@@ -5,11 +5,11 @@ plugins {
 }
 
 android {
-    namespace = "com.example.vitruvianredux"
-    compileSdk = 35
+    namespace = "com.devil.phoenixproject"
+    compileSdk = 36
 
     defaultConfig {
-        applicationId = "com.example.vitruvianredux"
+        applicationId = "com.devil.phoenixproject"
         minSdk = 26
         targetSdk = 35
         versionCode = 1

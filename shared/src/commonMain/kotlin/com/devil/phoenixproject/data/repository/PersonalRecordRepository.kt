@@ -1,0 +1,69 @@
+package com.devil.phoenixproject.data.repository
+
+import com.devil.phoenixproject.domain.model.PersonalRecord
+import kotlinx.coroutines.flow.Flow
+
+/**
+ * Repository interface for managing personal records (PRs)
+ *
+ * This interface defines the contract for accessing and managing personal records
+ * for exercises. Implementations will handle platform-specific data access
+ * (Android Room, iOS CoreData, Desktop SQLite, etc.)
+ */
+interface PersonalRecordRepository {
+    /**
+     * Get the latest PR for an exercise in a specific workout mode
+     * @param exerciseId Exercise ID
+     * @param workoutMode Workout mode (e.g., "OldSchool", "Pump", "TUT")
+     * @return PersonalRecord or null if no PR exists
+     */
+    suspend fun getLatestPR(exerciseId: String, workoutMode: String): PersonalRecord?
+
+    /**
+     * Get all PRs for an exercise across all workout modes
+     * @param exerciseId Exercise ID
+     * @return Flow emitting list of personal records
+     */
+    fun getPRsForExercise(exerciseId: String): Flow<List<PersonalRecord>>
+
+    /**
+     * Get the best PR for an exercise across all modes
+     * Returns the record with the highest weight * reps (volume)
+     * @param exerciseId Exercise ID
+     * @return PersonalRecord or null if no PR exists
+     */
+    suspend fun getBestPR(exerciseId: String): PersonalRecord?
+
+    /**
+     * Get all personal records
+     * @return Flow emitting list of all personal records
+     */
+    fun getAllPRs(): Flow<List<PersonalRecord>>
+
+    /**
+     * Get all personal records grouped by exercise (for analytics)
+     * Returns one record per exercise (the best one)
+     * @return Flow emitting list of personal records
+     */
+    fun getAllPRsGrouped(): Flow<List<PersonalRecord>>
+
+    /**
+     * Update PR if the new performance is better
+     * Compares the new weight and reps with the existing PR for the exercise/mode combination
+     * and updates if the new performance is better (higher volume = weight * reps)
+     *
+     * @param exerciseId Exercise ID
+     * @param weightPerCableKg Weight per cable in kg
+     * @param reps Number of reps completed
+     * @param workoutMode Workout mode
+     * @param timestamp Timestamp of the performance
+     * @return Result.success(true) if a new PR was set, Result.success(false) otherwise, or Result.failure on error
+     */
+    suspend fun updatePRIfBetter(
+        exerciseId: String,
+        weightPerCableKg: Float,
+        reps: Int,
+        workoutMode: String,
+        timestamp: Long
+    ): Result<Boolean>
+}

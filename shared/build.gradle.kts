@@ -163,8 +163,8 @@ kotlin {
 }
 
 android {
-    namespace = "com.example.vitruvianredux.shared"
-    compileSdk = 35
+    namespace = "com.devil.phoenixproject.shared"
+    compileSdk = 36
 
     defaultConfig {
         minSdk = 26
@@ -179,7 +179,7 @@ android {
 sqldelight {
     databases {
         create("VitruvianDatabase") {
-            packageName.set("com.example.vitruvianredux.database")
+            packageName.set("com.devil.phoenixproject.database")
         }
     }
 }
