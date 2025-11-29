@@ -3,20 +3,56 @@
 **Audit Date:** 2025-11-29
 **Auditor:** Claude (Automated Protocol Audit)
 **Repository:** Project-Phoenix-2.0 (Kable-based KMP)
-**Reference:** VitruvianProjectPhoenix (Nordic BLE / Android-specific)
+**Primary Reference:** [workoutmachineappfree](https://github.com/workoutmachineappfree/workoutmachineappfree.github.io) (Unofficial Web App - **AUTHORITATIVE SOURCE**)
+**Secondary Reference:** VitruvianProjectPhoenix (Nordic BLE / Android-specific)
+
+> **IMPORTANT:** The official Vitruvian app uses cloud-obfuscated protocols. Both this build and the
+> parent Nordic build derive their protocols from the **unofficial web app** which reverse-engineered
+> the direct BLE protocol. The web app is the authoritative protocol reference.
 
 ---
 
 ## Executive Summary
 
-This audit compares the Kable-based Kotlin Multiplatform BLE implementation against the parent Nordic BLE implementation. The migration is **largely complete** with good protocol parity, but several **CRITICAL** and **HIGH** severity gaps were identified that could cause workout failures or data issues.
+This audit compares the Kable-based Kotlin Multiplatform BLE implementation against the authoritative
+unofficial web app protocol and the parent Nordic BLE implementation. The migration is **largely complete**
+with good data parsing parity, but several **CRITICAL** and **HIGH** severity gaps were identified that
+could cause workout failures or mode selection issues.
 
 ### Quick Stats
 - **UUIDs:** MATCH (Core NUS UUIDs identical)
-- **Core Protocol:** PARTIAL (Missing 96-byte activation command)
+- **Core Protocol:** PARTIAL (Using simplified 0x4F instead of full 0x04 frame)
+- **Mode Values:** **DISCREPANCY** (See Critical Finding below)
 - **Data Parsing:** MATCH (Byte ordering and offsets correct)
 - **State Machine:** MATCH (Handle detection states equivalent)
 - **Connection Handling:** IMPROVED (Better auto-reconnect in Kable)
+
+### CRITICAL FINDING: Mode Value Discrepancy
+
+**Web App (Authoritative `modes.js`):**
+| Mode | Value |
+|------|-------|
+| Old School | 0 |
+| Pump | **1** |
+| TUT | **2** |
+| TUT Beast | **3** |
+| Eccentric Only | **4** |
+
+**Kable Build (`Models.kt:66-71`):**
+| Mode | Value |
+|------|-------|
+| OldSchool | 0 |
+| Pump | **2** |
+| TUT | **3** |
+| TUTBeast | **4** |
+| EccentricOnly | **6** |
+
+**Impact:** Selecting "Pump" mode sends value `2` (which is TUT in web app protocol). This could cause
+completely wrong workout behavior. **Needs immediate verification against actual hardware.**
+
+> **Note:** The Kable build comment says "Official app uses 0x4F" suggesting these values may come from
+> deobfuscated official app rather than web app. Both sources should be tested on hardware to determine
+> which is correct.
 
 ---
 
@@ -108,17 +144,23 @@ This audit compares the Kable-based Kotlin Multiplatform BLE implementation agai
 
 ## Phase 3: Protocol Packet Implementation
 
-### 3.1 Command Comparison
+### 3.1 Command Comparison (vs Web App Protocol)
 
-| Command | Parent | Kable Build | Status | Severity |
-|---------|--------|-------------|--------|----------|
-| STOP (0x50) | 1-2 bytes | 1 byte | **MATCH** | - |
-| RESET/INIT (0x0A) | 4 bytes | NOT IMPLEMENTED | **CRITICAL GAP** | **CRITICAL** |
-| REGULAR (0x4F) | 25 bytes | 25 bytes | **MATCH** | - |
-| ECHO (0x4E) | 29-32 bytes | 29 bytes (stub) | **HIGH GAP** | **HIGH** |
-| ACTIVATION (0x04) | 96-97 bytes | NOT IMPLEMENTED | **CRITICAL GAP** | **CRITICAL** |
-| INIT PRESET (0x11) | 34 bytes | NOT IMPLEMENTED | **HIGH GAP** | **HIGH** |
-| COLOR SCHEME | 34 bytes | NOT IMPLEMENTED | **LOW GAP** | **LOW** |
+| Command | Web App | Kable Build | Status | Severity |
+|---------|---------|-------------|--------|----------|
+| INIT (0x0A) | 4 bytes `[0x0A, 0x00, 0x00, 0x00]` | NOT IMPLEMENTED | **GAP** | **MEDIUM** |
+| INIT PRESET (0x11) | 34 bytes (coefficient table) | NOT IMPLEMENTED | **GAP** | **MEDIUM** |
+| PROGRAM (0x04) | 96 bytes (full frame) | NOT IMPLEMENTED | **GAP** | **HIGH** |
+| REGULAR (0x4F) | Not in web app | 25 bytes | **ALTERNATE** | - |
+| ECHO (0x4E) | 32 bytes (full params) | 29 bytes (stub) | **INCOMPLETE** | **HIGH** |
+| STOP (0x50) | Used by web app | 1 byte | **MATCH** | - |
+| COLOR (0x11) | 34 bytes | NOT IMPLEMENTED | **GAP** | **LOW** |
+
+**Key Insight:** The Kable build uses a simplified 25-byte 0x4F command that is NOT in the web app protocol.
+This appears to be derived from the official app deobfuscation. The web app uses the full 96-byte 0x04 command.
+
+**Both approaches may work** - the 0x4F command has been tested successfully in the parent repo. However,
+the mode value discrepancy (see Critical Finding above) needs verification.
 
 ### 3.2 CRITICAL: Missing 96-byte Activation Command (0x04)
 
@@ -339,21 +381,21 @@ Both implementations send single byte `0x50` for stop command.
 
 | ID | Gap | Impact | Files Affected |
 |----|-----|--------|----------------|
-| C1 | Missing 0x04 Activation Command (96 bytes) | Cannot use official app protocol | `BlePacketFactory.kt` |
-| C2 | Missing 0x0A INIT/RESET Command | Cannot recover from machine faults | `BlePacketFactory.kt` |
+| **C1** | **Mode Value Discrepancy** | Wrong workout mode sent to machine | `Models.kt:66-71` |
 
 ### HIGH Gaps (Should Fix)
 
 | ID | Gap | Impact | Files Affected |
 |----|-----|--------|----------------|
 | H1 | Echo Command (0x4E) incomplete | Echo mode parameters missing | `BlePacketFactory.kt:53-65` |
-| H2 | Missing 0x11 INIT Preset Frame | Legacy web app compatibility | `BlePacketFactory.kt` |
-| H3 | Diagnostic/Heuristic polling missing | No device health or Echo analytics | `KableBleRepository.kt` |
+| H2 | Missing 0x04 Program Command (96 bytes) | Cannot use web app protocol | `BlePacketFactory.kt` |
+| H3 | Missing initialization sequence (0x0A + 0x11) | May cause stability issues | `BlePacketFactory.kt` |
 
 ### MEDIUM Gaps (Consider Fixing)
 
 | ID | Gap | Impact | Files Affected |
 |----|-----|--------|----------------|
+| M0 | Verify 0x4F command works on hardware | Need hardware testing | `BlePacketFactory.kt` |
 | M1 | Scan filter missing V-Trainer/Vitruvian | May miss device variants | `KableBleRepository.kt:191-193` |
 | M2 | No explicit connection priority | Potential stability on Android | `KableBleRepository.kt` |
 | M3 | Scan timeout not implemented | Battery drain if scan forgotten | `KableBleRepository.kt` |
@@ -370,7 +412,36 @@ Both implementations send single byte `0x50` for stop command.
 
 ## Implementation Recommendations
 
-### Priority 1: Critical Command Implementation
+### Priority 0: VERIFY MODE VALUES ON HARDWARE
+
+**THIS IS THE MOST CRITICAL ISSUE.** Before any other changes, verify which mode values work:
+
+**Test Matrix:**
+| Mode | Web App Value | Kable Value | Test Result |
+|------|---------------|-------------|-------------|
+| Old School | 0 | 0 | (same) |
+| Pump | 1 | 2 | **VERIFY** |
+| TUT | 2 | 3 | **VERIFY** |
+| TUT Beast | 3 | 4 | **VERIFY** |
+| Eccentric Only | 4 | 6 | **VERIFY** |
+
+If web app values are correct, update `Models.kt:66-71`:
+```kotlin
+sealed class ProgramMode(val modeValue: Int, val displayName: String) {
+    object OldSchool : ProgramMode(0, "Old School")
+    object Pump : ProgramMode(1, "Pump")           // Was 2
+    object TUT : ProgramMode(2, "TUT")             // Was 3
+    object TUTBeast : ProgramMode(3, "TUT Beast")  // Was 4
+    object EccentricOnly : ProgramMode(4, "Eccentric Only")  // Was 6
+}
+```
+
+### Priority 1: Web App Initialization Sequence
+
+The web app uses this initialization sequence before workouts:
+1. Send INIT: `[0x0A, 0x00, 0x00, 0x00]`
+2. Send INIT PRESET (0x11): 34-byte coefficient table
+3. Send PROGRAM (0x04): 96-byte workout parameters
 
 **File:** `shared/src/commonMain/kotlin/com/devil/phoenixproject/util/BlePacketFactory.kt`
 
@@ -555,19 +626,32 @@ Update line 191-193:
 
 ## Conclusion
 
-The Kable migration successfully implements core BLE communication with accurate data parsing and state management. However, **two critical gaps** (0x04 activation and 0x0A reset commands) should be addressed before production release to ensure:
+The Kable migration successfully implements core BLE communication with accurate data parsing and state
+management. The implementation uses a simplified 0x4F command (from official app deobfuscation) rather
+than the 0x04 command (from the web app protocol). Both approaches may be valid.
 
-1. Full official app protocol compatibility
-2. Machine fault recovery without reconnection
-3. Complete Echo mode functionality
+### IMMEDIATE ACTION REQUIRED
 
-The recommended implementation order is:
-1. Add 0x0A INIT command (simple, enables fault recovery)
-2. Complete 0x4E Echo command (enables full Echo mode)
-3. Add 0x04 Activation command (enables official protocol)
-4. Update scan filters (ensures device discovery)
-5. Add diagnostic/heuristic polling (nice-to-have)
+**Verify mode values on hardware before any production use.** The mode value discrepancy between the
+web app (authoritative) and current implementation could cause wrong workout modes to activate.
+
+### Recommended Implementation Order
+
+1. **CRITICAL:** Test mode values 0-4 vs 0,2,3,4,6 on actual hardware
+2. Complete 0x4E Echo command parameters (enables full Echo mode)
+3. Consider implementing web app protocol (0x0A → 0x11 → 0x04) as alternative
+4. Update scan filters to include all device name patterns
+5. Add diagnostic/heuristic polling (nice-to-have for device health)
+
+### Protocol Sources Summary
+
+| Source | Protocol | Status |
+|--------|----------|--------|
+| Web App (workoutmachineappfree) | 0x0A → 0x11 → 0x04 (96-byte) | **AUTHORITATIVE** |
+| Official App (deobfuscated) | 0x4F (25-byte) | Used in Kable build |
+| Official App (production) | Cloud-obfuscated | Cannot replicate |
 
 ---
 
-*Generated by automated protocol audit - manual review recommended for production deployment.*
+*Generated by automated protocol audit against [workoutmachineappfree](https://github.com/workoutmachineappfree/workoutmachineappfree.github.io).
+Manual hardware verification required before production deployment.*
