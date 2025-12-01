@@ -1,11 +1,18 @@
 package com.devil.phoenixproject.presentation.screen
 
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.BluetoothSearching
@@ -14,6 +21,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -311,80 +319,97 @@ fun EnhancedMainScreen(
 }
 
 /**
- * Connection status indicator with icon and label.
- * Tappable to toggle connection state.
- * Features a prominent circular bordered container with status color.
+ * Connection status button with clear text labels and animated gradient when connecting.
+ * States:
+ * 1. Blue "Click to Connect" - disconnected/idle
+ * 2. Animated blue-green gradient "Connecting..." - connecting/scanning
+ * 3. Green "Connected" - connected
+ * 4. Red "Reconnect" - error or connection lost
  */
 @Composable
 private fun ConnectionStatusIndicator(
     connectionState: ConnectionState,
     onToggleConnection: () -> Unit
 ) {
-    val statusColor = when (connectionState) {
-        is ConnectionState.Connected -> Color(0xFF22C55E) // green-500
-        is ConnectionState.Connecting -> Color(0xFFFBBF24) // yellow-400
-        is ConnectionState.Disconnected -> Color(0xFFEF4444) // red-500
-        is ConnectionState.Scanning -> Color(0xFF3B82F6) // blue-500
-        is ConnectionState.Error -> Color(0xFFEF4444) // red-500
+    val isConnected = connectionState is ConnectionState.Connected
+    val isConnecting = connectionState is ConnectionState.Connecting ||
+                       connectionState is ConnectionState.Scanning
+    val isError = connectionState is ConnectionState.Error
+
+    // Animated gradient offset for connecting state
+    val infiniteTransition = rememberInfiniteTransition(label = "connecting")
+    val gradientOffset by infiniteTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(1000, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "gradientOffset"
+    )
+
+    val buttonText = when {
+        isConnected -> "Connected"
+        isConnecting -> "Connecting..."
+        isError -> "Reconnect"
+        else -> "Click to Connect"
     }
 
-    Column(
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center,
+    val contentDescription = when {
+        isConnected -> "Connected to machine. Tap to disconnect"
+        isConnecting -> "Connecting to machine"
+        isError -> "Connection error. Tap to reconnect"
+        else -> "Tap to connect to machine"
+    }
+
+    // Static colors for non-connecting states
+    val blueColor = Color(0xFF3B82F6)
+    val greenColor = Color(0xFF22C55E)
+    val redColor = Color(0xFFEF4444)
+
+    Box(
         modifier = Modifier
-            .padding(horizontal = 4.dp)
+            .height(32.dp)
+            .padding(end = 8.dp)
+            .clip(RoundedCornerShape(16.dp))
+            .then(
+                if (isConnecting) {
+                    // Animated gradient background for connecting state
+                    Modifier.background(
+                        brush = Brush.horizontalGradient(
+                            colors = listOf(
+                                blueColor,
+                                greenColor,
+                                blueColor,
+                                greenColor,
+                                blueColor
+                            ),
+                            startX = -200f + (gradientOffset * 600f),
+                            endX = 200f + (gradientOffset * 600f)
+                        )
+                    )
+                } else {
+                    // Static background for other states
+                    Modifier.background(
+                        color = when {
+                            isConnected -> greenColor
+                            isError -> redColor
+                            else -> blueColor
+                        }
+                    )
+                }
+            )
             .clickable(
                 onClick = onToggleConnection,
                 role = Role.Button
             )
+            .padding(horizontal = 10.dp),
+        contentAlignment = Alignment.Center
     ) {
-        // Circular bordered container for the icon
-        Box(
-            modifier = Modifier
-                .size(44.dp)
-                .border(
-                    width = 2.dp,
-                    color = statusColor,
-                    shape = CircleShape
-                )
-                .background(
-                    color = statusColor.copy(alpha = 0.15f),
-                    shape = CircleShape
-                ),
-            contentAlignment = Alignment.Center
-        ) {
-            Icon(
-                imageVector = when (connectionState) {
-                    is ConnectionState.Connected -> Icons.Default.Bluetooth
-                    is ConnectionState.Connecting -> Icons.AutoMirrored.Filled.BluetoothSearching
-                    is ConnectionState.Disconnected -> Icons.Default.BluetoothDisabled
-                    is ConnectionState.Scanning -> Icons.AutoMirrored.Filled.BluetoothSearching
-                    is ConnectionState.Error -> Icons.Default.BluetoothDisabled
-                },
-                contentDescription = when (connectionState) {
-                    is ConnectionState.Connected -> "Connected to machine. Tap to disconnect"
-                    is ConnectionState.Connecting -> "Connecting to machine"
-                    is ConnectionState.Disconnected -> "Disconnected. Tap to connect"
-                    is ConnectionState.Scanning -> "Scanning for machine"
-                    is ConnectionState.Error -> "Connection error. Tap to retry"
-                },
-                tint = statusColor,
-                modifier = Modifier.size(24.dp)
-            )
-        }
-
-        Spacer(modifier = Modifier.height(2.dp))
-
         Text(
-            text = when (connectionState) {
-                is ConnectionState.Connected -> "Connected"
-                is ConnectionState.Connecting -> "Connecting"
-                is ConnectionState.Disconnected -> "Disconnected"
-                is ConnectionState.Scanning -> "Scanning"
-                is ConnectionState.Error -> "Error"
-            },
-            style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
-            color = statusColor,
+            text = buttonText,
+            style = MaterialTheme.typography.labelSmall,
+            color = Color.White,
             maxLines = 1
         )
     }

@@ -35,13 +35,21 @@ data class AutoStopUiState(
 /**
  * Handle activity state for auto-start/auto-stop logic.
  * Tracks the workout phase based on handle position.
+ *
+ * 4-state machine (matches parent repo v0.5.1-beta):
+ * - WaitingForRest: Initial state, requires handles at rest before arming
+ * - Released (SetComplete): Handles at rest, armed for grab detection
+ * - Moving: Handles extended but no significant velocity yet (intermediate state)
+ * - Grabbed (Active): Handles grabbed with velocity - workout active
  */
 enum class HandleActivityState {
     /** Waiting for user to pick up handles (at rest position) */
     WaitingForRest,
-    /** Handles are lifted and user is actively working */
+    /** Handles extended (position > threshold) but no significant velocity yet */
+    Moving,
+    /** Handles are lifted with velocity - user is actively working (maps to "Grabbed" in parent) */
     Active,
-    /** Set completed, waiting for rest timer or next action */
+    /** Set completed / handles released, armed for next grab (maps to "Released" in parent) */
     SetComplete
 }
 
@@ -120,11 +128,41 @@ interface BleRepository {
     suspend fun setColorScheme(schemeIndex: Int)
     suspend fun sendWorkoutCommand(command: ByteArray)
 
-    // Handle detection
+    // Handle detection for auto-start (arms the state machine in WaitingForRest)
     fun enableHandleDetection(enabled: Boolean)
 
     // Reset handle state machine to initial state (for re-arming Just Lift)
     fun resetHandleActivityState()
+
+    /**
+     * Enable Just Lift waiting mode after set completion.
+     * Resets position tracking and state machine to WaitingForRest,
+     * ready to detect when user grabs handles for next set.
+     * This is called BETWEEN sets to re-arm the auto-start detection.
+     */
+    fun enableJustLiftWaitingMode()
+
+    /**
+     * Restart monitor polling to clear machine fault state (red lights).
+     * Unlike enableHandleDetection(), this does NOT arm auto-start -
+     * it just ensures polling continues to clear danger zone alarms.
+     * Use after AMRAP completion or when machine needs fault clearing.
+     */
+    fun restartMonitorPolling()
+
+    /**
+     * Start monitor polling for active workout (not for auto-start).
+     * Sets handle state to Active since workout is already running.
+     * Use when starting a workout that doesn't need handle detection.
+     */
+    fun startActiveWorkoutPolling()
+
+    /**
+     * Stop all polling (Monitor, Diagnostic, Heartbeat).
+     * Logs workout analysis (min/max positions) before stopping.
+     * Does NOT disconnect the device.
+     */
+    fun stopPolling()
 }
 
 /**
@@ -133,7 +171,7 @@ interface BleRepository {
 class StubBleRepository : BleRepository {
     override val connectionState = MutableStateFlow<ConnectionState>(ConnectionState.Disconnected)
     override val metricsFlow: Flow<WorkoutMetric> = MutableStateFlow(
-        WorkoutMetric(loadA = 0f, loadB = 0f, positionA = 0, positionB = 0)
+        WorkoutMetric(loadA = 0f, loadB = 0f, positionA = 0f, positionB = 0f)
     )
     override val scannedDevices = MutableStateFlow<List<ScannedDevice>>(emptyList())
     override val handleState = MutableStateFlow(HandleState())
@@ -150,4 +188,8 @@ class StubBleRepository : BleRepository {
     override suspend fun sendWorkoutCommand(command: ByteArray) {}
     override fun enableHandleDetection(enabled: Boolean) {}
     override fun resetHandleActivityState() {}
+    override fun enableJustLiftWaitingMode() {}
+    override fun restartMonitorPolling() {}
+    override fun startActiveWorkoutPolling() {}
+    override fun stopPolling() {}
 }

@@ -922,7 +922,7 @@ fun LiveMetricsCard(
                         trackColor = MaterialTheme.colorScheme.surfaceContainerHighest
                     )
                     Text(
-                        "${metric.positionA}",
+                        "${metric.positionA.toInt()}mm",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.width(50.dp).padding(start = Spacing.extraSmall),
@@ -952,7 +952,7 @@ fun LiveMetricsCard(
                         trackColor = MaterialTheme.colorScheme.surfaceContainerHighest
                     )
                     Text(
-                        "${metric.positionB}",
+                        "${metric.positionB.toInt()}mm",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.width(50.dp).padding(start = Spacing.extraSmall),

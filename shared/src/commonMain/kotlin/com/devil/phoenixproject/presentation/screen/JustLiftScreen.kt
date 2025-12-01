@@ -2,7 +2,6 @@ package com.devil.phoenixproject.presentation.screen
 
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.EaseInOutQuad
-import androidx.compose.animation.core.EaseOutBack
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -68,6 +67,7 @@ fun JustLiftScreen(
     val repCount by viewModel.repCount.collectAsState()
     val autoStopState by viewModel.autoStopState.collectAsState()
     val weightUnit by viewModel.weightUnit.collectAsState()
+    @Suppress("UNUSED_VARIABLE") // Reserved for future connecting overlay
     val isAutoConnecting by viewModel.isAutoConnecting.collectAsState()
     val connectionError by viewModel.connectionError.collectAsState()
 
@@ -125,8 +125,19 @@ fun JustLiftScreen(
 
     // Enable handle detection for auto-start when connected (matches official app)
     val connectionState by viewModel.connectionState.collectAsState()
+
+    // Enable handle detection on screen entry if already connected
+    LaunchedEffect(Unit) {
+        if (connectionState is ConnectionState.Connected) {
+            Logger.i("JustLiftScreen: Already connected on entry, enabling handle detection")
+            viewModel.enableHandleDetection()
+        }
+    }
+
+    // Also enable when connection state changes to connected
     LaunchedEffect(connectionState) {
         if (connectionState is ConnectionState.Connected) {
+            Logger.i("JustLiftScreen: Connection state changed to Connected, enabling handle detection")
             viewModel.enableHandleDetection()
         }
     }
@@ -436,13 +447,7 @@ fun JustLiftScreen(
                 }
             }
 
-            // Auto-connect UI overlays
-            if (isAutoConnecting) {
-                com.devil.phoenixproject.presentation.components.ConnectingOverlay(
-                    onCancel = { viewModel.cancelAutoConnecting() }
-                )
-            }
-
+            // Connection error dialog (ConnectingOverlay removed - status shown in top bar button)
             connectionError?.let { error ->
                 com.devil.phoenixproject.presentation.components.ConnectionErrorDialog(
                     message = error,

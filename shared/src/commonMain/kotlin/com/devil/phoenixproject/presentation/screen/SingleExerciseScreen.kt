@@ -9,7 +9,6 @@ import androidx.navigation.NavController
 import com.devil.phoenixproject.data.preferences.SingleExerciseDefaults
 import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.domain.model.*
-import com.devil.phoenixproject.presentation.components.ConnectingOverlay
 import com.devil.phoenixproject.presentation.components.ConnectionErrorDialog
 import com.devil.phoenixproject.presentation.components.ExercisePickerContent
 import com.devil.phoenixproject.presentation.navigation.NavigationRoutes
@@ -30,6 +29,7 @@ fun SingleExerciseScreen(
 ) {
     val weightUnit by viewModel.weightUnit.collectAsState()
     val enableVideoPlayback by viewModel.enableVideoPlayback.collectAsState()
+    @Suppress("UNUSED_VARIABLE") // Reserved for future connecting overlay
     val isAutoConnecting by viewModel.isAutoConnecting.collectAsState()
     val connectionError by viewModel.connectionError.collectAsState()
 
@@ -232,12 +232,7 @@ fun SingleExerciseScreen(
             }
         }
 
-        if (isAutoConnecting) {
-            ConnectingOverlay(
-                onCancel = { viewModel.cancelAutoConnecting() }
-            )
-        }
-
+        // Connection error dialog (ConnectingOverlay removed - status shown in top bar button)
         connectionError?.let { error ->
             ConnectionErrorDialog(
                 message = error,

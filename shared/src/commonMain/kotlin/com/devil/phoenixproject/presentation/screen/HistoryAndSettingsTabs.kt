@@ -783,6 +783,7 @@ fun SettingsTab(
     onNavigateToConnectionLogs: () -> Unit = {},
     onNavigateToProtocolTester: () -> Unit = {},
     onNavigateToBadges: () -> Unit = {},
+    @Suppress("UNUSED_PARAMETER") // Reserved for future connecting overlay
     isAutoConnecting: Boolean = false,
     connectionError: String? = null,
     onClearConnectionError: () -> Unit = {},
@@ -1524,13 +1525,7 @@ fun SettingsTab(
         )
     }
 
-    // Auto-connect UI overlays (same as other screens)
-    if (isAutoConnecting) {
-        com.devil.phoenixproject.presentation.components.ConnectingOverlay(
-            onCancel = onCancelAutoConnecting
-        )
-    }
-
+    // Connection error dialog (ConnectingOverlay removed - status shown in top bar button)
     connectionError?.let { error ->
         com.devil.phoenixproject.presentation.components.ConnectionErrorDialog(
             message = error,

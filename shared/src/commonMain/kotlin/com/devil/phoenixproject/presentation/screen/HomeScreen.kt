@@ -32,7 +32,6 @@ import com.devil.phoenixproject.ui.theme.ThemeMode
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import com.devil.phoenixproject.presentation.components.ConnectingOverlay
 import com.devil.phoenixproject.presentation.components.ConnectionErrorDialog
 import com.devil.phoenixproject.util.format
 import kotlin.time.Clock
@@ -51,6 +50,7 @@ fun HomeScreen(
     isLandscape: Boolean = false
 ) {
     // Collect connection state
+    @Suppress("UNUSED_VARIABLE") // Reserved for future connecting overlay
     val isAutoConnecting by viewModel.isAutoConnecting.collectAsState()
     val connectionError by viewModel.connectionError.collectAsState()
 
@@ -176,13 +176,7 @@ fun HomeScreen(
             }
         }
 
-        // Auto-connect UI overlays (same as exercise start screens)
-        if (isAutoConnecting) {
-            ConnectingOverlay(
-                onCancel = { viewModel.cancelAutoConnecting() }
-            )
-        }
-
+        // Connection error dialog (ConnectingOverlay removed - status shown in top bar button)
         connectionError?.let { error ->
             ConnectionErrorDialog(
                 message = error,

@@ -35,8 +35,8 @@ private fun WorkoutTabActivePreview() {
         timestamp = System.currentTimeMillis(),
         loadA = 25f,
         loadB = 25f,
-        positionA = 450,  // Left cable mid-pull
-        positionB = 520,  // Right cable slightly higher
+        positionA = 450f,  // Left cable mid-pull (mm)
+        positionB = 520f,  // Right cable slightly higher (mm)
         velocityA = 120.0,
         velocityB = 115.0,
         ticks = 12345,
@@ -132,7 +132,7 @@ private fun EnhancedPositionBarsPreview() {
             // Concentric phase (lifting) - Green
             EnhancedCablePositionBar(
                 label = "L",
-                currentPosition = 600,
+                currentPosition = 600f,  // mm
                 velocity = 100.0,  // Positive = concentric
                 minPosition = 200,
                 maxPosition = 800,
@@ -147,7 +147,7 @@ private fun EnhancedPositionBarsPreview() {
             // Eccentric phase (lowering) - Orange
             EnhancedCablePositionBar(
                 label = "R",
-                currentPosition = 400,
+                currentPosition = 400f,  // mm
                 velocity = -100.0,  // Negative = eccentric
                 minPosition = 200,
                 maxPosition = 800,
@@ -162,7 +162,7 @@ private fun EnhancedPositionBarsPreview() {
             // Static/holding - Blue
             EnhancedCablePositionBar(
                 label = "H",
-                currentPosition = 500,
+                currentPosition = 500f,  // mm
                 velocity = 0.0,  // Near zero = static
                 minPosition = 200,
                 maxPosition = 800,
@@ -175,7 +175,7 @@ private fun EnhancedPositionBarsPreview() {
             // Inactive - Grey
             EnhancedCablePositionBar(
                 label = "X",
-                currentPosition = 300,
+                currentPosition = 300f,  // mm
                 velocity = 0.0,
                 isActive = false,
                 modifier = Modifier
@@ -470,7 +470,7 @@ private fun WorkoutTabSetSummaryPreview() {
         WorkoutMetric(
             timestamp = System.currentTimeMillis(),
             loadA = 25f, loadB = 25f,
-            positionA = 500, positionB = 500,
+            positionA = 500f, positionB = 500f,
             velocityA = 100.0, velocityB = 100.0,
             ticks = 1000, status = 0
         )
@@ -796,8 +796,8 @@ private fun WorkoutTabJustLiftAutoStopPreview() {
         timestamp = System.currentTimeMillis(),
         loadA = 20f,
         loadB = 20f,
-        positionA = 50,  // Cables near bottom (user let go)
-        positionB = 45,
+        positionA = 50f,  // Cables near bottom (user let go)
+        positionB = 45f,
         velocityA = 0.0,
         velocityB = 0.0,
         ticks = 5000,
@@ -866,8 +866,8 @@ private fun WorkoutTabWarmupPreview() {
         timestamp = System.currentTimeMillis(),
         loadA = 25f,
         loadB = 25f,
-        positionA = 400,
-        positionB = 420,
+        positionA = 400f,
+        positionB = 420f,
         velocityA = 80.0,
         velocityB = 85.0,
         ticks = 2000,
@@ -1010,8 +1010,8 @@ private fun WorkoutTabAltActivePreview() {
         timestamp = System.currentTimeMillis(),
         loadA = 25f,
         loadB = 25f,
-        positionA = 450,
-        positionB = 520,
+        positionA = 450f,
+        positionB = 520f,
         velocityA = 120.0,
         velocityB = 115.0,
         ticks = 12345,
@@ -1079,8 +1079,8 @@ private fun WorkoutTabAltWarmupPreview() {
         timestamp = System.currentTimeMillis(),
         loadA = 25f,
         loadB = 25f,
-        positionA = 400,
-        positionB = 420,
+        positionA = 400f,
+        positionB = 420f,
         velocityA = 80.0,
         velocityB = 85.0,
         ticks = 2000,
@@ -1353,8 +1353,8 @@ private fun WorkoutTabAltJustLiftActivePreview() {
         timestamp = System.currentTimeMillis(),
         loadA = 30f,
         loadB = 30f,
-        positionA = 550,
-        positionB = 530,
+        positionA = 550f,
+        positionB = 530f,
         velocityA = 90.0,
         velocityB = 85.0,
         ticks = 8000,
@@ -1422,8 +1422,8 @@ private fun WorkoutTabAltJustLiftAutoStopPreview() {
         timestamp = System.currentTimeMillis(),
         loadA = 30f,
         loadB = 30f,
-        positionA = 50,  // Cables near bottom (handles released)
-        positionB = 45,
+        positionA = 50f,  // Cables near bottom (handles released)
+        positionB = 45f,
         velocityA = 0.0,
         velocityB = 0.0,
         ticks = 10000,
@@ -1489,8 +1489,8 @@ private fun WorkoutTabAltAMRAPActivePreview() {
         timestamp = System.currentTimeMillis(),
         loadA = 20f,
         loadB = 20f,
-        positionA = 600,
-        positionB = 580,
+        positionA = 600f,
+        positionB = 580f,
         velocityA = 75.0,
         velocityB = 70.0,
         ticks = 15000,
@@ -1560,8 +1560,8 @@ private fun WorkoutTabAltAMRAPAutoStopPreview() {
         timestamp = System.currentTimeMillis(),
         loadA = 20f,
         loadB = 20f,
-        positionA = 40,  // Cables near bottom
-        positionB = 35,
+        positionA = 40f,  // Cables near bottom
+        positionB = 35f,
         velocityA = 0.0,
         velocityB = 0.0,
         ticks = 20000,

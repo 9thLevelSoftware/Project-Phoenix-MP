@@ -6,7 +6,6 @@ import androidx.navigation.NavController
 import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.domain.model.*
 import com.devil.phoenixproject.presentation.components.BadgeCelebrationQueue
-import com.devil.phoenixproject.presentation.components.ConnectingOverlay
 import com.devil.phoenixproject.presentation.components.ConnectionErrorDialog
 import com.devil.phoenixproject.presentation.components.HapticFeedbackEffect
 import com.devil.phoenixproject.presentation.components.PRCelebrationDialog
@@ -39,6 +38,7 @@ fun ActiveWorkoutScreen(
     val currentExerciseIndex by viewModel.currentExerciseIndex.collectAsState()
     val hapticEvents = viewModel.hapticEvents
     val connectionState by viewModel.connectionState.collectAsState()
+    @Suppress("UNUSED_VARIABLE") // Reserved for future connecting overlay
     val isAutoConnecting by viewModel.isAutoConnecting.collectAsState()
     val connectionError by viewModel.connectionError.collectAsState()
     val userPreferences by viewModel.userPreferences.collectAsState()
@@ -189,13 +189,7 @@ fun ActiveWorkoutScreen(
         )
     }
 
-    // Auto-connect UI overlays
-    if (isAutoConnecting) {
-        ConnectingOverlay(
-            onCancel = { viewModel.cancelAutoConnecting() }
-        )
-    }
-
+    // Connection error dialog (ConnectingOverlay removed - status shown in top bar button)
     connectionError?.let { error ->
         ConnectionErrorDialog(
             message = error,

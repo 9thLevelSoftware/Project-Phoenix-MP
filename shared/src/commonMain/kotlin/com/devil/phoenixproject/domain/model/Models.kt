@@ -1,7 +1,13 @@
 package com.devil.phoenixproject.domain.model
 
-// TODO: VitruvianModel and HardwareDetection need to be migrated from util package
-// These are currently imported from Android-specific util classes
+/**
+ * Vitruvian Hardware Model
+ */
+enum class VitruvianModel(val displayName: String) {
+    VFormTrainer("V-Form Trainer"),
+    TrainerPlus("Trainer+"),
+    Unknown("Unknown Vitruvian Device")
+}
 
 /**
  * Personal record for an exercise
@@ -25,8 +31,7 @@ sealed class ConnectionState {
     data class Connected(
         val deviceName: String,
         val deviceAddress: String,
-        // TODO: hardwareModel needs expect/actual pattern for VitruvianModel
-        // val hardwareModel: VitruvianModel = HardwareDetection.detectModel(deviceName)
+        val hardwareModel: VitruvianModel = VitruvianModel.Unknown
     ) : ConnectionState()
     data class Error(val message: String, val throwable: Throwable? = null) : ConnectionState()
 }
@@ -214,13 +219,16 @@ data class WorkoutParameters(
 
 /**
  * Real-time workout metric data from the device
+ *
+ * Position values are in millimeters (mm), range -1000.0 to +1000.0
+ * Raw BLE values are scaled by dividing by 10.0f (Issue #197)
  */
 data class WorkoutMetric(
     val timestamp: Long = currentTimeMillis(),
     val loadA: Float,
     val loadB: Float,
-    val positionA: Int,
-    val positionB: Int,
+    val positionA: Float,  // Position in mm (changed from Int in Issue #197)
+    val positionB: Float,  // Position in mm (changed from Int in Issue #197)
     val ticks: Int = 0,
     val velocityA: Double = 0.0,  // Velocity for handle detection (official app protocol)
     val velocityB: Double = 0.0,   // Velocity for right handle detection (for single-handle exercises)
@@ -308,6 +316,7 @@ expect fun generateUUID(): String
 
 /**
  * Chart data point for visualization
+ * Position values are in millimeters (mm), range -1000.0 to +1000.0 (Issue #197)
  */
 @Suppress("unused")
 data class ChartDataPoint(
@@ -315,8 +324,8 @@ data class ChartDataPoint(
     val totalLoad: Float,
     val loadA: Float,
     val loadB: Float,
-    val positionA: Int,
-    val positionB: Int
+    val positionA: Float,  // Position in mm (changed from Int in Issue #197)
+    val positionB: Float   // Position in mm (changed from Int in Issue #197)
 )
 
 /**

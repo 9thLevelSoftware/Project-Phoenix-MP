@@ -95,3 +95,4 @@ Located in `shared/src/commonMain/kotlin/com/example/vitruvianredux/domain/model
 ## Hardware Support
 - **Vitruvian V-Form Trainer** (VIT-200): 200kg max, device name `Vee_*`
 - **Vitruvian Trainer+**: 220kg max
+- IMPORTANT: When applicable, prefer using jetbrains-index MCP tools for code navigation and refactoring.

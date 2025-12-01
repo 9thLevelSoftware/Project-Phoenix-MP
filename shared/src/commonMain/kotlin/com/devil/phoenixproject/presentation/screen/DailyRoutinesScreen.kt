@@ -30,6 +30,7 @@ fun DailyRoutinesScreen(
     val routines by viewModel.routines.collectAsState()
     val weightUnit by viewModel.weightUnit.collectAsState()
     val enableVideoPlayback by viewModel.enableVideoPlayback.collectAsState()
+    @Suppress("UNUSED_VARIABLE") // Reserved for future connecting overlay
     val isAutoConnecting by viewModel.isAutoConnecting.collectAsState()
     val connectionError by viewModel.connectionError.collectAsState()
 
@@ -95,13 +96,7 @@ fun DailyRoutinesScreen(
             modifier = Modifier.fillMaxSize()
         )
 
-        // Auto-connect UI overlays
-        if (isAutoConnecting) {
-            com.devil.phoenixproject.presentation.components.ConnectingOverlay(
-                onCancel = { viewModel.cancelAutoConnecting() }
-            )
-        }
-
+        // Connection error dialog (ConnectingOverlay removed - status shown in top bar button)
         connectionError?.let { error ->
             com.devil.phoenixproject.presentation.components.ConnectionErrorDialog(
                 message = error,

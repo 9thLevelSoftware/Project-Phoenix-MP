@@ -415,30 +415,36 @@ class MainViewModel constructor(
              }
         }
 
-        // Handle state collector for auto-start functionality
+        // Handle activity state collector for auto-start functionality
+        // Uses 4-state machine from BLE repo (matches parent repo v0.5.1-beta):
+        // WaitingForRest -> SetComplete (armed) -> Moving (intermediate) -> Active (grabbed with velocity)
         viewModelScope.launch {
-            bleRepository.handleState.collect { handleState ->
-                val handlesDetected = handleState.leftDetected || handleState.rightDetected
+            bleRepository.handleActivityState.collect { activityState ->
                 val params = _workoutParameters.value
                 val currentState = _workoutState.value
                 val isIdle = currentState is WorkoutState.Idle
                 val isSummaryAndJustLift = currentState is WorkoutState.SetSummary && params.isJustLift
 
-                // Auto-start logic: when handles are grabbed in idle state
+                // Auto-start logic: when handles transition to Active state
+                // Active = position > 8mm AND velocity > 100mm/s (matches parent repo)
                 if (params.useAutoStart && (isIdle || isSummaryAndJustLift)) {
-                    if (handlesDetected) {
-                        startAutoStartTimer()
-                    } else {
-                        cancelAutoStartTimer()
+                    when (activityState) {
+                        HandleActivityState.Active -> {
+                            startAutoStartTimer()
+                        }
+                        HandleActivityState.Moving -> {
+                            // Moving = position extended but no velocity yet
+                            // Don't start countdown yet, but also don't cancel if already running
+                            // This allows user to slowly pick up handles without false trigger
+                        }
+                        HandleActivityState.SetComplete, HandleActivityState.WaitingForRest -> {
+                            cancelAutoStartTimer()
+                        }
                     }
                 }
 
-                // Track handle activity state
-                currentHandleState = when {
-                    currentState is WorkoutState.Active && handlesDetected -> HandleActivityState.Active
-                    currentState is WorkoutState.SetSummary -> HandleActivityState.SetComplete
-                    else -> HandleActivityState.WaitingForRest
-                }
+                // Track handle activity state for UI
+                currentHandleState = activityState
             }
         }
 
@@ -461,13 +467,14 @@ class MainViewModel constructor(
         val currentPositions = _currentMetric.value
 
         // Use machine's ROM and Set counters directly (official app method)
+        // Position values are in mm (Issue #197)
         repCounter.process(
             repsRomCount = notification.repsRomCount,
             repsSetCount = notification.repsSetCount,
             up = notification.topCounter,
             down = notification.completeCounter,
-            posA = currentPositions?.positionA ?: 0,
-            posB = currentPositions?.positionB ?: 0
+            posA = currentPositions?.positionA ?: 0f,
+            posB = currentPositions?.positionB ?: 0f
         )
 
         // Update rep count and ranges for UI
@@ -541,17 +548,25 @@ class MainViewModel constructor(
 
             // Normal cable-based exercise
 
-            // 1. Build Command
-            val command = if (params.workoutType is WorkoutType.Program) {
-                BlePacketFactory.createWorkoutCommand(
-                    params.workoutType,
-                    params.weightPerCableKg,
-                    params.reps
-                )
-            } else {
-                 val echo = params.workoutType as WorkoutType.Echo
-                 BlePacketFactory.createEchoCommand(echo.level.levelValue, echo.eccentricLoad.percentage)
+            // 1. Build Command - Use full 96-byte PROGRAM params (matches parent repo)
+            val command = when (val workoutType = params.workoutType) {
+                is WorkoutType.Program -> {
+                    // Full 96-byte program frame with mode profile, weight, progression
+                    BlePacketFactory.createProgramParams(params)
+                }
+                is WorkoutType.Echo -> {
+                    // 32-byte Echo control frame
+                    BlePacketFactory.createEchoControl(
+                        level = workoutType.level,
+                        warmupReps = params.warmupReps,
+                        targetReps = params.reps,
+                        isJustLift = isJustLiftMode || params.isJustLift,
+                        isAMRAP = params.isAMRAP,
+                        eccentricPct = workoutType.eccentricLoad.percentage
+                    )
+                }
             }
+            Logger.d { "Built ${command.size}-byte workout command for ${params.workoutType}" }
 
             // 2. Send Command
             try {
@@ -631,10 +646,19 @@ class MainViewModel constructor(
              bleRepository.sendWorkoutCommand(BlePacketFactory.createStopCommand())
              monitorDataCollectionJob?.cancel()
              _hapticEvents.emit(HapticEvent.WORKOUT_END)
-             
+
              val params = _workoutParameters.value
              val repCount = _repCount.value
-             
+             val isJustLift = params.isJustLift
+
+             // CRITICAL: Just Lift mode - immediately restart polling to clear machine fault state
+             // The machine needs active polling to process the stop command and reset quickly.
+             // Without this, the machine stays in fault state (red lights) until polling resumes.
+             if (isJustLift) {
+                 Logger.d("Just Lift: Restarting monitor polling to clear machine fault state")
+                 bleRepository.restartMonitorPolling()
+             }
+
              val session = WorkoutSession(
                  timestamp = workoutStartTime,
                  mode = params.workoutType.displayName,
@@ -644,10 +668,10 @@ class MainViewModel constructor(
                  workingReps = repCount.workingReps,
                  warmupReps = repCount.warmupReps,
                  duration = currentTimeMillis() - workoutStartTime,
-                 isJustLift = params.isJustLift
+                 isJustLift = isJustLift
              )
              workoutRepository.saveSession(session)
-             
+
              // Show Summary
              val metrics = collectedMetrics.toList()
              val isEcho = params.workoutType is WorkoutType.Echo
@@ -1294,7 +1318,8 @@ class MainViewModel constructor(
         val inDangerZone = repCounter.isInDangerZone(metric.positionA, metric.positionB, MIN_RANGE_THRESHOLD)
         val repRanges = repCounter.getRepRanges()
 
-        // Check if cable appears to be released (position near minimum with low velocity)
+        // Check if cable appears to be released (position at rest OR near minimum)
+        // Matches parent repo logic: position < HANDLE_REST_THRESHOLD OR within 10mm of minimum
         var cableAppearsReleased = false
 
         // Check cable A
@@ -1304,9 +1329,10 @@ class MainViewModel constructor(
                 if (rangeA > MIN_RANGE_THRESHOLD) {
                     val thresholdA = minA + (rangeA * 0.05f).toInt()
                     val cableAInDanger = metric.positionA <= thresholdA
-                    // Consider released if position is very close to minimum
-                    val cableAReleased = (metric.positionA - minA) < 10 ||
-                            kotlin.math.abs(metric.velocityA) < HANDLE_REST_THRESHOLD
+                    // Consider released if position is very low (at rest) OR near minimum position
+                    // NOTE: HANDLE_REST_THRESHOLD is a POSITION threshold (2.5mm), not velocity!
+                    val cableAReleased = metric.positionA < HANDLE_REST_THRESHOLD ||
+                            (metric.positionA - minA) < 10
                     if (cableAInDanger && cableAReleased) {
                         cableAppearsReleased = true
                     }
@@ -1322,8 +1348,9 @@ class MainViewModel constructor(
                     if (rangeB > MIN_RANGE_THRESHOLD) {
                         val thresholdB = minB + (rangeB * 0.05f).toInt()
                         val cableBInDanger = metric.positionB <= thresholdB
-                        val cableBReleased = (metric.positionB - minB) < 10 ||
-                                kotlin.math.abs(metric.velocityB) < HANDLE_REST_THRESHOLD
+                        // Consider released if position is very low (at rest) OR near minimum position
+                        val cableBReleased = metric.positionB < HANDLE_REST_THRESHOLD ||
+                                (metric.positionB - minB) < 10
                         if (cableBInDanger && cableBReleased) {
                             cableAppearsReleased = true
                         }
@@ -1456,7 +1483,12 @@ class MainViewModel constructor(
                 // Just Lift mode: Auto-advance to next set after showing summary
                 repCounter.reset()
                 resetAutoStopState()
+
+                // Enable handle detection AND Just Lift waiting mode for next set
+                // This arms the state machine to detect when user grabs handles again
                 enableHandleDetection()
+                bleRepository.enableJustLiftWaitingMode()
+                Logger.d("Just Lift: Enabled waiting mode for next auto-start")
 
                 delay(5000) // Show summary for 5 seconds
 

@@ -42,7 +42,7 @@ enum class MovementPhase {
  * - **Smooth Animations**: Fluid position and color transitions
  *
  * @param label Label for the bar (e.g., "L" or "R")
- * @param currentPosition Current cable position (0-1000 scale)
+ * @param currentPosition Current cable position in mm (0-1000 range) - Issue #197
  * @param velocity Current velocity (positive = concentric/extending, negative = eccentric/retracting)
  * @param minPosition ROM bottom position (from calibration)
  * @param maxPosition ROM top position (from calibration)
@@ -53,7 +53,7 @@ enum class MovementPhase {
 @Composable
 fun EnhancedCablePositionBar(
     label: String,
-    currentPosition: Int,
+    currentPosition: Float,  // Position in mm (Issue #197)
     velocity: Double = 0.0,
     minPosition: Int? = null,
     maxPosition: Int? = null,

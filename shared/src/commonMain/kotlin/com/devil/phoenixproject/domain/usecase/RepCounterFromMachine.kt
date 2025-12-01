@@ -125,16 +125,20 @@ class RepCounterFromMachine {
      * the starting position rather than showing raw machine values.
      *
      * The baseline will be refined as reps are performed through the sliding window calibration.
+     * Position values are in mm (Issue #197).
      */
-    fun setInitialBaseline(posA: Int, posB: Int) {
+    fun setInitialBaseline(posA: Float, posB: Float) {
+        // Convert mm to internal Int representation for range tracking
+        val posAInt = posA.toInt()
+        val posBInt = posB.toInt()
         // Only set initial baseline if positions are valid and not already calibrated
-        if (posA > 0 && minRepPosA == null) {
-            minRepPosA = posA
-            minRepPosARange = Pair(posA, posA)
+        if (posAInt > 0 && minRepPosA == null) {
+            minRepPosA = posAInt
+            minRepPosARange = Pair(posAInt, posAInt)
         }
-        if (posB > 0 && minRepPosB == null) {
-            minRepPosB = posB
-            minRepPosBRange = Pair(posB, posB)
+        if (posBInt > 0 && minRepPosB == null) {
+            minRepPosB = posBInt
+            minRepPosBRange = Pair(posBInt, posBInt)
         }
     }
 
@@ -145,31 +149,35 @@ class RepCounterFromMachine {
      * continuously from monitor data to establish meaningful ranges for auto-stop.
      *
      * This should be called on every monitor metric during an active Just Lift workout.
+     * Position values are in mm (Issue #197).
      */
-    fun updatePositionRangesContinuously(posA: Int, posB: Int) {
-        if (posA <= 0 && posB <= 0) return
+    fun updatePositionRangesContinuously(posA: Float, posB: Float) {
+        // Convert mm to internal Int representation for range tracking
+        val posAInt = posA.toInt()
+        val posBInt = posB.toInt()
+        if (posAInt <= 0 && posBInt <= 0) return
 
         // Track minimum positions (cable at rest / bottom of movement)
-        if (posA > 0) {
-            if (minRepPosA == null || posA < minRepPosA!!) {
-                minRepPosA = posA
-                minRepPosARange = Pair(posA, minRepPosARange?.second ?: posA)
+        if (posAInt > 0) {
+            if (minRepPosA == null || posAInt < minRepPosA!!) {
+                minRepPosA = posAInt
+                minRepPosARange = Pair(posAInt, minRepPosARange?.second ?: posAInt)
             }
             // Track maximum positions (cable extended / top of movement)
-            if (maxRepPosA == null || posA > maxRepPosA!!) {
-                maxRepPosA = posA
-                maxRepPosARange = Pair(maxRepPosARange?.first ?: posA, posA)
+            if (maxRepPosA == null || posAInt > maxRepPosA!!) {
+                maxRepPosA = posAInt
+                maxRepPosARange = Pair(maxRepPosARange?.first ?: posAInt, posAInt)
             }
         }
 
-        if (posB > 0) {
-            if (minRepPosB == null || posB < minRepPosB!!) {
-                minRepPosB = posB
-                minRepPosBRange = Pair(posB, minRepPosBRange?.second ?: posB)
+        if (posBInt > 0) {
+            if (minRepPosB == null || posBInt < minRepPosB!!) {
+                minRepPosB = posBInt
+                minRepPosBRange = Pair(posBInt, minRepPosBRange?.second ?: posBInt)
             }
-            if (maxRepPosB == null || posB > maxRepPosB!!) {
-                maxRepPosB = posB
-                maxRepPosBRange = Pair(maxRepPosBRange?.first ?: posB, posB)
+            if (maxRepPosB == null || posBInt > maxRepPosB!!) {
+                maxRepPosB = posBInt
+                maxRepPosBRange = Pair(maxRepPosBRange?.first ?: posBInt, posBInt)
             }
         }
     }
@@ -184,24 +192,27 @@ class RepCounterFromMachine {
      * @param repsSetCount Machine's set rep count (working reps)
      * @param up Directional counter - increments at TOP (concentric peak)
      * @param down Directional counter - increments at BOTTOM (eccentric valley)
-     * @param posA Position A for range calibration
-     * @param posB Position B for range calibration
+     * @param posA Position A for range calibration (in mm, Issue #197)
+     * @param posB Position B for range calibration (in mm, Issue #197)
      */
     fun process(
         repsRomCount: Int,
         repsSetCount: Int,
         up: Int = 0,
         down: Int = 0,
-        posA: Int = 0,
-        posB: Int = 0
+        posA: Float = 0f,
+        posB: Float = 0f
     ) {
+        // Convert mm to internal Int representation for range tracking
+        val posAInt = posA.toInt()
+        val posBInt = posB.toInt()
         logDebug("Rep process: ROM=$repsRomCount, Set=$repsSetCount, up=$up, down=$down, pending=$hasPendingRep")
 
         // Track UP movement - for working reps, show PENDING (grey) at TOP
         if (lastTopCounter != null) {
             val upDelta = calculateDelta(lastTopCounter!!, up)
             if (upDelta > 0) {
-                recordTopPosition(posA, posB)
+                recordTopPosition(posAInt, posBInt)
 
                 // Only show pending for WORKING reps (after warmup complete)
                 if (warmupReps >= warmupTarget && !hasPendingRep) {
@@ -224,7 +235,7 @@ class RepCounterFromMachine {
         if (lastCompleteCounter != null) {
             val downDelta = calculateDelta(lastCompleteCounter!!, down)
             if (downDelta > 0) {
-                recordBottomPosition(posA, posB)
+                recordBottomPosition(posAInt, posBInt)
 
                 // Clear pending state when we reach bottom
                 if (hasPendingRep) {
@@ -240,11 +251,11 @@ class RepCounterFromMachine {
             val minA = minRepPosA ?: 0
             val maxA = maxRepPosA ?: 1000
             val rangeA = maxA - minA
-            
+
             // Calculate progress for Cable A (1.0 at Top, 0.0 at Bottom -> Invert for fill)
             // We want 0.0 at Top (Start of eccentric) -> 1.0 at Bottom (End of eccentric)
-            if (rangeA > 50) { // Ensure meaningful range
-                val currentPos = posA.coerceIn(minA, maxA)
+            if (rangeA > 50) { // Ensure meaningful range (50mm threshold)
+                val currentPos = posAInt.coerceIn(minA, maxA)
                 val fractionFromBottom = (currentPos - minA).toFloat() / rangeA.toFloat()
                 // Fraction is 1.0 at Top, 0.0 at Bottom.
                 // We want progress 0.0 at Top, 1.0 at Bottom.
@@ -412,7 +423,14 @@ class RepCounterFromMachine {
         return rangeA > minRangeThreshold || rangeB > minRangeThreshold
     }
 
-    fun isInDangerZone(posA: Int, posB: Int, minRangeThreshold: Int = 50): Boolean {
+    /**
+     * Check if position is in danger zone (within 5% of minimum).
+     * Position values are in mm (Issue #197).
+     */
+    fun isInDangerZone(posA: Float, posB: Float, minRangeThreshold: Int = 50): Boolean {
+        // Convert mm to internal Int representation for comparison
+        val posAInt = posA.toInt()
+        val posBInt = posB.toInt()
         val minA = minRepPosA
         val maxA = maxRepPosA
         val minB = minRepPosB
@@ -423,7 +441,7 @@ class RepCounterFromMachine {
             val rangeA = maxA - minA
             if (rangeA > minRangeThreshold) {
                 val thresholdA = minA + (rangeA * 0.05f).toInt()
-                if (posA <= thresholdA) return true
+                if (posAInt <= thresholdA) return true
             }
         }
 
@@ -432,7 +450,7 @@ class RepCounterFromMachine {
             val rangeB = maxB - minB
             if (rangeB > minRangeThreshold) {
                 val thresholdB = minB + (rangeB * 0.05f).toInt()
-                if (posB <= thresholdB) return true
+                if (posBInt <= thresholdB) return true
             }
         }
 

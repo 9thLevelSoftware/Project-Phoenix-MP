@@ -1,14 +1,8 @@
 package com.devil.phoenixproject.presentation.screen
 
-import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.spring
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -20,7 +14,6 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.scale
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -31,7 +24,6 @@ import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
 import com.devil.phoenixproject.ui.theme.Spacing
 import com.devil.phoenixproject.presentation.components.*
-import com.devil.phoenixproject.presentation.components.DateRangePickerDialog
 import com.devil.phoenixproject.util.CsvExporter
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -138,6 +130,7 @@ fun ProgressionTab(
 /**
  * Dashboard tab - shows key statistics, calendar heatmap, and muscle group visualization.
  */
+@Suppress("unused") // Reserved for future analytics dashboard feature
 @Composable
 fun DashboardTab(
     viewModel: MainViewModel,
@@ -331,6 +324,7 @@ fun AnalyticsScreen(
     val allWorkoutSessions by viewModel.allWorkoutSessions.collectAsState()
     val personalRecords by viewModel.allPersonalRecords.collectAsState()
     val weightUnit by viewModel.weightUnit.collectAsState()
+    @Suppress("UNUSED_VARIABLE") // Reserved for future connecting overlay
     val isAutoConnecting by viewModel.isAutoConnecting.collectAsState()
     val connectionError by viewModel.connectionError.collectAsState()
 
@@ -520,13 +514,7 @@ fun AnalyticsScreen(
         }
         }
 
-        // Auto-connect UI overlays (same as other screens)
-        if (isAutoConnecting) {
-            com.devil.phoenixproject.presentation.components.ConnectingOverlay(
-                onCancel = { viewModel.cancelAutoConnecting() }
-            )
-        }
-
+        // Connection error dialog (ConnectingOverlay removed - status shown in top bar button)
         connectionError?.let { error ->
             com.devil.phoenixproject.presentation.components.ConnectionErrorDialog(
                 message = error,
