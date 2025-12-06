@@ -317,7 +317,8 @@ fun DashboardTab(
 @Composable
 fun AnalyticsScreen(
     viewModel: MainViewModel,
-    themeMode: com.devil.phoenixproject.ui.theme.ThemeMode
+    themeMode: com.devil.phoenixproject.ui.theme.ThemeMode,
+    onNavigateToExerciseDetail: (String) -> Unit = {}
 ) {
     val workoutHistory by viewModel.workoutHistory.collectAsState()
     val groupedWorkoutHistory by viewModel.groupedWorkoutHistory.collectAsState()
@@ -389,16 +390,16 @@ fun AnalyticsScreen(
             modifier = Modifier
                 .fillMaxSize()
         ) {
-            // Tab Row with gradient indicator and swipe support - Material 3 Expressive
+            // Tab Row - Redesigned: Overview, Log, Exercises
             PrimaryTabRow(
                 selectedTabIndex = pagerState.currentPage,
-                containerColor = MaterialTheme.colorScheme.surfaceContainerHighest, // Material 3 Expressive: Higher contrast
-                contentColor = MaterialTheme.colorScheme.onSurface, // Use theme-aware color instead of hard-coded primary
+                containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                contentColor = MaterialTheme.colorScheme.onSurface,
                 indicator = {
                     TabRowDefaults.PrimaryIndicator(
                         modifier = Modifier
                             .tabIndicatorOffset(pagerState.currentPage)
-                            .height(8.dp), // Material 3 Expressive: Thicker indicator
+                            .height(8.dp),
                         color = MaterialTheme.colorScheme.primary
                     )
                 }
@@ -408,7 +409,7 @@ fun AnalyticsScreen(
                     onClick = { scope.launch { pagerState.animateScrollToPage(0) } },
                     text = {
                         Text(
-                            "Progression",
+                            "Overview",
                             style = MaterialTheme.typography.labelSmall,
                             maxLines = 1,
                             color = if (pagerState.currentPage == 0)
@@ -419,8 +420,8 @@ fun AnalyticsScreen(
                     },
                     icon = {
                         Icon(
-                            Icons.AutoMirrored.Filled.TrendingUp,
-                            contentDescription = "PR progression",
+                            Icons.Default.Dashboard,
+                            contentDescription = "Dashboard overview",
                             tint = if (pagerState.currentPage == 0)
                                 MaterialTheme.colorScheme.primary
                             else
@@ -433,7 +434,7 @@ fun AnalyticsScreen(
                     onClick = { scope.launch { pagerState.animateScrollToPage(1) } },
                     text = {
                         Text(
-                            "History",
+                            "Log",
                             style = MaterialTheme.typography.labelSmall,
                             maxLines = 1,
                             color = if (pagerState.currentPage == 1)
@@ -445,7 +446,7 @@ fun AnalyticsScreen(
                     icon = {
                         Icon(
                             Icons.AutoMirrored.Filled.List,
-                            contentDescription = "Workout history",
+                            contentDescription = "Workout log",
                             tint = if (pagerState.currentPage == 1)
                                 MaterialTheme.colorScheme.primary
                             else
@@ -458,7 +459,7 @@ fun AnalyticsScreen(
                     onClick = { scope.launch { pagerState.animateScrollToPage(2) } },
                     text = {
                         Text(
-                            "Insights",
+                            "Exercises",
                             style = MaterialTheme.typography.labelSmall,
                             maxLines = 1,
                             color = if (pagerState.currentPage == 2)
@@ -469,8 +470,8 @@ fun AnalyticsScreen(
                     },
                     icon = {
                         Icon(
-                            Icons.Default.AutoAwesome,
-                            contentDescription = "Analytics insights",
+                            Icons.Default.FitnessCenter,
+                            contentDescription = "Exercise list",
                             tint = if (pagerState.currentPage == 2)
                                 MaterialTheme.colorScheme.primary
                             else
@@ -481,37 +482,40 @@ fun AnalyticsScreen(
             }
 
             // Tab Content with Swipe Support
-        HorizontalPager(
-            state = pagerState,
-            modifier = Modifier.fillMaxSize()
-        ) { page ->
-            when (page) {
-                0 -> ProgressionTab(
-                    personalRecords = personalRecords,
-                    exerciseRepository = viewModel.exerciseRepository,
-                    weightUnit = weightUnit,
-                    formatWeight = viewModel::formatWeight,
-                    modifier = Modifier.fillMaxSize()
-                )
-                1 -> HistoryTab(
-                    groupedWorkoutHistory = groupedWorkoutHistory,
-                    weightUnit = weightUnit,
-                    formatWeight = viewModel::formatWeight,
-                    onDeleteWorkout = { viewModel.deleteWorkout(it) },
-                    exerciseRepository = viewModel.exerciseRepository,
-                    onRefresh = { /* Workout history refreshes automatically via StateFlow */ },
-                    modifier = Modifier.fillMaxSize()
-                )
-                2 -> InsightsTab(
-                    prs = personalRecords,
-                    workoutSessions = workoutHistory,
-                    exerciseRepository = viewModel.exerciseRepository,
-                    weightUnit = weightUnit,
-                    formatWeight = viewModel::formatWeight,
-                    modifier = Modifier.fillMaxSize()
-                )
+            HorizontalPager(
+                state = pagerState,
+                modifier = Modifier.fillMaxSize()
+            ) { page ->
+                when (page) {
+                    0 -> InsightsTab(
+                        prs = personalRecords,
+                        workoutSessions = workoutHistory,
+                        exerciseRepository = viewModel.exerciseRepository,
+                        weightUnit = weightUnit,
+                        formatWeight = viewModel::formatWeight,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                    1 -> HistoryTab(
+                        groupedWorkoutHistory = groupedWorkoutHistory,
+                        weightUnit = weightUnit,
+                        formatWeight = viewModel::formatWeight,
+                        onDeleteWorkout = { viewModel.deleteWorkout(it) },
+                        exerciseRepository = viewModel.exerciseRepository,
+                        onRefresh = { /* Workout history refreshes automatically via StateFlow */ },
+                        modifier = Modifier.fillMaxSize()
+                    )
+                    2 -> ExercisesTab(
+                        workoutSessions = allWorkoutSessions,
+                        exerciseNames = exerciseNames.toMap(),
+                        weightUnit = weightUnit,
+                        formatWeight = viewModel::formatWeight,
+                        onExerciseClick = { exerciseId ->
+                            onNavigateToExerciseDetail(exerciseId)
+                        },
+                        modifier = Modifier.fillMaxSize()
+                    )
+                }
             }
-        }
         }
 
         // Connection error dialog (ConnectingOverlay removed - status shown in top bar button)

@@ -84,8 +84,17 @@ class MainViewModel constructor(
         /** Prefix for temporary single exercise routines to identify them for cleanup */
         const val TEMP_SINGLE_EXERCISE_PREFIX = "temp_single_"
 
-        /** Auto-stop duration in seconds (time handles must be released before auto-stop triggers) */
-        const val AUTO_STOP_DURATION_SECONDS = 3f
+        /** Position-based auto-stop duration in seconds (handles in danger zone and released) */
+        const val AUTO_STOP_DURATION_SECONDS = 2.5f
+
+        /** Velocity-based stall detection duration in seconds (Issue #204, #214) */
+        const val STALL_DURATION_SECONDS = 5.0f
+
+        /** Velocity threshold below which movement is considered "stalled" (mm/s) */
+        const val STALL_VELOCITY_THRESHOLD = 25.0
+
+        /** Minimum position to consider handles "in use" for stall detection (mm) */
+        const val STALL_MIN_POSITION = 10.0
 
         /** Position threshold to consider handle at rest */
         const val HANDLE_REST_THRESHOLD = 2.5
@@ -212,6 +221,10 @@ class MainViewModel constructor(
 
     private val _completedExercises = MutableStateFlow<Set<Int>>(emptySet())
     val completedExercises: StateFlow<Set<Int>> = _completedExercises.asStateFlow()
+
+    // RPE tracking for current set (Phase 2: Training Cycles)
+    private val _currentSetRpe = MutableStateFlow<Int?>(null)
+    val currentSetRpe: StateFlow<Int?> = _currentSetRpe.asStateFlow()
 
     // Weekly Programs
     val weeklyPrograms: StateFlow<List<com.devil.phoenixproject.data.local.WeeklyProgramWithDays>> =
@@ -359,6 +372,10 @@ class MainViewModel constructor(
     private var autoStopTriggered = false
     private var autoStopStopRequested = false
     private var currentHandleState: HandleActivityState = HandleActivityState.WaitingForRest
+
+    // Velocity-based stall detection state (Issue #204, #214)
+    private var stallStartTime: Long? = null
+    private var isCurrentlyStalled = false
 
     private var connectionJob: Job? = null
     private var monitorDataCollectionJob: Job? = null
@@ -781,6 +798,18 @@ class MainViewModel constructor(
 
     fun proceedFromSummary() {
         _workoutState.value = WorkoutState.Idle
+        // Clear RPE for next set
+        _currentSetRpe.value = null
+    }
+
+    /**
+     * Log RPE (Rate of Perceived Exertion) for the current set.
+     * Called from the SetSummary screen when user logs their perceived effort.
+     * RPE value is stored and will be saved with the completed set data.
+     */
+    fun logRpeForCurrentSet(rpe: Int) {
+        _currentSetRpe.value = rpe
+        Logger.d("MainViewModel") { "RPE logged for current set: $rpe" }
     }
 
     fun resetForNewWorkout() {
@@ -1293,24 +1322,75 @@ class MainViewModel constructor(
     // ==================== AUTO-STOP FUNCTIONS ====================
 
     /**
-     * Check if auto-stop should be triggered based on position and danger zone detection.
-     * Called on every metric update during Just Lift mode.
+     * Check if auto-stop should be triggered based on velocity stall detection OR position-based detection.
+     * Called on every metric update during workout.
      *
-     * Auto-stop triggers when:
-     * 1. Meaningful position range has been established (user has performed movements)
-     * 2. Handles are in the danger zone (near minimum position)
-     * 3. Handles appear to be released (velocity low or position matches rest)
-     * 4. This condition persists for AUTO_STOP_DURATION_SECONDS
+     * Two detection methods (Issue #204, #214):
+     *
+     * 1. VELOCITY-BASED STALL DETECTION (primary):
+     *    - Triggers when velocity < 25 mm/s for 5 seconds while handles are in use
+     *    - Prevents false triggers during controlled eccentric movements
+     *
+     * 2. POSITION-BASED DETECTION (secondary):
+     *    - Triggers when handles in danger zone AND appear released for 2.5 seconds
+     *    - Original logic kept as safety backup
      */
     private fun checkAutoStop(metric: WorkoutMetric) {
         // Don't check if workout isn't active
         if (_workoutState.value !is WorkoutState.Active) {
             resetAutoStopTimer()
+            resetStallTimer()
             return
         }
 
-        // Need meaningful range to detect danger zone
-        if (!repCounter.hasMeaningfulRange(MIN_RANGE_THRESHOLD)) {
+        val hasMeaningfulRange = repCounter.hasMeaningfulRange(MIN_RANGE_THRESHOLD)
+
+        // ===== 1. VELOCITY-BASED STALL DETECTION (Issue #204, #214) =====
+        // This is the primary detection method - more reliable than position-based
+
+        // Get max velocity (use absolute values for comparison)
+        val maxVelocity = maxOf(kotlin.math.abs(metric.velocityA), kotlin.math.abs(metric.velocityB))
+        val isStalled = maxVelocity < STALL_VELOCITY_THRESHOLD
+
+        // Check if handles are actively being used (position > 10mm OR meaningful range achieved)
+        val maxPosition = maxOf(metric.positionA, metric.positionB)
+        val isActivelyUsing = maxPosition > STALL_MIN_POSITION || hasMeaningfulRange
+
+        if (isStalled && isActivelyUsing) {
+            // Movement has stopped while handles in use - start/continue stall timer
+            val startTime = stallStartTime ?: run {
+                stallStartTime = currentTimeMillis()
+                isCurrentlyStalled = true
+                currentTimeMillis()
+            }
+
+            val stallElapsed = (currentTimeMillis() - startTime) / 1000f
+
+            // Use stall timer for UI feedback when stalling
+            if (stallElapsed >= 1.0f) { // Only show after 1 second of stall
+                val progress = (stallElapsed / STALL_DURATION_SECONDS).coerceIn(0f, 1f)
+                val remaining = (STALL_DURATION_SECONDS - stallElapsed).coerceAtLeast(0f)
+
+                _autoStopState.value = AutoStopUiState(
+                    isActive = true,
+                    progress = progress,
+                    secondsRemaining = ceil(remaining).toInt()
+                )
+            }
+
+            // Trigger auto-stop after 5 seconds of no movement
+            if (stallElapsed >= STALL_DURATION_SECONDS && !autoStopTriggered) {
+                requestAutoStop()
+                return
+            }
+        } else {
+            // User is moving - reset stall timer
+            resetStallTimer()
+        }
+
+        // ===== 2. POSITION-BASED DETECTION (secondary/backup) =====
+        // Only check if we have meaningful range established
+        if (!hasMeaningfulRange) {
             resetAutoStopTimer()
             return
         }
@@ -1319,7 +1399,6 @@ class MainViewModel constructor(
         val repRanges = repCounter.getRepRanges()
 
         // Check if cable appears to be released (position at rest OR near minimum)
-        // Matches parent repo logic: position < HANDLE_REST_THRESHOLD OR within 10mm of minimum
         var cableAppearsReleased = false
 
         // Check cable A
@@ -1329,8 +1408,6 @@ class MainViewModel constructor(
                 if (rangeA > MIN_RANGE_THRESHOLD) {
                     val thresholdA = minA + (rangeA * 0.05f).toInt()
                     val cableAInDanger = metric.positionA <= thresholdA
-                    // Consider released if position is very low (at rest) OR near minimum position
-                    // NOTE: HANDLE_REST_THRESHOLD is a POSITION threshold (2.5mm), not velocity!
                     val cableAReleased = metric.positionA < HANDLE_REST_THRESHOLD ||
                             (metric.positionA - minA) < 10
                     if (cableAInDanger && cableAReleased) {
@@ -1348,7 +1425,6 @@ class MainViewModel constructor(
                     if (rangeB > MIN_RANGE_THRESHOLD) {
                         val thresholdB = minB + (rangeB * 0.05f).toInt()
                         val cableBInDanger = metric.positionB <= thresholdB
-                        // Consider released if position is very low (at rest) OR near minimum position
                         val cableBReleased = metric.positionB < HANDLE_REST_THRESHOLD ||
                                 (metric.positionB - minB) < 10
                         if (cableBInDanger && cableBReleased) {
@@ -1359,7 +1435,7 @@ class MainViewModel constructor(
             }
         }
 
-        // Trigger auto-stop countdown if in danger zone AND cable appears released
+        // Trigger position-based auto-stop countdown if in danger zone AND cable appears released
         if (inDangerZone && cableAppearsReleased) {
             val startTime = autoStopStartTime ?: run {
                 autoStopStartTime = currentTimeMillis()
@@ -1367,21 +1443,25 @@ class MainViewModel constructor(
             }
 
             val elapsed = (currentTimeMillis() - startTime) / 1000f
-            val progress = (elapsed / AUTO_STOP_DURATION_SECONDS).coerceIn(0f, 1f)
-            val remaining = (AUTO_STOP_DURATION_SECONDS - elapsed).coerceAtLeast(0f)
 
-            _autoStopState.value = AutoStopUiState(
-                isActive = true,
-                progress = progress,
-                secondsRemaining = ceil(remaining).toInt()
-            )
+            // Only update UI if stall detection isn't already showing (stall takes priority)
+            if (!isCurrentlyStalled) {
+                val progress = (elapsed / AUTO_STOP_DURATION_SECONDS).coerceIn(0f, 1f)
+                val remaining = (AUTO_STOP_DURATION_SECONDS - elapsed).coerceAtLeast(0f)
+
+                _autoStopState.value = AutoStopUiState(
+                    isActive = true,
+                    progress = progress,
+                    secondsRemaining = ceil(remaining).toInt()
+                )
+            }
 
             // Trigger auto-stop if timer expired
             if (elapsed >= AUTO_STOP_DURATION_SECONDS && !autoStopTriggered) {
                 requestAutoStop()
             }
         } else {
-            // User resumed activity, reset timer
+            // User resumed activity, reset position-based timer
             resetAutoStopTimer()
         }
     }
@@ -1392,7 +1472,20 @@ class MainViewModel constructor(
      */
     private fun resetAutoStopTimer() {
         autoStopStartTime = null
-        if (!autoStopTriggered) {
+        if (!autoStopTriggered && !isCurrentlyStalled) {
+            _autoStopState.value = AutoStopUiState()
+        }
+    }
+
+    /**
+     * Reset stall detection timer.
+     * Call this when movement is detected.
+     */
+    private fun resetStallTimer() {
+        stallStartTime = null
+        isCurrentlyStalled = false
+        // Only reset UI if position-based detection isn't active
+        if (autoStopStartTime == null && !autoStopTriggered) {
             _autoStopState.value = AutoStopUiState()
         }
     }
@@ -1405,6 +1498,8 @@ class MainViewModel constructor(
         autoStopStartTime = null
         autoStopTriggered = false
         autoStopStopRequested = false
+        stallStartTime = null
+        isCurrentlyStalled = false
         _autoStopState.value = AutoStopUiState()
     }
 
@@ -1495,6 +1590,30 @@ class MainViewModel constructor(
                 if (_workoutState.value is WorkoutState.SetSummary) {
                     resetForNewWorkout()
                     _workoutState.value = WorkoutState.Idle
+                }
+            } else if (params.isAMRAP) {
+                // AMRAP mode: Auto-advance to rest timer and next set (like Just Lift)
+                // Parent repo Issue #208 - enhance AMRAP mode to auto-advance
+                Logger.d("AMRAP: Auto-advancing to rest timer")
+
+                // Reset logical state for next set
+                repCounter.reset()
+                resetAutoStopState()
+
+                // Restart monitor polling to clear machine fault state (red lights)
+                bleRepository.restartMonitorPolling()
+
+                // Enable handle detection for auto-start during rest
+                enableHandleDetection()
+                bleRepository.enableJustLiftWaitingMode()
+
+                Logger.d("AMRAP: Machine armed & ready. Showing summary for 5s...")
+
+                delay(5000) // Show summary for 5 seconds
+
+                // Auto-start rest timer if we haven't already started a new set
+                if (_workoutState.value is WorkoutState.SetSummary) {
+                    startRestTimer()
                 }
             } else {
                 // Routine/Program mode: Start rest timer

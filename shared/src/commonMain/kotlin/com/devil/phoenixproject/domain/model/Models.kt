@@ -287,7 +287,6 @@ enum class HapticEvent {
  * Workout session data (simplified for database storage)
  */
 data class WorkoutSession(
-    // TODO: UUID generation needs expect/actual pattern for KMP
     val id: String = generateUUID(),
     val timestamp: Long = currentTimeMillis(),
     val mode: String = "OldSchool",
@@ -311,7 +310,6 @@ data class WorkoutSession(
     val routineName: String? = null  // Name of the routine being performed
 )
 
-// TODO: Implement expect/actual for UUID generation
 expect fun generateUUID(): String
 
 /**

@@ -32,6 +32,7 @@ import com.devil.phoenixproject.presentation.components.CompactExerciseNavigator
 import com.devil.phoenixproject.presentation.components.EnhancedCablePositionBar
 import com.devil.phoenixproject.presentation.components.ExerciseNavigator
 import com.devil.phoenixproject.presentation.components.HapticFeedbackEffect
+import com.devil.phoenixproject.presentation.components.RpeIndicator
 import com.devil.phoenixproject.presentation.components.VideoPlayer
 import com.devil.phoenixproject.data.repository.ExerciseVideoEntity
 import com.devil.phoenixproject.ui.theme.Spacing
@@ -74,6 +75,7 @@ fun WorkoutTab(
     onStopWorkout: () -> Unit,
     onSkipRest: () -> Unit,
     onProceedFromSummary: () -> Unit = {},
+    onRpeLogged: ((Int) -> Unit)? = null,  // Optional RPE callback for set summary
     onResetForNewWorkout: () -> Unit,
     onStartNextExercise: () -> Unit = {},
     onUpdateParameters: (WorkoutParameters) -> Unit,
@@ -260,7 +262,8 @@ fun WorkoutTab(
                         kgToDisplay = kgToDisplay,
                         formatWeight = formatWeight,
                         onContinue = onProceedFromSummary,
-                        autoplayEnabled = autoplayEnabled
+                        autoplayEnabled = autoplayEnabled,
+                        onRpeLogged = onRpeLogged
                     )
                 }
                 is WorkoutState.Resting -> {
@@ -1206,8 +1209,11 @@ fun SetSummaryCard(
     kgToDisplay: (Float, WeightUnit) -> Float,
     formatWeight: (Float, WeightUnit) -> String,
     onContinue: () -> Unit,
-    autoplayEnabled: Boolean
+    autoplayEnabled: Boolean,
+    onRpeLogged: ((Int) -> Unit)? = null  // Optional RPE callback
 ) {
+    // State for RPE tracking
+    var loggedRpe by remember { mutableStateOf<Int?>(null) }
     // Auto-continue countdown when autoplay is enabled
     var autoCountdown by remember { mutableStateOf(if (autoplayEnabled) 5 else -1) }
 
@@ -1373,6 +1379,46 @@ fun SetSummaryCard(
                     peakWeight = kgToDisplay(summary.peakWeightKg, weightUnit),
                     unitLabel = unitLabel
                 )
+            }
+
+            // RPE Capture (optional) - shown if callback is provided
+            if (onRpeLogged != null) {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
+                    ),
+                    shape = RoundedCornerShape(16.dp)
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column {
+                            Text(
+                                "How hard was that?",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Medium,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Text(
+                                "Log your perceived exertion",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        RpeIndicator(
+                            currentRpe = loggedRpe,
+                            onRpeChanged = { rpe ->
+                                loggedRpe = rpe
+                                onRpeLogged(rpe)
+                            }
+                        )
+                    }
+                }
             }
         }
 

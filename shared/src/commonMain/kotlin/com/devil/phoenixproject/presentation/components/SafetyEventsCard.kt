@@ -11,12 +11,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.domain.model.SafetyEventSummary
-
-// TODO: Import Spacing from theme when it's migrated
-private val Spacing = object {
-    val small = 8.dp
-    val medium = 16.dp
-}
+import com.devil.phoenixproject.ui.theme.Spacing
 
 @Composable
 fun SafetyEventsCard(

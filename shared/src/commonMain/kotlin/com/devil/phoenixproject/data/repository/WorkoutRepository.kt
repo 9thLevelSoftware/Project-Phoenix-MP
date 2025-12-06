@@ -22,8 +22,8 @@ data class PersonalRecordEntity(
 )
 
 /**
- * Workout Repository interface
- * TODO: Implement with SQLDelight for actual database operations
+ * Workout Repository interface.
+ * Implemented by SqlDelightWorkoutRepository for type-safe database operations.
  */
 interface WorkoutRepository {
     // Workout sessions

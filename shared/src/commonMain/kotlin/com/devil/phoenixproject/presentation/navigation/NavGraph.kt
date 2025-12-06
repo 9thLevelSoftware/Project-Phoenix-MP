@@ -136,9 +136,44 @@ fun NavGraph(
             )
         }
 
-        // Weekly Programs screen - view and manage programs
+        // Weekly Programs screen - view and manage programs (legacy)
         composable(NavigationRoutes.WeeklyPrograms.route) {
             WeeklyProgramsScreen(
+                navController = navController,
+                viewModel = viewModel,
+                themeMode = themeMode
+            )
+        }
+
+        // Training Cycles screen - new rolling schedule system
+        composable(
+            route = NavigationRoutes.TrainingCycles.route,
+            enterTransition = {
+                slideIntoContainer(
+                    towards = AnimatedContentTransitionScope.SlideDirection.Left,
+                    animationSpec = tween(300)
+                )
+            },
+            exitTransition = {
+                slideOutOfContainer(
+                    towards = AnimatedContentTransitionScope.SlideDirection.Left,
+                    animationSpec = tween(300)
+                )
+            },
+            popEnterTransition = {
+                slideIntoContainer(
+                    towards = AnimatedContentTransitionScope.SlideDirection.Right,
+                    animationSpec = tween(300)
+                )
+            },
+            popExitTransition = {
+                slideOutOfContainer(
+                    towards = AnimatedContentTransitionScope.SlideDirection.Right,
+                    animationSpec = tween(300)
+                )
+            }
+        ) {
+            TrainingCyclesScreen(
                 navController = navController,
                 viewModel = viewModel,
                 themeMode = themeMode
@@ -167,6 +202,47 @@ fun NavGraph(
             exitTransition = { fadeOut(animationSpec = tween(200)) }
         ) {
             AnalyticsScreen(
+                viewModel = viewModel,
+                themeMode = themeMode,
+                onNavigateToExerciseDetail = { exerciseId ->
+                    navController.navigate(NavigationRoutes.ExerciseDetail.createRoute(exerciseId))
+                }
+            )
+        }
+
+        // Exercise Detail screen - drill-down for individual exercise
+        composable(
+            route = NavigationRoutes.ExerciseDetail.route,
+            arguments = listOf(navArgument("exerciseId") { type = NavType.StringType }),
+            enterTransition = {
+                slideIntoContainer(
+                    towards = AnimatedContentTransitionScope.SlideDirection.Left,
+                    animationSpec = tween(300)
+                )
+            },
+            exitTransition = {
+                slideOutOfContainer(
+                    towards = AnimatedContentTransitionScope.SlideDirection.Left,
+                    animationSpec = tween(300)
+                )
+            },
+            popEnterTransition = {
+                slideIntoContainer(
+                    towards = AnimatedContentTransitionScope.SlideDirection.Right,
+                    animationSpec = tween(300)
+                )
+            },
+            popExitTransition = {
+                slideOutOfContainer(
+                    towards = AnimatedContentTransitionScope.SlideDirection.Right,
+                    animationSpec = tween(300)
+                )
+            }
+        ) { backStackEntry ->
+            val exerciseId = backStackEntry.arguments?.getString("exerciseId") ?: return@composable
+            ExerciseDetailScreen(
+                exerciseId = exerciseId,
+                navController = navController,
                 viewModel = viewModel,
                 themeMode = themeMode
             )

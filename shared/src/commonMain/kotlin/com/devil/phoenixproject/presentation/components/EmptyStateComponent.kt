@@ -10,13 +10,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-
-// TODO: Import Spacing from theme when it's migrated
-private val Spacing = object {
-    val small = 8.dp
-    val medium = 16.dp
-    val large = 24.dp
-}
+import com.devil.phoenixproject.ui.theme.Spacing
 
 /**
  * Reusable empty state component for displaying when lists/screens have no data.

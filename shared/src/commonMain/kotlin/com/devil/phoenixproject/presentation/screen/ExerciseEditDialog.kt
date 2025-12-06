@@ -45,8 +45,20 @@ fun ExerciseEditBottomSheet(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Text("TODO: ExerciseEditBottomSheet implementation")
-                Text("Exercise: ${exercise.exercise.name}")
+                Text(
+                    text = "Configure Exercise",
+                    style = MaterialTheme.typography.titleMedium
+                )
+                Text(
+                    text = exercise.exercise.name,
+                    style = MaterialTheme.typography.bodyLarge
+                )
+                Text(
+                    text = "Exercise configuration coming soon",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(modifier = Modifier.height(8.dp))
                 Button(onClick = onDismiss) {
                     Text("Close")
                 }

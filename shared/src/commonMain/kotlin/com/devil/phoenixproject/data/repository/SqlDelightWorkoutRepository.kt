@@ -236,11 +236,15 @@ class SqlDelightWorkoutRepository(
     }
 
     override suspend fun deleteSession(sessionId: String) {
-        // TODO: Add delete query
+        withContext(Dispatchers.IO) {
+            queries.deleteSession(sessionId)
+        }
     }
 
     override suspend fun deleteAllSessions() {
-        // TODO: Add delete all query
+        withContext(Dispatchers.IO) {
+            queries.deleteAllSessions()
+        }
     }
 
     override fun getAllRoutines(): Flow<List<Routine>> {

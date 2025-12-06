@@ -14,7 +14,14 @@ sealed class NavigationRoutes(val route: String) {
     object ProgramBuilder : NavigationRoutes("program_builder/{programId}") {
         fun createRoute(programId: String = "new") = "program_builder/$programId"
     }
+    object TrainingCycles : NavigationRoutes("training_cycles")
+    object CycleBuilder : NavigationRoutes("cycle_builder/{cycleId}") {
+        fun createRoute(cycleId: String = "new") = "cycle_builder/$cycleId"
+    }
     object Analytics : NavigationRoutes("analytics")
+    object ExerciseDetail : NavigationRoutes("exercise_detail/{exerciseId}") {
+        fun createRoute(exerciseId: String) = "exercise_detail/$exerciseId"
+    }
     object Settings : NavigationRoutes("settings")
     object ConnectionLogs : NavigationRoutes("connection_logs")
     object ProtocolTester : NavigationRoutes("protocol_tester")

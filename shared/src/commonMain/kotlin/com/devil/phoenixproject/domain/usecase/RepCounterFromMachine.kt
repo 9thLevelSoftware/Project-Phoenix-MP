@@ -1,10 +1,9 @@
 package com.devil.phoenixproject.domain.usecase
 
+import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.domain.model.RepCount
 import com.devil.phoenixproject.domain.model.RepEvent
 import com.devil.phoenixproject.domain.model.RepType
-// TODO: Timber logging needs expect/actual pattern for KMP
-// For now, we'll use println or implement a simple logging interface
 import kotlin.math.max
 
 /**
@@ -21,6 +20,8 @@ import kotlin.math.max
  * This creates the "number rolls up grey, fills with color going down" effect.
  */
 class RepCounterFromMachine {
+
+    private val log = Logger.withTag("RepCounterFromMachine")
 
     private var warmupReps = 0
     private var workingReps = 0
@@ -457,9 +458,8 @@ class RepCounterFromMachine {
         return false
     }
 
-    // TODO: Replace with proper logging implementation (expect/actual)
     private fun logDebug(message: String) {
-        println("[RepCounter] $message")
+        log.d { message }
     }
 }
 

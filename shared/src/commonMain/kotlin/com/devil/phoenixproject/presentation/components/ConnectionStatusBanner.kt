@@ -9,12 +9,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-
-// TODO: Import Spacing from theme when it's migrated
-private val Spacing = object {
-    val small = 8.dp
-    val medium = 16.dp
-}
+import com.devil.phoenixproject.ui.theme.Spacing
 
 /**
  * Connection status banner that displays when not connected to the machine.

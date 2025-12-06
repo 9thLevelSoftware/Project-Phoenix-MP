@@ -14,12 +14,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
-
-// TODO: Import Spacing from theme when it's migrated
-private val Spacing = object {
-    val small = 8.dp
-    val medium = 16.dp
-}
+import com.devil.phoenixproject.ui.theme.Spacing
 
 /**
  * Shimmer effect for skeleton loading screens.

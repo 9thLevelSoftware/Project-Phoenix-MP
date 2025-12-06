@@ -92,13 +92,19 @@ class KableBleRepository : BleRepository {
         private const val CONNECTION_RETRY_DELAY_MS = 100L
         private const val DESIRED_MTU = 247  // Match parent repo (needs 100+ for 96-byte program frames)
 
-        // Handle detection thresholds (from Nordic implementation - proven working)
+        // Handle detection thresholds (from parent repo - proven working)
         // Position values are in mm (raw / 10.0f), so thresholds are in mm
         private const val HANDLE_GRABBED_THRESHOLD = 8.0    // Position > 8.0mm = handles grabbed
         private const val HANDLE_REST_THRESHOLD = 5.0       // Position < 5.0mm = handles at rest
         // Velocity is in mm/s (calculated from mm positions)
         // With 20Hz polling (50ms), 5mm movement per frame = 100 mm/s
         private const val VELOCITY_THRESHOLD = 100.0        // Velocity > 100 mm/s = significant movement
+
+        // Velocity smoothing (Issue #204, #214)
+        // EMA alpha: 0.3 = balanced smoothing (faster response during direction changes)
+        // Higher alpha reduces zero-crossing dwell time during eccentric/concentric transitions
+        // which prevents false stall detection during controlled tempo movements
+        private const val VELOCITY_SMOOTHING_ALPHA = 0.3
 
         // Time-based grab detection fallback for slow poll rates
         // If position is sustained above grab threshold for this duration, consider grabbed
@@ -250,6 +256,11 @@ class KableBleRepository : BleRepository {
     private var lastPositionA = 0.0f
     private var lastPositionB = 0.0f
     private var lastTimestamp = 0L
+
+    // Smoothed velocity for stall detection (Issue #204, #214)
+    // Uses EMA to prevent false stall resets from position jitter
+    private var smoothedVelocityA = 0.0
+    private var smoothedVelocityB = 0.0
 
     // Handle detection state tracking
     private var minPositionSeen = Double.MAX_VALUE
@@ -1471,24 +1482,34 @@ class KableBleRepository : BleRepository {
                 }
             }
 
-            val velocityA = if (lastTimestamp > 0L) {
+            // Calculate raw velocity (SIGNED for proper EMA smoothing - Issue #204, #214)
+            // Using signed velocity allows jitter oscillations (+2, -3, +1mm) to average toward 0
+            val rawVelocityA = if (lastTimestamp > 0L) {
                 val deltaTime = (currentTime - lastTimestamp) / 1000.0
                 val deltaPos = posA - lastPositionA
-                if (deltaTime > 0) kotlin.math.abs(deltaPos / deltaTime) else 0.0
+                if (deltaTime > 0) deltaPos / deltaTime else 0.0
             } else 0.0
 
-            val velocityB = if (lastTimestamp > 0L) {
+            val rawVelocityB = if (lastTimestamp > 0L) {
                 val deltaTime = (currentTime - lastTimestamp) / 1000.0
                 val deltaPos = posB - lastPositionB
-                if (deltaTime > 0) kotlin.math.abs(deltaPos / deltaTime) else 0.0
+                if (deltaTime > 0) deltaPos / deltaTime else 0.0
             } else 0.0
+
+            // Apply Exponential Moving Average (EMA) smoothing (Issue #204, #214)
+            // This prevents false stall detection during controlled tempo movements
+            // and reduces sensitivity to BLE position jitter
+            smoothedVelocityA = VELOCITY_SMOOTHING_ALPHA * rawVelocityA +
+                    (1 - VELOCITY_SMOOTHING_ALPHA) * smoothedVelocityA
+            smoothedVelocityB = VELOCITY_SMOOTHING_ALPHA * rawVelocityB +
+                    (1 - VELOCITY_SMOOTHING_ALPHA) * smoothedVelocityB
 
             // Update tracking state for next velocity calculation
             lastPositionA = posA
             lastPositionB = posB
             lastTimestamp = currentTime
 
-            // Create metric with CALCULATED velocity
+            // Create metric with SMOOTHED velocity (absolute value for backwards compatibility)
             val metric = WorkoutMetric(
                 timestamp = currentTime,
                 loadA = loadA,
@@ -1496,8 +1517,8 @@ class KableBleRepository : BleRepository {
                 positionA = posA,
                 positionB = posB,
                 ticks = ticks,
-                velocityA = velocityA,
-                velocityB = velocityB,
+                velocityA = smoothedVelocityA,  // Smoothed, signed velocity
+                velocityB = smoothedVelocityB,  // Smoothed, signed velocity
                 status = status
             )
 

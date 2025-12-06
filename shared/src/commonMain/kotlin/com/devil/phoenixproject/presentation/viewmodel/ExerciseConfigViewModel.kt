@@ -13,8 +13,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import com.devil.phoenixproject.util.KmpUtils
-// TODO: Replace Timber with platform-specific logging or multiplatform logging library
-// import timber.log.Timber
+import co.touchlab.kermit.Logger
 
 
 // These are tightly coupled with the ExerciseEditDialog, so keeping them here is reasonable.
@@ -38,11 +37,9 @@ data class SetConfiguration(
     val restSeconds: Int = 60 // Add this
 )
 
-// TODO: Replace @HiltViewModel with Koin annotations
-// @HiltViewModel
-// TODO: Replace @Inject constructor with Koin injection
 class ExerciseConfigViewModel constructor() : ViewModel() {
 
+    private val log = Logger.withTag("ExerciseConfigViewModel")
     private val _initialized = MutableStateFlow(false)
 
     // Dependencies that need to be passed in
@@ -122,7 +119,6 @@ class ExerciseConfigViewModel constructor() : ViewModel() {
             exercise.duration
         } else {
             if (_exerciseType.value == ExerciseType.BODYWEIGHT) {
-                // TODO: Replace Timber with platform-specific logging
                 logWarning("Bodyweight exercise '${exercise.exercise.name}' missing duration - defaulting to 30s")
             }
             30
@@ -148,7 +144,6 @@ class ExerciseConfigViewModel constructor() : ViewModel() {
         }
 
         // Debug logging for AMRAP exercise data loading
-        // TODO: Replace Timber with platform-specific logging
         logDebug("━━━━━ ExerciseConfigViewModel.initialize() ━━━━━")
         logDebug("Exercise: ${exercise.exercise.name}")
         logDebug("isAMRAP flag: ${exercise.isAMRAP}")
@@ -178,7 +173,6 @@ class ExerciseConfigViewModel constructor() : ViewModel() {
     fun onSetModeChange(mode: SetMode) {
         // Bodyweight exercises must always use DURATION mode (cannot count reps)
         if (_exerciseType.value == ExerciseType.BODYWEIGHT && mode == SetMode.REPS) {
-            // TODO: Replace Timber with platform-specific logging
             logWarning("Cannot switch to REPS mode for bodyweight exercises - staying in DURATION mode")
             return
         }
@@ -277,7 +271,6 @@ class ExerciseConfigViewModel constructor() : ViewModel() {
         val isAMRAP = _sets.value.all { it.reps == null }
 
         // Debug logging for AMRAP exercise data saving
-        // TODO: Replace Timber with platform-specific logging
         logDebug("━━━━━ ExerciseConfigViewModel.onSave() ━━━━━")
         logDebug("Exercise: ${originalExercise.exercise.name}")
         logDebug("isAMRAP computed: $isAMRAP")
@@ -334,12 +327,11 @@ class ExerciseConfigViewModel constructor() : ViewModel() {
         return "uuid-${KmpUtils.currentTimeMillis()}-${(0..999).random()}"
     }
 
-    // TODO: Implement expect/actual pattern for logging
     private fun logDebug(message: String) {
-        println("DEBUG: $message")
+        log.d { message }
     }
 
     private fun logWarning(message: String) {
-        println("WARNING: $message")
+        log.w { message }
     }
 }

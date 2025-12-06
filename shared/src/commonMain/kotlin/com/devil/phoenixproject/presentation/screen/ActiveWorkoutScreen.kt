@@ -153,6 +153,7 @@ fun ActiveWorkoutScreen(
         onStopWorkout = { showExitConfirmation = true },
         onSkipRest = { viewModel.skipRest() },
         onProceedFromSummary = { viewModel.proceedFromSummary() },
+        onRpeLogged = { rpe -> viewModel.logRpeForCurrentSet(rpe) },
         onResetForNewWorkout = { viewModel.resetForNewWorkout() },
         onStartNextExercise = { viewModel.advanceToNextExercise() },
         onUpdateParameters = { viewModel.updateWorkoutParameters(it) },

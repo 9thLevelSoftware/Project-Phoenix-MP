@@ -7,11 +7,15 @@ import coil3.SingletonImageLoader
 import coil3.network.ktor3.KtorNetworkFetcherFactory
 import coil3.request.crossfade
 import coil3.util.DebugLogger
+import com.devil.phoenixproject.data.migration.MigrationManager
 import com.devil.phoenixproject.di.initKoin
+import org.koin.android.ext.android.inject
 import org.koin.android.ext.koin.androidContext
 import org.koin.android.ext.koin.androidLogger
 
 class VitruvianApp : Application(), SingletonImageLoader.Factory {
+
+    private val migrationManager: MigrationManager by inject()
 
     override fun onCreate() {
         super.onCreate()
@@ -20,6 +24,9 @@ class VitruvianApp : Application(), SingletonImageLoader.Factory {
             androidLogger()
             androidContext(this@VitruvianApp)
         }
+
+        // Run migrations after Koin is initialized
+        migrationManager.checkAndRunMigrations()
 
         Logger.d("VitruvianApp") { "Application initialized" }
     }

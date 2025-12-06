@@ -155,6 +155,9 @@ DELETE FROM Exercise WHERE id = ? AND isCustom = 1;
 deleteSession:
 DELETE FROM WorkoutSession WHERE id = ?;
 
+deleteAllSessions:
+DELETE FROM WorkoutSession;
+
 -- Exercise Video Queries
 selectVideosByExercise:
 SELECT * FROM ExerciseVideo WHERE exerciseId = ?;
@@ -344,3 +347,235 @@ SELECT COUNT(*) FROM PersonalRecord;
 
 selectWorkoutDates:
 SELECT DISTINCT DATE(timestamp / 1000, 'unixepoch') AS workoutDate FROM WorkoutSession ORDER BY timestamp DESC;
+
+-- ==================== TRAINING CYCLES TABLES ====================
+
+-- Training Cycles (replaces WeeklyProgram - rolling schedule)
+CREATE TABLE TrainingCycle (
+    id TEXT PRIMARY KEY NOT NULL,
+    name TEXT NOT NULL,
+    description TEXT,
+    created_at INTEGER NOT NULL,
+    is_active INTEGER NOT NULL DEFAULT 0
+);
+
+-- Cycle Days (replaces ProgramDay - day 1, 2, 3... instead of Mon/Tue/Wed)
+CREATE TABLE CycleDay (
+    id TEXT PRIMARY KEY NOT NULL,
+    cycle_id TEXT NOT NULL,
+    day_number INTEGER NOT NULL,
+    name TEXT,
+    routine_id TEXT,
+    is_rest_day INTEGER NOT NULL DEFAULT 0,
+    FOREIGN KEY (cycle_id) REFERENCES TrainingCycle(id) ON DELETE CASCADE,
+    FOREIGN KEY (routine_id) REFERENCES Routine(id) ON DELETE SET NULL
+);
+
+-- Cycle Progress (tracks current position in cycle)
+CREATE TABLE CycleProgress (
+    id TEXT PRIMARY KEY NOT NULL,
+    cycle_id TEXT NOT NULL UNIQUE,
+    current_day_number INTEGER NOT NULL DEFAULT 1,
+    last_completed_date INTEGER,
+    cycle_start_date INTEGER NOT NULL,
+    FOREIGN KEY (cycle_id) REFERENCES TrainingCycle(id) ON DELETE CASCADE
+);
+
+-- Planned Sets (pre-defined sets for routine exercises)
+CREATE TABLE PlannedSet (
+    id TEXT PRIMARY KEY NOT NULL,
+    routine_exercise_id INTEGER NOT NULL,
+    set_number INTEGER NOT NULL,
+    set_type TEXT NOT NULL DEFAULT 'STANDARD',
+    target_reps INTEGER,
+    target_weight_kg REAL,
+    target_rpe INTEGER,
+    rest_seconds INTEGER,
+    FOREIGN KEY (routine_exercise_id) REFERENCES RoutineExercise(id) ON DELETE CASCADE
+);
+
+-- Completed Sets (actual performed sets with full data)
+CREATE TABLE CompletedSet (
+    id TEXT PRIMARY KEY NOT NULL,
+    session_id TEXT NOT NULL,
+    planned_set_id TEXT,
+    set_number INTEGER NOT NULL,
+    set_type TEXT NOT NULL DEFAULT 'STANDARD',
+    actual_reps INTEGER NOT NULL,
+    actual_weight_kg REAL NOT NULL,
+    logged_rpe INTEGER,
+    is_pr INTEGER NOT NULL DEFAULT 0,
+    completed_at INTEGER NOT NULL,
+    FOREIGN KEY (session_id) REFERENCES WorkoutSession(id) ON DELETE CASCADE,
+    FOREIGN KEY (planned_set_id) REFERENCES PlannedSet(id) ON DELETE SET NULL
+);
+
+-- Progression Events (tracks auto-progression suggestions)
+CREATE TABLE ProgressionEvent (
+    id TEXT PRIMARY KEY NOT NULL,
+    exercise_id TEXT NOT NULL,
+    suggested_weight_kg REAL NOT NULL,
+    previous_weight_kg REAL NOT NULL,
+    reason TEXT NOT NULL,
+    user_response TEXT,
+    actual_weight_kg REAL,
+    timestamp INTEGER NOT NULL,
+    FOREIGN KEY (exercise_id) REFERENCES Exercise(id) ON DELETE CASCADE
+);
+
+-- ==================== TRAINING CYCLES INDEXES ====================
+
+CREATE INDEX idx_cycle_day_cycle ON CycleDay(cycle_id);
+CREATE INDEX idx_cycle_progress_cycle ON CycleProgress(cycle_id);
+CREATE INDEX idx_planned_set_exercise ON PlannedSet(routine_exercise_id);
+CREATE INDEX idx_completed_set_session ON CompletedSet(session_id);
+CREATE INDEX idx_progression_exercise ON ProgressionEvent(exercise_id);
+
+-- ==================== TRAINING CYCLES QUERIES ====================
+
+-- TrainingCycle Queries
+selectAllTrainingCycles:
+SELECT * FROM TrainingCycle ORDER BY created_at DESC;
+
+selectTrainingCycleById:
+SELECT * FROM TrainingCycle WHERE id = ?;
+
+selectActiveTrainingCycle:
+SELECT * FROM TrainingCycle WHERE is_active = 1 LIMIT 1;
+
+insertTrainingCycle:
+INSERT INTO TrainingCycle (id, name, description, created_at, is_active)
+VALUES (?, ?, ?, ?, ?);
+
+updateTrainingCycle:
+UPDATE TrainingCycle SET name = ?, description = ?, is_active = ? WHERE id = ?;
+
+setActiveTrainingCycle:
+UPDATE TrainingCycle SET is_active = CASE WHEN id = ? THEN 1 ELSE 0 END;
+
+deleteTrainingCycle:
+DELETE FROM TrainingCycle WHERE id = ?;
+
+-- CycleDay Queries
+selectCycleDaysByCycle:
+SELECT * FROM CycleDay WHERE cycle_id = ? ORDER BY day_number ASC;
+
+selectCycleDayById:
+SELECT * FROM CycleDay WHERE id = ?;
+
+insertCycleDay:
+INSERT INTO CycleDay (id, cycle_id, day_number, name, routine_id, is_rest_day)
+VALUES (?, ?, ?, ?, ?, ?);
+
+updateCycleDay:
+UPDATE CycleDay SET day_number = ?, name = ?, routine_id = ?, is_rest_day = ? WHERE id = ?;
+
+deleteCycleDay:
+DELETE FROM CycleDay WHERE id = ?;
+
+deleteCycleDaysByCycle:
+DELETE FROM CycleDay WHERE cycle_id = ?;
+
+-- CycleProgress Queries
+selectCycleProgressByCycle:
+SELECT * FROM CycleProgress WHERE cycle_id = ?;
+
+insertCycleProgress:
+INSERT INTO CycleProgress (id, cycle_id, current_day_number, last_completed_date, cycle_start_date)
+VALUES (?, ?, ?, ?, ?);
+
+updateCycleProgress:
+UPDATE CycleProgress
+SET current_day_number = ?, last_completed_date = ?, cycle_start_date = ?
+WHERE cycle_id = ?;
+
+advanceCycleDay:
+UPDATE CycleProgress
+SET current_day_number = ?, last_completed_date = ?
+WHERE cycle_id = ?;
+
+resetCycleProgress:
+UPDATE CycleProgress
+SET current_day_number = 1, cycle_start_date = ?
+WHERE cycle_id = ?;
+
+deleteCycleProgress:
+DELETE FROM CycleProgress WHERE cycle_id = ?;
+
+-- PlannedSet Queries
+selectPlannedSetsByRoutineExercise:
+SELECT * FROM PlannedSet WHERE routine_exercise_id = ? ORDER BY set_number ASC;
+
+selectPlannedSetById:
+SELECT * FROM PlannedSet WHERE id = ?;
+
+insertPlannedSet:
+INSERT INTO PlannedSet (id, routine_exercise_id, set_number, set_type, target_reps, target_weight_kg, target_rpe, rest_seconds)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?);
+
+updatePlannedSet:
+UPDATE PlannedSet
+SET set_number = ?, set_type = ?, target_reps = ?, target_weight_kg = ?, target_rpe = ?, rest_seconds = ?
+WHERE id = ?;
+
+deletePlannedSet:
+DELETE FROM PlannedSet WHERE id = ?;
+
+deletePlannedSetsByRoutineExercise:
+DELETE FROM PlannedSet WHERE routine_exercise_id = ?;
+
+-- CompletedSet Queries
+selectCompletedSetsBySession:
+SELECT * FROM CompletedSet WHERE session_id = ? ORDER BY set_number ASC;
+
+selectCompletedSetById:
+SELECT * FROM CompletedSet WHERE id = ?;
+
+selectCompletedSetsForExercise:
+SELECT cs.* FROM CompletedSet cs
+INNER JOIN WorkoutSession ws ON cs.session_id = ws.id
+WHERE ws.exerciseId = ?
+ORDER BY cs.completed_at DESC;
+
+selectRecentCompletedSetsForExercise:
+SELECT cs.* FROM CompletedSet cs
+INNER JOIN WorkoutSession ws ON cs.session_id = ws.id
+WHERE ws.exerciseId = ?
+ORDER BY cs.completed_at DESC
+LIMIT ?;
+
+insertCompletedSet:
+INSERT INTO CompletedSet (id, session_id, planned_set_id, set_number, set_type, actual_reps, actual_weight_kg, logged_rpe, is_pr, completed_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+updateCompletedSetRpe:
+UPDATE CompletedSet SET logged_rpe = ? WHERE id = ?;
+
+markCompletedSetAsPr:
+UPDATE CompletedSet SET is_pr = 1 WHERE id = ?;
+
+deleteCompletedSet:
+DELETE FROM CompletedSet WHERE id = ?;
+
+deleteCompletedSetsBySession:
+DELETE FROM CompletedSet WHERE session_id = ?;
+
+-- ProgressionEvent Queries
+selectProgressionEventsByExercise:
+SELECT * FROM ProgressionEvent WHERE exercise_id = ? ORDER BY timestamp DESC;
+
+selectRecentProgressionEvent:
+SELECT * FROM ProgressionEvent WHERE exercise_id = ? ORDER BY timestamp DESC LIMIT 1;
+
+selectPendingProgressionEvents:
+SELECT * FROM ProgressionEvent WHERE user_response IS NULL ORDER BY timestamp DESC;
+
+insertProgressionEvent:
+INSERT INTO ProgressionEvent (id, exercise_id, suggested_weight_kg, previous_weight_kg, reason, user_response, actual_weight_kg, timestamp)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?);
+
+updateProgressionEventResponse:
+UPDATE ProgressionEvent SET user_response = ?, actual_weight_kg = ? WHERE id = ?;
+
+deleteProgressionEvent:
+DELETE FROM ProgressionEvent WHERE id = ?;
