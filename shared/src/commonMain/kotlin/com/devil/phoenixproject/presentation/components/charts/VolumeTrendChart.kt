@@ -21,6 +21,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.domain.model.WorkoutSession
+import com.devil.phoenixproject.ui.theme.DataColors
 import com.devil.phoenixproject.util.KmpUtils
 import kotlinx.datetime.*
 
@@ -51,7 +52,7 @@ fun VolumeTrendChart(
     }
 
     val maxVolume = volumeData.maxOfOrNull { it.volume } ?: 1f
-    val barColor = MaterialTheme.colorScheme.tertiary
+    val barColor = DataColors.Volume
     val gridColor = MaterialTheme.colorScheme.outlineVariant
     val labelColor = MaterialTheme.colorScheme.onSurfaceVariant
 
