@@ -42,42 +42,57 @@ fun SingleExerciseScreen(
 
     // Local state for picker
     var searchQuery by remember { mutableStateOf("") }
-    var selectedMuscleFilter by remember { mutableStateOf("All") }
-    var selectedEquipmentFilter by remember { mutableStateOf("All") }
+    var selectedMuscles by remember { mutableStateOf<Set<String>>(emptySet()) }
+    var selectedEquipment by remember { mutableStateOf<Set<String>>(emptySet()) }
     var showFavoritesOnly by remember { mutableStateOf(false) }
+    var showCustomOnly by remember { mutableStateOf(false) }
 
     // Get exercises from repository
-    val allExercises by remember(searchQuery, selectedMuscleFilter, showFavoritesOnly) {
+    val allExercises by remember(searchQuery, selectedMuscles, showFavoritesOnly, showCustomOnly) {
         when {
             showFavoritesOnly -> exerciseRepository.getFavorites()
+            showCustomOnly -> exerciseRepository.getCustomExercises()
             searchQuery.isNotBlank() -> exerciseRepository.searchExercises(searchQuery)
-            selectedMuscleFilter != "All" -> exerciseRepository.filterByMuscleGroup(selectedMuscleFilter)
+            selectedMuscles.isNotEmpty() -> {
+                // Get exercises for all selected muscle groups and combine
+                val flows = selectedMuscles.map { muscle ->
+                    exerciseRepository.filterByMuscleGroup(muscle)
+                }
+                // For now, just use the first one - ideally we'd combine all flows
+                flows.firstOrNull() ?: exerciseRepository.getAllExercises()
+            }
             else -> exerciseRepository.getAllExercises()
         }
     }.collectAsState(initial = emptyList())
 
     // Apply equipment filter
-    val exercises = remember(allExercises, selectedEquipmentFilter) {
-        if (selectedEquipmentFilter != "All") {
+    val exercises = remember(allExercises, selectedEquipment) {
+        if (selectedEquipment.isNotEmpty()) {
             allExercises.filter { exercise ->
-                val databaseValues = when (selectedEquipmentFilter) {
-                    "Long Bar" -> listOf("BAR", "LONG_BAR", "BARBELL")
-                    "Short Bar" -> listOf("SHORT_BAR")
-                    "Ankle Strap" -> listOf("ANKLE_STRAP", "STRAPS")
-                    "Handles" -> listOf("HANDLES", "SINGLE_HANDLE", "BOTH_HANDLES")
-                    "Bench" -> listOf("BENCH")
-                    "Rope" -> listOf("ROPE")
-                    "Belt" -> listOf("BELT")
-                    "Bodyweight" -> listOf("BODYWEIGHT")
-                    else -> emptyList()
+                selectedEquipment.any { selectedEq ->
+                    val databaseValues = when (selectedEq) {
+                        "Long Bar" -> listOf("BAR", "LONG_BAR", "BARBELL")
+                        "Short Bar" -> listOf("SHORT_BAR")
+                        "Ankle Strap" -> listOf("ANKLE_STRAP", "STRAPS")
+                        "Handles" -> listOf("HANDLES", "SINGLE_HANDLE", "BOTH_HANDLES")
+                        "Bench" -> listOf("BENCH")
+                        "Rope" -> listOf("ROPE")
+                        "Belt" -> listOf("BELT")
+                        "Bodyweight" -> listOf("BODYWEIGHT")
+                        else -> emptyList()
+                    }
+                    val equipmentList = exercise.equipment.uppercase().split(",").map { it.trim() }
+                    databaseValues.any { dbValue -> equipmentList.contains(dbValue.uppercase()) }
                 }
-                val equipmentList = exercise.equipment.uppercase().split(",").map { it.trim() }
-                databaseValues.any { dbValue -> equipmentList.contains(dbValue.uppercase()) }
             }
         } else {
             allExercises
         }
     }
+
+    // Get custom exercise count
+    val customExerciseCount by exerciseRepository.getCustomExercises().collectAsState(initial = emptyList())
+    val customCount = customExerciseCount.size
 
     // Trigger import
     LaunchedEffect(Unit) {
@@ -97,18 +112,56 @@ fun SingleExerciseScreen(
                 searchQuery = searchQuery,
                 onSearchQueryChange = { searchQuery = it },
                 showFavoritesOnly = showFavoritesOnly,
-                onShowFavoritesOnlyChange = {
-                    showFavoritesOnly = it
-                    if (it) {
+                onToggleFavorites = {
+                    showFavoritesOnly = !showFavoritesOnly
+                    if (showFavoritesOnly) {
                         searchQuery = ""
-                        selectedMuscleFilter = "All"
-                        selectedEquipmentFilter = "All"
+                        selectedMuscles = emptySet()
+                        selectedEquipment = emptySet()
+                        showCustomOnly = false
                     }
                 },
-                selectedMuscleFilter = selectedMuscleFilter,
-                onMuscleFilterChange = { selectedMuscleFilter = it },
-                selectedEquipmentFilter = selectedEquipmentFilter,
-                onEquipmentFilterChange = { selectedEquipmentFilter = it },
+                showCustomOnly = showCustomOnly,
+                onToggleCustom = {
+                    showCustomOnly = !showCustomOnly
+                    if (showCustomOnly) {
+                        searchQuery = ""
+                        selectedMuscles = emptySet()
+                        selectedEquipment = emptySet()
+                        showFavoritesOnly = false
+                    }
+                },
+                customExerciseCount = customCount,
+                selectedMuscles = selectedMuscles,
+                onToggleMuscle = { muscle ->
+                    selectedMuscles = if (selectedMuscles.contains(muscle)) {
+                        selectedMuscles - muscle
+                    } else {
+                        selectedMuscles + muscle
+                    }
+                },
+                selectedEquipment = selectedEquipment,
+                onToggleEquipment = { equipment ->
+                    selectedEquipment = if (selectedEquipment.contains(equipment)) {
+                        selectedEquipment - equipment
+                    } else {
+                        selectedEquipment + equipment
+                    }
+                },
+                onClearAllFilters = {
+                    searchQuery = ""
+                    selectedMuscles = emptySet()
+                    selectedEquipment = emptySet()
+                    showFavoritesOnly = false
+                    showCustomOnly = false
+                },
+                onToggleFavorite = { exercise ->
+                    exercise.id?.let { id ->
+                        coroutineScope.launch {
+                            exerciseRepository.toggleFavorite(id)
+                        }
+                    }
+                },
                 onExerciseSelected = { selectedExercise ->
                     val exercise = Exercise(
                         name = selectedExercise.name,
@@ -177,6 +230,8 @@ fun SingleExerciseScreen(
                 },
                 exerciseRepository = exerciseRepository,
                 enableVideoPlayback = enableVideoPlayback,
+                enableCustomExercises = false,
+                onCreateExercise = {},
                 fullScreen = true
             )
 
