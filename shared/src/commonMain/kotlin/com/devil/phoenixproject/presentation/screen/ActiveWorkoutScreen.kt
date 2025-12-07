@@ -123,44 +123,62 @@ fun ActiveWorkoutScreen(
         }
     }
 
+    // Use the new state holder pattern for cleaner API
+    val workoutUiState = remember(
+        connectionState, workoutState, currentMetric, workoutParameters,
+        repCount, repRanges, autoStopState, weightUnit, enableVideoPlayback,
+        loadedRoutine, currentExerciseIndex, userPreferences.autoplayEnabled
+    ) {
+        WorkoutUiState(
+            connectionState = connectionState,
+            workoutState = workoutState,
+            currentMetric = currentMetric,
+            workoutParameters = workoutParameters,
+            repCount = repCount,
+            repRanges = repRanges,
+            autoStopState = autoStopState,
+            weightUnit = weightUnit,
+            enableVideoPlayback = enableVideoPlayback,
+            loadedRoutine = loadedRoutine,
+            currentExerciseIndex = currentExerciseIndex,
+            autoplayEnabled = userPreferences.autoplayEnabled,
+            isWorkoutSetupDialogVisible = false,
+            showConnectionCard = false,
+            showWorkoutSetupCard = false
+        )
+    }
+
+    val workoutActions = remember(viewModel) {
+        workoutActions(
+            onScan = { viewModel.startScanning() },
+            onDisconnect = { viewModel.disconnect() },
+            onStartWorkout = {
+                viewModel.ensureConnection(
+                    onConnected = { viewModel.startWorkout() },
+                    onFailed = { /* Error shown via StateFlow */ }
+                )
+            },
+            onStopWorkout = { showExitConfirmation = true },
+            onSkipRest = { viewModel.skipRest() },
+            onProceedFromSummary = { viewModel.proceedFromSummary() },
+            onRpeLogged = { rpe -> viewModel.logRpeForCurrentSet(rpe) },
+            onResetForNewWorkout = { viewModel.resetForNewWorkout() },
+            onStartNextExercise = { viewModel.advanceToNextExercise() },
+            onJumpToExercise = { /* Not used in ActiveWorkoutScreen */ },
+            onUpdateParameters = { viewModel.updateWorkoutParameters(it) },
+            onShowWorkoutSetupDialog = { /* Not used in ActiveWorkoutScreen */ },
+            onHideWorkoutSetupDialog = { /* Not used in ActiveWorkoutScreen */ },
+            kgToDisplay = viewModel::kgToDisplay,
+            displayToKg = viewModel::displayToKg,
+            formatWeight = viewModel::formatWeight
+        )
+    }
+
     WorkoutTab(
-        connectionState = connectionState,
-        workoutState = workoutState,
-        currentMetric = currentMetric,
-        workoutParameters = workoutParameters,
-        repCount = repCount,
-        repRanges = repRanges,
-        autoStopState = autoStopState,
-        weightUnit = weightUnit,
-        enableVideoPlayback = enableVideoPlayback,
+        state = workoutUiState,
+        actions = workoutActions,
         exerciseRepository = exerciseRepository,
-        isWorkoutSetupDialogVisible = false,
-        hapticEvents = hapticEvents,
-        loadedRoutine = loadedRoutine,
-        currentExerciseIndex = currentExerciseIndex,
-        autoplayEnabled = userPreferences.autoplayEnabled,
-        kgToDisplay = viewModel::kgToDisplay,
-        displayToKg = viewModel::displayToKg,
-        formatWeight = viewModel::formatWeight,
-        onScan = { viewModel.startScanning() },
-        onDisconnect = { viewModel.disconnect() },
-        onStartWorkout = {
-            viewModel.ensureConnection(
-                onConnected = { viewModel.startWorkout() },
-                onFailed = { /* Error shown via StateFlow */ }
-            )
-        },
-        onStopWorkout = { showExitConfirmation = true },
-        onSkipRest = { viewModel.skipRest() },
-        onProceedFromSummary = { viewModel.proceedFromSummary() },
-        onRpeLogged = { rpe -> viewModel.logRpeForCurrentSet(rpe) },
-        onResetForNewWorkout = { viewModel.resetForNewWorkout() },
-        onStartNextExercise = { viewModel.advanceToNextExercise() },
-        onUpdateParameters = { viewModel.updateWorkoutParameters(it) },
-        onShowWorkoutSetupDialog = { /* Not used in ActiveWorkoutScreen */ },
-        onHideWorkoutSetupDialog = { /* Not used in ActiveWorkoutScreen */ },
-        showConnectionCard = false,
-        showWorkoutSetupCard = false
+        hapticEvents = hapticEvents
     )
 
     // Exit confirmation dialog

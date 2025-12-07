@@ -37,6 +37,7 @@ import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
 import com.devil.phoenixproject.ui.theme.Spacing
 import com.devil.phoenixproject.ui.theme.ThemeMode
 import kotlinx.coroutines.launch
+import com.devil.phoenixproject.presentation.navigation.NavigationRoutes
 import org.koin.compose.koinInject
 
 /**
@@ -183,8 +184,7 @@ fun TrainingCyclesScreen(
                             }
                         },
                         onEdit = {
-                            // TODO: Navigate to cycle builder
-                            // navController.navigate(NavigationRoutes.CycleBuilder.createRoute(cycle.id))
+                            navController.navigate(NavigationRoutes.CycleEditor.createRoute(cycle.id))
                         },
                         onDelete = {
                             showDeleteConfirmDialog = cycle
@@ -196,7 +196,7 @@ fun TrainingCyclesScreen(
 
         // FAB for creating new cycle
         FloatingActionButton(
-            onClick = { showTemplateDialog = true },
+            onClick = { navController.navigate(NavigationRoutes.CycleEditor.createRoute("new")) },
             modifier = Modifier
                 .align(Alignment.BottomEnd)
                 .padding(20.dp),
@@ -206,7 +206,9 @@ fun TrainingCyclesScreen(
         }
     }
 
-    // Template Selection Dialog
+    // Template Selection Dialog - Removed for now as we go straight to editor via FAB, 
+    // or we can redirect "Create Blank" to editor.
+    // Keeping logic if user wants templates later, but for now FAB goes to editor.
     if (showTemplateDialog) {
         TemplateSelectionDialog(
             onDismiss = { showTemplateDialog = false },
@@ -218,8 +220,7 @@ fun TrainingCyclesScreen(
             },
             onCreateBlank = {
                 showTemplateDialog = false
-                // TODO: Navigate to cycle builder with blank cycle
-                // navController.navigate(NavigationRoutes.CycleBuilder.createRoute("new"))
+                navController.navigate(NavigationRoutes.CycleEditor.createRoute("new"))
             }
         )
     }

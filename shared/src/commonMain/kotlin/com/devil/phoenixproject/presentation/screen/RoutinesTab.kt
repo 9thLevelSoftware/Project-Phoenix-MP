@@ -45,12 +45,13 @@ fun RoutinesTab(
     onStartWorkout: (Routine) -> Unit,
     onDeleteRoutine: (String) -> Unit,
     onSaveRoutine: (Routine) -> Unit,
-    onUpdateRoutine: (Routine) -> Unit = onSaveRoutine,
+    // onUpdateRoutine removed as it is replaced by Editor Screen
+    onEditRoutine: (String) -> Unit,
+    onCreateRoutine: () -> Unit,
     themeMode: ThemeMode,
     modifier: Modifier = Modifier
 ) {
-    var showRoutineBuilder by remember { mutableStateOf(false) }
-    var routineToEdit by remember { mutableStateOf<Routine?>(null) }
+    // showRoutineBuilder and routineToEdit states removed
 
     Logger.d { "RoutinesTab: ${routines.size} routines loaded" }
 
@@ -89,8 +90,7 @@ fun RoutinesTab(
                     message = "Create your first workout routine to get started",
                     actionText = "Create Your First Routine",
                     onAction = {
-                        routineToEdit = null
-                        showRoutineBuilder = true
+                        onCreateRoutine()
                     }
                 )
             } else {
@@ -103,8 +103,7 @@ fun RoutinesTab(
                             routine = routine,
                             onStartWorkout = { onStartWorkout(routine) },
                             onEdit = {
-                                routineToEdit = routine
-                                showRoutineBuilder = true
+                                onEditRoutine(routine.id)
                             },
                             onDelete = { onDeleteRoutine(routine.id) },
                             onDuplicate = {
@@ -155,10 +154,7 @@ fun RoutinesTab(
 
         // Floating Action Button for creating new routine
         FloatingActionButton(
-            onClick = {
-                routineToEdit = null
-                showRoutineBuilder = true
-            },
+            onClick = onCreateRoutine,
             modifier = Modifier
                 .align(Alignment.BottomEnd)
                 .padding(Spacing.medium),
@@ -174,33 +170,7 @@ fun RoutinesTab(
         }
     }
 
-    // Show routine builder dialog
-    if (showRoutineBuilder) {
-        RoutineBuilderDialog(
-            routine = routineToEdit,
-            onSave = { routine ->
-                if (routineToEdit != null) {
-                    onUpdateRoutine(routine)
-                } else {
-                    onSaveRoutine(routine)
-                }
-                showRoutineBuilder = false
-                routineToEdit = null
-            },
-            onDismiss = {
-                showRoutineBuilder = false
-                routineToEdit = null
-            },
-            exerciseRepository = exerciseRepository,
-            personalRecordRepository = personalRecordRepository,
-            formatWeight = formatWeight,
-            weightUnit = weightUnit,
-            enableVideoPlayback = enableVideoPlayback,
-            kgToDisplay = kgToDisplay,
-            displayToKg = displayToKg,
-            themeMode = themeMode
-        )
-    }
+    // RoutineBuilderDialog removed
 }
 
 /**

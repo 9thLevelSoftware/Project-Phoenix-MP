@@ -8,8 +8,8 @@ import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.presentation.screen.EnhancedMainScreen
 import com.devil.phoenixproject.presentation.screen.SplashScreen
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
+import com.devil.phoenixproject.presentation.viewmodel.ThemeViewModel
 import com.devil.phoenixproject.ui.theme.VitruvianTheme
-import com.devil.phoenixproject.ui.theme.ThemeMode
 import kotlinx.coroutines.delay
 import org.koin.compose.KoinContext
 import org.koin.compose.viewmodel.koinViewModel
@@ -19,10 +19,11 @@ import org.koin.compose.koinInject
 fun App() {
     KoinContext {
         val viewModel = koinViewModel<MainViewModel>()
+        val themeViewModel = koinViewModel<ThemeViewModel>()
         val exerciseRepository = koinInject<ExerciseRepository>()
 
-        // Theme state - temporarily local, ideally from preferences
-        var themeMode by remember { mutableStateOf(ThemeMode.SYSTEM) }
+        // Theme state - persisted via ThemeViewModel
+        val themeMode by themeViewModel.themeMode.collectAsState()
 
         // Splash screen state
         var showSplash by remember { mutableStateOf(true) }
@@ -41,7 +42,7 @@ fun App() {
                         viewModel = viewModel,
                         exerciseRepository = exerciseRepository,
                         themeMode = themeMode,
-                        onThemeModeChange = { themeMode = it }
+                        onThemeModeChange = { themeViewModel.setThemeMode(it) }
                     )
                 }
 

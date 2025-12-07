@@ -1,6 +1,8 @@
 package com.devil.phoenixproject.presentation.navigation
 
 import androidx.compose.animation.AnimatedContentTransitionScope
+import androidx.compose.animation.ExperimentalSharedTransitionApi
+import androidx.compose.animation.SharedTransitionLayout
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -24,6 +26,7 @@ import org.koin.compose.koinInject
  * Main navigation graph for the app.
  * Defines all routes and their composable destinations.
  */
+@OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
 fun NavGraph(
     navController: NavHostController,
@@ -33,11 +36,12 @@ fun NavGraph(
     onThemeModeChange: (ThemeMode) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    NavHost(
-        navController = navController,
-        startDestination = NavigationRoutes.Home.route,
-        modifier = modifier
-    ) {
+    SharedTransitionLayout {
+        NavHost(
+            navController = navController,
+            startDestination = NavigationRoutes.Home.route,
+            modifier = modifier
+        ) {
         // Home screen - workout type selection
         composable(NavigationRoutes.Home.route) {
             HomeScreen(
@@ -325,5 +329,45 @@ fun NavGraph(
                 onBack = { navController.popBackStack() }
             )
         }
+
+        // Routine Editor - create/edit daily routine
+        composable(
+            route = NavigationRoutes.RoutineEditor.route,
+            arguments = listOf(navArgument("routineId") { type = NavType.StringType })
+        ) { backStackEntry ->
+            val routineId = backStackEntry.arguments?.getString("routineId") ?: "new"
+            
+            // Collect dependencies from ViewModel/Koin
+            val weightUnit by viewModel.weightUnit.collectAsState()
+            val enableVideo by viewModel.enableVideoPlayback.collectAsState()
+
+            RoutineEditorScreen(
+                routineId = routineId,
+                navController = navController,
+                viewModel = viewModel,
+                exerciseRepository = exerciseRepository,
+                weightUnit = weightUnit,
+                kgToDisplay = viewModel::kgToDisplay,
+                displayToKg = viewModel::displayToKg,
+                enableVideoPlayback = enableVideo
+            )
+        }
+
+        // Cycle Editor - timeline builder for rolling schedules
+        composable(
+            route = NavigationRoutes.CycleEditor.route,
+            arguments = listOf(navArgument("cycleId") { type = NavType.StringType })
+        ) { backStackEntry ->
+            val cycleId = backStackEntry.arguments?.getString("cycleId") ?: "new"
+            val routines by viewModel.routines.collectAsState()
+
+            CycleEditorScreen(
+                cycleId = cycleId,
+                navController = navController,
+                viewModel = viewModel,
+                routines = routines
+            )
+        }
     }
+}
 }

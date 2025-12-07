@@ -1,6 +1,6 @@
 package com.devil.phoenixproject.presentation.components.exercisepicker
 
-import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
@@ -17,10 +17,9 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.pointerInput
@@ -28,6 +27,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.domain.model.Exercise
+import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
 private val REVEAL_WIDTH = 56.dp
@@ -56,17 +56,18 @@ fun SwipeableExerciseRow(
     val density = LocalDensity.current
     val revealWidthPx = with(density) { REVEAL_WIDTH.toPx() }
     val thresholdPx = revealWidthPx * THRESHOLD_RATIO
+    val scope = rememberCoroutineScope()
 
-    // Target offset: 0 when closed, +revealWidthPx when revealed (slides right)
-    val targetOffset = if (isRevealed) revealWidthPx else 0f
-    val animatedOffset by animateFloatAsState(
-        targetValue = targetOffset,
-        animationSpec = tween(durationMillis = 200),
-        label = "swipeOffset"
-    )
+    // Single animatable for smooth drag + animate
+    val offsetX = remember { Animatable(0f) }
 
-    // Track drag delta during gesture
-    var dragOffset by remember { mutableFloatStateOf(0f) }
+    // Animate to target when isRevealed changes externally
+    LaunchedEffect(isRevealed) {
+        val target = if (isRevealed) revealWidthPx else 0f
+        if (offsetX.value != target) {
+            offsetX.animateTo(target, tween(200))
+        }
+    }
 
     Box(modifier = modifier) {
         // Background with star button on LEFT side
@@ -87,7 +88,7 @@ fun SwipeableExerciseRow(
             IconButton(
                 onClick = {
                     onToggleFavorite()
-                    onRevealChange(false) // Close after action
+                    onRevealChange(false)
                 },
                 modifier = Modifier.size(48.dp)
             ) {
@@ -116,35 +117,29 @@ fun SwipeableExerciseRow(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .offset { IntOffset((animatedOffset + dragOffset).roundToInt(), 0) }
+                .offset { IntOffset(offsetX.value.roundToInt(), 0) }
                 .pointerInput(Unit) {
                     detectHorizontalDragGestures(
-                        onDragStart = {
-                            dragOffset = 0f
-                        },
                         onDragEnd = {
-                            if (isRevealed) {
-                                // Currently revealed - close if dragged left past threshold
-                                if (dragOffset < -thresholdPx) {
-                                    onRevealChange(false)
-                                }
-                            } else {
-                                // Currently closed - open if dragged right past threshold
-                                if (dragOffset > thresholdPx) {
-                                    onRevealChange(true)
-                                }
+                            scope.launch {
+                                // Determine target based on current position
+                                val shouldReveal = offsetX.value > thresholdPx
+                                val target = if (shouldReveal) revealWidthPx else 0f
+                                offsetX.animateTo(target, tween(150))
+                                onRevealChange(shouldReveal)
                             }
-                            dragOffset = 0f
                         },
                         onDragCancel = {
-                            dragOffset = 0f
+                            scope.launch {
+                                val target = if (isRevealed) revealWidthPx else 0f
+                                offsetX.animateTo(target, tween(150))
+                            }
                         },
                         onHorizontalDrag = { _, dragAmount ->
-                            val newOffset = dragOffset + dragAmount
-                            // Clamp: don't drag left of start, don't drag right past reveal width
-                            val minOffset = if (isRevealed) -revealWidthPx else 0f
-                            val maxOffset = if (isRevealed) 0f else revealWidthPx
-                            dragOffset = newOffset.coerceIn(minOffset, maxOffset)
+                            scope.launch {
+                                val newValue = (offsetX.value + dragAmount).coerceIn(0f, revealWidthPx)
+                                offsetX.snapTo(newValue)
+                            }
                         }
                     )
                 }
@@ -154,8 +149,11 @@ fun SwipeableExerciseRow(
                 thumbnailUrl = thumbnailUrl,
                 isLoadingThumbnail = isLoadingThumbnail,
                 onClick = {
-                    if (isRevealed) {
-                        onRevealChange(false) // Close if tapping while revealed
+                    if (offsetX.value > 0f) {
+                        scope.launch {
+                            offsetX.animateTo(0f, tween(150))
+                            onRevealChange(false)
+                        }
                     } else {
                         onSelect()
                     }

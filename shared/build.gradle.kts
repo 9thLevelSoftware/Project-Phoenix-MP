@@ -80,6 +80,13 @@ kotlin {
 
                 // BLE - Kable (Multiplatform)
                 implementation(libs.kable.core)
+
+                // Drag and Drop
+                api(libs.reorderable)
+
+                // Lottie Animations (Compose Multiplatform)
+                implementation("io.github.alexzhirkevich:compottie:2.0.0-rc01")
+                implementation("io.github.alexzhirkevich:compottie-resources:2.0.0-rc01")
             }
         }
 

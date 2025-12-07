@@ -40,6 +40,67 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlin.math.roundToInt
 
 /**
+ * WorkoutTab with State Holder Pattern (2025 Material Expressive).
+ * This overload accepts consolidated state and actions for cleaner API.
+ *
+ * @param state Consolidated UI state
+ * @param actions Callback interface for UI events
+ * @param exerciseRepository Repository for loading exercise details/videos
+ * @param hapticEvents Optional flow for triggering haptic feedback
+ */
+@Composable
+fun WorkoutTab(
+    state: WorkoutUiState,
+    actions: WorkoutActions,
+    exerciseRepository: ExerciseRepository,
+    hapticEvents: SharedFlow<HapticEvent>? = null,
+    modifier: Modifier = Modifier
+) {
+    // Delegate to the original implementation
+    WorkoutTab(
+        connectionState = state.connectionState,
+        workoutState = state.workoutState,
+        currentMetric = state.currentMetric,
+        workoutParameters = state.workoutParameters,
+        repCount = state.repCount,
+        repRanges = state.repRanges,
+        autoStopState = state.autoStopState,
+        autoStartCountdown = state.autoStartCountdown,
+        weightUnit = state.weightUnit,
+        enableVideoPlayback = state.enableVideoPlayback,
+        exerciseRepository = exerciseRepository,
+        isWorkoutSetupDialogVisible = state.isWorkoutSetupDialogVisible,
+        hapticEvents = hapticEvents,
+        loadedRoutine = state.loadedRoutine,
+        currentExerciseIndex = state.currentExerciseIndex,
+        skippedExercises = state.skippedExercises,
+        completedExercises = state.completedExercises,
+        autoplayEnabled = state.autoplayEnabled,
+        onJumpToExercise = actions::onJumpToExercise,
+        canGoBack = state.canGoBack,
+        canSkipForward = state.canSkipForward,
+        kgToDisplay = actions::kgToDisplay,
+        displayToKg = actions::displayToKg,
+        formatWeight = actions::formatWeight,
+        onScan = actions::onScan,
+        onDisconnect = actions::onDisconnect,
+        onStartWorkout = actions::onStartWorkout,
+        onStopWorkout = actions::onStopWorkout,
+        onSkipRest = actions::onSkipRest,
+        onProceedFromSummary = actions::onProceedFromSummary,
+        onRpeLogged = actions::onRpeLogged,
+        onResetForNewWorkout = actions::onResetForNewWorkout,
+        onStartNextExercise = actions::onStartNextExercise,
+        onUpdateParameters = actions::onUpdateParameters,
+        onShowWorkoutSetupDialog = actions::onShowWorkoutSetupDialog,
+        onHideWorkoutSetupDialog = actions::onHideWorkoutSetupDialog,
+        modifier = modifier,
+        showConnectionCard = state.showConnectionCard,
+        showWorkoutSetupCard = state.showWorkoutSetupCard
+    )
+}
+
+/**
  * Workout Tab - displays workout controls during active workout
  * Full implementation matching parent project
  */
@@ -90,6 +151,7 @@ fun WorkoutTab(
         HapticFeedbackEffect(hapticEvents = it)
     }
 
+
     // Gradient backgrounds (light and dark)
     val isDarkMode = MaterialTheme.colorScheme.surface.luminance() < 0.5f
     val lightGradient = Brush.verticalGradient(
@@ -107,6 +169,29 @@ fun WorkoutTab(
         )
     )
 
+    // HUD LAYOUT FOR ACTIVE WORKOUT
+    if (workoutState is WorkoutState.Active && connectionState is ConnectionState.Connected) {
+        WorkoutHud(
+            activeState = workoutState,
+            metric = currentMetric,
+            workoutParameters = workoutParameters,
+            repCount = repCount,
+            repRanges = repRanges,
+            weightUnit = weightUnit,
+            connectionState = connectionState,
+            exerciseRepository = exerciseRepository,
+            loadedRoutine = loadedRoutine,
+            currentExerciseIndex = currentExerciseIndex,
+            enableVideoPlayback = enableVideoPlayback,
+            onStopWorkout = onStopWorkout,
+            formatWeight = formatWeight,
+            onUpdateParameters = onUpdateParameters,
+            onStartNextExercise = onStartNextExercise,
+            modifier = modifier
+        )
+        return
+    }
+
     Box(
         modifier = modifier
             .fillMaxSize()
@@ -118,6 +203,7 @@ fun WorkoutTab(
             currentMetric != null
 
         // Left edge bar (Cable A / Left hand) - Enhanced with phase-reactive coloring
+        // Uses safeGestures inset to avoid overlap with system back gesture areas
         if (showPositionBars && currentMetric != null) {
             EnhancedCablePositionBar(
                 label = "L",
@@ -128,13 +214,15 @@ fun WorkoutTab(
                 isActive = currentMetric.positionA > 0,
                 modifier = Modifier
                     .align(Alignment.CenterStart)
+                    .windowInsetsPadding(WindowInsets.safeGestures.only(WindowInsetsSides.Start))
                     .width(40.dp)
-                    .fillMaxHeight()
+                    .fillMaxHeight(0.8f) // Don't stretch full height for better visual balance
                     .padding(vertical = 8.dp, horizontal = 4.dp)
             )
         }
 
         // Right edge bar (Cable B / Right hand) - Enhanced with phase-reactive coloring
+        // Uses safeGestures inset to avoid overlap with system back gesture areas
         if (showPositionBars && currentMetric != null) {
             EnhancedCablePositionBar(
                 label = "R",
@@ -145,8 +233,9 @@ fun WorkoutTab(
                 isActive = currentMetric.positionB > 0,
                 modifier = Modifier
                     .align(Alignment.CenterEnd)
+                    .windowInsetsPadding(WindowInsets.safeGestures.only(WindowInsetsSides.End))
                     .width(40.dp)
-                    .fillMaxHeight()
+                    .fillMaxHeight(0.8f) // Don't stretch full height for better visual balance
                     .padding(vertical = 8.dp, horizontal = 4.dp)
             )
         }
@@ -195,45 +284,30 @@ fun WorkoutTab(
                         )
                     }
                     is WorkoutState.Active -> {
-                        ActiveWorkoutCard(
-                            workoutParameters = workoutParameters,
-                            onStopWorkout = onStopWorkout
-                        )
+                        // NEW HUD LAYOUT
+                        // We intercept the Active state here and delegate everything to WorkoutHud
+                        // NOTE: WorkoutHud includes its own Scaffold, so it might conflict if nested deeply.
+                        // Ideally WorkoutTab should switch completely.
+                        // For now, we render it inside this column? No, that's bad (scaffold inside column).
+                        // Refactoring: We should lift WorkoutHud to be the root content of WorkoutTab when active.
                     }
                     else -> {}
                 }
 
                 // Display state-specific cards (only non-overlay cards)
-                when (workoutState) {
-                    is WorkoutState.Active -> {
-                        // Show rep counter first (above video) so it's always visible
-                        RepCounterCard(repCount = repCount, workoutParameters = workoutParameters)
-
-                        // Show current exercise details
-                        CurrentExerciseCard(
-                            loadedRoutine = loadedRoutine,
-                            currentExerciseIndex = currentExerciseIndex,
-                            workoutParameters = workoutParameters,
-                            exerciseRepository = exerciseRepository,
-                            enableVideoPlayback = enableVideoPlayback,
-                            formatWeight = { weight -> formatWeight(weight, weightUnit) },
-                            kgToDisplay = { weight -> kgToDisplay(weight, weightUnit) },
-                            weightUnit = weightUnit
-                        )
-                    }
-                    else -> {}
-                }
-
-                // Only show live metrics after warmup is complete
-                if (workoutState is WorkoutState.Active
-                    && currentMetric != null
-                    && repCount.isWarmupComplete) {
-                    LiveMetricsCard(
-                        metric = currentMetric,
-                        weightUnit = weightUnit,
-                        formatWeight = formatWeight
-                    )
-                }
+//                when (workoutState) {
+//                    is WorkoutState.Active -> {
+//                         // Legacy cards removed in favor of HUD
+//                    }
+//                    else -> {}
+//                }
+//
+//                // Only show live metrics after warmup is complete
+//                if (workoutState is WorkoutState.Active
+//                    && currentMetric != null
+//                    && repCount.isWarmupComplete) {
+//                    // Legacy LiveMetricsCard removed
+//                }
             }
 
             // OVERLAYS - These float on top of all content

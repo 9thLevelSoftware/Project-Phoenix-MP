@@ -25,7 +25,6 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.devil.phoenixproject.domain.model.Badge
 import com.devil.phoenixproject.domain.model.BadgeCategory
-import kotlinx.coroutines.delay
 
 /**
  * Celebratory dialog shown when a user earns a new badge
@@ -56,15 +55,6 @@ fun BadgeCelebrationDialog(
 
     // Badge icon animation
     val infiniteTransition = rememberInfiniteTransition(label = "celebration")
-    val glowScale by infiniteTransition.animateFloat(
-        initialValue = 1f,
-        targetValue = 1.15f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(1000, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "glow"
-    )
     val rotation by infiniteTransition.animateFloat(
         initialValue = -5f,
         targetValue = 5f,
@@ -73,26 +63,6 @@ fun BadgeCelebrationDialog(
             repeatMode = RepeatMode.Reverse
         ),
         label = "rotation"
-    )
-
-    // Sparkle positions
-    val sparkles = remember {
-        List(8) { index ->
-            val angle = (index * 45f) * (kotlin.math.PI / 180f)
-            Pair(
-                kotlin.math.cos(angle).toFloat(),
-                kotlin.math.sin(angle).toFloat()
-            )
-        }
-    }
-    val sparkleAlpha by infiniteTransition.animateFloat(
-        initialValue = 0f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(800),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "sparkle"
     )
 
     // Start animation
@@ -137,44 +107,19 @@ fun BadgeCelebrationDialog(
 
                 Spacer(modifier = Modifier.height(24.dp))
 
-                // Animated badge icon with sparkles
+                // Animated badge icon with Lottie trophy animation
                 Box(
                     modifier = Modifier.size(140.dp),
                     contentAlignment = Alignment.Center
                 ) {
-                    // Sparkles
-                    sparkles.forEachIndexed { index, (x, y) ->
-                        val distance = 55f + (index % 2) * 10f
-                        Icon(
-                            imageVector = Icons.Default.Star,
-                            contentDescription = null,
-                            tint = tierColor.copy(alpha = sparkleAlpha * (0.5f + (index % 3) * 0.2f)),
-                            modifier = Modifier
-                                .size(16.dp)
-                                .offset(
-                                    x = (x * distance).dp,
-                                    y = (y * distance).dp
-                                )
-                        )
-                    }
-
-                    // Glow ring
-                    Box(
-                        modifier = Modifier
-                            .size(100.dp)
-                            .scale(glowScale)
-                            .clip(CircleShape)
-                            .background(
-                                Brush.radialGradient(
-                                    listOf(
-                                        tierColor.copy(alpha = 0.3f),
-                                        Color.Transparent
-                                    )
-                                )
-                            )
+                    // Lottie trophy animation in background
+                    LottieAnimation(
+                        animationJson = CelebrationAnimations.trophy,
+                        size = 140.dp,
+                        contentDescription = "Trophy celebration"
                     )
 
-                    // Main badge icon
+                    // Main badge icon overlay
                     Box(
                         modifier = Modifier
                             .size(80.dp)

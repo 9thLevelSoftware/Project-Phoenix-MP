@@ -91,7 +91,12 @@ fun DailyRoutinesScreen(
             },
             onDeleteRoutine = { routineId -> viewModel.deleteRoutine(routineId) },
             onSaveRoutine = { routine -> viewModel.saveRoutine(routine) },
-            onUpdateRoutine = { routine -> viewModel.updateRoutine(routine) },
+            onEditRoutine = { routineId -> 
+                navController.navigate(NavigationRoutes.RoutineEditor.createRoute(routineId)) 
+            },
+            onCreateRoutine = {
+                navController.navigate(NavigationRoutes.RoutineEditor.createRoute("new")) 
+            },
             themeMode = themeMode,
             modifier = Modifier.fillMaxSize()
         )

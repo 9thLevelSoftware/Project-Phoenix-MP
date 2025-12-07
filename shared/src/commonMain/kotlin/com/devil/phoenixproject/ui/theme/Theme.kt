@@ -5,7 +5,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.graphics.Color
 
 enum class ThemeMode { SYSTEM, LIGHT, DARK }
 
@@ -25,18 +24,22 @@ private val DarkColorScheme = darkColorScheme(
     tertiaryContainer = TertiaryPurpleDark,
     onTertiaryContainer = TextPrimary,
 
-    background = BackgroundBlack,
+    background = SurfaceContainerDark,         // 2025: Use container as background
     onBackground = TextPrimary,
 
-    surface = SurfaceDarkGrey,
+    surface = SurfaceContainerDark,            // 2025: Tonal surface
     onSurface = TextPrimary,
-    surfaceVariant = CardBackground,
+    surfaceVariant = SurfaceContainerHighDark,
     onSurfaceVariant = TextSecondary,
 
-    // Material 3 Expressive Surface Container Roles (Dark)
-    surfaceContainer = SurfaceDarkGrey,        // Base surface
-    surfaceContainerHigh = CardBackground,     // Cards
-    surfaceContainerHighest = Color(0xFF353535), // Modals/High emphasis
+    // 2025 Material Design Expressive Surface Container Roles (Dark)
+    surfaceDim = SurfaceDimDark,
+    surfaceBright = SurfaceBrightDark,
+    surfaceContainerLowest = SurfaceContainerLowestDark,
+    surfaceContainerLow = SurfaceContainerLowDark,
+    surfaceContainer = SurfaceContainerDark,           // Main screens
+    surfaceContainerHigh = SurfaceContainerHighDark,   // Cards
+    surfaceContainerHighest = SurfaceContainerHighestDark, // Modals/Dialogs
 
     error = ErrorRed,
     onError = TextPrimary,
@@ -61,18 +64,22 @@ private val LightColorScheme = lightColorScheme(
     tertiaryContainer = TertiaryBlueLight.copy(alpha = 0.1f),
     onTertiaryContainer = ColorOnLightBackground,  // Dark text
 
-    background = ColorLightBackground,
+    background = SurfaceContainerLight,      // 2025: Use container as background
     onBackground = ColorOnLightBackground,
 
-    surface = ColorLightSurface,
+    surface = SurfaceContainerLight,         // 2025: Tonal surface
     onSurface = ColorOnLightSurface,
-    surfaceVariant = ColorLightSurfaceVariant,
+    surfaceVariant = SurfaceContainerHighLight,
     onSurfaceVariant = ColorOnLightSurfaceVariant,
 
-    // Material 3 Expressive Surface Container Roles (Light)
-    surfaceContainer = ColorLightSurface,         // Base surface
-    surfaceContainerHigh = ColorLightSurfaceVariant, // Cards
-    surfaceContainerHighest = Color(0xFFE2E8F0), // Slate-200 for modals
+    // 2025 Material Design Expressive Surface Container Roles (Light)
+    surfaceDim = SurfaceDimLight,
+    surfaceBright = SurfaceBrightLight,
+    surfaceContainerLowest = SurfaceContainerLowestLight,
+    surfaceContainerLow = SurfaceContainerLowLight,
+    surfaceContainer = SurfaceContainerLight,          // Main screens
+    surfaceContainerHigh = SurfaceContainerHighLight,  // Cards
+    surfaceContainerHighest = SurfaceContainerHighestLight, // Modals/Dialogs
 
     error = ErrorRed,
     onError = ColorLightSurface,            // White text on red error
@@ -99,10 +106,3 @@ fun VitruvianTheme(
         content = content
     )
 }
-
-// Alias for backward compatibility
-@Composable
-fun VitruvianProjectPhoenixTheme(
-    themeMode: ThemeMode = ThemeMode.SYSTEM,
-    content: @Composable () -> Unit
-) = VitruvianTheme(themeMode, content)

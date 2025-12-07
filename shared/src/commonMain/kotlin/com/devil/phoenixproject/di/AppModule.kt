@@ -55,5 +55,6 @@ val commonModule = module {
     factory { ConnectionLogsViewModel() }
     factory { ProtocolTesterViewModel(get()) }
     factory { GamificationViewModel(get()) }
-    factory { ThemeViewModel(get()) }
+    // ThemeViewModel as singleton - app-wide theme state that must persist
+    single { ThemeViewModel(get()) }
 }

@@ -4,22 +4,18 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.outlined.FitnessCenter
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
@@ -40,8 +36,13 @@ import org.koin.compose.koinInject
 import kotlin.time.Clock
 
 /**
- * Home screen - Pro Dashboard design.
- * Answers: "What do I need to do today?" + "How consistent have I been?"
+ * Home Screen Redesign - "The Command Deck"
+ *
+ * Material 3 Expressive design principles:
+ * - Zero Redundancy: "Start Workout" in ONE place (the FAB)
+ * - No Partial Text: Full labels on all buttons
+ * - Native Feel: Scaffold handles insets and layout
+ * - Context-Aware: FAB adapts to active cycle state
  */
 @Composable
 fun HomeScreen(
@@ -67,192 +68,183 @@ fun HomeScreen(
         }
     }
 
-    // Determine actual theme
-    val useDarkColors = when (themeMode) {
+    // Determine context for "Start Workout" button
+    val nextRoutineId = remember(activeCycle, cycleProgress, routines) {
+        if (activeCycle != null && cycleProgress != null) {
+            val day = activeCycle!!.days.find { it.dayNumber == cycleProgress!!.currentDayNumber }
+            day?.routineId
+        } else null
+    }
+
+    // Determine actual theme for custom coloring
+    val isDark = when (themeMode) {
         ThemeMode.SYSTEM -> isSystemInDarkTheme()
         ThemeMode.LIGHT -> false
         ThemeMode.DARK -> true
     }
 
-    val backgroundGradient = if (useDarkColors) {
-        Brush.verticalGradient(
-            colors = listOf(
-                Color(0xFF0F172A),
-                Color(0xFF1E1B4B),
-                Color(0xFF172554)
-            )
-        )
-    } else {
-        Brush.verticalGradient(
-            colors = listOf(
-                Color(0xFFE0E7FF),
-                Color(0xFFFCE7F3),
-                Color(0xFFDDD6FE)
-            )
-        )
-    }
-
-    // Clear title to allow global branding to show
+    // Clear global title so our custom header shines
     LaunchedEffect(Unit) {
         viewModel.updateTopBarTitle("")
     }
 
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(backgroundGradient)
-    ) {
-        Column(modifier = Modifier.fillMaxSize()) {
-            // Scrollable content area
-            Column(
-                modifier = Modifier
-                    .weight(1f)
-                    .verticalScroll(rememberScrollState())
-                    .padding(20.dp),
+    Scaffold(
+        containerColor = MaterialTheme.colorScheme.background
+    ) { paddingValues ->
+        Box(modifier = Modifier.fillMaxSize().padding(paddingValues)) {
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 4.dp, bottom = 16.dp),
                 verticalArrangement = Arrangement.spacedBy(24.dp)
             ) {
-                // 1. Header with streak badge
-                DashboardHeader(workoutStreak = workoutStreak)
-
-                // 2. Weekly Compliance Strip
-                WeeklyComplianceStrip(history = recentSessions)
-
-                // 3. Hero Card - Up Next
-                if (activeCycle != null) {
-                    ActiveCycleHero(
-                        cycle = activeCycle!!,
-                        progress = cycleProgress,
-                        routines = routines,
-                        onStartRoutine = { routineId ->
-                            viewModel.ensureConnection(
-                                onConnected = {
-                                    viewModel.loadRoutineById(routineId)
-                                    viewModel.startWorkout()
-                                    navController.navigate(NavigationRoutes.ActiveWorkout.route)
-                                },
-                                onFailed = { /* Error shown via StateFlow */ }
-                            )
-                        },
-                        onViewCycles = {
-                            navController.navigate(NavigationRoutes.TrainingCycles.route)
-                        }
-                    )
-                } else {
-                    NoProgramHero(
-                        onCreateProgram = { navController.navigate(NavigationRoutes.TrainingCycles.route) },
-                        onJustLift = { navController.navigate(NavigationRoutes.JustLift.route) }
+                // 1. Weekly Compliance Strip (Top of screen)
+                item(key = "weekly-compliance") {
+                    WeeklyComplianceStrip(
+                        history = recentSessions,
+                        isDark = isDark,
+                        workoutStreak = workoutStreak
                     )
                 }
 
-                // 4. Secondary Action Tiles
-                SecondaryActionTiles(
-                    onLibraryClick = { navController.navigate(NavigationRoutes.DailyRoutines.route) },
-                    onProgramsClick = { navController.navigate(NavigationRoutes.TrainingCycles.route) }
-                )
+                // 2. The Hero Section (only when cycle active)
+                if (activeCycle != null) {
+                    item(key = "hero-card") {
+                        ActiveCycleHero(
+                            cycle = activeCycle!!,
+                            progress = cycleProgress,
+                            routines = routines,
+                            onViewSchedule = { navController.navigate(NavigationRoutes.TrainingCycles.route) }
+                        )
+                    }
+                }
 
-                // Bottom padding for scroll content
-                Spacer(Modifier.height(20.dp))
+                // 4. Recent Activity Summary
+                item(key = "recent-activity") {
+                    Text(
+                        "Recent Activity",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.padding(bottom = 8.dp)
+                    )
+                    RecentActivitySummary(recentSessions)
+                }
+
+                // Spacer for FABs clearance
+                item(key = "fab-spacer") {
+                    Spacer(modifier = Modifier.height(160.dp))
+                }
             }
 
-            // 5. Fixed Bottom Action Bar (NOT in scroll)
-            FixedBottomActionBar(
-                onJustLiftClick = { navController.navigate(NavigationRoutes.JustLift.route) },
-                onSingleExerciseClick = { navController.navigate(NavigationRoutes.SingleExercise.route) }
-            )
-        }
+            // Bottom FAB Grid: 2 columns, equal width
+            Row(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .padding(horizontal = 12.dp, vertical = 12.dp)
+                    .navigationBarsPadding(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                // Left column: Cycles & Routines
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    ExtendedFloatingActionButton(
+                        onClick = { navController.navigate(NavigationRoutes.TrainingCycles.route) },
+                        containerColor = MaterialTheme.colorScheme.tertiaryContainer,
+                        contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
+                        modifier = Modifier.fillMaxWidth().height(52.dp),
+                        icon = { Icon(Icons.Default.Loop, contentDescription = null) },
+                        text = { Text("Cycles") }
+                    )
+                    ExtendedFloatingActionButton(
+                        onClick = { navController.navigate(NavigationRoutes.DailyRoutines.route) },
+                        containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                        contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                        modifier = Modifier.fillMaxWidth().height(52.dp),
+                        icon = { Icon(Icons.Default.FormatListBulleted, contentDescription = null) },
+                        text = { Text("Routines") }
+                    )
+                }
 
-        // Connection error dialog
-        connectionError?.let { error ->
-            ConnectionErrorDialog(
-                message = error,
-                onDismiss = { viewModel.clearConnectionError() }
-            )
+                // Right column: Single Exercise & Just Lift
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    ExtendedFloatingActionButton(
+                        onClick = { navController.navigate(NavigationRoutes.SingleExercise.route) },
+                        containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                        contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                        modifier = Modifier.fillMaxWidth().height(52.dp),
+                        icon = { Icon(Icons.Outlined.FitnessCenter, contentDescription = null) },
+                        text = { Text("Single Exercise") }
+                    )
+                    ExtendedFloatingActionButton(
+                        onClick = {
+                            if (nextRoutineId != null) {
+                                viewModel.ensureConnection(
+                                    onConnected = {
+                                        viewModel.loadRoutineById(nextRoutineId)
+                                        viewModel.startWorkout()
+                                        navController.navigate(NavigationRoutes.ActiveWorkout.route)
+                                    },
+                                    onFailed = { /* Error handled by state */ }
+                                )
+                            } else {
+                                navController.navigate(NavigationRoutes.JustLift.route)
+                            }
+                        },
+                        containerColor = MaterialTheme.colorScheme.primary,
+                        contentColor = MaterialTheme.colorScheme.onPrimary,
+                        modifier = Modifier.fillMaxWidth().height(52.dp),
+                        icon = { Icon(Icons.Default.PlayArrow, contentDescription = null) },
+                        text = {
+                            Text(
+                                if (activeCycle != null) "Start Session" else "Just Lift",
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    )
+                }
+            }
+
+            // Connection Error Handling
+            connectionError?.let { error ->
+                ConnectionErrorDialog(
+                    message = error,
+                    onDismiss = { viewModel.clearConnectionError() }
+                )
+            }
         }
     }
 }
 
 // ============================================================================
-// DASHBOARD HEADER
+// WEEKLY COMPLIANCE STRIP (Top of screen)
 // ============================================================================
 
 @Composable
-private fun DashboardHeader(workoutStreak: Int?) {
+private fun WeeklyComplianceStrip(
+    history: List<WorkoutSession>,
+    isDark: Boolean,
+    workoutStreak: Int?
+) {
+    // Get current week's Monday
+    val today = Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault()).date
+    val mondayOffset = today.dayOfWeek.ordinal
+    val mondayEpochDays = today.toEpochDays() - mondayOffset
+    val weekDays = (0..6).map { LocalDate.fromEpochDays(mondayEpochDays + it) }
+
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Column {
-            Text(
-                "Welcome Back",
-                style = MaterialTheme.typography.bodyLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Text(
-                "Let's Crush It",
-                style = MaterialTheme.typography.headlineMedium,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurface
-            )
-        }
-
-        // Streak badge (only if streak > 0)
-        if (workoutStreak != null && workoutStreak > 0) {
-            StreakBadge(days = workoutStreak)
-        }
-    }
-}
-
-@Composable
-private fun StreakBadge(days: Int) {
-    Surface(
-        color = MaterialTheme.colorScheme.tertiaryContainer,
-        shape = RoundedCornerShape(16.dp)
-    ) {
+        // Week days in their own row (consistent spacing regardless of streak)
         Row(
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(
-                Icons.Default.LocalFireDepartment,
-                contentDescription = null,
-                tint = Color(0xFFFF6B00),
-                modifier = Modifier.size(20.dp)
-            )
-            Spacer(Modifier.width(4.dp))
-            Text(
-                "$days Day Streak",
-                style = MaterialTheme.typography.labelLarge,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onTertiaryContainer
-            )
-        }
-    }
-}
-
-// ============================================================================
-// WEEKLY COMPLIANCE STRIP
-// ============================================================================
-
-@Composable
-private fun WeeklyComplianceStrip(history: List<WorkoutSession>) {
-    // Get current week's Monday
-    val today = Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault()).date
-    val mondayOffset = today.dayOfWeek.ordinal // Monday = 0, Sunday = 6
-    val mondayEpochDays = today.toEpochDays() - mondayOffset
-    val weekDays = (0..6).map { LocalDate.fromEpochDays(mondayEpochDays + it) }
-
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.7f)
-        ),
-        shape = RoundedCornerShape(16.dp)
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
+            modifier = Modifier.weight(1f),
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
             weekDays.forEach { date ->
@@ -262,13 +254,33 @@ private fun WeeklyComplianceStrip(history: List<WorkoutSession>) {
                     sessionDate == date
                 }
                 val isToday = date == today
-                val isFuture = date.toEpochDays() > today.toEpochDays()
 
-                DayDot(
-                    dayLetter = date.dayOfWeek.name.first().toString(),
-                    isToday = isToday,
-                    hasWorkout = hasWorkout,
-                    isFuture = isFuture
+                ComplianceDot(
+                    letter = date.dayOfWeek.name.take(1),
+                    isActive = hasWorkout,
+                    isToday = isToday
+                )
+            }
+        }
+
+        // Streak badge (fixed position, right side)
+        if (workoutStreak != null && workoutStreak > 0) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.padding(start = 12.dp)
+            ) {
+                Icon(
+                    Icons.Default.LocalFireDepartment,
+                    contentDescription = "Streak",
+                    tint = Color(0xFFFF6B00),
+                    modifier = Modifier.size(16.dp)
+                )
+                Spacer(Modifier.width(2.dp))
+                Text(
+                    "$workoutStreak",
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
                 )
             }
         }
@@ -276,41 +288,30 @@ private fun WeeklyComplianceStrip(history: List<WorkoutSession>) {
 }
 
 @Composable
-private fun DayDot(
-    dayLetter: String,
-    isToday: Boolean,
-    hasWorkout: Boolean,
-    isFuture: Boolean
-) {
-    Column(
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(8.dp)
-    ) {
+private fun ComplianceDot(letter: String, isActive: Boolean, isToday: Boolean) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
         Text(
-            text = dayLetter,
+            text = letter,
             style = MaterialTheme.typography.labelSmall,
-            fontWeight = if (isToday) FontWeight.Bold else FontWeight.Normal,
             color = if (isToday) MaterialTheme.colorScheme.primary
-            else MaterialTheme.colorScheme.onSurfaceVariant
+                    else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+            fontWeight = if (isToday) FontWeight.Bold else FontWeight.Normal
         )
-
+        Spacer(Modifier.height(4.dp))
         Box(
             modifier = Modifier
-                .size(12.dp)
+                .size(10.dp)
                 .clip(CircleShape)
                 .background(
                     when {
-                        hasWorkout -> Color(0xFF10B981) // Green
-                        isToday -> MaterialTheme.colorScheme.primary.copy(alpha = 0.3f)
-                        else -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.2f)
+                        isActive -> MaterialTheme.colorScheme.primary // Workout done
+                        isToday -> MaterialTheme.colorScheme.primary.copy(alpha = 0.3f) // Today empty
+                        else -> MaterialTheme.colorScheme.surfaceVariant // Past/Future empty
                     }
                 )
                 .then(
-                    if (isToday) Modifier.border(
-                        2.dp,
-                        MaterialTheme.colorScheme.primary,
-                        CircleShape
-                    )
+                    if (isToday && !isActive)
+                        Modifier.border(1.dp, MaterialTheme.colorScheme.primary, CircleShape)
                     else Modifier
                 )
         )
@@ -318,7 +319,7 @@ private fun DayDot(
 }
 
 // ============================================================================
-// HERO CARDS
+// HERO CARDS (Refined)
 // ============================================================================
 
 @Composable
@@ -326,369 +327,137 @@ private fun ActiveCycleHero(
     cycle: TrainingCycle,
     progress: CycleProgress?,
     routines: List<Routine>,
-    onStartRoutine: (String) -> Unit,
-    onViewCycles: () -> Unit
+    onViewSchedule: () -> Unit
 ) {
-    val currentDay = progress?.currentDayNumber ?: 1
-    val currentCycleDay = cycle.days.find { it.dayNumber == currentDay }
-    val routine = currentCycleDay?.routineId?.let { routineId ->
-        routines.find { it.id == routineId }
-    }
-    val isRestDay = currentCycleDay?.isRestDay == true || currentCycleDay?.routineId == null
+    val currentDayNum = progress?.currentDayNumber ?: 1
+    val cycleDay = cycle.days.find { it.dayNumber == currentDayNum }
+    val routine = cycleDay?.routineId?.let { id -> routines.find { it.id == id } }
+    val isRest = cycleDay?.isRestDay == true || cycleDay?.routineId == null
 
     Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .shadow(16.dp, RoundedCornerShape(24.dp)),
-        shape = RoundedCornerShape(24.dp),
-        colors = CardDefaults.cardColors(containerColor = Color.Transparent)
+        onClick = onViewSchedule,
+        modifier = Modifier.fillMaxWidth().height(180.dp),
+        shape = RoundedCornerShape(28.dp), // Expressive shape
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
     ) {
-        Box(
-            modifier = Modifier.background(
-                if (!isRestDay) {
-                    Brush.linearGradient(listOf(Color(0xFF4F46E5), Color(0xFF7C3AED)))
-                } else {
-                    Brush.linearGradient(
-                        listOf(
-                            MaterialTheme.colorScheme.surfaceContainerHighest,
-                            MaterialTheme.colorScheme.surfaceContainer
-                        )
-                    )
-                }
+        Box(modifier = Modifier.fillMaxSize()) {
+            // Background Image/Icon Placeholder (Right aligned, subtle)
+            Icon(
+                imageVector = if (isRest) Icons.Default.SelfImprovement else Icons.Default.FitnessCenter,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.05f),
+                modifier = Modifier
+                    .size(200.dp)
+                    .align(Alignment.BottomEnd)
+                    .offset(x = 40.dp, y = 40.dp)
             )
-        ) {
-            Column(modifier = Modifier.padding(24.dp)) {
-                // Label row
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Surface(
-                        color = if (!isRestDay) Color.White.copy(alpha = 0.2f)
-                        else MaterialTheme.colorScheme.primary.copy(alpha = 0.1f),
-                        shape = RoundedCornerShape(8.dp)
-                    ) {
-                        Text(
-                            text = if (isRestDay) "REST DAY" else "UP NEXT",
-                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                            style = MaterialTheme.typography.labelMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = if (!isRestDay) Color.White else MaterialTheme.colorScheme.primary
-                        )
-                    }
 
-                    TextButton(
-                        onClick = onViewCycles,
-                        colors = ButtonDefaults.textButtonColors(
-                            contentColor = if (!isRestDay) Color.White.copy(alpha = 0.9f)
-                            else MaterialTheme.colorScheme.primary
-                        )
-                    ) {
-                        Text("View Schedule")
-                        Icon(
-                            Icons.Default.ChevronRight,
-                            contentDescription = null,
-                            modifier = Modifier.size(18.dp)
-                        )
-                    }
+            Column(
+                modifier = Modifier
+                    .padding(24.dp)
+                    .align(Alignment.TopStart)
+            ) {
+                Surface(
+                    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.3f),
+                    shape = RoundedCornerShape(8.dp)
+                ) {
+                    Text(
+                        text = if (isRest) "REST DAY" else "UP NEXT",
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                    )
                 }
 
-                Spacer(Modifier.height(16.dp))
+                Spacer(Modifier.height(12.dp))
 
-                if (isRestDay) {
-                    // Rest day content
+                Text(
+                    text = cycleDay?.name ?: "Day $currentDayNum",
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer
+                )
+
+                if (routine != null) {
                     Text(
-                        "Recovery & Rest",
-                        style = MaterialTheme.typography.headlineMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurface
+                        text = routine.name,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
                     )
-                    Spacer(Modifier.height(8.dp))
+                } else if (isRest) {
                     Text(
-                        "Day $currentDay of ${cycle.days.size} - Enjoy your rest day.",
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        text = "Take it easy today.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
                     )
-                } else {
-                    // Workout day content
-                    Text(
-                        currentCycleDay?.name ?: "Day $currentDay",
-                        style = MaterialTheme.typography.headlineMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = Color.White
-                    )
-                    Spacer(Modifier.height(8.dp))
-
-                    routine?.let { r ->
-                        Text(
-                            r.name,
-                            style = MaterialTheme.typography.titleMedium,
-                            color = Color.White.copy(alpha = 0.9f)
-                        )
-                        Text(
-                            "${r.exercises.size} Exercises",
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = Color.White.copy(alpha = 0.7f)
-                        )
-                    }
-
-                    Spacer(Modifier.height(24.dp))
-
-                    Button(
-                        onClick = { currentCycleDay?.routineId?.let { onStartRoutine(it) } },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(56.dp),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = Color.White,
-                            contentColor = Color(0xFF4F46E5)
-                        ),
-                        shape = RoundedCornerShape(16.dp)
-                    ) {
-                        Icon(Icons.Default.PlayArrow, contentDescription = null)
-                        Spacer(Modifier.width(8.dp))
-                        Text("Start Workout", fontWeight = FontWeight.Bold)
-                    }
                 }
+            }
 
-                // Progress indicator
-                Spacer(Modifier.height(16.dp))
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.Center
+            // Progress Bar at bottom (replaces dot indicators)
+            if (cycle.days.isNotEmpty()) {
+                val progressValue = currentDayNum.toFloat() / cycle.days.size.toFloat()
+                LinearProgressIndicator(
+                    progress = { progressValue },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(4.dp)
+                        .align(Alignment.BottomCenter),
+                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                    trackColor = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.2f),
+                    drawStopIndicator = {}
+                )
+            }
+        }
+    }
+}
+
+// ============================================================================
+// RECENT ACTIVITY SUMMARY
+// ============================================================================
+
+@Composable
+private fun RecentActivitySummary(history: List<WorkoutSession>) {
+    if (history.isEmpty()) {
+        Text(
+            "No recent workouts recorded.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    } else {
+        // Simple list of last 3 workouts
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            history.take(3).forEach { session ->
+                Surface(
+                    color = MaterialTheme.colorScheme.surfaceContainer,
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.fillMaxWidth()
                 ) {
-                    cycle.days.take(10).forEach { day ->
-                        val isCurrent = day.dayNumber == currentDay
-                        val isPast = day.dayNumber < currentDay
+                    Row(
+                        modifier = Modifier.padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
                         Box(
                             modifier = Modifier
-                                .size(if (isCurrent) 10.dp else 6.dp)
+                                .size(8.dp)
                                 .clip(CircleShape)
-                                .background(
-                                    when {
-                                        isCurrent -> if (!isRestDay) Color.White else MaterialTheme.colorScheme.primary
-                                        isPast -> if (!isRestDay) Color.White.copy(alpha = 0.5f) else MaterialTheme.colorScheme.primary.copy(alpha = 0.4f)
-                                        else -> if (!isRestDay) Color.White.copy(alpha = 0.3f) else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.2f)
-                                    }
-                                )
+                                .background(MaterialTheme.colorScheme.primary)
                         )
-                        if (day.dayNumber < cycle.days.size.coerceAtMost(10)) {
-                            Spacer(Modifier.width(6.dp))
+                        Spacer(Modifier.width(12.dp))
+                        Column {
+                            Text(
+                                session.exerciseName ?: "Workout Session",
+                                style = MaterialTheme.typography.labelLarge,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            Text(
+                                "${session.workingReps} reps • ${session.weightPerCableKg.toInt()} kg/cable",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
                         }
                     }
-                    if (cycle.days.size > 10) {
-                        Spacer(Modifier.width(6.dp))
-                        Text(
-                            "+${cycle.days.size - 10}",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = if (!isRestDay) Color.White.copy(alpha = 0.7f)
-                            else MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
                 }
-            }
-        }
-    }
-}
-
-@Composable
-private fun NoProgramHero(
-    onCreateProgram: () -> Unit,
-    onJustLift: () -> Unit
-) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(24.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceContainerHighest
-        )
-    ) {
-        Column(
-            modifier = Modifier.padding(24.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            Icon(
-                Icons.Default.FitnessCenter,
-                contentDescription = null,
-                modifier = Modifier.size(48.dp),
-                tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.6f)
-            )
-            Spacer(Modifier.height(16.dp))
-            Text(
-                "No Active Training Cycle",
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurface
-            )
-            Text(
-                "Create a rolling schedule or jump straight into lifting.",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Spacer(Modifier.height(24.dp))
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(16.dp),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                OutlinedButton(
-                    onClick = onJustLift,
-                    modifier = Modifier.weight(1f),
-                    shape = RoundedCornerShape(12.dp)
-                ) {
-                    Text("Just Lift")
-                }
-                Button(
-                    onClick = onCreateProgram,
-                    modifier = Modifier.weight(1f),
-                    shape = RoundedCornerShape(12.dp)
-                ) {
-                    Text("Create Cycle")
-                }
-            }
-        }
-    }
-}
-
-// ============================================================================
-// SECONDARY ACTION TILES
-// ============================================================================
-
-@Composable
-private fun SecondaryActionTiles(
-    onLibraryClick: () -> Unit,
-    onProgramsClick: () -> Unit
-) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(16.dp)
-    ) {
-        QuickActionCard(
-            title = "Routines",
-            icon = Icons.Default.CollectionsBookmark,
-            color = Color(0xFF3B82F6),
-            modifier = Modifier.weight(1f),
-            onClick = onLibraryClick
-        )
-        QuickActionCard(
-            title = "Cycles",
-            icon = Icons.Default.Loop,
-            color = Color(0xFF10B981),
-            modifier = Modifier.weight(1f),
-            onClick = onProgramsClick
-        )
-    }
-}
-
-@Composable
-private fun QuickActionCard(
-    title: String,
-    icon: ImageVector,
-    color: Color,
-    modifier: Modifier = Modifier,
-    onClick: () -> Unit
-) {
-    Card(
-        onClick = onClick,
-        modifier = modifier.height(100.dp),
-        shape = RoundedCornerShape(20.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceContainerHighest
-        )
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(12.dp),
-            verticalArrangement = Arrangement.SpaceBetween
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(36.dp)
-                    .background(color.copy(alpha = 0.15f), CircleShape),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    icon,
-                    contentDescription = null,
-                    tint = color,
-                    modifier = Modifier.size(20.dp)
-                )
-            }
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.Bottom
-            ) {
-                Text(
-                    title,
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-                Icon(
-                    Icons.AutoMirrored.Filled.ArrowForward,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
-                    modifier = Modifier.size(16.dp)
-                )
-            }
-        }
-    }
-}
-
-// ============================================================================
-// FIXED BOTTOM ACTION BAR
-// ============================================================================
-
-@Composable
-private fun FixedBottomActionBar(
-    onJustLiftClick: () -> Unit,
-    onSingleExerciseClick: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    Surface(
-        modifier = modifier.fillMaxWidth(),
-        color = MaterialTheme.colorScheme.surface,
-        tonalElevation = 3.dp
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 20.dp, vertical = 12.dp),
-            horizontalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
-            // Just Lift Button
-            Button(
-                onClick = onJustLiftClick,
-                modifier = Modifier
-                    .weight(1f)
-                    .height(56.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = Color(0xFF9333EA) // Purple
-                ),
-                shape = RoundedCornerShape(16.dp)
-            ) {
-                Icon(Icons.Default.FitnessCenter, contentDescription = null)
-                Spacer(Modifier.width(8.dp))
-                Text("Just Lift", fontWeight = FontWeight.Bold)
-            }
-
-            // Single Exercise Button
-            Button(
-                onClick = onSingleExerciseClick,
-                modifier = Modifier
-                    .weight(1f)
-                    .height(56.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = Color(0xFFEC4899) // Pink
-                ),
-                shape = RoundedCornerShape(16.dp)
-            ) {
-                Icon(Icons.Default.PlayArrow, contentDescription = null)
-                Spacer(Modifier.width(8.dp))
-                Text("Single Ex", fontWeight = FontWeight.Bold)
             }
         }
     }

@@ -92,8 +92,10 @@ fun EnhancedMainScreen(
         currentRoute.startsWith(NavigationRoutes.ProgramBuilder.route.replace("/{programId}", ""))
     }
 
-    // Always show TopBar
-    val shouldShowTopBar = true
+    // Always show TopBar unless in Active Workout (HUD handles it)
+    val shouldShowTopBar = remember(currentRoute) {
+        currentRoute != NavigationRoutes.ActiveWorkout.route
+    }
 
     // Show BottomBar only for main tabs
     val shouldShowBottomBar = remember(currentRoute) {
