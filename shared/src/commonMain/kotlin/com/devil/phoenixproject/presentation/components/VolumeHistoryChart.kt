@@ -10,6 +10,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
+import com.devil.phoenixproject.ui.theme.DataColors
 
 // Placeholder for TrendPoint if not resolved
 data class VolumePoint(
@@ -21,7 +22,7 @@ data class VolumePoint(
 fun VolumeHistoryChart(
     data: List<VolumePoint>,
     modifier: Modifier = Modifier.height(200.dp),
-    barColor: Color = MaterialTheme.colorScheme.primary
+    barColor: Color = DataColors.Volume
 ) {
     if (data.isEmpty()) return
 
