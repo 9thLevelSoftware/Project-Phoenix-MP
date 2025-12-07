@@ -27,6 +27,8 @@ import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.presentation.components.ConnectionErrorDialog
 import com.devil.phoenixproject.presentation.navigation.NavigationRoutes
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
+import com.devil.phoenixproject.presentation.components.AnimatedActionButton
+import com.devil.phoenixproject.presentation.components.IconAnimation
 import com.devil.phoenixproject.ui.theme.ThemeMode
 import kotlinx.datetime.Instant
 import kotlinx.datetime.LocalDate
@@ -150,21 +152,19 @@ fun HomeScreen(
                     modifier = Modifier.weight(1f),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    ExtendedFloatingActionButton(
+                    AnimatedActionButton(
+                        label = "Cycles",
+                        icon = Icons.Default.Loop,
                         onClick = { navController.navigate(NavigationRoutes.TrainingCycles.route) },
-                        containerColor = MaterialTheme.colorScheme.tertiaryContainer,
-                        contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
-                        modifier = Modifier.fillMaxWidth().height(52.dp),
-                        icon = { Icon(Icons.Default.Loop, contentDescription = null) },
-                        text = { Text("Cycles") }
+                        isPrimary = false,
+                        iconAnimation = IconAnimation.ROTATE
                     )
-                    ExtendedFloatingActionButton(
+                    AnimatedActionButton(
+                        label = "Routines",
+                        icon = Icons.Default.FormatListBulleted,
                         onClick = { navController.navigate(NavigationRoutes.DailyRoutines.route) },
-                        containerColor = MaterialTheme.colorScheme.secondaryContainer,
-                        contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
-                        modifier = Modifier.fillMaxWidth().height(52.dp),
-                        icon = { Icon(Icons.Default.FormatListBulleted, contentDescription = null) },
-                        text = { Text("Routines") }
+                        isPrimary = false,
+                        iconAnimation = IconAnimation.NONE
                     )
                 }
 
@@ -173,15 +173,16 @@ fun HomeScreen(
                     modifier = Modifier.weight(1f),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    ExtendedFloatingActionButton(
+                    AnimatedActionButton(
+                        label = "Single Exercise",
+                        icon = Icons.Outlined.FitnessCenter,
                         onClick = { navController.navigate(NavigationRoutes.SingleExercise.route) },
-                        containerColor = MaterialTheme.colorScheme.secondaryContainer,
-                        contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
-                        modifier = Modifier.fillMaxWidth().height(52.dp),
-                        icon = { Icon(Icons.Outlined.FitnessCenter, contentDescription = null) },
-                        text = { Text("Single Exercise") }
+                        isPrimary = false,
+                        iconAnimation = IconAnimation.TILT
                     )
-                    ExtendedFloatingActionButton(
+                    AnimatedActionButton(
+                        label = if (activeCycle != null) "Start Session" else "Just Lift",
+                        icon = Icons.Default.PlayArrow,
                         onClick = {
                             if (nextRoutineId != null) {
                                 viewModel.ensureConnection(
@@ -196,16 +197,8 @@ fun HomeScreen(
                                 navController.navigate(NavigationRoutes.JustLift.route)
                             }
                         },
-                        containerColor = MaterialTheme.colorScheme.primary,
-                        contentColor = MaterialTheme.colorScheme.onPrimary,
-                        modifier = Modifier.fillMaxWidth().height(52.dp),
-                        icon = { Icon(Icons.Default.PlayArrow, contentDescription = null) },
-                        text = {
-                            Text(
-                                if (activeCycle != null) "Start Session" else "Just Lift",
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
+                        isPrimary = true,
+                        iconAnimation = IconAnimation.PULSE
                     )
                 }
             }
