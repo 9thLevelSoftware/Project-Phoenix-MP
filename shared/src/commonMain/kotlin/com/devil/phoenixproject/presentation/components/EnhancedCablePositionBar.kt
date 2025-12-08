@@ -55,10 +55,10 @@ fun EnhancedCablePositionBar(
     label: String,
     currentPosition: Float,  // Position in mm (Issue #197)
     velocity: Double = 0.0,
-    minPosition: Int? = null,
-    maxPosition: Int? = null,
-    ghostMin: Int? = null,
-    ghostMax: Int? = null,
+    minPosition: Float? = null,  // Position in mm (Float for Nordic parity)
+    maxPosition: Float? = null,  // Position in mm (Float for Nordic parity)
+    ghostMin: Float? = null,
+    ghostMax: Float? = null,
     isActive: Boolean = true,
     modifier: Modifier = Modifier
 ) {

@@ -44,14 +44,14 @@ private fun WorkoutTabActivePreview() {
     )
 
     val mockRepRanges = RepRanges(
-        minPosA = 80,
-        maxPosA = 750,
-        minPosB = 85,
-        maxPosB = 760,
-        minRangeA = Pair(50, 120),
-        maxRangeA = Pair(700, 800),
-        minRangeB = Pair(55, 115),
-        maxRangeB = Pair(710, 810)
+        minPosA = 80f,
+        maxPosA = 750f,
+        minPosB = 85f,
+        maxPosB = 760f,
+        minRangeA = Pair(50f, 120f),
+        maxRangeA = Pair(700f, 800f),
+        minRangeB = Pair(55f, 115f),
+        maxRangeB = Pair(710f, 810f)
     )
 
     val mockParameters = WorkoutParameters(
@@ -134,10 +134,10 @@ private fun EnhancedPositionBarsPreview() {
                 label = "L",
                 currentPosition = 600f,  // mm
                 velocity = 100.0,  // Positive = concentric
-                minPosition = 200,
-                maxPosition = 800,
-                ghostMin = 180,
-                ghostMax = 820,
+                minPosition = 200f,
+                maxPosition = 800f,
+                ghostMin = 180f,
+                ghostMax = 820f,
                 isActive = true,
                 modifier = Modifier
                     .width(40.dp)
@@ -149,10 +149,10 @@ private fun EnhancedPositionBarsPreview() {
                 label = "R",
                 currentPosition = 400f,  // mm
                 velocity = -100.0,  // Negative = eccentric
-                minPosition = 200,
-                maxPosition = 800,
-                ghostMin = 180,
-                ghostMax = 820,
+                minPosition = 200f,
+                maxPosition = 800f,
+                ghostMin = 180f,
+                ghostMax = 820f,
                 isActive = true,
                 modifier = Modifier
                     .width(40.dp)
@@ -164,8 +164,8 @@ private fun EnhancedPositionBarsPreview() {
                 label = "H",
                 currentPosition = 500f,  // mm
                 velocity = 0.0,  // Near zero = static
-                minPosition = 200,
-                maxPosition = 800,
+                minPosition = 200f,
+                maxPosition = 800f,
                 isActive = true,
                 modifier = Modifier
                     .width(40.dp)
@@ -898,10 +898,10 @@ private fun WorkoutTabWarmupPreview() {
                 hasPendingRep = false
             ),
             repRanges = RepRanges(
-                minPosA = 80, maxPosA = 750,
-                minPosB = 85, maxPosB = 760,
-                minRangeA = Pair(50, 120), maxRangeA = Pair(700, 800),
-                minRangeB = Pair(55, 115), maxRangeB = Pair(710, 810)
+                minPosA = 80f, maxPosA = 750f,
+                minPosB = 85f, maxPosB = 760f,
+                minRangeA = Pair(50f, 120f), maxRangeA = Pair(700f, 800f),
+                minRangeB = Pair(55f, 115f), maxRangeB = Pair(710f, 810f)
             ),
             autoStopState = AutoStopUiState(isActive = false, secondsRemaining = 5, progress = 0f),
             weightUnit = WeightUnit.KG,
@@ -1019,10 +1019,10 @@ private fun WorkoutTabAltActivePreview() {
     )
 
     val mockRepRanges = RepRanges(
-        minPosA = 80, maxPosA = 750,
-        minPosB = 85, maxPosB = 760,
-        minRangeA = Pair(50, 120), maxRangeA = Pair(700, 800),
-        minRangeB = Pair(55, 115), maxRangeB = Pair(710, 810)
+        minPosA = 80f, maxPosA = 750f,
+        minPosB = 85f, maxPosB = 760f,
+        minRangeA = Pair(50f, 120f), maxRangeA = Pair(700f, 800f),
+        minRangeB = Pair(55f, 115f), maxRangeB = Pair(710f, 810f)
     )
 
     MaterialTheme {
@@ -1382,10 +1382,10 @@ private fun WorkoutTabAltJustLiftActivePreview() {
                 isWarmupComplete = true
             ),
             repRanges = RepRanges(
-                minPosA = 100, maxPosA = 700,
-                minPosB = 105, maxPosB = 710,
-                minRangeA = Pair(80, 130), maxRangeA = Pair(680, 750),
-                minRangeB = Pair(85, 125), maxRangeB = Pair(690, 760)
+                minPosA = 100f, maxPosA = 700f,
+                minPosB = 105f, maxPosB = 710f,
+                minRangeA = Pair(80f, 130f), maxRangeA = Pair(680f, 750f),
+                minRangeB = Pair(85f, 125f), maxRangeB = Pair(690f, 760f)
             ),
             autoStopState = AutoStopUiState(isActive = false, secondsRemaining = 5, progress = 0f),
             weightUnit = WeightUnit.KG,
@@ -1498,10 +1498,10 @@ private fun WorkoutTabAltAMRAPActivePreview() {
     )
 
     val mockRepRanges = RepRanges(
-        minPosA = 90, maxPosA = 720,
-        minPosB = 95, maxPosB = 730,
-        minRangeA = Pair(70, 110), maxRangeA = Pair(700, 760),
-        minRangeB = Pair(75, 115), maxRangeB = Pair(710, 770)
+        minPosA = 90f, maxPosA = 720f,
+        minPosB = 95f, maxPosB = 730f,
+        minRangeA = Pair(70f, 110f), maxRangeA = Pair(700f, 760f),
+        minRangeB = Pair(75f, 115f), maxRangeB = Pair(710f, 770f)
     )
 
     MaterialTheme {

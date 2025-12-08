@@ -36,6 +36,7 @@ import kotlin.uuid.Uuid
 import com.devil.phoenixproject.data.ble.requestHighPriority
 
 import com.devil.phoenixproject.util.HardwareDetection
+import kotlin.concurrent.Volatile
 
 /**
  * Kable-based BLE Repository implementation for Vitruvian machines.
@@ -97,19 +98,13 @@ class KableBleRepository : BleRepository {
         private const val HANDLE_GRABBED_THRESHOLD = 8.0    // Position > 8.0mm = handles grabbed
         private const val HANDLE_REST_THRESHOLD = 5.0       // Position < 5.0mm = handles at rest
         // Velocity is in mm/s (calculated from mm positions)
-        // With 20Hz polling (50ms), 5mm movement per frame = 100 mm/s
-        private const val VELOCITY_THRESHOLD = 100.0        // Velocity > 100 mm/s = significant movement
+        private const val VELOCITY_THRESHOLD = 50.0         // Velocity > 50 mm/s = significant movement (matches official concentric threshold)
 
         // Velocity smoothing (Issue #204, #214)
         // EMA alpha: 0.3 = balanced smoothing (faster response during direction changes)
         // Higher alpha reduces zero-crossing dwell time during eccentric/concentric transitions
         // which prevents false stall detection during controlled tempo movements
         private const val VELOCITY_SMOOTHING_ALPHA = 0.3
-
-        // Time-based grab detection fallback for slow poll rates
-        // If position is sustained above grab threshold for this duration, consider grabbed
-        // regardless of velocity (compensates for slow BLE polling affecting velocity calc)
-        private const val SUSTAINED_GRAB_TIME_MS = 300L     // 300ms sustained position = grab detected
 
         // Sample validation
         @Suppress("unused") // Reserved for future spike detection
@@ -249,18 +244,18 @@ class KableBleRepository : BleRepository {
     private var connectedDeviceAddress: String = ""
 
     // Data parsing state (for spike filtering) - Float for mm precision (Issue #197)
-    private var lastGoodPosA = 0.0f
-    private var lastGoodPosB = 0.0f
+    @Volatile private var lastGoodPosA = 0.0f
+    @Volatile private var lastGoodPosB = 0.0f
 
     // Velocity calculation state - Float for mm precision (Issue #197)
-    private var lastPositionA = 0.0f
-    private var lastPositionB = 0.0f
-    private var lastTimestamp = 0L
+    @Volatile private var lastPositionA = 0.0f
+    @Volatile private var lastPositionB = 0.0f
+    @Volatile private var lastTimestamp = 0L
 
     // Smoothed velocity for stall detection (Issue #204, #214)
     // Uses EMA to prevent false stall resets from position jitter
-    private var smoothedVelocityA = 0.0
-    private var smoothedVelocityB = 0.0
+    @Volatile private var smoothedVelocityA = 0.0
+    @Volatile private var smoothedVelocityB = 0.0
 
     // Handle detection state tracking
     private var minPositionSeen = Double.MAX_VALUE
@@ -290,7 +285,7 @@ class KableBleRepository : BleRepository {
     private var minPollInterval = Long.MAX_VALUE
 
     // Monitor notification counter (for diagnostic logging)
-    private var monitorNotificationCount = 0L
+    @Volatile private var monitorNotificationCount = 0L
 
     // Heartbeat job
     private var heartbeatJob: kotlinx.coroutines.Job? = null
@@ -1672,54 +1667,23 @@ class KableBleRepository : BleRepository {
                 val aActive = handleAGrabbed && handleAMoving
                 val bActive = handleBGrabbed && handleBMoving
 
-                // Time-based fallback: If position is sustained above threshold for SUSTAINED_GRAB_TIME_MS,
-                // consider grabbed regardless of velocity. This compensates for slow BLE polling
-                // that results in artificially low velocity calculations.
-                val currentTime = currentTimeMillis()
-                val sustainedGrab = if (handleAGrabbed || handleBGrabbed) {
-                    if (forceAboveGrabThresholdStart == null) {
-                        forceAboveGrabThresholdStart = currentTime
-                    }
-                    val holdTime = currentTime - forceAboveGrabThresholdStart!!
-                    holdTime >= SUSTAINED_GRAB_TIME_MS
-                } else {
-                    forceAboveGrabThresholdStart = null
-                    false
-                }
-
                 when {
                     aActive || bActive -> {
-                        // GRAB CONFIRMED - position AND velocity thresholds met (fast path)
-                        forceAboveGrabThresholdStart = null  // Reset timer
+                        // GRAB CONFIRMED - position AND velocity thresholds met
                         val activeHandle = when {
                             aActive && bActive -> "both"
                             aActive -> "A"
                             else -> "B"
                         }
-                        log.i { "🔥 GRAB CONFIRMED (velocity): handle=$activeHandle (posA=${posA.format(1)}, posB=${posB.format(1)}, velA=${velocityA.format(0)}, velB=${velocityB.format(0)})" }
-                        HandleActivityState.Active
-                    }
-                    sustainedGrab -> {
-                        // GRAB CONFIRMED via time-based fallback (position held for 300ms)
-                        forceAboveGrabThresholdStart = null  // Reset timer
-                        val activeHandle = when {
-                            handleAGrabbed && handleBGrabbed -> "both"
-                            handleAGrabbed -> "A"
-                            else -> "B"
-                        }
-                        log.i { "🔥 GRAB CONFIRMED (sustained ${SUSTAINED_GRAB_TIME_MS}ms): handle=$activeHandle (posA=${posA.format(1)}, posB=${posB.format(1)})" }
+                        log.i { "🔥 GRAB CONFIRMED: handle=$activeHandle (posA=${posA.format(1)}, posB=${posB.format(1)}, velA=${velocityA.format(0)}, velB=${velocityB.format(0)})" }
                         HandleActivityState.Active
                     }
                     handleAGrabbed || handleBGrabbed -> {
-                        // Position extended but no velocity yet - transition to Moving (intermediate state)
-                        if (currentState != HandleActivityState.Moving) {
-                            log.d { "📍 Moving (no velocity yet): posA=${posA.format(1)}, posB=${posB.format(1)}, waiting for velocity or ${SUSTAINED_GRAB_TIME_MS}ms hold" }
-                        }
+                        // Position extended but no significant movement yet
                         HandleActivityState.Moving
                     }
                     else -> {
                         // Back to rest position
-                        forceAboveGrabThresholdStart = null  // Reset timer
                         HandleActivityState.SetComplete
                     }
                 }

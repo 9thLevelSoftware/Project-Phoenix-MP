@@ -106,8 +106,8 @@ class MainViewModel constructor(
         /** Position threshold to consider handle at rest */
         const val HANDLE_REST_THRESHOLD = 2.5
 
-        /** Minimum position range to consider "meaningful" for auto-stop detection */
-        const val MIN_RANGE_THRESHOLD = 50
+        /** Minimum position range to consider "meaningful" for auto-stop detection (in mm) */
+        const val MIN_RANGE_THRESHOLD = 50f
     }
 
     val connectionState: StateFlow<ConnectionState> = bleRepository.connectionState
@@ -605,7 +605,13 @@ class MainViewModel constructor(
             // 3. Reset State
             currentSessionId = KmpUtils.randomUUID()
             _repCount.value = RepCount()
-            repCounter.reset()
+            // For Just Lift mode, preserve position ranges built during handle detection
+            // A full reset() would wipe out hasMeaningfulRange() data needed for auto-stop
+            if (isJustLiftMode) {
+                repCounter.resetCountsOnly()
+            } else {
+                repCounter.reset()
+            }
             repCounter.configure(
                 warmupTarget = params.warmupReps,
                 workingTarget = params.reps,
@@ -1423,7 +1429,7 @@ class MainViewModel constructor(
             repRanges.maxPosA?.let { maxA ->
                 val rangeA = maxA - minA
                 if (rangeA > MIN_RANGE_THRESHOLD) {
-                    val thresholdA = minA + (rangeA * 0.05f).toInt()
+                    val thresholdA = minA + (rangeA * 0.05f)
                     val cableAInDanger = metric.positionA <= thresholdA
                     val cableAReleased = metric.positionA < HANDLE_REST_THRESHOLD ||
                             (metric.positionA - minA) < 10
@@ -1440,7 +1446,7 @@ class MainViewModel constructor(
                 repRanges.maxPosB?.let { maxB ->
                     val rangeB = maxB - minB
                     if (rangeB > MIN_RANGE_THRESHOLD) {
-                        val thresholdB = minB + (rangeB * 0.05f).toInt()
+                        val thresholdB = minB + (rangeB * 0.05f)
                         val cableBInDanger = metric.positionB <= thresholdB
                         val cableBReleased = metric.positionB < HANDLE_REST_THRESHOLD ||
                                 (metric.positionB - minB) < 10
