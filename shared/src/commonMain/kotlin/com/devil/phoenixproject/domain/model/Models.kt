@@ -10,6 +10,14 @@ enum class VitruvianModel(val displayName: String) {
 }
 
 /**
+ * PR Type - distinguishes between weight-based and volume-based records
+ */
+enum class PRType {
+    MAX_WEIGHT,  // Highest weight in a single rep (strength PR)
+    MAX_VOLUME   // Highest weight × reps in a single set (volume PR)
+}
+
+/**
  * Personal record for an exercise
  */
 data class PersonalRecord(
@@ -18,7 +26,9 @@ data class PersonalRecord(
     val weightPerCableKg: Float,
     val reps: Int,
     val timestamp: Long,
-    val workoutMode: String
+    val workoutMode: String,
+    val prType: PRType = PRType.MAX_WEIGHT,
+    val volume: Float = weightPerCableKg * reps
 )
 
 /**
@@ -307,7 +317,12 @@ data class WorkoutSession(
     val exerciseName: String? = null,  // Exercise name for display (avoids DB lookups)
     // Routine tracking (for grouping sets from the same routine)
     val routineSessionId: String? = null,  // Unique ID for this routine session
-    val routineName: String? = null  // Name of the routine being performed
+    val routineName: String? = null,  // Name of the routine being performed
+    // Safety tracking (parity with parent repo v23)
+    val safetyFlags: Int = 0,
+    val deloadWarningCount: Int = 0,
+    val romViolationCount: Int = 0,
+    val spotterActivations: Int = 0
 )
 
 expect fun generateUUID(): String
@@ -345,5 +360,10 @@ data class PRCelebrationEvent(
     val exerciseName: String,
     val weightPerCableKg: Float,
     val reps: Int,
-    val workoutMode: String
-)
+    val workoutMode: String,
+    val brokenPRTypes: List<PRType> = listOf(PRType.MAX_WEIGHT)
+) {
+    val isWeightPR: Boolean get() = PRType.MAX_WEIGHT in brokenPRTypes
+    val isVolumePR: Boolean get() = PRType.MAX_VOLUME in brokenPRTypes
+    val isBothPRs: Boolean get() = brokenPRTypes.size == 2
+}

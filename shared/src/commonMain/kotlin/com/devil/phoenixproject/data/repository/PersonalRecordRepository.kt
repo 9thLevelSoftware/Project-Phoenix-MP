@@ -1,5 +1,6 @@
 package com.devil.phoenixproject.data.repository
 
+import com.devil.phoenixproject.domain.model.PRType
 import com.devil.phoenixproject.domain.model.PersonalRecord
 import kotlinx.coroutines.flow.Flow
 
@@ -66,4 +67,55 @@ interface PersonalRecordRepository {
         workoutMode: String,
         timestamp: Long
     ): Result<Boolean>
+
+    // ========== Volume/Weight PR Methods (parity with parent) ==========
+
+    /**
+     * Get the weight PR for an exercise in a specific workout mode
+     * @param exerciseId Exercise ID
+     * @param workoutMode Workout mode
+     * @return PersonalRecord or null if no weight PR exists
+     */
+    suspend fun getWeightPR(exerciseId: String, workoutMode: String): PersonalRecord?
+
+    /**
+     * Get the volume PR for an exercise in a specific workout mode
+     * @param exerciseId Exercise ID
+     * @param workoutMode Workout mode
+     * @return PersonalRecord or null if no volume PR exists
+     */
+    suspend fun getVolumePR(exerciseId: String, workoutMode: String): PersonalRecord?
+
+    /**
+     * Get the best weight PR for an exercise across all modes
+     * @param exerciseId Exercise ID
+     * @return PersonalRecord with highest weight, or null if no PR exists
+     */
+    suspend fun getBestWeightPR(exerciseId: String): PersonalRecord?
+
+    /**
+     * Get the best volume PR for an exercise across all modes
+     * @param exerciseId Exercise ID
+     * @return PersonalRecord with highest volume (weight × reps), or null if no PR exists
+     */
+    suspend fun getBestVolumePR(exerciseId: String): PersonalRecord?
+
+    /**
+     * Update PRs if the new performance is better
+     * Checks both weight and volume PRs and updates each if beaten
+     *
+     * @param exerciseId Exercise ID
+     * @param weightPerCableKg Weight per cable in kg
+     * @param reps Number of reps completed
+     * @param workoutMode Workout mode
+     * @param timestamp Timestamp of the performance
+     * @return List of PR types that were broken (can be empty, one, or both)
+     */
+    suspend fun updatePRsIfBetter(
+        exerciseId: String,
+        weightPerCableKg: Float,
+        reps: Int,
+        workoutMode: String,
+        timestamp: Long
+    ): Result<List<PRType>>
 }

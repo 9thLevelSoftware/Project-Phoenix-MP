@@ -3,6 +3,7 @@ package com.devil.phoenixproject.data.repository
 import app.cash.sqldelight.coroutines.asFlow
 import app.cash.sqldelight.coroutines.mapToList
 import com.devil.phoenixproject.database.VitruvianDatabase
+import com.devil.phoenixproject.domain.model.PRType
 import com.devil.phoenixproject.domain.model.PersonalRecord
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
@@ -25,7 +26,9 @@ class SqlDelightPersonalRecordRepository(
         reps: Long,
         oneRepMax: Double,
         achievedAt: Long,
-        workoutMode: String
+        workoutMode: String,
+        prType: String,
+        volume: Double
     ): PersonalRecord {
         return PersonalRecord(
             id = id,
@@ -85,30 +88,127 @@ class SqlDelightPersonalRecordRepository(
     ): Result<Boolean> {
         return withContext(Dispatchers.IO) {
             try {
-                val currentBest = getBestPR(exerciseId)
-                val currentVolume = (currentBest?.weightPerCableKg ?: 0f) * (currentBest?.reps ?: 0)
-                val newVolume = weightPerCableKg * reps
-
-                if (newVolume > currentVolume) {
-                    // Calculate Epley 1RM
-                    val oneRepMax = weightPerCableKg * (1 + reps / 30f)
-                    
-                    queries.insertRecord(
-                        exerciseId = exerciseId,
-                        exerciseName = "Unknown", // TODO: Fetch name
-                        weight = weightPerCableKg.toDouble(),
-                        reps = reps.toLong(),
-                        oneRepMax = oneRepMax.toDouble(),
-                        achievedAt = timestamp,
-                        workoutMode = workoutMode
-                    )
-                    Result.success(true)
-                } else {
-                    Result.success(false)
-                }
+                val brokenPRs = updatePRsIfBetterInternal(exerciseId, weightPerCableKg, reps, workoutMode, timestamp)
+                Result.success(brokenPRs.isNotEmpty())
             } catch (e: Exception) {
                 Result.failure(e)
             }
         }
+    }
+
+    // ========== Volume/Weight PR Methods ==========
+
+    override suspend fun getWeightPR(exerciseId: String, workoutMode: String): PersonalRecord? {
+        return withContext(Dispatchers.IO) {
+            queries.selectRecordsByExercise(exerciseId, ::mapToPR)
+                .executeAsList()
+                .filter { it.workoutMode == workoutMode }
+                .maxByOrNull { it.weightPerCableKg }
+        }
+    }
+
+    override suspend fun getVolumePR(exerciseId: String, workoutMode: String): PersonalRecord? {
+        return withContext(Dispatchers.IO) {
+            queries.selectRecordsByExercise(exerciseId, ::mapToPR)
+                .executeAsList()
+                .filter { it.workoutMode == workoutMode }
+                .maxByOrNull { it.weightPerCableKg * it.reps }
+        }
+    }
+
+    override suspend fun getBestWeightPR(exerciseId: String): PersonalRecord? {
+        return withContext(Dispatchers.IO) {
+            queries.selectRecordsByExercise(exerciseId, ::mapToPR)
+                .executeAsList()
+                .maxByOrNull { it.weightPerCableKg }
+        }
+    }
+
+    override suspend fun getBestVolumePR(exerciseId: String): PersonalRecord? {
+        return withContext(Dispatchers.IO) {
+            queries.selectRecordsByExercise(exerciseId, ::mapToPR)
+                .executeAsList()
+                .maxByOrNull { it.weightPerCableKg * it.reps }
+        }
+    }
+
+    override suspend fun updatePRsIfBetter(
+        exerciseId: String,
+        weightPerCableKg: Float,
+        reps: Int,
+        workoutMode: String,
+        timestamp: Long
+    ): Result<List<PRType>> {
+        return withContext(Dispatchers.IO) {
+            try {
+                val brokenPRs = updatePRsIfBetterInternal(exerciseId, weightPerCableKg, reps, workoutMode, timestamp)
+                Result.success(brokenPRs)
+            } catch (e: Exception) {
+                Result.failure(e)
+            }
+        }
+    }
+
+    /**
+     * Internal implementation that checks and updates both weight and volume PRs
+     */
+    private suspend fun updatePRsIfBetterInternal(
+        exerciseId: String,
+        weightPerCableKg: Float,
+        reps: Int,
+        workoutMode: String,
+        timestamp: Long
+    ): List<PRType> {
+        val brokenPRs = mutableListOf<PRType>()
+        val newVolume = weightPerCableKg * reps
+
+        // Check weight PR
+        val currentWeightPR = getWeightPR(exerciseId, workoutMode)
+        val isNewWeightPR = currentWeightPR == null || weightPerCableKg > currentWeightPR.weightPerCableKg
+
+        // Check volume PR
+        val currentVolumePR = getVolumePR(exerciseId, workoutMode)
+        val currentVolume = (currentVolumePR?.weightPerCableKg ?: 0f) * (currentVolumePR?.reps ?: 0)
+        val isNewVolumePR = newVolume > currentVolume
+
+        if (isNewWeightPR) {
+            // Calculate Epley 1RM
+            val oneRepMax = if (reps == 1) weightPerCableKg else weightPerCableKg * (1 + reps / 30f)
+
+            queries.insertRecord(
+                exerciseId = exerciseId,
+                exerciseName = "", // Will be resolved by join if needed
+                weight = weightPerCableKg.toDouble(),
+                reps = reps.toLong(),
+                oneRepMax = oneRepMax.toDouble(),
+                achievedAt = timestamp,
+                workoutMode = workoutMode,
+                prType = PRType.MAX_WEIGHT.name,
+                volume = newVolume.toDouble()
+            )
+            brokenPRs.add(PRType.MAX_WEIGHT)
+        }
+
+        if (isNewVolumePR && !isNewWeightPR) {
+            // Only insert volume PR if it's not also a weight PR (avoid duplicates)
+            val oneRepMax = if (reps == 1) weightPerCableKg else weightPerCableKg * (1 + reps / 30f)
+
+            queries.insertRecord(
+                exerciseId = exerciseId,
+                exerciseName = "",
+                weight = weightPerCableKg.toDouble(),
+                reps = reps.toLong(),
+                oneRepMax = oneRepMax.toDouble(),
+                achievedAt = timestamp,
+                workoutMode = workoutMode,
+                prType = PRType.MAX_VOLUME.name,
+                volume = newVolume.toDouble()
+            )
+            brokenPRs.add(PRType.MAX_VOLUME)
+        } else if (isNewVolumePR) {
+            brokenPRs.add(PRType.MAX_VOLUME)
+        }
+
+        return brokenPRs
     }
 }
