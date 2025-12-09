@@ -6,6 +6,7 @@ package com.devil.phoenixproject.domain.model
 data class Routine(
     val id: String,
     val name: String,
+    val description: String = "",
     val exercises: List<RoutineExercise> = emptyList(),
     val createdAt: Long = currentTimeMillis(),
     val lastUsed: Long? = null,
