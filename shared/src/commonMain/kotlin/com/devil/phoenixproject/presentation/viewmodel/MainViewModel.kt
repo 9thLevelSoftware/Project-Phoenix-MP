@@ -592,29 +592,23 @@ class MainViewModel constructor(
             }
             Logger.d { "Built ${command.size}-byte workout command for ${params.workoutType}" }
 
-            // 2. Send Configuration Command
+            // 2. Send Workout Command (matches parent repo protocol)
+            // Program modes: 96-byte frame (command 0x04) - machine engages on receipt
+            // Echo mode: 32-byte frame (command 0x4E) - machine engages on receipt
             try {
                 bleRepository.sendWorkoutCommand(command)
-                Logger.d { "Workout config sent: ${command.size} bytes for ${params.workoutType}" }
+                Logger.d { "Workout command sent: ${command.size} bytes for ${params.workoutType}" }
+
+                // Start active workout polling (matches parent repo: bleManager?.startMonitorPolling())
+                // This transitions from auto-start detection mode to active workout monitoring
+                bleRepository.startActiveWorkoutPolling()
             } catch (e: Exception) {
-                Logger.e(e) { "Failed to send config command" }
+                Logger.e(e) { "Failed to send workout command" }
                 _connectionError.value = "Failed to send command: ${e.message}"
                 return@launch
             }
 
-            // 3. Send START Command - This engages the machine!
-            // Protocol: Config (0x04/0x4E) sets parameters, START (0x03) activates them
-            try {
-                val startCommand = BlePacketFactory.createStartCommand()
-                bleRepository.sendWorkoutCommand(startCommand)
-                Logger.d { "START command sent (0x03) - machine engaged" }
-            } catch (e: Exception) {
-                Logger.e(e) { "Failed to send START command" }
-                _connectionError.value = "Failed to start workout: ${e.message}"
-                return@launch
-            }
-
-            // 4. Reset State
+            // 3. Reset State
             currentSessionId = KmpUtils.randomUUID()
             _repCount.value = RepCount()
             // For Just Lift mode, preserve position ranges built during handle detection
@@ -632,7 +626,7 @@ class MainViewModel constructor(
                 isAMRAP = params.isAMRAP
             )
 
-            // 5. Countdown (skipped for Just Lift auto-start)
+            // 4. Countdown (skipped for Just Lift auto-start)
             if (!skipCountdown && !isJustLiftMode) {
                 for (i in 5 downTo 1) {
                     _workoutState.value = WorkoutState.Countdown(i)
@@ -640,7 +634,7 @@ class MainViewModel constructor(
                 }
             }
 
-            // 6. Start Monitoring
+            // 5. Start Monitoring
             _workoutState.value = WorkoutState.Active
             workoutStartTime = currentTimeMillis()
             _hapticEvents.emit(HapticEvent.WORKOUT_START)
