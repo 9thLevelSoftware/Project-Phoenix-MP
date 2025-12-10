@@ -1000,11 +1000,44 @@ class MainViewModel constructor(
     }
 
     fun loadRoutine(routine: Routine) {
+        if (routine.exercises.isEmpty()) {
+            Logger.w { "Cannot load routine with no exercises" }
+            return
+        }
+
         _loadedRoutine.value = routine
         _currentExerciseIndex.value = 0
         _currentSetIndex.value = 0
         _skippedExercises.value = emptySet()
         _completedExercises.value = emptySet()
+
+        // Load parameters from first exercise (matching parent repo behavior)
+        val firstExercise = routine.exercises[0]
+        val firstSetReps = firstExercise.setReps.firstOrNull() // Can be null for AMRAP sets
+        // Get per-set weight for first set, falling back to exercise default
+        val firstSetWeight = firstExercise.setWeightsPerCableKg.getOrNull(0)
+            ?: firstExercise.weightPerCableKg
+
+        Logger.d { "Loading routine: ${routine.name}" }
+        Logger.d { "  First exercise: ${firstExercise.exercise.displayName}" }
+        Logger.d { "  First set weight: ${firstSetWeight}kg, reps: $firstSetReps" }
+        Logger.d { "  Workout type: ${firstExercise.workoutType.displayName}" }
+
+        val params = WorkoutParameters(
+            workoutType = firstExercise.workoutType,
+            reps = firstSetReps ?: 0, // AMRAP sets have null reps, use 0 as placeholder
+            weightPerCableKg = firstSetWeight,
+            progressionRegressionKg = firstExercise.progressionKg,
+            isJustLift = false,  // CRITICAL: Routines are NOT just lift mode
+            useAutoStart = false,
+            stopAtTop = stopAtTop.value,
+            warmupReps = _workoutParameters.value.warmupReps,
+            isAMRAP = firstSetReps == null, // This SET is AMRAP if its reps is null
+            selectedExerciseId = firstExercise.exercise.id
+        )
+
+        Logger.d { "Created WorkoutParameters: isAMRAP=${params.isAMRAP}, isJustLift=${params.isJustLift}" }
+        updateWorkoutParameters(params)
     }
 
     fun loadRoutineById(routineId: String) {
