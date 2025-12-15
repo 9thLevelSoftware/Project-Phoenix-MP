@@ -30,6 +30,7 @@ import com.devil.phoenixproject.data.migration.CycleTemplates
 import com.devil.phoenixproject.data.repository.TrainingCycleRepository
 import com.devil.phoenixproject.domain.model.CycleDay
 import com.devil.phoenixproject.domain.model.CycleProgress
+import com.devil.phoenixproject.domain.model.CycleTemplate
 import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.domain.model.TrainingCycle
 import com.devil.phoenixproject.presentation.components.EmptyState
@@ -198,10 +199,9 @@ fun TrainingCyclesScreen(
         TemplateSelectionDialog(
             onDismiss = { showTemplateDialog = false },
             onSelectTemplate = { template ->
-                scope.launch {
-                    cycleRepository.saveCycle(template)
-                    showTemplateDialog = false
-                }
+                // TODO: Task 11 - Convert CycleTemplate to TrainingCycle using TemplateConverter
+                // For now, this is disabled until TemplateConverter is implemented
+                showTemplateDialog = false
             },
             onCreateBlank = {
                 showTemplateDialog = false
@@ -606,7 +606,7 @@ private fun CycleListItem(
 @Composable
 private fun TemplateSelectionDialog(
     onDismiss: () -> Unit,
-    onSelectTemplate: (TrainingCycle) -> Unit,
+    onSelectTemplate: (CycleTemplate) -> Unit,
     onCreateBlank: () -> Unit
 ) {
     val templates = remember { CycleTemplates.all() }

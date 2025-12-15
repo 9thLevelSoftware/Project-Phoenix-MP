@@ -10,6 +10,12 @@ import com.devil.phoenixproject.domain.model.CycleProgress
 import com.devil.phoenixproject.domain.model.TrainingCycle
 import com.devil.phoenixproject.domain.model.currentTimeMillis
 import com.devil.phoenixproject.domain.model.generateUUID
+import com.devil.phoenixproject.domain.model.CycleTemplate
+import com.devil.phoenixproject.domain.model.CycleDayTemplate
+import com.devil.phoenixproject.domain.model.RoutineTemplate
+import com.devil.phoenixproject.domain.model.TemplateExercise
+import com.devil.phoenixproject.domain.model.ProgressionRule
+import com.devil.phoenixproject.domain.model.ProgramMode
 import kotlinx.coroutines.flow.first
 
 /**
@@ -181,23 +187,55 @@ object CycleTemplates {
     /**
      * 3-Day Full Body template.
      */
-    fun threeDay(): TrainingCycle {
-        val cycleId = generateUUID()
-        return TrainingCycle(
-            id = cycleId,
+    fun threeDay(): CycleTemplate {
+        val fullBodyA = RoutineTemplate(
+            name = "Full Body A",
+            exercises = listOf(
+                TemplateExercise("Squat", 3, 8, ProgramMode.OldSchool),
+                TemplateExercise("Bench Press", 3, 8, ProgramMode.OldSchool),
+                TemplateExercise("Bent Over Row", 3, 8, ProgramMode.OldSchool),
+                TemplateExercise("Shoulder Press", 3, 10, ProgramMode.OldSchool),
+                TemplateExercise("Bicep Curl", 3, 12, ProgramMode.TUT),
+                TemplateExercise("Calf Raise", 3, 15, ProgramMode.TUT)
+            )
+        )
+        val fullBodyB = RoutineTemplate(
+            name = "Full Body B",
+            exercises = listOf(
+                TemplateExercise("Deadlift", 3, 5, ProgramMode.OldSchool),
+                TemplateExercise("Incline Bench Press", 3, 10, ProgramMode.OldSchool),
+                TemplateExercise("Bent Over Row - Reverse Grip", 3, 10, ProgramMode.OldSchool),
+                TemplateExercise("Lateral Raise", 3, 12, ProgramMode.TUT),
+                TemplateExercise("Tricep Extension", 3, 12, ProgramMode.TUT),
+                TemplateExercise("Plank", 3, null, ProgramMode.OldSchool)  // null reps = timed
+            )
+        )
+        val fullBodyC = RoutineTemplate(
+            name = "Full Body C",
+            exercises = listOf(
+                TemplateExercise("Front Squat", 3, 8, ProgramMode.OldSchool),
+                TemplateExercise("Bench Press - Wide Grip", 3, 10, ProgramMode.OldSchool),
+                TemplateExercise("Upright Row", 3, 10, ProgramMode.OldSchool),
+                TemplateExercise("Arnold Press", 3, 10, ProgramMode.OldSchool),
+                TemplateExercise("Hammer Curl", 3, 12, ProgramMode.TUT),
+                TemplateExercise("Shrug", 3, 12, ProgramMode.TUT)
+            )
+        )
+
+        return CycleTemplate(
+            id = "template_3day_fullbody",
             name = "3-Day Full Body",
-            description = "Full body workout 3 times per week with rest days",
+            description = "Full body workout 3 times per week. Great for beginners or those with limited training time.",
             days = listOf(
-                CycleDay.create(cycleId = cycleId, dayNumber = 1, name = "Full Body A"),
-                CycleDay.restDay(cycleId = cycleId, dayNumber = 2, name = "Rest"),
-                CycleDay.create(cycleId = cycleId, dayNumber = 3, name = "Full Body B"),
-                CycleDay.restDay(cycleId = cycleId, dayNumber = 4, name = "Rest"),
-                CycleDay.create(cycleId = cycleId, dayNumber = 5, name = "Full Body C"),
-                CycleDay.restDay(cycleId = cycleId, dayNumber = 6, name = "Rest"),
-                CycleDay.restDay(cycleId = cycleId, dayNumber = 7, name = "Rest")
+                CycleDayTemplate.training(1, "Full Body A", fullBodyA),
+                CycleDayTemplate.rest(2),
+                CycleDayTemplate.training(3, "Full Body B", fullBodyB),
+                CycleDayTemplate.rest(4),
+                CycleDayTemplate.training(5, "Full Body C", fullBodyC),
+                CycleDayTemplate.rest(6),
+                CycleDayTemplate.rest(7)
             ),
-            createdAt = currentTimeMillis(),
-            isActive = false
+            progressionRule = ProgressionRule.percentage(2.5f)
         )
     }
 
@@ -247,9 +285,8 @@ object CycleTemplates {
     /**
      * Get all available templates.
      */
-    fun all(): List<TrainingCycle> = listOf(
-        threeDay(),
-        pushPullLegs(),
-        upperLower()
+    fun all(): List<CycleTemplate> = listOf(
+        threeDay()
+        // TODO: Convert pushPullLegs() and upperLower() to CycleTemplate
     )
 }
