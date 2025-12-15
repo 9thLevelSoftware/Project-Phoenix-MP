@@ -321,23 +321,60 @@ object CycleTemplates {
     }
 
     /**
-     * Upper/Lower 4-day template.
+     * Upper/Lower 5-day template with rest day.
      */
-    fun upperLower(): TrainingCycle {
-        val cycleId = generateUUID()
-        return TrainingCycle(
-            id = cycleId,
+    fun upperLower(): CycleTemplate {
+        val upperA = RoutineTemplate(
+            name = "Upper A",
+            exercises = listOf(
+                TemplateExercise("Bench Press", 4, 6, ProgramMode.OldSchool),
+                TemplateExercise("Bent Over Row", 4, 6, ProgramMode.OldSchool),
+                TemplateExercise("Shoulder Press", 3, 10, ProgramMode.OldSchool),
+                TemplateExercise("Bicep Curl", 3, 12, ProgramMode.TUT),
+                TemplateExercise("Tricep Extension", 3, 12, ProgramMode.TUT)
+            )
+        )
+        val lowerA = RoutineTemplate(
+            name = "Lower A",
+            exercises = listOf(
+                TemplateExercise("Squat", 4, 6, ProgramMode.OldSchool),
+                TemplateExercise("Romanian Deadlift", 3, 10, ProgramMode.OldSchool),
+                TemplateExercise("Lunges", 3, 10, ProgramMode.OldSchool),
+                TemplateExercise("Calf Raise", 3, 15, ProgramMode.TUT)
+            )
+        )
+        val upperB = RoutineTemplate(
+            name = "Upper B",
+            exercises = listOf(
+                TemplateExercise("Incline Bench Press", 4, 8, ProgramMode.OldSchool),
+                TemplateExercise("Bent Over Row - Wide Grip", 4, 8, ProgramMode.OldSchool),
+                TemplateExercise("Arnold Press", 3, 10, ProgramMode.OldSchool),
+                TemplateExercise("Hammer Curl", 3, 12, ProgramMode.TUT),
+                TemplateExercise("Skull Crusher", 3, 12, ProgramMode.TUT)
+            )
+        )
+        val lowerB = RoutineTemplate(
+            name = "Lower B",
+            exercises = listOf(
+                TemplateExercise("Deadlift", 4, 5, ProgramMode.OldSchool),
+                TemplateExercise("Front Squat", 3, 10, ProgramMode.OldSchool),
+                TemplateExercise("Bulgarian Split Squat", 3, 10, ProgramMode.OldSchool),
+                TemplateExercise("Glute Kickback", 3, 12, ProgramMode.TUT)
+            )
+        )
+
+        return CycleTemplate(
+            id = "template_upper_lower",
             name = "Upper/Lower",
-            description = "4-day split alternating between upper and lower body",
+            description = "5-day split alternating between upper and lower body. Balanced approach for strength and hypertrophy.",
             days = listOf(
-                CycleDay.create(cycleId = cycleId, dayNumber = 1, name = "Upper"),
-                CycleDay.create(cycleId = cycleId, dayNumber = 2, name = "Lower"),
-                CycleDay.restDay(cycleId = cycleId, dayNumber = 3, name = "Rest"),
-                CycleDay.create(cycleId = cycleId, dayNumber = 4, name = "Upper"),
-                CycleDay.create(cycleId = cycleId, dayNumber = 5, name = "Lower")
+                CycleDayTemplate.training(1, "Upper A", upperA),
+                CycleDayTemplate.training(2, "Lower A", lowerA),
+                CycleDayTemplate.rest(3),
+                CycleDayTemplate.training(4, "Upper B", upperB),
+                CycleDayTemplate.training(5, "Lower B", lowerB)
             ),
-            createdAt = currentTimeMillis(),
-            isActive = false
+            progressionRule = ProgressionRule.percentage(2.5f)
         )
     }
 
@@ -346,7 +383,7 @@ object CycleTemplates {
      */
     fun all(): List<CycleTemplate> = listOf(
         threeDay(),
-        pushPullLegs()
-        // TODO: Convert upperLower() to CycleTemplate
+        pushPullLegs(),
+        upperLower()
     )
 }
