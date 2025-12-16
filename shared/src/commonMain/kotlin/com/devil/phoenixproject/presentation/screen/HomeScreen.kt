@@ -217,14 +217,13 @@ private fun WeeklyComplianceStrip(
     val mondayEpochDays = today.toEpochDays() - mondayOffset
     val weekDays = (0..6).map { LocalDate.fromEpochDays(mondayEpochDays + it) }
 
-    Row(
+    Column(
         modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
+        horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        // Week days in their own row (consistent spacing regardless of streak)
+        // Week days row
         Row(
-            modifier = Modifier.weight(1f),
+            modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
             weekDays.forEach { date ->
@@ -243,22 +242,22 @@ private fun WeeklyComplianceStrip(
             }
         }
 
-        // Streak badge (fixed position, right side)
+        // Streak badge (centered beneath days of the week)
         if (workoutStreak != null && workoutStreak > 0) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.padding(start = 12.dp)
+                modifier = Modifier.padding(top = 8.dp)
             ) {
                 Icon(
                     Icons.Default.LocalFireDepartment,
                     contentDescription = "Streak",
                     tint = Color(0xFFFF6B00),
-                    modifier = Modifier.size(16.dp)
+                    modifier = Modifier.size(24.dp)
                 )
-                Spacer(Modifier.width(2.dp))
+                Spacer(Modifier.width(4.dp))
                 Text(
                     "$workoutStreak",
-                    style = MaterialTheme.typography.labelMedium,
+                    style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurface
                 )
