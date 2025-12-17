@@ -7,7 +7,7 @@ import androidx.core.content.FileProvider
 import com.devil.phoenixproject.domain.model.PersonalRecord
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.domain.model.WorkoutSession
-import kotlinx.datetime.Instant
+import kotlin.time.Instant
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
 import java.io.File
@@ -178,7 +178,8 @@ class AndroidCsvExporter(private val context: Context) : CsvExporter {
     private fun formatDate(timestamp: Long): String {
         val instant = Instant.fromEpochMilliseconds(timestamp)
         val localDateTime = instant.toLocalDateTime(TimeZone.currentSystemDefault())
-        return "${localDateTime.year}-${localDateTime.monthNumber.toString().padStart(2, '0')}-${localDateTime.dayOfMonth.toString().padStart(2, '0')}"
+        val monthNum = localDateTime.month.ordinal + 1
+        return "${localDateTime.year}-${monthNum.toString().padStart(2, '0')}-${localDateTime.day.toString().padStart(2, '0')}"
     }
 
     private fun escapeCsv(value: String): String {

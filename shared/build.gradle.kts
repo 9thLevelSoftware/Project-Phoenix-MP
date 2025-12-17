@@ -14,6 +14,11 @@ kotlin {
         languageSettings.optIn("kotlinx.coroutines.ExperimentalCoroutinesApi")
     }
 
+    // Suppress expect/actual classes Beta warning
+    compilerOptions {
+        freeCompilerArgs.add("-Xexpect-actual-classes")
+    }
+
     // Android target
     androidTarget {
         compilerOptions {

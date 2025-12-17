@@ -23,6 +23,7 @@ import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.ui.theme.DataColors
 import com.devil.phoenixproject.util.KmpUtils
+import kotlin.time.Instant
 import kotlinx.datetime.*
 
 /**
@@ -214,9 +215,9 @@ private fun processVolumeData(
 
         // Format date label (e.g., "Nov 26")
         val localDate = LocalDate.parse(dateStr)
-        val month = localDate.month.name.take(3).lowercase()
+        val monthName = localDate.month.name.take(3).lowercase()
             .replaceFirstChar { it.uppercase() }
-        val dateLabel = "$month ${localDate.dayOfMonth}"
+        val dateLabel = "$monthName ${localDate.day}"
 
         VolumeDataPoint(
             dateLabel = dateLabel,

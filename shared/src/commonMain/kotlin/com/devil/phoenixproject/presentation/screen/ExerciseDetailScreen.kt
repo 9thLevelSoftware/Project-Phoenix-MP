@@ -382,7 +382,7 @@ private fun SessionHistoryRow(
             // Expanded details
             if (isExpanded) {
                 Spacer(Modifier.height(12.dp))
-                Divider(color = MaterialTheme.colorScheme.outlineVariant)
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                 Spacer(Modifier.height(12.dp))
 
                 Row(

@@ -8,6 +8,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.FormatListBulleted
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.FitnessCenter
 import androidx.compose.material3.*
@@ -30,7 +31,7 @@ import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
 import com.devil.phoenixproject.presentation.components.AnimatedActionButton
 import com.devil.phoenixproject.presentation.components.IconAnimation
 import com.devil.phoenixproject.ui.theme.ThemeMode
-import kotlinx.datetime.Instant
+import kotlin.time.Instant
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
@@ -158,7 +159,7 @@ fun HomeScreen(
                     )
                     AnimatedActionButton(
                         label = "Routines",
-                        icon = Icons.Default.FormatListBulleted,
+                        icon = Icons.AutoMirrored.Filled.FormatListBulleted,
                         onClick = { navController.navigate(NavigationRoutes.DailyRoutines.route) },
                         isPrimary = false,
                         iconAnimation = IconAnimation.NONE

@@ -1,5 +1,6 @@
 package com.devil.phoenixproject.util
 
+import kotlin.time.Instant
 import kotlinx.datetime.*
 import kotlin.math.roundToInt
 import kotlin.random.Random
@@ -20,13 +21,13 @@ data class KmpLocalDate(
     fun minusDays(days: Int): KmpLocalDate {
         val localDate = LocalDate(year, month, dayOfMonth)
         val result = localDate.minus(days, DateTimeUnit.DAY)
-        return KmpLocalDate(result.year, result.monthNumber, result.dayOfMonth)
+        return KmpLocalDate(result.year, result.month.number, result.day)
     }
 
     fun plusDays(days: Int): KmpLocalDate {
         val localDate = LocalDate(year, month, dayOfMonth)
         val result = localDate.plus(days, DateTimeUnit.DAY)
-        return KmpLocalDate(result.year, result.monthNumber, result.dayOfMonth)
+        return KmpLocalDate(result.year, result.month.number, result.day)
     }
 
     fun isBefore(other: KmpLocalDate): Boolean {
@@ -54,13 +55,13 @@ data class KmpLocalDate(
         fun today(): KmpLocalDate {
             val now = currentInstant()
             val localDate = now.toLocalDateTime(TimeZone.currentSystemDefault()).date
-            return KmpLocalDate(localDate.year, localDate.monthNumber, localDate.dayOfMonth)
+            return KmpLocalDate(localDate.year, localDate.month.number, localDate.day)
         }
 
         fun fromTimestamp(timestampMillis: Long): KmpLocalDate {
             val instant = Instant.fromEpochMilliseconds(timestampMillis)
             val localDate = instant.toLocalDateTime(TimeZone.currentSystemDefault()).date
-            return KmpLocalDate(localDate.year, localDate.monthNumber, localDate.dayOfMonth)
+            return KmpLocalDate(localDate.year, localDate.month.number, localDate.day)
         }
     }
 }
@@ -82,20 +83,20 @@ object KmpUtils {
 
         return when (pattern) {
             "MMM dd, yyyy" -> {
-                val month = dateTime.month.name.take(3).lowercase().replaceFirstChar { it.uppercase() }
-                val day = dateTime.dayOfMonth.toString().padStart(2, '0')
+                val monthName = dateTime.month.name.take(3).lowercase().replaceFirstChar { it.uppercase() }
+                val day = dateTime.day.toString().padStart(2, '0')
                 val year = dateTime.year
-                "$month $day, $year"
+                "$monthName $day, $year"
             }
             "MM/dd/yyyy" -> {
-                val month = dateTime.monthNumber.toString().padStart(2, '0')
-                val day = dateTime.dayOfMonth.toString().padStart(2, '0')
+                val month = dateTime.month.number.toString().padStart(2, '0')
+                val day = dateTime.day.toString().padStart(2, '0')
                 val year = dateTime.year
                 "$month/$day/$year"
             }
             "yyyy-MM-dd" -> {
-                val month = dateTime.monthNumber.toString().padStart(2, '0')
-                val day = dateTime.dayOfMonth.toString().padStart(2, '0')
+                val month = dateTime.month.number.toString().padStart(2, '0')
+                val day = dateTime.day.toString().padStart(2, '0')
                 val year = dateTime.year
                 "$year-$month-$day"
             }
@@ -131,8 +132,8 @@ object KmpUtils {
             }
             else -> {
                 // Default fallback
-                val month = dateTime.monthNumber.toString().padStart(2, '0')
-                val day = dateTime.dayOfMonth.toString().padStart(2, '0')
+                val month = dateTime.month.number.toString().padStart(2, '0')
+                val day = dateTime.day.toString().padStart(2, '0')
                 val year = dateTime.year
                 "$month/$day/$year"
             }

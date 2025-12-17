@@ -1,5 +1,6 @@
 package com.devil.phoenixproject.presentation.components
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -272,13 +273,9 @@ fun CreateExerciseDialog(
                                 colors = ButtonDefaults.outlinedButtonColors(
                                     contentColor = MaterialTheme.colorScheme.error
                                 ),
-                                border = ButtonDefaults.outlinedButtonBorder.copy(
-                                    brush = Brush.linearGradient(
-                                        colors = listOf(
-                                            MaterialTheme.colorScheme.error,
-                                            MaterialTheme.colorScheme.error
-                                        )
-                                    )
+                                border = BorderStroke(
+                                    width = 1.dp,
+                                    color = MaterialTheme.colorScheme.error
                                 )
                             ) {
                                 Text("Delete")

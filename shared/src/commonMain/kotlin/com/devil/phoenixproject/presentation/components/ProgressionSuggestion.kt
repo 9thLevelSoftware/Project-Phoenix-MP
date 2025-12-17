@@ -9,6 +9,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.automirrored.filled.TrendingUp
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -61,7 +63,7 @@ fun ProgressionSuggestionBanner(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Icon(
-                        Icons.Default.TrendingUp,
+                        Icons.AutoMirrored.Filled.TrendingUp,
                         contentDescription = null,
                         tint = Color(0xFF4CAF50),
                         modifier = Modifier.size(24.dp)
@@ -113,7 +115,7 @@ fun ProgressionSuggestionBanner(
                     }
 
                     Icon(
-                        Icons.Default.ArrowForward,
+                        Icons.AutoMirrored.Filled.ArrowForward,
                         contentDescription = null,
                         tint = Color(0xFF4CAF50),
                         modifier = Modifier.size(20.dp)
@@ -348,7 +350,7 @@ fun ProgressionIndicator(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Icon(
-                Icons.Default.TrendingUp,
+                Icons.AutoMirrored.Filled.TrendingUp,
                 contentDescription = null,
                 tint = Color(0xFF4CAF50),
                 modifier = Modifier.size(14.dp)

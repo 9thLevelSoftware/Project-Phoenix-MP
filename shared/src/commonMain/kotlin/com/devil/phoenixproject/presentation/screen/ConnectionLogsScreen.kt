@@ -26,7 +26,7 @@ import com.devil.phoenixproject.data.local.ConnectionLogEntity
 import com.devil.phoenixproject.data.repository.LogLevel
 import com.devil.phoenixproject.presentation.viewmodel.ConnectionLogsViewModel
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
-import kotlinx.datetime.Instant
+import kotlin.time.Instant
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
 import org.koin.compose.viewmodel.koinViewModel
