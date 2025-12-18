@@ -11,44 +11,41 @@ import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
 import com.devil.phoenixproject.presentation.viewmodel.ThemeViewModel
 import com.devil.phoenixproject.ui.theme.VitruvianTheme
 import kotlinx.coroutines.delay
-import org.koin.compose.KoinContext
 import org.koin.compose.viewmodel.koinViewModel
 import org.koin.compose.koinInject
 
 @Composable
 fun App() {
-    KoinContext {
-        val viewModel = koinViewModel<MainViewModel>()
-        val themeViewModel = koinViewModel<ThemeViewModel>()
-        val exerciseRepository = koinInject<ExerciseRepository>()
+    val viewModel = koinViewModel<MainViewModel>()
+    val themeViewModel = koinViewModel<ThemeViewModel>()
+    val exerciseRepository = koinInject<ExerciseRepository>()
 
-        // Theme state - persisted via ThemeViewModel
-        val themeMode by themeViewModel.themeMode.collectAsState()
+    // Theme state - persisted via ThemeViewModel
+    val themeMode by themeViewModel.themeMode.collectAsState()
 
-        // Splash screen state
-        var showSplash by remember { mutableStateOf(true) }
+    // Splash screen state
+    var showSplash by remember { mutableStateOf(true) }
 
-        // Hide splash after animation completes (2500ms for full effect)
-        LaunchedEffect(Unit) {
-            delay(2500)
-            showSplash = false
-        }
+    // Hide splash after animation completes (2500ms for full effect)
+    LaunchedEffect(Unit) {
+        delay(2500)
+        showSplash = false
+    }
 
-        VitruvianTheme(themeMode = themeMode) {
-            Box(modifier = Modifier.fillMaxSize()) {
-                // Main content (always rendered, splash overlays it)
-                if (!showSplash) {
-                    EnhancedMainScreen(
-                        viewModel = viewModel,
-                        exerciseRepository = exerciseRepository,
-                        themeMode = themeMode,
-                        onThemeModeChange = { themeViewModel.setThemeMode(it) }
-                    )
-                }
-
-                // Splash screen overlay with fade animation
-                SplashScreen(visible = showSplash)
+    VitruvianTheme(themeMode = themeMode) {
+        Box(modifier = Modifier.fillMaxSize()) {
+            // Main content (always rendered, splash overlays it)
+            if (!showSplash) {
+                EnhancedMainScreen(
+                    viewModel = viewModel,
+                    exerciseRepository = exerciseRepository,
+                    themeMode = themeMode,
+                    onThemeModeChange = { themeViewModel.setThemeMode(it) }
+                )
             }
+
+            // Splash screen overlay with fade animation
+            SplashScreen(visible = showSplash)
         }
     }
 }
