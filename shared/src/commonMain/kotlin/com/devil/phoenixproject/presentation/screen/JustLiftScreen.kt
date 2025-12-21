@@ -67,6 +67,7 @@ fun JustLiftScreen(
     val repCount by viewModel.repCount.collectAsState()
     val autoStopState by viewModel.autoStopState.collectAsState()
     val weightUnit by viewModel.weightUnit.collectAsState()
+    val userPreferences by viewModel.userPreferences.collectAsState()
     @Suppress("UNUSED_VARIABLE") // Reserved for future connecting overlay
     val isAutoConnecting by viewModel.isAutoConnecting.collectAsState()
     val connectionError by viewModel.connectionError.collectAsState()
@@ -77,7 +78,6 @@ fun JustLiftScreen(
     var weightChangePerRep by remember { mutableStateOf(0) } // Progression/Regression value
     var eccentricLoad by remember { mutableStateOf(EccentricLoad.LOAD_100) }
     var echoLevel by remember { mutableStateOf(EchoLevel.HARDER) }
-    var stallDetectionEnabled by remember { mutableStateOf(true) }
     var defaultsLoaded by remember { mutableStateOf(false) }
 
     // Load saved Just Lift defaults on screen init
@@ -104,10 +104,7 @@ fun JustLiftScreen(
                 eccentricLoad = defaults.getEccentricLoad()
                 echoLevel = defaults.getEchoLevel()
 
-                // Restore stall detection setting
-                stallDetectionEnabled = defaults.stallDetectionEnabled
-
-                Logger.d("Loaded Just Lift defaults: modeId=${defaults.workoutModeId}, weight=${defaults.weightPerCableKg}kg, progression=${defaults.weightChangePerRep}, stallDetection=$stallDetectionEnabled")
+                Logger.d("Loaded Just Lift defaults: modeId=${defaults.workoutModeId}, weight=${defaults.weightPerCableKg}kg, progression=${defaults.weightChangePerRep}")
             }
             defaultsLoaded = true
         }
@@ -155,7 +152,7 @@ fun JustLiftScreen(
     }
 
     // Update parameters whenever user changes them
-    LaunchedEffect(selectedMode, weightPerCable, weightChangePerRep, stallDetectionEnabled) {
+    LaunchedEffect(selectedMode, weightPerCable, weightChangePerRep, userPreferences.stallDetectionEnabled) {
         val weightChangeKg = if (weightUnit == WeightUnit.LB) {
             weightChangePerRep / 2.20462f
         } else {
@@ -168,7 +165,7 @@ fun JustLiftScreen(
             progressionRegressionKg = weightChangeKg,
             isJustLift = true,
             useAutoStart = true, // Enable auto-start for Just Lift
-            stallDetectionEnabled = stallDetectionEnabled
+            stallDetectionEnabled = userPreferences.stallDetectionEnabled
         )
         viewModel.updateWorkoutParameters(updatedParameters)
     }
