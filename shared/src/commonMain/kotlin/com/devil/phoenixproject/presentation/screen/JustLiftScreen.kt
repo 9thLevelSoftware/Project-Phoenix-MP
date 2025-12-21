@@ -21,6 +21,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExposedDropdownMenuDefaults
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -352,39 +356,44 @@ fun JustLiftScreen(
                             verticalArrangement = Arrangement.SpaceEvenly
                         ) {
                             Text(
-                                "Eccentric Load: ${eccentricLoad.percentage}%",
+                                "Eccentric Load",
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.onSurface
                             )
 
-                            val eccentricLoadValues = listOf(
-                                EccentricLoad.LOAD_0,
-                                EccentricLoad.LOAD_50,
-                                EccentricLoad.LOAD_75,
-                                EccentricLoad.LOAD_100,
-                                EccentricLoad.LOAD_125,
-                                EccentricLoad.LOAD_150
-                            )
-                            val currentIndex = eccentricLoadValues.indexOf(eccentricLoad).coerceAtLeast(0)
+                            var expanded by remember { mutableStateOf(false) }
 
-                            Column {
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween
-                                ) {
-                                    Text("0%", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                    Text("150%", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                }
-                                ExpressiveSlider(
-                                    value = currentIndex.toFloat(),
-                                    onValueChange = { value ->
-                                        eccentricLoad = eccentricLoadValues[value.toInt().coerceIn(0, eccentricLoadValues.lastIndex)]
-                                    },
-                                    valueRange = 0f..(eccentricLoadValues.lastIndex).toFloat(),
-                                    steps = eccentricLoadValues.size - 2,
-                                    modifier = Modifier.fillMaxWidth()
+                            ExposedDropdownMenuBox(
+                                expanded = expanded,
+                                onExpandedChange = { expanded = it }
+                            ) {
+                                OutlinedTextField(
+                                    value = eccentricLoad.displayName,
+                                    onValueChange = {},
+                                    readOnly = true,
+                                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
+                                    modifier = Modifier
+                                        .menuAnchor()
+                                        .fillMaxWidth(),
+                                    colors = ExposedDropdownMenuDefaults.outlinedTextFieldColors()
                                 )
+
+                                ExposedDropdownMenu(
+                                    expanded = expanded,
+                                    onDismissRequest = { expanded = false }
+                                ) {
+                                    EccentricLoad.entries.forEach { load ->
+                                        DropdownMenuItem(
+                                            text = { Text(load.displayName) },
+                                            onClick = {
+                                                eccentricLoad = load
+                                                expanded = false
+                                            },
+                                            contentPadding = ExposedDropdownMenuDefaults.ItemContentPadding
+                                        )
+                                    }
+                                }
                             }
 
                             Text(
