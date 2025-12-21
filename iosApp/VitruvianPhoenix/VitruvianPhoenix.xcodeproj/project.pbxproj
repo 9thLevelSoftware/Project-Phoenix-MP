@@ -106,7 +106,6 @@
 				DFE6BD442EEDF42200886589 /* Frameworks */,
 				DFE6BD452EEDF42200886589 /* Resources */,
 				DFE6BD592EEDF53700886589 /* Embed Frameworks */,
-				DFE6BD802EEE100000886589 /* Generate shared.framework dSYM */,
 			);
 			buildRules = (
 			);
