@@ -22,7 +22,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.devil.phoenixproject.domain.model.WeightUnit
-import com.devil.phoenixproject.presentation.components.WeightAdjustmentControls
+import com.devil.phoenixproject.presentation.components.SliderWithButtons
 import com.devil.phoenixproject.ui.theme.*
 
 /**
@@ -221,56 +221,36 @@ fun RestTimerCard(
                             letterSpacing = 1.sp
                         )
 
-                        // Reps/Duration adjuster
+                        // Reps adjuster with hybrid slider
                         if (nextExerciseReps != null) {
-                            ParameterAdjuster(
-                                label = "Target Reps",
-                                value = editedReps,
+                            SliderWithButtons(
+                                value = editedReps.toFloat(),
                                 onValueChange = { newValue ->
-                                    editedReps = newValue.coerceIn(1, 50)
+                                    editedReps = newValue.toInt().coerceIn(1, 50)
                                     onUpdateReps?.invoke(editedReps)
                                 },
-                                formatValue = { it.toString() },
-                                step = 1
+                                valueRange = 1f..50f,
+                                step = 1f,
+                                label = "Target Reps",
+                                formatValue = { it.toInt().toString() }
                             )
                         }
 
-                        // Enhanced Weight adjustment controls
+                        // Weight adjuster with hybrid slider
                         if (nextExerciseWeight != null && formatWeightWithUnit != null) {
-                            Spacer(modifier = Modifier.height(Spacing.small))
+                            val maxWeight = if (weightUnit == WeightUnit.LB) 220f else 100f
+                            val weightStep = if (weightUnit == WeightUnit.LB) 1f else 0.5f
 
-                            Text(
-                                text = "Weight per cable",
-                                style = MaterialTheme.typography.bodyLarge,
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-
-                            Spacer(modifier = Modifier.height(Spacing.small))
-
-                            WeightAdjustmentControls(
-                                currentWeightKg = editedWeight,
-                                weightUnit = weightUnit,
-                                formatWeight = formatWeightWithUnit,
-                                onWeightChange = { newWeight ->
-                                    editedWeight = newWeight.coerceIn(0f, 110f)
+                            SliderWithButtons(
+                                value = editedWeight,
+                                onValueChange = { newWeight ->
+                                    editedWeight = newWeight.coerceIn(0f, maxWeight)
                                     onUpdateWeight?.invoke(editedWeight)
                                 },
-                                enabled = true,
-                                showPresets = true,
-                                lastUsedWeight = lastUsedWeight,
-                                prWeight = prWeight
-                            )
-                        } else if (nextExerciseWeight != null && formatWeight != null) {
-                            // Fallback to simple adjuster if formatWeightWithUnit not provided
-                            ParameterAdjuster(
-                                label = "Weight",
-                                value = editedWeight.toInt(),
-                                onValueChange = { newValue ->
-                                    editedWeight = newValue.toFloat().coerceIn(0f, 220f)
-                                    onUpdateWeight?.invoke(editedWeight)
-                                },
-                                formatValue = { formatWeight(it.toFloat()) },
-                                step = 5
+                                valueRange = 0f..maxWeight,
+                                step = weightStep,
+                                label = "Weight per cable",
+                                formatValue = { formatWeightWithUnit(it, weightUnit) }
                             )
                         }
                     }
@@ -373,76 +353,6 @@ private fun formatRestTime(seconds: Int): String {
     val minutes = seconds / 60
     val remainingSeconds = seconds % 60
     return "$minutes:${remainingSeconds.toString().padStart(2, '0')}"
-}
-
-/**
- * Reusable parameter adjuster with +/- buttons
- */
-@Composable
-private fun ParameterAdjuster(
-    label: String,
-    value: Int,
-    onValueChange: (Int) -> Unit,
-    formatValue: (Int) -> String,
-    step: Int,
-    modifier: Modifier = Modifier
-) {
-    Row(
-        modifier = modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween
-    ) {
-        Text(
-            text = label,
-            style = MaterialTheme.typography.bodyLarge,
-            color = MaterialTheme.colorScheme.onSurface
-        )
-
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            // Decrease button
-            FilledIconButton(
-                onClick = { onValueChange(value - step) },
-                modifier = Modifier.size(40.dp),
-                colors = IconButtonDefaults.filledIconButtonColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
-                )
-            ) {
-                Icon(
-                    Icons.Default.Remove,
-                    contentDescription = "Decrease",
-                    modifier = Modifier.size(20.dp)
-                )
-            }
-
-            // Value display
-            Text(
-                text = formatValue(value),
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.widthIn(min = 60.dp),
-                textAlign = TextAlign.Center
-            )
-
-            // Increase button
-            FilledIconButton(
-                onClick = { onValueChange(value + step) },
-                modifier = Modifier.size(40.dp),
-                colors = IconButtonDefaults.filledIconButtonColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
-                )
-            ) {
-                Icon(
-                    Icons.Default.Add,
-                    contentDescription = "Increase",
-                    modifier = Modifier.size(20.dp)
-                )
-            }
-        }
-    }
 }
 
 @Composable

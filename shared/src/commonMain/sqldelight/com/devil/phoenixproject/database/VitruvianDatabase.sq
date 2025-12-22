@@ -898,3 +898,40 @@ SELECT * FROM Exercise WHERE one_rep_max_kg IS NOT NULL;
 
 findExerciseByName:
 SELECT * FROM Exercise WHERE name = ? LIMIT 1;
+
+-- ==================== USER PROFILES ====================
+-- User Profiles for multi-user support
+
+CREATE TABLE UserProfile (
+    id TEXT PRIMARY KEY NOT NULL,
+    name TEXT NOT NULL,
+    colorIndex INTEGER NOT NULL DEFAULT 0,
+    createdAt INTEGER NOT NULL,
+    isActive INTEGER NOT NULL DEFAULT 0
+);
+
+-- Queries for UserProfile
+getActiveProfile:
+SELECT * FROM UserProfile WHERE isActive = 1 LIMIT 1;
+
+getAllProfiles:
+SELECT * FROM UserProfile ORDER BY createdAt ASC;
+
+getProfileById:
+SELECT * FROM UserProfile WHERE id = ?;
+
+insertProfile:
+INSERT INTO UserProfile (id, name, colorIndex, createdAt, isActive)
+VALUES (?, ?, ?, ?, ?);
+
+updateProfile:
+UPDATE UserProfile SET name = ?, colorIndex = ? WHERE id = ?;
+
+setActiveProfile:
+UPDATE UserProfile SET isActive = CASE WHEN id = ? THEN 1 ELSE 0 END;
+
+deleteProfile:
+DELETE FROM UserProfile WHERE id = ? AND id != 'default';
+
+countProfiles:
+SELECT COUNT(*) FROM UserProfile;

@@ -198,7 +198,10 @@ enum class EccentricLoad(val percentage: Int, val displayName: String) {
     LOAD_50(50, "50%"),
     LOAD_75(75, "75%"),
     LOAD_100(100, "100%"),
-    LOAD_125(125, "125%"),
+    LOAD_110(110, "110%"),
+    LOAD_120(120, "120%"),
+    LOAD_130(130, "130%"),
+    LOAD_140(140, "140%"),
     LOAD_150(150, "150%")
 }
 

@@ -876,7 +876,9 @@ class MainViewModel constructor(
     fun setAutoplayEnabled(enabled: Boolean) {
         viewModelScope.launch { preferencesManager.setAutoplayEnabled(enabled) }
     }
-
+    fun setStallDetectionEnabled(enabled: Boolean) {
+        viewModelScope.launch { preferencesManager.setStallDetectionEnabled(enabled) }
+    }
     fun setColorScheme(schemeIndex: Int) {
         viewModelScope.launch { bleRepository.setColorScheme(schemeIndex) }
     }
@@ -2687,7 +2689,10 @@ data class JustLiftDefaults(
         50 -> EccentricLoad.LOAD_50
         75 -> EccentricLoad.LOAD_75
         100 -> EccentricLoad.LOAD_100
-        125 -> EccentricLoad.LOAD_125
+        110 -> EccentricLoad.LOAD_110
+        120 -> EccentricLoad.LOAD_120
+        130 -> EccentricLoad.LOAD_130
+        140 -> EccentricLoad.LOAD_140
         150 -> EccentricLoad.LOAD_150
         else -> EccentricLoad.LOAD_100
     }

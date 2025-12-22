@@ -775,12 +775,14 @@ fun SettingsTab(
     stopAtTop: Boolean,
     enableVideoPlayback: Boolean,
     darkModeEnabled: Boolean,
+    stallDetectionEnabled: Boolean = true,
     selectedColorSchemeIndex: Int = 0,
     onWeightUnitChange: (WeightUnit) -> Unit,
     onAutoplayChange: (Boolean) -> Unit,
     onStopAtTopChange: (Boolean) -> Unit,
     onEnableVideoPlaybackChange: (Boolean) -> Unit,
     onDarkModeChange: (Boolean) -> Unit,
+    onStallDetectionChange: (Boolean) -> Unit,
     onColorSchemeChange: (Int) -> Unit,
     onDeleteAllWorkouts: () -> Unit,
     onNavigateToConnectionLogs: () -> Unit = {},
@@ -1174,6 +1176,36 @@ fun SettingsTab(
                     Switch(
                         checked = enableVideoPlayback,
                         onCheckedChange = onEnableVideoPlaybackChange
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(Spacing.medium))
+
+                // Stall Detection toggle
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text(
+                            "Stall Detection",
+                            style = MaterialTheme.typography.bodyLarge,
+                            fontWeight = FontWeight.Medium,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            "Auto-stop set when movement pauses for 5 seconds (Just Lift/AMRAP)",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Switch(
+                        checked = stallDetectionEnabled,
+                        onCheckedChange = onStallDetectionChange
                     )
                 }
             }

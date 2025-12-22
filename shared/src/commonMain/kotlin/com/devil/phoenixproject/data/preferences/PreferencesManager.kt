@@ -18,7 +18,8 @@ data class UserPreferences(
     val stopAtTop: Boolean = false,
     val enableVideoPlayback: Boolean = true,
     val beepsEnabled: Boolean = true,
-    val colorScheme: Int = 0
+    val colorScheme: Int = 0,
+    val stallDetectionEnabled: Boolean = true  // NEW - default enabled
 )
 
 /**
@@ -46,7 +47,9 @@ data class SingleExerciseDefaults(
     }
 
     fun getEccentricLoad(): com.devil.phoenixproject.domain.model.EccentricLoad {
-        return com.devil.phoenixproject.domain.model.EccentricLoad.entries.find { it.percentage == eccentricLoadPercentage }
+        // Handle legacy 125% -> fall back to 120%
+        val percentage = if (eccentricLoadPercentage == 125) 120 else eccentricLoadPercentage
+        return com.devil.phoenixproject.domain.model.EccentricLoad.entries.find { it.percentage == percentage }
             ?: com.devil.phoenixproject.domain.model.EccentricLoad.LOAD_100
     }
 
@@ -81,7 +84,9 @@ data class JustLiftDefaults(
     val stallDetectionEnabled: Boolean = true  // Stall detection auto-stop toggle
 ) {
     fun getEccentricLoad(): com.devil.phoenixproject.domain.model.EccentricLoad {
-        return com.devil.phoenixproject.domain.model.EccentricLoad.entries.find { it.percentage == eccentricLoadPercentage }
+        // Handle legacy 125% -> fall back to 120%
+        val percentage = if (eccentricLoadPercentage == 125) 120 else eccentricLoadPercentage
+        return com.devil.phoenixproject.domain.model.EccentricLoad.entries.find { it.percentage == percentage }
             ?: com.devil.phoenixproject.domain.model.EccentricLoad.LOAD_100
     }
 
@@ -116,6 +121,7 @@ interface PreferencesManager {
     suspend fun setEnableVideoPlayback(enabled: Boolean)
     suspend fun setBeepsEnabled(enabled: Boolean)
     suspend fun setColorScheme(scheme: Int)
+    suspend fun setStallDetectionEnabled(enabled: Boolean)
 
     suspend fun getSingleExerciseDefaults(exerciseId: String, cableConfig: String): SingleExerciseDefaults?
     suspend fun saveSingleExerciseDefaults(defaults: SingleExerciseDefaults)
@@ -149,6 +155,7 @@ class SettingsPreferencesManager(
         private const val KEY_VIDEO_PLAYBACK = "video_playback"
         private const val KEY_BEEPS_ENABLED = "beeps_enabled"
         private const val KEY_COLOR_SCHEME = "color_scheme"
+        private const val KEY_STALL_DETECTION = "stall_detection_enabled"
         private const val KEY_JUST_LIFT_DEFAULTS = "just_lift_defaults"
         private const val KEY_PREFIX_EXERCISE = "exercise_defaults_"
     }
@@ -165,7 +172,8 @@ class SettingsPreferencesManager(
             stopAtTop = settings.getBoolean(KEY_STOP_AT_TOP, false),
             enableVideoPlayback = settings.getBoolean(KEY_VIDEO_PLAYBACK, true),
             beepsEnabled = settings.getBoolean(KEY_BEEPS_ENABLED, true),
-            colorScheme = settings.getInt(KEY_COLOR_SCHEME, 0)
+            colorScheme = settings.getInt(KEY_COLOR_SCHEME, 0),
+            stallDetectionEnabled = settings.getBoolean(KEY_STALL_DETECTION, true)
         )
     }
 
@@ -202,6 +210,11 @@ class SettingsPreferencesManager(
         settings.putInt(KEY_COLOR_SCHEME, scheme)
         updateAndEmit { copy(colorScheme = scheme) }
     }
+    override suspend fun setStallDetectionEnabled(enabled: Boolean) {
+        settings.putBoolean(KEY_STALL_DETECTION, enabled)
+        updateAndEmit { copy(stallDetectionEnabled = enabled) }
+    }
+
 
     override suspend fun getSingleExerciseDefaults(exerciseId: String, cableConfig: String): SingleExerciseDefaults? {
         val key = "$KEY_PREFIX_EXERCISE${exerciseId}_$cableConfig"
@@ -273,6 +286,10 @@ class StubPreferencesManager : PreferencesManager {
     override suspend fun setColorScheme(scheme: Int) {
         _preferencesFlow.value = _preferencesFlow.value.copy(colorScheme = scheme)
     }
+    override suspend fun setStallDetectionEnabled(enabled: Boolean) {
+        _preferencesFlow.value = _preferencesFlow.value.copy(stallDetectionEnabled = enabled)
+    }
+
 
     override suspend fun getSingleExerciseDefaults(exerciseId: String, cableConfig: String): SingleExerciseDefaults? = null
     override suspend fun saveSingleExerciseDefaults(defaults: SingleExerciseDefaults) {}

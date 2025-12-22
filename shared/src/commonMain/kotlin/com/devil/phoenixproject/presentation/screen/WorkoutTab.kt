@@ -2378,7 +2378,7 @@ fun ModeSubSelectorDialog(
                                     EccentricLoad.LOAD_50,
                                     EccentricLoad.LOAD_75,
                                     EccentricLoad.LOAD_100,
-                                    EccentricLoad.LOAD_125,
+                                    EccentricLoad.LOAD_120,
                                     EccentricLoad.LOAD_150
                                 ).forEach { load ->
                                     DropdownMenuItem(

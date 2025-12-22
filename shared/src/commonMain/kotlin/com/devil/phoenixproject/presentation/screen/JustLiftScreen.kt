@@ -21,6 +21,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExposedDropdownMenuDefaults
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -41,13 +45,18 @@ import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.data.repository.AutoStopUiState
+import com.devil.phoenixproject.data.repository.UserProfileRepository
 import com.devil.phoenixproject.domain.model.*
+import com.devil.phoenixproject.presentation.components.AddProfileDialog
 import com.devil.phoenixproject.presentation.components.CompactNumberPicker
 import com.devil.phoenixproject.presentation.components.ExpressiveSlider
+import com.devil.phoenixproject.presentation.components.ProfileSpeedDial
 import com.devil.phoenixproject.presentation.components.ProgressionSlider
 import com.devil.phoenixproject.presentation.navigation.NavigationRoutes
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
 import com.devil.phoenixproject.ui.theme.Spacing
+import kotlinx.coroutines.launch
+import org.koin.compose.koinInject
 import com.devil.phoenixproject.ui.theme.ThemeMode
 
 /**
@@ -67,6 +76,7 @@ fun JustLiftScreen(
     val repCount by viewModel.repCount.collectAsState()
     val autoStopState by viewModel.autoStopState.collectAsState()
     val weightUnit by viewModel.weightUnit.collectAsState()
+    val userPreferences by viewModel.userPreferences.collectAsState()
     @Suppress("UNUSED_VARIABLE") // Reserved for future connecting overlay
     val isAutoConnecting by viewModel.isAutoConnecting.collectAsState()
     val connectionError by viewModel.connectionError.collectAsState()
@@ -77,8 +87,13 @@ fun JustLiftScreen(
     var weightChangePerRep by remember { mutableStateOf(0) } // Progression/Regression value
     var eccentricLoad by remember { mutableStateOf(EccentricLoad.LOAD_100) }
     var echoLevel by remember { mutableStateOf(EchoLevel.HARDER) }
-    var stallDetectionEnabled by remember { mutableStateOf(true) }
     var defaultsLoaded by remember { mutableStateOf(false) }
+    // Profile management
+    val scope = rememberCoroutineScope()
+    val profileRepository: UserProfileRepository = koinInject()
+    val profiles by profileRepository.allProfiles.collectAsState()
+    val activeProfile by profileRepository.activeProfile.collectAsState()
+    var showAddProfileDialog by remember { mutableStateOf(false) }
 
     // Load saved Just Lift defaults on screen init
     LaunchedEffect(Unit) {
@@ -104,10 +119,7 @@ fun JustLiftScreen(
                 eccentricLoad = defaults.getEccentricLoad()
                 echoLevel = defaults.getEchoLevel()
 
-                // Restore stall detection setting
-                stallDetectionEnabled = defaults.stallDetectionEnabled
-
-                Logger.d("Loaded Just Lift defaults: modeId=${defaults.workoutModeId}, weight=${defaults.weightPerCableKg}kg, progression=${defaults.weightChangePerRep}, stallDetection=$stallDetectionEnabled")
+                Logger.d("Loaded Just Lift defaults: modeId=${defaults.workoutModeId}, weight=${defaults.weightPerCableKg}kg, progression=${defaults.weightChangePerRep}")
             }
             defaultsLoaded = true
         }
@@ -155,7 +167,7 @@ fun JustLiftScreen(
     }
 
     // Update parameters whenever user changes them
-    LaunchedEffect(selectedMode, weightPerCable, weightChangePerRep, stallDetectionEnabled) {
+    LaunchedEffect(selectedMode, weightPerCable, weightChangePerRep, userPreferences.stallDetectionEnabled) {
         val weightChangeKg = if (weightUnit == WeightUnit.LB) {
             weightChangePerRep / 2.20462f
         } else {
@@ -168,7 +180,7 @@ fun JustLiftScreen(
             progressionRegressionKg = weightChangeKg,
             isJustLift = true,
             useAutoStart = true, // Enable auto-start for Just Lift
-            stallDetectionEnabled = stallDetectionEnabled
+            stallDetectionEnabled = userPreferences.stallDetectionEnabled
         )
         viewModel.updateWorkoutParameters(updatedParameters)
     }
@@ -178,7 +190,18 @@ fun JustLiftScreen(
         viewModel.updateTopBarTitle("Just Lift")
     }
 
-    Scaffold { padding ->
+    Scaffold(
+        floatingActionButton = {
+            ProfileSpeedDial(
+                profiles = profiles,
+                activeProfile = activeProfile,
+                onProfileSelected = { profile ->
+                    scope.launch { profileRepository.setActiveProfile(profile.id) }
+                },
+                onAddProfile = { showAddProfileDialog = true }
+            )
+        }
+    ) { padding ->
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -257,40 +280,6 @@ fun JustLiftScreen(
                     }
                 }
 
-                // Stall Detection Toggle Card
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
-                    ),
-                    shape = RoundedCornerShape(16.dp)
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = Spacing.medium, vertical = Spacing.small),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                "Stall Detection",
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-                            Text(
-                                "Auto-stop set when movement pauses for 5 seconds",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                        Switch(
-                            checked = stallDetectionEnabled,
-                            onCheckedChange = { stallDetectionEnabled = it }
-                        )
-                    }
-                }
 
                 // Mode-specific options - OLD SCHOOL & PUMP
                 val isOldSchoolOrPump = selectedMode is WorkoutMode.OldSchool || selectedMode is WorkoutMode.Pump
@@ -389,39 +378,44 @@ fun JustLiftScreen(
                             verticalArrangement = Arrangement.SpaceEvenly
                         ) {
                             Text(
-                                "Eccentric Load: ${eccentricLoad.percentage}%",
+                                "Eccentric Load",
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.onSurface
                             )
 
-                            val eccentricLoadValues = listOf(
-                                EccentricLoad.LOAD_0,
-                                EccentricLoad.LOAD_50,
-                                EccentricLoad.LOAD_75,
-                                EccentricLoad.LOAD_100,
-                                EccentricLoad.LOAD_125,
-                                EccentricLoad.LOAD_150
-                            )
-                            val currentIndex = eccentricLoadValues.indexOf(eccentricLoad).coerceAtLeast(0)
+                            var expanded by remember { mutableStateOf(false) }
 
-                            Column {
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween
-                                ) {
-                                    Text("0%", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                    Text("150%", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                }
-                                ExpressiveSlider(
-                                    value = currentIndex.toFloat(),
-                                    onValueChange = { value ->
-                                        eccentricLoad = eccentricLoadValues[value.toInt().coerceIn(0, eccentricLoadValues.lastIndex)]
-                                    },
-                                    valueRange = 0f..(eccentricLoadValues.lastIndex).toFloat(),
-                                    steps = eccentricLoadValues.size - 2,
-                                    modifier = Modifier.fillMaxWidth()
+                            ExposedDropdownMenuBox(
+                                expanded = expanded,
+                                onExpandedChange = { expanded = it }
+                            ) {
+                                OutlinedTextField(
+                                    value = eccentricLoad.displayName,
+                                    onValueChange = {},
+                                    readOnly = true,
+                                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
+                                    modifier = Modifier
+                                        .menuAnchor()
+                                        .fillMaxWidth(),
+                                    colors = ExposedDropdownMenuDefaults.outlinedTextFieldColors()
                                 )
+
+                                ExposedDropdownMenu(
+                                    expanded = expanded,
+                                    onDismissRequest = { expanded = false }
+                                ) {
+                                    EccentricLoad.entries.forEach { load ->
+                                        DropdownMenuItem(
+                                            text = { Text(load.displayName) },
+                                            onClick = {
+                                                eccentricLoad = load
+                                                expanded = false
+                                            },
+                                            contentPadding = ExposedDropdownMenuDefaults.ItemContentPadding
+                                        )
+                                    }
+                                }
                             }
 
                             Text(
@@ -495,6 +489,15 @@ fun JustLiftScreen(
                     onDismiss = { viewModel.clearConnectionError() }
                 )
             }
+        // Add Profile Dialog
+        if (showAddProfileDialog) {
+            AddProfileDialog(
+                profiles = profiles,
+                profileRepository = profileRepository,
+                scope = scope,
+                onDismiss = { showAddProfileDialog = false }
+            )
+        }
         }
     }
 }

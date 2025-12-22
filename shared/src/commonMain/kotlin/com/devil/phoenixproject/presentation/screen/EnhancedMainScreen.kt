@@ -39,6 +39,11 @@ import com.devil.phoenixproject.presentation.navigation.NavGraph
 import com.devil.phoenixproject.presentation.navigation.NavigationRoutes
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
 import com.devil.phoenixproject.ui.theme.ThemeMode
+import com.devil.phoenixproject.data.repository.UserProfileRepository
+import com.devil.phoenixproject.presentation.components.AddProfileDialog
+import com.devil.phoenixproject.presentation.components.ProfileSpeedDial
+import kotlinx.coroutines.launch
+import org.koin.compose.koinInject
 
 /**
  * Enhanced main screen with dynamic top bar and bottom navigation.
@@ -61,6 +66,19 @@ fun EnhancedMainScreen(
     val topBarTitle by viewModel.topBarTitle.collectAsState()
     val topBarActions by viewModel.topBarActions.collectAsState()
     val topBarBackAction by viewModel.topBarBackAction.collectAsState()
+
+    // Profile management
+    val scope = rememberCoroutineScope()
+    val profileRepository: UserProfileRepository = koinInject()
+    val profiles by profileRepository.allProfiles.collectAsState()
+    val activeProfile by profileRepository.activeProfile.collectAsState()
+    var showAddProfileDialog by remember { mutableStateOf(false) }
+
+    // Ensure default profile exists
+    LaunchedEffect(Unit) {
+        profileRepository.ensureDefaultProfile()
+    }
+
 
     // Determine if we're in dark mode for TopAppBar color
     val isDarkMode = when (themeMode) {
@@ -110,8 +128,25 @@ fun EnhancedMainScreen(
         currentRoute != NavigationRoutes.Settings.route
     }
 
+    // Only show ProfileSpeedDial on Home screen (JustLift has its own)
+    val showProfileSpeedDial = remember(currentRoute) {
+        currentRoute == NavigationRoutes.Home.route
+    }
+
     Scaffold(
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
+        floatingActionButton = {
+            if (showProfileSpeedDial) {
+                ProfileSpeedDial(
+                    profiles = profiles,
+                    activeProfile = activeProfile,
+                    onProfileSelected = { profile ->
+                        scope.launch { profileRepository.setActiveProfile(profile.id) }
+                    },
+                    onAddProfile = { showAddProfileDialog = true }
+                )
+            }
+        },
         topBar = {
             if (shouldShowTopBar) {
                 TopAppBar(
@@ -313,6 +348,16 @@ fun EnhancedMainScreen(
             onDismiss = {
                 viewModel.dismissConnectionLostAlert()
             }
+        )
+    }
+
+    // Add Profile Dialog
+    if (showAddProfileDialog) {
+        AddProfileDialog(
+            profiles = profiles,
+            profileRepository = profileRepository,
+            scope = scope,
+            onDismiss = { showAddProfileDialog = false }
         )
     }
 }
