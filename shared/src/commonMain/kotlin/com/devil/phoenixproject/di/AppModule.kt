@@ -33,6 +33,7 @@ val commonModule = module {
     single<WorkoutRepository> { SqlDelightWorkoutRepository(get(), get()) }
     single<PersonalRecordRepository> { SqlDelightPersonalRecordRepository(get()) }
     single<GamificationRepository> { SqlDelightGamificationRepository(get()) }
+    single<UserProfileRepository> { SqlDelightUserProfileRepository(get()) }
 
     // Training Cycles Repositories
     single<TrainingCycleRepository> { SqlDelightTrainingCycleRepository(get()) }
