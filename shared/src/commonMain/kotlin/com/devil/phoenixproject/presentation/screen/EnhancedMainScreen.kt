@@ -41,7 +41,7 @@ import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
 import com.devil.phoenixproject.ui.theme.ThemeMode
 import com.devil.phoenixproject.data.repository.UserProfileRepository
 import com.devil.phoenixproject.presentation.components.AddProfileDialog
-import com.devil.phoenixproject.presentation.components.ProfileSpeedDial
+import com.devil.phoenixproject.presentation.components.ProfileSidePanel
 import kotlinx.coroutines.launch
 import org.koin.compose.koinInject
 
@@ -128,25 +128,8 @@ fun EnhancedMainScreen(
         currentRoute != NavigationRoutes.Settings.route
     }
 
-    // Only show ProfileSpeedDial on Home screen (JustLift has its own)
-    val showProfileSpeedDial = remember(currentRoute) {
-        currentRoute == NavigationRoutes.Home.route
-    }
-
     Scaffold(
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
-        floatingActionButton = {
-            if (showProfileSpeedDial) {
-                ProfileSpeedDial(
-                    profiles = profiles,
-                    activeProfile = activeProfile,
-                    onProfileSelected = { profile ->
-                        scope.launch { profileRepository.setActiveProfile(profile.id) }
-                    },
-                    onAddProfile = { showAddProfileDialog = true }
-                )
-            }
-        },
         topBar = {
             if (shouldShowTopBar) {
                 TopAppBar(
@@ -324,15 +307,28 @@ fun EnhancedMainScreen(
             }
         }
     ) { padding ->
-        // Use proper padding to account for TopAppBar and system bars
-        NavGraph(
-            navController = navController,
-            viewModel = viewModel,
-            exerciseRepository = exerciseRepository,
-            themeMode = themeMode,
-            onThemeModeChange = onThemeModeChange,
-            modifier = Modifier.padding(padding)
-        )
+        Box(modifier = Modifier.fillMaxSize()) {
+            // Use proper padding to account for TopAppBar and system bars
+            NavGraph(
+                navController = navController,
+                viewModel = viewModel,
+                exerciseRepository = exerciseRepository,
+                themeMode = themeMode,
+                onThemeModeChange = onThemeModeChange,
+                modifier = Modifier.padding(padding)
+            )
+
+            // Profile side panel (only on Home screen)
+            if (currentRoute == NavigationRoutes.Home.route) {
+                ProfileSidePanel(
+                    profiles = profiles,
+                    activeProfile = activeProfile,
+                    profileRepository = profileRepository,
+                    scope = scope,
+                    onAddProfile = { showAddProfileDialog = true }
+                )
+            }
+        }
     }
 
     // Show connection lost alert during workout (Issue #43)
