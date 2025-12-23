@@ -214,6 +214,15 @@ class KableBleRepository : BleRepository {
     )
     override val deloadOccurredEvents: Flow<Unit> = _deloadOccurredEvents.asSharedFlow()
 
+    // ROM violation events (Task 5)
+    enum class RomViolationType { OUTSIDE_HIGH, OUTSIDE_LOW }
+    private val _romViolationEvents = MutableSharedFlow<RomViolationType>(
+        replay = 0,
+        extraBufferCapacity = 8,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST
+    )
+    val romViolationEvents: Flow<RomViolationType> = _romViolationEvents.asSharedFlow()
+
     // Reconnection request flow (for Android BLE bug workaround)
     private val _reconnectionRequested = MutableSharedFlow<ReconnectionRequest>(
         replay = 0,
@@ -260,6 +269,9 @@ class KableBleRepository : BleRepository {
     @Volatile private var smoothedVelocityA = 0.0
     @Volatile private var smoothedVelocityB = 0.0
 
+    // EMA velocity initialization flag (Task 10)
+    private var isFirstVelocitySample = true
+
     // Handle detection state tracking
     private var minPositionSeen = Double.MAX_VALUE
     private var maxPositionSeen = Double.MIN_VALUE
@@ -268,6 +280,10 @@ class KableBleRepository : BleRepository {
     // These prevent false triggers from momentary position spikes
     private var forceAboveGrabThresholdStart: Long? = null
     private var forceBelowReleaseThresholdStart: Long? = null
+
+    // Handle state hysteresis timers (Task 14)
+    private var pendingGrabbedStartTime: Long? = null
+    private var pendingReleasedStartTime: Long? = null
 
     // Monitor polling job (for explicit control)
     private var monitorPollingJob: kotlinx.coroutines.Job? = null

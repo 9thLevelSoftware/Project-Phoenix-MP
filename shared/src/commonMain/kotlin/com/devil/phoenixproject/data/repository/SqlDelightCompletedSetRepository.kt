@@ -131,7 +131,7 @@ class SqlDelightCompletedSetRepository(
         }
     }
 
-    override suspend fun deletePlannedSetsForExercise(routineExerciseId: Long) {
+    override suspend fun deletePlannedSetsForExercise(routineExerciseId: String) {
         withContext(Dispatchers.IO) {
             queries.deletePlannedSetsByRoutineExercise(routine_exercise_id = routineExerciseId)
         }
