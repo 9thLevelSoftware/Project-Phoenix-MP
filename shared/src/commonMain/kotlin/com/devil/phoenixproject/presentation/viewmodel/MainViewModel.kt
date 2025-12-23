@@ -2655,6 +2655,17 @@ class MainViewModel constructor(
             }
         }
     }
+
+    override fun onCleared() {
+        super.onCleared()
+        connectionJob?.cancel()
+        monitorDataCollectionJob?.cancel()
+        autoStartJob?.cancel()
+        restTimerJob?.cancel()
+        bodyweightTimerJob?.cancel()
+        repEventsCollectionJob?.cancel()
+        log.i { "MainViewModel cleared, all jobs cancelled" }
+    }
 }
 
 /**

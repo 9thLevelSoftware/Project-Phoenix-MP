@@ -6,7 +6,6 @@ import com.devil.phoenixproject.domain.model.EchoLevel
 import com.devil.phoenixproject.domain.model.RoutineExercise
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.domain.model.WorkoutMode
-// TODO: Replace Hilt with Koin for dependency injection
 // import dagger.hilt.android.lifecycle.HiltViewModel
 // import javax.inject.Inject
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -330,9 +329,8 @@ class ExerciseConfigViewModel constructor() : ViewModel() {
         super.onCleared()
     }
 
-    // TODO: Implement expect/actual pattern for UUID generation
     private fun generateUUID(): String {
-        // Placeholder - needs platform-specific implementation
+        // Fallback UUID generation using timestamp and random number
         return "uuid-${KmpUtils.currentTimeMillis()}-${(0..999).random()}"
     }
 

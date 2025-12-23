@@ -23,12 +23,14 @@ enum class PRType {
 data class PersonalRecord(
     val id: Long = 0,
     val exerciseId: String,
+    val exerciseName: String,
     val weightPerCableKg: Float,
     val reps: Int,
+    val oneRepMax: Float,
     val timestamp: Long,
     val workoutMode: String,
     val prType: PRType = PRType.MAX_WEIGHT,
-    val volume: Float = weightPerCableKg * reps
+    val volume: Float
 )
 
 /**

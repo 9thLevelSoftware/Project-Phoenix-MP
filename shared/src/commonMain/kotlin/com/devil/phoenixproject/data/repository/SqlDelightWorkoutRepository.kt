@@ -152,7 +152,7 @@ class SqlDelightWorkoutRepository(
                     CableConfiguration.DOUBLE
                 }
 
-                val eccentricLoad = EccentricLoad.values().getOrNull(row.eccentricLoad.toInt() / 25) ?: EccentricLoad.LOAD_100
+                val eccentricLoad = mapEccentricLoadFromDb(row.eccentricLoad)
                 val echoLevel = EchoLevel.values().getOrNull(row.echoLevel.toInt()) ?: EchoLevel.HARDER
 
                 val workoutType = parseWorkoutType(row.mode, eccentricLoad, echoLevel)
@@ -191,6 +191,24 @@ class SqlDelightWorkoutRepository(
             lastUsed = lastUsed,
             useCount = useCount
         )
+    }
+
+    private fun mapEccentricLoadFromDb(dbValue: Long): EccentricLoad {
+        return when (dbValue.toInt()) {
+            0 -> EccentricLoad.LOAD_0
+            50 -> EccentricLoad.LOAD_50
+            75 -> EccentricLoad.LOAD_75
+            100 -> EccentricLoad.LOAD_100
+            110 -> EccentricLoad.LOAD_110
+            120 -> EccentricLoad.LOAD_120
+            130 -> EccentricLoad.LOAD_130
+            140 -> EccentricLoad.LOAD_140
+            150 -> EccentricLoad.LOAD_150
+            else -> {
+                Logger.w { "Unknown eccentric load value: $dbValue, defaulting to 100%" }
+                EccentricLoad.LOAD_100
+            }
+        }
     }
 
     private fun parseWorkoutType(modeStr: String, eccentricLoad: EccentricLoad = EccentricLoad.LOAD_100, echoLevel: EchoLevel = EchoLevel.HARDER): WorkoutType {

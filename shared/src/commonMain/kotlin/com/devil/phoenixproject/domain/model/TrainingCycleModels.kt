@@ -144,7 +144,7 @@ data class CycleProgress(
  */
 data class PlannedSet(
     val id: String,
-    val routineExerciseId: Long,
+    val routineExerciseId: String,
     val setNumber: Int,
     val setType: SetType,
     val targetReps: Int?,
@@ -155,7 +155,7 @@ data class PlannedSet(
     companion object {
         fun standard(
             id: String = generateUUID(),
-            routineExerciseId: Long,
+            routineExerciseId: String,
             setNumber: Int,
             targetReps: Int,
             targetWeightKg: Float,
@@ -174,7 +174,7 @@ data class PlannedSet(
 
         fun amrap(
             id: String = generateUUID(),
-            routineExerciseId: Long,
+            routineExerciseId: String,
             setNumber: Int,
             targetWeightKg: Float,
             targetRpe: Int? = null,

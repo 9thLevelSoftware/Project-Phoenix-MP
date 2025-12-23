@@ -696,7 +696,7 @@ CREATE TABLE CycleProgress (
 -- Planned Sets (pre-defined sets for routine exercises)
 CREATE TABLE PlannedSet (
     id TEXT PRIMARY KEY NOT NULL,
-    routine_exercise_id INTEGER NOT NULL,
+    routine_exercise_id TEXT NOT NULL,
     set_number INTEGER NOT NULL,
     set_type TEXT NOT NULL DEFAULT 'STANDARD',
     target_reps INTEGER,

@@ -17,7 +17,6 @@ class SqlDelightPersonalRecordRepository(
     private val queries = db.vitruvianDatabaseQueries
 
     // SQLDelight mapper - parameters must match query columns even if not all are used
-    @Suppress("UNUSED_PARAMETER")
     private fun mapToPR(
         id: Long,
         exerciseId: String,
@@ -33,10 +32,17 @@ class SqlDelightPersonalRecordRepository(
         return PersonalRecord(
             id = id,
             exerciseId = exerciseId,
+            exerciseName = exerciseName,
             weightPerCableKg = weight.toFloat(),
             reps = reps.toInt(),
+            oneRepMax = oneRepMax.toFloat(),
             timestamp = achievedAt,
-            workoutMode = workoutMode
+            workoutMode = workoutMode,
+            prType = when (prType) {
+                "MAX_VOLUME" -> PRType.MAX_VOLUME
+                else -> PRType.MAX_WEIGHT
+            },
+            volume = volume.toFloat()
         )
     }
 
