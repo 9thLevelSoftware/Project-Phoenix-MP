@@ -552,6 +552,11 @@ class KableBleRepository : BleRepository {
             device.name,
             device.address
         )
+
+        // Clean up any existing connection first (matches parent repo)
+        // Prevents "dangling GATT connections" on Android 16/Pixel 7
+        cleanupExistingConnection()
+
         _connectionState.value = ConnectionState.Connecting
 
         val advertisement = discoveredAdvertisements[device.address]
