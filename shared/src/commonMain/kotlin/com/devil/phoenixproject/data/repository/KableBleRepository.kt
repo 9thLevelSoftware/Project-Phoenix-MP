@@ -1599,6 +1599,44 @@ class KableBleRepository : BleRepository {
         log.d { "STOP_DEBUG: [$afterCancel] Jobs cancelled (took ${afterCancel - timestamp}ms)" }
     }
 
+    /**
+     * Clean up any existing connection before creating a new one.
+     * Matches parent repo behavior to prevent "dangling GATT connections"
+     * which cause issues on Android 16/Pixel 7.
+     *
+     * This is idempotent - safe to call even if no connection exists.
+     */
+    private suspend fun cleanupExistingConnection() {
+        val existingPeripheral = peripheral ?: return
+
+        log.d { "Cleaning up existing connection before new connection attempt" }
+        logRepo.info(
+            LogEventType.DISCONNECT,
+            "Cleaning up existing connection (pre-connect)",
+            connectedDeviceName,
+            connectedDeviceAddress
+        )
+
+        // Cancel all polling jobs (matches disconnect() behavior)
+        heartbeatJob?.cancel()
+        heartbeatJob = null
+        monitorPollingJob?.cancel()
+        monitorPollingJob = null
+        diagnosticPollingJob?.cancel()
+        diagnosticPollingJob = null
+
+        // Disconnect and release the peripheral
+        try {
+            existingPeripheral.disconnect()
+        } catch (e: Exception) {
+            log.w { "Cleanup disconnect error (non-fatal): ${e.message}" }
+        }
+
+        peripheral = null
+        // Note: Don't update _connectionState here - we're about to connect
+        // and the Connecting state will be set by the caller
+    }
+
     private fun processIncomingData(data: ByteArray) {
         if (data.isEmpty()) return
 
