@@ -500,6 +500,9 @@ class KableBleRepository : BleRepository {
         log.i { "scanAndConnect: Starting scan and auto-connect (timeout: ${timeoutMs}ms)" }
         logRepo.info(LogEventType.SCAN_START, "Scan and connect started")
 
+        // Ensure clean state before scan+connect cycle
+        cleanupExistingConnection()
+
         _connectionState.value = ConnectionState.Scanning
         _scannedDevices.value = emptyList()
         discoveredAdvertisements.clear()
