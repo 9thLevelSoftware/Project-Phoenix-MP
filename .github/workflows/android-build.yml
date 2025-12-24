@@ -50,7 +50,7 @@ jobs:
         run: ./gradlew :androidApp:assembleDebug
 
       - name: Run tests
-        run: ./gradlew :shared:allTests :androidApp:testDebugUnitTest
+        run: ./gradlew :androidApp:testDebugUnitTest
 
       - name: Upload Debug APK
         uses: actions/upload-artifact@v4

@@ -5,13 +5,19 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Project Phoenix</title>
     <style>
+        @import url("https://fonts.googleapis.com/css2?family=Fraunces:wght@600;700&family=IBM+Plex+Mono:wght@400;500&family=Space+Grotesk:wght@400;500;600&display=swap");
+
         :root {
-            --bg-color: #0f0f0f;
-            --card-bg: #1a1a1a;
-            --text-primary: #ffffff;
-            --text-secondary: #a0a0a0;
-            --accent: #ff6b35;
-            --border: #2a2a2a;
+            --bg: #0b1118;
+            --panel: #151f2c;
+            --panel-alt: #101826;
+            --text: #f4f7fb;
+            --muted: #a6b3c3;
+            --accent: #ff7a3d;
+            --accent-2: #39d2a4;
+            --accent-3: #f2c14e;
+            --border: rgba(255, 255, 255, 0.08);
+            --shadow: 0 20px 40px rgba(0, 0, 0, 0.35);
         }
 
         * {
@@ -21,110 +27,536 @@
         }
 
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
-            background-color: var(--bg-color);
-            color: var(--text-primary);
-            line-height: 1.6;
+            font-family: "Space Grotesk", "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+            color: var(--text);
+            background-color: var(--bg);
             min-height: 100vh;
+        }
+
+        body::before {
+            content: "";
+            position: fixed;
+            inset: 0;
+            background:
+                radial-gradient(700px circle at 12% 10%, rgba(255, 122, 61, 0.25), transparent 60%),
+                radial-gradient(600px circle at 85% 16%, rgba(57, 210, 164, 0.2), transparent 62%),
+                linear-gradient(120deg, #0a1017 0%, #0d1520 52%, #121c2a 100%);
+            z-index: -2;
+        }
+
+        body::after {
+            content: "";
+            position: fixed;
+            inset: 0;
+            background-image:
+                repeating-linear-gradient(135deg, rgba(255, 255, 255, 0.04) 0, rgba(255, 255, 255, 0.04) 1px, transparent 1px, transparent 8px),
+                repeating-linear-gradient(45deg, rgba(255, 255, 255, 0.02) 0, rgba(255, 255, 255, 0.02) 1px, transparent 1px, transparent 10px);
+            opacity: 0.5;
+            z-index: -1;
+            pointer-events: none;
+        }
+
+        a {
+            color: inherit;
+        }
+
+        .page {
+            max-width: 1100px;
+            margin: 0 auto;
+            padding: 64px 20px 80px;
             display: flex;
+            flex-direction: column;
+            gap: 48px;
+        }
+
+        .hero {
+            display: grid;
+            grid-template-columns: 1.2fr 0.8fr;
+            gap: 32px;
             align-items: center;
-            justify-content: center;
-            padding: 20px;
         }
 
-        .container {
-            max-width: 600px;
-            text-align: center;
-        }
-
-        .logo {
-            font-size: 4rem;
-            margin-bottom: 16px;
+        .eyebrow {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 14px;
+            border-radius: 999px;
+            border: 1px solid var(--border);
+            background: rgba(255, 255, 255, 0.03);
+            color: var(--muted);
+            font-size: 0.85rem;
+            text-transform: uppercase;
+            letter-spacing: 0.12em;
         }
 
         h1 {
-            color: var(--accent);
-            font-size: 2.5rem;
-            margin-bottom: 8px;
+            font-family: "Fraunces", "Times New Roman", serif;
+            font-size: clamp(2.6rem, 4vw, 3.8rem);
+            margin: 18px 0 12px;
         }
 
         .tagline {
-            color: var(--text-secondary);
             font-size: 1.1rem;
-            margin-bottom: 40px;
+            color: var(--muted);
+            max-width: 600px;
         }
 
-        .links {
+        .cta {
+            margin-top: 26px;
             display: flex;
-            flex-direction: column;
-            gap: 16px;
-            margin-bottom: 40px;
+            flex-wrap: wrap;
+            gap: 12px;
         }
 
-        a.button {
-            display: inline-block;
-            background-color: var(--card-bg);
-            color: var(--text-primary);
-            text-decoration: none;
-            padding: 16px 32px;
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            padding: 14px 20px;
             border-radius: 12px;
             border: 1px solid var(--border);
-            transition: all 0.2s ease;
+            text-decoration: none;
+            font-weight: 600;
+            transition: transform 0.2s ease, background 0.2s ease, border-color 0.2s ease, color 0.2s ease;
         }
 
-        a.button:hover {
-            background-color: var(--accent);
+        .btn.primary {
+            background: var(--accent);
             border-color: var(--accent);
+            color: #1b0f0a;
         }
 
-        a.button.primary {
-            background-color: var(--accent);
-            border-color: var(--accent);
+        .btn.secondary {
+            background: rgba(57, 210, 164, 0.12);
+            border-color: rgba(57, 210, 164, 0.5);
+            color: var(--text);
         }
 
-        a.button.primary:hover {
-            background-color: #ff8555;
-            border-color: #ff8555;
+        .btn.ghost {
+            background: transparent;
         }
 
-        .support {
-            color: var(--text-secondary);
+        .btn.small {
+            padding: 10px 14px;
             font-size: 0.9rem;
         }
 
-        .support a {
-            color: var(--accent);
-            text-decoration: none;
+        .btn:hover {
+            transform: translateY(-2px);
+            border-color: rgba(255, 255, 255, 0.3);
         }
 
-        .support a:hover {
+        .meta {
+            margin-top: 22px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 12px;
+            font-family: "IBM Plex Mono", "Courier New", monospace;
+            font-size: 0.85rem;
+            color: var(--muted);
+        }
+
+        .meta span {
+            padding: 4px 10px;
+            border-radius: 999px;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid var(--border);
+        }
+
+        .card {
+            background: var(--panel);
+            border: 1px solid var(--border);
+            border-radius: 20px;
+            padding: 24px;
+            box-shadow: var(--shadow);
+        }
+
+        .hero-card {
+            display: flex;
+            flex-direction: column;
+            gap: 18px;
+        }
+
+        .logo-wrap {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 12px;
+            background: rgba(255, 255, 255, 0.04);
+            border-radius: 16px;
+        }
+
+        .logo-wrap img {
+            width: 100%;
+            max-width: 220px;
+            height: auto;
+        }
+
+        h2, h3 {
+            font-family: "Fraunces", "Times New Roman", serif;
+            margin-bottom: 12px;
+        }
+
+        .list {
+            list-style: none;
+            display: grid;
+            gap: 10px;
+            color: var(--muted);
+            line-height: 1.5;
+        }
+
+        .list li {
+            display: flex;
+            gap: 10px;
+        }
+
+        .list li::before {
+            content: "-";
+            color: var(--accent-2);
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(12, 1fr);
+            gap: 24px;
+        }
+
+        .grid .card {
+            grid-column: span 4;
+        }
+
+        .span-7 {
+            grid-column: span 7;
+        }
+
+        .span-5 {
+            grid-column: span 5;
+        }
+
+        .span-6 {
+            grid-column: span 6;
+        }
+
+        .callout {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 24px;
+            background: linear-gradient(120deg, rgba(255, 122, 61, 0.25), rgba(57, 210, 164, 0.1));
+        }
+
+        .callout p {
+            color: var(--muted);
+        }
+
+        .table {
+            display: grid;
+            gap: 10px;
+            margin-top: 12px;
+        }
+
+        .row {
+            display: grid;
+            grid-template-columns: 1.2fr 0.6fr 1.4fr;
+            gap: 10px;
+            padding: 10px 12px;
+            border-radius: 12px;
+            background: var(--panel-alt);
+            border: 1px solid var(--border);
+            color: var(--muted);
+        }
+
+        .row.header {
+            background: transparent;
+            border: none;
+            padding: 0 4px;
+            color: var(--muted);
+            text-transform: uppercase;
+            letter-spacing: 0.12em;
+            font-size: 0.7rem;
+        }
+
+        .badge {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            padding: 2px 8px;
+            border-radius: 999px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            background: rgba(255, 255, 255, 0.08);
+            color: var(--text);
+        }
+
+        .badge.warning {
+            background: rgba(242, 193, 78, 0.18);
+            color: var(--accent-3);
+        }
+
+        .hardware {
+            display: grid;
+            gap: 16px;
+        }
+
+        .device {
+            padding: 14px;
+            border-radius: 14px;
+            border: 1px solid var(--border);
+            background: rgba(255, 255, 255, 0.02);
+        }
+
+        .device-name {
+            font-weight: 600;
+        }
+
+        .device-meta {
+            margin-top: 6px;
+            color: var(--muted);
+            font-size: 0.9rem;
+        }
+
+        .mono {
+            font-family: "IBM Plex Mono", "Courier New", monospace;
+            font-size: 0.9rem;
+        }
+
+        .link-list a {
+            text-decoration: none;
+            color: var(--accent-2);
+            font-weight: 600;
+        }
+
+        .link-list a:hover {
             text-decoration: underline;
         }
 
+        .legal {
+            border-left: 4px solid var(--accent);
+        }
+
         footer {
-            margin-top: 60px;
-            color: var(--text-secondary);
-            font-size: 0.85rem;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 12px;
+            justify-content: space-between;
+            color: var(--muted);
+            font-size: 0.9rem;
+        }
+
+        footer a {
+            color: var(--text);
+            text-decoration: none;
+        }
+
+        footer a:hover {
+            text-decoration: underline;
+        }
+
+        .reveal {
+            opacity: 0;
+            transform: translateY(16px);
+            animation: fadeUp 0.8s ease forwards;
+        }
+
+        .delay-1 { animation-delay: 0.1s; }
+        .delay-2 { animation-delay: 0.2s; }
+        .delay-3 { animation-delay: 0.3s; }
+        .delay-4 { animation-delay: 0.4s; }
+
+        @keyframes fadeUp {
+            from {
+                opacity: 0;
+                transform: translateY(16px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            .reveal {
+                animation: none;
+                opacity: 1;
+                transform: none;
+            }
+        }
+
+        @media (max-width: 980px) {
+            .hero {
+                grid-template-columns: 1fr;
+            }
+
+            .grid {
+                grid-template-columns: 1fr;
+            }
+
+            .grid .card,
+            .span-7,
+            .span-6,
+            .span-5 {
+                grid-column: auto;
+            }
+
+            .callout {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+
+            .row {
+                grid-template-columns: 1fr;
+            }
         }
     </style>
 </head>
 <body>
-    <div class="container">
-        <div class="logo">🔥</div>
-        <h1>Project Phoenix</h1>
-        <p class="tagline">Community companion app for Vitruvian Trainer</p>
+    <div class="page">
+        <header class="hero reveal">
+            <div>
+                <span class="eyebrow">Community rescue project</span>
+                <h1>Project Phoenix</h1>
+                <p class="tagline">
+                    A Kotlin Multiplatform companion app for controlling Vitruvian Trainer workout machines via Bluetooth Low Energy.
+                    Built to keep equipment functional after the company's bankruptcy and avoid e-waste.
+                </p>
+                <div class="cta">
+                    <a class="btn primary" href="https://ko-fi.com/vitruvianredux" target="_blank" rel="noopener noreferrer">Donate on Ko-fi</a>
+                    <a class="btn ghost" href="https://github.com/DasBluEyedDevil/Project-Phoenix-MP" target="_blank" rel="noopener noreferrer">View on GitHub</a>
+                </div>
+                <div class="meta">
+                    <span>Android beta</span>
+                    <span>iOS beta</span>
+                    <span>MIT license</span>
+                </div>
+            </div>
+            <div class="card hero-card">
+                <div class="logo-wrap">
+                    <img src="vitphoe_logo.png" alt="Project Phoenix logo">
+                </div>
+                <h2>Quick facts</h2>
+                <ul class="list">
+                    <li>Local BLE control for Vitruvian Trainer machines.</li>
+                    <li>Compose Multiplatform UI with shared Kotlin logic.</li>
+                    <li>SQLDelight storage, Koin DI, coroutines and flow.</li>
+                    <li>Open source community effort under MIT license.</li>
+                </ul>
+            </div>
+        </header>
 
-        <div class="links">
-            <a href="privacy-policy.html" class="button">Privacy Policy</a>
-            <a href="https://github.com/DasBluEyedDevil/Project-Phoenix-MP" class="button">View on GitHub</a>
-        </div>
+        <section class="grid reveal delay-1">
+            <div class="card">
+                <h3>Get the app</h3>
+                <p class="tagline">Download the latest release and follow the install guides.</p>
+                <div class="cta">
+                    <a class="btn small primary" href="https://github.com/DasBluEyedDevil/Project-Phoenix-MP/releases" target="_blank" rel="noopener noreferrer">Releases</a>
+                    <a class="btn small ghost" href="https://github.com/DasBluEyedDevil/Project-Phoenix-MP/blob/main/ANDROID_INSTALL.md" target="_blank" rel="noopener noreferrer">Android install</a>
+                    <a class="btn small ghost" href="https://github.com/DasBluEyedDevil/Project-Phoenix-MP/blob/main/iOS_INSTALL.md" target="_blank" rel="noopener noreferrer">iOS install</a>
+                </div>
+            </div>
+            <div class="card">
+                <h3>Planned features</h3>
+                <ul class="list">
+                    <li>BLE connectivity, workout modes, and real-time monitoring.</li>
+                    <li>Rep counting with visual feedback and auto-stop logic.</li>
+                    <li>Exercise library (200+ exercises), custom routines, program builder.</li>
+                    <li>Workout history, PR tracking, and analytics dashboards.</li>
+                </ul>
+            </div>
+            <div class="card">
+                <h3>Tech stack</h3>
+                <ul class="list mono">
+                    <li>Kotlin 2.0+ with Compose Multiplatform UI.</li>
+                    <li>MVVM + Clean Architecture with Koin.</li>
+                    <li>SQLDelight, Multiplatform Settings, coroutines.</li>
+                    <li>Platform BLE APIs and CoreBluetooth support.</li>
+                </ul>
+            </div>
+        </section>
 
-        <p class="support">
-            Like this project? <a href="https://ko-fi.com/vitruvianredux">Support on Ko-fi</a>
-        </p>
+        <section class="grid reveal delay-2">
+            <div class="card span-7">
+                <h3>Platform status</h3>
+                <div class="table">
+                    <div class="row header">
+                        <div>Platform</div>
+                        <div>Status</div>
+                        <div>Notes</div>
+                    </div>
+                    <div class="row">
+                        <div>Android</div>
+                        <div><span class="badge warning">Beta</span></div>
+                        <div>BLE support via native APIs.</div>
+                    </div>
+                    <div class="row">
+                        <div>iOS</div>
+                        <div><span class="badge warning">Beta</span></div>
+                        <div>BLE support via CoreBluetooth.</div>
+                    </div>
+                </div>
+            </div>
+            <div class="card span-5">
+                <h3>Hardware compatibility</h3>
+                <div class="hardware">
+                    <div class="device">
+                        <div class="device-name">Vitruvian V-Form Trainer (Euclid / VIT-200)</div>
+                        <div class="device-meta">Status: In development</div>
+                        <div class="device-meta">Device name: Vee_*</div>
+                        <div class="device-meta">Max resistance: 200 kg (440 lbs)</div>
+                    </div>
+                    <div class="device">
+                        <div class="device-name">Vitruvian Trainer+</div>
+                        <div class="device-meta">Status: In development</div>
+                        <div class="device-meta">Max resistance: 220 kg (485 lbs)</div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="card callout reveal delay-3">
+            <div>
+                <h2>Support the project</h2>
+                <p>Every donation keeps the machines running and the code flowing.</p>
+                <p class="tagline">Alternate support option: <a href="https://buymeacoffee.com/vitruvianredux" target="_blank" rel="noopener noreferrer">Buy Me a Coffee</a></p>
+            </div>
+            <div class="cta">
+                <a class="btn primary" href="https://ko-fi.com/vitruvianredux" target="_blank" rel="noopener noreferrer">Donate on Ko-fi</a>
+            </div>
+        </section>
+
+        <section class="grid reveal delay-4">
+            <div class="card span-6">
+                <h3>Get involved</h3>
+                <ul class="list link-list">
+                    <li><a href="https://github.com/DasBluEyedDevil/Project-Phoenix-MP/issues" target="_blank" rel="noopener noreferrer">GitHub Issues</a> for bug reports and feature requests.</li>
+                    <li><a href="https://github.com/DasBluEyedDevil/Project-Phoenix-MP/discussions" target="_blank" rel="noopener noreferrer">GitHub Discussions</a> for community planning.</li>
+                    <li><a href="https://github.com/DasBluEyedDevil/Project-Phoenix-MP" target="_blank" rel="noopener noreferrer">Repository</a> for source code and contribution guides.</li>
+                </ul>
+            </div>
+            <div class="card span-6">
+                <h3>Project layout</h3>
+                <ul class="list mono">
+                    <li>shared/ - common Kotlin Multiplatform code.</li>
+                    <li>androidApp/ - Android application.</li>
+                    <li>iosApp/ - iOS application (Xcode project).</li>
+                    <li>gradle/ - Gradle wrapper and version catalog.</li>
+                </ul>
+            </div>
+        </section>
+
+        <section class="card legal reveal delay-4">
+            <h3>Legal notice</h3>
+            <p class="tagline">
+                Project Phoenix is an independent, community-developed application and is not affiliated with,
+                endorsed by, sponsored by, or supported by Vitruvian. Vitruvian and related marks are trademarks
+                of their respective owners.
+            </p>
+        </section>
 
         <footer>
-            <p>A community rescue project to keep Vitruvian machines functional.</p>
+            <span>Community rescue project to keep Vitruvian machines functional.</span>
+            <span><a href="privacy-policy.html">Privacy Policy</a></span>
         </footer>
     </div>
 </body>

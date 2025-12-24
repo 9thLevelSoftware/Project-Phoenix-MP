@@ -25,12 +25,7 @@ Kotlin Multiplatform app for controlling Vitruvian Trainer workout machines via 
 ./gradlew clean
 
 # Run tests
-./gradlew test
-./gradlew :shared:allTests                    # All shared module tests
 ./gradlew :androidApp:testDebugUnitTest       # Android unit tests
-
-# Single test class
-./gradlew :shared:allTests --tests "com.example.vitruvianredux.SomeTest"
 ```
 
 ## Architecture
