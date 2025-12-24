@@ -3,6 +3,8 @@ name: iOS Build
 on:
   push:
     branches: [main]
+    tags:
+      - 'v*'  # Trigger on version tags for releases
     paths:
       - 'shared/**'
       - 'iosApp/**'
@@ -13,6 +15,9 @@ on:
       - 'shared/**'
       - 'iosApp/**'
   workflow_dispatch:  # Manual trigger
+
+permissions:
+  contents: write  # Required for creating releases
 
 env:
   BUNDLE_ID: com.devil.phoenixproject.projectphoenix
@@ -138,8 +143,16 @@ jobs:
           path: ${{ runner.temp }}/export/*.ipa
           retention-days: 14
 
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ runner.temp }}/export/*.ipa
+          fail_on_unmatched_files: false
+          generate_release_notes: true
+
       - name: Upload to TestFlight
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
         env:
           APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APPSTORE_API_KEY_ID }}
           APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APPSTORE_ISSUER_ID }}
