@@ -16,7 +16,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
 
 class SqlDelightTrainingCycleRepository(
-    db: VitruvianDatabase
+    private val db: VitruvianDatabase
 ) : TrainingCycleRepository {
 
     private val queries = db.vitruvianDatabaseQueries
@@ -148,34 +148,41 @@ class SqlDelightTrainingCycleRepository(
 
     override suspend fun saveCycle(cycle: TrainingCycle) {
         withContext(Dispatchers.IO) {
-            // Insert the training cycle
-            queries.insertTrainingCycle(
-                id = cycle.id,
-                name = cycle.name,
-                description = cycle.description,
-                created_at = cycle.createdAt,
-                is_active = if (cycle.isActive) 1L else 0L
-            )
-
-            // Insert all days
-            cycle.days.forEach { day ->
-                queries.insertCycleDay(
-                    id = day.id,
-                    cycle_id = cycle.id,
-                    day_number = day.dayNumber.toLong(),
-                    name = day.name,
-                    routine_id = day.routineId,
-                    is_rest_day = if (day.isRestDay) 1L else 0L
+            db.transaction {
+                // Insert the training cycle
+                queries.insertTrainingCycle(
+                    id = cycle.id,
+                    name = cycle.name,
+                    description = cycle.description,
+                    created_at = cycle.createdAt,
+                    is_active = if (cycle.isActive) 1L else 0L
                 )
-            }
 
-            // If cycle is active, deactivate all others and initialize progress
-            if (cycle.isActive) {
-                queries.setActiveTrainingCycle(cycle.id)
-                // Check if progress exists, if not, initialize it
-                val existingProgress = getCycleProgress(cycle.id)
-                if (existingProgress == null) {
-                    initializeProgress(cycle.id)
+                // Insert all days
+                cycle.days.forEach { day ->
+                    queries.insertCycleDay(
+                        id = day.id,
+                        cycle_id = cycle.id,
+                        day_number = day.dayNumber.toLong(),
+                        name = day.name,
+                        routine_id = day.routineId,
+                        is_rest_day = if (day.isRestDay) 1L else 0L
+                    )
+                }
+
+                // If cycle is active, deactivate all others and initialize progress
+                if (cycle.isActive) {
+                    queries.setActiveTrainingCycle(cycle.id)
+                    // Initialize progress if it doesn't exist (uses INSERT OR IGNORE to prevent UNIQUE constraint violations)
+                    val now = currentTimeMillis()
+                    val progressId = generateUUID()
+                    queries.insertCycleProgressIfNotExists(
+                        id = progressId,
+                        cycle_id = cycle.id,
+                        current_day_number = 1L,
+                        last_completed_date = null,
+                        cycle_start_date = now
+                    )
                 }
             }
         }
@@ -183,45 +190,54 @@ class SqlDelightTrainingCycleRepository(
 
     override suspend fun updateCycle(cycle: TrainingCycle) {
         withContext(Dispatchers.IO) {
-            // Update the training cycle
-            queries.updateTrainingCycle(
-                name = cycle.name,
-                description = cycle.description,
-                is_active = if (cycle.isActive) 1L else 0L,
-                id = cycle.id
-            )
-
-            // Delete existing days and re-insert
-            queries.deleteCycleDaysByCycle(cycle.id)
-
-            // Insert all days
-            cycle.days.forEach { day ->
-                queries.insertCycleDay(
-                    id = day.id,
-                    cycle_id = cycle.id,
-                    day_number = day.dayNumber.toLong(),
-                    name = day.name,
-                    routine_id = day.routineId,
-                    is_rest_day = if (day.isRestDay) 1L else 0L
+            db.transaction {
+                // Update the training cycle
+                queries.updateTrainingCycle(
+                    name = cycle.name,
+                    description = cycle.description,
+                    is_active = if (cycle.isActive) 1L else 0L,
+                    id = cycle.id
                 )
-            }
 
-            // If cycle is active, deactivate all others
-            if (cycle.isActive) {
-                queries.setActiveTrainingCycle(cycle.id)
+                // Delete existing days and re-insert
+                queries.deleteCycleDaysByCycle(cycle.id)
+
+                // Insert all days
+                cycle.days.forEach { day ->
+                    queries.insertCycleDay(
+                        id = day.id,
+                        cycle_id = cycle.id,
+                        day_number = day.dayNumber.toLong(),
+                        name = day.name,
+                        routine_id = day.routineId,
+                        is_rest_day = if (day.isRestDay) 1L else 0L
+                    )
+                }
+
+                // If cycle is active, deactivate all others
+                if (cycle.isActive) {
+                    queries.setActiveTrainingCycle(cycle.id)
+                }
             }
         }
     }
 
     override suspend fun setActiveCycle(cycleId: String) {
         withContext(Dispatchers.IO) {
-            // Set this cycle as active and all others as inactive
-            queries.setActiveTrainingCycle(cycleId)
+            db.transaction {
+                // Set this cycle as active and all others as inactive
+                queries.setActiveTrainingCycle(cycleId)
 
-            // Initialize progress if it doesn't exist
-            val existingProgress = getCycleProgress(cycleId)
-            if (existingProgress == null) {
-                initializeProgress(cycleId)
+                // Initialize progress if it doesn't exist (uses INSERT OR IGNORE to prevent race conditions)
+                val now = currentTimeMillis()
+                val progressId = generateUUID()
+                queries.insertCycleProgressIfNotExists(
+                    id = progressId,
+                    cycle_id = cycleId,
+                    current_day_number = 1L,
+                    last_completed_date = null,
+                    cycle_start_date = now
+                )
             }
         }
     }

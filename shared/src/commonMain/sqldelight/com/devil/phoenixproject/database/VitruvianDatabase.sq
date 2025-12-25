@@ -796,6 +796,11 @@ insertCycleProgress:
 INSERT INTO CycleProgress (id, cycle_id, current_day_number, last_completed_date, cycle_start_date)
 VALUES (?, ?, ?, ?, ?);
 
+-- Insert cycle progress only if it doesn't already exist (prevents UNIQUE constraint violations)
+insertCycleProgressIfNotExists:
+INSERT OR IGNORE INTO CycleProgress (id, cycle_id, current_day_number, last_completed_date, cycle_start_date)
+VALUES (?, ?, ?, ?, ?);
+
 updateCycleProgress:
 UPDATE CycleProgress
 SET current_day_number = ?, last_completed_date = ?, cycle_start_date = ?

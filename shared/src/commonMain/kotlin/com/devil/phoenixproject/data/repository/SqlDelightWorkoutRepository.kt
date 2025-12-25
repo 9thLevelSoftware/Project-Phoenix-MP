@@ -26,7 +26,7 @@ import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
 class SqlDelightWorkoutRepository(
-    db: VitruvianDatabase,
+    private val db: VitruvianDatabase,
     private val exerciseRepository: ExerciseRepository
 ) : WorkoutRepository {
 
@@ -324,19 +324,21 @@ class SqlDelightWorkoutRepository(
             // Generate a UUID for the routine if not provided
             val routineId = routine.id.takeIf { it.isNotBlank() } ?: generateUUID()
 
-            // Insert the routine
-            queries.insertRoutine(
-                id = routineId,
-                name = routine.name,
-                description = "", // Default empty description
-                createdAt = routine.createdAt,
-                lastUsed = routine.lastUsed,
-                useCount = routine.useCount.toLong()
-            )
+            db.transaction {
+                // Insert the routine
+                queries.insertRoutine(
+                    id = routineId,
+                    name = routine.name,
+                    description = "", // Default empty description
+                    createdAt = routine.createdAt,
+                    lastUsed = routine.lastUsed,
+                    useCount = routine.useCount.toLong()
+                )
 
-            // Insert all exercises
-            routine.exercises.forEachIndexed { index, exercise ->
-                insertRoutineExercise(routineId, exercise, index)
+                // Insert all exercises
+                routine.exercises.forEachIndexed { index, exercise ->
+                    insertRoutineExercise(routineId, exercise, index)
+                }
             }
 
             Logger.d { "Saved routine '${routine.name}' with ${routine.exercises.size} exercises" }
@@ -379,19 +381,21 @@ class SqlDelightWorkoutRepository(
         withContext(Dispatchers.IO) {
             val routineId = routine.id.takeIf { it.isNotBlank() } ?: return@withContext
 
-            // Update the routine
-            queries.updateRoutineById(
-                name = routine.name,
-                description = "", // Keep description empty for now
-                id = routineId
-            )
+            db.transaction {
+                // Update the routine
+                queries.updateRoutineById(
+                    name = routine.name,
+                    description = "", // Keep description empty for now
+                    id = routineId
+                )
 
-            // Delete existing exercises and re-insert
-            queries.deleteRoutineExercises(routineId)
+                // Delete existing exercises and re-insert
+                queries.deleteRoutineExercises(routineId)
 
-            // Insert all exercises
-            routine.exercises.forEachIndexed { index, exercise ->
-                insertRoutineExercise(routineId, exercise, index)
+                // Insert all exercises
+                routine.exercises.forEachIndexed { index, exercise ->
+                    insertRoutineExercise(routineId, exercise, index)
+                }
             }
 
             Logger.d { "Updated routine '${routine.name}' with ${routine.exercises.size} exercises" }
