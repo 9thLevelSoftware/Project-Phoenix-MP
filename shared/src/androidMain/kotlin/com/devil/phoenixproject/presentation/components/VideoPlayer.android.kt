@@ -59,6 +59,9 @@ actual fun VideoPlayer(
                                 Logger.d("VideoPlayer") { "Video prepared, starting playback" }
                                 isLoading = false
                                 mp.isLooping = true
+                                // Mute the video to prevent audio focus theft from other apps (e.g., Spotify)
+                                // These are silent preview videos that play like GIFs
+                                mp.setVolume(0f, 0f)
                                 start()
                             }
 

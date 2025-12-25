@@ -213,6 +213,9 @@ private class LoopingPlayerView : UIView(frame = CGRectZero.readValue()) {
 
         val item = AVPlayerItem(uRL = url)
         val avPlayer = AVPlayer(playerItem = item)
+        // Mute the video to prevent audio focus theft from other apps (e.g., Spotify)
+        // These are silent preview videos that play like GIFs
+        avPlayer.volume = 0f
         player = avPlayer
 
         val layer = playerLayer ?: AVPlayerLayer().also { createdLayer ->
