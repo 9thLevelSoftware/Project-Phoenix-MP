@@ -52,11 +52,11 @@ kotlin {
                 implementation(compose.ui)
                 implementation(compose.components.resources)
 
-                // Lifecycle ViewModel for Compose
-                implementation("org.jetbrains.androidx.lifecycle:lifecycle-viewmodel-compose:2.8.4")
+                // Lifecycle ViewModel for Compose (must match Compose MP 1.10.0 requirements)
+                implementation("org.jetbrains.androidx.lifecycle:lifecycle-viewmodel-compose:2.10.0-alpha06")
 
-                // Navigation Compose (Multiplatform)
-                implementation("org.jetbrains.androidx.navigation:navigation-compose:2.8.0-alpha10")
+                // Navigation Compose (Multiplatform) - 2.9.1 required for Compose MP 1.10.0
+                implementation("org.jetbrains.androidx.navigation:navigation-compose:2.9.1")
 
                 // Kotlinx
                 implementation(libs.kotlinx.coroutines.core)
