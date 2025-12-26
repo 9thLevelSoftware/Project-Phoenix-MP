@@ -911,7 +911,7 @@ getExercisesWithOneRepMax:
 SELECT * FROM Exercise WHERE one_rep_max_kg IS NOT NULL;
 
 findExerciseByName:
-SELECT * FROM Exercise WHERE name = ? LIMIT 1;
+SELECT * FROM Exercise WHERE TRIM(name) = TRIM(?) LIMIT 1;
 
 -- ==================== USER PROFILES ====================
 -- User Profiles for multi-user support

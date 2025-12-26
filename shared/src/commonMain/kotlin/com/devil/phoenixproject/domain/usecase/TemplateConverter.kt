@@ -109,7 +109,10 @@ class TemplateConverter(
                             List(templateExercise.sets) { templateExercise.reps }
                         },
                         weightPerCableKg = 0f, // Will be set by user or auto-calculated from 1RM
-                        workoutType = WorkoutType.Program(templateExercise.suggestedMode),
+                        // For bodyweight exercises (null mode), default to OldSchool as placeholder
+                        // The UI should detect bodyweight via empty equipment and skip mode selection
+                        workoutType = templateExercise.suggestedMode?.let { WorkoutType.Program(it) }
+                            ?: WorkoutType.Program(ProgramMode.OldSchool),
                         isAMRAP = templateExercise.percentageSets?.any { it.isAmrap } ?: false
                     )
 

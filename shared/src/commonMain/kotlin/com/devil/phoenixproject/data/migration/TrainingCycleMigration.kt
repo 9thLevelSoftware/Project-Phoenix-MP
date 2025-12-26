@@ -29,12 +29,12 @@ object CycleTemplates {
         val fullBodyB = RoutineTemplate(
             name = "Full Body B",
             exercises = listOf(
-                TemplateExercise("Deadlift", 3, 5, ProgramMode.OldSchool),
+                TemplateExercise("Conventional Deadlift", 3, 5, ProgramMode.OldSchool),
                 TemplateExercise("Incline Bench Press", 3, 10, ProgramMode.OldSchool),
                 TemplateExercise("Bent Over Row - Reverse Grip", 3, 10, ProgramMode.OldSchool),
                 TemplateExercise("Lateral Raise", 3, 12, ProgramMode.TUT),
-                TemplateExercise("Tricep Extension", 3, 12, ProgramMode.TUT),
-                TemplateExercise("Plank", 3, null, ProgramMode.OldSchool)  // null reps = timed
+                TemplateExercise("Overhead Tricep Extension", 3, 12, ProgramMode.TUT),
+                TemplateExercise("Plank", 3, null, null)  // null reps = timed, null mode = bodyweight
             )
         )
         val fullBodyC = RoutineTemplate(
@@ -77,7 +77,7 @@ object CycleTemplates {
                 TemplateExercise("Incline Bench Press", 3, 10, ProgramMode.OldSchool),
                 TemplateExercise("Shoulder Press", 3, 10, ProgramMode.OldSchool),
                 TemplateExercise("Lateral Raise", 3, 12, ProgramMode.TUT),
-                TemplateExercise("Tricep Extension", 3, 12, ProgramMode.TUT)
+                TemplateExercise("Overhead Tricep Extension", 3, 12, ProgramMode.TUT)
             )
         )
         val pullA = RoutineTemplate(
@@ -95,8 +95,8 @@ object CycleTemplates {
             exercises = listOf(
                 TemplateExercise("Squat", 5, 5, ProgramMode.OldSchool),
                 TemplateExercise("Romanian Deadlift", 3, 10, ProgramMode.OldSchool),
-                TemplateExercise("Lunges", 3, 10, ProgramMode.OldSchool),
-                TemplateExercise("Leg Extension", 3, 12, ProgramMode.TUT),
+                TemplateExercise("Lunge", 3, 10, ProgramMode.OldSchool),
+                TemplateExercise("Lying Leg Extension", 3, 12, ProgramMode.TUT),
                 TemplateExercise("Calf Raise", 3, 15, ProgramMode.TUT)
             )
         )
@@ -107,7 +107,7 @@ object CycleTemplates {
                 TemplateExercise("Bench Press", 3, 10, ProgramMode.OldSchool),
                 TemplateExercise("Incline Bench Press", 3, 10, ProgramMode.OldSchool),
                 TemplateExercise("Lateral Raise", 3, 12, ProgramMode.TUT),
-                TemplateExercise("Tricep Extension", 3, 12, ProgramMode.TUT)
+                TemplateExercise("Overhead Tricep Extension", 3, 12, ProgramMode.TUT)
             )
         )
         val pullB = RoutineTemplate(
@@ -123,10 +123,10 @@ object CycleTemplates {
         val legsB = RoutineTemplate(
             name = "Legs B",
             exercises = listOf(
-                TemplateExercise("Deadlift", 5, 5, ProgramMode.OldSchool),
+                TemplateExercise("Conventional Deadlift", 5, 5, ProgramMode.OldSchool),
                 TemplateExercise("Front Squat", 3, 10, ProgramMode.OldSchool),
                 TemplateExercise("Bulgarian Split Squat", 3, 10, ProgramMode.OldSchool),
-                TemplateExercise("Leg Curl", 3, 12, ProgramMode.TUT),
+                TemplateExercise("Lying Hamstring Curl", 3, 12, ProgramMode.TUT),
                 TemplateExercise("Calf Raise", 3, 15, ProgramMode.TUT)
             )
         )
@@ -158,7 +158,7 @@ object CycleTemplates {
                 TemplateExercise("Bent Over Row", 4, 6, ProgramMode.OldSchool),
                 TemplateExercise("Shoulder Press", 3, 10, ProgramMode.OldSchool),
                 TemplateExercise("Bicep Curl", 3, 12, ProgramMode.TUT),
-                TemplateExercise("Tricep Extension", 3, 12, ProgramMode.TUT)
+                TemplateExercise("Overhead Tricep Extension", 3, 12, ProgramMode.TUT)
             )
         )
         val lowerA = RoutineTemplate(
@@ -166,7 +166,7 @@ object CycleTemplates {
             exercises = listOf(
                 TemplateExercise("Squat", 4, 6, ProgramMode.OldSchool),
                 TemplateExercise("Romanian Deadlift", 3, 10, ProgramMode.OldSchool),
-                TemplateExercise("Lunges", 3, 10, ProgramMode.OldSchool),
+                TemplateExercise("Lunge", 3, 10, ProgramMode.OldSchool),
                 TemplateExercise("Calf Raise", 3, 15, ProgramMode.TUT)
             )
         )
@@ -183,10 +183,10 @@ object CycleTemplates {
         val lowerB = RoutineTemplate(
             name = "Lower B",
             exercises = listOf(
-                TemplateExercise("Deadlift", 4, 5, ProgramMode.OldSchool),
+                TemplateExercise("Conventional Deadlift", 4, 5, ProgramMode.OldSchool),
                 TemplateExercise("Front Squat", 3, 10, ProgramMode.OldSchool),
                 TemplateExercise("Bulgarian Split Squat", 3, 10, ProgramMode.OldSchool),
-                TemplateExercise("Glute Kickback", 3, 12, ProgramMode.TUT)
+                TemplateExercise("Glute Kickbacks", 3, 12, ProgramMode.TUT)
             )
         )
 
@@ -215,7 +215,7 @@ object CycleTemplates {
                 TemplateExercise("Bench Press", 3, null, ProgramMode.OldSchool, isPercentageBased = true),
                 TemplateExercise("Incline Bench Press", 3, 10, ProgramMode.OldSchool),
                 TemplateExercise("Bent Over Row", 3, 10, ProgramMode.OldSchool),
-                TemplateExercise("Plank", 3, null, ProgramMode.OldSchool)
+                TemplateExercise("Plank", 3, null, null)  // null mode = bodyweight
             )
         )
         val squatDay = RoutineTemplate(
@@ -224,25 +224,25 @@ object CycleTemplates {
                 TemplateExercise("Squat", 3, null, ProgramMode.OldSchool, isPercentageBased = true),
                 TemplateExercise("Shoulder Press", 3, 10, ProgramMode.OldSchool),
                 TemplateExercise("Face Pull", 3, 15, ProgramMode.TUT),
-                TemplateExercise("Lunges", 3, 10, ProgramMode.OldSchool)
+                TemplateExercise("Lunge", 3, 10, ProgramMode.OldSchool)
             )
         )
         val pressDay = RoutineTemplate(
             name = "Press Day",
             exercises = listOf(
                 TemplateExercise("Shoulder Press", 3, null, ProgramMode.OldSchool, isPercentageBased = true),
-                TemplateExercise("Tricep Extension", 3, 12, ProgramMode.TUT),
+                TemplateExercise("Overhead Tricep Extension", 3, 12, ProgramMode.TUT),
                 TemplateExercise("Bent Over Row", 3, 10, ProgramMode.OldSchool),
-                TemplateExercise("Ab Crunch", 3, 15, ProgramMode.OldSchool)
+                TemplateExercise("Crunch", 3, 15, null)  // null mode = bodyweight
             )
         )
         val deadliftDay = RoutineTemplate(
             name = "Deadlift Day",
             exercises = listOf(
-                TemplateExercise("Deadlift", 3, null, ProgramMode.OldSchool, isPercentageBased = true),
+                TemplateExercise("Conventional Deadlift", 3, null, ProgramMode.OldSchool, isPercentageBased = true),
                 TemplateExercise("Incline Bench Press", 3, 10, ProgramMode.OldSchool),
                 TemplateExercise("Shrug", 3, 12, ProgramMode.OldSchool),
-                TemplateExercise("Back Extension", 3, 12, ProgramMode.OldSchool)
+                TemplateExercise("Good Morning", 3, 12, ProgramMode.OldSchool)
             )
         )
 
@@ -258,7 +258,7 @@ object CycleTemplates {
             ),
             progressionRule = ProgressionRule.fiveThreeOne(),
             requiresOneRepMax = true,
-            mainLifts = listOf("Bench Press", "Squat", "Shoulder Press", "Deadlift")
+            mainLifts = listOf("Bench Press", "Squat", "Shoulder Press", "Conventional Deadlift")
         )
     }
 

@@ -39,12 +39,15 @@ fun ModeConfirmationScreen(
     onCancel: () -> Unit
 ) {
     // State: Map of exercise name to selected ProgramMode
+    // Note: Bodyweight exercises (null suggestedMode) are excluded - they don't use cables
     val modeSelections = remember {
         mutableStateMapOf<String, ProgramMode>().apply {
-            // Initialize with suggested modes from template
+            // Initialize with suggested modes from template (skip bodyweight exercises)
             template.days.forEach { day ->
                 day.routine?.exercises?.forEach { exercise ->
-                    put(exercise.exerciseName, exercise.suggestedMode)
+                    exercise.suggestedMode?.let { mode ->
+                        put(exercise.exerciseName, mode)
+                    }
                 }
             }
         }
@@ -180,15 +183,18 @@ fun ModeConfirmationScreen(
                     }
                 }
 
-                // Exercise list for this day
+                // Exercise list for this day (excluding bodyweight exercises)
                 if (!day.isRestDay && day.routine != null) {
+                    // Filter to only cable exercises (those with a suggested mode)
+                    val cableExercises = day.routine.exercises.filter { it.suggestedMode != null }
                     items(
-                        items = day.routine.exercises,
+                        items = cableExercises,
                         key = { exercise -> "${day.dayNumber}_${exercise.exerciseName}" }
                     ) { exercise ->
                         ExerciseModeCard(
                             exercise = exercise,
-                            selectedMode = modeSelections[exercise.exerciseName] ?: exercise.suggestedMode,
+                            // suggestedMode is guaranteed non-null due to filter above
+                            selectedMode = modeSelections[exercise.exerciseName] ?: exercise.suggestedMode!!,
                             onModeChanged = { newMode ->
                                 modeSelections[exercise.exerciseName] = newMode
                             }

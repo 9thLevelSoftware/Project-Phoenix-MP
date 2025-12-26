@@ -56,12 +56,19 @@ fun calculateSetWeight(oneRepMaxKg: Float, percentageSet: PercentageSet): Float 
 
 /**
  * An exercise within a template, before being resolved to actual Exercise.
+ *
+ * @param exerciseName Name to look up in exercise library
+ * @param sets Number of sets
+ * @param reps Target reps per set (null for timed exercises)
+ * @param suggestedMode Workout mode for cable exercises, null for bodyweight exercises
+ * @param isPercentageBased Whether this uses percentage-based loading (5/3/1)
+ * @param percentageSets Percentage sets for 5/3/1 programming
  */
 data class TemplateExercise(
     val exerciseName: String,
     val sets: Int,
     val reps: Int?,
-    val suggestedMode: ProgramMode = ProgramMode.OldSchool,
+    val suggestedMode: ProgramMode? = ProgramMode.OldSchool,
     val isPercentageBased: Boolean = false,
     val percentageSets: List<PercentageSet>? = null
 )
