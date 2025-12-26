@@ -122,6 +122,7 @@ class SqlDelightWorkoutRepository(
                             defaultCableConfig = try {
                                 CableConfiguration.valueOf(row.exerciseDefaultCableConfig)
                             } catch (e: Exception) {
+                                Logger.w(e) { "Invalid defaultCableConfig '${row.exerciseDefaultCableConfig}' for exercise ${row.exerciseName}, using DOUBLE" }
                                 CableConfiguration.DOUBLE
                             },
                             isFavorite = false,
@@ -139,6 +140,7 @@ class SqlDelightWorkoutRepository(
                         defaultCableConfig = try {
                             CableConfiguration.valueOf(row.exerciseDefaultCableConfig)
                         } catch (e: Exception) {
+                            Logger.w(e) { "Invalid defaultCableConfig '${row.exerciseDefaultCableConfig}' for exercise ${row.exerciseName}, using DOUBLE" }
                             CableConfiguration.DOUBLE
                         },
                         isFavorite = false,
@@ -150,6 +152,7 @@ class SqlDelightWorkoutRepository(
                 val setReps: List<Int?> = try {
                     row.setReps.split(",").map { it.trim().toIntOrNull() }
                 } catch (e: Exception) {
+                    Logger.w(e) { "Failed to parse setReps '${row.setReps}' for exercise ${row.exerciseName}, using default [10]" }
                     listOf(10)
                 }
 
@@ -157,18 +160,21 @@ class SqlDelightWorkoutRepository(
                     if (row.setWeights.isBlank()) emptyList()
                     else row.setWeights.split(",").mapNotNull { it.trim().toFloatOrNull() }
                 } catch (e: Exception) {
+                    Logger.w(e) { "Failed to parse setWeights '${row.setWeights}' for exercise ${row.exerciseName}, using empty list" }
                     emptyList()
                 }
 
                 val setRestSeconds: List<Int> = try {
                     json.decodeFromString<List<Int>>(row.setRestSeconds)
                 } catch (e: Exception) {
+                    Logger.w(e) { "Failed to parse setRestSeconds '${row.setRestSeconds}' for exercise ${row.exerciseName}, using empty list" }
                     emptyList()
                 }
 
                 val cableConfig = try {
                     CableConfiguration.valueOf(row.cableConfig)
                 } catch (e: Exception) {
+                    Logger.w(e) { "Invalid cable config '${row.cableConfig}' for exercise ${row.exerciseName}, using DOUBLE" }
                     CableConfiguration.DOUBLE
                 }
 
