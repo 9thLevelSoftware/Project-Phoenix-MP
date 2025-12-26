@@ -310,8 +310,8 @@ class ExerciseImporter(
                                 thumbnailUrl = video.thumbnail,
                                 isTutorial = 0L
                             )
-                        } catch (_: Exception) {
-                            // Video already exists, ignore
+                        } catch (e: Exception) {
+                            Logger.w(e) { "Failed to insert video: ${e.message}" }
                         }
                     }
 
@@ -325,8 +325,8 @@ class ExerciseImporter(
                                 thumbnailUrl = tutorial.thumbnail,
                                 isTutorial = 1L
                             )
-                        } catch (_: Exception) {
-                            // Tutorial already exists, ignore
+                        } catch (e: Exception) {
+                            Logger.w(e) { "Failed to insert tutorial video: ${e.message}" }
                         }
                     }
 
