@@ -91,4 +91,4 @@ jobs:
         with:
           files: androidApp/build/outputs/apk/release/*.apk
           fail_on_unmatched_files: false
-          generate_release_notes: true
+          # Don't generate notes - preserves manually written release notes

@@ -238,7 +238,7 @@ jobs:
         with:
           files: ${{ runner.temp }}/export/*.ipa
           fail_on_unmatched_files: false
-          generate_release_notes: true
+          # Don't generate notes - preserves manually written release notes
 
       - name: Clean up keychain
         if: always() && github.event_name != 'pull_request'
