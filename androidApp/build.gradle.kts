@@ -118,6 +118,9 @@ dependencies {
     // Logging
     implementation(libs.kermit)
 
+    // RevenueCat (needed for SubscriptionManager interface visibility)
+    implementation(libs.revenuecat.purchases.core)
+
     // Image Loading - Coil 3
     implementation(libs.coil.compose)
     implementation(libs.coil.network.ktor)

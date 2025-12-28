@@ -9,6 +9,8 @@ import coil3.request.crossfade
 import coil3.util.DebugLogger
 import com.devil.phoenixproject.data.migration.MigrationManager
 import com.devil.phoenixproject.di.initKoin
+import com.devil.phoenixproject.domain.subscription.RevenueCatInitializer
+import com.devil.phoenixproject.domain.subscription.SubscriptionManager
 import com.devil.phoenixproject.util.DeviceInfo
 import org.koin.android.ext.android.inject
 import org.koin.android.ext.koin.androidContext
@@ -17,6 +19,7 @@ import org.koin.android.ext.koin.androidLogger
 class VitruvianApp : Application(), SingletonImageLoader.Factory {
 
     private val migrationManager: MigrationManager by inject()
+    private val subscriptionManager: SubscriptionManager by inject()
 
     override fun onCreate() {
         super.onCreate()
@@ -27,6 +30,9 @@ class VitruvianApp : Application(), SingletonImageLoader.Factory {
             isDebug = BuildConfig.DEBUG
         )
 
+        // Set application context for RevenueCat before Koin init
+        RevenueCatInitializer.setApplication(this)
+
         initKoin {
             androidLogger()
             androidContext(this@VitruvianApp)
@@ -34,6 +40,15 @@ class VitruvianApp : Application(), SingletonImageLoader.Factory {
 
         // Run migrations after Koin is initialized
         migrationManager.checkAndRunMigrations()
+
+        // Initialize RevenueCat after Koin is set up
+        try {
+            RevenueCatInitializer.initialize()
+            subscriptionManager.setupDelegate()
+            Logger.d("VitruvianApp") { "RevenueCat initialized" }
+        } catch (e: Exception) {
+            Logger.e("VitruvianApp") { "Failed to initialize RevenueCat: ${e.message}" }
+        }
 
         Logger.d("VitruvianApp") { "Application initialized" }
     }
