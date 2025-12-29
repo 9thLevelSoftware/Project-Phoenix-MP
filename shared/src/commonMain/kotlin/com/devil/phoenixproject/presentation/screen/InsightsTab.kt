@@ -52,6 +52,17 @@ fun InsightsTab(
             )
         }
 
+        // This Week Summary Card - week-over-week comparison
+        item {
+            ThisWeekSummaryCard(
+                workoutSessions = workoutSessions,
+                personalRecords = prs,
+                weightUnit = weightUnit,
+                formatWeight = formatWeight,
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
+
         // 1. Muscle Balance Radar Chart (Replaces linear progress bars)
         if (prs.isNotEmpty()) {
             item {

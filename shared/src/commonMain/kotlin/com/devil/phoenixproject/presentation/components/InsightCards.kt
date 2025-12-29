@@ -4,9 +4,16 @@ package com.devil.phoenixproject.presentation.components
 
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowDownward
+import androidx.compose.material.icons.filled.ArrowUpward
+import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.data.repository.ExerciseRepository
@@ -15,11 +22,261 @@ import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.presentation.components.charts.*
 import com.devil.phoenixproject.util.KmpUtils
+import kotlin.math.absoluteValue
+import kotlin.math.roundToInt
 
 /**
  * Insight card components for workout analytics
  * These components display various analytics and insights about workout data
  */
+
+/**
+ * Week-over-week summary data
+ */
+private data class WeekSummary(
+    val workouts: Int,
+    val totalVolume: Float,
+    val totalReps: Int,
+    val prsHit: Int
+)
+
+/**
+ * Comparison result for week-over-week metrics
+ */
+private sealed class Comparison {
+    data class Increase(val value: String) : Comparison()
+    data class Decrease(val value: String) : Comparison()
+    object NoChange : Comparison()
+    object NoData : Comparison()
+}
+
+/**
+ * This Week Summary Card - shows week-over-week comparison metrics
+ */
+@Composable
+fun ThisWeekSummaryCard(
+    workoutSessions: List<WorkoutSession>,
+    personalRecords: List<PersonalRecord>,
+    weightUnit: WeightUnit,
+    formatWeight: (Float, WeightUnit) -> String,
+    modifier: Modifier = Modifier
+) {
+    val now = remember { KmpUtils.currentTimeMillis() }
+    val oneDayMs = 24L * 60 * 60 * 1000
+    val sevenDaysMs = 7 * oneDayMs
+
+    // Calculate week boundaries
+    val thisWeekStart = now - sevenDaysMs
+    val lastWeekStart = now - (2 * sevenDaysMs)
+    val lastWeekEnd = thisWeekStart
+
+    // Calculate summaries for each week
+    val (thisWeek, lastWeek) = remember(workoutSessions, personalRecords, now) {
+        val thisWeekSessions = workoutSessions.filter { it.timestamp >= thisWeekStart }
+        val lastWeekSessions = workoutSessions.filter {
+            it.timestamp >= lastWeekStart && it.timestamp < lastWeekEnd
+        }
+
+        val thisWeekPRs = personalRecords.filter { it.timestamp >= thisWeekStart }
+        val lastWeekPRs = personalRecords.filter {
+            it.timestamp >= lastWeekStart && it.timestamp < lastWeekEnd
+        }
+
+        val thisWeekSummary = WeekSummary(
+            workouts = thisWeekSessions.size,
+            totalVolume = thisWeekSessions.sumOf {
+                (it.weightPerCableKg * 2 * it.totalReps).toDouble()
+            }.toFloat(),
+            totalReps = thisWeekSessions.sumOf { it.totalReps },
+            prsHit = thisWeekPRs.size
+        )
+
+        val lastWeekSummary = WeekSummary(
+            workouts = lastWeekSessions.size,
+            totalVolume = lastWeekSessions.sumOf {
+                (it.weightPerCableKg * 2 * it.totalReps).toDouble()
+            }.toFloat(),
+            totalReps = lastWeekSessions.sumOf { it.totalReps },
+            prsHit = lastWeekPRs.size
+        )
+
+        Pair(thisWeekSummary, lastWeekSummary)
+    }
+
+    // Helper function to calculate comparison
+    fun calculateComparison(current: Int, previous: Int): Comparison {
+        return when {
+            previous == 0 && current == 0 -> Comparison.NoChange
+            previous == 0 -> Comparison.Increase("+$current")
+            else -> {
+                val diff = current - previous
+                when {
+                    diff > 0 -> Comparison.Increase("+$diff")
+                    diff < 0 -> Comparison.Decrease("$diff")
+                    else -> Comparison.NoChange
+                }
+            }
+        }
+    }
+
+    fun calculatePercentageComparison(current: Float, previous: Float): Comparison {
+        return when {
+            previous == 0f && current == 0f -> Comparison.NoChange
+            previous == 0f && current > 0f -> Comparison.Increase("+100%")
+            previous == 0f -> Comparison.NoData
+            else -> {
+                val percentChange = ((current - previous) / previous * 100).roundToInt()
+                when {
+                    percentChange > 0 -> Comparison.Increase("+$percentChange%")
+                    percentChange < 0 -> Comparison.Decrease("$percentChange%")
+                    else -> Comparison.NoChange
+                }
+            }
+        }
+    }
+
+    // Calculate comparisons
+    val workoutsComparison = calculateComparison(thisWeek.workouts, lastWeek.workouts)
+    val volumeComparison = calculatePercentageComparison(thisWeek.totalVolume, lastWeek.totalVolume)
+    val repsComparison = calculateComparison(thisWeek.totalReps, lastWeek.totalReps)
+    val prsComparison = calculateComparison(thisWeek.prsHit, lastWeek.prsHit)
+
+    // Format volume for display
+    val displayVolume = if (weightUnit == WeightUnit.LB) {
+        thisWeek.totalVolume * 2.20462f
+    } else {
+        thisWeek.totalVolume
+    }
+    val volumeText = when {
+        displayVolume >= 1000 -> "${(displayVolume / 1000).roundToInt()}k ${weightUnit.name.lowercase()}"
+        else -> "${displayVolume.roundToInt()} ${weightUnit.name.lowercase()}"
+    }
+
+    Card(
+        modifier = modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest),
+        shape = RoundedCornerShape(20.dp)
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text(
+                "This Week",
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold
+            )
+            Text(
+                "Compared to last 7 days",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // Stat rows
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                WeekStatRow(
+                    label = "Workouts",
+                    value = "${thisWeek.workouts}",
+                    comparison = workoutsComparison
+                )
+
+                WeekStatRow(
+                    label = "Total Volume",
+                    value = volumeText,
+                    comparison = volumeComparison
+                )
+
+                WeekStatRow(
+                    label = "Total Reps",
+                    value = "${thisWeek.totalReps}",
+                    comparison = repsComparison
+                )
+
+                WeekStatRow(
+                    label = "PRs Hit",
+                    value = "${thisWeek.prsHit}",
+                    comparison = prsComparison
+                )
+            }
+        }
+    }
+}
+
+/**
+ * Individual stat row with comparison indicator
+ */
+@Composable
+private fun WeekStatRow(
+    label: String,
+    value: String,
+    comparison: Comparison,
+    modifier: Modifier = Modifier
+) {
+    val (icon, color, comparisonText) = when (comparison) {
+        is Comparison.Increase -> Triple(
+            Icons.Default.ArrowUpward,
+            Color(0xFF4CAF50), // Green
+            comparison.value
+        )
+        is Comparison.Decrease -> Triple(
+            Icons.Default.ArrowDownward,
+            Color(0xFFF44336), // Red
+            comparison.value
+        )
+        is Comparison.NoChange -> Triple(
+            Icons.Default.Remove,
+            MaterialTheme.colorScheme.onSurfaceVariant,
+            "same"
+        )
+        is Comparison.NoData -> Triple(
+            Icons.Default.Remove,
+            MaterialTheme.colorScheme.onSurfaceVariant,
+            "-"
+        )
+    }
+
+    Row(
+        modifier = modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = value,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+
+            // Comparison indicator
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(2.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    tint = color,
+                    modifier = Modifier.size(16.dp)
+                )
+                Text(
+                    text = comparisonText,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = color,
+                    fontWeight = FontWeight.Medium
+                )
+            }
+        }
+    }
+}
 
 @Composable
 fun MuscleBalanceRadarCard(
