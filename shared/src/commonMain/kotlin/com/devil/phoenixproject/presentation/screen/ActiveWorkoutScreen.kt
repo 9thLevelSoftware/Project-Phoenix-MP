@@ -242,7 +242,8 @@ fun ActiveWorkoutScreen(
             show = true,
             exerciseName = event.exerciseName,
             weight = "${viewModel.formatWeight(event.weightPerCableKg, weightUnit)}/cable × ${event.reps} reps",
-            onDismiss = { prCelebrationEvent = null }
+            onDismiss = { prCelebrationEvent = null },
+            onSoundTrigger = { viewModel.emitPRSound() }
         )
     }
 
@@ -255,7 +256,8 @@ fun ActiveWorkoutScreen(
                 kotlinx.coroutines.MainScope().launch {
                     gamificationRepository.markBadgeCelebrated(badgeId)
                 }
-            }
+            },
+            onSoundTrigger = { viewModel.emitBadgeSound() }
         )
     }
 }

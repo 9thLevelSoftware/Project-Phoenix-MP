@@ -12,6 +12,7 @@ import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.R
 import com.devil.phoenixproject.domain.model.HapticEvent
 import kotlinx.coroutines.flow.SharedFlow
+import kotlin.random.Random
 
 /**
  * Composable effect that handles haptic feedback and sound playback for workout events.
@@ -52,9 +53,65 @@ fun HapticFeedbackEffect(
                 put(HapticEvent.WORKOUT_END, soundPool.load(context, R.raw.chirpchirp, 1))
                 put(HapticEvent.REST_ENDING, soundPool.load(context, R.raw.restover, 1))
                 put(HapticEvent.DISCO_MODE_UNLOCKED, soundPool.load(context, R.raw.discomode, 1))
+                // BADGE_EARNED and PERSONAL_RECORD use random sounds from lists below
                 // ERROR has no sound
             } catch (e: Exception) {
                 Logger.e(e) { "Failed to load sounds" }
+            }
+        }
+    }
+
+    // Load badge celebration sounds (excludes PR-specific sounds)
+    val badgeSoundIds = remember(soundPool) {
+        mutableListOf<Int>().apply {
+            try {
+                add(soundPool.load(context, R.raw.absolute_domination, 1))
+                add(soundPool.load(context, R.raw.absolute_unit, 1))
+                add(soundPool.load(context, R.raw.another_milestone_crushed, 1))
+                add(soundPool.load(context, R.raw.beast_mode, 1))
+                add(soundPool.load(context, R.raw.insane_performance, 1))
+                add(soundPool.load(context, R.raw.maxed_out, 1))
+                add(soundPool.load(context, R.raw.new_peak_achieved, 1))
+                add(soundPool.load(context, R.raw.new_record_secured, 1))
+                add(soundPool.load(context, R.raw.no_ones_stopping_you_now, 1))
+                add(soundPool.load(context, R.raw.power, 1))
+                add(soundPool.load(context, R.raw.pr, 1))
+                add(soundPool.load(context, R.raw.pressure_create_greatness, 1))
+                add(soundPool.load(context, R.raw.record, 1))
+                add(soundPool.load(context, R.raw.shattered, 1))
+                add(soundPool.load(context, R.raw.strenght_unlocked, 1))
+                add(soundPool.load(context, R.raw.that_bar_never_stood_a_chance, 1))
+                add(soundPool.load(context, R.raw.that_was_a_demolition, 1))
+                add(soundPool.load(context, R.raw.that_was_god_mode, 1))
+                add(soundPool.load(context, R.raw.that_was_monster_level, 1))
+                add(soundPool.load(context, R.raw.that_was_next_tier_strenght, 1))
+                add(soundPool.load(context, R.raw.that_was_pure_savagery, 1))
+                add(soundPool.load(context, R.raw.the_grind_continues, 1))
+                add(soundPool.load(context, R.raw.the_grind_is_real, 1))
+                add(soundPool.load(context, R.raw.this_is_what_champions_are_made, 1))
+                add(soundPool.load(context, R.raw.unchained_power, 1))
+                add(soundPool.load(context, R.raw.unstoppable, 1))
+                add(soundPool.load(context, R.raw.victory, 1))
+                add(soundPool.load(context, R.raw.you_crushed_that, 1))
+                add(soundPool.load(context, R.raw.you_dominated_that_set, 1))
+                add(soundPool.load(context, R.raw.you_just_broke_your_limits, 1))
+                add(soundPool.load(context, R.raw.you_just_destroyed_that_weight, 1))
+                add(soundPool.load(context, R.raw.you_just_levelled_up, 1))
+                add(soundPool.load(context, R.raw.you_went_full_throttle, 1))
+            } catch (e: Exception) {
+                Logger.e(e) { "Failed to load badge sounds" }
+            }
+        }
+    }
+
+    // Load PR-specific sounds
+    val prSoundIds = remember(soundPool) {
+        mutableListOf<Int>().apply {
+            try {
+                add(soundPool.load(context, R.raw.new_personal_record, 1))
+                add(soundPool.load(context, R.raw.new_personal_record_2, 1))
+            } catch (e: Exception) {
+                Logger.e(e) { "Failed to load PR sounds" }
             }
         }
     }
@@ -63,7 +120,7 @@ fun HapticFeedbackEffect(
     LaunchedEffect(hapticEvents) {
         hapticEvents.collect { event ->
             playHapticFeedback(event, hapticFeedback)
-            playSound(event, soundPool, soundIds)
+            playSound(event, soundPool, soundIds, badgeSoundIds, prSoundIds)
         }
     }
 
@@ -88,7 +145,9 @@ private fun playHapticFeedback(event: HapticEvent, hapticFeedback: HapticFeedbac
         HapticEvent.WORKOUT_COMPLETE,
         HapticEvent.REST_ENDING,
         HapticEvent.ERROR,
-        HapticEvent.DISCO_MODE_UNLOCKED -> HapticFeedbackType.LongPress // Strong vibration
+        HapticEvent.DISCO_MODE_UNLOCKED,
+        HapticEvent.BADGE_EARNED,
+        HapticEvent.PERSONAL_RECORD -> HapticFeedbackType.LongPress // Strong vibration
     }
 
     try {
@@ -104,12 +163,26 @@ private fun playHapticFeedback(event: HapticEvent, hapticFeedback: HapticFeedbac
 private fun playSound(
     event: HapticEvent,
     soundPool: SoundPool,
-    soundIds: Map<HapticEvent, Int>
+    soundIds: Map<HapticEvent, Int>,
+    badgeSoundIds: List<Int>,
+    prSoundIds: List<Int>
 ) {
     // ERROR event has no sound
     if (event == HapticEvent.ERROR) return
 
-    val soundId = soundIds[event] ?: return
+    val soundId = when (event) {
+        HapticEvent.BADGE_EARNED -> {
+            if (badgeSoundIds.isNotEmpty()) {
+                badgeSoundIds[Random.nextInt(badgeSoundIds.size)]
+            } else null
+        }
+        HapticEvent.PERSONAL_RECORD -> {
+            if (prSoundIds.isNotEmpty()) {
+                prSoundIds[Random.nextInt(prSoundIds.size)]
+            } else null
+        }
+        else -> soundIds[event]
+    } ?: return
 
     try {
         soundPool.play(

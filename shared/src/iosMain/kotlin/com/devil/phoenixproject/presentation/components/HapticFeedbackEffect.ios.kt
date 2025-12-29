@@ -60,10 +60,14 @@ actual fun HapticFeedbackEffect(hapticEvents: SharedFlow<HapticEvent>) {
  */
 private class IosSoundManager {
     private val players = mutableMapOf<HapticEvent, AVAudioPlayer?>()
+    private val badgeSoundPlayers = mutableListOf<AVAudioPlayer?>()
+    private val prSoundPlayers = mutableListOf<AVAudioPlayer?>()
 
     init {
         setupAudioSession()
         loadSounds()
+        loadBadgeSounds()
+        loadPRSounds()
     }
 
     private fun setupAudioSession() {
@@ -92,12 +96,69 @@ private class IosSoundManager {
             HapticEvent.WORKOUT_END to "chirpchirp",
             HapticEvent.REST_ENDING to "restover",
             HapticEvent.DISCO_MODE_UNLOCKED to "discomode"
-            // ERROR has no sound
+            // ERROR, BADGE_EARNED, PERSONAL_RECORD handled separately
         )
 
         soundFiles.forEach { (event, fileName) ->
             players[event] = loadSound(fileName)
         }
+    }
+
+    private fun loadBadgeSounds() {
+        // Badge celebration sounds (excludes PR-specific sounds)
+        val badgeSoundFiles = listOf(
+            "absolute_domination",
+            "absolute_unit",
+            "another_milestone_crushed",
+            "beast_mode",
+            "insane_performance",
+            "maxed_out",
+            "new_peak_achieved",
+            "new_record_secured",
+            "no_ones_stopping_you_now",
+            "power",
+            "pr",
+            "pressure_create_greatness",
+            "record",
+            "shattered",
+            "strenght_unlocked",
+            "that_bar_never_stood_a_chance",
+            "that_was_a_demolition",
+            "that_was_god_mode",
+            "that_was_monster_level",
+            "that_was_next_tier_strenght",
+            "that_was_pure_savagery",
+            "the_grind_continues",
+            "the_grind_is_real",
+            "this_is_what_champions_are_made",
+            "unchained_power",
+            "unstoppable",
+            "victory",
+            "you_crushed_that",
+            "you_dominated_that_set",
+            "you_just_broke_your_limits",
+            "you_just_destroyed_that_weight",
+            "you_just_levelled_up",
+            "you_went_full_throttle"
+        )
+
+        badgeSoundFiles.forEach { fileName ->
+            loadSound(fileName)?.let { badgeSoundPlayers.add(it) }
+        }
+        log.d { "Loaded ${badgeSoundPlayers.size} badge celebration sounds" }
+    }
+
+    private fun loadPRSounds() {
+        // PR-specific sounds
+        val prSoundFiles = listOf(
+            "new_personal_record",
+            "new_personal_record_2"
+        )
+
+        prSoundFiles.forEach { fileName ->
+            loadSound(fileName)?.let { prSoundPlayers.add(it) }
+        }
+        log.d { "Loaded ${prSoundPlayers.size} PR celebration sounds" }
     }
 
     private fun loadSound(fileName: String): AVAudioPlayer? {
@@ -127,7 +188,20 @@ private class IosSoundManager {
         // ERROR event has no sound
         if (event == HapticEvent.ERROR) return
 
-        val player = players[event]
+        val player = when (event) {
+            HapticEvent.BADGE_EARNED -> {
+                if (badgeSoundPlayers.isNotEmpty()) {
+                    badgeSoundPlayers[kotlin.random.Random.nextInt(badgeSoundPlayers.size)]
+                } else null
+            }
+            HapticEvent.PERSONAL_RECORD -> {
+                if (prSoundPlayers.isNotEmpty()) {
+                    prSoundPlayers[kotlin.random.Random.nextInt(prSoundPlayers.size)]
+                } else null
+            }
+            else -> players[event]
+        }
+
         if (player != null) {
             try {
                 // Reset to beginning if already playing
@@ -148,6 +222,24 @@ private class IosSoundManager {
             }
         }
         players.clear()
+
+        badgeSoundPlayers.forEach { player ->
+            try {
+                player?.stop()
+            } catch (e: Exception) {
+                // Ignore cleanup errors
+            }
+        }
+        badgeSoundPlayers.clear()
+
+        prSoundPlayers.forEach { player ->
+            try {
+                player?.stop()
+            } catch (e: Exception) {
+                // Ignore cleanup errors
+            }
+        }
+        prSoundPlayers.clear()
 
         try {
             AVAudioSession.sharedInstance().setActive(
@@ -197,12 +289,12 @@ private fun playHapticFeedback(event: HapticEvent) {
                 generator.prepare()
                 generator.notificationOccurred(UINotificationFeedbackType.UINotificationFeedbackTypeError)
             }
-            HapticEvent.DISCO_MODE_UNLOCKED -> {
-                // Funky celebration - heavy impact followed by success notification
+            HapticEvent.DISCO_MODE_UNLOCKED, HapticEvent.BADGE_EARNED, HapticEvent.PERSONAL_RECORD -> {
+                // Celebration - heavy impact followed by success notification
                 val impactGenerator = UIImpactFeedbackGenerator(UIImpactFeedbackStyle.UIImpactFeedbackStyleHeavy)
                 impactGenerator.prepare()
                 impactGenerator.impactOccurred()
-                // Follow with success notification for the "unlocked" feeling
+                // Follow with success notification for the celebration
                 val notificationGenerator = UINotificationFeedbackGenerator()
                 notificationGenerator.prepare()
                 notificationGenerator.notificationOccurred(UINotificationFeedbackType.UINotificationFeedbackTypeSuccess)

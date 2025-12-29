@@ -306,6 +306,157 @@ class SqlDelightGamificationRepository(
         }
     }
 
+    /**
+     * Count workouts completed within a specific time range
+     */
+    private fun countWorkoutsAtTime(hourStart: Int, hourEnd: Int): Int {
+        val sessions = queries.selectAllSessions().executeAsList()
+
+        return sessions.count { session ->
+            val sessionTime = Instant.fromEpochMilliseconds(session.timestamp)
+                .toLocalDateTime(TimeZone.currentSystemDefault())
+            val hour = sessionTime.hour
+
+            if (hourStart <= hourEnd) {
+                hour in hourStart until hourEnd
+            } else {
+                hour >= hourStart || hour < hourEnd
+            }
+        }
+    }
+
+    /**
+     * Get the count of workouts in a specific mode
+     */
+    private fun getWorkoutCountByMode(modeName: String): Int {
+        val modeCounts = queries.countWorkoutsByMode().executeAsList()
+        // Handle Echo mode specially - it's stored as "Echo" in DB
+        return modeCounts.find {
+            it.mode.equals(modeName, ignoreCase = true) ||
+            (modeName == "Echo" && it.mode.startsWith("Echo", ignoreCase = true))
+        }?.count?.toInt() ?: 0
+    }
+
+    /**
+     * Get the count of unique workout modes used
+     */
+    private fun getUniqueWorkoutModesCount(): Int {
+        val modes = queries.selectUniqueWorkoutModes().executeAsList()
+        // Count distinct base modes (Echo variants count as 1)
+        val baseModes = modes.map { mode ->
+            when {
+                mode.startsWith("Echo", ignoreCase = true) -> "Echo"
+                mode.startsWith("TUT Beast", ignoreCase = true) -> "TUT Beast"
+                else -> mode
+            }
+        }.distinct()
+        return baseModes.size
+    }
+
+    /**
+     * Check if all 6 workout modes have been used
+     */
+    private fun hasUsedAllWorkoutModes(): Boolean {
+        val modes = queries.selectUniqueWorkoutModes().executeAsList()
+        val baseModes = modes.map { mode ->
+            when {
+                mode.startsWith("Echo", ignoreCase = true) -> "Echo"
+                mode.startsWith("TUT Beast", ignoreCase = true) -> "TUT Beast"
+                else -> mode
+            }
+        }.distinct()
+
+        val requiredModes = setOf("Old School", "Pump", "TUT", "TUT Beast", "Eccentric Only", "Echo")
+        return requiredModes.all { required ->
+            baseModes.any { it.equals(required, ignoreCase = true) }
+        }
+    }
+
+    /**
+     * Get peak power from all workouts
+     */
+    private fun getPeakPower(): Int {
+        val result = queries.selectPeakPower().executeAsOneOrNull()
+        return result?.peakPower?.toInt() ?: 0
+    }
+
+    /**
+     * Get count of unique muscle groups trained
+     */
+    private fun getUniqueMuscleGroupsCount(): Int {
+        val muscleGroups = queries.selectUniqueMuscleGroupsFromWorkouts().executeAsList()
+        return muscleGroups.size
+    }
+
+    /**
+     * Get count of weekend workouts
+     */
+    private fun getWeekendWorkoutsCount(): Int {
+        return queries.countWeekendWorkouts().executeAsOne().toInt()
+    }
+
+    /**
+     * Get count of completed routine sessions
+     */
+    private fun getCompletedRoutinesCount(): Int {
+        return queries.countCompletedRoutineSessions().executeAsOne().toInt()
+    }
+
+    /**
+     * Get count of created routines
+     */
+    private fun getCreatedRoutinesCount(): Int {
+        return queries.countCreatedRoutines().executeAsOne().toInt()
+    }
+
+    /**
+     * Check if user came back after a break of specified days
+     * This is tracked by checking if there was a gap >= breakDays between any two workouts
+     */
+    private fun hasComebackAfterBreak(breakDays: Int): Boolean {
+        val sessions = queries.selectAllSessions().executeAsList()
+        if (sessions.size < 2) return false
+
+        val sortedSessions = sessions.sortedBy { it.timestamp }
+
+        for (i in 1 until sortedSessions.size) {
+            val prevDate = Instant.fromEpochMilliseconds(sortedSessions[i - 1].timestamp)
+                .toLocalDateTime(TimeZone.currentSystemDefault()).date
+            val currDate = Instant.fromEpochMilliseconds(sortedSessions[i].timestamp)
+                .toLocalDateTime(TimeZone.currentSystemDefault()).date
+
+            val daysBetween = currDate.toEpochDays() - prevDate.toEpochDays()
+            if (daysBetween >= breakDays) {
+                return true
+            }
+        }
+        return false
+    }
+
+    /**
+     * Check if user saved their streak (workout when at risk)
+     * This happens when user works out on the same day their streak would break
+     */
+    private fun hasSavedStreak(): Boolean {
+        // Check if there's at least one streak entry in history and current streak > 0
+        val streakHistory = queries.selectStreakBreakCount().executeAsOne()
+        val stats = queries.selectGamificationStats().executeAsOneOrNull() ?: return false
+
+        // If we have streak history and a current streak, user has saved streaks before
+        return streakHistory > 0 && stats.currentStreak > 0
+    }
+
+    /**
+     * Check if user has rebuilt a streak after losing one
+     */
+    private fun hasRebuiltStreak(requiredDays: Int): Boolean {
+        val streakBreaks = queries.selectStreakBreakCount().executeAsOne()
+        val stats = queries.selectGamificationStats().executeAsOneOrNull() ?: return false
+
+        // User must have had a previous streak break and rebuilt to required length
+        return streakBreaks > 0 && stats.currentStreak >= requiredDays
+    }
+
     override suspend fun checkAndAwardBadges(): List<Badge> {
         return withContext(Dispatchers.IO) {
             val newlyAwarded = mutableListOf<Badge>()
@@ -357,6 +508,39 @@ class SqlDelightGamificationRepository(
             is BadgeRequirement.WorkoutAtTime -> {
                 hasWorkoutAtTime(req.hourStart, req.hourEnd)
             }
+            is BadgeRequirement.WorkoutsAtTimeCount -> {
+                countWorkoutsAtTime(req.hourStart, req.hourEnd) >= req.count
+            }
+            is BadgeRequirement.WorkoutModeCount -> {
+                getWorkoutCountByMode(req.modeName) >= req.count
+            }
+            is BadgeRequirement.AllWorkoutModes -> {
+                hasUsedAllWorkoutModes()
+            }
+            is BadgeRequirement.PeakPower -> {
+                getPeakPower() >= req.watts
+            }
+            is BadgeRequirement.UniqueMuscleGroups -> {
+                getUniqueMuscleGroupsCount() >= req.count
+            }
+            is BadgeRequirement.ComebackAfterBreak -> {
+                hasComebackAfterBreak(req.breakDays)
+            }
+            is BadgeRequirement.StreakSaved -> {
+                hasSavedStreak()
+            }
+            is BadgeRequirement.StreakRebuilt -> {
+                hasRebuiltStreak(req.days)
+            }
+            is BadgeRequirement.WeekendWorkouts -> {
+                getWeekendWorkoutsCount() >= req.count
+            }
+            is BadgeRequirement.RoutinesCompleted -> {
+                getCompletedRoutinesCount() >= req.count
+            }
+            is BadgeRequirement.RoutinesCreated -> {
+                getCreatedRoutinesCount() >= req.count
+            }
         }
     }
 
@@ -377,6 +561,17 @@ class SqlDelightGamificationRepository(
                 is BadgeRequirement.WorkoutsInWeek -> countWorkoutsInCurrentWeek()
                 is BadgeRequirement.SingleWorkoutVolume -> getMaxSingleSessionVolume()
                 is BadgeRequirement.WorkoutAtTime -> if (hasWorkoutAtTime(req.hourStart, req.hourEnd)) 1 else 0
+                is BadgeRequirement.WorkoutsAtTimeCount -> countWorkoutsAtTime(req.hourStart, req.hourEnd)
+                is BadgeRequirement.WorkoutModeCount -> getWorkoutCountByMode(req.modeName)
+                is BadgeRequirement.AllWorkoutModes -> getUniqueWorkoutModesCount()
+                is BadgeRequirement.PeakPower -> getPeakPower()
+                is BadgeRequirement.UniqueMuscleGroups -> getUniqueMuscleGroupsCount()
+                is BadgeRequirement.ComebackAfterBreak -> if (hasComebackAfterBreak(req.breakDays)) 1 else 0
+                is BadgeRequirement.StreakSaved -> if (hasSavedStreak()) 1 else 0
+                is BadgeRequirement.StreakRebuilt -> if (hasRebuiltStreak(req.days)) req.days else stats.currentStreak.toInt()
+                is BadgeRequirement.WeekendWorkouts -> getWeekendWorkoutsCount()
+                is BadgeRequirement.RoutinesCompleted -> getCompletedRoutinesCount()
+                is BadgeRequirement.RoutinesCreated -> getCreatedRoutinesCount()
             }
 
             Pair(current, badge.getTargetValue())

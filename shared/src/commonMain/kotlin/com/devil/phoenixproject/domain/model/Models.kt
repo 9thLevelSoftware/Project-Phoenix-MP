@@ -297,7 +297,9 @@ enum class HapticEvent {
     WORKOUT_END,        // Light haptic + chirpchirp sound
     REST_ENDING,        // Strong haptic + restover sound (5 seconds left in rest timer)
     ERROR,              // Strong haptic (no sound)
-    DISCO_MODE_UNLOCKED // Easter egg celebration sound
+    DISCO_MODE_UNLOCKED, // Easter egg celebration sound
+    BADGE_EARNED,       // Strong haptic + random badge celebration sound
+    PERSONAL_RECORD     // Strong haptic + random PR celebration sound
 }
 
 /**

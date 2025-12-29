@@ -666,6 +666,50 @@ SELECT COUNT(*) FROM PersonalRecord;
 selectWorkoutDates:
 SELECT DISTINCT DATE(timestamp / 1000, 'unixepoch') AS workoutDate FROM WorkoutSession ORDER BY timestamp DESC;
 
+-- ==================== ADDITIONAL GAMIFICATION QUERIES ====================
+
+-- Count workouts by workout mode
+countWorkoutsByMode:
+SELECT mode, COUNT(*) AS count FROM WorkoutSession GROUP BY mode;
+
+-- Get all unique workout modes used
+selectUniqueWorkoutModes:
+SELECT DISTINCT mode FROM WorkoutSession;
+
+-- Get peak power from all workout metrics
+selectPeakPower:
+SELECT MAX(power) AS peakPower FROM MetricSample;
+
+-- Get unique muscle groups from exercises performed in workouts
+selectUniqueMuscleGroupsFromWorkouts:
+SELECT DISTINCT e.muscleGroup
+FROM WorkoutSession ws
+INNER JOIN Exercise e ON ws.exerciseId = e.id
+WHERE ws.exerciseId IS NOT NULL;
+
+-- Count workouts completed on weekends (Saturday = 6, Sunday = 0 in SQLite strftime %w)
+countWeekendWorkouts:
+SELECT COUNT(*) FROM WorkoutSession
+WHERE CAST(strftime('%w', timestamp / 1000, 'unixepoch') AS INTEGER) IN (0, 6);
+
+-- Count completed routine sessions (workouts that are part of a routine)
+countCompletedRoutineSessions:
+SELECT COUNT(DISTINCT routineSessionId) FROM WorkoutSession WHERE routineSessionId IS NOT NULL;
+
+-- Count custom routines created
+countCreatedRoutines:
+SELECT COUNT(*) FROM Routine;
+
+-- Get days since last workout (for comeback badge)
+selectDaysSinceLastWorkout:
+SELECT CAST((julianday('now') - julianday(MAX(timestamp) / 1000, 'unixepoch')) AS INTEGER) AS daysSince
+FROM WorkoutSession;
+
+-- Check if a streak was previously broken and rebuilt
+-- Returns the count of streak breaks (transitions from >0 streak to 0)
+selectStreakBreakCount:
+SELECT COUNT(*) FROM StreakHistory WHERE length > 0;
+
 -- ==================== TRAINING CYCLES TABLES ====================
 
 -- Training Cycles (replaces WeeklyProgram - rolling schedule)

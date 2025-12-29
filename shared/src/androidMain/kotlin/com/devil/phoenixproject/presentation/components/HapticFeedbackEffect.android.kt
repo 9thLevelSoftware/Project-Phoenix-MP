@@ -102,6 +102,14 @@ private fun playHapticFeedback(
                     -1
                 )
             }
+            HapticEvent.BADGE_EARNED, HapticEvent.PERSONAL_RECORD -> {
+                // Celebration pattern - escalating pulses for achievement
+                VibrationEffect.createWaveform(
+                    longArrayOf(0, 100, 60, 120, 60, 150),
+                    intArrayOf(0, 180, 0, 220, 0, 255),
+                    -1
+                )
+            }
         }
         vibrator.vibrate(effect)
     } else {
@@ -128,6 +136,9 @@ private fun playHapticFeedback(
             }
             HapticEvent.DISCO_MODE_UNLOCKED -> {
                 vibrator.vibrate(longArrayOf(0, 80, 60, 80, 60, 80, 60, 120, 80, 120), -1)
+            }
+            HapticEvent.BADGE_EARNED, HapticEvent.PERSONAL_RECORD -> {
+                vibrator.vibrate(longArrayOf(0, 100, 60, 120, 60, 150), -1)
             }
         }
     }

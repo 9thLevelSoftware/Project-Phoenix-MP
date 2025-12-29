@@ -921,6 +921,24 @@ class MainViewModel constructor(
         }
     }
 
+    /**
+     * Emit badge earned sound event for badge celebration
+     */
+    fun emitBadgeSound() {
+        viewModelScope.launch {
+            _hapticEvents.emit(HapticEvent.BADGE_EARNED)
+        }
+    }
+
+    /**
+     * Emit personal record sound event for PR celebration
+     */
+    fun emitPRSound() {
+        viewModelScope.launch {
+            _hapticEvents.emit(HapticEvent.PERSONAL_RECORD)
+        }
+    }
+
     fun deleteAllWorkouts() {
         viewModelScope.launch { workoutRepository.deleteAllSessions() }
     }

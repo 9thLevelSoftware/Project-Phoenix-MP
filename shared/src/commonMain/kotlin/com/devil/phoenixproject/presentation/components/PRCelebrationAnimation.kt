@@ -33,9 +33,15 @@ fun PRCelebrationDialog(
     show: Boolean,
     exerciseName: String,
     weight: String,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    onSoundTrigger: () -> Unit = {}
 ) {
     if (!show) return
+
+    // Trigger sound when dialog is shown
+    LaunchedEffect(show) {
+        onSoundTrigger()
+    }
 
     // Auto-dismiss after 3 seconds
     LaunchedEffect(show) {
