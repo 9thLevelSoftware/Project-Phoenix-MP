@@ -39,9 +39,9 @@ private fun formatTimestamp(timestamp: Long): String {
     return KmpUtils.formatTimestamp(timestamp, "MMM dd, yyyy")
 }
 
-// ProgressionTab composable - List of Personal Records
+// ProgressTab composable - Deep-dive analytics with Personal Records list
 @Composable
-fun ProgressionTab(
+fun ProgressTab(
     personalRecords: List<PersonalRecord>,
     exerciseRepository: ExerciseRepository,
     weightUnit: WeightUnit,
@@ -49,18 +49,36 @@ fun ProgressionTab(
     modifier: Modifier = Modifier
 ) {
     LazyColumn(
-        modifier = modifier.padding(Spacing.medium),
+        modifier = modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
+            .padding(Spacing.medium),
         verticalArrangement = Arrangement.spacedBy(Spacing.medium)
     ) {
         item {
             Text(
+                "Progress",
+                style = MaterialTheme.typography.headlineLarge,
+                color = MaterialTheme.colorScheme.onSurface,
+                fontWeight = FontWeight.Bold
+            )
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = "Track your strength gains over time",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+
+        item {
+            Text(
                 "Personal Records",
-                style = MaterialTheme.typography.headlineMedium,
+                style = MaterialTheme.typography.titleLarge,
                 color = MaterialTheme.colorScheme.onSurface,
                 fontWeight = FontWeight.Bold
             )
         }
-        
+
         if (personalRecords.isEmpty()) {
             item {
                 EmptyState(
@@ -72,12 +90,12 @@ fun ProgressionTab(
         } else {
             items(personalRecords, key = { it.id }) { pr ->
                 var exerciseName by remember(pr.exerciseId) { mutableStateOf("Loading...") }
-                
+
                 LaunchedEffect(pr.exerciseId) {
                     val exercise = exerciseRepository.getExerciseById(pr.exerciseId)
                     exerciseName = exercise?.name ?: "Unknown Exercise"
                 }
-                
+
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     colors = CardDefaults.cardColors(
@@ -104,7 +122,7 @@ fun ProgressionTab(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
-                        
+
                         Column(horizontalAlignment = Alignment.End) {
                             Text(
                                 text = formatWeight(pr.weightPerCableKg, weightUnit),
@@ -121,6 +139,11 @@ fun ProgressionTab(
                     }
                 }
             }
+        }
+
+        // Bottom padding for FAB
+        item {
+            Spacer(modifier = Modifier.height(80.dp))
         }
     }
 }
@@ -310,8 +333,10 @@ fun DashboardTab(
 }
 
 /**
- * Analytics screen with three tabs: Dashboard, Trends, and History.
- * Provides comprehensive view of workout data and progress.
+ * Analytics screen with three tabs: Dashboard, Progress, and History.
+ * - Dashboard: Key insights and analytics overview
+ * - Progress: Deep-dive into strength gains and personal records
+ * - History: Workout log and session details
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -372,7 +397,7 @@ fun AnalyticsScreen(
             modifier = Modifier
                 .fillMaxSize()
         ) {
-            // Tab Row - Redesigned: Overview, Log, Exercises
+            // Tab Row - Redesigned: Dashboard, Progress, History
             PrimaryTabRow(
                 selectedTabIndex = pagerState.currentPage,
                 containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
@@ -391,7 +416,7 @@ fun AnalyticsScreen(
                     onClick = { scope.launch { pagerState.animateScrollToPage(0) } },
                     text = {
                         Text(
-                            "Overview",
+                            "Dashboard",
                             style = MaterialTheme.typography.labelSmall,
                             maxLines = 1,
                             color = if (pagerState.currentPage == 0)
@@ -416,7 +441,7 @@ fun AnalyticsScreen(
                     onClick = { scope.launch { pagerState.animateScrollToPage(1) } },
                     text = {
                         Text(
-                            "Log",
+                            "Progress",
                             style = MaterialTheme.typography.labelSmall,
                             maxLines = 1,
                             color = if (pagerState.currentPage == 1)
@@ -427,8 +452,8 @@ fun AnalyticsScreen(
                     },
                     icon = {
                         Icon(
-                            Icons.AutoMirrored.Filled.List,
-                            contentDescription = "Workout log",
+                            Icons.AutoMirrored.Filled.TrendingUp,
+                            contentDescription = "Progress tracking",
                             tint = if (pagerState.currentPage == 1)
                                 MaterialTheme.colorScheme.primary
                             else
@@ -441,7 +466,7 @@ fun AnalyticsScreen(
                     onClick = { scope.launch { pagerState.animateScrollToPage(2) } },
                     text = {
                         Text(
-                            "Exercises",
+                            "History",
                             style = MaterialTheme.typography.labelSmall,
                             maxLines = 1,
                             color = if (pagerState.currentPage == 2)
@@ -452,8 +477,8 @@ fun AnalyticsScreen(
                     },
                     icon = {
                         Icon(
-                            Icons.Default.FitnessCenter,
-                            contentDescription = "Exercise list",
+                            Icons.AutoMirrored.Filled.List,
+                            contentDescription = "Workout history",
                             tint = if (pagerState.currentPage == 2)
                                 MaterialTheme.colorScheme.primary
                             else
@@ -477,23 +502,20 @@ fun AnalyticsScreen(
                         formatWeight = viewModel::formatWeight,
                         modifier = Modifier.fillMaxSize()
                     )
-                    1 -> HistoryTab(
+                    1 -> ProgressTab(
+                        personalRecords = personalRecords,
+                        exerciseRepository = viewModel.exerciseRepository,
+                        weightUnit = weightUnit,
+                        formatWeight = viewModel::formatWeight,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                    2 -> HistoryTab(
                         groupedWorkoutHistory = groupedWorkoutHistory,
                         weightUnit = weightUnit,
                         formatWeight = viewModel::formatWeight,
                         onDeleteWorkout = { viewModel.deleteWorkout(it) },
                         exerciseRepository = viewModel.exerciseRepository,
                         onRefresh = { /* Workout history refreshes automatically via StateFlow */ },
-                        modifier = Modifier.fillMaxSize()
-                    )
-                    2 -> ExercisesTab(
-                        workoutSessions = allWorkoutSessions,
-                        exerciseNames = exerciseNames.toMap(),
-                        weightUnit = weightUnit,
-                        formatWeight = viewModel::formatWeight,
-                        onExerciseClick = { exerciseId ->
-                            onNavigateToExerciseDetail(exerciseId)
-                        },
                         modifier = Modifier.fillMaxSize()
                     )
                 }
