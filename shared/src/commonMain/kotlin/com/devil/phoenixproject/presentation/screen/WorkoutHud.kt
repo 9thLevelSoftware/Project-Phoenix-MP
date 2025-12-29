@@ -45,6 +45,7 @@ fun WorkoutHud(
     exerciseRepository: ExerciseRepository,
     loadedRoutine: Routine?,
     currentExerciseIndex: Int,
+    currentSetIndex: Int,
     enableVideoPlayback: Boolean,
     onStopWorkout: () -> Unit,
     formatWeight: (Float, WeightUnit) -> String,
@@ -93,17 +94,27 @@ fun WorkoutHud(
                 modifier = Modifier.fillMaxSize()
             ) { page ->
                 when (page) {
-                    0 -> ExecutionPage(
-                        metric = metric,
-                        repCount = repCount,
-                        weightUnit = weightUnit,
-                        formatWeight = formatWeight,
-                        workoutParameters = workoutParameters,
-                        isEchoMode = isEchoMode,
-                        echoForceKgMax = currentHeuristicKgMax,
-                        loadBaselineA = loadBaselineA,
-                        loadBaselineB = loadBaselineB
-                    )
+                    0 -> {
+                        // Derive exercise info for display
+                        val currentExercise = loadedRoutine?.exercises?.getOrNull(currentExerciseIndex)
+                        val exerciseName = currentExercise?.exercise?.name
+                        val totalSets = currentExercise?.setReps?.size ?: 0
+
+                        ExecutionPage(
+                            metric = metric,
+                            repCount = repCount,
+                            weightUnit = weightUnit,
+                            formatWeight = formatWeight,
+                            workoutParameters = workoutParameters,
+                            isEchoMode = isEchoMode,
+                            echoForceKgMax = currentHeuristicKgMax,
+                            loadBaselineA = loadBaselineA,
+                            loadBaselineB = loadBaselineB,
+                            exerciseName = exerciseName,
+                            currentSetIndex = currentSetIndex,
+                            totalSets = totalSets
+                        )
+                    }
                     1 -> InstructionPage(
                         loadedRoutine = loadedRoutine,
                         currentExerciseIndex = currentExerciseIndex,
@@ -295,13 +306,39 @@ private fun ExecutionPage(
     isEchoMode: Boolean = false,
     echoForceKgMax: Float = 0f, // Echo mode: actual measured force per cable (kg)
     loadBaselineA: Float = 0f, // Load baseline for cable A (base tension to subtract)
-    loadBaselineB: Float = 0f  // Load baseline for cable B (base tension to subtract)
+    loadBaselineB: Float = 0f, // Load baseline for cable B (base tension to subtract)
+    exerciseName: String? = null, // Current exercise name (null for Just Lift)
+    currentSetIndex: Int = 0, // Current set (0-based)
+    totalSets: Int = 0 // Total number of sets for current exercise
 ) {
     Column(
         modifier = Modifier.fillMaxSize(),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
+        // Exercise Name and Set Counter (only shown for routines/single exercise, NOT Just Lift)
+        // Display above the rep counter when exerciseName is available
+        if (!workoutParameters.isJustLift && exerciseName != null) {
+            // Exercise Name
+            Text(
+                text = exerciseName,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+
+            // Set Counter: "Set X / Y"
+            if (totalSets > 0) {
+                Text(
+                    text = "Set ${currentSetIndex + 1} / $totalSets",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+        }
+
         // Giant Rep Counter (matches parent repo style)
         Text(
             if (repCount.isWarmupComplete) "REP" else "WARMUP",

@@ -21,6 +21,7 @@ import com.devil.phoenixproject.domain.usecase.RepRanges
  * @property enableVideoPlayback Whether to show exercise demo videos
  * @property loadedRoutine Currently loaded routine (null for single exercise)
  * @property currentExerciseIndex Index in routine's exercise list
+ * @property currentSetIndex Index of current set (0-based) within current exercise
  * @property skippedExercises Indices of exercises user skipped
  * @property completedExercises Indices of completed exercises
  * @property autoplayEnabled Whether to auto-advance after set summary
@@ -49,6 +50,7 @@ data class WorkoutUiState(
     val enableVideoPlayback: Boolean = true,
     val loadedRoutine: Routine? = null,
     val currentExerciseIndex: Int = 0,
+    val currentSetIndex: Int = 0,
     val skippedExercises: Set<Int> = emptySet(),
     val completedExercises: Set<Int> = emptySet(),
     val autoplayEnabled: Boolean = false,
