@@ -868,7 +868,7 @@ private fun LifetimeStatRow(
         Column(horizontalAlignment = Alignment.End) {
             Text(
                 text = value,
-                style = if (isFunStat) MaterialTheme.typography.titleMedium else MaterialTheme.typography.titleMedium,
+                style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
                 color = if (isFunStat) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
             )
