@@ -14,9 +14,6 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.domain.model.WeightUnit
@@ -151,188 +148,6 @@ fun ProgressTab(
 
 
 /**
- * Dashboard tab - shows key statistics, calendar heatmap, and muscle group visualization.
- */
-@Suppress("unused") // Reserved for future analytics dashboard feature
-@Composable
-fun DashboardTab(
-    viewModel: MainViewModel,
-    personalRecords: List<com.devil.phoenixproject.domain.model.PersonalRecord>,
-    workoutHistory: List<WorkoutSession>,
-    weightUnit: WeightUnit,
-    formatWeight: (Float, WeightUnit) -> String,
-    modifier: Modifier = Modifier
-) {
-    val workoutStreak by viewModel.workoutStreak.collectAsState()
-    val allWorkoutSessions by viewModel.allWorkoutSessions.collectAsState()
-    val exerciseRepository = viewModel.exerciseRepository
-
-    // Fetch exercise names
-    val exerciseNames = remember { mutableStateMapOf<String, String>() }
-    LaunchedEffect(personalRecords) {
-        personalRecords.map { it.exerciseId }.distinct().forEach { exerciseId ->
-            if (!exerciseNames.containsKey(exerciseId)) {
-                val exercise = try {
-                    exerciseRepository.getExerciseById(exerciseId)
-                } catch (e: Exception) {
-                    null
-                }
-                exerciseNames[exerciseId] = exercise?.name ?: "Unknown Exercise"
-            }
-        }
-    }
-
-    LazyColumn(
-        modifier = modifier
-            .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
-            .padding(Spacing.medium),
-        verticalArrangement = Arrangement.spacedBy(Spacing.medium)
-    ) {
-        item {
-            Text(
-                "Dashboard",
-                style = MaterialTheme.typography.headlineLarge,
-                fontWeight = FontWeight.Bold
-            )
-            Spacer(modifier = Modifier.height(Spacing.small))
-        }
-
-        // Strength Score - Hero Metric
-        item {
-            StrengthScoreCard(
-                personalRecords = personalRecords,
-                workoutSessions = allWorkoutSessions,
-                modifier = Modifier.fillMaxWidth()
-            )
-        }
-
-        // This Week Stats
-        item {
-            ThisWeekStatsCard(
-                workoutSessions = allWorkoutSessions,
-                personalRecords = personalRecords,
-                weightUnit = weightUnit,
-                formatWeight = formatWeight,
-                modifier = Modifier.fillMaxWidth()
-            )
-        }
-
-        // Workout Streak (Keep - it's motivating)
-        if (workoutStreak != null && workoutStreak!! > 0) {
-            item {
-                Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .shadow(8.dp, RoundedCornerShape(20.dp)),
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.tertiaryContainer
-                    ),
-                    shape = RoundedCornerShape(20.dp)
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(20.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                Icons.Default.LocalFireDepartment,
-                                contentDescription = null,
-                                tint = Color(0xFFFF6B00),
-                                modifier = Modifier.size(40.dp)
-                            )
-                            Spacer(modifier = Modifier.width(12.dp))
-                            Column {
-                                Text(
-                                    text = "${workoutStreak} Day Streak!",
-                                    style = MaterialTheme.typography.titleLarge,
-                                    fontWeight = FontWeight.Bold
-                                )
-                                Text(
-                                    text = "Keep it going!",
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.onTertiaryContainer
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        // Recent PRs
-        if (personalRecords.isNotEmpty()) {
-            item {
-                RecentPRsCard(
-                    personalRecords = personalRecords,
-                    exerciseNames = exerciseNames,
-                    weightUnit = weightUnit,
-                    formatWeight = formatWeight,
-                    modifier = Modifier.fillMaxWidth()
-                )
-            }
-        }
-
-        // Top Exercises
-        if (personalRecords.isNotEmpty()) {
-            item {
-                TopExercisesCard(
-                    personalRecords = personalRecords,
-                    exerciseNames = exerciseNames,
-                    weightUnit = weightUnit,
-                    formatWeight = formatWeight,
-                    modifier = Modifier.fillMaxWidth()
-                )
-            }
-        }
-
-        // Empty state
-        if (personalRecords.isEmpty()) {
-            item {
-                Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .shadow(8.dp, RoundedCornerShape(20.dp)),
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceContainerHighest
-                    ),
-                    shape = RoundedCornerShape(20.dp)
-                ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(32.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
-                        Icon(
-                            Icons.Default.FitnessCenter,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(64.dp)
-                        )
-                        Spacer(modifier = Modifier.height(16.dp))
-                        Text(
-                            text = "Start Your Journey",
-                            style = MaterialTheme.typography.titleLarge,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text(
-                            text = "Complete workouts to see your progress and PRs here",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
-            }
-        }
-    }
-}
-
-/**
  * Analytics screen with three tabs: Dashboard, Progress, and History.
  * - Dashboard: Key insights and analytics overview
  * - Progress: Deep-dive into strength gains and personal records
@@ -342,8 +157,7 @@ fun DashboardTab(
 @Composable
 fun AnalyticsScreen(
     viewModel: MainViewModel,
-    themeMode: com.devil.phoenixproject.ui.theme.ThemeMode,
-    onNavigateToExerciseDetail: (String) -> Unit = {}
+    themeMode: com.devil.phoenixproject.ui.theme.ThemeMode
 ) {
     val workoutHistory by viewModel.workoutHistory.collectAsState()
     val groupedWorkoutHistory by viewModel.groupedWorkoutHistory.collectAsState()

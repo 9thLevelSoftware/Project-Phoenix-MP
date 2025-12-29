@@ -183,10 +183,7 @@ fun NavGraph(
         ) {
             AnalyticsScreen(
                 viewModel = viewModel,
-                themeMode = themeMode,
-                onNavigateToExerciseDetail = { exerciseId ->
-                    navController.navigate(NavigationRoutes.ExerciseDetail.createRoute(exerciseId))
-                }
+                themeMode = themeMode
             )
         }
 

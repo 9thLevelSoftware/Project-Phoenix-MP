@@ -39,14 +39,14 @@ fun InsightsTab(
     ) {
         item {
             Text(
-                text = "Insights & Analytics",
+                text = "Dashboard",
                 style = MaterialTheme.typography.headlineLarge,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onBackground
             )
             Spacer(modifier = Modifier.height(4.dp))
             Text(
-                text = "Deep analysis of your training patterns",
+                text = "Your training overview",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
