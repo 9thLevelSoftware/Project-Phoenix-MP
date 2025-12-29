@@ -1371,8 +1371,8 @@ class KableBleRepository : BleRepository {
     override suspend fun setColorScheme(schemeIndex: Int): Result<Unit> {
         log.d { "Setting color scheme: $schemeIndex" }
         return try {
-            // Color scheme command - send via workout command characteristic
-            val command = byteArrayOf(0x10, schemeIndex.toByte(), 0x00, 0x00)
+            // Color scheme command - use proper 34-byte frame format
+            val command = com.devil.phoenixproject.util.BlePacketFactory.createColorSchemeCommand(schemeIndex)
             sendWorkoutCommand(command)
         } catch (e: Exception) {
             log.e { "Failed to set color scheme: ${e.message}" }
@@ -2369,6 +2369,8 @@ class KableBleRepository : BleRepository {
     // ========== Disco Mode (Easter Egg) ==========
 
     override fun startDiscoMode() {
+        log.d { "🕺 startDiscoMode() called - discoJob=${discoJob?.isActive}, peripheral=${peripheral != null}" }
+
         // Don't start if already running
         if (discoJob?.isActive == true) {
             log.d { "🕺 Disco mode already active" }
@@ -2377,15 +2379,13 @@ class KableBleRepository : BleRepository {
 
         // Don't start if not connected
         if (peripheral == null) {
-            log.w { "🕺 Cannot start disco mode - not connected" }
+            log.w { "🕺 Cannot start disco mode - not connected (peripheral is null)" }
             return
         }
 
-        // Don't start during active workout (monitorPollingJob running means workout in progress)
-        if (monitorPollingJob?.isActive == true) {
-            log.w { "🕺 Cannot start disco mode - workout in progress" }
-            return
-        }
+        // Note: We removed the monitorPollingJob check because monitor polling runs
+        // continuously for keep-alive, not just during workouts. If user starts a workout
+        // during disco mode, workout commands take precedence anyway.
 
         log.i { "🕺 Starting DISCO MODE! 🪩" }
         _discoModeActive.value = true
