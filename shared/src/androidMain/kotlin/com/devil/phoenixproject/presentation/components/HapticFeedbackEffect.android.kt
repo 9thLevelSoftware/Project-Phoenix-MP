@@ -54,9 +54,6 @@ actual fun HapticFeedbackEffect(
                 setOnLoadCompleteListener { _, sampleId, status ->
                     if (status == 0) {
                         loadedSounds.add(sampleId)
-                        Logger.d { "Sound loaded successfully: $sampleId (total: ${loadedSounds.size})" }
-                    } else {
-                        Logger.e { "Sound load failed: $sampleId, status: $status" }
                     }
                 }
             }
@@ -64,23 +61,15 @@ actual fun HapticFeedbackEffect(
 
     // Load sounds using resource identifiers (works across modules)
     val soundIds = remember(soundPool) {
-        Logger.d { "Loading sounds, package: ${context.packageName}" }
         mutableMapOf<HapticEvent, Int>().apply {
             try {
-                loadSoundByName(context, soundPool, "beep")?.let {
-                    put(HapticEvent.REP_COMPLETED, it)
-                    Logger.d { "Loaded beep -> soundId $it" }
-                }
+                loadSoundByName(context, soundPool, "beep")?.let { put(HapticEvent.REP_COMPLETED, it) }
                 loadSoundByName(context, soundPool, "beepboop")?.let { put(HapticEvent.WARMUP_COMPLETE, it) }
                 loadSoundByName(context, soundPool, "boopbeepbeep")?.let { put(HapticEvent.WORKOUT_COMPLETE, it) }
                 loadSoundByName(context, soundPool, "chirpchirp")?.let { put(HapticEvent.WORKOUT_START, it) }
                 loadSoundByName(context, soundPool, "chirpchirp")?.let { put(HapticEvent.WORKOUT_END, it) }
                 loadSoundByName(context, soundPool, "restover")?.let { put(HapticEvent.REST_ENDING, it) }
-                loadSoundByName(context, soundPool, "discomode")?.let {
-                    put(HapticEvent.DISCO_MODE_UNLOCKED, it)
-                    Logger.d { "Loaded discomode -> soundId $it" }
-                }
-                Logger.d { "Loaded ${size} basic sounds" }
+                loadSoundByName(context, soundPool, "discomode")?.let { put(HapticEvent.DISCO_MODE_UNLOCKED, it) }
             } catch (e: Exception) {
                 Logger.e(e) { "Failed to load sounds" }
             }
@@ -101,34 +90,25 @@ actual fun HapticFeedbackEffect(
             "you_dominated_that_set", "you_just_broke_your_limits", "you_just_destroyed_that_weight",
             "you_just_levelled_up", "you_went_full_throttle"
         )
-        val ids = badgeSoundNames.mapNotNull { loadSoundByName(context, soundPool, it) }
-        Logger.d { "Loaded ${ids.size} badge sounds" }
-        ids
+        badgeSoundNames.mapNotNull { loadSoundByName(context, soundPool, it) }
     }
 
     // Load PR-specific sounds
     val prSoundIds = remember(soundPool) {
-        val ids = listOf("new_personal_record", "new_personal_record_2")
+        listOf("new_personal_record", "new_personal_record_2")
             .mapNotNull { loadSoundByName(context, soundPool, it) }
-        Logger.d { "Loaded ${ids.size} PR sounds" }
-        ids
     }
 
     // Load rep count sounds (1-25)
     val repCountSoundIds = remember(soundPool) {
-        val ids = (1..25).mapNotNull { num ->
+        (1..25).mapNotNull { num ->
             loadSoundByName(context, soundPool, "rep_%02d".format(num))
         }
-        Logger.d { "Loaded ${ids.size} rep count sounds" }
-        ids
     }
 
     LaunchedEffect(hapticEvents) {
         hapticEvents.collect { event ->
-            Logger.d { "HapticEvent received: $event" }
-            // Play haptic on main thread
             playHapticFeedback(vibrator, event)
-            // Play sound - SoundPool.play() is thread-safe, with MediaPlayer fallback
             playSound(event, soundPool, soundIds, badgeSoundIds, prSoundIds, repCountSoundIds, loadedSounds, context)
         }
     }
@@ -157,14 +137,10 @@ private fun loadSoundByName(context: Context, soundPool: SoundPool, name: String
         resId = context.resources.getIdentifier(name, "raw", context.packageName)
     }
 
-    if (resId == 0) {
-        Logger.w { "Sound resource not found: $name in package $packageName or ${context.packageName}" }
-        return null
-    }
+    if (resId == 0) return null
+
     return try {
-        val soundId = soundPool.load(context, resId, 1)
-        Logger.d { "Loaded sound '$name' (resId=$resId) -> soundId $soundId" }
-        soundId
+        soundPool.load(context, resId, 1)
     } catch (e: Exception) {
         Logger.e(e) { "Failed to load sound '$name'" }
         null
@@ -208,15 +184,9 @@ private fun playSound(
     }
 
     if (soundId == null) {
-        Logger.w { "No sound ID found for event: $event, trying MediaPlayer fallback" }
         // Try MediaPlayer fallback for key events
         playWithMediaPlayer(event, context)
         return
-    }
-
-    // Check if sound is loaded
-    if (soundId !in loadedSounds) {
-        Logger.w { "Sound $soundId not yet loaded for event: $event (loaded: ${loadedSounds.size})" }
     }
 
     try {
@@ -228,13 +198,11 @@ private fun playSound(
             0,    // Loop (0 = no loop)
             1.0f  // Playback rate
         )
-        Logger.d { "Playing sound $soundId for $event -> streamId $streamId" }
+        // If SoundPool fails, try MediaPlayer fallback
         if (streamId == 0) {
-            Logger.e { "SoundPool.play returned 0 (failed) for soundId $soundId, trying MediaPlayer" }
             playWithMediaPlayer(event, context)
         }
     } catch (e: Exception) {
-        Logger.e(e) { "Sound playback failed for $event, trying MediaPlayer" }
         playWithMediaPlayer(event, context)
     }
 }
@@ -245,33 +213,23 @@ private fun playSound(
 private fun playWithMediaPlayer(event: HapticEvent, context: Context) {
     val soundName = when (event) {
         is HapticEvent.DISCO_MODE_UNLOCKED -> "discomode"
-        is HapticEvent.BADGE_EARNED -> "victory" // Use a common badge sound
+        is HapticEvent.BADGE_EARNED -> "victory"
         is HapticEvent.PERSONAL_RECORD -> "new_personal_record"
         is HapticEvent.WORKOUT_COMPLETE -> "boopbeepbeep"
-        else -> return // Skip other events for now
+        else -> return
     }
 
     val packageName = context.packageName.removeSuffix(".debug")
     val resId = context.resources.getIdentifier(soundName, "raw", packageName)
-    if (resId == 0) {
-        Logger.e { "MediaPlayer fallback: resource not found for $soundName" }
-        return
-    }
+    if (resId == 0) return
 
     try {
-        val mediaPlayer = MediaPlayer.create(context, resId)
-        if (mediaPlayer == null) {
-            Logger.e { "MediaPlayer.create returned null for $soundName (resId=$resId)" }
-            return
-        }
+        val mediaPlayer = MediaPlayer.create(context, resId) ?: return
         mediaPlayer.setVolume(1.0f, 1.0f)
-        mediaPlayer.setOnCompletionListener { mp ->
-            mp.release()
-        }
+        mediaPlayer.setOnCompletionListener { it.release() }
         mediaPlayer.start()
-        Logger.d { "MediaPlayer playing $soundName for $event" }
-    } catch (e: Exception) {
-        Logger.e(e) { "MediaPlayer fallback failed for $event" }
+    } catch (_: Exception) {
+        // Silently fail - sound is not critical
     }
 }
 
