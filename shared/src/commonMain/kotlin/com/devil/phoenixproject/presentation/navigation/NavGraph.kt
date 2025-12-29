@@ -183,8 +183,7 @@ fun NavGraph(
         ) {
             AnalyticsScreen(
                 viewModel = viewModel,
-                themeMode = themeMode,
-                onNavigateToBadges = { navController.navigate(NavigationRoutes.Badges.route) }
+                themeMode = themeMode
             )
         }
 

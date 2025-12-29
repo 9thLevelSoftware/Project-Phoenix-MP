@@ -2,6 +2,7 @@
 
 package com.devil.phoenixproject.presentation.components
 
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -14,8 +15,12 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -496,12 +501,12 @@ fun VolumeVsIntensityCard(
 
 @Composable
 fun WorkoutModeDistributionCard(
-    personalRecords: List<PersonalRecord>,
+    workoutSessions: List<WorkoutSession>,
     modifier: Modifier = Modifier
 ) {
-    val modeData = remember(personalRecords) {
-        personalRecords
-            .groupingBy { it.workoutMode }
+    val modeData = remember(workoutSessions) {
+        workoutSessions
+            .groupingBy { it.mode }
             .eachCount()
             .map { it.key to it.value.toFloat() }
             .sortedByDescending { it.second }
@@ -519,7 +524,7 @@ fun WorkoutModeDistributionCard(
                 fontWeight = FontWeight.Bold
             )
             Text(
-                "Based on Personal Records",
+                "Based on Workout Sessions",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -599,37 +604,49 @@ private data class VolumeComparison(
 )
 
 /**
+ * Format a float to one decimal place (KMP-compatible)
+ */
+private fun formatOneDecimal(value: Float): String {
+    val rounded = kotlin.math.round(value * 10) / 10
+    return if (rounded == rounded.toLong().toFloat()) {
+        "${rounded.toLong()}.0"
+    } else {
+        "$rounded"
+    }
+}
+
+/**
  * Get fun volume comparison based on total volume in kg
  */
 private fun getVolumeComparison(totalVolumeKg: Float): VolumeComparison {
     return when {
         totalVolumeKg >= 1_000_000 -> VolumeComparison(
-            funValue = String.format("%.1f", totalVolumeKg / 52_000_000f),
+            funValue = formatOneDecimal(totalVolumeKg / 52_000_000f),
             funLabel = "Titanics",
             actualKg = totalVolumeKg
         )
         totalVolumeKg >= 200_000 -> VolumeComparison(
-            funValue = String.format("%.1f", totalVolumeKg / 150_000f),
+            funValue = formatOneDecimal(totalVolumeKg / 150_000f),
             funLabel = "Blue Whales",
             actualKg = totalVolumeKg
         )
         totalVolumeKg >= 100_000 -> VolumeComparison(
-            funValue = String.format("%.1f", totalVolumeKg / 100_000f),
+            funValue = formatOneDecimal(totalVolumeKg / 100_000f),
             funLabel = "Jumbo Jets",
             actualKg = totalVolumeKg
         )
         totalVolumeKg >= 50_000 -> VolumeComparison(
-            funValue = String.format("%.1f", totalVolumeKg / 5_000f),
+            funValue = formatOneDecimal(totalVolumeKg / 5_000f),
             funLabel = "Elephants Moved",
             actualKg = totalVolumeKg
         )
         totalVolumeKg >= 10_000 -> VolumeComparison(
-            funValue = String.format("%.1f", totalVolumeKg / 1_500f),
+            funValue = formatOneDecimal(totalVolumeKg / 1_500f),
             funLabel = "Cars Crushed",
             actualKg = totalVolumeKg
         )
         else -> VolumeComparison(
-            funValue = String.format("%.0f", totalVolumeKg),
+            funValue = "${totalVolumeKg.toInt()}",
             funLabel = "kg lifted",
             actualKg = totalVolumeKg
         )
@@ -750,10 +767,11 @@ fun LifetimeStatsCard(
         } else {
             stats.totalVolumeKg
         }
+        val unitLabel = weightUnit.name.lowercase()
         when {
-            displayVolume >= 1_000_000 -> String.format("%.1fM %s", displayVolume / 1_000_000f, weightUnit.name.lowercase())
-            displayVolume >= 1_000 -> String.format("%.1fk %s", displayVolume / 1_000f, weightUnit.name.lowercase())
-            else -> String.format("%.0f %s", displayVolume, weightUnit.name.lowercase())
+            displayVolume >= 1_000_000 -> "${formatOneDecimal(displayVolume / 1_000_000f)}M $unitLabel"
+            displayVolume >= 1_000 -> "${formatOneDecimal(displayVolume / 1_000f)}k $unitLabel"
+            else -> "${displayVolume.toInt()} $unitLabel"
         }
     }
 
@@ -813,7 +831,7 @@ fun LifetimeStatsCard(
                     LifetimeStatRow(
                         label = "Total Reps",
                         value = when {
-                            stats.totalReps >= 1000 -> String.format("%.1fk", stats.totalReps / 1000f)
+                            stats.totalReps >= 1000 -> "${formatOneDecimal(stats.totalReps / 1000f)}k"
                             else -> "${stats.totalReps}"
                         },
                         subtext = null

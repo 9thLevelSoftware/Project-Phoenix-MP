@@ -105,10 +105,10 @@ fun InsightsTab(
         }
         
         // 5. Mode Distribution Donut Chart (New Metric)
-        if (prs.isNotEmpty()) {
+        if (workoutSessions.isNotEmpty()) {
             item {
                 WorkoutModeDistributionCard(
-                    personalRecords = prs,
+                    workoutSessions = workoutSessions,
                     modifier = Modifier.fillMaxWidth()
                 )
             }

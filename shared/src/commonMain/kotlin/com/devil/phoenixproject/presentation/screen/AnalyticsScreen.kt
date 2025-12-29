@@ -40,6 +40,7 @@ private fun formatTimestamp(timestamp: Long): String {
 @Composable
 fun ProgressTab(
     personalRecords: List<PersonalRecord>,
+    workoutSessions: List<WorkoutSession>,
     exerciseRepository: ExerciseRepository,
     weightUnit: WeightUnit,
     formatWeight: (Float, WeightUnit) -> String,
@@ -64,6 +65,22 @@ fun ProgressTab(
                 text = "Track your strength gains over time",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+
+        // Lifetime Stats Card at the top
+        item {
+            LifetimeStatsCard(
+                workoutSessions = workoutSessions,
+                exerciseRepository = exerciseRepository,
+                weightUnit = weightUnit
+            )
+        }
+
+        // Workout Mode Distribution Card
+        item {
+            WorkoutModeDistributionCard(
+                workoutSessions = workoutSessions
             )
         }
 
@@ -318,6 +335,7 @@ fun AnalyticsScreen(
                     )
                     1 -> ProgressTab(
                         personalRecords = personalRecords,
+                        workoutSessions = allWorkoutSessions,
                         exerciseRepository = viewModel.exerciseRepository,
                         weightUnit = weightUnit,
                         formatWeight = viewModel::formatWeight,
