@@ -22,9 +22,8 @@ data class Routine(
  * @param weightPerCableKg Weight in kg per cable (machine tracks each cable independently)
  *                         For SINGLE: weight on the one active cable
  *                         For DOUBLE: weight per cable (total load = 2x this value)
- * @param supersetGroupId Exercises with the same ID are grouped into a superset
- * @param supersetOrder Order of this exercise within its superset (0-based)
- * @param supersetRestSeconds Rest time between exercises within a superset (default 10s)
+ * @param supersetId Reference to parent Superset container (null if not in a superset)
+ * @param orderInSuperset Position within the superset (0-based)
  */
 data class RoutineExercise(
     val id: String,
@@ -50,13 +49,12 @@ data class RoutineExercise(
     val perSetRestTime: Boolean = false,
     // Stall detection toggle - when true, auto-stops set if user hesitates too long (applies to AMRAP/Just Lift modes)
     val stallDetectionEnabled: Boolean = true,
-    // Superset configuration
-    val supersetGroupId: String? = null,  // Exercises with same ID are in same superset
-    val supersetOrder: Int = 0,           // Order within the superset
-    val supersetRestSeconds: Int = 10     // Rest between superset exercises (default 10s)
+    // Superset configuration (container model)
+    val supersetId: String? = null,       // Reference to parent Superset container
+    val orderInSuperset: Int = 0          // Position within the superset
 ) {
     /** Returns true if this exercise is part of a superset */
-    val isInSuperset: Boolean get() = supersetGroupId != null
+    val isInSuperset: Boolean get() = supersetId != null
     // Computed property for backwards compatibility
     val sets: Int get() = setReps.size
     val reps: Int get() = setReps.firstOrNull() ?: 10
@@ -94,18 +92,47 @@ fun Exercise.resolveDefaultCableConfig(): CableConfiguration {
 // ==================== SUPERSET SUPPORT ====================
 
 /**
- * Represents a group of exercises that form a superset.
- * Exercises in a superset are performed back-to-back with minimal rest.
+ * Superset colors for visual distinction
  */
-data class SupersetGroup(
+object SupersetColors {
+    const val INDIGO = 0   // #6366F1
+    const val PINK = 1     // #EC4899
+    const val GREEN = 2    // #10B981
+    const val AMBER = 3    // #F59E0B
+
+    fun next(existingIndices: Set<Int>): Int {
+        for (i in 0..3) {
+            if (i !in existingIndices) return i
+        }
+        return existingIndices.size % 4
+    }
+}
+
+/**
+ * First-class superset container entity.
+ * Represents a group of exercises performed back-to-back.
+ */
+data class Superset(
     val id: String,
-    val name: String,  // e.g., "Superset A", "Superset B"
-    val exercises: List<RoutineExercise>,
-    val restBetweenExercises: Int = 10  // Rest between exercises within superset
+    val routineId: String,
+    val name: String,
+    val colorIndex: Int = SupersetColors.INDIGO,
+    val restBetweenSeconds: Int = 10,
+    val orderIndex: Int = 0,
+    val exercises: List<RoutineExercise> = emptyList(),
+    val isCollapsed: Boolean = false  // UI state only, not persisted
 ) {
+    val isEmpty: Boolean get() = exercises.isEmpty()
+    val exerciseCount: Int get() = exercises.size
+
     /** Total number of sets (minimum sets among all exercises) */
     val sets: Int get() = exercises.minOfOrNull { it.sets } ?: 0
 }
+
+/**
+ * Generate a unique superset ID
+ */
+fun generateSupersetId(): String = "superset_${generateUUID()}"
 
 /**
  * Sealed class representing an item in a routine - either a single exercise or a superset group.
@@ -184,9 +211,3 @@ fun Routine.getExercisesInSuperset(groupId: String): List<RoutineExercise> {
         .sortedBy { it.supersetOrder }
 }
 
-/**
- * Generate a unique superset group ID
- */
-fun generateSupersetGroupId(): String {
-    return "superset_${generateUUID()}"
-}
