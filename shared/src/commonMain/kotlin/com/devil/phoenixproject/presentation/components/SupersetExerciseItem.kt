@@ -139,7 +139,7 @@ fun SupersetExerciseItem(
                     val weight = kgToDisplay(exercise.weightPerCableKg, weightUnit)
                     val unitLabel = if (weightUnit == WeightUnit.KG) "kg" else "lbs"
                     Text(
-                        text = "${exercise.sets} sets x ${exercise.reps} reps @ ${"%.1f".format(weight)} $unitLabel",
+                        text = "${exercise.sets} sets x ${exercise.reps} reps @ ${weight.toInt()} $unitLabel",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )

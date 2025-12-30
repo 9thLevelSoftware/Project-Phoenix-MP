@@ -8,9 +8,7 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -19,19 +17,18 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.data.repository.PersonalRecordRepository
 import com.devil.phoenixproject.domain.model.*
 import com.devil.phoenixproject.presentation.components.ExercisePickerDialog
+import com.devil.phoenixproject.presentation.components.SupersetHeader
+import com.devil.phoenixproject.presentation.components.SupersetExerciseItem
 import org.koin.compose.koinInject
-import com.devil.phoenixproject.ui.theme.Spacing
-import com.devil.phoenixproject.util.KmpUtils
 import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.rememberReorderableLazyListState
 
@@ -97,18 +94,6 @@ fun RoutineEditorScreen(
 
     // Drag and Drop State
     val lazyListState = rememberLazyListState()
-    val reorderState = rememberReorderableLazyListState(lazyListState) { from, to ->
-        val list = state.exercises.toMutableList()
-        val fromIndex = from.index
-        val toIndex = to.index
-        
-        if (fromIndex in list.indices && toIndex in list.indices) {
-            val moved = list.removeAt(fromIndex)
-            list.add(toIndex, moved)
-            // Re-assign order indices immediately
-            state = state.copy(exercises = list.mapIndexed { i, ex -> ex.copy(orderIndex = i) })
-        }
-    }
 
     // Helper: Update Routine
     fun updateRoutine(updateFn: (Routine) -> Routine) {
@@ -120,6 +105,18 @@ fun RoutineEditorScreen(
     // Helper: Update Exercises
     fun updateExercises(newList: List<RoutineExercise>) {
         updateRoutine { it.copy(exercises = newList.mapIndexed { i, ex -> ex.copy(orderIndex = i) }) }
+    }
+
+    val reorderState = rememberReorderableLazyListState(lazyListState) { from, to ->
+        val list = state.exercises.toMutableList()
+        val fromIndex = from.index
+        val toIndex = to.index
+
+        if (fromIndex in list.indices && toIndex in list.indices) {
+            val moved = list.removeAt(fromIndex)
+            list.add(toIndex, moved)
+            updateExercises(list)
+        }
     }
 
     Scaffold(
@@ -166,7 +163,8 @@ fun RoutineEditorScreen(
                                     id = if (routineId == "new") generateUUID() else routineId,
                                     name = state.routineName.ifBlank { "Unnamed Routine" },
                                     exercises = state.exercises,
-                                    createdAt = KmpUtils.currentTimeMillis() // Preserve original date in real app
+                                    supersets = state.supersets,
+                                    createdAt = com.devil.phoenixproject.util.KmpUtils.currentTimeMillis() // Preserve original date in real app
                                 )
                                 viewModel.saveRoutine(routineToSave)
                                 navController.popBackStack()
@@ -204,12 +202,12 @@ fun RoutineEditorScreen(
                         NavigationBarItem(
                             selected = false,
                             onClick = {
-                                val newGroupId = generateSupersetGroupId()
-                                // Find the earliest index to keep them together if desired, 
+                                val newSupersetId = generateSupersetId()
+                                // Find the earliest index to keep them together if desired,
                                 // or just group them in place. Grouping usually implies adjacency.
                                 // For MVP, we just assign the ID.
-                                val newExercises = state.exercises.map {
-                                    if (it.id in state.selectedIds) it.copy(supersetGroupId = newGroupId) else it
+                                val newExercises = state.exercises.mapIndexed { index, ex ->
+                                    if (ex.id in state.selectedIds) ex.copy(supersetId = newSupersetId, orderInSuperset = index) else ex
                                 }
                                 updateExercises(newExercises)
                                 state = state.copy(isSelectionMode = false, selectedIds = emptySet())
@@ -218,15 +216,15 @@ fun RoutineEditorScreen(
                             label = { Text("Group") }
                         )
                     }
-                    
+
                     // Ungroup Button
-                    val canUngroup = state.exercises.any { it.id in state.selectedIds && it.supersetGroupId != null }
+                    val canUngroup = state.exercises.any { it.id in state.selectedIds && it.supersetId != null }
                     if (canUngroup) {
                         NavigationBarItem(
                             selected = false,
                             onClick = {
                                 val newExercises = state.exercises.map {
-                                    if (it.id in state.selectedIds) it.copy(supersetGroupId = null) else it
+                                    if (it.id in state.selectedIds) it.copy(supersetId = null, orderInSuperset = 0) else it
                                 }
                                 updateExercises(newExercises)
                                 state = state.copy(isSelectionMode = false, selectedIds = emptySet())
@@ -253,64 +251,127 @@ fun RoutineEditorScreen(
         LazyColumn(
             state = lazyListState,
             contentPadding = PaddingValues(bottom = 100.dp, top = padding.calculateTopPadding()),
-            modifier = Modifier.fillMaxSize()
+            modifier = Modifier.fillMaxSize(),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            itemsIndexed(state.exercises, key = { _, item -> item.id }) { index, exercise ->
-                // Visual Logic for Supersets
-                val currentGroup = exercise.supersetGroupId
-                val prevGroup = state.exercises.getOrNull(index - 1)?.supersetGroupId
-                val nextGroup = state.exercises.getOrNull(index + 1)?.supersetGroupId
-                
-                val isSupersetStart = currentGroup != null && currentGroup != prevGroup
-                val isSupersetEnd = currentGroup != null && currentGroup != nextGroup
-                
-                ReorderableItem(
-                    state = reorderState,
-                    key = exercise.id
-                ) { isDragging ->
-                    val elevation by animateDpAsState(if (isDragging) 8.dp else 0.dp)
-                    
-                    DraggableExerciseCard(
-                        exercise = exercise,
-                        index = index + 1,
-                        isSelected = exercise.id in state.selectedIds,
-                        isSelectionMode = state.isSelectionMode,
-                        supersetState = when {
-                            currentGroup == null -> SupersetState.None
-                            isSupersetStart && isSupersetEnd -> SupersetState.Single
-                            isSupersetStart -> SupersetState.Top
-                            isSupersetEnd -> SupersetState.Bottom
-                            else -> SupersetState.Middle
-                        },
-                        elevation = elevation,
-                        weightUnit = weightUnit,
-                        kgToDisplay = kgToDisplay,
-                        onToggleSelection = {
-                            val newIds = if (exercise.id in state.selectedIds) {
-                                state.selectedIds - exercise.id
-                            } else {
-                                state.selectedIds + exercise.id
+            state.items.forEach { item ->
+                when (item) {
+                    is RoutineItem.Single -> {
+                        item(key = item.exercise.id) {
+                            val dragInteractionSource = remember { MutableInteractionSource() }
+                            ReorderableItem(reorderState, key = item.exercise.id) { isDragging ->
+                                val elevation by animateDpAsState(if (isDragging) 8.dp else 0.dp)
+                                StandaloneExerciseCard(
+                                    exercise = item.exercise,
+                                    isDragging = isDragging,
+                                    elevation = elevation,
+                                    isSelected = item.exercise.id in state.selectedIds,
+                                    isSelectionMode = state.isSelectionMode,
+                                    weightUnit = weightUnit,
+                                    kgToDisplay = kgToDisplay,
+                                    onToggleSelection = {
+                                        val newIds = if (item.exercise.id in state.selectedIds) {
+                                            state.selectedIds - item.exercise.id
+                                        } else {
+                                            state.selectedIds + item.exercise.id
+                                        }
+                                        state = state.copy(selectedIds = newIds, isSelectionMode = newIds.isNotEmpty())
+                                    },
+                                    onEdit = {
+                                        exerciseToConfig = item.exercise
+                                        isNewExercise = false
+                                        editingIndex = state.exercises.indexOf(item.exercise)
+                                    },
+                                    dragModifier = Modifier.draggableHandle(
+                                        interactionSource = dragInteractionSource
+                                    )
+                                )
                             }
-                            state = state.copy(
-                                selectedIds = newIds,
-                                isSelectionMode = newIds.isNotEmpty()
-                            )
-                        },
-                        onEdit = {
-                            exerciseToConfig = exercise
-                            isNewExercise = false
-                            editingIndex = index
-                        },
-                        dragModifier = Modifier.draggableHandle(
-                            interactionSource = remember { MutableInteractionSource() }
-                        )
-                    )
+                        }
+                    }
+
+                    is RoutineItem.SupersetItem -> {
+                        val superset = item.superset
+                        val isExpanded = superset.id !in state.collapsedSupersets
+
+                        // Superset header
+                        item(key = "superset_${superset.id}") {
+                            val headerDragInteractionSource = remember { MutableInteractionSource() }
+                            ReorderableItem(reorderState, key = "superset_${superset.id}") { isDragging ->
+                                SupersetHeader(
+                                    superset = superset,
+                                    isExpanded = isExpanded,
+                                    isDragging = isDragging,
+                                    onToggleExpand = {
+                                        state = if (isExpanded) {
+                                            state.copy(collapsedSupersets = state.collapsedSupersets + superset.id)
+                                        } else {
+                                            state.copy(collapsedSupersets = state.collapsedSupersets - superset.id)
+                                        }
+                                    },
+                                    onMenuClick = { /* TODO: show superset menu */ },
+                                    onDragHandle = {
+                                        Icon(
+                                            Icons.Default.DragHandle,
+                                            contentDescription = "Drag",
+                                            tint = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f),
+                                            modifier = Modifier.draggableHandle(
+                                                interactionSource = headerDragInteractionSource
+                                            )
+                                        )
+                                    },
+                                    modifier = Modifier.padding(horizontal = 16.dp)
+                                )
+                            }
+                        }
+
+                        // Exercises inside superset (if expanded)
+                        if (isExpanded) {
+                            superset.exercises.forEachIndexed { index, exercise ->
+                                item(key = exercise.id) {
+                                    val exerciseDragInteractionSource = remember { MutableInteractionSource() }
+                                    ReorderableItem(reorderState, key = exercise.id) { isDragging ->
+                                        SupersetExerciseItem(
+                                            exercise = exercise,
+                                            colorIndex = superset.colorIndex,
+                                            isFirst = index == 0,
+                                            isLast = index == superset.exercises.lastIndex,
+                                            isDragging = isDragging,
+                                            weightUnit = weightUnit,
+                                            kgToDisplay = kgToDisplay,
+                                            onMenuClick = { /* TODO: show exercise menu */ },
+                                            onDragHandle = {
+                                                Icon(
+                                                    Icons.Default.DragHandle,
+                                                    contentDescription = "Drag",
+                                                    tint = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f),
+                                                    modifier = Modifier.draggableHandle(
+                                                        interactionSource = exerciseDragInteractionSource
+                                                    )
+                                                )
+                                            },
+                                            onClick = {
+                                                exerciseToConfig = exercise
+                                                isNewExercise = false
+                                                editingIndex = state.exercises.indexOf(exercise)
+                                            },
+                                            modifier = Modifier.padding(horizontal = 16.dp)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
             }
-            
-            if (state.exercises.isEmpty()) {
+
+            // Empty state
+            if (state.items.isEmpty()) {
                 item {
-                    Box(modifier = Modifier.fillMaxWidth().padding(top = 100.dp), contentAlignment = Alignment.Center) {
+                    Box(
+                        modifier = Modifier.fillMaxWidth().padding(top = 100.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
                         Text("Tap + to add your first exercise", color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
@@ -381,98 +442,65 @@ fun RoutineEditorScreen(
     }
 }
 
-enum class SupersetState { None, Top, Middle, Bottom, Single }
-
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
-fun DraggableExerciseCard(
+fun StandaloneExerciseCard(
     exercise: RoutineExercise,
-    index: Int,
+    isDragging: Boolean,
+    elevation: Dp,
     isSelected: Boolean,
     isSelectionMode: Boolean,
-    supersetState: SupersetState,
-    elevation: androidx.compose.ui.unit.Dp,
     weightUnit: WeightUnit,
     kgToDisplay: (Float, WeightUnit) -> Float,
     onToggleSelection: () -> Unit,
     onEdit: () -> Unit,
     dragModifier: Modifier
 ) {
-    val isSuperset = supersetState != SupersetState.None
-    
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .height(IntrinsicSize.Min) // Essential for fillMaxHeight child
-            .padding(horizontal = 16.dp, vertical = if (isSuperset) 0.dp else 4.dp)
+            .padding(horizontal = 16.dp, vertical = 4.dp)
             .shadow(elevation, RoundedCornerShape(12.dp))
             .background(MaterialTheme.colorScheme.background)
             .combinedClickable(
-                onClick = { 
-                    if (isSelectionMode) onToggleSelection() else onEdit() 
-                },
-                onLongClick = {
-                    if (!isSelectionMode) onToggleSelection()
-                }
+                onClick = { if (isSelectionMode) onToggleSelection() else onEdit() },
+                onLongClick = { if (!isSelectionMode) onToggleSelection() }
             )
     ) {
-        // 1. Left Rail (Superset / Selection)
+        // Left rail with drag handle or checkbox
         Box(
             modifier = Modifier
                 .width(40.dp)
-                .fillMaxHeight(),
+                .height(IntrinsicSize.Min),
             contentAlignment = Alignment.Center
         ) {
             if (isSelectionMode) {
                 Checkbox(
                     checked = isSelected,
-                    onCheckedChange = { onToggleSelection() },
-                    modifier = Modifier.align(Alignment.Center)
+                    onCheckedChange = { onToggleSelection() }
                 )
             } else {
-                // Drag Handle
                 Icon(
-                    Icons.Default.DragHandle, 
+                    Icons.Default.DragHandle,
                     contentDescription = "Drag",
                     tint = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f),
-                    modifier = Modifier.align(Alignment.Center).then(dragModifier)
-                )
-            }
-            
-            // Superset Line
-            if (isSuperset && !isSelectionMode) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxHeight()
-                        .width(4.dp)
-                        .align(Alignment.CenterEnd)
-                        .padding(vertical = if(supersetState == SupersetState.Top) 4.dp else 0.dp)
-                        .background(
-                            MaterialTheme.colorScheme.tertiary,
-                            shape = when(supersetState) {
-                                SupersetState.Top -> RoundedCornerShape(topStart = 4.dp, topEnd = 4.dp)
-                                SupersetState.Bottom -> RoundedCornerShape(bottomStart = 4.dp, bottomEnd = 4.dp)
-                                else -> androidx.compose.ui.graphics.RectangleShape
-                            }
-                        )
+                    modifier = dragModifier
                 )
             }
         }
 
-        // 2. Card Content
+        // Card content
         Card(
-            modifier = Modifier.weight(1f).padding(start = 8.dp),
+            modifier = Modifier
+                .weight(1f)
+                .padding(start = 8.dp),
             colors = CardDefaults.cardColors(
-                containerColor = if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f) 
-                               else MaterialTheme.colorScheme.surfaceContainer
+                containerColor = if (isSelected)
+                    MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
+                else
+                    MaterialTheme.colorScheme.surfaceContainer
             ),
-            shape = if (isSuperset) {
-                when(supersetState) {
-                    SupersetState.Top -> RoundedCornerShape(topEnd = 12.dp, topStart = 4.dp)
-                    SupersetState.Bottom -> RoundedCornerShape(bottomEnd = 12.dp, bottomStart = 4.dp)
-                    SupersetState.Middle -> RoundedCornerShape(4.dp)
-                    else -> RoundedCornerShape(12.dp)
-                }
-            } else RoundedCornerShape(12.dp)
+            shape = RoundedCornerShape(12.dp)
         ) {
             Row(
                 modifier = Modifier.padding(12.dp),
@@ -484,14 +512,14 @@ fun DraggableExerciseCard(
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold
                     )
+                    val weight = kgToDisplay(exercise.weightPerCableKg, weightUnit)
+                    val unitLabel = if (weightUnit == WeightUnit.KG) "kg" else "lbs"
                     Text(
-                        "${formatReps(exercise.setReps)} @ ${kgToDisplay(exercise.weightPerCableKg, weightUnit).toInt()}",
+                        "${exercise.sets} sets x ${exercise.reps} reps @ ${weight.toInt()} $unitLabel",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
-                
-                // Kebab Menu Removed - Interactions moved to card tap/long-press
             }
         }
     }
