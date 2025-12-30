@@ -13,6 +13,7 @@ import org.koin.compose.koinInject
 import com.devil.phoenixproject.data.repository.GamificationRepository
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
 import co.touchlab.kermit.Logger
+import com.devil.phoenixproject.util.setKeepScreenOn
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -66,6 +67,14 @@ fun ActiveWorkoutScreen(
     LaunchedEffect(Unit) {
         viewModel.badgeEarnedEvents.collect { badges ->
             earnedBadges = badges
+        }
+    }
+
+    // Keep screen on during workout
+    DisposableEffect(Unit) {
+        setKeepScreenOn(true)
+        onDispose {
+            setKeepScreenOn(false)
         }
     }
 
@@ -132,6 +141,12 @@ fun ActiveWorkoutScreen(
             workoutState is WorkoutState.Idle && workoutParameters.isJustLift -> {
                 // Just Lift completed and reset to Idle - navigate back to Just Lift screen
                 Logger.d { "ActiveWorkoutScreen: Just Lift idle, navigating back to JustLiftScreen" }
+                hasNavigatedAway = true
+                navController.navigateUp()
+            }
+            workoutState is WorkoutState.Idle && (loadedRoutine == null || loadedRoutine?.id?.startsWith(MainViewModel.TEMP_SINGLE_EXERCISE_PREFIX) == true) -> {
+                // Single Exercise completed and reset to Idle - navigate back to SingleExerciseScreen
+                Logger.d { "ActiveWorkoutScreen: Single Exercise idle, navigating back" }
                 hasNavigatedAway = true
                 navController.navigateUp()
             }
