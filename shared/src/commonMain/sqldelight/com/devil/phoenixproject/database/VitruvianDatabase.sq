@@ -158,6 +158,7 @@ CREATE TABLE RoutineExercise (
 );
 
 CREATE INDEX idx_routine_exercise_routine ON RoutineExercise(routineId);
+CREATE INDEX idx_routine_exercise_superset ON RoutineExercise(supersetId);
 
 -- ==================== CONNECTION LOGS ====================
 -- BLE connection debug logs for diagnosing connectivity issues
@@ -510,6 +511,34 @@ DELETE FROM Routine WHERE id = ?;
 
 updateRoutineById:
 UPDATE Routine SET name = ?, description = ? WHERE id = ?;
+
+-- ==================== SUPERSET QUERIES ====================
+
+selectSupersetsByRoutine:
+SELECT * FROM Superset WHERE routineId = ? ORDER BY orderIndex ASC;
+
+selectSupersetById:
+SELECT * FROM Superset WHERE id = ?;
+
+insertSuperset:
+INSERT INTO Superset (id, routineId, name, colorIndex, restBetweenSeconds, orderIndex)
+VALUES (?, ?, ?, ?, ?, ?);
+
+updateSuperset:
+UPDATE Superset SET name = ?, colorIndex = ?, restBetweenSeconds = ?, orderIndex = ? WHERE id = ?;
+
+deleteSuperset:
+DELETE FROM Superset WHERE id = ?;
+
+deleteSupersetsByRoutine:
+DELETE FROM Superset WHERE routineId = ?;
+
+countSupersetsInRoutine:
+SELECT COUNT(*) FROM Superset WHERE routineId = ?;
+
+-- Sync version for backup
+selectAllSupersetsSync:
+SELECT * FROM Superset;
 
 -- Analytics Queries
 selectVolumeHistory:
