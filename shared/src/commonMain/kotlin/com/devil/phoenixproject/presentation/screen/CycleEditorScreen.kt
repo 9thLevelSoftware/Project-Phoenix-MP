@@ -2,9 +2,11 @@ package com.devil.phoenixproject.presentation.screen
 
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
@@ -20,12 +22,14 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.data.repository.TrainingCycleRepository
 import com.devil.phoenixproject.domain.model.CycleDay
 import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.domain.model.TrainingCycle
 import com.devil.phoenixproject.domain.model.generateUUID
+import com.devil.phoenixproject.presentation.components.CycleDayConfigSheet
 import com.devil.phoenixproject.presentation.components.RoutinePickerDialog
 import com.devil.phoenixproject.presentation.navigation.NavigationRoutes
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
@@ -33,13 +37,16 @@ import kotlinx.coroutines.launch
 import org.koin.compose.koinInject
 import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.rememberReorderableLazyListState
+import kotlin.math.roundToInt
 
 // UI State
 data class CycleEditorState(
     val cycleName: String = "",
     val description: String = "",
     val days: List<CycleDay> = emptyList(),
-    val showRoutinePickerForIndex: Int? = null
+    val showRoutinePickerForIndex: Int? = null,
+    val configDayIndex: Int? = null, // For CycleDayConfigSheet
+    val selectedRoutineId: String? = null // For click-to-assign flow
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -53,7 +60,7 @@ fun CycleEditorScreen(
 ) {
     val repository: TrainingCycleRepository = koinInject()
     val scope = rememberCoroutineScope()
-    
+
     // State
     var state by remember { mutableStateOf(CycleEditorState()) }
     var hasInitialized by remember { mutableStateOf(false) }
@@ -82,8 +89,8 @@ fun CycleEditorScreen(
     }
 
     val lazyListState = rememberLazyListState()
-    
-    // Drag State
+
+    // Drag State for reordering days
     val reorderState = rememberReorderableLazyListState(lazyListState) { from, to ->
         val list = state.days.toMutableList()
         val moved = list.removeAt(from.index)
@@ -112,7 +119,7 @@ fun CycleEditorScreen(
                             singleLine = true
                         )
                         Text(
-                            "${state.days.size} Day Rotation", 
+                            "${state.days.size} Day Rotation",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.padding(start = 16.dp)
@@ -172,7 +179,7 @@ fun CycleEditorScreen(
                         Spacer(Modifier.width(8.dp))
                         Text("Add Workout")
                     }
-                    
+
                     OutlinedButton(
                         onClick = {
                             val newRest = CycleDay.restDay(
@@ -192,56 +199,119 @@ fun CycleEditorScreen(
             }
         }
     ) { padding ->
-        LazyColumn(
-            state = lazyListState,
-            contentPadding = PaddingValues(top = padding.calculateTopPadding() + 16.dp, bottom = 100.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+        // Two-panel layout: 30% routines palette, 70% day slots
+        Row(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(horizontal = 16.dp)
+                .padding(padding)
+                .padding(horizontal = 8.dp, vertical = 16.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            itemsIndexed(state.days, key = { _, day -> day.id }) { index, day ->
-                ReorderableItem(reorderState, key = day.id) { isDragging ->
-                    val elevation by animateDpAsState(if (isDragging) 8.dp else 0.dp)
-                    
-                    val dayRoutine = day.routineId?.let { id -> routines.find { it.id == id } }
-                    
-                    CycleDayCard(
-                        day = day,
-                        routineName = dayRoutine?.name,
-                        elevation = elevation,
-                        onDelete = {
-                            val newDays = state.days.toMutableList().apply { removeAt(index) }
-                                .mapIndexed { i, d -> d.copy(dayNumber = i + 1) }
-                            state = state.copy(days = newDays)
-                        },
-                        onEdit = {
-                            // If rest day, simple toggle or rename. If workout, open picker.
-                            if (!day.isRestDay) {
-                                state = state.copy(showRoutinePickerForIndex = index)
-                            }
-                        },
-                        onToggleType = {
-                            val updated = if (day.isRestDay) {
-                                // Convert to Workout
-                                day.copy(isRestDay = false, name = "Workout ${day.dayNumber}")
-                            } else {
-                                // Convert to Rest
-                                day.copy(isRestDay = true, name = "Rest Day", routineId = null)
-                            }
-                            val newDays = state.days.toMutableList().apply { set(index, updated) }
-                            state = state.copy(days = newDays)
-                        },
-                        dragModifier = Modifier.draggableHandle(
-                            interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
-                        )
+            // Left Panel: Routine Palette (~30%)
+            RoutinePalette(
+                routines = routines,
+                selectedRoutineId = state.selectedRoutineId,
+                onRoutineSelected = { routineId ->
+                    state = state.copy(
+                        selectedRoutineId = if (state.selectedRoutineId == routineId) null else routineId
                     )
+                },
+                onCreateRoutine = {
+                    navController.navigate(NavigationRoutes.RoutineEditor.createRoute("new"))
+                },
+                modifier = Modifier
+                    .weight(0.3f)
+                    .fillMaxHeight()
+            )
+
+            // Right Panel: Day Slots (~70%)
+            LazyColumn(
+                state = lazyListState,
+                contentPadding = PaddingValues(bottom = 80.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+                modifier = Modifier
+                    .weight(0.7f)
+                    .fillMaxHeight()
+            ) {
+                // Header
+                item {
+                    Text(
+                        text = "YOUR CYCLE",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.primary,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(start = 4.dp, bottom = 4.dp)
+                    )
+                }
+
+                itemsIndexed(state.days, key = { _, day -> day.id }) { index, day ->
+                    ReorderableItem(reorderState, key = day.id) { isDragging ->
+                        val elevation by animateDpAsState(if (isDragging) 8.dp else 0.dp)
+
+                        val dayRoutine = day.routineId?.let { id -> routines.find { it.id == id } }
+
+                        CycleDaySlotCard(
+                            day = day,
+                            routine = dayRoutine,
+                            elevation = elevation,
+                            isDropTarget = state.selectedRoutineId != null && !day.isRestDay,
+                            onCardTap = {
+                                // If a routine is selected in palette, assign it to this day
+                                if (state.selectedRoutineId != null && !day.isRestDay) {
+                                    val selectedRoutine = routines.find { it.id == state.selectedRoutineId }
+                                    if (selectedRoutine != null) {
+                                        val updatedDay = day.copy(
+                                            routineId = selectedRoutine.id,
+                                            name = selectedRoutine.name
+                                        )
+                                        val newDays = state.days.toMutableList().apply { set(index, updatedDay) }
+                                        state = state.copy(days = newDays, selectedRoutineId = null)
+                                    }
+                                } else if (!day.isRestDay && day.routineId != null) {
+                                    // Tap on assigned day opens config sheet
+                                    state = state.copy(configDayIndex = index)
+                                } else if (!day.isRestDay && day.routineId == null) {
+                                    // Tap on unassigned day opens routine picker
+                                    state = state.copy(showRoutinePickerForIndex = index)
+                                }
+                            },
+                            onClearAssignment = {
+                                val updatedDay = day.copy(routineId = null, name = "Day ${day.dayNumber}")
+                                val newDays = state.days.toMutableList().apply { set(index, updatedDay) }
+                                state = state.copy(days = newDays)
+                            },
+                            onConfigureTap = {
+                                if (!day.isRestDay && day.routineId != null) {
+                                    state = state.copy(configDayIndex = index)
+                                }
+                            },
+                            onDelete = {
+                                val newDays = state.days.toMutableList().apply { removeAt(index) }
+                                    .mapIndexed { i, d -> d.copy(dayNumber = i + 1) }
+                                state = state.copy(days = newDays)
+                            },
+                            onToggleType = {
+                                val updated = if (day.isRestDay) {
+                                    // Convert to Workout
+                                    day.copy(isRestDay = false, name = "Workout ${day.dayNumber}")
+                                } else {
+                                    // Convert to Rest
+                                    day.copy(isRestDay = true, name = "Rest Day", routineId = null)
+                                }
+                                val newDays = state.days.toMutableList().apply { set(index, updated) }
+                                state = state.copy(days = newDays)
+                            },
+                            dragModifier = Modifier.draggableHandle(
+                                interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+                            )
+                        )
+                    }
                 }
             }
         }
     }
 
-    // Routine Picker
+    // Routine Picker Dialog
     if (state.showRoutinePickerForIndex != null) {
         val index = state.showRoutinePickerForIndex!!
         RoutinePickerDialog(
@@ -256,13 +326,420 @@ fun CycleEditorScreen(
             },
             onCreateRoutine = {
                 state = state.copy(showRoutinePickerForIndex = null)
-                navController.navigate(com.devil.phoenixproject.presentation.navigation.NavigationRoutes.RoutineEditor.createRoute("new"))
+                navController.navigate(NavigationRoutes.RoutineEditor.createRoute("new"))
             },
             onDismiss = { state = state.copy(showRoutinePickerForIndex = null) }
         )
     }
+
+    // CycleDayConfigSheet
+    if (state.configDayIndex != null) {
+        val index = state.configDayIndex!!
+        val day = state.days[index]
+        val routine = day.routineId?.let { id -> routines.find { it.id == id } }
+
+        CycleDayConfigSheet(
+            day = day,
+            routine = routine,
+            onDismiss = { state = state.copy(configDayIndex = null) },
+            onApply = { updatedDay ->
+                val newDays = state.days.toMutableList().apply { set(index, updatedDay) }
+                state = state.copy(days = newDays, configDayIndex = null)
+            }
+        )
+    }
 }
 
+/**
+ * Left panel: Scrollable palette of available routines.
+ * Tap to select a routine, then tap a day slot to assign it.
+ */
+@Composable
+private fun RoutinePalette(
+    routines: List<Routine>,
+    selectedRoutineId: String?,
+    onRoutineSelected: (String) -> Unit,
+    onCreateRoutine: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Column(modifier = modifier) {
+        Text(
+            text = "ROUTINES",
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.primary,
+            fontWeight = FontWeight.Bold,
+            modifier = Modifier.padding(start = 4.dp, bottom = 8.dp)
+        )
+
+        LazyColumn(
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.weight(1f)
+        ) {
+            items(routines, key = { it.id }) { routine ->
+                val isSelected = selectedRoutineId == routine.id
+
+                RoutinePaletteCard(
+                    routine = routine,
+                    isSelected = isSelected,
+                    onClick = { onRoutineSelected(routine.id) }
+                )
+            }
+
+            if (routines.isEmpty()) {
+                item {
+                    Text(
+                        text = "No routines yet",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(8.dp)
+                    )
+                }
+            }
+
+            item {
+                OutlinedButton(
+                    onClick = onCreateRoutine,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Icon(Icons.Default.Add, null, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text("New", style = MaterialTheme.typography.labelMedium)
+                }
+            }
+        }
+
+        // Hint when routine is selected
+        if (selectedRoutineId != null) {
+            val selectedRoutine = routines.find { it.id == selectedRoutineId }
+            if (selectedRoutine != null) {
+                Surface(
+                    color = MaterialTheme.colorScheme.primaryContainer,
+                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 8.dp)
+                ) {
+                    Text(
+                        text = "Tap a day to assign \"${selectedRoutine.name}\"",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer,
+                        modifier = Modifier.padding(8.dp)
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun RoutinePaletteCard(
+    routine: Routine,
+    isSelected: Boolean,
+    onClick: () -> Unit
+) {
+    val containerColor = if (isSelected) {
+        MaterialTheme.colorScheme.primaryContainer
+    } else {
+        MaterialTheme.colorScheme.surfaceContainerHigh
+    }
+
+    val borderColor = if (isSelected) {
+        MaterialTheme.colorScheme.primary
+    } else {
+        Color.Transparent
+    }
+
+    Card(
+        colors = CardDefaults.cardColors(containerColor = containerColor),
+        shape = RoundedCornerShape(12.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .border(
+                width = if (isSelected) 2.dp else 0.dp,
+                color = borderColor,
+                shape = RoundedCornerShape(12.dp)
+            )
+            .clickable(onClick = onClick)
+    ) {
+        Column(
+            modifier = Modifier.padding(12.dp)
+        ) {
+            Text(
+                text = routine.name,
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Text(
+                text = "${routine.exercises.size} exercises",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
+
+/**
+ * Day slot card with modifier badges and overflow menu.
+ */
+@Composable
+fun CycleDaySlotCard(
+    day: CycleDay,
+    routine: Routine?,
+    elevation: androidx.compose.ui.unit.Dp,
+    isDropTarget: Boolean,
+    onCardTap: () -> Unit,
+    onClearAssignment: () -> Unit,
+    onConfigureTap: () -> Unit,
+    onDelete: () -> Unit,
+    onToggleType: () -> Unit,
+    dragModifier: Modifier
+) {
+    val containerColor = when {
+        isDropTarget -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.7f)
+        day.isRestDay -> MaterialTheme.colorScheme.surfaceContainerHigh
+        else -> MaterialTheme.colorScheme.surfaceContainer
+    }
+
+    val borderColor = if (isDropTarget) {
+        MaterialTheme.colorScheme.primary
+    } else {
+        Color.Transparent
+    }
+
+    val iconColor = if (day.isRestDay)
+        MaterialTheme.colorScheme.tertiary
+    else
+        MaterialTheme.colorScheme.primary
+
+    // Dropdown menu state
+    var showMenu by remember { mutableStateOf(false) }
+
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .shadow(elevation, RoundedCornerShape(16.dp))
+            .border(
+                width = if (isDropTarget) 2.dp else 0.dp,
+                color = borderColor,
+                shape = RoundedCornerShape(16.dp)
+            )
+            .clickable(onClick = onCardTap),
+        colors = CardDefaults.cardColors(containerColor = containerColor),
+        shape = RoundedCornerShape(16.dp)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // 1. Drag Handle & Number
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center,
+                modifier = Modifier.width(40.dp).then(dragModifier)
+            ) {
+                Icon(
+                    Icons.Default.DragHandle,
+                    contentDescription = "Reorder",
+                    tint = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)
+                )
+                Spacer(Modifier.height(4.dp))
+                Box(
+                    modifier = Modifier
+                        .size(24.dp)
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.surface),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        "${day.dayNumber}",
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+
+            Spacer(Modifier.width(12.dp))
+
+            // 2. Content
+            Column(
+                modifier = Modifier.weight(1f)
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (day.isRestDay) {
+                        Icon(
+                            Icons.Default.Hotel,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.tertiary,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(Modifier.width(4.dp))
+                        Text(
+                            text = "Rest",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    } else {
+                        Text(
+                            text = routine?.name ?: "Select Routine",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = if (routine == null) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        if (routine == null) {
+                            Spacer(Modifier.width(8.dp))
+                            Icon(
+                                Icons.Default.Warning,
+                                null,
+                                tint = MaterialTheme.colorScheme.error,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
+                    }
+                }
+
+                // Modifier badges row
+                if (!day.isRestDay && routine != null) {
+                    val badges = buildBadgeList(day)
+                    if (badges.isNotEmpty()) {
+                        Spacer(Modifier.height(4.dp))
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            badges.forEach { badge ->
+                                ModifierBadge(text = badge)
+                            }
+                        }
+                    } else {
+                        Text(
+                            "Tap to configure",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+
+            // 3. Overflow Menu
+            Box {
+                IconButton(onClick = { showMenu = true }) {
+                    Icon(
+                        Icons.Default.MoreVert,
+                        contentDescription = "Options",
+                        tint = MaterialTheme.colorScheme.outline
+                    )
+                }
+
+                DropdownMenu(
+                    expanded = showMenu,
+                    onDismissRequest = { showMenu = false }
+                ) {
+                    if (!day.isRestDay && day.routineId != null) {
+                        DropdownMenuItem(
+                            text = { Text("Configure") },
+                            leadingIcon = { Icon(Icons.Default.Settings, null) },
+                            onClick = {
+                                showMenu = false
+                                onConfigureTap()
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Clear Routine") },
+                            leadingIcon = { Icon(Icons.Default.Clear, null) },
+                            onClick = {
+                                showMenu = false
+                                onClearAssignment()
+                            }
+                        )
+                        HorizontalDivider()
+                    }
+                    DropdownMenuItem(
+                        text = { Text(if (day.isRestDay) "Convert to Workout" else "Convert to Rest") },
+                        leadingIcon = {
+                            Icon(
+                                if (day.isRestDay) Icons.Default.FitnessCenter else Icons.Default.Hotel,
+                                null
+                            )
+                        },
+                        onClick = {
+                            showMenu = false
+                            onToggleType()
+                        }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Delete Day") },
+                        leadingIcon = {
+                            Icon(
+                                Icons.Default.Delete,
+                                null,
+                                tint = MaterialTheme.colorScheme.error
+                            )
+                        },
+                        onClick = {
+                            showMenu = false
+                            onDelete()
+                        }
+                    )
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Build list of badge strings from day modifiers.
+ */
+private fun buildBadgeList(day: CycleDay): List<String> {
+    val badges = mutableListOf<String>()
+
+    day.echoLevel?.let { badges.add(it.displayName) }
+    day.weightProgressionPercent?.let { pct ->
+        val sign = if (pct >= 0) "+" else ""
+        badges.add("${sign}${pct.roundToInt()}%")
+    }
+    day.eccentricLoadPercent?.let { pct ->
+        if (pct != 100) {
+            badges.add("Ecc ${pct}%")
+        }
+    }
+    day.repModifier?.let { mod ->
+        if (mod != 0) {
+            val sign = if (mod > 0) "+" else ""
+            badges.add("${sign}${mod} reps")
+        }
+    }
+    day.restTimeOverrideSeconds?.let { sec ->
+        if (sec != 60) {
+            badges.add("${sec}s rest")
+        }
+    }
+
+    return badges
+}
+
+@Composable
+private fun ModifierBadge(text: String) {
+    Surface(
+        color = MaterialTheme.colorScheme.secondaryContainer,
+        shape = RoundedCornerShape(6.dp)
+    ) {
+        Text(
+            text = text,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSecondaryContainer,
+            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+        )
+    }
+}
+
+// Keep the old CycleDayCard for backward compatibility if needed
 @Composable
 fun CycleDayCard(
     day: CycleDay,
@@ -273,14 +750,14 @@ fun CycleDayCard(
     onToggleType: () -> Unit,
     dragModifier: Modifier
 ) {
-    val containerColor = if (day.isRestDay) 
-        MaterialTheme.colorScheme.surfaceContainerHigh 
-    else 
+    val containerColor = if (day.isRestDay)
+        MaterialTheme.colorScheme.surfaceContainerHigh
+    else
         MaterialTheme.colorScheme.surfaceContainer
-        
-    val iconColor = if (day.isRestDay) 
-        MaterialTheme.colorScheme.tertiary 
-    else 
+
+    val iconColor = if (day.isRestDay)
+        MaterialTheme.colorScheme.tertiary
+    else
         MaterialTheme.colorScheme.primary
 
     Card(
@@ -301,7 +778,7 @@ fun CycleDayCard(
                 modifier = Modifier.width(40.dp).then(dragModifier)
             ) {
                 Icon(
-                    Icons.Default.DragHandle, 
+                    Icons.Default.DragHandle,
                     contentDescription = "Reorder",
                     tint = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)
                 )
@@ -344,7 +821,7 @@ fun CycleDayCard(
                         )
                     }
                 }
-                
+
                 if (!day.isRestDay && routineName != null) {
                     Text(
                         "Tap to change routine",
@@ -362,10 +839,10 @@ fun CycleDayCard(
                     tint = iconColor
                 )
             }
-            
+
             IconButton(onClick = onDelete) {
                 Icon(
-                    Icons.Default.Close, 
+                    Icons.Default.Close,
                     contentDescription = "Remove Day",
                     tint = MaterialTheme.colorScheme.outline
                 )
