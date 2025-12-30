@@ -1520,6 +1520,111 @@ class MainViewModel constructor(
         return if (nextIndex < routine.exercises.size) nextIndex else null
     }
 
+    // ========== Superset CRUD Operations ==========
+
+    /**
+     * Create a new superset in a routine.
+     * Auto-assigns next available color and generates name.
+     */
+    suspend fun createSuperset(
+        routineId: String,
+        name: String? = null,
+        exercises: List<RoutineExercise> = emptyList()
+    ): Superset {
+        val routine = getRoutineById(routineId) ?: throw IllegalArgumentException("Routine not found")
+        val existingColors = routine.supersets.map { it.colorIndex }.toSet()
+        val colorIndex = SupersetColors.next(existingColors)
+        val supersetCount = routine.supersets.size
+        val autoName = name ?: "Superset ${'A' + supersetCount}"
+        val orderIndex = routine.getItems().maxOfOrNull { it.orderIndex }?.plus(1) ?: 0
+
+        val superset = Superset(
+            id = generateSupersetId(),
+            routineId = routineId,
+            name = autoName,
+            colorIndex = colorIndex,
+            restBetweenSeconds = 10,
+            orderIndex = orderIndex
+        )
+
+        // Save routine with new superset
+        val updatedSupersets = routine.supersets + superset
+        val updatedExercises = exercises.mapIndexed { index, exercise ->
+            exercise.copy(supersetId = superset.id, orderInSuperset = index)
+        } + routine.exercises.filter { it.id !in exercises.map { e -> e.id } }
+
+        val updatedRoutine = routine.copy(supersets = updatedSupersets, exercises = updatedExercises)
+        workoutRepository.updateRoutine(updatedRoutine)
+
+        return superset
+    }
+
+    /**
+     * Update superset properties (name, rest time, color).
+     */
+    suspend fun updateSuperset(routineId: String, superset: Superset) {
+        val routine = getRoutineById(routineId) ?: return
+        val updatedSupersets = routine.supersets.map {
+            if (it.id == superset.id) superset else it
+        }
+        val updatedRoutine = routine.copy(supersets = updatedSupersets)
+        workoutRepository.updateRoutine(updatedRoutine)
+    }
+
+    /**
+     * Delete a superset. Exercises become standalone.
+     */
+    suspend fun deleteSuperset(routineId: String, supersetId: String) {
+        val routine = getRoutineById(routineId) ?: return
+        val updatedSupersets = routine.supersets.filter { it.id != supersetId }
+        // Clear superset reference from exercises
+        val updatedExercises = routine.exercises.map { exercise ->
+            if (exercise.supersetId == supersetId) {
+                exercise.copy(supersetId = null, orderInSuperset = 0)
+            } else {
+                exercise
+            }
+        }
+        val updatedRoutine = routine.copy(supersets = updatedSupersets, exercises = updatedExercises)
+        workoutRepository.updateRoutine(updatedRoutine)
+    }
+
+    /**
+     * Move an exercise into a superset.
+     */
+    suspend fun addExerciseToSuperset(routineId: String, exerciseId: String, supersetId: String) {
+        val routine = getRoutineById(routineId) ?: return
+        val superset = routine.supersets.find { it.id == supersetId } ?: return
+        val currentExercisesInSuperset = routine.exercises.filter { it.supersetId == supersetId }
+        val newOrderInSuperset = currentExercisesInSuperset.maxOfOrNull { it.orderInSuperset }?.plus(1) ?: 0
+
+        val updatedExercises = routine.exercises.map { exercise ->
+            if (exercise.id == exerciseId) {
+                exercise.copy(supersetId = supersetId, orderInSuperset = newOrderInSuperset)
+            } else {
+                exercise
+            }
+        }
+        val updatedRoutine = routine.copy(exercises = updatedExercises)
+        workoutRepository.updateRoutine(updatedRoutine)
+    }
+
+    /**
+     * Remove an exercise from a superset (becomes standalone).
+     */
+    suspend fun removeExerciseFromSuperset(routineId: String, exerciseId: String) {
+        val routine = getRoutineById(routineId) ?: return
+        val updatedExercises = routine.exercises.map { exercise ->
+            if (exercise.id == exerciseId) {
+                exercise.copy(supersetId = null, orderInSuperset = 0)
+            } else {
+                exercise
+            }
+        }
+        val updatedRoutine = routine.copy(exercises = updatedExercises)
+        workoutRepository.updateRoutine(updatedRoutine)
+    }
+
     // ========== Just Lift Features ==========
 
     /**
