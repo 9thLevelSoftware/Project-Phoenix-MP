@@ -8,10 +8,29 @@ data class Routine(
     val name: String,
     val description: String = "",
     val exercises: List<RoutineExercise> = emptyList(),
+    val supersets: List<Superset> = emptyList(),  // Superset containers
     val createdAt: Long = currentTimeMillis(),
     val lastUsed: Long? = null,
     val useCount: Int = 0
-)
+) {
+    /**
+     * Get all items (supersets + standalone exercises) in display order.
+     */
+    fun getItems(): List<RoutineItem> {
+        val supersetItems = supersets.map { superset ->
+            RoutineItem.SupersetItem(
+                superset.copy(exercises = exercises.filter { it.supersetId == superset.id }
+                    .sortedBy { it.orderInSuperset })
+            )
+        }
+
+        val standaloneItems = exercises
+            .filter { it.supersetId == null }
+            .map { RoutineItem.Single(it) }
+
+        return (supersetItems + standaloneItems).sortedBy { it.orderIndex }
+    }
+}
 
 /**
  * Domain model for an exercise within a routine
@@ -135,79 +154,34 @@ data class Superset(
 fun generateSupersetId(): String = "superset_${generateUUID()}"
 
 /**
- * Sealed class representing an item in a routine - either a single exercise or a superset group.
- * Used for UI display and workout execution.
+ * Sealed class representing an item in a routine's flat ordering.
+ * Used for UI display where supersets and standalone exercises share ordering.
  */
 sealed class RoutineItem {
+    abstract val orderIndex: Int
+
     /** A single exercise not part of any superset */
-    data class SingleExercise(val exercise: RoutineExercise) : RoutineItem() {
-        val orderIndex: Int get() = exercise.orderIndex
+    data class Single(val exercise: RoutineExercise) : RoutineItem() {
+        override val orderIndex: Int get() = exercise.orderIndex
     }
 
-    /** A group of exercises forming a superset */
-    data class Superset(val group: SupersetGroup) : RoutineItem() {
-        val orderIndex: Int get() = group.exercises.minOfOrNull { it.orderIndex } ?: 0
-    }
-}
-
-/**
- * Extension to get exercises grouped by supersets.
- * Returns a list of RoutineItems (either SingleExercise or Superset) sorted by order.
- */
-fun Routine.getGroupedExercises(): List<RoutineItem> {
-    // Group exercises by superset ID
-    val supersetGroups = exercises
-        .filter { it.supersetGroupId != null }
-        .groupBy { it.supersetGroupId!! }
-
-    // Create superset items
-    val supersetItems = supersetGroups.map { (groupId, groupExercises) ->
-        val sortedExercises = groupExercises.sortedBy { it.supersetOrder }
-        val groupIndex = ('A'.code + supersetGroups.keys.toList().indexOf(groupId)).toChar()
-        RoutineItem.Superset(
-            SupersetGroup(
-                id = groupId,
-                name = "Superset $groupIndex",
-                exercises = sortedExercises,
-                restBetweenExercises = sortedExercises.first().supersetRestSeconds
-            )
-        )
-    }
-
-    // Create single exercise items (not in any superset)
-    val singleItems = exercises
-        .filter { it.supersetGroupId == null }
-        .map { RoutineItem.SingleExercise(it) }
-
-    // Combine and sort by order index
-    return (supersetItems + singleItems).sortedBy { item ->
-        when (item) {
-            is RoutineItem.SingleExercise -> item.orderIndex
-            is RoutineItem.Superset -> item.orderIndex
-        }
+    /** A superset container with exercises */
+    data class SupersetItem(val superset: Superset) : RoutineItem() {
+        override val orderIndex: Int get() = superset.orderIndex
     }
 }
 
 /**
  * Extension to check if a routine contains any supersets
  */
-fun Routine.hasSupersets(): Boolean {
-    return exercises.any { it.supersetGroupId != null }
-}
+fun Routine.hasSupersets(): Boolean = supersets.isNotEmpty()
 
 /**
- * Extension to get all superset group IDs in a routine
+ * Get exercises in a specific superset
  */
-fun Routine.getSupersetGroupIds(): Set<String> {
-    return exercises.mapNotNull { it.supersetGroupId }.toSet()
-}
-
-/**
- * Extension to get exercises in a specific superset group
- */
-fun Routine.getExercisesInSuperset(groupId: String): List<RoutineExercise> {
+fun Routine.getExercisesInSuperset(supersetId: String): List<RoutineExercise> {
     return exercises
-        .filter { it.supersetGroupId == groupId }
-        .sortedBy { it.supersetOrder }
+        .filter { it.supersetId == supersetId }
+        .sortedBy { it.orderInSuperset }
 }
 
