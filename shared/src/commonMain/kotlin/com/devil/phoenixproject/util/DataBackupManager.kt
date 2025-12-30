@@ -165,9 +165,8 @@ abstract class BaseDataBackupManager(
                         setRestSeconds = exercise.setRestSeconds,
                         perSetRestTime = exercise.perSetRestTime != 0L,
                         isAMRAP = exercise.isAMRAP != 0L,
-                        supersetGroupId = exercise.supersetGroupId,
-                        supersetOrder = exercise.supersetOrder.toInt(),
-                        supersetRestSeconds = exercise.supersetRestSeconds.toInt()
+                        supersetId = exercise.supersetId,
+                        orderInSuperset = exercise.orderInSuperset.toInt()
                     )
                 },
                 personalRecords = personalRecords,
@@ -320,9 +319,8 @@ abstract class BaseDataBackupManager(
                         setRestSeconds = exercise.setRestSeconds,
                         perSetRestTime = if (exercise.perSetRestTime) 1L else 0L,
                         isAMRAP = if (exercise.isAMRAP) 1L else 0L,
-                        supersetGroupId = exercise.supersetGroupId,
-                        supersetOrder = exercise.supersetOrder.toLong(),
-                        supersetRestSeconds = exercise.supersetRestSeconds.toLong()
+                        supersetId = exercise.supersetId,
+                        orderInSuperset = exercise.orderInSuperset.toLong()
                     )
                     routineExercisesImported++
                 }

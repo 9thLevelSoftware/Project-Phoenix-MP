@@ -98,10 +98,9 @@ data class RoutineExerciseBackup(
     val setRestSeconds: String = "[]",
     val perSetRestTime: Boolean = false,
     val isAMRAP: Boolean = false,
-    // KMP extension: superset support
-    val supersetGroupId: String? = null,
-    val supersetOrder: Int = 0,
-    val supersetRestSeconds: Int = 10
+    // KMP extension: superset support (updated field names)
+    val supersetId: String? = null,
+    val orderInSuperset: Int = 0
 )
 
 /**
