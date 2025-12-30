@@ -619,11 +619,7 @@ private fun CompletedCard(
                         )
 
                         Text(
-                            if (nextExercise.setReps.isEmpty()) {
-                                "AMRAP - As Many Reps As Possible"
-                            } else {
-                                "${nextExercise.setReps.size} sets x ${nextExercise.setReps.first()} reps"
-                            },
+                            formatReps(nextExercise.setReps),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onPrimaryContainer
                         )
@@ -1321,11 +1317,11 @@ fun SetSummaryCard(
     // State for RPE tracking
     var loggedRpe by remember { mutableStateOf<Int?>(null) }
     // Auto-continue countdown when autoplay is enabled
-    var autoCountdown by remember { mutableStateOf(if (autoplayEnabled) 5 else -1) }
+    var autoCountdown by remember { mutableStateOf(if (autoplayEnabled) 10 else -1) }
 
     LaunchedEffect(autoplayEnabled) {
         if (autoplayEnabled) {
-            autoCountdown = 5
+            autoCountdown = 10
             while (autoCountdown > 0) {
                 kotlinx.coroutines.delay(1000)
                 autoCountdown--

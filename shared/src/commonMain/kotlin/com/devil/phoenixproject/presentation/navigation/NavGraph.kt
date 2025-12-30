@@ -267,7 +267,8 @@ fun NavGraph(
                 isConnected = connectionState is com.devil.phoenixproject.domain.model.ConnectionState.Connected,
                 onDiscoModeUnlocked = { viewModel.unlockDiscoMode() },
                 onDiscoModeToggle = { viewModel.toggleDiscoMode(it) },
-                onPlayDiscoSound = { viewModel.emitDiscoSound() }
+                onPlayDiscoSound = { viewModel.emitDiscoSound() },
+                onTestSounds = { viewModel.testSounds() }
             )
         }
 
