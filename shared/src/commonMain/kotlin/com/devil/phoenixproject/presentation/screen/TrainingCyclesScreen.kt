@@ -38,6 +38,7 @@ import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.domain.model.TrainingCycle
 import com.devil.phoenixproject.domain.usecase.TemplateConverter
+import com.devil.phoenixproject.presentation.components.DayStrip
 import com.devil.phoenixproject.presentation.components.EmptyState
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
 import com.devil.phoenixproject.ui.theme.Spacing
@@ -88,6 +89,14 @@ fun TrainingCyclesScreen(
     var creationState by remember { mutableStateOf<CycleCreationState>(CycleCreationState.Idle) }
     var showWarningDialog by remember { mutableStateOf<List<String>?>(null) }
     var showErrorDialog by remember { mutableStateOf<String?>(null) }
+
+    // Selected day for viewing different days in the active cycle
+    var selectedDayNumber by remember { mutableStateOf<Int?>(null) }
+
+    // When active cycle changes, reset selection to current day
+    LaunchedEffect(activeCycle, cycleProgress) {
+        selectedDayNumber = cycleProgress[activeCycle?.id]?.currentDayNumber
+    }
 
     // Load progress for all cycles
     LaunchedEffect(cycles) {
@@ -141,6 +150,10 @@ fun TrainingCyclesScreen(
                             cycle = activeCycle!!,
                             progress = cycleProgress[activeCycle!!.id],
                             routines = routines,
+                            selectedDayNumber = selectedDayNumber,
+                            onDaySelected = { dayNumber ->
+                                selectedDayNumber = dayNumber
+                            },
                             onStartWorkout = { routineId ->
                                 routineId?.let {
                                     viewModel.ensureConnection(
@@ -437,21 +450,33 @@ fun TrainingCyclesScreen(
 }
 
 /**
- * Active cycle card with "Up Next" style display.
+ * Active cycle card with "Up Next" style display and DayStrip for browsing days.
  */
 @Composable
 private fun ActiveCycleCard(
     cycle: TrainingCycle,
     progress: CycleProgress?,
     routines: List<Routine>,
+    selectedDayNumber: Int?,
+    onDaySelected: (Int) -> Unit,
     onStartWorkout: (String?) -> Unit,
     onAdvanceDay: () -> Unit
 ) {
     val currentDay = progress?.currentDayNumber ?: 1
-    val currentCycleDay = cycle.days.find { it.dayNumber == currentDay }
-    val routine = currentCycleDay?.routineId?.let { routineId ->
+    // Use selected day for preview, or default to current day
+    val displayedDayNumber = selectedDayNumber ?: currentDay
+    val isViewingCurrentDay = displayedDayNumber == currentDay
+
+    val displayedCycleDay = cycle.days.find { it.dayNumber == displayedDayNumber }
+    val routine = displayedCycleDay?.routineId?.let { routineId ->
         routines.find { it.id == routineId }
     }
+
+    // Create a default progress if none exists
+    val effectiveProgress = progress ?: CycleProgress.create(
+        cycleId = cycle.id,
+        currentDayNumber = 1
+    )
 
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -474,13 +499,13 @@ private fun ActiveCycleCard(
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(
-                        Icons.Default.PlayCircle,
+                        if (isViewingCurrentDay) Icons.Default.PlayCircle else Icons.Default.CalendarToday,
                         contentDescription = null,
                         tint = MaterialTheme.colorScheme.primary
                     )
                     Spacer(Modifier.width(8.dp))
                     Text(
-                        "UP NEXT",
+                        if (isViewingCurrentDay) "UP NEXT" else "PREVIEWING",
                         style = MaterialTheme.typography.labelLarge,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.primary
@@ -492,7 +517,7 @@ private fun ActiveCycleCard(
                     shape = RoundedCornerShape(8.dp)
                 ) {
                     Text(
-                        "Day $currentDay of ${cycle.days.size}",
+                        "Day $displayedDayNumber of ${cycle.days.size}",
                         modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.primary
@@ -504,13 +529,13 @@ private fun ActiveCycleCard(
 
             // Day name and routine
             Text(
-                currentCycleDay?.name ?: "Day $currentDay",
+                displayedCycleDay?.name ?: "Day $displayedDayNumber",
                 style = MaterialTheme.typography.headlineMedium,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onPrimaryContainer
             )
 
-            if (currentCycleDay?.isRestDay == true) {
+            if (displayedCycleDay?.isRestDay == true) {
                 Spacer(Modifier.height(8.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(
@@ -543,27 +568,13 @@ private fun ActiveCycleCard(
 
             Spacer(Modifier.height(16.dp))
 
-            // Progress dots
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.Center
-            ) {
-                cycle.days.forEach { day ->
-                    val isCurrentDay = day.dayNumber == currentDay
-                    Box(
-                        modifier = Modifier
-                            .size(if (isCurrentDay) 12.dp else 8.dp)
-                            .clip(CircleShape)
-                            .background(
-                                if (isCurrentDay) MaterialTheme.colorScheme.primary
-                                else MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.3f)
-                            )
-                    )
-                    if (day.dayNumber < cycle.days.size) {
-                        Spacer(Modifier.width(4.dp))
-                    }
-                }
-            }
+            // DayStrip - replaces progress dots with interactive day chips
+            DayStrip(
+                days = cycle.days,
+                progress = effectiveProgress,
+                currentSelection = displayedDayNumber,
+                onDaySelected = onDaySelected
+            )
 
             Spacer(Modifier.height(16.dp))
 
@@ -572,26 +583,52 @@ private fun ActiveCycleCard(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                if (currentCycleDay?.isRestDay == true) {
-                    OutlinedButton(
-                        onClick = onAdvanceDay,
-                        modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(12.dp)
-                    ) {
-                        Icon(Icons.Default.SkipNext, contentDescription = null)
-                        Spacer(Modifier.width(8.dp))
-                        Text("Skip Rest Day")
+                if (displayedCycleDay?.isRestDay == true) {
+                    if (isViewingCurrentDay) {
+                        OutlinedButton(
+                            onClick = onAdvanceDay,
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Icon(Icons.Default.SkipNext, contentDescription = null)
+                            Spacer(Modifier.width(8.dp))
+                            Text("Skip Rest Day")
+                        }
+                    } else {
+                        // Viewing a different rest day - show "Go to today" button
+                        OutlinedButton(
+                            onClick = { onDaySelected(currentDay) },
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Icon(Icons.Default.Today, contentDescription = null)
+                            Spacer(Modifier.width(8.dp))
+                            Text("Go to Today")
+                        }
                     }
                 } else {
-                    Button(
-                        onClick = { onStartWorkout(currentCycleDay?.routineId) },
-                        modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(12.dp),
-                        enabled = currentCycleDay?.routineId != null
-                    ) {
-                        Icon(Icons.Default.PlayArrow, contentDescription = null)
-                        Spacer(Modifier.width(8.dp))
-                        Text("Start Workout")
+                    if (isViewingCurrentDay) {
+                        Button(
+                            onClick = { onStartWorkout(displayedCycleDay?.routineId) },
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(12.dp),
+                            enabled = displayedCycleDay?.routineId != null
+                        ) {
+                            Icon(Icons.Default.PlayArrow, contentDescription = null)
+                            Spacer(Modifier.width(8.dp))
+                            Text("Start Workout")
+                        }
+                    } else {
+                        // Viewing a different day - show "Go to today" button
+                        OutlinedButton(
+                            onClick = { onDaySelected(currentDay) },
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Icon(Icons.Default.Today, contentDescription = null)
+                            Spacer(Modifier.width(8.dp))
+                            Text("Go to Today")
+                        }
                     }
                 }
             }
