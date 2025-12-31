@@ -4,6 +4,7 @@ import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -20,10 +21,18 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.zIndex
 import com.devil.phoenixproject.data.repository.TrainingCycleRepository
 import com.devil.phoenixproject.domain.model.CycleDay
 import com.devil.phoenixproject.domain.model.Routine
@@ -39,6 +48,14 @@ import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.rememberReorderableLazyListState
 import kotlin.math.roundToInt
 
+// Drag state for routine-to-day drag-and-drop
+data class RoutineDragState(
+    val routineId: String,
+    val routineName: String,
+    val startPosition: Offset = Offset.Zero,
+    val currentOffset: Offset = Offset.Zero
+)
+
 // UI State
 data class CycleEditorState(
     val cycleName: String = "",
@@ -46,7 +63,8 @@ data class CycleEditorState(
     val days: List<CycleDay> = emptyList(),
     val showRoutinePickerForIndex: Int? = null,
     val configDayIndex: Int? = null, // For CycleDayConfigSheet
-    val selectedRoutineId: String? = null // For click-to-assign flow
+    val selectedRoutineId: String? = null, // For click-to-assign flow
+    val dragState: RoutineDragState? = null // For drag-and-drop
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -89,6 +107,20 @@ fun CycleEditorScreen(
     }
 
     val lazyListState = rememberLazyListState()
+
+    // Track day slot positions for drag-drop hit testing
+    val daySlotBounds = remember { mutableStateMapOf<Int, Pair<Offset, Offset>>() } // index -> (topLeft, bottomRight)
+
+    // Find which day slot is under the current drag position
+    val hoveredDayIndex: Int? = remember(state.dragState, daySlotBounds) {
+        val drag = state.dragState ?: return@remember null
+        val dragPos = drag.startPosition + drag.currentOffset
+        daySlotBounds.entries.firstOrNull { (_, bounds) ->
+            val (topLeft, bottomRight) = bounds
+            dragPos.x >= topLeft.x && dragPos.x <= bottomRight.x &&
+                dragPos.y >= topLeft.y && dragPos.y <= bottomRight.y
+        }?.key
+    }
 
     // Drag State for reordering days
     val reorderState = rememberReorderableLazyListState(lazyListState) { from, to ->
@@ -212,10 +244,49 @@ fun CycleEditorScreen(
             RoutinePalette(
                 routines = routines,
                 selectedRoutineId = state.selectedRoutineId,
+                isDragging = state.dragState != null,
                 onRoutineSelected = { routineId ->
                     state = state.copy(
                         selectedRoutineId = if (state.selectedRoutineId == routineId) null else routineId
                     )
+                },
+                onDragStart = { routine, startPos ->
+                    state = state.copy(
+                        dragState = RoutineDragState(
+                            routineId = routine.id,
+                            routineName = routine.name,
+                            startPosition = startPos
+                        ),
+                        selectedRoutineId = null // Clear click-selection when dragging
+                    )
+                },
+                onDrag = { delta ->
+                    state.dragState?.let { drag ->
+                        state = state.copy(
+                            dragState = drag.copy(currentOffset = drag.currentOffset + delta)
+                        )
+                    }
+                },
+                onDragEnd = {
+                    // Check if we dropped on a valid day slot
+                    val draggedRoutineId = state.dragState?.routineId
+                    if (draggedRoutineId != null && hoveredDayIndex != null) {
+                        val targetDay = state.days.getOrNull(hoveredDayIndex)
+                        if (targetDay != null && !targetDay.isRestDay) {
+                            val routine = routines.find { it.id == draggedRoutineId }
+                            if (routine != null) {
+                                val updatedDay = targetDay.copy(
+                                    routineId = routine.id,
+                                    name = routine.name
+                                )
+                                val newDays = state.days.toMutableList().apply {
+                                    set(hoveredDayIndex, updatedDay)
+                                }
+                                state = state.copy(days = newDays)
+                            }
+                        }
+                    }
+                    state = state.copy(dragState = null)
                 },
                 onCreateRoutine = {
                     navController.navigate(NavigationRoutes.RoutineEditor.createRoute("new"))
@@ -251,11 +322,18 @@ fun CycleEditorScreen(
 
                         val dayRoutine = day.routineId?.let { id -> routines.find { it.id == id } }
 
+                        // Track this day slot's position for drag hit testing
+                        val isHoveredByDrag = hoveredDayIndex == index && state.dragState != null
+
                         CycleDaySlotCard(
                             day = day,
                             routine = dayRoutine,
                             elevation = elevation,
-                            isDropTarget = state.selectedRoutineId != null && !day.isRestDay,
+                            isDropTarget = (state.selectedRoutineId != null || isHoveredByDrag) && !day.isRestDay,
+                            isHoveredByDrag = isHoveredByDrag,
+                            onPositioned = { topLeft, bottomRight ->
+                                daySlotBounds[index] = topLeft to bottomRight
+                            },
                             onCardTap = {
                                 // If a routine is selected in palette, assign it to this day
                                 if (state.selectedRoutineId != null && !day.isRestDay) {
@@ -349,17 +427,37 @@ fun CycleEditorScreen(
             }
         )
     }
+
+    // Floating drag preview
+    state.dragState?.let { drag ->
+        val density = LocalDensity.current
+        Box(
+            modifier = Modifier
+                .offset {
+                    val pos = drag.startPosition + drag.currentOffset
+                    IntOffset(pos.x.roundToInt() - with(density) { 60.dp.roundToPx() }, pos.y.roundToInt() - with(density) { 20.dp.roundToPx() })
+                }
+                .zIndex(100f)
+        ) {
+            DragPreviewCard(routineName = drag.routineName)
+        }
+    }
 }
 
 /**
  * Left panel: Scrollable palette of available routines.
  * Tap to select a routine, then tap a day slot to assign it.
+ * Or drag a routine onto a day slot to assign it directly.
  */
 @Composable
 private fun RoutinePalette(
     routines: List<Routine>,
     selectedRoutineId: String?,
+    isDragging: Boolean,
     onRoutineSelected: (String) -> Unit,
+    onDragStart: (Routine, Offset) -> Unit,
+    onDrag: (Offset) -> Unit,
+    onDragEnd: () -> Unit,
     onCreateRoutine: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -382,7 +480,11 @@ private fun RoutinePalette(
                 RoutinePaletteCard(
                     routine = routine,
                     isSelected = isSelected,
-                    onClick = { onRoutineSelected(routine.id) }
+                    isDragging = isDragging,
+                    onClick = { onRoutineSelected(routine.id) },
+                    onDragStart = { startPos -> onDragStart(routine, startPos) },
+                    onDrag = onDrag,
+                    onDragEnd = onDragEnd
                 )
             }
 
@@ -437,7 +539,11 @@ private fun RoutinePalette(
 private fun RoutinePaletteCard(
     routine: Routine,
     isSelected: Boolean,
-    onClick: () -> Unit
+    isDragging: Boolean,
+    onClick: () -> Unit,
+    onDragStart: (Offset) -> Unit,
+    onDrag: (Offset) -> Unit,
+    onDragEnd: () -> Unit
 ) {
     val containerColor = if (isSelected) {
         MaterialTheme.colorScheme.primaryContainer
@@ -451,32 +557,76 @@ private fun RoutinePaletteCard(
         Color.Transparent
     }
 
+    // Track position for drag start
+    var cardPosition by remember { mutableStateOf(Offset.Zero) }
+    var isDraggingThis by remember { mutableStateOf(false) }
+
     Card(
         colors = CardDefaults.cardColors(containerColor = containerColor),
         shape = RoundedCornerShape(12.dp),
         modifier = Modifier
             .fillMaxWidth()
+            .graphicsLayer {
+                // Make card semi-transparent while being dragged
+                alpha = if (isDraggingThis) 0.5f else 1f
+            }
+            .onGloballyPositioned { coords ->
+                cardPosition = coords.positionInRoot()
+            }
             .border(
                 width = if (isSelected) 2.dp else 0.dp,
                 color = borderColor,
                 shape = RoundedCornerShape(12.dp)
             )
-            .clickable(onClick = onClick)
+            .pointerInput(routine.id) {
+                detectDragGestures(
+                    onDragStart = { offset ->
+                        isDraggingThis = true
+                        onDragStart(cardPosition + offset)
+                    },
+                    onDrag = { change, dragAmount ->
+                        change.consume()
+                        onDrag(dragAmount)
+                    },
+                    onDragEnd = {
+                        isDraggingThis = false
+                        onDragEnd()
+                    },
+                    onDragCancel = {
+                        isDraggingThis = false
+                        onDragEnd()
+                    }
+                )
+            }
+            .clickable(enabled = !isDragging, onClick = onClick)
     ) {
         Column(
             modifier = Modifier.padding(12.dp)
         ) {
-            Text(
-                text = routine.name,
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.SemiBold,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Icon(
+                    Icons.Default.DragIndicator,
+                    contentDescription = "Drag to assign",
+                    tint = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f),
+                    modifier = Modifier.size(16.dp)
+                )
+                Text(
+                    text = routine.name,
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f)
+                )
+            }
             Text(
                 text = "${routine.exercises.size} exercises",
                 style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(start = 24.dp)
             )
         }
     }
@@ -491,6 +641,8 @@ fun CycleDaySlotCard(
     routine: Routine?,
     elevation: androidx.compose.ui.unit.Dp,
     isDropTarget: Boolean,
+    isHoveredByDrag: Boolean = false,
+    onPositioned: ((Offset, Offset) -> Unit)? = null,
     onCardTap: () -> Unit,
     onClearAssignment: () -> Unit,
     onConfigureTap: () -> Unit,
@@ -499,15 +651,16 @@ fun CycleDaySlotCard(
     dragModifier: Modifier
 ) {
     val containerColor = when {
+        isHoveredByDrag -> MaterialTheme.colorScheme.primaryContainer
         isDropTarget -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.7f)
         day.isRestDay -> MaterialTheme.colorScheme.surfaceContainerHigh
         else -> MaterialTheme.colorScheme.surfaceContainer
     }
 
-    val borderColor = if (isDropTarget) {
-        MaterialTheme.colorScheme.primary
-    } else {
-        Color.Transparent
+    val borderColor = when {
+        isHoveredByDrag -> MaterialTheme.colorScheme.primary
+        isDropTarget -> MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)
+        else -> Color.Transparent
     }
 
     val iconColor = if (day.isRestDay)
@@ -521,9 +674,15 @@ fun CycleDaySlotCard(
     Card(
         modifier = Modifier
             .fillMaxWidth()
+            .onGloballyPositioned { coords ->
+                onPositioned?.invoke(
+                    coords.positionInRoot(),
+                    coords.positionInRoot() + Offset(coords.size.width.toFloat(), coords.size.height.toFloat())
+                )
+            }
             .shadow(elevation, RoundedCornerShape(16.dp))
             .border(
-                width = if (isDropTarget) 2.dp else 0.dp,
+                width = if (isHoveredByDrag || isDropTarget) 2.dp else 0.dp,
                 color = borderColor,
                 shape = RoundedCornerShape(16.dp)
             )
@@ -848,6 +1007,44 @@ fun CycleDayCard(
                     tint = MaterialTheme.colorScheme.outline
                 )
             }
+        }
+    }
+}
+
+/**
+ * Floating preview card shown during drag operation.
+ */
+@Composable
+private fun DragPreviewCard(
+    routineName: String
+) {
+    Card(
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.primaryContainer
+        ),
+        shape = RoundedCornerShape(12.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
+        modifier = Modifier.width(120.dp)
+    ) {
+        Row(
+            modifier = Modifier.padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Icon(
+                Icons.Default.FitnessCenter,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(16.dp)
+            )
+            Text(
+                text = routineName,
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                color = MaterialTheme.colorScheme.onPrimaryContainer
+            )
         }
     }
 }
