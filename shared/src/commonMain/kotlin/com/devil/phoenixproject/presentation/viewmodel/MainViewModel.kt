@@ -983,6 +983,23 @@ class MainViewModel constructor(
         }
     }
 
+    /**
+     * Test sound playback - plays a sequence of sounds for testing audio configuration.
+     * Useful for verifying sounds play through DND and use correct volume stream.
+     */
+    fun testSounds() {
+        viewModelScope.launch {
+            // Play a variety of sounds with delays so user can hear each one
+            _hapticEvents.emit(HapticEvent.REP_COMPLETED)
+            kotlinx.coroutines.delay(800)
+            _hapticEvents.emit(HapticEvent.WARMUP_COMPLETE)
+            kotlinx.coroutines.delay(1000)
+            _hapticEvents.emit(HapticEvent.REP_COUNT_ANNOUNCED(5))
+            kotlinx.coroutines.delay(1000)
+            _hapticEvents.emit(HapticEvent.WORKOUT_COMPLETE)
+        }
+    }
+
     fun deleteAllWorkouts() {
         viewModelScope.launch { workoutRepository.deleteAllSessions() }
     }

@@ -40,13 +40,15 @@ actual fun HapticFeedbackEffect(
     val loadedSounds = remember { mutableSetOf<Int>() }
 
     // Create SoundPool for audio feedback
-    // Uses USAGE_ASSISTANCE_SONIFICATION to mix with music without interrupting it
+    // Uses USAGE_GAME to:
+    // 1. Tie sounds to media volume (not notification - so they play through DND)
+    // 2. Mix with music without interrupting it (game audio is designed for this)
     val soundPool = remember {
         SoundPool.Builder()
             .setMaxStreams(3)
             .setAudioAttributes(
                 AudioAttributes.Builder()
-                    .setUsage(AudioAttributes.USAGE_ASSISTANCE_SONIFICATION)
+                    .setUsage(AudioAttributes.USAGE_GAME)
                     .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
                     .build()
             )
@@ -208,7 +210,8 @@ private fun playSound(
 }
 
 /**
- * Fallback sound playback using MediaPlayer for when SoundPool fails
+ * Fallback sound playback using MediaPlayer for when SoundPool fails.
+ * Uses same USAGE_GAME attributes to ensure sounds play through DND and use media volume.
  */
 private fun playWithMediaPlayer(event: HapticEvent, context: Context) {
     val soundName = when (event) {
@@ -224,7 +227,12 @@ private fun playWithMediaPlayer(event: HapticEvent, context: Context) {
     if (resId == 0) return
 
     try {
-        val mediaPlayer = MediaPlayer.create(context, resId) ?: return
+        val audioAttributes = AudioAttributes.Builder()
+            .setUsage(AudioAttributes.USAGE_GAME)
+            .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+            .build()
+
+        val mediaPlayer = MediaPlayer.create(context, resId, audioAttributes, 0) ?: return
         mediaPlayer.setVolume(1.0f, 1.0f)
         mediaPlayer.setOnCompletionListener { it.release() }
         mediaPlayer.start()

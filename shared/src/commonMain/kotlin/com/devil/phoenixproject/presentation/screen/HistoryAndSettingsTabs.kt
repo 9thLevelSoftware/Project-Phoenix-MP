@@ -808,6 +808,7 @@ fun SettingsTab(
     onDiscoModeUnlocked: () -> Unit = {},
     onDiscoModeToggle: (Boolean) -> Unit = {},
     onPlayDiscoSound: () -> Unit = {},
+    onTestSounds: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     var showDeleteAllDialog by remember { mutableStateOf(false) }
@@ -1617,6 +1618,39 @@ fun SettingsTab(
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
                     "View Bluetooth connection debug logs to diagnose connectivity issues",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                Spacer(modifier = Modifier.height(Spacing.medium))
+
+                OutlinedButton(
+                    onClick = onTestSounds,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(56.dp),
+                    shape = RoundedCornerShape(20.dp),
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        contentColor = MaterialTheme.colorScheme.primary
+                    ),
+                    border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary)
+                ) {
+                    Icon(
+                        Icons.Default.MusicNote,
+                        contentDescription = "Test sounds",
+                        modifier = Modifier.size(24.dp)
+                    )
+                    Spacer(modifier = Modifier.width(Spacing.small))
+                    Text(
+                        "Test Sounds",
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    "Play workout sounds to test audio configuration and volume",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
