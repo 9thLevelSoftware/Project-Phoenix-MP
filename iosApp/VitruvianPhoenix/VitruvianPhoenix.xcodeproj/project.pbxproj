@@ -103,6 +103,7 @@
 				DFE6BD442EEDF42200886589 /* Frameworks */,
 				DFE6BD452EEDF42200886589 /* Resources */,
 				DFE6BD592EEDF53700886589 /* Embed Frameworks */,
+				DFE6BD802EEE100000886589 /* Generate shared.framework dSYM */,
 			);
 			buildRules = (
 			);
@@ -162,6 +163,25 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXResourcesBuildPhase section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		DFE6BD802EEE100000886589 /* Generate shared.framework dSYM */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+				"$(SRCROOT)/../../shared/build/bin/iosArm64/debugFramework/shared.framework/shared",
+			);
+			name = "Generate shared.framework dSYM";
+			outputPaths = (
+				"$(DWARF_DSYM_FOLDER_PATH)/shared.framework.dSYM",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "# Generate dSYM for shared.framework\nif [ \"$CONFIGURATION\" = \"Release\" ]; then\n    FRAMEWORK_PATH=\"${SRCROOT}/../../shared/build/bin/iosArm64/debugFramework/shared.framework\"\n    DSYM_PATH=\"${DWARF_DSYM_FOLDER_PATH}/shared.framework.dSYM\"\n    \n    if [ -f \"${FRAMEWORK_PATH}/shared\" ]; then\n        echo \"Generating dSYM for shared.framework...\"\n        xcrun dsymutil \"${FRAMEWORK_PATH}/shared\" -o \"${DSYM_PATH}\"\n        echo \"dSYM generated at ${DSYM_PATH}\"\n    else\n        echo \"Warning: shared.framework binary not found at ${FRAMEWORK_PATH}\"\n    fi\nfi\n";
+		};
+/* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		DFE6BD432EEDF42200886589 /* Sources */ = {
