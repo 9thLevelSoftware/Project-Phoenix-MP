@@ -327,7 +327,7 @@
 				CURRENT_PROJECT_VERSION = 2025122901;
 				DEVELOPMENT_TEAM = BDJDR669ZV;
 				ENABLE_PREVIEWS = YES;
-				FRAMEWORK_SEARCH_PATHS = "$(SRCROOT)/../../shared/build/bin/iosSimulatorArm64/debugFramework";
+				FRAMEWORK_SEARCH_PATHS = "$(SRCROOT)/../../shared/build/bin/iosArm64/debugFramework";
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = VitruvianPhoenix/Info.plist;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
