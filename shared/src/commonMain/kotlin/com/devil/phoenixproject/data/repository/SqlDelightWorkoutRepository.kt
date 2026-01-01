@@ -60,7 +60,24 @@ class SqlDelightWorkoutRepository(
         safetyFlags: Long,
         deloadWarningCount: Long,
         romViolationCount: Long,
-        spotterActivations: Long
+        spotterActivations: Long,
+        // New summary metrics
+        peakForceConcentricA: Double?,
+        peakForceConcentricB: Double?,
+        peakForceEccentricA: Double?,
+        peakForceEccentricB: Double?,
+        avgForceConcentricA: Double?,
+        avgForceConcentricB: Double?,
+        avgForceEccentricA: Double?,
+        avgForceEccentricB: Double?,
+        heaviestLiftKg: Double?,
+        totalVolumeKg: Double?,
+        estimatedCalories: Double?,
+        warmupAvgWeightKg: Double?,
+        workingAvgWeightKg: Double?,
+        burnoutAvgWeightKg: Double?,
+        peakWeightKg: Double?,
+        rpe: Long?
     ): WorkoutSession {
         return WorkoutSession(
             id = id,
@@ -84,7 +101,24 @@ class SqlDelightWorkoutRepository(
             safetyFlags = safetyFlags.toInt(),
             deloadWarningCount = deloadWarningCount.toInt(),
             romViolationCount = romViolationCount.toInt(),
-            spotterActivations = spotterActivations.toInt()
+            spotterActivations = spotterActivations.toInt(),
+            // New summary metrics
+            peakForceConcentricA = peakForceConcentricA?.toFloat(),
+            peakForceConcentricB = peakForceConcentricB?.toFloat(),
+            peakForceEccentricA = peakForceEccentricA?.toFloat(),
+            peakForceEccentricB = peakForceEccentricB?.toFloat(),
+            avgForceConcentricA = avgForceConcentricA?.toFloat(),
+            avgForceConcentricB = avgForceConcentricB?.toFloat(),
+            avgForceEccentricA = avgForceEccentricA?.toFloat(),
+            avgForceEccentricB = avgForceEccentricB?.toFloat(),
+            heaviestLiftKg = heaviestLiftKg?.toFloat(),
+            totalVolumeKg = totalVolumeKg?.toFloat(),
+            estimatedCalories = estimatedCalories?.toFloat(),
+            warmupAvgWeightKg = warmupAvgWeightKg?.toFloat(),
+            workingAvgWeightKg = workingAvgWeightKg?.toFloat(),
+            burnoutAvgWeightKg = burnoutAvgWeightKg?.toFloat(),
+            peakWeightKg = peakWeightKg?.toFloat(),
+            rpe = rpe?.toInt()
         )
     }
 
@@ -322,7 +356,24 @@ class SqlDelightWorkoutRepository(
                 safetyFlags = session.safetyFlags.toLong(),
                 deloadWarningCount = session.deloadWarningCount.toLong(),
                 romViolationCount = session.romViolationCount.toLong(),
-                spotterActivations = session.spotterActivations.toLong()
+                spotterActivations = session.spotterActivations.toLong(),
+                // New summary metrics
+                peakForceConcentricA = session.peakForceConcentricA?.toDouble(),
+                peakForceConcentricB = session.peakForceConcentricB?.toDouble(),
+                peakForceEccentricA = session.peakForceEccentricA?.toDouble(),
+                peakForceEccentricB = session.peakForceEccentricB?.toDouble(),
+                avgForceConcentricA = session.avgForceConcentricA?.toDouble(),
+                avgForceConcentricB = session.avgForceConcentricB?.toDouble(),
+                avgForceEccentricA = session.avgForceEccentricA?.toDouble(),
+                avgForceEccentricB = session.avgForceEccentricB?.toDouble(),
+                heaviestLiftKg = session.heaviestLiftKg?.toDouble(),
+                totalVolumeKg = session.totalVolumeKg?.toDouble(),
+                estimatedCalories = session.estimatedCalories?.toDouble(),
+                warmupAvgWeightKg = session.warmupAvgWeightKg?.toDouble(),
+                workingAvgWeightKg = session.workingAvgWeightKg?.toDouble(),
+                burnoutAvgWeightKg = session.burnoutAvgWeightKg?.toDouble(),
+                peakWeightKg = session.peakWeightKg?.toDouble(),
+                rpe = session.rpe?.toLong()
             )
         }
     }

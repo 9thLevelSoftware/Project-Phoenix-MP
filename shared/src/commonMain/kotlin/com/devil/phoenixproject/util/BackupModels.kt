@@ -38,7 +38,24 @@ data class WorkoutSessionBackup(
     val safetyFlags: Int = 0,
     val deloadWarningCount: Int = 0,
     val romViolationCount: Int = 0,
-    val spotterActivations: Int = 0
+    val spotterActivations: Int = 0,
+    // Set Summary Metrics (added in v0.2.1)
+    val peakForceConcentricA: Float? = null,
+    val peakForceConcentricB: Float? = null,
+    val peakForceEccentricA: Float? = null,
+    val peakForceEccentricB: Float? = null,
+    val avgForceConcentricA: Float? = null,
+    val avgForceConcentricB: Float? = null,
+    val avgForceEccentricA: Float? = null,
+    val avgForceEccentricB: Float? = null,
+    val heaviestLiftKg: Float? = null,
+    val totalVolumeKg: Float? = null,
+    val estimatedCalories: Float? = null,
+    val warmupAvgWeightKg: Float? = null,
+    val workingAvgWeightKg: Float? = null,
+    val burnoutAvgWeightKg: Float? = null,
+    val peakWeightKg: Float? = null,
+    val rpe: Int? = null
 )
 
 /**

@@ -114,7 +114,24 @@ abstract class BaseDataBackupManager(
                         safetyFlags = session.safetyFlags.toInt(),
                         deloadWarningCount = session.deloadWarningCount.toInt(),
                         romViolationCount = session.romViolationCount.toInt(),
-                        spotterActivations = session.spotterActivations.toInt()
+                        spotterActivations = session.spotterActivations.toInt(),
+                        // New summary metrics
+                        peakForceConcentricA = session.peakForceConcentricA?.toFloat(),
+                        peakForceConcentricB = session.peakForceConcentricB?.toFloat(),
+                        peakForceEccentricA = session.peakForceEccentricA?.toFloat(),
+                        peakForceEccentricB = session.peakForceEccentricB?.toFloat(),
+                        avgForceConcentricA = session.avgForceConcentricA?.toFloat(),
+                        avgForceConcentricB = session.avgForceConcentricB?.toFloat(),
+                        avgForceEccentricA = session.avgForceEccentricA?.toFloat(),
+                        avgForceEccentricB = session.avgForceEccentricB?.toFloat(),
+                        heaviestLiftKg = session.heaviestLiftKg?.toFloat(),
+                        totalVolumeKg = session.totalVolumeKg?.toFloat(),
+                        estimatedCalories = session.estimatedCalories?.toFloat(),
+                        warmupAvgWeightKg = session.warmupAvgWeightKg?.toFloat(),
+                        workingAvgWeightKg = session.workingAvgWeightKg?.toFloat(),
+                        burnoutAvgWeightKg = session.burnoutAvgWeightKg?.toFloat(),
+                        peakWeightKg = session.peakWeightKg?.toFloat(),
+                        rpe = session.rpe?.toInt()
                     )
                 },
                 metricSamples = metrics.map { metric ->
@@ -236,7 +253,24 @@ abstract class BaseDataBackupManager(
                         safetyFlags = session.safetyFlags.toLong(),
                         deloadWarningCount = session.deloadWarningCount.toLong(),
                         romViolationCount = session.romViolationCount.toLong(),
-                        spotterActivations = session.spotterActivations.toLong()
+                        spotterActivations = session.spotterActivations.toLong(),
+                        // New summary metrics
+                        peakForceConcentricA = session.peakForceConcentricA?.toDouble(),
+                        peakForceConcentricB = session.peakForceConcentricB?.toDouble(),
+                        peakForceEccentricA = session.peakForceEccentricA?.toDouble(),
+                        peakForceEccentricB = session.peakForceEccentricB?.toDouble(),
+                        avgForceConcentricA = session.avgForceConcentricA?.toDouble(),
+                        avgForceConcentricB = session.avgForceConcentricB?.toDouble(),
+                        avgForceEccentricA = session.avgForceEccentricA?.toDouble(),
+                        avgForceEccentricB = session.avgForceEccentricB?.toDouble(),
+                        heaviestLiftKg = session.heaviestLiftKg?.toDouble(),
+                        totalVolumeKg = session.totalVolumeKg?.toDouble(),
+                        estimatedCalories = session.estimatedCalories?.toDouble(),
+                        warmupAvgWeightKg = session.warmupAvgWeightKg?.toDouble(),
+                        workingAvgWeightKg = session.workingAvgWeightKg?.toDouble(),
+                        burnoutAvgWeightKg = session.burnoutAvgWeightKg?.toDouble(),
+                        peakWeightKg = session.peakWeightKg?.toDouble(),
+                        rpe = session.rpe?.toLong()
                     )
                     sessionsImported++
                 } else {
