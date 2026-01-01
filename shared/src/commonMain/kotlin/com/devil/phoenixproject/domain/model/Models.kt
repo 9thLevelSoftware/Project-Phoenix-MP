@@ -359,8 +359,64 @@ data class WorkoutSession(
     val safetyFlags: Int = 0,
     val deloadWarningCount: Int = 0,
     val romViolationCount: Int = 0,
-    val spotterActivations: Int = 0
-)
+    val spotterActivations: Int = 0,
+    // Set Summary Metrics (added in v0.2.1)
+    val peakForceConcentricA: Float? = null,
+    val peakForceConcentricB: Float? = null,
+    val peakForceEccentricA: Float? = null,
+    val peakForceEccentricB: Float? = null,
+    val avgForceConcentricA: Float? = null,
+    val avgForceConcentricB: Float? = null,
+    val avgForceEccentricA: Float? = null,
+    val avgForceEccentricB: Float? = null,
+    val heaviestLiftKg: Float? = null,
+    val totalVolumeKg: Float? = null,
+    val estimatedCalories: Float? = null,
+    val warmupAvgWeightKg: Float? = null,
+    val workingAvgWeightKg: Float? = null,
+    val burnoutAvgWeightKg: Float? = null,
+    val peakWeightKg: Float? = null,
+    val rpe: Int? = null
+) {
+    /** True if this session has detailed summary metrics (v0.2.1+) */
+    val hasSummaryMetrics: Boolean
+        get() = peakForceConcentricA != null || peakForceConcentricB != null
+}
+
+/**
+ * Convert WorkoutSession to SetSummary for display in history.
+ * Returns null if session doesn't have summary metrics (pre-v0.2.1).
+ */
+fun WorkoutSession.toSetSummary(): WorkoutState.SetSummary? {
+    if (!hasSummaryMetrics) return null
+
+    return WorkoutState.SetSummary(
+        metrics = emptyList(),
+        peakPower = 0f,
+        averagePower = 0f,
+        repCount = totalReps,
+        durationMs = duration,
+        totalVolumeKg = totalVolumeKg ?: 0f,
+        heaviestLiftKgPerCable = heaviestLiftKg ?: 0f,
+        peakForceConcentricA = peakForceConcentricA ?: 0f,
+        peakForceConcentricB = peakForceConcentricB ?: 0f,
+        peakForceEccentricA = peakForceEccentricA ?: 0f,
+        peakForceEccentricB = peakForceEccentricB ?: 0f,
+        avgForceConcentricA = avgForceConcentricA ?: 0f,
+        avgForceConcentricB = avgForceConcentricB ?: 0f,
+        avgForceEccentricA = avgForceEccentricA ?: 0f,
+        avgForceEccentricB = avgForceEccentricB ?: 0f,
+        estimatedCalories = estimatedCalories ?: 0f,
+        isEchoMode = mode.contains("Echo", ignoreCase = true),
+        warmupReps = warmupReps,
+        workingReps = workingReps,
+        burnoutReps = (totalReps - warmupReps - workingReps).coerceAtLeast(0),
+        warmupAvgWeightKg = warmupAvgWeightKg ?: 0f,
+        workingAvgWeightKg = workingAvgWeightKg ?: 0f,
+        burnoutAvgWeightKg = burnoutAvgWeightKg ?: 0f,
+        peakWeightKg = peakWeightKg ?: 0f
+    )
+}
 
 expect fun generateUUID(): String
 
