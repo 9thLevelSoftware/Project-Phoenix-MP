@@ -1329,6 +1329,7 @@ class MainViewModel constructor(
     /**
      * Navigate to a specific exercise in the routine.
      * Saves progress of current exercise if any reps completed.
+     * If workout is currently Active, stops the machine first and waits for completion.
      */
     fun jumpToExercise(index: Int) {
         val routine = _loadedRoutine.value ?: return
@@ -1351,6 +1352,33 @@ class MainViewModel constructor(
         bodyweightTimerJob?.cancel()
         resetAutoStopState()
 
+        // If workout is Active, stop the machine before transitioning
+        // This prevents the machine from staying in an engaged state while UI shows idle
+        // IMPORTANT: Navigation must happen AFTER stop completes to avoid race conditions
+        // where the next startWorkout() sends commands while machine is still processing RESET
+        val wasActive = _workoutState.value is WorkoutState.Active
+        if (wasActive) {
+            viewModelScope.launch {
+                try {
+                    bleRepository.stopWorkout()
+                    Logger.d("MainViewModel") { "Stopped active workout before jumping to exercise $index" }
+                } catch (e: Exception) {
+                    Logger.w(e) { "Failed to stop workout before jump (non-fatal): ${e.message}" }
+                }
+                // Navigate AFTER stop completes to ensure machine is ready for new commands
+                navigateToExerciseInternal(routine, index)
+            }
+        } else {
+            // Not active, navigate immediately
+            navigateToExerciseInternal(routine, index)
+        }
+    }
+
+    /**
+     * Internal helper to perform the actual exercise navigation.
+     * Called either synchronously (when not active) or after stopWorkout completes (when active).
+     */
+    private fun navigateToExerciseInternal(routine: Routine, index: Int) {
         // Navigate to new exercise
         _currentExerciseIndex.value = index
         _currentSetIndex.value = 0
