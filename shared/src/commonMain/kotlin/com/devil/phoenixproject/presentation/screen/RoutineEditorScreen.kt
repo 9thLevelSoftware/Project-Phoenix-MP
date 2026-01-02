@@ -43,8 +43,6 @@ import sh.calvin.reorderable.rememberReorderableLazyListState
 data class RoutineEditorState(
     val routineName: String = "",
     val routine: Routine? = null,
-    val selectedIds: Set<String> = emptySet(),  // Can be exercise or superset IDs
-    val isSelectionMode: Boolean = false,
     val collapsedSupersets: Set<String> = emptySet(),  // Collapsed superset IDs
     val showAddMenu: Boolean = false
 ) {
