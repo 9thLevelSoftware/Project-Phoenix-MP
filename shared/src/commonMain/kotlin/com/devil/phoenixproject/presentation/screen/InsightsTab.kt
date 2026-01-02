@@ -39,16 +39,26 @@ fun InsightsTab(
     ) {
         item {
             Text(
-                text = "Insights & Analytics",
+                text = "Dashboard",
                 style = MaterialTheme.typography.headlineLarge,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onBackground
             )
             Spacer(modifier = Modifier.height(4.dp))
             Text(
-                text = "Deep analysis of your training patterns",
+                text = "Your training overview",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+
+        // This Week Summary Card - week-over-week comparison
+        item {
+            ThisWeekSummaryCard(
+                workoutSessions = workoutSessions,
+                personalRecords = prs,
+                weightUnit = weightUnit,
+                modifier = Modifier.fillMaxWidth()
             )
         }
 
@@ -95,10 +105,10 @@ fun InsightsTab(
         }
         
         // 5. Mode Distribution Donut Chart (New Metric)
-        if (prs.isNotEmpty()) {
+        if (workoutSessions.isNotEmpty()) {
             item {
                 WorkoutModeDistributionCard(
-                    personalRecords = prs,
+                    workoutSessions = workoutSessions,
                     modifier = Modifier.fillMaxWidth()
                 )
             }

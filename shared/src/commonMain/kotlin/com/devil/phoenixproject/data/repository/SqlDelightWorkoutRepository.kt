@@ -13,6 +13,7 @@ import com.devil.phoenixproject.domain.model.PRType
 import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.domain.model.RoutineExercise
+import com.devil.phoenixproject.domain.model.Superset
 import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.domain.model.WorkoutType
 import com.devil.phoenixproject.domain.model.currentTimeMillis
@@ -59,7 +60,24 @@ class SqlDelightWorkoutRepository(
         safetyFlags: Long,
         deloadWarningCount: Long,
         romViolationCount: Long,
-        spotterActivations: Long
+        spotterActivations: Long,
+        // New summary metrics
+        peakForceConcentricA: Double?,
+        peakForceConcentricB: Double?,
+        peakForceEccentricA: Double?,
+        peakForceEccentricB: Double?,
+        avgForceConcentricA: Double?,
+        avgForceConcentricB: Double?,
+        avgForceEccentricA: Double?,
+        avgForceEccentricB: Double?,
+        heaviestLiftKg: Double?,
+        totalVolumeKg: Double?,
+        estimatedCalories: Double?,
+        warmupAvgWeightKg: Double?,
+        workingAvgWeightKg: Double?,
+        burnoutAvgWeightKg: Double?,
+        peakWeightKg: Double?,
+        rpe: Long?
     ): WorkoutSession {
         return WorkoutSession(
             id = id,
@@ -83,7 +101,24 @@ class SqlDelightWorkoutRepository(
             safetyFlags = safetyFlags.toInt(),
             deloadWarningCount = deloadWarningCount.toInt(),
             romViolationCount = romViolationCount.toInt(),
-            spotterActivations = spotterActivations.toInt()
+            spotterActivations = spotterActivations.toInt(),
+            // New summary metrics
+            peakForceConcentricA = peakForceConcentricA?.toFloat(),
+            peakForceConcentricB = peakForceConcentricB?.toFloat(),
+            peakForceEccentricA = peakForceEccentricA?.toFloat(),
+            peakForceEccentricB = peakForceEccentricB?.toFloat(),
+            avgForceConcentricA = avgForceConcentricA?.toFloat(),
+            avgForceConcentricB = avgForceConcentricB?.toFloat(),
+            avgForceEccentricA = avgForceEccentricA?.toFloat(),
+            avgForceEccentricB = avgForceEccentricB?.toFloat(),
+            heaviestLiftKg = heaviestLiftKg?.toFloat(),
+            totalVolumeKg = totalVolumeKg?.toFloat(),
+            estimatedCalories = estimatedCalories?.toFloat(),
+            warmupAvgWeightKg = warmupAvgWeightKg?.toFloat(),
+            workingAvgWeightKg = workingAvgWeightKg?.toFloat(),
+            burnoutAvgWeightKg = burnoutAvgWeightKg?.toFloat(),
+            peakWeightKg = peakWeightKg?.toFloat(),
+            rpe = rpe?.toInt()
         )
     }
 
@@ -107,6 +142,20 @@ class SqlDelightWorkoutRepository(
 
     private suspend fun loadRoutineWithExercises(routineId: String, name: String, createdAt: Long, lastUsed: Long? = null, useCount: Int = 0): Routine {
         val exerciseRows = queries.selectExercisesByRoutine(routineId).executeAsList()
+        val supersetRows = queries.selectSupersetsByRoutine(routineId).executeAsList()
+
+        // Load supersets from database
+        val supersets = supersetRows.map { row ->
+            Superset(
+                id = row.id,
+                routineId = row.routineId,
+                name = row.name,
+                colorIndex = row.colorIndex.toInt(),
+                restBetweenSeconds = row.restBetweenSeconds.toInt(),
+                orderIndex = row.orderIndex.toInt()
+            )
+        }
+
         val exercises = exerciseRows.mapNotNull { row ->
             try {
                 // Try to get exercise from library, or create from stored data
@@ -148,9 +197,12 @@ class SqlDelightWorkoutRepository(
                     )
                 }
 
-                // Parse comma-separated setReps
+                // Parse comma-separated setReps (supports "AMRAP" as null marker)
                 val setReps: List<Int?> = try {
-                    row.setReps.split(",").map { it.trim().toIntOrNull() }
+                    row.setReps.split(",").map { value ->
+                        val trimmed = value.trim()
+                        if (trimmed.equals("AMRAP", ignoreCase = true)) null else trimmed.toIntOrNull()
+                    }
                 } catch (e: Exception) {
                     Logger.w(e) { "Failed to parse setReps '${row.setReps}' for exercise ${row.exerciseName}, using default [10]" }
                     listOf(10)
@@ -199,9 +251,8 @@ class SqlDelightWorkoutRepository(
                     duration = row.duration?.toInt(),
                     isAMRAP = row.isAMRAP == 1L,
                     perSetRestTime = row.perSetRestTime == 1L,
-                    supersetGroupId = row.supersetGroupId,
-                    supersetOrder = row.supersetOrder.toInt(),
-                    supersetRestSeconds = row.supersetRestSeconds.toInt()
+                    supersetId = row.supersetId,
+                    orderInSuperset = row.orderInSuperset.toInt()
                 )
             } catch (e: Exception) {
                 Logger.e(e) { "Failed to map routine exercise: ${row.exerciseId}" }
@@ -213,6 +264,7 @@ class SqlDelightWorkoutRepository(
             id = routineId,
             name = name,
             exercises = exercises,
+            supersets = supersets,
             createdAt = createdAt,
             lastUsed = lastUsed,
             useCount = useCount
@@ -304,7 +356,24 @@ class SqlDelightWorkoutRepository(
                 safetyFlags = session.safetyFlags.toLong(),
                 deloadWarningCount = session.deloadWarningCount.toLong(),
                 romViolationCount = session.romViolationCount.toLong(),
-                spotterActivations = session.spotterActivations.toLong()
+                spotterActivations = session.spotterActivations.toLong(),
+                // New summary metrics
+                peakForceConcentricA = session.peakForceConcentricA?.toDouble(),
+                peakForceConcentricB = session.peakForceConcentricB?.toDouble(),
+                peakForceEccentricA = session.peakForceEccentricA?.toDouble(),
+                peakForceEccentricB = session.peakForceEccentricB?.toDouble(),
+                avgForceConcentricA = session.avgForceConcentricA?.toDouble(),
+                avgForceConcentricB = session.avgForceConcentricB?.toDouble(),
+                avgForceEccentricA = session.avgForceEccentricA?.toDouble(),
+                avgForceEccentricB = session.avgForceEccentricB?.toDouble(),
+                heaviestLiftKg = session.heaviestLiftKg?.toDouble(),
+                totalVolumeKg = session.totalVolumeKg?.toDouble(),
+                estimatedCalories = session.estimatedCalories?.toDouble(),
+                warmupAvgWeightKg = session.warmupAvgWeightKg?.toDouble(),
+                workingAvgWeightKg = session.workingAvgWeightKg?.toDouble(),
+                burnoutAvgWeightKg = session.burnoutAvgWeightKg?.toDouble(),
+                peakWeightKg = session.peakWeightKg?.toDouble(),
+                rpe = session.rpe?.toLong()
             )
         }
     }
@@ -360,8 +429,14 @@ class SqlDelightWorkoutRepository(
                     useCount = routine.useCount.toLong()
                 )
 
-                // Delete existing exercises before re-inserting (prevents duplicates on edit)
+                // Delete existing supersets and exercises before re-inserting
+                queries.deleteSupersetsByRoutine(routineId)
                 queries.deleteRoutineExercises(routineId)
+
+                // Insert all supersets
+                routine.supersets.forEach { superset ->
+                    insertSuperset(routineId, superset)
+                }
 
                 // Insert all exercises
                 routine.exercises.forEachIndexed { index, exercise ->
@@ -369,7 +444,7 @@ class SqlDelightWorkoutRepository(
                 }
             }
 
-            Logger.d { "Saved routine '${routine.name}' with ${routine.exercises.size} exercises" }
+            Logger.d { "Saved routine '${routine.name}' with ${routine.exercises.size} exercises and ${routine.supersets.size} supersets" }
         }
     }
 
@@ -387,7 +462,7 @@ class SqlDelightWorkoutRepository(
             exerciseId = exercise.exercise.id,
             cableConfig = exercise.cableConfig.name,
             orderIndex = index.toLong(),
-            setReps = exercise.setReps.joinToString(",") { (it ?: 10).toString() },
+            setReps = exercise.setReps.joinToString(",") { it?.toString() ?: "AMRAP" },
             weightPerCableKg = exercise.weightPerCableKg.toDouble(),
             setWeights = exercise.setWeightsPerCableKg.joinToString(","),
             mode = serializeWorkoutType(exercise.workoutType),
@@ -399,9 +474,19 @@ class SqlDelightWorkoutRepository(
             setRestSeconds = json.encodeToString(exercise.setRestSeconds),
             perSetRestTime = if (exercise.perSetRestTime) 1L else 0L,
             isAMRAP = if (exercise.isAMRAP) 1L else 0L,
-            supersetGroupId = exercise.supersetGroupId,
-            supersetOrder = exercise.supersetOrder.toLong(),
-            supersetRestSeconds = exercise.supersetRestSeconds.toLong()
+            supersetId = exercise.supersetId,
+            orderInSuperset = exercise.orderInSuperset.toLong()
+        )
+    }
+
+    private fun insertSuperset(routineId: String, superset: Superset) {
+        queries.insertSuperset(
+            id = superset.id,
+            routineId = routineId,
+            name = superset.name,
+            colorIndex = superset.colorIndex.toLong(),
+            restBetweenSeconds = superset.restBetweenSeconds.toLong(),
+            orderIndex = superset.orderIndex.toLong()
         )
     }
 
@@ -417,8 +502,14 @@ class SqlDelightWorkoutRepository(
                     id = routineId
                 )
 
-                // Delete existing exercises and re-insert
+                // Delete existing supersets and exercises, then re-insert
+                queries.deleteSupersetsByRoutine(routineId)
                 queries.deleteRoutineExercises(routineId)
+
+                // Insert all supersets
+                routine.supersets.forEach { superset ->
+                    insertSuperset(routineId, superset)
+                }
 
                 // Insert all exercises
                 routine.exercises.forEachIndexed { index, exercise ->
@@ -426,7 +517,7 @@ class SqlDelightWorkoutRepository(
                 }
             }
 
-            Logger.d { "Updated routine '${routine.name}' with ${routine.exercises.size} exercises" }
+            Logger.d { "Updated routine '${routine.name}' with ${routine.exercises.size} exercises and ${routine.supersets.size} supersets" }
         }
     }
 
@@ -435,8 +526,9 @@ class SqlDelightWorkoutRepository(
             if (routineId.isBlank()) return@withContext
 
             db.transaction {
-                // Delete exercises first (foreign key cascade should handle this, but be explicit)
+                // Delete exercises and supersets first (foreign key cascade should handle this, but be explicit)
                 queries.deleteRoutineExercises(routineId)
+                queries.deleteSupersetsByRoutine(routineId)
                 queries.deleteRoutineById(routineId)
             }
 

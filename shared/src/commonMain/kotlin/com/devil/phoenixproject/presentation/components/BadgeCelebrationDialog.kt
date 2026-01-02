@@ -33,12 +33,18 @@ import com.devil.phoenixproject.domain.model.BadgeCategory
 fun BadgeCelebrationDialog(
     badge: Badge,
     onDismiss: () -> Unit,
-    onMarkCelebrated: () -> Unit
+    onMarkCelebrated: () -> Unit,
+    onSoundTrigger: () -> Unit = {}
 ) {
     val tierColor = Color(badge.tier.colorHex.toInt())
 
     // Animation states
     var showDialog by remember { mutableStateOf(false) }
+
+    // Trigger sound when dialog is shown
+    LaunchedEffect(badge.id) {
+        onSoundTrigger()
+    }
     val scale by animateFloatAsState(
         targetValue = if (showDialog) 1f else 0f,
         animationSpec = spring(
@@ -229,7 +235,8 @@ fun BadgeCelebrationDialog(
 fun BadgeCelebrationQueue(
     badges: List<Badge>,
     onAllCelebrated: () -> Unit,
-    onMarkCelebrated: (String) -> Unit
+    onMarkCelebrated: (String) -> Unit,
+    onSoundTrigger: () -> Unit = {}
 ) {
     var currentIndex by remember { mutableStateOf(0) }
 
@@ -245,7 +252,8 @@ fun BadgeCelebrationQueue(
             },
             onMarkCelebrated = {
                 onMarkCelebrated(badges[currentIndex].id)
-            }
+            },
+            onSoundTrigger = onSoundTrigger
         )
     }
 }
@@ -272,6 +280,11 @@ private fun getBadgeIcon(iconResource: String): ImageVector {
         "sun" -> Icons.Default.WbSunny
         "moon" -> Icons.Default.NightsStay
         "weight" -> Icons.Default.FitnessCenter
+        "lightning" -> Icons.Default.Bolt
+        "body" -> Icons.Default.Accessibility
+        "phoenix" -> Icons.Default.LocalFireDepartment // Phoenix uses fire icon
+        "shield" -> Icons.Default.Shield
+        "list" -> Icons.Default.Checklist
         else -> Icons.Default.Star
     }
 }

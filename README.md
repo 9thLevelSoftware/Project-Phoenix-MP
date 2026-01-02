@@ -10,7 +10,7 @@ A Kotlin Multiplatform application for controlling Vitruvian Trainer workout mac
 
 If you find this app useful and want to support its continued development:
 
-**[☕ Buy Me a Coffee](https://buymeacoffee.com/vitruvianredux)**
+**[Buy Me a Coffee](https://buymeacoffee.com/vitruvianredux)**
 
 Your support helps keep the machines running and the code flowing!
 
@@ -22,42 +22,67 @@ This app enables local control of Vitruvian Trainer machines after the company's
 
 ## Installation
 
-Download the latest release and follow the installation guide for your platform:
+The app is now available on both app stores!
 
-| Platform | Download | Installation Guide |
-|----------|----------|-------------------|
-| **Android** | [APK Download](../../releases) | [Android Install Guide](ANDROID_INSTALL.md) |
-| **iOS** | [IPA Download](../../releases) | [iOS Install Guide](iOS_INSTALL.md) |
+| Platform | App Store | Alternative |
+|----------|-----------|-------------|
+| **Android** | [Google Play Store](https://play.google.com/store/apps/details?id=com.devil.phoenixproject) | [APK Download](../../releases) |
+| **iOS** | [App Store](https://apps.apple.com/app/vitruvian-phoenix/id6740537270) | [TestFlight Beta](iOS_INSTALL.md#option-2-testflight-beta-testing) |
+
+For detailed installation instructions, see:
+- [Android Install Guide](ANDROID_INSTALL.md)
+- [iOS Install Guide](iOS_INSTALL.md)
 
 ## Supported Platforms
 
 | Platform | Status | Notes |
 |----------|--------|-------|
-| **Android** | Beta | BLE support via native APIs |
-| **iOS** | Beta | BLE support via CoreBluetooth |
+| **Android** | Released | Google Play Store + APK sideloading |
+| **iOS** | Released | App Store + TestFlight beta |
 
 ## Features
 
-### Core Functionality (Planned)
+### Core Workout Features
 - **BLE Connectivity**: Reliable connection to Vitruvian Trainer devices
 - **All Workout Modes**: Old School, Pump, TUT, TUT Beast, Eccentric-Only, Echo
 - **Real-time Monitoring**: Live load, position, velocity, and power metrics
 - **Rep Counting**: Accurate rep detection with visual feedback
 - **Auto-Stop**: Automatic workout termination based on rep targets
+- **Screen Wake Lock**: Screen stays on during active workouts
 
-### Enhanced Features (Planned)
-- **Exercise Library**: 200+ pre-loaded exercises categorized by muscle group
+### Set Summary & History
+- **Detailed Set Summary**: View comprehensive stats after each set (reps, volume, forces, calories, RPE)
+- **Expandable History Cards**: Tap any workout in history to view the full set summary
+- **Echo Mode Phase Breakdown**: See warmup, working, and burnout phase metrics
+- **RPE Tracking**: Rate perceived exertion saved with each set
+
+### Exercise Library & Routines
+- **200+ Exercises**: Pre-loaded exercises categorized by muscle group
+- **Custom Routines**: Build and save your own workout routines
+- **Superset Support**: Create and manage supersets with visual tree connectors
+- **Drag-and-Drop**: Easily reorder exercises and create supersets by dragging
+
+### Training Cycles
+- **Multi-Week Programs**: Create structured training programs with customizable day counts
+- **Two-Panel Editor**: Visual cycle editor with drag-and-drop routine assignment
+- **Per-Day Modifiers**: Configure intensity, volume, and deload settings for each day
+- **Cycle Review**: Collapsible timeline view of your entire training cycle
+- **Progress Tracking**: Automatic day completion and cycle progression
+- **Day Strip Navigation**: Quick navigation between cycle days
+
+### Analytics & Insights
 - **Personal Records**: Automatic PR detection and historical tracking
 - **Workout History**: Complete history with metrics stored locally
-- **Custom Routines**: Build and save your own workout routines
-- **Program Builder**: Create structured multi-exercise programs
-
-### Analytics & Insights (Planned)
 - **Muscle Balance Radar**: Visual balance across muscle groups
 - **Consistency Gauge**: Monthly workout consistency tracking
 - **Volume vs Intensity**: Session comparison charts
 - **Total Volume History**: Track volume lifted over time
 - **Mode Distribution**: Workout mode usage breakdown
+
+### Data Management
+- **Local Storage**: All data stored securely on your device
+- **Backup & Restore**: Export/import your workout history
+- **No Account Required**: Works completely offline
 
 ## Technology Stack
 
@@ -113,13 +138,40 @@ open iosApp/VitruvianPhoenix/VitruvianPhoenix.xcodeproj
 ## Hardware Compatibility
 
 ### Vitruvian V-Form Trainer (Euclid / VIT-200)
-- **Status:** 🔄 In Development
+- **Status:** Fully Supported
 - **Device Name:** `Vee_*`
 - **Max Resistance:** 200 kg (440 lbs)
 
 ### Vitruvian Trainer+
-- **Status:** 🔄 In Development
+- **Status:** Fully Supported
 - **Max Resistance:** 220 kg (485 lbs)
+
+## What's New in v0.2.1
+
+### Set Summary History
+- View detailed workout metrics from history by tapping workout entries
+- Expandable cards with chevron animation
+- Full SetSummaryCard display including forces, volume, and calories
+- RPE displayed when recorded
+- Graceful handling of pre-v0.2.1 workouts
+
+### Training Cycles Redesign
+- New day count picker for cycle creation
+- Two-panel cycle editor with drag-and-drop routine assignment
+- Per-day modifier configuration (intensity, volume, deload)
+- Cycle review screen with collapsible timeline
+- Day strip for quick navigation
+- Automatic day completion tracking
+
+### Superset Containers
+- First-class superset support with dedicated database table
+- Visual tree connectors showing superset groupings
+- Create supersets via drag-and-drop or context menu
+- Enhanced superset management dialogs
+
+### Quality of Life
+- Screen stays awake during active workouts
+- Improved audio management for workout sounds
 
 ## Contributing
 

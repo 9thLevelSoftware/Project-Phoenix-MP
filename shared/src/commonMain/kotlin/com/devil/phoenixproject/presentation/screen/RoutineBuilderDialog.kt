@@ -199,12 +199,12 @@ fun RoutineBuilderDialog(
                                             if (selectedForSuperset.size >= 2) {
                                                 Button(
                                                     onClick = {
-                                                        val groupId = generateSupersetGroupId()
+                                                        val groupId = generateSupersetId()
                                                         exercises = exercises.map { ex ->
                                                             if (ex.id in selectedForSuperset) {
                                                                 ex.copy(
-                                                                    supersetGroupId = groupId,
-                                                                    supersetOrder = selectedForSuperset.toList().indexOf(ex.id)
+                                                                    supersetId = groupId,
+                                                                    orderInSuperset = selectedForSuperset.toList().indexOf(ex.id)
                                                                 )
                                                             } else ex
                                                         }
@@ -265,8 +265,8 @@ fun RoutineBuilderDialog(
                             }
                         } else {
                             // Group exercises by superset for rendering
-                            val supersetGroups = exercises.filter { it.supersetGroupId != null }
-                                .groupBy { it.supersetGroupId!! }
+                            val supersetGroups = exercises.filter { it.supersetId != null }
+                                .groupBy { it.supersetId!! }
                             val supersetColors = listOf(
                                 Color(0xFF6366F1), // Indigo
                                 Color(0xFFEC4899), // Pink
@@ -276,14 +276,14 @@ fun RoutineBuilderDialog(
 
                             Column(verticalArrangement = Arrangement.spacedBy(Spacing.small)) {
                                 exercises.forEachIndexed { index, exercise ->
-                                    val supersetGroupId = exercise.supersetGroupId
-                                    val supersetIndex = supersetGroups.keys.toList().indexOf(supersetGroupId)
+                                    val supersetId = exercise.supersetId
+                                    val supersetIndex = supersetGroups.keys.toList().indexOf(supersetId)
                                     val supersetColor = if (supersetIndex >= 0) {
                                         supersetColors[supersetIndex % supersetColors.size]
                                     } else null
-                                    val isFirstInSuperset = supersetGroupId != null &&
-                                        exercises.filter { it.supersetGroupId == supersetGroupId }
-                                            .minByOrNull { it.supersetOrder }?.id == exercise.id
+                                    val isFirstInSuperset = supersetId != null &&
+                                        exercises.filter { it.supersetId == supersetId }
+                                            .minByOrNull { it.orderInSuperset }?.id == exercise.id
                                     val isSelected = exercise.id in selectedForSuperset
 
                                     key(exercise.id) {
@@ -310,7 +310,7 @@ fun RoutineBuilderDialog(
                                             onUnlinkFromSuperset = {
                                                 exercises = exercises.map { ex ->
                                                     if (ex.id == exercise.id) {
-                                                        ex.copy(supersetGroupId = null, supersetOrder = 0)
+                                                        ex.copy(supersetId = null, orderInSuperset = 0)
                                                     } else ex
                                                 }
                                             },
@@ -733,7 +733,7 @@ fun RoutineExerciseListItem(
                         }
                     }
                     // Unlink from superset button (only show for exercises in a superset)
-                    if (exercise.supersetGroupId != null && !supersetMode) {
+                    if (exercise.supersetId != null && !supersetMode) {
                         IconButton(
                             onClick = onUnlinkFromSuperset,
                             modifier = Modifier.size(36.dp)

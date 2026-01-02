@@ -1,0 +1,7 @@
+-- Migration 5: Add subscription-related columns to UserProfile
+-- Enables tracking of Supabase auth and RevenueCat subscription status
+
+ALTER TABLE UserProfile ADD COLUMN supabase_user_id TEXT;
+ALTER TABLE UserProfile ADD COLUMN subscription_status TEXT DEFAULT 'free';
+ALTER TABLE UserProfile ADD COLUMN subscription_expires_at INTEGER;
+ALTER TABLE UserProfile ADD COLUMN last_auth_at INTEGER;

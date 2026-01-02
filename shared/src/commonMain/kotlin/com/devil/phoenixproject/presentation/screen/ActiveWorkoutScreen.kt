@@ -13,6 +13,7 @@ import org.koin.compose.koinInject
 import com.devil.phoenixproject.data.repository.GamificationRepository
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
 import co.touchlab.kermit.Logger
+import com.devil.phoenixproject.util.setKeepScreenOn
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -38,8 +39,12 @@ fun ActiveWorkoutScreen(
     val enableVideoPlayback by viewModel.enableVideoPlayback.collectAsState()
     val loadedRoutine by viewModel.loadedRoutine.collectAsState()
     val currentExerciseIndex by viewModel.currentExerciseIndex.collectAsState()
+    val currentSetIndex by viewModel.currentSetIndex.collectAsState()
     val hapticEvents = viewModel.hapticEvents
     val connectionState by viewModel.connectionState.collectAsState()
+    // Load baseline for base tension subtraction (~4kg per cable)
+    val loadBaselineA by viewModel.loadBaselineA.collectAsState()
+    val loadBaselineB by viewModel.loadBaselineB.collectAsState()
     @Suppress("UNUSED_VARIABLE") // Reserved for future connecting overlay
     val isAutoConnecting by viewModel.isAutoConnecting.collectAsState()
     val connectionError by viewModel.connectionError.collectAsState()
@@ -62,6 +67,14 @@ fun ActiveWorkoutScreen(
     LaunchedEffect(Unit) {
         viewModel.badgeEarnedEvents.collect { badges ->
             earnedBadges = badges
+        }
+    }
+
+    // Keep screen on during workout
+    DisposableEffect(Unit) {
+        setKeepScreenOn(true)
+        onDispose {
+            setKeepScreenOn(false)
         }
     }
 
@@ -102,8 +115,8 @@ fun ActiveWorkoutScreen(
         }
     }
 
-    // Haptic feedback effect
-    HapticFeedbackEffect(hapticEvents = hapticEvents)
+    // Note: HapticFeedbackEffect is now global in EnhancedMainScreen
+    // No need for local haptic effect here
 
     // Navigation guard to prevent double navigateUp() calls (Issue #204)
     // The LaunchedEffect can re-trigger if workoutParameters changes during navigation,
@@ -131,6 +144,12 @@ fun ActiveWorkoutScreen(
                 hasNavigatedAway = true
                 navController.navigateUp()
             }
+            workoutState is WorkoutState.Idle && (loadedRoutine == null || loadedRoutine?.id?.startsWith(MainViewModel.TEMP_SINGLE_EXERCISE_PREFIX) == true) -> {
+                // Single Exercise completed and reset to Idle - navigate back to SingleExerciseScreen
+                Logger.d { "ActiveWorkoutScreen: Single Exercise idle, navigating back" }
+                hasNavigatedAway = true
+                navController.navigateUp()
+            }
             workoutState is WorkoutState.Error -> {
                 // Show error for 3 seconds then navigate back
                 Logger.e { "ActiveWorkoutScreen: Error state, navigating back in 3s" }
@@ -145,7 +164,8 @@ fun ActiveWorkoutScreen(
     val workoutUiState = remember(
         connectionState, workoutState, currentMetric, currentHeuristicKgMax, workoutParameters,
         repCount, repRanges, autoStopState, weightUnit, enableVideoPlayback,
-        loadedRoutine, currentExerciseIndex, userPreferences.autoplayEnabled
+        loadedRoutine, currentExerciseIndex, currentSetIndex, userPreferences.autoplayEnabled,
+        loadBaselineA, loadBaselineB
     ) {
         WorkoutUiState(
             connectionState = connectionState,
@@ -160,10 +180,13 @@ fun ActiveWorkoutScreen(
             enableVideoPlayback = enableVideoPlayback,
             loadedRoutine = loadedRoutine,
             currentExerciseIndex = currentExerciseIndex,
+            currentSetIndex = currentSetIndex,
             autoplayEnabled = userPreferences.autoplayEnabled,
             isWorkoutSetupDialogVisible = false,
             showConnectionCard = false,
-            showWorkoutSetupCard = false
+            showWorkoutSetupCard = false,
+            loadBaselineA = loadBaselineA,
+            loadBaselineB = loadBaselineB
         )
     }
 
@@ -242,7 +265,8 @@ fun ActiveWorkoutScreen(
             show = true,
             exerciseName = event.exerciseName,
             weight = "${viewModel.formatWeight(event.weightPerCableKg, weightUnit)}/cable × ${event.reps} reps",
-            onDismiss = { prCelebrationEvent = null }
+            onDismiss = { prCelebrationEvent = null },
+            onSoundTrigger = { viewModel.emitPRSound() }
         )
     }
 
@@ -255,7 +279,8 @@ fun ActiveWorkoutScreen(
                 kotlinx.coroutines.MainScope().launch {
                     gamificationRepository.markBadgeCelebrated(badgeId)
                 }
-            }
+            },
+            onSoundTrigger = { viewModel.emitBadgeSound() }
         )
     }
 }

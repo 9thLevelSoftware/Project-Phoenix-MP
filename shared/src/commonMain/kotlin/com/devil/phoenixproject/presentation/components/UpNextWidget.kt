@@ -27,7 +27,7 @@ import org.koin.compose.koinInject
 @Composable
 fun UpNextWidget(
     routines: List<Routine>,
-    onStartWorkout: (routineId: String) -> Unit,
+    onStartWorkout: (routineId: String, cycleId: String, dayNumber: Int) -> Unit,
     onViewAllCycles: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -128,7 +128,7 @@ private fun ActiveCycleWidget(
     cycle: TrainingCycle,
     progress: CycleProgress?,
     routines: List<Routine>,
-    onStartWorkout: (routineId: String) -> Unit,
+    onStartWorkout: (routineId: String, cycleId: String, dayNumber: Int) -> Unit,
     onViewDetails: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -337,7 +337,7 @@ private fun ActiveCycleWidget(
                         // Start button
                         if (currentCycleDay?.isRestDay != true && currentCycleDay?.routineId != null) {
                             Button(
-                                onClick = { currentCycleDay.routineId?.let { onStartWorkout(it) } },
+                                onClick = { currentCycleDay.routineId?.let { onStartWorkout(it, cycle.id, currentDay) } },
                                 modifier = Modifier.fillMaxWidth(),
                                 shape = RoundedCornerShape(12.dp)
                             ) {
@@ -377,7 +377,7 @@ private fun ActiveCycleWidget(
 @Composable
 fun UpNextCompactWidget(
     routines: List<Routine>,
-    onStartWorkout: (routineId: String) -> Unit,
+    onStartWorkout: (routineId: String, cycleId: String, dayNumber: Int) -> Unit,
     onViewCycles: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -408,7 +408,7 @@ fun UpNextCompactWidget(
         shape = RoundedCornerShape(16.dp),
         onClick = {
             if (currentCycleDay?.routineId != null) {
-                onStartWorkout(currentCycleDay.routineId!!)
+                onStartWorkout(currentCycleDay.routineId!!, cycle.id, currentDay)
             } else {
                 onViewCycles()
             }

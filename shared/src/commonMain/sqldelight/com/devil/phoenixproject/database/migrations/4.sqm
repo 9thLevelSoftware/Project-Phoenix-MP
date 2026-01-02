@@ -1,7 +1,107 @@
--- Migration: Add subscription-related columns to UserProfile
--- Enables tracking of Supabase auth and RevenueCat subscription status
+-- Migration 4: Convert superset from per-exercise properties to container model
+-- Creates Superset table and migrates RoutineExercise columns
+--
+-- OLD columns (from migration 3):
+--   supersetGroupId TEXT
+--   supersetOrder INTEGER NOT NULL DEFAULT 0
+--   supersetRestSeconds INTEGER NOT NULL DEFAULT 10
+--
+-- NEW columns (container model):
+--   supersetId TEXT (FK to Superset)
+--   orderInSuperset INTEGER NOT NULL DEFAULT 0
 
-ALTER TABLE UserProfile ADD COLUMN supabase_user_id TEXT;
-ALTER TABLE UserProfile ADD COLUMN subscription_status TEXT DEFAULT 'free';
-ALTER TABLE UserProfile ADD COLUMN subscription_expires_at INTEGER;
-ALTER TABLE UserProfile ADD COLUMN last_auth_at INTEGER;
+-- Disable foreign keys during migration
+PRAGMA foreign_keys = OFF;
+
+-- Create Superset table (matches schema in VitruvianDatabase.sq)
+CREATE TABLE Superset (
+    id TEXT PRIMARY KEY NOT NULL,
+    routineId TEXT NOT NULL,
+    name TEXT NOT NULL,
+    colorIndex INTEGER NOT NULL DEFAULT 0,
+    restBetweenSeconds INTEGER NOT NULL DEFAULT 10,
+    orderIndex INTEGER NOT NULL,
+    FOREIGN KEY (routineId) REFERENCES Routine(id) ON DELETE CASCADE
+);
+
+CREATE INDEX idx_superset_routine ON Superset(routineId);
+
+-- Migrate existing superset groups to Superset table
+-- For each distinct supersetGroupId, create a Superset entry
+-- Uses the supersetGroupId as both ID and name (can be renamed by user later)
+-- Takes restBetweenSeconds from the first exercise in the group
+-- Uses MIN(orderIndex) to determine superset position in routine
+INSERT INTO Superset (id, routineId, name, colorIndex, restBetweenSeconds, orderIndex)
+SELECT
+    supersetGroupId,
+    routineId,
+    supersetGroupId,  -- Use the group ID as the name (user can rename later)
+    0,                -- Default color index
+    MAX(supersetRestSeconds),  -- Take the rest seconds from the group
+    MIN(orderIndex)   -- Position based on first exercise in group
+FROM RoutineExercise
+WHERE supersetGroupId IS NOT NULL
+GROUP BY supersetGroupId, routineId;
+
+-- Create new RoutineExercise table with updated columns
+CREATE TABLE RoutineExercise_new (
+    id TEXT NOT NULL PRIMARY KEY,
+    routineId TEXT NOT NULL,
+    exerciseName TEXT NOT NULL,
+    exerciseMuscleGroup TEXT NOT NULL DEFAULT '',
+    exerciseEquipment TEXT NOT NULL DEFAULT '',
+    exerciseDefaultCableConfig TEXT NOT NULL DEFAULT 'DOUBLE',
+    exerciseId TEXT,
+    cableConfig TEXT NOT NULL DEFAULT 'DOUBLE',
+    orderIndex INTEGER NOT NULL,
+    setReps TEXT NOT NULL DEFAULT '10,10,10',
+    weightPerCableKg REAL NOT NULL DEFAULT 0.0,
+    setWeights TEXT NOT NULL DEFAULT '',
+    mode TEXT NOT NULL DEFAULT 'OldSchool',
+    eccentricLoad INTEGER NOT NULL DEFAULT 100,
+    echoLevel INTEGER NOT NULL DEFAULT 1,
+    progressionKg REAL NOT NULL DEFAULT 0.0,
+    restSeconds INTEGER NOT NULL DEFAULT 60,
+    duration INTEGER,
+    setRestSeconds TEXT NOT NULL DEFAULT '[]',
+    perSetRestTime INTEGER NOT NULL DEFAULT 0,
+    isAMRAP INTEGER NOT NULL DEFAULT 0,
+    supersetId TEXT,
+    orderInSuperset INTEGER NOT NULL DEFAULT 0,
+    FOREIGN KEY (routineId) REFERENCES Routine(id) ON DELETE CASCADE,
+    FOREIGN KEY (exerciseId) REFERENCES Exercise(id) ON DELETE SET NULL,
+    FOREIGN KEY (supersetId) REFERENCES Superset(id) ON DELETE SET NULL
+);
+
+-- Copy data with column mapping:
+-- supersetGroupId -> supersetId
+-- supersetOrder -> orderInSuperset
+-- supersetRestSeconds is dropped (now stored in Superset table)
+INSERT INTO RoutineExercise_new (
+    id, routineId, exerciseName, exerciseMuscleGroup, exerciseEquipment,
+    exerciseDefaultCableConfig, exerciseId, cableConfig, orderIndex, setReps,
+    weightPerCableKg, setWeights, mode, eccentricLoad, echoLevel, progressionKg,
+    restSeconds, duration, setRestSeconds, perSetRestTime, isAMRAP,
+    supersetId, orderInSuperset
+)
+SELECT
+    id, routineId, exerciseName, exerciseMuscleGroup, exerciseEquipment,
+    exerciseDefaultCableConfig, exerciseId, cableConfig, orderIndex, setReps,
+    weightPerCableKg, setWeights, mode, eccentricLoad, echoLevel, progressionKg,
+    restSeconds, duration, setRestSeconds, perSetRestTime, isAMRAP,
+    supersetGroupId,  -- Map old supersetGroupId to new supersetId
+    supersetOrder     -- Map old supersetOrder to new orderInSuperset
+FROM RoutineExercise;
+
+-- Drop old table
+DROP TABLE RoutineExercise;
+
+-- Rename new table
+ALTER TABLE RoutineExercise_new RENAME TO RoutineExercise;
+
+-- Recreate indexes
+CREATE INDEX idx_routine_exercise_routine ON RoutineExercise(routineId);
+CREATE INDEX idx_routine_exercise_superset ON RoutineExercise(supersetId);
+
+-- Re-enable foreign keys
+PRAGMA foreign_keys = ON;

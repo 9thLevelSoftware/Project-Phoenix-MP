@@ -103,6 +103,7 @@
 				DFE6BD442EEDF42200886589 /* Frameworks */,
 				DFE6BD452EEDF42200886589 /* Resources */,
 				DFE6BD592EEDF53700886589 /* Embed Frameworks */,
+				DFE6BD802EEE100000886589 /* Generate shared.framework dSYM */,
 			);
 			buildRules = (
 			);
@@ -178,7 +179,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "# Generate dSYM for shared.framework\nif [ \"$CONFIGURATION\" = \"Release\" ]; then\n    FRAMEWORK_PATH=\"${SRCROOT}/../../shared/build/bin/iosArm64/debugFramework/shared.framework\"\n    DSYM_PATH=\"${DWARF_DSYM_FOLDER_PATH}/shared.framework.dSYM\"\n    \n    if [ -f \"${FRAMEWORK_PATH}/shared\" ]; then\n        echo \"Generating dSYM for shared.framework...\"\n        xcrun dsymutil \"${FRAMEWORK_PATH}/shared\" -o \"${DSYM_PATH}\"\n        echo \"dSYM generated at ${DSYM_PATH}\"\n    else\n        echo \"Warning: shared.framework binary not found at ${FRAMEWORK_PATH}\"\n    fi\nfi\n";
+                        shellScript = "# Generate dSYM for shared.framework\nif [ \"$CONFIGURATION\" = \"Release\" ]; then\n    FRAMEWORK_PATH=\"${SRCROOT}/../../shared/build/bin/iosArm64/debugFramework/shared.framework\"\n    DSYM_PATH=\"${DWARF_DSYM_FOLDER_PATH}/shared.framework.dSYM\"\n    FRAMEWORK_BIN=\"${FRAMEWORK_PATH}/shared\"\n    \n    if [ -f \"${FRAMEWORK_BIN}\" ]; then\n        FILE_TYPE=\"$(/usr/bin/file -b \"${FRAMEWORK_BIN}\" 2>/dev/null || true)\"\n        if echo \"${FILE_TYPE}\" | /usr/bin/grep -q \"Mach-O\"; then\n            echo \"Generating dSYM for shared.framework...\"\n            if xcrun dsymutil \"${FRAMEWORK_BIN}\" -o \"${DSYM_PATH}\" >/dev/null 2>&1; then\n                echo \"dSYM generated at ${DSYM_PATH}\"\n            else\n                echo \"Warning: dsymutil failed for shared.framework; skipping.\"\n            fi\n        else\n            echo \"Skipping dSYM generation for shared.framework (binary type: ${FILE_TYPE:-unknown}).\"\n        fi\n    else\n        echo \"Warning: shared.framework binary not found at ${FRAMEWORK_PATH}\"\n    fi\nfi\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 
@@ -323,10 +324,10 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 2025122504;
+				CURRENT_PROJECT_VERSION = 2025122901;
 				DEVELOPMENT_TEAM = BDJDR669ZV;
 				ENABLE_PREVIEWS = YES;
-				FRAMEWORK_SEARCH_PATHS = "$(SRCROOT)/../../shared/build/bin/iosSimulatorArm64/debugFramework";
+				FRAMEWORK_SEARCH_PATHS = "$(SRCROOT)/../../shared/build/bin/iosArm64/debugFramework";
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = VitruvianPhoenix/Info.plist;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
@@ -338,7 +339,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 0.1.1;
+				MARKETING_VERSION = 0.2.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.devil.phoenixproject.projectphoenix;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
@@ -359,7 +360,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 2025122504;
+				CURRENT_PROJECT_VERSION = 2025122901;
 				DEVELOPMENT_TEAM = BDJDR669ZV;
 				ENABLE_PREVIEWS = YES;
 				FRAMEWORK_SEARCH_PATHS = "$(SRCROOT)/../../shared/build/bin/iosArm64/debugFramework";
@@ -374,7 +375,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 0.1.1;
+				MARKETING_VERSION = 0.2.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.devil.phoenixproject.projectphoenix;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;

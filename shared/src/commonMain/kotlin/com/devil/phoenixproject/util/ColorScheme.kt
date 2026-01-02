@@ -83,5 +83,19 @@ object ColorSchemes {
         )
     )
 
-    val ALL = listOf(BLUE, GREEN, TEAL, YELLOW, PINK, RED, PURPLE)
+    /**
+     * "None" turns off the LED lights by sending black (0,0,0) colors.
+     * This matches the official app's implementation.
+     */
+    val NONE = ColorScheme(
+        name = "None",
+        brightness = 0.4f,
+        colors = listOf(
+            RGBColor(0x00, 0x00, 0x00),
+            RGBColor(0x00, 0x00, 0x00),
+            RGBColor(0x00, 0x00, 0x00)
+        )
+    )
+
+    val ALL = listOf(BLUE, GREEN, TEAL, YELLOW, PINK, RED, PURPLE, NONE)
 }

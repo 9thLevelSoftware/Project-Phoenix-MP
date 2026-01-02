@@ -8,5 +8,6 @@ data class UserPreferences(
     val autoplayEnabled: Boolean = true,
     val stopAtTop: Boolean = false,  // false = stop at bottom (extended), true = stop at top (contracted)
     val enableVideoPlayback: Boolean = true,  // true = show videos, false = hide videos to avoid slow loading
-    val beepsEnabled: Boolean = true  // true = play audio cues during workouts, false = haptic only
+    val beepsEnabled: Boolean = true,  // true = play audio cues during workouts, false = haptic only
+    val audioRepCountEnabled: Boolean = false  // Audio rep count announcements during workout
 )

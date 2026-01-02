@@ -634,6 +634,11 @@ private fun getBadgeIcon(iconResource: String): ImageVector {
         "sun" -> Icons.Default.WbSunny
         "moon" -> Icons.Default.NightsStay
         "weight" -> Icons.Default.FitnessCenter
+        "lightning" -> Icons.Default.Bolt
+        "body" -> Icons.Default.Accessibility
+        "phoenix" -> Icons.Default.LocalFireDepartment // Phoenix uses fire icon
+        "shield" -> Icons.Default.Shield
+        "list" -> Icons.Default.Checklist
         else -> Icons.Default.Star
     }
 }

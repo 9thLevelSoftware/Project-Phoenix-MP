@@ -73,6 +73,7 @@ fun WorkoutTab(
         hapticEvents = hapticEvents,
         loadedRoutine = state.loadedRoutine,
         currentExerciseIndex = state.currentExerciseIndex,
+        currentSetIndex = state.currentSetIndex,
         skippedExercises = state.skippedExercises,
         completedExercises = state.completedExercises,
         autoplayEnabled = state.autoplayEnabled,
@@ -97,7 +98,9 @@ fun WorkoutTab(
         onHideWorkoutSetupDialog = actions::onHideWorkoutSetupDialog,
         modifier = modifier,
         showConnectionCard = state.showConnectionCard,
-        showWorkoutSetupCard = state.showWorkoutSetupCard
+        showWorkoutSetupCard = state.showWorkoutSetupCard,
+        loadBaselineA = state.loadBaselineA,
+        loadBaselineB = state.loadBaselineB
     )
 }
 
@@ -123,6 +126,7 @@ fun WorkoutTab(
     hapticEvents: SharedFlow<HapticEvent>? = null,
     loadedRoutine: Routine? = null,
     currentExerciseIndex: Int = 0,
+    currentSetIndex: Int = 0,
     skippedExercises: Set<Int> = emptySet(),
     completedExercises: Set<Int> = emptySet(),
     autoplayEnabled: Boolean = false,
@@ -147,13 +151,12 @@ fun WorkoutTab(
     onHideWorkoutSetupDialog: () -> Unit = {},
     modifier: Modifier = Modifier,
     showConnectionCard: Boolean = true,
-    showWorkoutSetupCard: Boolean = true
+    showWorkoutSetupCard: Boolean = true,
+    loadBaselineA: Float = 0f,
+    loadBaselineB: Float = 0f
 ) {
-    // Haptic feedback effect
-    hapticEvents?.let {
-        HapticFeedbackEffect(hapticEvents = it)
-    }
-
+    // Note: HapticFeedbackEffect is now global in EnhancedMainScreen
+    // No need for local haptic effect here
 
     // Gradient backgrounds
     val backgroundGradient = screenBackgroundBrush()
@@ -171,12 +174,15 @@ fun WorkoutTab(
             exerciseRepository = exerciseRepository,
             loadedRoutine = loadedRoutine,
             currentExerciseIndex = currentExerciseIndex,
+            currentSetIndex = currentSetIndex,
             enableVideoPlayback = enableVideoPlayback,
             onStopWorkout = onStopWorkout,
             formatWeight = formatWeight,
             onUpdateParameters = onUpdateParameters,
             onStartNextExercise = onStartNextExercise,
             currentHeuristicKgMax = currentHeuristicKgMax,
+            loadBaselineA = loadBaselineA,
+            loadBaselineB = loadBaselineB,
             modifier = modifier
         )
         return
@@ -613,11 +619,7 @@ private fun CompletedCard(
                         )
 
                         Text(
-                            if (nextExercise.setReps.isEmpty()) {
-                                "AMRAP - As Many Reps As Possible"
-                            } else {
-                                "${nextExercise.setReps.size} sets x ${nextExercise.setReps.first()} reps"
-                            },
+                            formatReps(nextExercise.setReps),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onPrimaryContainer
                         )
@@ -1310,16 +1312,19 @@ fun SetSummaryCard(
     formatWeight: (Float, WeightUnit) -> String,
     onContinue: () -> Unit,
     autoplayEnabled: Boolean,
-    onRpeLogged: ((Int) -> Unit)? = null  // Optional RPE callback
+    onRpeLogged: ((Int) -> Unit)? = null,  // Optional RPE callback
+    isHistoryView: Boolean = false,  // Hide interactive elements when viewing from history
+    savedRpe: Int? = null  // Show saved RPE value in history view
 ) {
     // State for RPE tracking
     var loggedRpe by remember { mutableStateOf<Int?>(null) }
-    // Auto-continue countdown when autoplay is enabled
-    var autoCountdown by remember { mutableStateOf(if (autoplayEnabled) 5 else -1) }
+    // Auto-continue countdown when autoplay is enabled (only in live view)
+    var autoCountdown by remember { mutableStateOf(if (autoplayEnabled && !isHistoryView) 10 else -1) }
 
-    LaunchedEffect(autoplayEnabled) {
-        if (autoplayEnabled) {
-            autoCountdown = 5
+    // Only run countdown in live view
+    LaunchedEffect(autoplayEnabled, isHistoryView) {
+        if (autoplayEnabled && !isHistoryView) {
+            autoCountdown = 10
             while (autoCountdown > 0) {
                 kotlinx.coroutines.delay(1000)
                 autoCountdown--
@@ -1343,7 +1348,7 @@ fun SetSummaryCard(
     val avgConcentric = kgToDisplay(maxOf(summary.avgForceConcentricA, summary.avgForceConcentricB), weightUnit)
     val avgEccentric = kgToDisplay(maxOf(summary.avgForceEccentricA, summary.avgForceEccentricB), weightUnit)
 
-    val unitLabel = if (weightUnit == WeightUnit.LB) "lb" else "kg"
+    val unitLabel = if (weightUnit == WeightUnit.LB) "lbs" else "kg"
 
     Column(
         modifier = Modifier.fillMaxWidth(),
@@ -1481,8 +1486,38 @@ fun SetSummaryCard(
                 )
             }
 
-            // RPE Capture (optional) - shown if callback is provided
-            if (onRpeLogged != null) {
+            // RPE section - show read-only in history view, interactive in live view
+            if (isHistoryView && savedRpe != null) {
+                // Show saved RPE as read-only
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
+                    ),
+                    shape = RoundedCornerShape(16.dp)
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            "RPE",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Text(
+                            "$savedRpe/10",
+                            style = MaterialTheme.typography.bodyLarge,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+                }
+            } else if (!isHistoryView && onRpeLogged != null) {
+                // RPE Capture (optional) - shown if callback is provided in live view
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     colors = CardDefaults.cardColors(
@@ -1522,27 +1557,29 @@ fun SetSummaryCard(
             }
         }
 
-        // Done/Continue button
-        Button(
-            onClick = onContinue,
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(56.dp),
-            shape = RoundedCornerShape(28.dp),
-            colors = ButtonDefaults.buttonColors(
-                containerColor = MaterialTheme.colorScheme.primary
-            )
-        ) {
-            Text(
-                text = if (autoplayEnabled && autoCountdown > 0) {
-                    "Done ($autoCountdown)"
-                } else {
-                    "Done"
-                },
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onPrimary
-            )
+        // Done/Continue button - only show in live view
+        if (!isHistoryView) {
+            Button(
+                onClick = onContinue,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(56.dp),
+                shape = RoundedCornerShape(28.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.primary
+                )
+            ) {
+                Text(
+                    text = if (autoplayEnabled && autoCountdown > 0) {
+                        "Done ($autoCountdown)"
+                    } else {
+                        "Done"
+                    },
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onPrimary
+                )
+            }
         }
     }
 }

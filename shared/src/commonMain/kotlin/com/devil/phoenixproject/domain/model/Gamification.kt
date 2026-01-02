@@ -58,6 +58,39 @@ sealed class BadgeRequirement {
 
     /** Workout completed at a specific time */
     data class WorkoutAtTime(val hourStart: Int, val hourEnd: Int) : BadgeRequirement()
+
+    /** Number of workouts completed at a specific time range */
+    data class WorkoutsAtTimeCount(val hourStart: Int, val hourEnd: Int, val count: Int) : BadgeRequirement()
+
+    /** Number of workouts in a specific workout mode */
+    data class WorkoutModeCount(val modeName: String, val count: Int) : BadgeRequirement()
+
+    /** Used all available workout modes at least once */
+    data object AllWorkoutModes : BadgeRequirement()
+
+    /** Peak power achieved in watts */
+    data class PeakPower(val watts: Int) : BadgeRequirement()
+
+    /** Number of unique muscle groups trained */
+    data class UniqueMuscleGroups(val count: Int) : BadgeRequirement()
+
+    /** Return to training after a break of N days */
+    data class ComebackAfterBreak(val breakDays: Int) : BadgeRequirement()
+
+    /** Complete a workout when streak is at risk */
+    data object StreakSaved : BadgeRequirement()
+
+    /** Rebuild a streak of N days after losing a previous streak */
+    data class StreakRebuilt(val days: Int) : BadgeRequirement()
+
+    /** Number of workouts on weekend days (Saturday/Sunday) */
+    data class WeekendWorkouts(val count: Int) : BadgeRequirement()
+
+    /** Number of complete routines finished */
+    data class RoutinesCompleted(val count: Int) : BadgeRequirement()
+
+    /** Number of custom routines created */
+    data class RoutinesCreated(val count: Int) : BadgeRequirement()
 }
 
 /**
@@ -88,6 +121,17 @@ data class Badge(
             is BadgeRequirement.TotalVolume -> "${currentValue}/${req.kgLifted} kg"
             is BadgeRequirement.SingleWorkoutVolume -> "${currentValue}/${req.kgLifted} kg"
             is BadgeRequirement.WorkoutAtTime -> if (currentValue > 0) "Completed!" else "Pending"
+            is BadgeRequirement.WorkoutsAtTimeCount -> "$currentValue/${req.count} workouts"
+            is BadgeRequirement.WorkoutModeCount -> "$currentValue/${req.count} workouts"
+            is BadgeRequirement.AllWorkoutModes -> "$currentValue/6 modes"
+            is BadgeRequirement.PeakPower -> "${currentValue}/${req.watts}W"
+            is BadgeRequirement.UniqueMuscleGroups -> "$currentValue/${req.count} groups"
+            is BadgeRequirement.ComebackAfterBreak -> if (currentValue > 0) "Completed!" else "Pending"
+            is BadgeRequirement.StreakSaved -> if (currentValue > 0) "Completed!" else "Pending"
+            is BadgeRequirement.StreakRebuilt -> "$currentValue/${req.days} days"
+            is BadgeRequirement.WeekendWorkouts -> "$currentValue/${req.count} workouts"
+            is BadgeRequirement.RoutinesCompleted -> "$currentValue/${req.count} routines"
+            is BadgeRequirement.RoutinesCreated -> "$currentValue/${req.count} routines"
         }
     }
 
@@ -106,6 +150,17 @@ data class Badge(
             is BadgeRequirement.TotalVolume -> req.kgLifted.toInt()
             is BadgeRequirement.SingleWorkoutVolume -> req.kgLifted
             is BadgeRequirement.WorkoutAtTime -> 1
+            is BadgeRequirement.WorkoutsAtTimeCount -> req.count
+            is BadgeRequirement.WorkoutModeCount -> req.count
+            is BadgeRequirement.AllWorkoutModes -> 6
+            is BadgeRequirement.PeakPower -> req.watts
+            is BadgeRequirement.UniqueMuscleGroups -> req.count
+            is BadgeRequirement.ComebackAfterBreak -> 1
+            is BadgeRequirement.StreakSaved -> 1
+            is BadgeRequirement.StreakRebuilt -> req.days
+            is BadgeRequirement.WeekendWorkouts -> req.count
+            is BadgeRequirement.RoutinesCompleted -> req.count
+            is BadgeRequirement.RoutinesCreated -> req.count
         }
     }
 }

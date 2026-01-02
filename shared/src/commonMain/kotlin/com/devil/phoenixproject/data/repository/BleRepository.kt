@@ -217,4 +217,23 @@ interface BleRepository {
      * Does NOT disconnect the device.
      */
     fun stopPolling()
+
+    // ========== Disco Mode (Easter Egg) ==========
+
+    /**
+     * Whether disco mode is currently active.
+     */
+    val discoModeActive: StateFlow<Boolean>
+
+    /**
+     * Start disco mode - rapidly cycles through LED color schemes.
+     * Only works when not in an active workout to avoid interfering with position polling.
+     * Automatically pauses if a workout starts.
+     */
+    fun startDiscoMode()
+
+    /**
+     * Stop disco mode and restore the last selected color scheme.
+     */
+    fun stopDiscoMode()
 }

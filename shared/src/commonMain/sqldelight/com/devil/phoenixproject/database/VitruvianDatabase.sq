@@ -65,7 +65,24 @@ CREATE TABLE WorkoutSession (
     safetyFlags INTEGER NOT NULL DEFAULT 0,
     deloadWarningCount INTEGER NOT NULL DEFAULT 0,
     romViolationCount INTEGER NOT NULL DEFAULT 0,
-    spotterActivations INTEGER NOT NULL DEFAULT 0
+    spotterActivations INTEGER NOT NULL DEFAULT 0,
+    -- Set Summary Metrics (added in v0.2.1)
+    peakForceConcentricA REAL,
+    peakForceConcentricB REAL,
+    peakForceEccentricA REAL,
+    peakForceEccentricB REAL,
+    avgForceConcentricA REAL,
+    avgForceConcentricB REAL,
+    avgForceEccentricA REAL,
+    avgForceEccentricB REAL,
+    heaviestLiftKg REAL,
+    totalVolumeKg REAL,
+    estimatedCalories REAL,
+    warmupAvgWeightKg REAL,
+    workingAvgWeightKg REAL,
+    burnoutAvgWeightKg REAL,
+    peakWeightKg REAL,
+    rpe INTEGER
 );
 
 -- Exercise metrics (samples during workout)
@@ -111,6 +128,19 @@ CREATE TABLE Routine (
     useCount INTEGER NOT NULL DEFAULT 0
 );
 
+-- Supersets (first-class container for grouped exercises)
+CREATE TABLE Superset (
+    id TEXT PRIMARY KEY NOT NULL,
+    routineId TEXT NOT NULL,
+    name TEXT NOT NULL,
+    colorIndex INTEGER NOT NULL DEFAULT 0,
+    restBetweenSeconds INTEGER NOT NULL DEFAULT 10,
+    orderIndex INTEGER NOT NULL,
+    FOREIGN KEY (routineId) REFERENCES Routine(id) ON DELETE CASCADE
+);
+
+CREATE INDEX idx_superset_routine ON Superset(routineId);
+
 -- Routine exercises
 CREATE TABLE RoutineExercise (
     id TEXT NOT NULL PRIMARY KEY,
@@ -136,15 +166,16 @@ CREATE TABLE RoutineExercise (
     setRestSeconds TEXT NOT NULL DEFAULT '[]',
     perSetRestTime INTEGER NOT NULL DEFAULT 0,
     isAMRAP INTEGER NOT NULL DEFAULT 0,
-    -- Superset support (KMP extension)
-    supersetGroupId TEXT,
-    supersetOrder INTEGER NOT NULL DEFAULT 0,
-    supersetRestSeconds INTEGER NOT NULL DEFAULT 10,
+    -- Superset support (container model)
+    supersetId TEXT,
+    orderInSuperset INTEGER NOT NULL DEFAULT 0,
     FOREIGN KEY (routineId) REFERENCES Routine(id) ON DELETE CASCADE,
-    FOREIGN KEY (exerciseId) REFERENCES Exercise(id) ON DELETE SET NULL
+    FOREIGN KEY (exerciseId) REFERENCES Exercise(id) ON DELETE SET NULL,
+    FOREIGN KEY (supersetId) REFERENCES Superset(id) ON DELETE SET NULL
 );
 
 CREATE INDEX idx_routine_exercise_routine ON RoutineExercise(routineId);
+CREATE INDEX idx_routine_exercise_superset ON RoutineExercise(supersetId);
 
 -- ==================== CONNECTION LOGS ====================
 -- BLE connection debug logs for diagnosing connectivity issues
@@ -335,9 +366,13 @@ INSERT INTO WorkoutSession (
     duration, totalReps, warmupReps, workingReps,
     isJustLift, stopAtTop, eccentricLoad, echoLevel,
     exerciseId, exerciseName, routineSessionId, routineName,
-    safetyFlags, deloadWarningCount, romViolationCount, spotterActivations
+    safetyFlags, deloadWarningCount, romViolationCount, spotterActivations,
+    peakForceConcentricA, peakForceConcentricB, peakForceEccentricA, peakForceEccentricB,
+    avgForceConcentricA, avgForceConcentricB, avgForceEccentricA, avgForceEccentricB,
+    heaviestLiftKg, totalVolumeKg, estimatedCalories,
+    warmupAvgWeightKg, workingAvgWeightKg, burnoutAvgWeightKg, peakWeightKg, rpe
 )
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 updateSession:
 UPDATE WorkoutSession 
@@ -475,9 +510,9 @@ INSERT INTO RoutineExercise (
     id, routineId, exerciseName, exerciseMuscleGroup, exerciseEquipment, exerciseDefaultCableConfig,
     exerciseId, cableConfig, orderIndex, setReps, weightPerCableKg, setWeights, mode,
     eccentricLoad, echoLevel, progressionKg, restSeconds, duration, setRestSeconds,
-    perSetRestTime, isAMRAP, supersetGroupId, supersetOrder, supersetRestSeconds
+    perSetRestTime, isAMRAP, supersetId, orderInSuperset
 )
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 -- Insert with IGNORE for import (won't overwrite existing)
 insertRoutineExerciseIgnore:
@@ -485,9 +520,9 @@ INSERT OR IGNORE INTO RoutineExercise (
     id, routineId, exerciseName, exerciseMuscleGroup, exerciseEquipment, exerciseDefaultCableConfig,
     exerciseId, cableConfig, orderIndex, setReps, weightPerCableKg, setWeights, mode,
     eccentricLoad, echoLevel, progressionKg, restSeconds, duration, setRestSeconds,
-    perSetRestTime, isAMRAP, supersetGroupId, supersetOrder, supersetRestSeconds
+    perSetRestTime, isAMRAP, supersetId, orderInSuperset
 )
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 deleteRoutineExercises:
 DELETE FROM RoutineExercise WHERE routineId = ?;
@@ -497,6 +532,40 @@ DELETE FROM Routine WHERE id = ?;
 
 updateRoutineById:
 UPDATE Routine SET name = ?, description = ? WHERE id = ?;
+
+-- ==================== SUPERSET QUERIES ====================
+
+selectSupersetsByRoutine:
+SELECT * FROM Superset WHERE routineId = ? ORDER BY orderIndex ASC;
+
+selectSupersetById:
+SELECT * FROM Superset WHERE id = ?;
+
+insertSuperset:
+INSERT INTO Superset (id, routineId, name, colorIndex, restBetweenSeconds, orderIndex)
+VALUES (?, ?, ?, ?, ?, ?);
+
+updateSuperset:
+UPDATE Superset SET name = ?, colorIndex = ?, restBetweenSeconds = ?, orderIndex = ? WHERE id = ?;
+
+deleteSuperset:
+DELETE FROM Superset WHERE id = ?;
+
+deleteSupersetsByRoutine:
+DELETE FROM Superset WHERE routineId = ?;
+
+countSupersetsInRoutine:
+SELECT COUNT(*) FROM Superset WHERE routineId = ?;
+
+-- Sync version for backup
+selectAllSupersetsSync:
+SELECT * FROM Superset;
+
+-- Update exercise superset reference (for migration and CRUD operations)
+updateExerciseSupersetRef:
+UPDATE RoutineExercise
+SET supersetId = ?, orderInSuperset = ?
+WHERE id = ?;
 
 -- Analytics Queries
 selectVolumeHistory:
@@ -666,6 +735,50 @@ SELECT COUNT(*) FROM PersonalRecord;
 selectWorkoutDates:
 SELECT DISTINCT DATE(timestamp / 1000, 'unixepoch') AS workoutDate FROM WorkoutSession ORDER BY timestamp DESC;
 
+-- ==================== ADDITIONAL GAMIFICATION QUERIES ====================
+
+-- Count workouts by workout mode
+countWorkoutsByMode:
+SELECT mode, COUNT(*) AS count FROM WorkoutSession GROUP BY mode;
+
+-- Get all unique workout modes used
+selectUniqueWorkoutModes:
+SELECT DISTINCT mode FROM WorkoutSession;
+
+-- Get peak power from all workout metrics
+selectPeakPower:
+SELECT MAX(power) AS peakPower FROM MetricSample;
+
+-- Get unique muscle groups from exercises performed in workouts
+selectUniqueMuscleGroupsFromWorkouts:
+SELECT DISTINCT e.muscleGroup
+FROM WorkoutSession ws
+INNER JOIN Exercise e ON ws.exerciseId = e.id
+WHERE ws.exerciseId IS NOT NULL;
+
+-- Count workouts completed on weekends (Saturday = 6, Sunday = 0 in SQLite strftime %w)
+countWeekendWorkouts:
+SELECT COUNT(*) FROM WorkoutSession
+WHERE CAST(strftime('%w', timestamp / 1000, 'unixepoch') AS INTEGER) IN (0, 6);
+
+-- Count completed routine sessions (workouts that are part of a routine)
+countCompletedRoutineSessions:
+SELECT COUNT(DISTINCT routineSessionId) FROM WorkoutSession WHERE routineSessionId IS NOT NULL;
+
+-- Count custom routines created
+countCreatedRoutines:
+SELECT COUNT(*) FROM Routine;
+
+-- Get days since last workout (for comeback badge)
+selectDaysSinceLastWorkout:
+SELECT CAST((julianday('now') - julianday(MAX(timestamp) / 1000, 'unixepoch')) AS INTEGER) AS daysSince
+FROM WorkoutSession;
+
+-- Check if a streak was previously broken and rebuilt
+-- Returns the count of streak breaks (transitions from >0 streak to 0)
+selectStreakBreakCount:
+SELECT COUNT(*) FROM StreakHistory WHERE length > 0;
+
 -- ==================== TRAINING CYCLES TABLES ====================
 
 -- Training Cycles (replaces WeeklyProgram - rolling schedule)
@@ -685,6 +798,11 @@ CREATE TABLE CycleDay (
     name TEXT,
     routine_id TEXT,
     is_rest_day INTEGER NOT NULL DEFAULT 0,
+    echo_level TEXT,
+    eccentric_load_percent INTEGER,
+    weight_progression_percent REAL,
+    rep_modifier INTEGER,
+    rest_time_override_seconds INTEGER,
     FOREIGN KEY (cycle_id) REFERENCES TrainingCycle(id) ON DELETE CASCADE,
     FOREIGN KEY (routine_id) REFERENCES Routine(id) ON DELETE SET NULL
 );
@@ -696,6 +814,10 @@ CREATE TABLE CycleProgress (
     current_day_number INTEGER NOT NULL DEFAULT 1,
     last_completed_date INTEGER,
     cycle_start_date INTEGER NOT NULL,
+    last_advanced_at INTEGER,
+    completed_days TEXT,
+    missed_days TEXT,
+    rotation_count INTEGER NOT NULL DEFAULT 0,
     FOREIGN KEY (cycle_id) REFERENCES TrainingCycle(id) ON DELETE CASCADE
 );
 
@@ -782,11 +904,11 @@ selectCycleDayById:
 SELECT * FROM CycleDay WHERE id = ?;
 
 insertCycleDay:
-INSERT INTO CycleDay (id, cycle_id, day_number, name, routine_id, is_rest_day)
-VALUES (?, ?, ?, ?, ?, ?);
+INSERT INTO CycleDay (id, cycle_id, day_number, name, routine_id, is_rest_day, echo_level, eccentric_load_percent, weight_progression_percent, rep_modifier, rest_time_override_seconds)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 updateCycleDay:
-UPDATE CycleDay SET day_number = ?, name = ?, routine_id = ?, is_rest_day = ? WHERE id = ?;
+UPDATE CycleDay SET day_number = ?, name = ?, routine_id = ?, is_rest_day = ?, echo_level = ?, eccentric_load_percent = ?, weight_progression_percent = ?, rep_modifier = ?, rest_time_override_seconds = ? WHERE id = ?;
 
 deleteCycleDay:
 DELETE FROM CycleDay WHERE id = ?;
@@ -799,17 +921,17 @@ selectCycleProgressByCycle:
 SELECT * FROM CycleProgress WHERE cycle_id = ?;
 
 insertCycleProgress:
-INSERT INTO CycleProgress (id, cycle_id, current_day_number, last_completed_date, cycle_start_date)
-VALUES (?, ?, ?, ?, ?);
+INSERT INTO CycleProgress (id, cycle_id, current_day_number, last_completed_date, cycle_start_date, last_advanced_at, completed_days, missed_days, rotation_count)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 -- Insert cycle progress only if it doesn't already exist (prevents UNIQUE constraint violations)
 insertCycleProgressIfNotExists:
-INSERT OR IGNORE INTO CycleProgress (id, cycle_id, current_day_number, last_completed_date, cycle_start_date)
-VALUES (?, ?, ?, ?, ?);
+INSERT OR IGNORE INTO CycleProgress (id, cycle_id, current_day_number, last_completed_date, cycle_start_date, last_advanced_at, completed_days, missed_days, rotation_count)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 updateCycleProgress:
 UPDATE CycleProgress
-SET current_day_number = ?, last_completed_date = ?, cycle_start_date = ?
+SET current_day_number = ?, last_completed_date = ?, cycle_start_date = ?, last_advanced_at = ?, completed_days = ?, missed_days = ?, rotation_count = ?
 WHERE cycle_id = ?;
 
 advanceCycleDay:

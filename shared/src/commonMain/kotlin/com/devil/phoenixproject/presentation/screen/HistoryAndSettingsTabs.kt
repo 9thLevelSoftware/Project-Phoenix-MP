@@ -1,8 +1,17 @@
 package com.devil.phoenixproject.presentation.screen
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -29,6 +38,7 @@ import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.domain.model.WorkoutSession
+import com.devil.phoenixproject.domain.model.toSetSummary
 import com.devil.phoenixproject.presentation.viewmodel.HistoryItem
 import com.devil.phoenixproject.util.ColorScheme
 import com.devil.phoenixproject.util.ColorSchemes
@@ -42,6 +52,7 @@ fun HistoryTab(
     groupedWorkoutHistory: List<HistoryItem>,
     weightUnit: WeightUnit,
     formatWeight: (Float, WeightUnit) -> String,
+    kgToDisplay: (Float, WeightUnit) -> Float,
     onDeleteWorkout: (String) -> Unit,
     exerciseRepository: ExerciseRepository,
     onRefresh: () -> Unit = {},
@@ -118,6 +129,7 @@ fun HistoryTab(
                                 session = item.session,
                                 weightUnit = weightUnit,
                                 formatWeight = formatWeight,
+                                kgToDisplay = kgToDisplay,
                                 exerciseRepository = exerciseRepository,
                                 onDelete = { onDeleteWorkout(item.session.id) }
                             )
@@ -127,6 +139,7 @@ fun HistoryTab(
                                 groupedItem = item,
                                 weightUnit = weightUnit,
                                 formatWeight = formatWeight,
+                                kgToDisplay = kgToDisplay,
                                 exerciseRepository = exerciseRepository,
                                 onDelete = { sessionId -> onDeleteWorkout(sessionId) }
                             )
@@ -144,28 +157,27 @@ fun WorkoutHistoryCard(
     session: WorkoutSession,
     weightUnit: WeightUnit,
     formatWeight: (Float, WeightUnit) -> String,
+    kgToDisplay: (Float, WeightUnit) -> Float,
     exerciseRepository: com.devil.phoenixproject.data.repository.ExerciseRepository,
     onDelete: () -> Unit
 ) {
     var showDeleteDialog by remember { mutableStateOf(false) }
-    var isPressed by remember { mutableStateOf(false) }
-    val scale by animateFloatAsState(
-        targetValue = if (isPressed) 0.95f else 1f, // Material 3 Expressive: More scale (was 0.98f)
-        animationSpec = spring(
-            dampingRatio = Spring.DampingRatioLowBouncy, // Material 3 Expressive: More bouncy (was MediumBouncy)
-            stiffness = Spring.StiffnessLow // Material 3 Expressive: Springy feel (was 400f)
-        ),
-        label = "scale"
+    var isExpanded by remember { mutableStateOf(false) }
+
+    // Chevron rotation animation
+    val chevronRotation by animateFloatAsState(
+        targetValue = if (isExpanded) 180f else 0f,
+        animationSpec = tween(300),
+        label = "chevron"
     )
 
     // Get exercise name from session (no DB lookup needed!)
     val exerciseName = session.exerciseName ?: if (session.isJustLift) "Just Lift" else "Unknown Exercise"
 
     Card(
-        onClick = { isPressed = true },
+        onClick = { isExpanded = !isExpanded },
         modifier = Modifier
             .fillMaxWidth()
-            .scale(scale)
             .shadow(8.dp, RoundedCornerShape(20.dp)), // Material 3 Expressive: More shadow, more rounded
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest), // Material 3 Expressive: Higher contrast
         shape = RoundedCornerShape(20.dp), // Material 3 Expressive: More rounded (was 16dp)
@@ -177,13 +189,25 @@ fun WorkoutHistoryCard(
                 .fillMaxWidth()
                 .padding(Spacing.medium)
         ) {
-            // Header: "Single Exercise"
-            Text(
-                "Single Exercise",
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.primary
-            )
+            // Header: "Single Exercise" with chevron
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    "Single Exercise",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary
+                )
+                Icon(
+                    imageVector = Icons.Default.KeyboardArrowDown,
+                    contentDescription = if (isExpanded) "Collapse" else "Expand",
+                    modifier = Modifier.rotate(chevronRotation),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
 
             Spacer(modifier = Modifier.height(Spacing.small))
 
@@ -285,6 +309,66 @@ fun WorkoutHistoryCard(
                 )
             }
 
+            // Expandable summary section
+            AnimatedVisibility(
+                visible = isExpanded,
+                enter = expandVertically(),
+                exit = shrinkVertically()
+            ) {
+                Column(
+                    modifier = Modifier.padding(top = Spacing.medium)
+                ) {
+                    HorizontalDivider(
+                        thickness = 1.dp,
+                        color = MaterialTheme.colorScheme.outlineVariant
+                    )
+                    Spacer(modifier = Modifier.height(Spacing.medium))
+
+                    val summary = session.toSetSummary()
+                    if (summary != null) {
+                        SetSummaryCard(
+                            summary = summary,
+                            workoutMode = session.mode,
+                            weightUnit = weightUnit,
+                            kgToDisplay = kgToDisplay,
+                            formatWeight = formatWeight,
+                            onContinue = { },
+                            autoplayEnabled = false,
+                            isHistoryView = true,
+                            savedRpe = session.rpe
+                        )
+                    } else {
+                        // Pre-v0.2.1 session - show message
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = CardDefaults.cardColors(
+                                containerColor = MaterialTheme.colorScheme.surfaceVariant
+                            ),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(Spacing.medium),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Info,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Spacer(modifier = Modifier.width(Spacing.small))
+                                Text(
+                                    "Detailed metrics available for workouts after v0.2.1",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
             Spacer(modifier = Modifier.height(Spacing.small))
 
             // Divider
@@ -377,13 +461,6 @@ fun WorkoutHistoryCard(
             }
         )
     }
-
-    LaunchedEffect(isPressed) {
-        if (isPressed) {
-            kotlinx.coroutines.delay(100)
-            isPressed = false
-        }
-    }
 }
 
 /**
@@ -407,18 +484,18 @@ fun GroupedRoutineCard(
     groupedItem: com.devil.phoenixproject.presentation.viewmodel.GroupedRoutineHistoryItem,
     weightUnit: WeightUnit,
     formatWeight: (Float, WeightUnit) -> String,
+    kgToDisplay: (Float, WeightUnit) -> Float,
     exerciseRepository: com.devil.phoenixproject.data.repository.ExerciseRepository,
     onDelete: (String) -> Unit
 ) {
     var showDeleteDialog by remember { mutableStateOf(false) }
-    var isPressed by remember { mutableStateOf(false) }
-    val scale by animateFloatAsState(
-        targetValue = if (isPressed) 0.95f else 1f, // Material 3 Expressive: More scale (was 0.98f)
-        animationSpec = spring(
-            dampingRatio = Spring.DampingRatioLowBouncy, // Material 3 Expressive: More bouncy (was MediumBouncy)
-            stiffness = Spring.StiffnessLow // Material 3 Expressive: Springy feel (was 400f)
-        ),
-        label = "scale"
+    var isExpanded by remember { mutableStateOf(false) }
+
+    // Chevron rotation animation
+    val chevronRotation by animateFloatAsState(
+        targetValue = if (isExpanded) 180f else 0f,
+        animationSpec = tween(300),
+        label = "chevron"
     )
 
     // Group sessions by exerciseId and use exerciseName directly (no DB lookup needed!)
@@ -444,10 +521,9 @@ fun GroupedRoutineCard(
     }
 
     Card(
-        onClick = { isPressed = true },
+        onClick = { isExpanded = !isExpanded },
         modifier = Modifier
             .fillMaxWidth()
-            .scale(scale)
             .shadow(8.dp, RoundedCornerShape(20.dp)), // Material 3 Expressive: More shadow, more rounded
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest), // Material 3 Expressive: Higher contrast
         shape = RoundedCornerShape(20.dp), // Material 3 Expressive: More rounded (was 16dp)
@@ -459,13 +535,25 @@ fun GroupedRoutineCard(
                 .fillMaxWidth()
                 .padding(Spacing.medium)
         ) {
-            // Header: "Daily Routine"
-            Text(
-                "Daily Routine",
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.primary
-            )
+            // Header: "Daily Routine" with chevron
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    "Daily Routine",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary
+                )
+                Icon(
+                    imageVector = Icons.Default.KeyboardArrowDown,
+                    contentDescription = if (isExpanded) "Collapse" else "Expand",
+                    modifier = Modifier.rotate(chevronRotation),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
 
             Spacer(modifier = Modifier.height(Spacing.small))
 
@@ -595,6 +683,75 @@ fun GroupedRoutineCard(
                 }
             }
 
+            // Expandable summary section
+            AnimatedVisibility(
+                visible = isExpanded,
+                enter = expandVertically(),
+                exit = shrinkVertically()
+            ) {
+                Column(modifier = Modifier.padding(top = Spacing.medium)) {
+                    HorizontalDivider(thickness = 1.dp, color = MaterialTheme.colorScheme.outlineVariant)
+                    Spacer(modifier = Modifier.height(Spacing.medium))
+
+                    Text(
+                        "Detailed Set Metrics",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Spacer(modifier = Modifier.height(Spacing.small))
+
+                    groupedItem.sessions.forEachIndexed { index, session ->
+                        val summary = session.toSetSummary()
+
+                        Text(
+                            session.exerciseName ?: "Unknown Exercise",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        Spacer(modifier = Modifier.height(Spacing.small))
+
+                        if (summary != null) {
+                            SetSummaryCard(
+                                summary = summary,
+                                workoutMode = session.mode,
+                                weightUnit = weightUnit,
+                                kgToDisplay = kgToDisplay,
+                                formatWeight = formatWeight,
+                                onContinue = { },
+                                autoplayEnabled = false,
+                                isHistoryView = true,
+                                savedRpe = session.rpe
+                            )
+                        } else {
+                            Card(
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+                                shape = RoundedCornerShape(12.dp)
+                            ) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth().padding(Spacing.medium),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(Icons.Default.Info, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    Spacer(modifier = Modifier.width(Spacing.small))
+                                    Text(
+                                        "Detailed metrics available for workouts after v0.2.1",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                        }
+
+                        if (index < groupedItem.sessions.size - 1) {
+                            Spacer(modifier = Modifier.height(Spacing.medium))
+                        }
+                    }
+                }
+            }
+
             Spacer(modifier = Modifier.height(Spacing.small))
 
             // Divider
@@ -690,13 +847,6 @@ fun GroupedRoutineCard(
             }
         )
     }
-
-    LaunchedEffect(isPressed) {
-        if (isPressed) {
-            kotlinx.coroutines.delay(100)
-            isPressed = false
-        }
-    }
 }
 
 /**
@@ -776,6 +926,7 @@ fun SettingsTab(
     enableVideoPlayback: Boolean,
     darkModeEnabled: Boolean,
     stallDetectionEnabled: Boolean = true,
+    audioRepCountEnabled: Boolean = false,
     selectedColorSchemeIndex: Int = 0,
     onWeightUnitChange: (WeightUnit) -> Unit,
     onAutoplayChange: (Boolean) -> Unit,
@@ -783,6 +934,7 @@ fun SettingsTab(
     onEnableVideoPlaybackChange: (Boolean) -> Unit,
     onDarkModeChange: (Boolean) -> Unit,
     onStallDetectionChange: (Boolean) -> Unit,
+    onAudioRepCountChange: (Boolean) -> Unit,
     onColorSchemeChange: (Int) -> Unit,
     onDeleteAllWorkouts: () -> Unit,
     onNavigateToConnectionLogs: () -> Unit = {},
@@ -793,9 +945,22 @@ fun SettingsTab(
     onClearConnectionError: () -> Unit = {},
     onCancelAutoConnecting: () -> Unit = {},
     onSetTitle: (String) -> Unit,
+    // Disco mode Easter egg
+    discoModeUnlocked: Boolean = false,
+    discoModeActive: Boolean = false,
+    isConnected: Boolean = false,
+    onDiscoModeUnlocked: () -> Unit = {},
+    onDiscoModeToggle: (Boolean) -> Unit = {},
+    onPlayDiscoSound: () -> Unit = {},
+    onTestSounds: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     var showDeleteAllDialog by remember { mutableStateOf(false) }
+    // Easter egg tap counter for disco mode
+    var easterEggTapCount by remember { mutableStateOf(0) }
+    var lastTapTime by remember { mutableStateOf(0L) }
+    // Disco mode unlock celebration dialog
+    var showDiscoUnlockDialog by remember { mutableStateOf(false) }
     // Optimistic UI state for immediate visual feedback
     var localWeightUnit by remember(weightUnit) { mutableStateOf(weightUnit) }
 
@@ -1208,6 +1373,36 @@ fun SettingsTab(
                         onCheckedChange = onStallDetectionChange
                     )
                 }
+
+                Spacer(modifier = Modifier.height(Spacing.medium))
+
+                // Audio Rep Counter toggle
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text(
+                            "Audio Rep Counter",
+                            style = MaterialTheme.typography.bodyLarge,
+                            fontWeight = FontWeight.Medium,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            "Play spoken rep numbers during working sets",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Switch(
+                        checked = audioRepCountEnabled,
+                        onCheckedChange = onAudioRepCountChange
+                    )
+                }
             }
         }
 
@@ -1226,25 +1421,52 @@ fun SettingsTab(
                 .fillMaxWidth()
                 .padding(Spacing.medium)
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            // Easter egg: tap the header 7 times rapidly to unlock disco mode
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.clickable {
+                    val currentTime = KmpUtils.currentTimeMillis()
+                    // Reset if more than 2 seconds since last tap
+                    if (currentTime - lastTapTime > 2000L) {
+                        easterEggTapCount = 1
+                    } else {
+                        easterEggTapCount++
+                    }
+                    lastTapTime = currentTime
+
+                    // Unlock disco mode after 7 rapid taps
+                    if (easterEggTapCount >= 7 && !discoModeUnlocked) {
+                        showDiscoUnlockDialog = true
+                        onPlayDiscoSound()
+                        onDiscoModeUnlocked()
+                        easterEggTapCount = 0
+                    }
+                }
+            ) {
                 Box(
                     modifier = Modifier
                         .size(48.dp)
                         .shadow(8.dp, RoundedCornerShape(20.dp))
                         .background(
                             Brush.linearGradient(
-                                colors = listOf(Color(0xFF3B82F6), Color(0xFF6366F1))
+                                colors = if (discoModeActive) {
+                                    // Rainbow gradient when disco mode is active
+                                    listOf(Color(0xFFFF0000), Color(0xFFFF7F00), Color(0xFFFFFF00),
+                                           Color(0xFF00FF00), Color(0xFF0000FF), Color(0xFF8B00FF))
+                                } else {
+                                    listOf(Color(0xFF3B82F6), Color(0xFF6366F1))
+                                }
                             ),
                             RoundedCornerShape(20.dp)
                         ),
                     contentAlignment = Alignment.Center
-                ) { 
+                ) {
                     Icon(
                         Icons.Default.ColorLens,
                         contentDescription = "LED color scheme",
                         tint = MaterialTheme.colorScheme.onPrimary,
                         modifier = Modifier.size(24.dp)
-                    ) 
+                    )
                 }
                 Spacer(modifier = Modifier.width(Spacing.medium))
                 Text(
@@ -1254,9 +1476,9 @@ fun SettingsTab(
                     color = MaterialTheme.colorScheme.onSurface
                 )
             }
-            
+
             Spacer(modifier = Modifier.height(Spacing.medium))
-            
+
             // Compact horizontal scrollable color chips
             val colorSchemes = ColorSchemes.ALL
             Row(
@@ -1270,6 +1492,48 @@ fun SettingsTab(
                         scheme = scheme,
                         isSelected = index == selectedColorSchemeIndex,
                         onClick = { onColorSchemeChange(index) }
+                    )
+                }
+            }
+
+            // Disco mode toggle (only visible when unlocked)
+            if (discoModeUnlocked) {
+                Spacer(modifier = Modifier.height(Spacing.medium))
+                HorizontalDivider(
+                    modifier = Modifier.padding(vertical = Spacing.small),
+                    color = MaterialTheme.colorScheme.outlineVariant
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            "🕺",
+                            style = MaterialTheme.typography.titleMedium
+                        )
+                        Spacer(modifier = Modifier.width(Spacing.small))
+                        Column {
+                            Text(
+                                "Disco Mode",
+                                style = MaterialTheme.typography.bodyLarge,
+                                fontWeight = FontWeight.Medium,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Text(
+                                if (!isConnected) "Connect to enable"
+                                else if (discoModeActive) "Party time!"
+                                else "Cycle through colors",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                    Switch(
+                        checked = discoModeActive,
+                        onCheckedChange = { onDiscoModeToggle(it) },
+                        enabled = isConnected
                     )
                 }
             }
@@ -1502,6 +1766,39 @@ fun SettingsTab(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
 
+                Spacer(modifier = Modifier.height(Spacing.medium))
+
+                OutlinedButton(
+                    onClick = onTestSounds,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(56.dp),
+                    shape = RoundedCornerShape(20.dp),
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        contentColor = MaterialTheme.colorScheme.primary
+                    ),
+                    border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary)
+                ) {
+                    Icon(
+                        Icons.Default.MusicNote,
+                        contentDescription = "Test sounds",
+                        modifier = Modifier.size(24.dp)
+                    )
+                    Spacer(modifier = Modifier.width(Spacing.small))
+                    Text(
+                        "Test Sounds",
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    "Play workout sounds to test audio configuration and volume",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
             }
         }
 
@@ -1549,7 +1846,7 @@ fun SettingsTab(
                 )
             }
                 Spacer(modifier = Modifier.height(Spacing.small))
-                Text("Version: 0.1.1-beta", color = MaterialTheme.colorScheme.onSurface)
+                Text("Version: 0.2.1", color = MaterialTheme.colorScheme.onSurface)
                 Spacer(modifier = Modifier.height(Spacing.small))
                 Text(
                     "Open source community project to control Vitruvian Trainer machines locally.",
@@ -1620,6 +1917,143 @@ fun SettingsTab(
             onDismiss = onClearConnectionError
         )
     }
+
+    // Disco Mode Unlock Celebration Dialog
+    if (showDiscoUnlockDialog) {
+        DiscoModeUnlockDialog(
+            onDismiss = { showDiscoUnlockDialog = false }
+        )
+    }
+}
+
+/**
+ * Fun animated dialog celebrating disco mode unlock
+ */
+@Composable
+private fun DiscoModeUnlockDialog(onDismiss: () -> Unit) {
+    // Auto-dismiss after 4 seconds
+    LaunchedEffect(Unit) {
+        kotlinx.coroutines.delay(4000)
+        onDismiss()
+    }
+
+    // Animate the scale for a fun pop-in effect
+    var isVisible by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { isVisible = true }
+
+    val scale by animateFloatAsState(
+        targetValue = if (isVisible) 1f else 0f,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioMediumBouncy,
+            stiffness = Spring.StiffnessMedium
+        ),
+        label = "dialog_scale"
+    )
+
+    // Rotating disco ball effect - use coroutine-based animation
+    var rotation by remember { mutableStateOf(0f) }
+    var glowAlpha by remember { mutableStateOf(0.3f) }
+    var glowUp by remember { mutableStateOf(true) }
+
+    LaunchedEffect(Unit) {
+        while (true) {
+            kotlinx.coroutines.delay(16) // ~60fps
+            rotation = (rotation + 3f) % 360f
+            // Pulsing glow effect
+            if (glowUp) {
+                glowAlpha += 0.02f
+                if (glowAlpha >= 0.8f) glowUp = false
+            } else {
+                glowAlpha -= 0.02f
+                if (glowAlpha <= 0.3f) glowUp = true
+            }
+        }
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        modifier = Modifier.scale(scale),
+        containerColor = Color(0xFF1A1A2E),
+        shape = RoundedCornerShape(28.dp),
+        title = {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                // Spinning disco ball emoji with glow
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier = Modifier
+                        .size(80.dp)
+                        .rotate(rotation)
+                        .background(
+                            Brush.radialGradient(
+                                colors = listOf(
+                                    Color.White.copy(alpha = glowAlpha),
+                                    Color.Transparent
+                                )
+                            ),
+                            shape = RoundedCornerShape(40.dp)
+                        )
+                ) {
+                    Text(
+                        "🪩",
+                        style = MaterialTheme.typography.displayLarge
+                    )
+                }
+                Spacer(modifier = Modifier.height(16.dp))
+                Text(
+                    "DISCO MODE UNLOCKED!",
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.ExtraBold,
+                    color = Color.White,
+                    modifier = Modifier.background(
+                        Brush.linearGradient(
+                            colors = listOf(
+                                Color(0xFFFF0000), Color(0xFFFF7F00), Color(0xFFFFFF00),
+                                Color(0xFF00FF00), Color(0xFF0000FF), Color(0xFF8B00FF)
+                            )
+                        ),
+                        shape = RoundedCornerShape(8.dp)
+                    ).padding(horizontal = 12.dp, vertical = 4.dp)
+                )
+            }
+        },
+        text = {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(
+                    "🕺 Time to get funky! 💃",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    "Toggle Disco Mode in the LED Color Scheme section to make your trainer party!",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = Color.White.copy(alpha = 0.8f),
+                    modifier = Modifier.padding(horizontal = 8.dp)
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = onDismiss,
+                modifier = Modifier.height(48.dp),
+                shape = RoundedCornerShape(20.dp)
+            ) {
+                Text(
+                    "🎉 Let's Party!",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = Color(0xFFFFD700) // Gold
+                )
+            }
+        }
+    )
 }
 
 private fun formatTimestamp(timestamp: Long): String {
@@ -1695,19 +2129,25 @@ private fun ColorSchemeChip(
         ),
         label = "scale"
     )
-    
+
+    // Check if this is the "None" color scheme (turns off LEDs)
+    val isNoneScheme = scheme.name == "None"
+
     // Convert RGB colors to Compose Color
     val composeColors = scheme.colors.map { rgbColor ->
         Color(rgbColor.r, rgbColor.g, rgbColor.b)
     }
-    
+
     // Create gradient from the color scheme
-    val gradientColors = if (composeColors.size >= 2) {
+    // For "None", use a gray gradient to make it visible
+    val gradientColors = if (isNoneScheme) {
+        listOf(Color.DarkGray, Color.Gray, Color.DarkGray)
+    } else if (composeColors.size >= 2) {
         composeColors
     } else {
         listOf(composeColors.firstOrNull() ?: Color.Gray, Color.DarkGray)
     }
-    
+
     Surface(
         onClick = {
             isPressed = true
@@ -1737,7 +2177,7 @@ private fun ColorSchemeChip(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.SpaceBetween
         ) {
-            // Color preview (gradient box)
+            // Color preview (gradient box) or "Off" icon for None
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -1745,9 +2185,20 @@ private fun ColorSchemeChip(
                     .background(
                         Brush.horizontalGradient(gradientColors),
                         RoundedCornerShape(8.dp)
+                    ),
+                contentAlignment = Alignment.Center
+            ) {
+                if (isNoneScheme) {
+                    // Show power off icon for "None" scheme
+                    Icon(
+                        imageVector = Icons.Default.PowerSettingsNew,
+                        contentDescription = "LEDs Off",
+                        tint = Color.White.copy(alpha = 0.7f),
+                        modifier = Modifier.size(24.dp)
                     )
-            )
-            
+                }
+            }
+
             // Color name with background for readability
             Surface(
                 modifier = Modifier.fillMaxWidth(),
@@ -1763,7 +2214,7 @@ private fun ColorSchemeChip(
                     modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
                 )
             }
-            
+
             // Selected indicator
             if (isSelected) {
                 Icon(

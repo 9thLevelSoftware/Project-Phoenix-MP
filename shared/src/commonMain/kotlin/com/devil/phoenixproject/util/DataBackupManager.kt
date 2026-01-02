@@ -114,7 +114,24 @@ abstract class BaseDataBackupManager(
                         safetyFlags = session.safetyFlags.toInt(),
                         deloadWarningCount = session.deloadWarningCount.toInt(),
                         romViolationCount = session.romViolationCount.toInt(),
-                        spotterActivations = session.spotterActivations.toInt()
+                        spotterActivations = session.spotterActivations.toInt(),
+                        // New summary metrics
+                        peakForceConcentricA = session.peakForceConcentricA?.toFloat(),
+                        peakForceConcentricB = session.peakForceConcentricB?.toFloat(),
+                        peakForceEccentricA = session.peakForceEccentricA?.toFloat(),
+                        peakForceEccentricB = session.peakForceEccentricB?.toFloat(),
+                        avgForceConcentricA = session.avgForceConcentricA?.toFloat(),
+                        avgForceConcentricB = session.avgForceConcentricB?.toFloat(),
+                        avgForceEccentricA = session.avgForceEccentricA?.toFloat(),
+                        avgForceEccentricB = session.avgForceEccentricB?.toFloat(),
+                        heaviestLiftKg = session.heaviestLiftKg?.toFloat(),
+                        totalVolumeKg = session.totalVolumeKg?.toFloat(),
+                        estimatedCalories = session.estimatedCalories?.toFloat(),
+                        warmupAvgWeightKg = session.warmupAvgWeightKg?.toFloat(),
+                        workingAvgWeightKg = session.workingAvgWeightKg?.toFloat(),
+                        burnoutAvgWeightKg = session.burnoutAvgWeightKg?.toFloat(),
+                        peakWeightKg = session.peakWeightKg?.toFloat(),
+                        rpe = session.rpe?.toInt()
                     )
                 },
                 metricSamples = metrics.map { metric ->
@@ -165,9 +182,8 @@ abstract class BaseDataBackupManager(
                         setRestSeconds = exercise.setRestSeconds,
                         perSetRestTime = exercise.perSetRestTime != 0L,
                         isAMRAP = exercise.isAMRAP != 0L,
-                        supersetGroupId = exercise.supersetGroupId,
-                        supersetOrder = exercise.supersetOrder.toInt(),
-                        supersetRestSeconds = exercise.supersetRestSeconds.toInt()
+                        supersetId = exercise.supersetId,
+                        orderInSuperset = exercise.orderInSuperset.toInt()
                     )
                 },
                 personalRecords = personalRecords,
@@ -237,7 +253,24 @@ abstract class BaseDataBackupManager(
                         safetyFlags = session.safetyFlags.toLong(),
                         deloadWarningCount = session.deloadWarningCount.toLong(),
                         romViolationCount = session.romViolationCount.toLong(),
-                        spotterActivations = session.spotterActivations.toLong()
+                        spotterActivations = session.spotterActivations.toLong(),
+                        // New summary metrics
+                        peakForceConcentricA = session.peakForceConcentricA?.toDouble(),
+                        peakForceConcentricB = session.peakForceConcentricB?.toDouble(),
+                        peakForceEccentricA = session.peakForceEccentricA?.toDouble(),
+                        peakForceEccentricB = session.peakForceEccentricB?.toDouble(),
+                        avgForceConcentricA = session.avgForceConcentricA?.toDouble(),
+                        avgForceConcentricB = session.avgForceConcentricB?.toDouble(),
+                        avgForceEccentricA = session.avgForceEccentricA?.toDouble(),
+                        avgForceEccentricB = session.avgForceEccentricB?.toDouble(),
+                        heaviestLiftKg = session.heaviestLiftKg?.toDouble(),
+                        totalVolumeKg = session.totalVolumeKg?.toDouble(),
+                        estimatedCalories = session.estimatedCalories?.toDouble(),
+                        warmupAvgWeightKg = session.warmupAvgWeightKg?.toDouble(),
+                        workingAvgWeightKg = session.workingAvgWeightKg?.toDouble(),
+                        burnoutAvgWeightKg = session.burnoutAvgWeightKg?.toDouble(),
+                        peakWeightKg = session.peakWeightKg?.toDouble(),
+                        rpe = session.rpe?.toLong()
                     )
                     sessionsImported++
                 } else {
@@ -320,9 +353,8 @@ abstract class BaseDataBackupManager(
                         setRestSeconds = exercise.setRestSeconds,
                         perSetRestTime = if (exercise.perSetRestTime) 1L else 0L,
                         isAMRAP = if (exercise.isAMRAP) 1L else 0L,
-                        supersetGroupId = exercise.supersetGroupId,
-                        supersetOrder = exercise.supersetOrder.toLong(),
-                        supersetRestSeconds = exercise.supersetRestSeconds.toLong()
+                        supersetId = exercise.supersetId,
+                        orderInSuperset = exercise.orderInSuperset.toLong()
                     )
                     routineExercisesImported++
                 }
@@ -385,7 +417,12 @@ abstract class BaseDataBackupManager(
                         day_number = day.dayNumber.toLong(),
                         name = day.name,
                         routine_id = day.routineId,
-                        is_rest_day = if (day.isRestDay) 1L else 0L
+                        is_rest_day = if (day.isRestDay) 1L else 0L,
+                        echo_level = null,
+                        eccentric_load_percent = null,
+                        weight_progression_percent = null,
+                        rep_modifier = null,
+                        rest_time_override_seconds = null
                     )
                     cycleDaysImported++
                 }

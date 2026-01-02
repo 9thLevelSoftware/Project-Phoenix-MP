@@ -373,6 +373,308 @@ object BadgeDefinitions {
             tier = GOLD,
             requirement = SingleWorkoutVolume(5000),
             isSecret = true
+        ),
+
+        // ==================== LIFETIME VOLUME BADGES (Total kg lifted) ====================
+        Badge(
+            id = "volume_1000",
+            name = "Ton Lifter",
+            description = "Lift 1,000 kg total (1 metric ton)",
+            category = VOLUME,
+            iconResource = "weight",
+            tier = BRONZE,
+            requirement = TotalVolume(1_000)
+        ),
+        Badge(
+            id = "volume_10000",
+            name = "Car Crusher",
+            description = "Lift 10,000 kg total",
+            category = VOLUME,
+            iconResource = "weight",
+            tier = BRONZE,
+            requirement = TotalVolume(10_000)
+        ),
+        Badge(
+            id = "volume_50000",
+            name = "Elephant Mover",
+            description = "Lift 50,000 kg total",
+            category = VOLUME,
+            iconResource = "weight",
+            tier = SILVER,
+            requirement = TotalVolume(50_000)
+        ),
+        Badge(
+            id = "volume_100000",
+            name = "Jumbo Jet",
+            description = "Lift 100,000 kg total",
+            category = VOLUME,
+            iconResource = "weight",
+            tier = SILVER,
+            requirement = TotalVolume(100_000)
+        ),
+        Badge(
+            id = "volume_200000",
+            name = "Blue Whale",
+            description = "Lift 200,000 kg total",
+            category = VOLUME,
+            iconResource = "weight",
+            tier = GOLD,
+            requirement = TotalVolume(200_000)
+        ),
+        Badge(
+            id = "volume_500000",
+            name = "Space Shuttle",
+            description = "Lift 500,000 kg total",
+            category = VOLUME,
+            iconResource = "weight",
+            tier = GOLD,
+            requirement = TotalVolume(500_000)
+        ),
+        Badge(
+            id = "volume_1000000",
+            name = "Titanic",
+            description = "Lift 1,000,000 kg total",
+            category = VOLUME,
+            iconResource = "weight",
+            tier = PLATINUM,
+            requirement = TotalVolume(1_000_000),
+            isSecret = true
+        ),
+
+        // ==================== WORKOUT MODE BADGES ====================
+        Badge(
+            id = "mode_oldschool_25",
+            name = "Old School Master",
+            description = "Complete 25 Old School workouts",
+            category = DEDICATION,
+            iconResource = "dumbbell",
+            tier = SILVER,
+            requirement = WorkoutModeCount("Old School", 25)
+        ),
+        Badge(
+            id = "mode_pump_25",
+            name = "Pump King",
+            description = "Complete 25 Pump mode workouts",
+            category = DEDICATION,
+            iconResource = "dumbbell",
+            tier = SILVER,
+            requirement = WorkoutModeCount("Pump", 25)
+        ),
+        Badge(
+            id = "mode_tut_25",
+            name = "Time Under Tension",
+            description = "Complete 25 TUT workouts",
+            category = DEDICATION,
+            iconResource = "dumbbell",
+            tier = SILVER,
+            requirement = WorkoutModeCount("TUT", 25)
+        ),
+        Badge(
+            id = "mode_tutbeast_25",
+            name = "Beast Unleashed",
+            description = "Complete 25 TUT Beast workouts",
+            category = DEDICATION,
+            iconResource = "dumbbell",
+            tier = GOLD,
+            requirement = WorkoutModeCount("TUT Beast", 25)
+        ),
+        Badge(
+            id = "mode_eccentric_25",
+            name = "Eccentric Expert",
+            description = "Complete 25 Eccentric Only workouts",
+            category = DEDICATION,
+            iconResource = "dumbbell",
+            tier = SILVER,
+            requirement = WorkoutModeCount("Eccentric Only", 25)
+        ),
+        Badge(
+            id = "mode_echo_25",
+            name = "Echo Chamber",
+            description = "Complete 25 Echo mode workouts",
+            category = DEDICATION,
+            iconResource = "dumbbell",
+            tier = SILVER,
+            requirement = WorkoutModeCount("Echo", 25)
+        ),
+        Badge(
+            id = "mode_explorer",
+            name = "Mode Explorer",
+            description = "Use all 6 workout modes at least once",
+            category = EXPLORER,
+            iconResource = "compass",
+            tier = GOLD,
+            requirement = AllWorkoutModes,
+            isSecret = true
+        ),
+
+        // ==================== POWER BADGES ====================
+        Badge(
+            id = "power_500",
+            name = "Power Spike",
+            description = "Hit 500W peak power in a single rep",
+            category = STRENGTH,
+            iconResource = "lightning",
+            tier = SILVER,
+            requirement = PeakPower(500)
+        ),
+        Badge(
+            id = "power_750",
+            name = "Power House",
+            description = "Hit 750W peak power in a single rep",
+            category = STRENGTH,
+            iconResource = "lightning",
+            tier = GOLD,
+            requirement = PeakPower(750)
+        ),
+        Badge(
+            id = "power_1000",
+            name = "Lightning Bolt",
+            description = "Hit 1000W peak power in a single rep",
+            category = STRENGTH,
+            iconResource = "lightning",
+            tier = PLATINUM,
+            requirement = PeakPower(1000),
+            isSecret = true
+        ),
+
+        // ==================== MUSCLE GROUP BADGES ====================
+        Badge(
+            id = "muscles_6",
+            name = "Well Rounded",
+            description = "Train 6 different muscle groups",
+            category = EXPLORER,
+            iconResource = "body",
+            tier = BRONZE,
+            requirement = UniqueMuscleGroups(6)
+        ),
+        Badge(
+            id = "muscles_12",
+            name = "Full Body Master",
+            description = "Train all 12 muscle groups",
+            category = EXPLORER,
+            iconResource = "body",
+            tier = GOLD,
+            requirement = UniqueMuscleGroups(12)
+        ),
+
+        // ==================== COMEBACK/RESILIENCE BADGES ====================
+        Badge(
+            id = "comeback_7",
+            name = "Phoenix Rising",
+            description = "Return to training after a 7+ day break",
+            category = CONSISTENCY,
+            iconResource = "phoenix",
+            tier = SILVER,
+            requirement = ComebackAfterBreak(7),
+            isSecret = true
+        ),
+        Badge(
+            id = "streak_saved",
+            name = "Streak Saver",
+            description = "Complete a workout when your streak is at risk",
+            category = CONSISTENCY,
+            iconResource = "shield",
+            tier = SILVER,
+            requirement = StreakSaved,
+            isSecret = true
+        ),
+        Badge(
+            id = "streak_rebuilt_7",
+            name = "Consistency Comeback",
+            description = "Rebuild a 7-day streak after losing one",
+            category = CONSISTENCY,
+            iconResource = "fire",
+            tier = GOLD,
+            requirement = StreakRebuilt(7),
+            isSecret = true
+        ),
+
+        // ==================== ADDITIONAL TIME-BASED BADGES ====================
+        Badge(
+            id = "dawn_patrol_10",
+            name = "Dawn Patrol",
+            description = "Complete 10 workouts before 7 AM",
+            category = DEDICATION,
+            iconResource = "sun",
+            tier = GOLD,
+            requirement = WorkoutsAtTimeCount(0, 7, 10)
+        ),
+        Badge(
+            id = "lunch_lifter",
+            name = "Lunch Lifter",
+            description = "Complete a workout between 11 AM - 1 PM",
+            category = DEDICATION,
+            iconResource = "sun",
+            tier = BRONZE,
+            requirement = WorkoutAtTime(11, 13),
+            isSecret = true
+        ),
+        Badge(
+            id = "weekend_workouts_10",
+            name = "Weekend Warrior II",
+            description = "Complete 10 workouts on weekend days",
+            category = DEDICATION,
+            iconResource = "calendar",
+            tier = GOLD,
+            requirement = WeekendWorkouts(10)
+        ),
+
+        // ==================== ROUTINE BADGES ====================
+        Badge(
+            id = "routines_completed_10",
+            name = "Routine Regular",
+            description = "Complete 10 full routines",
+            category = DEDICATION,
+            iconResource = "list",
+            tier = SILVER,
+            requirement = RoutinesCompleted(10)
+        ),
+        Badge(
+            id = "routines_completed_50",
+            name = "Routine Master",
+            description = "Complete 50 full routines",
+            category = DEDICATION,
+            iconResource = "list",
+            tier = GOLD,
+            requirement = RoutinesCompleted(50)
+        ),
+        Badge(
+            id = "routines_created_5",
+            name = "Routine Creator",
+            description = "Create 5 custom routines",
+            category = EXPLORER,
+            iconResource = "list",
+            tier = SILVER,
+            requirement = RoutinesCreated(5)
+        ),
+
+        // ==================== INTERMEDIATE MILESTONES (Fill gaps) ====================
+        Badge(
+            id = "streak_45",
+            name = "Six Week Strong",
+            description = "Maintain a 45-day workout streak",
+            category = CONSISTENCY,
+            iconResource = "fire",
+            tier = GOLD,
+            requirement = StreakDays(45)
+        ),
+        Badge(
+            id = "workouts_75",
+            name = "Seventy-Five Strong",
+            description = "Complete 75 workouts",
+            category = DEDICATION,
+            iconResource = "dumbbell",
+            tier = SILVER,
+            requirement = TotalWorkouts(75)
+        ),
+        Badge(
+            id = "workouts_150",
+            name = "One-Fifty Club",
+            description = "Complete 150 workouts",
+            category = DEDICATION,
+            iconResource = "dumbbell",
+            tier = GOLD,
+            requirement = TotalWorkouts(150)
         )
     )
 

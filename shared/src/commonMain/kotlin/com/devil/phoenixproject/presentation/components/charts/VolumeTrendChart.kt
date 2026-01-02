@@ -231,7 +231,7 @@ private fun processVolumeData(
  * Format volume label for Y-axis
  */
 private fun formatVolumeLabel(volume: Float, weightUnit: WeightUnit): String {
-    val unit = if (weightUnit == WeightUnit.KG) "kg" else "lb"
+    val unit = if (weightUnit == WeightUnit.KG) "kg" else "lbs"
     return when {
         volume >= 1000 -> "${(volume / 1000).toInt()}k"
         volume >= 100 -> "${volume.toInt()}"

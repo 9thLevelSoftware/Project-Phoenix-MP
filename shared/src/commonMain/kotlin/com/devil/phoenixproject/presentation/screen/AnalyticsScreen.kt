@@ -14,9 +14,6 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.domain.model.WeightUnit
@@ -39,28 +36,63 @@ private fun formatTimestamp(timestamp: Long): String {
     return KmpUtils.formatTimestamp(timestamp, "MMM dd, yyyy")
 }
 
-// ProgressionTab composable - List of Personal Records
+// ProgressTab composable - Deep-dive analytics with Personal Records list
 @Composable
-fun ProgressionTab(
+fun ProgressTab(
     personalRecords: List<PersonalRecord>,
+    workoutSessions: List<WorkoutSession>,
     exerciseRepository: ExerciseRepository,
     weightUnit: WeightUnit,
     formatWeight: (Float, WeightUnit) -> String,
     modifier: Modifier = Modifier
 ) {
     LazyColumn(
-        modifier = modifier.padding(Spacing.medium),
+        modifier = modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
+            .padding(Spacing.medium),
         verticalArrangement = Arrangement.spacedBy(Spacing.medium)
     ) {
         item {
             Text(
+                "Progress",
+                style = MaterialTheme.typography.headlineLarge,
+                color = MaterialTheme.colorScheme.onSurface,
+                fontWeight = FontWeight.Bold
+            )
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = "Track your strength gains over time",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+
+        // Lifetime Stats Card at the top
+        item {
+            LifetimeStatsCard(
+                workoutSessions = workoutSessions,
+                exerciseRepository = exerciseRepository,
+                weightUnit = weightUnit
+            )
+        }
+
+        // Workout Mode Distribution Card
+        item {
+            WorkoutModeDistributionCard(
+                workoutSessions = workoutSessions
+            )
+        }
+
+        item {
+            Text(
                 "Personal Records",
-                style = MaterialTheme.typography.headlineMedium,
+                style = MaterialTheme.typography.titleLarge,
                 color = MaterialTheme.colorScheme.onSurface,
                 fontWeight = FontWeight.Bold
             )
         }
-        
+
         if (personalRecords.isEmpty()) {
             item {
                 EmptyState(
@@ -72,12 +104,12 @@ fun ProgressionTab(
         } else {
             items(personalRecords, key = { it.id }) { pr ->
                 var exerciseName by remember(pr.exerciseId) { mutableStateOf("Loading...") }
-                
+
                 LaunchedEffect(pr.exerciseId) {
                     val exercise = exerciseRepository.getExerciseById(pr.exerciseId)
                     exerciseName = exercise?.name ?: "Unknown Exercise"
                 }
-                
+
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     colors = CardDefaults.cardColors(
@@ -104,7 +136,7 @@ fun ProgressionTab(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
-                        
+
                         Column(horizontalAlignment = Alignment.End) {
                             Text(
                                 text = formatWeight(pr.weightPerCableKg, weightUnit),
@@ -122,203 +154,27 @@ fun ProgressionTab(
                 }
             }
         }
+
+        // Bottom padding for FAB
+        item {
+            Spacer(modifier = Modifier.height(80.dp))
+        }
     }
 }
 
 
 
 /**
- * Dashboard tab - shows key statistics, calendar heatmap, and muscle group visualization.
- */
-@Suppress("unused") // Reserved for future analytics dashboard feature
-@Composable
-fun DashboardTab(
-    viewModel: MainViewModel,
-    personalRecords: List<com.devil.phoenixproject.domain.model.PersonalRecord>,
-    workoutHistory: List<WorkoutSession>,
-    weightUnit: WeightUnit,
-    formatWeight: (Float, WeightUnit) -> String,
-    modifier: Modifier = Modifier
-) {
-    val workoutStreak by viewModel.workoutStreak.collectAsState()
-    val allWorkoutSessions by viewModel.allWorkoutSessions.collectAsState()
-    val exerciseRepository = viewModel.exerciseRepository
-
-    // Fetch exercise names
-    val exerciseNames = remember { mutableStateMapOf<String, String>() }
-    LaunchedEffect(personalRecords) {
-        personalRecords.map { it.exerciseId }.distinct().forEach { exerciseId ->
-            if (!exerciseNames.containsKey(exerciseId)) {
-                val exercise = try {
-                    exerciseRepository.getExerciseById(exerciseId)
-                } catch (e: Exception) {
-                    null
-                }
-                exerciseNames[exerciseId] = exercise?.name ?: "Unknown Exercise"
-            }
-        }
-    }
-
-    LazyColumn(
-        modifier = modifier
-            .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
-            .padding(Spacing.medium),
-        verticalArrangement = Arrangement.spacedBy(Spacing.medium)
-    ) {
-        item {
-            Text(
-                "Dashboard",
-                style = MaterialTheme.typography.headlineLarge,
-                fontWeight = FontWeight.Bold
-            )
-            Spacer(modifier = Modifier.height(Spacing.small))
-        }
-
-        // Strength Score - Hero Metric
-        item {
-            StrengthScoreCard(
-                personalRecords = personalRecords,
-                workoutSessions = allWorkoutSessions,
-                modifier = Modifier.fillMaxWidth()
-            )
-        }
-
-        // This Week Stats
-        item {
-            ThisWeekStatsCard(
-                workoutSessions = allWorkoutSessions,
-                personalRecords = personalRecords,
-                weightUnit = weightUnit,
-                formatWeight = formatWeight,
-                modifier = Modifier.fillMaxWidth()
-            )
-        }
-
-        // Workout Streak (Keep - it's motivating)
-        if (workoutStreak != null && workoutStreak!! > 0) {
-            item {
-                Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .shadow(8.dp, RoundedCornerShape(20.dp)),
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.tertiaryContainer
-                    ),
-                    shape = RoundedCornerShape(20.dp)
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(20.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                Icons.Default.LocalFireDepartment,
-                                contentDescription = null,
-                                tint = Color(0xFFFF6B00),
-                                modifier = Modifier.size(40.dp)
-                            )
-                            Spacer(modifier = Modifier.width(12.dp))
-                            Column {
-                                Text(
-                                    text = "${workoutStreak} Day Streak!",
-                                    style = MaterialTheme.typography.titleLarge,
-                                    fontWeight = FontWeight.Bold
-                                )
-                                Text(
-                                    text = "Keep it going!",
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.onTertiaryContainer
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        // Recent PRs
-        if (personalRecords.isNotEmpty()) {
-            item {
-                RecentPRsCard(
-                    personalRecords = personalRecords,
-                    exerciseNames = exerciseNames,
-                    weightUnit = weightUnit,
-                    formatWeight = formatWeight,
-                    modifier = Modifier.fillMaxWidth()
-                )
-            }
-        }
-
-        // Top Exercises
-        if (personalRecords.isNotEmpty()) {
-            item {
-                TopExercisesCard(
-                    personalRecords = personalRecords,
-                    exerciseNames = exerciseNames,
-                    weightUnit = weightUnit,
-                    formatWeight = formatWeight,
-                    modifier = Modifier.fillMaxWidth()
-                )
-            }
-        }
-
-        // Empty state
-        if (personalRecords.isEmpty()) {
-            item {
-                Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .shadow(8.dp, RoundedCornerShape(20.dp)),
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceContainerHighest
-                    ),
-                    shape = RoundedCornerShape(20.dp)
-                ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(32.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
-                        Icon(
-                            Icons.Default.FitnessCenter,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(64.dp)
-                        )
-                        Spacer(modifier = Modifier.height(16.dp))
-                        Text(
-                            text = "Start Your Journey",
-                            style = MaterialTheme.typography.titleLarge,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text(
-                            text = "Complete workouts to see your progress and PRs here",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
-            }
-        }
-    }
-}
-
-/**
- * Analytics screen with three tabs: Dashboard, Trends, and History.
- * Provides comprehensive view of workout data and progress.
+ * Analytics screen with three tabs: Dashboard, Progress, and History.
+ * - Dashboard: Key insights and analytics overview
+ * - Progress: Deep-dive into strength gains and personal records
+ * - History: Workout log and session details
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AnalyticsScreen(
     viewModel: MainViewModel,
-    themeMode: com.devil.phoenixproject.ui.theme.ThemeMode,
-    onNavigateToExerciseDetail: (String) -> Unit = {}
+    themeMode: com.devil.phoenixproject.ui.theme.ThemeMode
 ) {
     val workoutHistory by viewModel.workoutHistory.collectAsState()
     val groupedWorkoutHistory by viewModel.groupedWorkoutHistory.collectAsState()
@@ -372,7 +228,7 @@ fun AnalyticsScreen(
             modifier = Modifier
                 .fillMaxSize()
         ) {
-            // Tab Row - Redesigned: Overview, Log, Exercises
+            // Tab Row - Redesigned: Dashboard, Progress, History
             PrimaryTabRow(
                 selectedTabIndex = pagerState.currentPage,
                 containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
@@ -391,7 +247,7 @@ fun AnalyticsScreen(
                     onClick = { scope.launch { pagerState.animateScrollToPage(0) } },
                     text = {
                         Text(
-                            "Overview",
+                            "Dashboard",
                             style = MaterialTheme.typography.labelSmall,
                             maxLines = 1,
                             color = if (pagerState.currentPage == 0)
@@ -416,7 +272,7 @@ fun AnalyticsScreen(
                     onClick = { scope.launch { pagerState.animateScrollToPage(1) } },
                     text = {
                         Text(
-                            "Log",
+                            "Progress",
                             style = MaterialTheme.typography.labelSmall,
                             maxLines = 1,
                             color = if (pagerState.currentPage == 1)
@@ -427,8 +283,8 @@ fun AnalyticsScreen(
                     },
                     icon = {
                         Icon(
-                            Icons.AutoMirrored.Filled.List,
-                            contentDescription = "Workout log",
+                            Icons.AutoMirrored.Filled.TrendingUp,
+                            contentDescription = "Progress tracking",
                             tint = if (pagerState.currentPage == 1)
                                 MaterialTheme.colorScheme.primary
                             else
@@ -441,7 +297,7 @@ fun AnalyticsScreen(
                     onClick = { scope.launch { pagerState.animateScrollToPage(2) } },
                     text = {
                         Text(
-                            "Exercises",
+                            "History",
                             style = MaterialTheme.typography.labelSmall,
                             maxLines = 1,
                             color = if (pagerState.currentPage == 2)
@@ -452,8 +308,8 @@ fun AnalyticsScreen(
                     },
                     icon = {
                         Icon(
-                            Icons.Default.FitnessCenter,
-                            contentDescription = "Exercise list",
+                            Icons.AutoMirrored.Filled.List,
+                            contentDescription = "Workout history",
                             tint = if (pagerState.currentPage == 2)
                                 MaterialTheme.colorScheme.primary
                             else
@@ -477,23 +333,22 @@ fun AnalyticsScreen(
                         formatWeight = viewModel::formatWeight,
                         modifier = Modifier.fillMaxSize()
                     )
-                    1 -> HistoryTab(
+                    1 -> ProgressTab(
+                        personalRecords = personalRecords,
+                        workoutSessions = allWorkoutSessions,
+                        exerciseRepository = viewModel.exerciseRepository,
+                        weightUnit = weightUnit,
+                        formatWeight = viewModel::formatWeight,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                    2 -> HistoryTab(
                         groupedWorkoutHistory = groupedWorkoutHistory,
                         weightUnit = weightUnit,
                         formatWeight = viewModel::formatWeight,
+                        kgToDisplay = viewModel::kgToDisplay,
                         onDeleteWorkout = { viewModel.deleteWorkout(it) },
                         exerciseRepository = viewModel.exerciseRepository,
                         onRefresh = { /* Workout history refreshes automatically via StateFlow */ },
-                        modifier = Modifier.fillMaxSize()
-                    )
-                    2 -> ExercisesTab(
-                        workoutSessions = allWorkoutSessions,
-                        exerciseNames = exerciseNames.toMap(),
-                        weightUnit = weightUnit,
-                        formatWeight = viewModel::formatWeight,
-                        onExerciseClick = { exerciseId ->
-                            onNavigateToExerciseDetail(exerciseId)
-                        },
                         modifier = Modifier.fillMaxSize()
                     )
                 }

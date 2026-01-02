@@ -6,16 +6,33 @@ This guide explains how to install Vitruvian Phoenix on your Android device.
 
 - Android phone or tablet running Android 8.0 (Oreo) or later
 - Bluetooth Low Energy (BLE) support (most devices from 2015+ have this)
-- The `androidApp-debug.apk` file from [GitHub Releases](../../releases)
 
 ---
 
-## Installation Steps
+## Option 1: Google Play Store (Recommended)
+
+The easiest way to install Vitruvian Phoenix is from the Google Play Store.
+
+1. Open the **Google Play Store** on your Android device
+2. Search for **"Vitruvian Phoenix"** or [tap here to go directly to the listing](https://play.google.com/store/apps/details?id=com.devil.phoenixproject)
+3. Tap **Install**
+4. Once installed, tap **Open** or find the app in your app drawer
+
+**Benefits of Play Store installation:**
+- Automatic updates when new versions are released
+- Verified and signed by Google
+- No special permissions required to install
+
+---
+
+## Option 2: Direct APK Download (Sideloading)
+
+If you prefer to install directly from GitHub or need a specific version:
 
 ### Step 1: Download the APK
 
 1. On your Android device, go to our [GitHub Releases](../../releases) page
-2. Download the latest `androidApp-debug.apk` file
+2. Download the latest `androidApp-release.apk` file
 3. You may see a warning about downloading APK files - tap **Download anyway**
 
 ### Step 2: Enable Installation from Unknown Sources
@@ -29,13 +46,13 @@ Android requires permission to install apps from outside the Play Store.
 4. Go back and try opening the APK again
 
 **Or manually:**
-1. Go to **Settings → Apps → Special app access → Install unknown apps**
+1. Go to **Settings > Apps > Special app access > Install unknown apps**
 2. Select your browser (Chrome, Firefox, etc.) or file manager
 3. Enable **Allow from this source**
 
 ### Step 3: Install the App
 
-1. Open the downloaded `androidApp-debug.apk` file
+1. Open the downloaded APK file
 2. Tap **Install**
 3. Wait for installation to complete
 4. Tap **Open** or find **Vitruvian Phoenix** in your app drawer
@@ -55,14 +72,17 @@ When you first launch the app, you'll be asked to grant permissions:
 - This is an Android requirement - the app does not track your location
 - Tap **Allow** when prompted
 
-**Note:** If you deny permissions, the app cannot connect to your trainer. You can always grant permissions later in Settings → Apps → Vitruvian Phoenix → Permissions.
+**Note:** If you deny permissions, the app cannot connect to your trainer. You can always grant permissions later in Settings > Apps > Vitruvian Phoenix > Permissions.
 
 ---
 
 ## Updating the App
 
-When a new version is released:
+### Play Store Users
+Updates are automatic! You'll receive new versions as they're released.
 
+### APK Users
+When a new version is released:
 1. Download the new APK from GitHub Releases
 2. Open and install it - Android will update the existing app
 3. **Your workout data is preserved** during updates
@@ -88,12 +108,12 @@ When a new version is released:
 ### App Crashes on Launch
 
 - Make sure your device is running Android 8.0 or later
-- Try clearing app data: Settings → Apps → Vitruvian Phoenix → Storage → Clear data
+- Try clearing app data: Settings > Apps > Vitruvian Phoenix > Storage > Clear data
 - Report the issue on GitHub with your device model and Android version
 
 ### Bluetooth Permission Denied
 
-1. Go to **Settings → Apps → Vitruvian Phoenix → Permissions**
+1. Go to **Settings > Apps > Vitruvian Phoenix > Permissions**
 2. Enable **Nearby devices** (Android 12+) or **Location** (Android 11 and below)
 3. Restart the app
 
@@ -108,17 +128,18 @@ When a new version is released:
 
 ### Backup Your Data
 
-Currently, workout data is stored in the app's internal database. If you want to preserve your data:
-
-- Don't uninstall the app when updating - install over the existing version
-- Android's built-in backup may include app data (varies by device)
+The app includes a built-in backup feature:
+1. Go to **Settings** tab in the app
+2. Tap **Export Data** to save your workout history
+3. Store the backup file safely
+4. Use **Import Data** to restore on a new device
 
 ---
 
 ## FAQ
 
-**Q: Why isn't this on the Play Store?**
-A: This is a community project to keep Vitruvian trainers functional. We're distributing directly to users who need it.
+**Q: Is the Play Store version different from the APK?**
+A: No, they're the same app. The Play Store version just has the convenience of automatic updates.
 
 **Q: Is it safe to install APKs?**
 A: APKs from trusted sources are safe. Our releases are built from the open-source code in this repository. You can verify or build it yourself.

@@ -25,8 +25,17 @@ sealed class NavigationRoutes(val route: String) {
         fun createRoute(routineId: String) = "routine_editor/$routineId"
     }
 
-    object CycleEditor : NavigationRoutes("cycle_editor/{cycleId}") {
-        fun createRoute(cycleId: String) = "cycle_editor/$cycleId"
+    object CycleEditor : NavigationRoutes("cycle_editor/{cycleId}?dayCount={dayCount}") {
+        fun createRoute(cycleId: String, dayCount: Int? = null): String {
+            val base = "cycle_editor/$cycleId"
+            return if (dayCount != null) "$base?dayCount=$dayCount" else base
+        }
+    }
+
+    object DayCountPicker : NavigationRoutes("dayCountPicker")
+
+    object CycleReview : NavigationRoutes("cycleReview/{cycleId}") {
+        fun createRoute(cycleId: String) = "cycleReview/$cycleId"
     }
 
     // Premium/Account routes

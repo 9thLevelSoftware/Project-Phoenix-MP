@@ -1,21 +1,67 @@
 # iOS Installation Guide
 
-This guide explains how to install Vitruvian Phoenix on your iPhone without the App Store.
+This guide explains how to install Vitruvian Phoenix on your iPhone or iPad.
 
 ## Prerequisites
 
-- iPhone running iOS 14.0 or later
-- A computer (Mac or Windows PC)
-- Apple ID (free)
-- The `VitruvianPhoenix.ipa` file from [GitHub Releases](../../releases)
+- iPhone or iPad running iOS 14.0 or later
+- Bluetooth Low Energy (BLE) support
 
 ---
 
-## Option 1: AltStore (Recommended)
+## Option 1: App Store (Recommended)
+
+The easiest way to install Vitruvian Phoenix is from the App Store.
+
+1. Open the **App Store** on your iPhone or iPad
+2. Search for **"Vitruvian Phoenix"** or [tap here to go directly to the listing](https://apps.apple.com/app/vitruvian-phoenix/id6740537270)
+3. Tap **Get** (or the download icon)
+4. Authenticate with Face ID, Touch ID, or your Apple ID password
+5. Once installed, tap **Open** or find the app on your home screen
+
+**Benefits of App Store installation:**
+- Automatic updates when new versions are released
+- Reviewed and signed by Apple
+- No expiration or re-signing required
+- Easy to install and manage
+
+---
+
+## Option 2: TestFlight (Beta Testing)
+
+Want early access to new features? Join our TestFlight beta program.
+
+### Step 1: Install TestFlight
+
+1. Download **TestFlight** from the App Store (it's free, made by Apple)
+2. Open TestFlight
+
+### Step 2: Join the Beta
+
+1. [Tap here to join the Vitruvian Phoenix beta](https://testflight.apple.com/join/YourTestFlightLink)
+2. Or open this link on your device: `https://testflight.apple.com/join/YourTestFlightLink`
+3. Tap **Accept** to join the beta program
+4. Tap **Install** to download the beta version
+
+**TestFlight benefits:**
+- Early access to new features before App Store release
+- Easy one-tap updates
+- Provide feedback directly to developers
+- Apps last 90 days between updates (automatic)
+
+---
+
+## Option 3: Sideloading (Advanced)
+
+If you prefer to install directly from GitHub or need a specific version, you can sideload the app.
+
+**Note:** This method requires a computer and apps need to be refreshed every 7 days with a free Apple ID.
+
+### Using AltStore
 
 AltStore is a free app that lets you sideload apps using your Apple ID.
 
-### Step 1: Install AltServer on Your Computer
+#### Step 1: Install AltServer on Your Computer
 
 **Mac:**
 1. Download AltServer from [altstore.io](https://altstore.io/)
@@ -27,148 +73,110 @@ AltStore is a free app that lets you sideload apps using your Apple ID.
 2. Run the installer
 3. Launch AltServer - it will appear in your system tray
 
-### Step 2: Install AltStore on Your iPhone
+#### Step 2: Install AltStore on Your iPhone
 
 1. Connect your iPhone to your computer with a USB cable
 2. **Trust** the computer on your iPhone if prompted
-3. On Mac: Click the AltServer icon in the menu bar → Install AltStore → Select your iPhone
-4. On Windows: Click the AltServer icon in the system tray → Install AltStore → Select your iPhone
+3. On Mac: Click the AltServer icon in the menu bar > Install AltStore > Select your iPhone
+4. On Windows: Click the AltServer icon in the system tray > Install AltStore > Select your iPhone
 5. Enter your Apple ID and password when prompted
 6. AltStore will appear on your iPhone home screen
 
-### Step 3: Install Vitruvian Phoenix
+#### Step 3: Install Vitruvian Phoenix
 
-1. Download the `VitruvianPhoenix.ipa` file to your iPhone (via Safari, Files app, or AirDrop)
+1. Download the `VitruvianPhoenix.ipa` file from [GitHub Releases](../../releases)
 2. Open AltStore on your iPhone
 3. Go to the **My Apps** tab
 4. Tap the **+** button in the top left
 5. Select the `VitruvianPhoenix.ipa` file
 6. Wait for installation to complete
 
-### Step 4: Trust the App
+#### Step 4: Trust the App
 
-1. Go to **Settings → General → VPN & Device Management**
+1. Go to **Settings > General > VPN & Device Management**
 2. Tap your Apple ID under "Developer App"
 3. Tap **Trust** and confirm
 
-The app is now ready to use!
+### Keeping Sideloaded Apps Active
 
----
-
-## Keeping the App Active (Important!)
-
-Apps installed with a free Apple ID expire after **7 days**. To keep Vitruvian Phoenix working:
-
-### Automatic Refresh (Recommended)
-
-AltStore can refresh apps automatically in the background:
+Apps installed with a free Apple ID expire after **7 days**. AltStore can refresh apps automatically:
 
 1. Keep AltServer running on your computer
 2. Make sure your iPhone and computer are on the **same WiFi network**
-3. AltStore will refresh apps automatically when conditions are right
+3. AltStore will refresh apps automatically in the background
 
-**Tip:** Enable "Refresh All on WiFi" in AltStore settings.
-
-### Manual Refresh
-
-If automatic refresh isn't working:
-
-1. Connect your iPhone to your computer via USB
-2. Make sure AltServer is running
-3. Open AltStore on your iPhone
-4. Go to **My Apps** tab
-5. Tap **Refresh All**
-
-### What Happens If It Expires?
-
-- The app icon will still be there but won't open
-- **Your workout data is NOT deleted** - it's safely stored on your device
-- Simply refresh via AltStore and everything will be restored
+**Tip:** With a paid Apple Developer account ($99/year), apps last 1 year instead of 7 days.
 
 ---
 
-## Option 2: Sideloadly
+## Permissions
 
-Sideloadly is an alternative to AltStore with a simpler interface.
+When you first launch the app, you'll be asked to grant permissions:
 
-### Step 1: Install Sideloadly
+### Bluetooth Permission
+- Required to scan for and connect to your Vitruvian trainer
+- Tap **OK** or **Allow** when prompted
 
-1. Download from [sideloadly.io](https://sideloadly.io/)
-2. Install and launch the application
-
-### Step 2: Install the App
-
-1. Connect your iPhone to your computer via USB
-2. Open Sideloadly
-3. Drag the `VitruvianPhoenix.ipa` file into Sideloadly (or click to browse)
-4. Select your iPhone from the device dropdown
-5. Enter your Apple ID and click **Start**
-6. Enter your Apple ID password when prompted
-7. Wait for installation to complete
-
-### Step 3: Trust the App
-
-1. Go to **Settings → General → VPN & Device Management**
-2. Tap your Apple ID under "Developer App"
-3. Tap **Trust** and confirm
-
-### Refreshing with Sideloadly
-
-Unlike AltStore, Sideloadly doesn't have automatic refresh. Every 7 days:
-
-1. Connect your iPhone to your computer
-2. Open Sideloadly
-3. Re-install the IPA file (your data will be preserved)
+**Note:** If you deny Bluetooth permission, the app cannot connect to your trainer. You can grant it later in Settings > Vitruvian Phoenix > Bluetooth.
 
 ---
 
 ## Troubleshooting
 
-### "Unable to Install" Error
+### App Won't Open (Sideloaded Only)
 
-- Make sure your Apple ID doesn't have 2FA issues - try generating an app-specific password at [appleid.apple.com](https://appleid.apple.com/)
-- Try a different Apple ID
-- Ensure iTunes/Apple Devices is installed (Windows)
+- The app may have expired - refresh via AltStore
+- Make sure you trusted the developer certificate in Settings
+
+### Can't Find the Trainer
+
+- Ensure Bluetooth is enabled on your device
+- Make sure you granted Bluetooth permission to the app
+- Move closer to your Vitruvian trainer
+- Try turning your trainer off and on again
 
 ### App Crashes on Launch
 
-- Make sure you trusted the developer certificate in Settings
-- Try reinstalling the app
-
-### AltStore Won't Refresh
-
-- Ensure your iPhone and computer are on the same WiFi network
-- Check that AltServer is running on your computer
-- Try a manual refresh via USB connection
-
-### "Your session has expired"
-
-- Open AltStore and sign in again with your Apple ID
-- This can happen if you changed your Apple ID password
+- Make sure your device is running iOS 14.0 or later
+- Try deleting and reinstalling the app
+- Report the issue on GitHub with your device model and iOS version
 
 ---
 
 ## Data & Privacy
 
 - All workout data is stored **locally on your device**
-- Your Apple ID is only used by Apple's signing servers - we never see it
-- Refreshing/reinstalling preserves all your data as long as you don't delete the app
+- No data is sent to any server
+- Deleting the app will delete your workout history
+
+### Backup Your Data
+
+The app includes a built-in backup feature:
+1. Go to **Settings** tab in the app
+2. Tap **Export Data** to save your workout history
+3. Save the backup file to Files, iCloud, or share it
+4. Use **Import Data** to restore on a new device
 
 ---
 
 ## FAQ
 
-**Q: Will I lose my workout history when I refresh?**
-A: No. Refreshing re-signs the app without deleting data. Your history is safe.
+**Q: Which installation method should I use?**
+A: Use the App Store for the easiest experience. Use TestFlight if you want early access to new features.
 
-**Q: Can I use a throwaway Apple ID?**
-A: Yes. Any valid Apple ID works for sideloading.
+**Q: Will I lose my data when updating?**
+A: No. Updates preserve all your workout history and settings.
 
-**Q: What if I have a paid Apple Developer account?**
-A: Apps will last 1 year instead of 7 days before needing refresh.
+**Q: Can I switch from TestFlight to App Store?**
+A: Yes. Install from the App Store and your data will be preserved.
 
-**Q: Is this legal?**
-A: Yes. Sideloading apps you have legitimate access to is legal. Apple allows it.
+**Q: What Vitruvian devices are supported?**
+A:
+- Vitruvian V-Form Trainer (VIT-200) - devices starting with `Vee_`
+- Vitruvian Trainer+ - devices starting with `VIT`
+
+**Q: Does it work on iPad?**
+A: Yes, the app works on any iPad running iOS/iPadOS 14.0 or later with Bluetooth support.
 
 ---
 

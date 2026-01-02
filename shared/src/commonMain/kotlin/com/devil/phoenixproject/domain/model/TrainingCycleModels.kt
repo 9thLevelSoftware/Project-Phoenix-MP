@@ -61,7 +61,12 @@ data class CycleDay(
     val dayNumber: Int,
     val name: String?,
     val routineId: String?,
-    val isRestDay: Boolean
+    val isRestDay: Boolean,
+    val echoLevel: EchoLevel? = null,
+    val eccentricLoadPercent: Int? = null,
+    val weightProgressionPercent: Float? = null,
+    val repModifier: Int? = null,
+    val restTimeOverrideSeconds: Int? = null
 ) {
     companion object {
         fun create(
@@ -70,28 +75,48 @@ data class CycleDay(
             dayNumber: Int,
             name: String? = null,
             routineId: String? = null,
-            isRestDay: Boolean = false
+            isRestDay: Boolean = false,
+            echoLevel: EchoLevel? = null,
+            eccentricLoadPercent: Int? = null,
+            weightProgressionPercent: Float? = null,
+            repModifier: Int? = null,
+            restTimeOverrideSeconds: Int? = null
         ) = CycleDay(
             id = id,
             cycleId = cycleId,
             dayNumber = dayNumber,
             name = name,
             routineId = routineId,
-            isRestDay = isRestDay
+            isRestDay = isRestDay,
+            echoLevel = echoLevel,
+            eccentricLoadPercent = eccentricLoadPercent,
+            weightProgressionPercent = weightProgressionPercent,
+            repModifier = repModifier,
+            restTimeOverrideSeconds = restTimeOverrideSeconds
         )
 
         fun restDay(
             id: String = generateUUID(),
             cycleId: String,
             dayNumber: Int,
-            name: String? = "Rest"
+            name: String? = "Rest",
+            echoLevel: EchoLevel? = null,
+            eccentricLoadPercent: Int? = null,
+            weightProgressionPercent: Float? = null,
+            repModifier: Int? = null,
+            restTimeOverrideSeconds: Int? = null
         ) = CycleDay(
             id = id,
             cycleId = cycleId,
             dayNumber = dayNumber,
             name = name,
             routineId = null,
-            isRestDay = true
+            isRestDay = true,
+            echoLevel = echoLevel,
+            eccentricLoadPercent = eccentricLoadPercent,
+            weightProgressionPercent = weightProgressionPercent,
+            repModifier = repModifier,
+            restTimeOverrideSeconds = restTimeOverrideSeconds
         )
     }
 }
@@ -104,7 +129,11 @@ data class CycleProgress(
     val cycleId: String,
     val currentDayNumber: Int,
     val lastCompletedDate: Long?,
-    val cycleStartDate: Long
+    val cycleStartDate: Long,
+    val lastAdvancedAt: Long? = null,
+    val completedDays: Set<Int> = emptySet(),
+    val missedDays: Set<Int> = emptySet(),
+    val rotationCount: Int = 0
 ) {
     /**
      * Calculate days since last workout for gap detection.
@@ -123,17 +152,92 @@ data class CycleProgress(
         return daysSince >= 3
     }
 
+    /**
+     * Check if 24 hours have passed since last advance, triggering auto-advance.
+     */
+    fun shouldAutoAdvance(): Boolean {
+        val advancedAt = lastAdvancedAt ?: return false
+        val now = currentTimeMillis()
+        val hoursSince = (now - advancedAt) / (60 * 60 * 1000L)
+        return hoursSince >= 24
+    }
+
+    /**
+     * Advance to the next day in the cycle.
+     * @param totalDays Total number of days in the cycle
+     * @param markMissed If true, mark current day as missed before advancing
+     * @return New CycleProgress with updated values
+     */
+    fun advanceToNextDay(totalDays: Int, markMissed: Boolean = false): CycleProgress {
+        val updatedMissedDays = if (markMissed) {
+            missedDays + currentDayNumber
+        } else {
+            missedDays
+        }
+
+        val nextDay = if (currentDayNumber >= totalDays) 1 else currentDayNumber + 1
+        val isNewRotation = nextDay == 1
+
+        return copy(
+            currentDayNumber = nextDay,
+            lastAdvancedAt = currentTimeMillis(),
+            completedDays = if (isNewRotation) emptySet() else completedDays,
+            missedDays = if (isNewRotation) emptySet() else updatedMissedDays,
+            rotationCount = if (isNewRotation) rotationCount + 1 else rotationCount
+        )
+    }
+
+    /**
+     * Mark a day as completed and advance to the next day.
+     * Any days between currentDayNumber and dayNumber are marked as missed.
+     * @param dayNumber The day number that was completed
+     * @param totalDays Total number of days in the cycle
+     * @return New CycleProgress with updated values
+     */
+    fun markDayCompleted(dayNumber: Int, totalDays: Int): CycleProgress {
+        // Calculate skipped days (between current and completed day)
+        val skippedDays = if (dayNumber > currentDayNumber) {
+            (currentDayNumber until dayNumber).toSet()
+        } else {
+            emptySet()
+        }
+
+        val updatedMissedDays = missedDays + skippedDays
+        val updatedCompletedDays = completedDays + dayNumber
+
+        val nextDay = if (dayNumber >= totalDays) 1 else dayNumber + 1
+        val isNewRotation = nextDay == 1
+        val now = currentTimeMillis()
+
+        return copy(
+            currentDayNumber = nextDay,
+            lastCompletedDate = now,
+            lastAdvancedAt = now,
+            completedDays = if (isNewRotation) emptySet() else updatedCompletedDays,
+            missedDays = if (isNewRotation) emptySet() else updatedMissedDays,
+            rotationCount = if (isNewRotation) rotationCount + 1 else rotationCount
+        )
+    }
+
     companion object {
         fun create(
             id: String = generateUUID(),
             cycleId: String,
-            currentDayNumber: Int = 1
+            currentDayNumber: Int = 1,
+            lastAdvancedAt: Long? = null,
+            completedDays: Set<Int> = emptySet(),
+            missedDays: Set<Int> = emptySet(),
+            rotationCount: Int = 0
         ) = CycleProgress(
             id = id,
             cycleId = cycleId,
             currentDayNumber = currentDayNumber,
             lastCompletedDate = null,
-            cycleStartDate = currentTimeMillis()
+            cycleStartDate = currentTimeMillis(),
+            lastAdvancedAt = lastAdvancedAt,
+            completedDays = completedDays,
+            missedDays = missedDays,
+            rotationCount = rotationCount
         )
     }
 }

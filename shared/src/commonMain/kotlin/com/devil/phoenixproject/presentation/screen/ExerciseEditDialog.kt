@@ -181,7 +181,7 @@ fun ExerciseEditBottomSheet(
                     newValue.toFloatOrNull()?.let { weightPerCable = it }
                 },
                 label = {
-                    val unitLabel = if (weightUnit == WeightUnit.KG) "kg" else "lb"
+                    val unitLabel = if (weightUnit == WeightUnit.KG) "kg" else "lbs"
                     Text("Weight per cable ($unitLabel)")
                 },
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),

@@ -6,6 +6,7 @@ import app.cash.sqldelight.coroutines.mapToOneOrNull
 import com.devil.phoenixproject.database.VitruvianDatabase
 import com.devil.phoenixproject.domain.model.CycleDay
 import com.devil.phoenixproject.domain.model.CycleProgress
+import com.devil.phoenixproject.domain.model.EchoLevel
 import com.devil.phoenixproject.domain.model.TrainingCycle
 import com.devil.phoenixproject.domain.model.currentTimeMillis
 import com.devil.phoenixproject.domain.model.generateUUID
@@ -47,7 +48,12 @@ class SqlDelightTrainingCycleRepository(
         day_number: Long,
         name: String?,
         routine_id: String?,
-        is_rest_day: Long
+        is_rest_day: Long,
+        echo_level: String?,
+        eccentric_load_percent: Long?,
+        weight_progression_percent: Double?,
+        rep_modifier: Long?,
+        rest_time_override_seconds: Long?
     ): CycleDay {
         return CycleDay(
             id = id,
@@ -55,7 +61,12 @@ class SqlDelightTrainingCycleRepository(
             dayNumber = day_number.toInt(),
             name = name,
             routineId = routine_id,
-            isRestDay = is_rest_day == 1L
+            isRestDay = is_rest_day == 1L,
+            echoLevel = echo_level?.let { parseEchoLevel(it) },
+            eccentricLoadPercent = eccentric_load_percent?.toInt(),
+            weightProgressionPercent = weight_progression_percent?.toFloat(),
+            repModifier = rep_modifier?.toInt(),
+            restTimeOverrideSeconds = rest_time_override_seconds?.toInt()
         )
     }
 
@@ -64,15 +75,45 @@ class SqlDelightTrainingCycleRepository(
         cycle_id: String,
         current_day_number: Long,
         last_completed_date: Long?,
-        cycle_start_date: Long
+        cycle_start_date: Long,
+        last_advanced_at: Long?,
+        completed_days: String?,
+        missed_days: String?,
+        rotation_count: Long
     ): CycleProgress {
         return CycleProgress(
             id = id,
             cycleId = cycle_id,
             currentDayNumber = current_day_number.toInt(),
             lastCompletedDate = last_completed_date,
-            cycleStartDate = cycle_start_date
+            cycleStartDate = cycle_start_date,
+            lastAdvancedAt = last_advanced_at,
+            completedDays = parseIntSet(completed_days),
+            missedDays = parseIntSet(missed_days),
+            rotationCount = rotation_count.toInt()
         )
+    }
+
+    // ==================== Helper Functions ====================
+
+    private fun parseEchoLevel(value: String): EchoLevel? {
+        return try {
+            EchoLevel.valueOf(value)
+        } catch (e: IllegalArgumentException) {
+            null
+        }
+    }
+
+    private fun parseIntSet(json: String?): Set<Int> {
+        if (json.isNullOrBlank()) return emptySet()
+        return json.trim('[', ']')
+            .split(',')
+            .mapNotNull { it.trim().toIntOrNull() }
+            .toSet()
+    }
+
+    private fun intSetToJson(set: Set<Int>): String {
+        return set.sorted().joinToString(",", "[", "]")
     }
 
     // ==================== Training Cycles ====================
@@ -166,7 +207,12 @@ class SqlDelightTrainingCycleRepository(
                         day_number = day.dayNumber.toLong(),
                         name = day.name,
                         routine_id = day.routineId,
-                        is_rest_day = if (day.isRestDay) 1L else 0L
+                        is_rest_day = if (day.isRestDay) 1L else 0L,
+                        echo_level = day.echoLevel?.name,
+                        eccentric_load_percent = day.eccentricLoadPercent?.toLong(),
+                        weight_progression_percent = day.weightProgressionPercent?.toDouble(),
+                        rep_modifier = day.repModifier?.toLong(),
+                        rest_time_override_seconds = day.restTimeOverrideSeconds?.toLong()
                     )
                 }
 
@@ -181,7 +227,11 @@ class SqlDelightTrainingCycleRepository(
                         cycle_id = cycle.id,
                         current_day_number = 1L,
                         last_completed_date = null,
-                        cycle_start_date = now
+                        cycle_start_date = now,
+                        last_advanced_at = null,
+                        completed_days = null,
+                        missed_days = null,
+                        rotation_count = 0L
                     )
                 }
             }
@@ -210,7 +260,12 @@ class SqlDelightTrainingCycleRepository(
                         day_number = day.dayNumber.toLong(),
                         name = day.name,
                         routine_id = day.routineId,
-                        is_rest_day = if (day.isRestDay) 1L else 0L
+                        is_rest_day = if (day.isRestDay) 1L else 0L,
+                        echo_level = day.echoLevel?.name,
+                        eccentric_load_percent = day.eccentricLoadPercent?.toLong(),
+                        weight_progression_percent = day.weightProgressionPercent?.toDouble(),
+                        rep_modifier = day.repModifier?.toLong(),
+                        rest_time_override_seconds = day.restTimeOverrideSeconds?.toLong()
                     )
                 }
 
@@ -236,7 +291,11 @@ class SqlDelightTrainingCycleRepository(
                     cycle_id = cycleId,
                     current_day_number = 1L,
                     last_completed_date = null,
-                    cycle_start_date = now
+                    cycle_start_date = now,
+                    last_advanced_at = null,
+                    completed_days = null,
+                    missed_days = null,
+                    rotation_count = 0L
                 )
             }
         }
@@ -274,7 +333,12 @@ class SqlDelightTrainingCycleRepository(
                 day_number = day.dayNumber.toLong(),
                 name = day.name,
                 routine_id = day.routineId,
-                is_rest_day = if (day.isRestDay) 1L else 0L
+                is_rest_day = if (day.isRestDay) 1L else 0L,
+                echo_level = day.echoLevel?.name,
+                eccentric_load_percent = day.eccentricLoadPercent?.toLong(),
+                weight_progression_percent = day.weightProgressionPercent?.toDouble(),
+                rep_modifier = day.repModifier?.toLong(),
+                rest_time_override_seconds = day.restTimeOverrideSeconds?.toLong()
             )
         }
     }
@@ -286,6 +350,11 @@ class SqlDelightTrainingCycleRepository(
                 name = day.name,
                 routine_id = day.routineId,
                 is_rest_day = if (day.isRestDay) 1L else 0L,
+                echo_level = day.echoLevel?.name,
+                eccentric_load_percent = day.eccentricLoadPercent?.toLong(),
+                weight_progression_percent = day.weightProgressionPercent?.toDouble(),
+                rep_modifier = day.repModifier?.toLong(),
+                rest_time_override_seconds = day.restTimeOverrideSeconds?.toLong(),
                 id = day.id
             )
         }
@@ -335,7 +404,11 @@ class SqlDelightTrainingCycleRepository(
                 cycleId = cycleId,
                 currentDayNumber = 1,
                 lastCompletedDate = null,
-                cycleStartDate = now
+                cycleStartDate = now,
+                lastAdvancedAt = null,
+                completedDays = emptySet(),
+                missedDays = emptySet(),
+                rotationCount = 0
             )
 
             queries.insertCycleProgress(
@@ -343,7 +416,11 @@ class SqlDelightTrainingCycleRepository(
                 cycle_id = progress.cycleId,
                 current_day_number = progress.currentDayNumber.toLong(),
                 last_completed_date = progress.lastCompletedDate,
-                cycle_start_date = progress.cycleStartDate
+                cycle_start_date = progress.cycleStartDate,
+                last_advanced_at = progress.lastAdvancedAt,
+                completed_days = intSetToJson(progress.completedDays),
+                missed_days = intSetToJson(progress.missedDays),
+                rotation_count = progress.rotationCount.toLong()
             )
 
             progress
@@ -398,6 +475,10 @@ class SqlDelightTrainingCycleRepository(
                 current_day_number = dayNumber.toLong(),
                 last_completed_date = progress.lastCompletedDate,
                 cycle_start_date = progress.cycleStartDate,
+                last_advanced_at = progress.lastAdvancedAt,
+                completed_days = intSetToJson(progress.completedDays),
+                missed_days = intSetToJson(progress.missedDays),
+                rotation_count = progress.rotationCount.toLong(),
                 cycle_id = cycleId
             )
         }
@@ -414,8 +495,53 @@ class SqlDelightTrainingCycleRepository(
                 current_day_number = progress.currentDayNumber.toLong(),
                 last_completed_date = now,
                 cycle_start_date = progress.cycleStartDate,
+                last_advanced_at = progress.lastAdvancedAt,
+                completed_days = intSetToJson(progress.completedDays),
+                missed_days = intSetToJson(progress.missedDays),
+                rotation_count = progress.rotationCount.toLong(),
                 cycle_id = cycleId
             )
+        }
+    }
+
+    override suspend fun updateCycleProgress(progress: CycleProgress) {
+        withContext(Dispatchers.IO) {
+            queries.updateCycleProgress(
+                current_day_number = progress.currentDayNumber.toLong(),
+                last_completed_date = progress.lastCompletedDate,
+                cycle_start_date = progress.cycleStartDate,
+                last_advanced_at = progress.lastAdvancedAt,
+                completed_days = intSetToJson(progress.completedDays),
+                missed_days = intSetToJson(progress.missedDays),
+                rotation_count = progress.rotationCount.toLong(),
+                cycle_id = progress.cycleId
+            )
+        }
+    }
+
+    override suspend fun checkAndAutoAdvance(cycleId: String): CycleProgress? {
+        return withContext(Dispatchers.IO) {
+            val progress = getCycleProgress(cycleId) ?: return@withContext null
+            val cycle = getCycleById(cycleId) ?: return@withContext null
+
+            if (progress.shouldAutoAdvance()) {
+                val updated = progress.advanceToNextDay(cycle.days.size, markMissed = true)
+
+                queries.updateCycleProgress(
+                    current_day_number = updated.currentDayNumber.toLong(),
+                    last_completed_date = updated.lastCompletedDate,
+                    cycle_start_date = updated.cycleStartDate,
+                    last_advanced_at = updated.lastAdvancedAt,
+                    completed_days = intSetToJson(updated.completedDays),
+                    missed_days = intSetToJson(updated.missedDays),
+                    rotation_count = updated.rotationCount.toLong(),
+                    cycle_id = cycleId
+                )
+
+                updated
+            } else {
+                progress
+            }
         }
     }
 }

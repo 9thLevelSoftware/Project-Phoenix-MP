@@ -5,7 +5,7 @@ package com.devil.phoenixproject.util
  */
 object Constants {
     // App version
-    const val APP_VERSION = "0.1.0"
+    const val APP_VERSION = "0.2.0"
 
     // Weight limits (in kg)
     const val MIN_WEIGHT_KG = 0f
@@ -59,7 +59,7 @@ object UnitConverter {
      */
     fun formatWeight(kg: Float, useLb: Boolean): String {
         return if (useLb) {
-            "${kgToLb(kg).toInt()} lb"
+            "${kgToLb(kg).toInt()} lbs"
         } else {
             "${kg.toInt()} kg"
         }

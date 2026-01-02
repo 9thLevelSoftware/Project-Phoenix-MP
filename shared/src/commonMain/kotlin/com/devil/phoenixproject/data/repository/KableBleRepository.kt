@@ -3,6 +3,7 @@ package com.devil.phoenixproject.data.repository
 import com.devil.phoenixproject.domain.model.ConnectionState
 import com.devil.phoenixproject.domain.model.SampleStatus
 import com.devil.phoenixproject.domain.model.WorkoutMetric
+import com.devil.phoenixproject.util.BlePacketFactory
 import com.juul.kable.Advertisement
 import com.juul.kable.Peripheral
 import com.juul.kable.Scanner
@@ -117,6 +118,7 @@ class KableBleRepository : BleRepository {
         private const val HEARTBEAT_READ_TIMEOUT_MS = 1500L
         private const val DELOAD_EVENT_DEBOUNCE_MS = 2000L
         private const val DIAGNOSTIC_POLL_INTERVAL_MS = 500L  // Keep-alive polling (matching parent)
+        private const val HEURISTIC_POLL_INTERVAL_MS = 250L   // Force telemetry polling (4Hz - matching parent repo)
 
         // Heartbeat no-op command (MUST be 4 bytes)
         private val HEARTBEAT_NO_OP = byteArrayOf(0x00, 0x00, 0x00, 0x00)
@@ -235,6 +237,10 @@ class KableBleRepository : BleRepository {
     private val _heuristicData = MutableStateFlow<HeuristicStatistics?>(null)
     override val heuristicData: StateFlow<HeuristicStatistics?> = _heuristicData.asStateFlow()
 
+    // Disco mode state (Easter egg - rapidly cycles LED colors)
+    private val _discoModeActive = MutableStateFlow(false)
+    override val discoModeActive: StateFlow<Boolean> = _discoModeActive.asStateFlow()
+
     // Command response flow (for awaitResponse() protocol handshake)
     private val _commandResponses = MutableSharedFlow<UByte>(
         replay = 0,
@@ -247,6 +253,10 @@ class KableBleRepository : BleRepository {
     private var peripheral: Peripheral? = null
     private val discoveredAdvertisements = mutableMapOf<String, Advertisement>()
     private var scanJob: kotlinx.coroutines.Job? = null
+
+    // Disco mode job and state
+    private var discoJob: kotlinx.coroutines.Job? = null
+    private var lastColorSchemeIndex: Int = 0  // To restore after disco mode
 
     // Handle detection
     private var handleDetectionEnabled = false
@@ -293,6 +303,9 @@ class KableBleRepository : BleRepository {
 
     // Diagnostic polling job (500ms keep-alive)
     private var diagnosticPollingJob: kotlinx.coroutines.Job? = null
+
+    // Heuristic polling job (250ms / 4Hz - force telemetry for Echo mode)
+    private var heuristicPollingJob: kotlinx.coroutines.Job? = null
 
     // Deload event debouncing
     private var lastDeloadEventTime = 0L
@@ -1013,20 +1026,6 @@ class KableBleRepository : BleRepository {
             }
         }
 
-        // Observe HEURISTIC characteristic for Echo mode force feedback (per Nordic spec)
-        scope.launch {
-            try {
-                log.i { "Starting HEURISTIC characteristic notifications (Echo force feedback)" }
-                p.observe(heuristicCharacteristic)
-                    .catch { e -> log.w { "Heuristic observation error (non-fatal): ${e.message}" } }
-                    .collect { data ->
-                        parseHeuristicData(data)
-                    }
-            } catch (e: Exception) {
-                log.d { "HEURISTIC notifications not available (expected): ${e.message}" }
-            }
-        }
-
         // ===== POLLING (NOT notifications - these chars are ReadableCharacteristics) =====
 
         // MONITOR characteristic - use POLLING only (NOT notifications)
@@ -1038,6 +1037,12 @@ class KableBleRepository : BleRepository {
         // Maintains connection and provides fault/temperature data
         log.i { "Starting DIAGNOSTIC characteristic polling (500ms keep-alive)" }
         startDiagnosticPolling(p)
+
+        // HEURISTIC characteristic - 250ms/4Hz polling for force telemetry
+        // Per parent repo: Uses polling (not notifications) to get phase statistics
+        // Critical for Echo mode force feedback - provides kgMax for actual measured force
+        log.i { "Starting HEURISTIC characteristic polling (250ms/4Hz - force telemetry)" }
+        startHeuristicPolling(p)
     }
 
     /**
@@ -1122,6 +1127,57 @@ class KableBleRepository : BleRepository {
                 }
             }
             log.d { "📊 Diagnostic polling ended (success: $successfulReads, failed: $failedReads)" }
+        }
+    }
+
+    /**
+     * Poll HEURISTIC characteristic every 250ms (4Hz) for force telemetry.
+     * Matches parent repo and official app - provides phase statistics for
+     * concentric/eccentric analysis and Echo mode force feedback.
+     *
+     * Returns 48 bytes: 6 floats for concentric stats, 6 floats for eccentric stats
+     * Each phase has: kgAvg, kgMax, velAvg, velMax, wattAvg, wattMax
+     *
+     * This is critical for accurate force display - heuristicData.kgMax represents
+     * actual measured force from the machine, not the user's configured weight.
+     */
+    private fun startHeuristicPolling(p: Peripheral) {
+        heuristicPollingJob?.cancel()
+        heuristicPollingJob = scope.launch {
+            log.d { "🔄 Starting SEQUENTIAL heuristic polling (${HEURISTIC_POLL_INTERVAL_MS}ms interval / 4Hz - matching parent repo)" }
+            var successfulReads = 0L
+            var failedReads = 0L
+
+            while (_connectionState.value is ConnectionState.Connected && isActive) {
+                try {
+                    val data = withTimeoutOrNull(HEARTBEAT_READ_TIMEOUT_MS) {
+                        p.read(heuristicCharacteristic)
+                    }
+
+                    if (data != null && data.isNotEmpty()) {
+                        successfulReads++
+                        if (successfulReads % 100 == 0L) {
+                            log.v { "📊 Heuristic poll #$successfulReads (failed: $failedReads)" }
+                        }
+                        parseHeuristicData(data)
+                    } else {
+                        failedReads++
+                        if (failedReads <= 3) {
+                            log.v { "Heuristic read returned null/empty" }
+                        }
+                    }
+
+                    // Fixed 250ms interval (4Hz) matching parent repo
+                    delay(HEURISTIC_POLL_INTERVAL_MS)
+                } catch (e: Exception) {
+                    failedReads++
+                    if (failedReads <= 5 || failedReads % 50 == 0L) {
+                        log.w { "❌ Heuristic poll failed #$failedReads: ${e.message}" }
+                    }
+                    delay(HEURISTIC_POLL_INTERVAL_MS)
+                }
+            }
+            log.d { "📊 Heuristic polling ended (success: $successfulReads, failed: $failedReads)" }
         }
     }
 
@@ -1219,6 +1275,9 @@ class KableBleRepository : BleRepository {
      *                     If false, sets handle state to Active (for active workout monitoring).
      */
     private fun startMonitorPolling(p: Peripheral, forAutoStart: Boolean = false) {
+        // Stop disco mode if running (safety - don't interfere with workout polling)
+        stopDiscoMode()
+
         // Reset position tracking for new workout/session
         minPositionSeen = Double.MAX_VALUE
         maxPositionSeen = Double.MIN_VALUE
@@ -1335,6 +1394,8 @@ class KableBleRepository : BleRepository {
         monitorPollingJob = null
         diagnosticPollingJob?.cancel()
         diagnosticPollingJob = null
+        heuristicPollingJob?.cancel()
+        heuristicPollingJob = null
 
         try {
             peripheral?.disconnect()
@@ -1360,8 +1421,8 @@ class KableBleRepository : BleRepository {
     override suspend fun setColorScheme(schemeIndex: Int): Result<Unit> {
         log.d { "Setting color scheme: $schemeIndex" }
         return try {
-            // Color scheme command - send via workout command characteristic
-            val command = byteArrayOf(0x10, schemeIndex.toByte(), 0x00, 0x00)
+            // Color scheme command - use proper 34-byte frame format
+            val command = com.devil.phoenixproject.util.BlePacketFactory.createColorSchemeCommand(schemeIndex)
             sendWorkoutCommand(command)
         } catch (e: Exception) {
             log.e { "Failed to set color scheme: ${e.message}" }
@@ -1435,6 +1496,9 @@ class KableBleRepository : BleRepository {
     }
 
     override suspend fun startWorkout(params: WorkoutParameters): Result<Unit> {
+        // Stop disco mode if running (safety - don't interfere with workout)
+        stopDiscoMode()
+
         log.i { "Starting workout with params: type=${params.workoutType}, weight=${params.weightPerCableKg}kg" }
         return try {
             // Build workout start command based on parameters
@@ -1462,13 +1526,17 @@ class KableBleRepository : BleRepository {
     override suspend fun stopWorkout(): Result<Unit> {
         log.i { "Stopping workout" }
         return try {
-            // Send stop command AND stop polling
-            val result = sendStopCommand()
+            // Send RESET command (0x0A) - matches web app and parent repo behavior
+            // This fully stops the workout on the machine
+            val resetCmd = BlePacketFactory.createResetCommand()
+            log.d { "Sending RESET command (0x0A)..." }
+            sendWorkoutCommand(resetCmd)
+            kotlinx.coroutines.delay(50)  // Short delay for machine to process
 
             // Stop all polling when workout ends
             stopPolling()
 
-            result
+            Result.success(Unit)
         } catch (e: Exception) {
             log.e { "Failed to stop workout: ${e.message}" }
             Result.failure(e)
@@ -1478,10 +1546,12 @@ class KableBleRepository : BleRepository {
     override suspend fun sendStopCommand(): Result<Unit> {
         log.i { "Sending stop command (polling continues)" }
         return try {
-            // Send stop command to machine WITHOUT stopping polling
-            // This allows Just Lift mode to continue monitoring for auto-start
-            val stopCmd = byteArrayOf(0x03, 0x00, 0x00, 0x00)  // Stop command
-            sendWorkoutCommand(stopCmd)
+            // Send StopPacket (0x50) - official app stop command
+            // This is a "soft stop" that releases tension but allows polling to continue
+            // Used for Just Lift mode where we need continuous polling for auto-start detection
+            val stopPacket = BlePacketFactory.createOfficialStopPacket()
+            log.d { "Sending StopPacket (0x50)..." }
+            sendWorkoutCommand(stopPacket)
         } catch (e: Exception) {
             log.e { "Failed to send stop command: ${e.message}" }
             Result.failure(e)
@@ -1595,10 +1665,12 @@ class KableBleRepository : BleRepository {
 
         monitorPollingJob?.cancel()
         diagnosticPollingJob?.cancel()
+        heuristicPollingJob?.cancel()
         heartbeatJob?.cancel()
 
         monitorPollingJob = null
         diagnosticPollingJob = null
+        heuristicPollingJob = null
         heartbeatJob = null
 
         val afterCancel = currentTimeMillis()
@@ -1630,6 +1702,8 @@ class KableBleRepository : BleRepository {
         monitorPollingJob = null
         diagnosticPollingJob?.cancel()
         diagnosticPollingJob = null
+        heuristicPollingJob?.cancel()
+        heuristicPollingJob = null
 
         // Disconnect and release the peripheral
         try {
@@ -2350,5 +2424,82 @@ class KableBleRepository : BleRepository {
      */
     private fun currentTimeMillis(): Long {
         return Clock.System.now().toEpochMilliseconds()
+    }
+
+    // ========== Disco Mode (Easter Egg) ==========
+
+    override fun startDiscoMode() {
+        log.d { "🕺 startDiscoMode() called - discoJob=${discoJob?.isActive}, peripheral=${peripheral != null}" }
+
+        // Don't start if already running
+        if (discoJob?.isActive == true) {
+            log.d { "🕺 Disco mode already active" }
+            return
+        }
+
+        // Don't start if not connected
+        if (peripheral == null) {
+            log.w { "🕺 Cannot start disco mode - not connected (peripheral is null)" }
+            return
+        }
+
+        // Note: We removed the monitorPollingJob check because monitor polling runs
+        // continuously for keep-alive, not just during workouts. If user starts a workout
+        // during disco mode, workout commands take precedence anyway.
+
+        log.i { "🕺 Starting DISCO MODE! 🪩" }
+        _discoModeActive.value = true
+
+        val discoIntervalMs = 300L  // Interval between color changes
+        val discoColorCount = 7     // Number of colors (excluding "None")
+
+        discoJob = scope.launch {
+            var colorIndex = 0
+            while (isActive) {
+                try {
+                    // Send color command directly (faster than setColorScheme which logs)
+                    val command = com.devil.phoenixproject.util.BlePacketFactory.createColorSchemeCommand(colorIndex)
+                    sendWorkoutCommand(command)
+
+                    // Cycle to next color (0-6, skipping "None" at index 7)
+                    colorIndex = (colorIndex + 1) % discoColorCount
+
+                    delay(discoIntervalMs)
+                } catch (e: Exception) {
+                    log.w { "🕺 Disco mode error: ${e.message}" }
+                    break
+                }
+            }
+            log.d { "🕺 Disco mode coroutine ended" }
+        }
+    }
+
+    override fun stopDiscoMode() {
+        if (discoJob?.isActive != true && !_discoModeActive.value) {
+            return
+        }
+
+        log.i { "🕺 Stopping disco mode, restoring color scheme $lastColorSchemeIndex" }
+        discoJob?.cancel()
+        discoJob = null
+        _discoModeActive.value = false
+
+        // Restore the last selected color scheme
+        scope.launch {
+            try {
+                val command = com.devil.phoenixproject.util.BlePacketFactory.createColorSchemeCommand(lastColorSchemeIndex)
+                sendWorkoutCommand(command)
+            } catch (e: Exception) {
+                log.w { "Failed to restore color scheme: ${e.message}" }
+            }
+        }
+    }
+
+    /**
+     * Update the stored color scheme index (called when user changes color in settings).
+     * This allows disco mode to restore the correct color when stopped.
+     */
+    fun setLastColorSchemeIndex(index: Int) {
+        lastColorSchemeIndex = index
     }
 }

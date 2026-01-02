@@ -113,4 +113,17 @@ interface TrainingCycleRepository {
      * Mark a day as completed (updates last completed date).
      */
     suspend fun markDayCompleted(cycleId: String)
+
+    /**
+     * Update cycle progress with a full CycleProgress object.
+     * Used when using the CycleProgress model methods like markDayCompleted().
+     */
+    suspend fun updateCycleProgress(progress: CycleProgress)
+
+    /**
+     * Check if auto-advance is needed (24+ hours since last advance) and perform it.
+     * If auto-advance is triggered, marks the current day as missed and advances to next day.
+     * @return Current CycleProgress (possibly auto-advanced), or null if no progress exists
+     */
+    suspend fun checkAndAutoAdvance(cycleId: String): CycleProgress?
 }

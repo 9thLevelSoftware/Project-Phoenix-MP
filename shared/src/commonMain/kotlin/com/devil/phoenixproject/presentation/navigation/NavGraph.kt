@@ -6,9 +6,17 @@ import androidx.compose.animation.SharedTransitionLayout
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
@@ -18,6 +26,8 @@ import androidx.navigation.navArgument
 import androidx.savedstate.read
 import com.devil.phoenixproject.data.repository.AuthRepository
 import com.devil.phoenixproject.data.repository.ExerciseRepository
+import com.devil.phoenixproject.data.repository.TrainingCycleRepository
+import com.devil.phoenixproject.domain.model.TrainingCycle
 import com.devil.phoenixproject.domain.subscription.SubscriptionManager
 import com.devil.phoenixproject.presentation.screen.*
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
@@ -185,10 +195,7 @@ fun NavGraph(
         ) {
             AnalyticsScreen(
                 viewModel = viewModel,
-                themeMode = themeMode,
-                onNavigateToExerciseDetail = { exerciseId ->
-                    navController.navigate(NavigationRoutes.ExerciseDetail.createRoute(exerciseId))
-                }
+                themeMode = themeMode
             )
         }
 
@@ -240,6 +247,8 @@ fun NavGraph(
             val userPreferences by viewModel.userPreferences.collectAsState()
             val isAutoConnecting by viewModel.isAutoConnecting.collectAsState()
             val connectionError by viewModel.connectionError.collectAsState()
+            val connectionState by viewModel.connectionState.collectAsState()
+            val discoModeActive by viewModel.discoModeActive.collectAsState()
             SettingsTab(
                 weightUnit = weightUnit,
                 autoplayEnabled = userPreferences.autoplayEnabled,
@@ -247,12 +256,14 @@ fun NavGraph(
                 enableVideoPlayback = userPreferences.enableVideoPlayback,
                 darkModeEnabled = themeMode == ThemeMode.DARK,
                 stallDetectionEnabled = userPreferences.stallDetectionEnabled,
+                audioRepCountEnabled = userPreferences.audioRepCountEnabled,
                 onWeightUnitChange = { viewModel.setWeightUnit(it) },
                 onAutoplayChange = { viewModel.setAutoplayEnabled(it) },
                 onStopAtTopChange = { viewModel.setStopAtTop(it) },
                 onEnableVideoPlaybackChange = { viewModel.setEnableVideoPlayback(it) },
                 onDarkModeChange = { enabled -> onThemeModeChange(if (enabled) ThemeMode.DARK else ThemeMode.LIGHT) },
                 onStallDetectionChange = { viewModel.setStallDetectionEnabled(it) },
+                onAudioRepCountChange = { viewModel.setAudioRepCountEnabled(it) },
                 onColorSchemeChange = { viewModel.setColorScheme(it) },
                 onDeleteAllWorkouts = { viewModel.deleteAllWorkouts() },
                 onNavigateToConnectionLogs = { navController.navigate(NavigationRoutes.ConnectionLogs.route) },
@@ -261,7 +272,15 @@ fun NavGraph(
                 connectionError = connectionError,
                 onClearConnectionError = { viewModel.clearConnectionError() },
                 onCancelAutoConnecting = { viewModel.cancelAutoConnecting() },
-                onSetTitle = { viewModel.updateTopBarTitle(it) }
+                onSetTitle = { viewModel.updateTopBarTitle(it) },
+                // Disco mode Easter egg
+                discoModeUnlocked = userPreferences.discoModeUnlocked,
+                discoModeActive = discoModeActive,
+                isConnected = connectionState is com.devil.phoenixproject.domain.model.ConnectionState.Connected,
+                onDiscoModeUnlocked = { viewModel.unlockDiscoMode() },
+                onDiscoModeToggle = { viewModel.toggleDiscoMode(it) },
+                onPlayDiscoSound = { viewModel.emitDiscoSound() },
+                onTestSounds = { viewModel.testSounds() }
             )
         }
 
@@ -319,20 +338,91 @@ fun NavGraph(
             )
         }
 
+        // Day Count Picker - select number of days for new cycle
+        composable(NavigationRoutes.DayCountPicker.route) {
+            DayCountPickerScreen(
+                onDayCountSelected = { dayCount ->
+                    navController.navigate(NavigationRoutes.CycleEditor.createRoute("new", dayCount))
+                },
+                onBack = { navController.popBackStack() }
+            )
+        }
+
         // Cycle Editor - timeline builder for rolling schedules
         composable(
             route = NavigationRoutes.CycleEditor.route,
-            arguments = listOf(navArgument("cycleId") { type = NavType.StringType })
+            arguments = listOf(
+                navArgument("cycleId") { type = NavType.StringType },
+                navArgument("dayCount") {
+                    type = NavType.StringType
+                    nullable = true
+                    defaultValue = null
+                }
+            )
         ) { backStackEntry ->
             val cycleId = backStackEntry.arguments?.read { getStringOrNull("cycleId") } ?: "new"
+            val dayCount = backStackEntry.arguments?.read { getStringOrNull("dayCount") }?.toIntOrNull()
             val routines by viewModel.routines.collectAsState()
 
             CycleEditorScreen(
                 cycleId = cycleId,
                 navController = navController,
                 viewModel = viewModel,
-                routines = routines
+                routines = routines,
+                initialDayCount = dayCount
             )
+        }
+
+        // Cycle Review - preview before final save
+        composable(
+            route = NavigationRoutes.CycleReview.route,
+            arguments = listOf(navArgument("cycleId") { type = NavType.StringType })
+        ) { backStackEntry ->
+            val cycleId = backStackEntry.arguments?.read { getStringOrNull("cycleId") } ?: return@composable
+            val routines by viewModel.routines.collectAsState()
+            val cycleRepository: TrainingCycleRepository = koinInject()
+
+            // Load cycle from repository
+            var cycle by remember { mutableStateOf<TrainingCycle?>(null) }
+            var isLoading by remember { mutableStateOf(true) }
+
+            LaunchedEffect(cycleId) {
+                isLoading = true
+                cycle = cycleRepository.getCycleById(cycleId)
+                isLoading = false
+            }
+
+            when {
+                isLoading -> {
+                    // Show loading indicator
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        CircularProgressIndicator()
+                    }
+                }
+                cycle == null -> {
+                    // Cycle not found - navigate back with error handling
+                    LaunchedEffect(Unit) {
+                        navController.popBackStack()
+                    }
+                }
+                else -> {
+                    CycleReviewScreen(
+                        cycleName = cycle!!.name,
+                        days = cycle!!.days,
+                        routines = routines,
+                        onBack = { navController.popBackStack() },
+                        onSave = {
+                            // Cycle is already saved, just navigate back to TrainingCycles
+                            navController.navigate(NavigationRoutes.TrainingCycles.route) {
+                                popUpTo(NavigationRoutes.TrainingCycles.route) { inclusive = true }
+                            }
+                        }
+                    )
+                }
+            }
         }
 
         // Auth screen - sign in / sign up

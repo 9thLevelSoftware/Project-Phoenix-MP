@@ -35,6 +35,7 @@ import androidx.navigation.compose.rememberNavController
 import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.domain.model.ConnectionState
 import com.devil.phoenixproject.presentation.components.ConnectionLostDialog
+import com.devil.phoenixproject.presentation.components.HapticFeedbackEffect
 import com.devil.phoenixproject.presentation.navigation.NavGraph
 import com.devil.phoenixproject.presentation.navigation.NavigationRoutes
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
@@ -307,6 +308,9 @@ fun EnhancedMainScreen(
             }
         }
     ) { padding ->
+        // Global haptic feedback effect - ensures sounds/haptics work on all screens
+        HapticFeedbackEffect(hapticEvents = viewModel.hapticEvents)
+
         Box(modifier = Modifier.fillMaxSize()) {
             // Use proper padding to account for TopAppBar and system bars
             NavGraph(

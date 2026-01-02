@@ -8,10 +8,29 @@ data class Routine(
     val name: String,
     val description: String = "",
     val exercises: List<RoutineExercise> = emptyList(),
+    val supersets: List<Superset> = emptyList(),  // Superset containers
     val createdAt: Long = currentTimeMillis(),
     val lastUsed: Long? = null,
     val useCount: Int = 0
-)
+) {
+    /**
+     * Get all items (supersets + standalone exercises) in display order.
+     */
+    fun getItems(): List<RoutineItem> {
+        val supersetItems = supersets.map { superset ->
+            RoutineItem.SupersetItem(
+                superset.copy(exercises = exercises.filter { it.supersetId == superset.id }
+                    .sortedBy { it.orderInSuperset })
+            )
+        }
+
+        val standaloneItems = exercises
+            .filter { it.supersetId == null }
+            .map { RoutineItem.Single(it) }
+
+        return (supersetItems + standaloneItems).sortedBy { it.orderIndex }
+    }
+}
 
 /**
  * Domain model for an exercise within a routine
@@ -22,9 +41,8 @@ data class Routine(
  * @param weightPerCableKg Weight in kg per cable (machine tracks each cable independently)
  *                         For SINGLE: weight on the one active cable
  *                         For DOUBLE: weight per cable (total load = 2x this value)
- * @param supersetGroupId Exercises with the same ID are grouped into a superset
- * @param supersetOrder Order of this exercise within its superset (0-based)
- * @param supersetRestSeconds Rest time between exercises within a superset (default 10s)
+ * @param supersetId Reference to parent Superset container (null if not in a superset)
+ * @param orderInSuperset Position within the superset (0-based)
  */
 data class RoutineExercise(
     val id: String,
@@ -50,13 +68,12 @@ data class RoutineExercise(
     val perSetRestTime: Boolean = false,
     // Stall detection toggle - when true, auto-stops set if user hesitates too long (applies to AMRAP/Just Lift modes)
     val stallDetectionEnabled: Boolean = true,
-    // Superset configuration
-    val supersetGroupId: String? = null,  // Exercises with same ID are in same superset
-    val supersetOrder: Int = 0,           // Order within the superset
-    val supersetRestSeconds: Int = 10     // Rest between superset exercises (default 10s)
+    // Superset configuration (container model)
+    val supersetId: String? = null,       // Reference to parent Superset container
+    val orderInSuperset: Int = 0          // Position within the superset
 ) {
     /** Returns true if this exercise is part of a superset */
-    val isInSuperset: Boolean get() = supersetGroupId != null
+    val isInSuperset: Boolean get() = supersetId != null
     // Computed property for backwards compatibility
     val sets: Int get() = setReps.size
     val reps: Int get() = setReps.firstOrNull() ?: 10
@@ -94,99 +111,77 @@ fun Exercise.resolveDefaultCableConfig(): CableConfiguration {
 // ==================== SUPERSET SUPPORT ====================
 
 /**
- * Represents a group of exercises that form a superset.
- * Exercises in a superset are performed back-to-back with minimal rest.
+ * Superset colors for visual distinction
  */
-data class SupersetGroup(
+object SupersetColors {
+    const val INDIGO = 0   // #6366F1
+    const val PINK = 1     // #EC4899
+    const val GREEN = 2    // #10B981
+    const val AMBER = 3    // #F59E0B
+
+    fun next(existingIndices: Set<Int>): Int {
+        for (i in 0..3) {
+            if (i !in existingIndices) return i
+        }
+        return existingIndices.size % 4
+    }
+}
+
+/**
+ * First-class superset container entity.
+ * Represents a group of exercises performed back-to-back.
+ */
+data class Superset(
     val id: String,
-    val name: String,  // e.g., "Superset A", "Superset B"
-    val exercises: List<RoutineExercise>,
-    val restBetweenExercises: Int = 10  // Rest between exercises within superset
+    val routineId: String,
+    val name: String,
+    val colorIndex: Int = SupersetColors.INDIGO,
+    val restBetweenSeconds: Int = 10,
+    val orderIndex: Int = 0,
+    val exercises: List<RoutineExercise> = emptyList(),
+    val isCollapsed: Boolean = false  // UI state only, not persisted
 ) {
+    val isEmpty: Boolean get() = exercises.isEmpty()
+    val exerciseCount: Int get() = exercises.size
+
     /** Total number of sets (minimum sets among all exercises) */
     val sets: Int get() = exercises.minOfOrNull { it.sets } ?: 0
 }
 
 /**
- * Sealed class representing an item in a routine - either a single exercise or a superset group.
- * Used for UI display and workout execution.
+ * Generate a unique superset ID
  */
-sealed class RoutineItem {
-    /** A single exercise not part of any superset */
-    data class SingleExercise(val exercise: RoutineExercise) : RoutineItem() {
-        val orderIndex: Int get() = exercise.orderIndex
-    }
-
-    /** A group of exercises forming a superset */
-    data class Superset(val group: SupersetGroup) : RoutineItem() {
-        val orderIndex: Int get() = group.exercises.minOfOrNull { it.orderIndex } ?: 0
-    }
-}
+fun generateSupersetId(): String = "superset_${generateUUID()}"
 
 /**
- * Extension to get exercises grouped by supersets.
- * Returns a list of RoutineItems (either SingleExercise or Superset) sorted by order.
+ * Sealed class representing an item in a routine's flat ordering.
+ * Used for UI display where supersets and standalone exercises share ordering.
  */
-fun Routine.getGroupedExercises(): List<RoutineItem> {
-    // Group exercises by superset ID
-    val supersetGroups = exercises
-        .filter { it.supersetGroupId != null }
-        .groupBy { it.supersetGroupId!! }
+sealed class RoutineItem {
+    abstract val orderIndex: Int
 
-    // Create superset items
-    val supersetItems = supersetGroups.map { (groupId, groupExercises) ->
-        val sortedExercises = groupExercises.sortedBy { it.supersetOrder }
-        val groupIndex = ('A'.code + supersetGroups.keys.toList().indexOf(groupId)).toChar()
-        RoutineItem.Superset(
-            SupersetGroup(
-                id = groupId,
-                name = "Superset $groupIndex",
-                exercises = sortedExercises,
-                restBetweenExercises = sortedExercises.first().supersetRestSeconds
-            )
-        )
+    /** A single exercise not part of any superset */
+    data class Single(val exercise: RoutineExercise) : RoutineItem() {
+        override val orderIndex: Int get() = exercise.orderIndex
     }
 
-    // Create single exercise items (not in any superset)
-    val singleItems = exercises
-        .filter { it.supersetGroupId == null }
-        .map { RoutineItem.SingleExercise(it) }
-
-    // Combine and sort by order index
-    return (supersetItems + singleItems).sortedBy { item ->
-        when (item) {
-            is RoutineItem.SingleExercise -> item.orderIndex
-            is RoutineItem.Superset -> item.orderIndex
-        }
+    /** A superset container with exercises */
+    data class SupersetItem(val superset: Superset) : RoutineItem() {
+        override val orderIndex: Int get() = superset.orderIndex
     }
 }
 
 /**
  * Extension to check if a routine contains any supersets
  */
-fun Routine.hasSupersets(): Boolean {
-    return exercises.any { it.supersetGroupId != null }
-}
+fun Routine.hasSupersets(): Boolean = supersets.isNotEmpty()
 
 /**
- * Extension to get all superset group IDs in a routine
+ * Get exercises in a specific superset
  */
-fun Routine.getSupersetGroupIds(): Set<String> {
-    return exercises.mapNotNull { it.supersetGroupId }.toSet()
-}
-
-/**
- * Extension to get exercises in a specific superset group
- */
-fun Routine.getExercisesInSuperset(groupId: String): List<RoutineExercise> {
+fun Routine.getExercisesInSuperset(supersetId: String): List<RoutineExercise> {
     return exercises
-        .filter { it.supersetGroupId == groupId }
-        .sortedBy { it.supersetOrder }
+        .filter { it.supersetId == supersetId }
+        .sortedBy { it.orderInSuperset }
 }
 
-/**
- * Generate a unique superset group ID
- */
-fun generateSupersetGroupId(): String {
-    return "superset_${generateUUID()}"
-}

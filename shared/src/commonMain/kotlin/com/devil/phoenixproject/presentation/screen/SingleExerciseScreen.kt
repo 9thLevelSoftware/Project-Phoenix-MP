@@ -182,10 +182,11 @@ fun SingleExerciseScreen(
                     isLoadingDefaults = true
 
                     // Load saved defaults for this exercise+cable config asynchronously
+                    // Uses fallback to try other cable configs if the default doesn't have saved values
                     loadingJob = coroutineScope.launch {
                         try {
                             val savedDefaults = selectedExercise.id?.let { exerciseId ->
-                                viewModel.getSingleExerciseDefaults(exerciseId, defaultCableConfig.name)
+                                viewModel.getSingleExerciseDefaultsWithFallback(exerciseId, defaultCableConfig.name)
                             }
 
                             val newRoutineExercise = if (savedDefaults != null) {
