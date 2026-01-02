@@ -399,6 +399,8 @@ class MainViewModel constructor(
     private var restTimerJob: Job? = null
     private var bodyweightTimerJob: Job? = null
     private var repEventsCollectionJob: Job? = null
+    // Track if current workout is duration-based (timed exercise) to skip ROM calibration and rep processing
+    private var isCurrentWorkoutTimed: Boolean = false
 
     init {
         Logger.d("MainViewModel initialized")
@@ -593,8 +595,16 @@ class MainViewModel constructor(
     /**
      * Handle rep notification from the machine.
      * Updates rep counter and position ranges for visualization.
+     *
+     * Note: Skip processing for timed/duration-based exercises to avoid
+     * incorrect ROM calibration and potential crashes (Issue #41).
      */
     private fun handleRepNotification(notification: RepNotification) {
+        // Skip rep processing for timed exercises - they use duration, not rep counting
+        if (isCurrentWorkoutTimed) {
+            return
+        }
+
         val currentPositions = _currentMetric.value
 
         // Use machine's ROM and Set counters directly (official app method)
@@ -723,10 +733,15 @@ class MainViewModel constructor(
         viewModelScope.launch {
             val params = _workoutParameters.value
 
-            // Check for bodyweight exercise
+            // Check for bodyweight or timed exercise
             val currentExercise = _loadedRoutine.value?.exercises?.getOrNull(_currentExerciseIndex.value)
             val isBodyweight = isBodyweightExercise(currentExercise)
-            val bodyweightDuration = if (isBodyweight) currentExercise?.duration else null
+            val exerciseDuration = currentExercise?.duration?.takeIf { it > 0 }
+            val bodyweightDuration = if (isBodyweight) exerciseDuration else null
+
+            // Track if this is a timed cable exercise (not bodyweight, but has duration)
+            val isTimedCableExercise = !isBodyweight && exerciseDuration != null
+            isCurrentWorkoutTimed = exerciseDuration != null
 
             // For bodyweight exercises with duration, skip machine commands
             if (isBodyweight && bodyweightDuration != null) {
@@ -830,13 +845,19 @@ class MainViewModel constructor(
             } else {
                 repCounter.reset()
             }
+            // For timed cable exercises, skip ROM calibration (warmupTarget = 0)
             repCounter.configure(
-                warmupTarget = params.warmupReps,
+                warmupTarget = if (isTimedCableExercise) 0 else params.warmupReps,
                 workingTarget = params.reps,
                 isJustLift = isJustLiftMode,
                 stopAtTop = params.stopAtTop,
                 isAMRAP = params.isAMRAP
             )
+
+            // Log timed cable exercise detection
+            if (isTimedCableExercise) {
+                Logger.d { "Starting TIMED cable exercise: ${currentExercise?.exercise?.name} for ${exerciseDuration}s (no ROM calibration)" }
+            }
 
             // 6. Countdown (skipped for Just Lift auto-start)
             if (!skipCountdown && !isJustLiftMode) {
@@ -851,6 +872,15 @@ class MainViewModel constructor(
             workoutStartTime = currentTimeMillis()
             collectedMetrics.clear()  // Clear metrics from previous workout
             _hapticEvents.emit(HapticEvent.WORKOUT_START)
+
+            // For timed cable exercises, start auto-complete timer
+            if (isTimedCableExercise && exerciseDuration != null) {
+                bodyweightTimerJob?.cancel()
+                bodyweightTimerJob = viewModelScope.launch {
+                    delay(exerciseDuration * 1000L)
+                    handleSetCompletion()
+                }
+            }
 
             // Set initial baseline position for position bars calibration
             // This ensures bars start at 0% relative to the starting rope position
@@ -876,6 +906,9 @@ class MainViewModel constructor(
 
     fun stopWorkout() {
         viewModelScope.launch {
+             // Reset timed workout flag
+             isCurrentWorkoutTimed = false
+
              // Send RESET command (0x0A) to fully stop workout on machine
              // This matches parent repo and web app behavior
              bleRepository.stopWorkout()
@@ -1442,10 +1475,14 @@ class MainViewModel constructor(
         val firstSetWeight = firstExercise.setWeightsPerCableKg.getOrNull(0)
             ?: firstExercise.weightPerCableKg
 
+        // Check if first exercise is duration-based (timed exercise)
+        val isDurationBased = firstExercise.duration != null && firstExercise.duration > 0
+
         Logger.d { "Loading routine: ${routine.name}" }
         Logger.d { "  First exercise: ${firstExercise.exercise.displayName}" }
         Logger.d { "  First set weight: ${firstSetWeight}kg, reps: $firstSetReps" }
         Logger.d { "  Workout type: ${firstExercise.workoutType.displayName}" }
+        Logger.d { "  Duration-based: $isDurationBased (duration=${firstExercise.duration})" }
 
         val params = WorkoutParameters(
             workoutType = firstExercise.workoutType,
@@ -1455,7 +1492,7 @@ class MainViewModel constructor(
             isJustLift = false,  // CRITICAL: Routines are NOT just lift mode
             useAutoStart = false,
             stopAtTop = stopAtTop.value,
-            warmupReps = _workoutParameters.value.warmupReps,
+            warmupReps = if (isDurationBased) 0 else _workoutParameters.value.warmupReps,
             isAMRAP = firstSetReps == null, // This SET is AMRAP if its reps is null
             selectedExerciseId = firstExercise.exercise.id,
             stallDetectionEnabled = firstExercise.stallDetectionEnabled
@@ -2231,6 +2268,9 @@ class MainViewModel constructor(
             val isJustLift = params.isJustLift
 
             Logger.d("handleSetCompletion: isJustLift=$isJustLift")
+
+            // Reset timed workout flag
+            isCurrentWorkoutTimed = false
 
             // Stop hardware - use stopWorkout() which sends RESET command (0x0A), delays 50ms, and STOPS polling
             // This matches parent repo behavior - polling must be fully stopped before restarting
