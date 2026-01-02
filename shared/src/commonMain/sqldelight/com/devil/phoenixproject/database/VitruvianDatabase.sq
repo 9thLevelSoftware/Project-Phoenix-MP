@@ -821,6 +821,16 @@ CREATE TABLE CycleProgress (
     FOREIGN KEY (cycle_id) REFERENCES TrainingCycle(id) ON DELETE CASCADE
 );
 
+-- Cycle Progression Settings (cycle-wide, replaces per-day modifiers)
+CREATE TABLE CycleProgression (
+    cycle_id TEXT PRIMARY KEY NOT NULL,
+    frequency_cycles INTEGER NOT NULL DEFAULT 2,
+    weight_increase_percent REAL,
+    echo_level_increase INTEGER NOT NULL DEFAULT 0,
+    eccentric_load_increase_percent INTEGER,
+    FOREIGN KEY (cycle_id) REFERENCES TrainingCycle(id) ON DELETE CASCADE
+);
+
 -- Planned Sets (pre-defined sets for routine exercises)
 CREATE TABLE PlannedSet (
     id TEXT PRIMARY KEY NOT NULL,
@@ -946,6 +956,26 @@ WHERE cycle_id = ?;
 
 deleteCycleProgress:
 DELETE FROM CycleProgress WHERE cycle_id = ?;
+
+-- CycleProgression Queries
+selectCycleProgression:
+SELECT * FROM CycleProgression WHERE cycle_id = ?;
+
+insertCycleProgression:
+INSERT INTO CycleProgression (cycle_id, frequency_cycles, weight_increase_percent, echo_level_increase, eccentric_load_increase_percent)
+VALUES (?, ?, ?, ?, ?);
+
+updateCycleProgression:
+UPDATE CycleProgression
+SET frequency_cycles = ?, weight_increase_percent = ?, echo_level_increase = ?, eccentric_load_increase_percent = ?
+WHERE cycle_id = ?;
+
+upsertCycleProgression:
+INSERT OR REPLACE INTO CycleProgression (cycle_id, frequency_cycles, weight_increase_percent, echo_level_increase, eccentric_load_increase_percent)
+VALUES (?, ?, ?, ?, ?);
+
+deleteCycleProgression:
+DELETE FROM CycleProgression WHERE cycle_id = ?;
 
 -- PlannedSet Queries
 selectPlannedSetsByRoutineExercise:
