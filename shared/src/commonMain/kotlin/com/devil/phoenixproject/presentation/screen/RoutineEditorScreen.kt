@@ -6,7 +6,6 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -229,69 +228,13 @@ fun RoutineEditorScreen(
                 }
             )
         },
-        bottomBar = {
-            AnimatedVisibility(
-                visible = state.isSelectionMode,
-                enter = slideInVertically { it },
-                exit = slideOutVertically { it }
-            ) {
-                BottomAppBar {
-                    val selectedCount = state.selectedIds.size
-                    // Group into Superset
-                    if (selectedCount >= 2) {
-                        NavigationBarItem(
-                            selected = false,
-                            onClick = {
-                                val routine = state.routine ?: return@NavigationBarItem
-                                val newSupersetId = generateSupersetId()
-                                val existingColors = routine.supersets.map { it.colorIndex }.toSet()
-                                val newColor = SupersetColors.next(existingColors)
-
-                                // Find order index for the new superset (use earliest selected)
-                                val selectedExercises = routine.exercises.filter { it.id in state.selectedIds }
-                                val minOrder = selectedExercises.minOfOrNull { it.orderIndex } ?: 0
-
-                                // Create new superset
-                                val newSuperset = Superset(
-                                    id = newSupersetId,
-                                    routineId = routine.id,
-                                    name = "Superset",
-                                    colorIndex = newColor,
-                                    orderIndex = minOrder
-                                )
-
-                                // Update exercises to belong to superset
-                                val updatedExercises = routine.exercises.map { ex ->
-                                    if (ex.id in state.selectedIds) {
-                                        val orderInSuperset = selectedExercises.indexOf(ex)
-                                        ex.copy(supersetId = newSupersetId, orderInSuperset = orderInSuperset)
-                                    } else ex
-                                }
-
-                                updateRoutine {
-                                    it.copy(
-                                        exercises = updatedExercises,
-                                        supersets = routine.supersets + newSuperset
-                                    )
-                                }
-                                state = state.copy(isSelectionMode = false, selectedIds = emptySet())
-                            },
-                            icon = { Icon(Icons.Default.Link, null) },
-                            label = { Text("Superset") }
-                        )
-                    }
-                }
-            }
-        },
         floatingActionButton = {
-            if (!state.isSelectionMode) {
-                ExtendedFloatingActionButton(
-                    onClick = { showExercisePicker = true },
-                    icon = { Icon(Icons.Default.Add, null) },
-                    text = { Text("Add Exercise") },
-                    containerColor = MaterialTheme.colorScheme.primaryContainer
-                )
-            }
+            ExtendedFloatingActionButton(
+                onClick = { showExercisePicker = true },
+                icon = { Icon(Icons.Default.Add, null) },
+                text = { Text("Add Exercise") },
+                containerColor = MaterialTheme.colorScheme.primaryContainer
+            )
         }
     ) { padding ->
         LazyColumn(
@@ -332,22 +275,9 @@ fun RoutineEditorScreen(
                                 val elevation by animateDpAsState(if (isDragging) 8.dp else 0.dp)
                                 StandaloneExerciseCard(
                                     exercise = routineItem.exercise,
-                                    isSelected = routineItem.exercise.id in state.selectedIds,
-                                    isSelectionMode = state.isSelectionMode,
                                     elevation = elevation,
                                     weightUnit = weightUnit,
                                     kgToDisplay = kgToDisplay,
-                                    onToggleSelection = {
-                                        val newIds = if (routineItem.exercise.id in state.selectedIds) {
-                                            state.selectedIds - routineItem.exercise.id
-                                        } else {
-                                            state.selectedIds + routineItem.exercise.id
-                                        }
-                                        state = state.copy(
-                                            selectedIds = newIds,
-                                            isSelectionMode = newIds.isNotEmpty()
-                                        )
-                                    },
                                     onEdit = {
                                         exerciseToConfig = routineItem.exercise
                                         isNewExercise = false
@@ -836,16 +766,12 @@ private fun EmptySupersetHint(
 /**
  * Standalone exercise card (not in a superset)
  */
-@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 private fun StandaloneExerciseCard(
     exercise: RoutineExercise,
-    isSelected: Boolean,
-    isSelectionMode: Boolean,
     elevation: Dp,
     weightUnit: WeightUnit,
     kgToDisplay: (Float, WeightUnit) -> Float,
-    onToggleSelection: () -> Unit,
     onEdit: () -> Unit,
     onMenuClick: () -> Unit,
     dragModifier: Modifier,
@@ -856,43 +782,29 @@ private fun StandaloneExerciseCard(
             .fillMaxWidth()
             .shadow(elevation, RoundedCornerShape(12.dp))
             .background(MaterialTheme.colorScheme.background)
-            .combinedClickable(
-                onClick = { if (isSelectionMode) onToggleSelection() else onEdit() },
-                onLongClick = { if (!isSelectionMode) onToggleSelection() }
-            ),
+            .clickable(onClick = onEdit),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        // Left rail (selection or drag handle)
+        // Left rail (drag handle)
         Box(
             modifier = Modifier
                 .width(40.dp)
                 .padding(vertical = 12.dp),
             contentAlignment = Alignment.Center
         ) {
-            if (isSelectionMode) {
-                Checkbox(
-                    checked = isSelected,
-                    onCheckedChange = { onToggleSelection() }
-                )
-            } else {
-                Icon(
-                    Icons.Default.DragHandle,
-                    contentDescription = "Drag",
-                    tint = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f),
-                    modifier = dragModifier
-                )
-            }
+            Icon(
+                Icons.Default.DragHandle,
+                contentDescription = "Drag",
+                tint = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f),
+                modifier = dragModifier
+            )
         }
 
         // Card content
         Card(
             modifier = Modifier.weight(1f),
             colors = CardDefaults.cardColors(
-                containerColor = if (isSelected) {
-                    MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
-                } else {
-                    MaterialTheme.colorScheme.surfaceContainer
-                }
+                containerColor = MaterialTheme.colorScheme.surfaceContainer
             ),
             shape = RoundedCornerShape(12.dp)
         ) {
