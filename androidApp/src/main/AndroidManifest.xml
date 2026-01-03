@@ -26,6 +26,9 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
 
+    <!-- Notification permission for Android 13+ -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
     <!-- Haptic feedback / vibration permission -->
     <uses-permission android:name="android.permission.VIBRATE" />
 

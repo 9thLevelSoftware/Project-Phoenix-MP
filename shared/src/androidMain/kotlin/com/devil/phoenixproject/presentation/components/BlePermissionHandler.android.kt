@@ -22,25 +22,30 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 
 /**
- * BLE permissions required for Android 12+ (API 31+).
+ * BLE and notification permissions required for the app.
+ * Android 12+ (API 31+) requires BLUETOOTH_SCAN and BLUETOOTH_CONNECT.
+ * Android 13+ (API 33+) requires POST_NOTIFICATIONS for workout notifications.
  * On older versions, only location permission is needed.
  */
 object BlePermissions {
     /**
-     * Get the list of permissions required for BLE scanning based on Android version.
+     * Get the list of permissions required based on Android version.
      */
     fun getRequiredPermissions(): List<String> {
-        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            // Android 12+ requires BLUETOOTH_SCAN and BLUETOOTH_CONNECT
-            listOf(
-                Manifest.permission.BLUETOOTH_SCAN,
-                Manifest.permission.BLUETOOTH_CONNECT
-            )
-        } else {
-            // Older versions need location for BLE scanning
-            listOf(
-                Manifest.permission.ACCESS_FINE_LOCATION
-            )
+        return buildList {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                // Android 12+ requires BLUETOOTH_SCAN and BLUETOOTH_CONNECT
+                add(Manifest.permission.BLUETOOTH_SCAN)
+                add(Manifest.permission.BLUETOOTH_CONNECT)
+            } else {
+                // Older versions need location for BLE scanning
+                add(Manifest.permission.ACCESS_FINE_LOCATION)
+            }
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                // Android 13+ requires POST_NOTIFICATIONS for workout notifications
+                add(Manifest.permission.POST_NOTIFICATIONS)
+            }
         }
     }
 
