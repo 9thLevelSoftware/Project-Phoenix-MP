@@ -107,6 +107,18 @@ kotlin {
             dependencies {
                 implementation(libs.kotlin.test)
                 implementation(libs.kotlinx.coroutines.test)
+                implementation(libs.turbine)
+                implementation(libs.koin.test)
+                implementation(libs.multiplatform.settings.test)
+            }
+        }
+
+        val androidUnitTest by getting {
+            dependencies {
+                implementation(libs.junit)
+                implementation(libs.truth)
+                implementation(libs.sqldelight.sqlite.driver)
+                implementation(libs.koin.test.junit4)
             }
         }
         

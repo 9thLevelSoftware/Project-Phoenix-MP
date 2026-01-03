@@ -2,6 +2,7 @@ package com.devil.phoenixproject.data.repository
 
 import app.cash.turbine.test
 import com.devil.phoenixproject.domain.model.WorkoutSession
+import com.devil.phoenixproject.testutil.FakeExerciseRepository
 import com.devil.phoenixproject.testutil.createTestDatabase
 import kotlinx.coroutines.test.runTest
 import org.junit.Before
@@ -188,93 +189,4 @@ class SqlDelightWorkoutRepositoryTest {
         exerciseId = "test-exercise",
         exerciseName = "Test Exercise"
     )
-}
-
-/**
- * Fake ExerciseRepository for testing SqlDelightWorkoutRepository.
- * Provides minimal implementation needed for tests.
- */
-private class FakeExerciseRepository : ExerciseRepository {
-    private val exercises = mutableMapOf<String, com.devil.phoenixproject.domain.model.Exercise>()
-
-    override fun getAllExercises(): kotlinx.coroutines.flow.Flow<List<com.devil.phoenixproject.domain.model.Exercise>> {
-        return kotlinx.coroutines.flow.flowOf(exercises.values.toList())
-    }
-
-    override fun searchExercises(query: String): kotlinx.coroutines.flow.Flow<List<com.devil.phoenixproject.domain.model.Exercise>> {
-        return kotlinx.coroutines.flow.flowOf(
-            exercises.values.filter {
-                it.name.contains(query, ignoreCase = true) ||
-                it.muscleGroup.contains(query, ignoreCase = true)
-            }
-        )
-    }
-
-    override fun filterByMuscleGroup(muscleGroup: String): kotlinx.coroutines.flow.Flow<List<com.devil.phoenixproject.domain.model.Exercise>> {
-        return kotlinx.coroutines.flow.flowOf(
-            exercises.values.filter { it.muscleGroup.equals(muscleGroup, ignoreCase = true) }
-        )
-    }
-
-    override fun filterByEquipment(equipment: String): kotlinx.coroutines.flow.Flow<List<com.devil.phoenixproject.domain.model.Exercise>> {
-        return kotlinx.coroutines.flow.flowOf(
-            exercises.values.filter { it.equipment.contains(equipment, ignoreCase = true) }
-        )
-    }
-
-    override fun getFavorites(): kotlinx.coroutines.flow.Flow<List<com.devil.phoenixproject.domain.model.Exercise>> {
-        return kotlinx.coroutines.flow.flowOf(exercises.values.filter { it.isFavorite })
-    }
-
-    override suspend fun toggleFavorite(id: String) {
-        exercises[id]?.let { exercise ->
-            exercises[id] = exercise.copy(isFavorite = !exercise.isFavorite)
-        }
-    }
-
-    override suspend fun getExerciseById(id: String): com.devil.phoenixproject.domain.model.Exercise? {
-        return exercises[id]
-    }
-
-    override suspend fun getVideos(exerciseId: String): List<ExerciseVideoEntity> = emptyList()
-
-    override suspend fun importExercises(): Result<Unit> = Result.success(Unit)
-
-    override suspend fun isExerciseLibraryEmpty(): Boolean = exercises.isEmpty()
-
-    override suspend fun updateFromGitHub(): Result<Int> = Result.success(0)
-
-    override fun getCustomExercises(): kotlinx.coroutines.flow.Flow<List<com.devil.phoenixproject.domain.model.Exercise>> {
-        return kotlinx.coroutines.flow.flowOf(exercises.values.filter { it.isCustom })
-    }
-
-    override suspend fun createCustomExercise(exercise: com.devil.phoenixproject.domain.model.Exercise): Result<com.devil.phoenixproject.domain.model.Exercise> {
-        val newExercise = exercise.copy(isCustom = true)
-        exercises[exercise.id ?: return Result.failure(Exception("No ID"))] = newExercise
-        return Result.success(newExercise)
-    }
-
-    override suspend fun updateCustomExercise(exercise: com.devil.phoenixproject.domain.model.Exercise): Result<com.devil.phoenixproject.domain.model.Exercise> {
-        exercises[exercise.id ?: return Result.failure(Exception("No ID"))] = exercise
-        return Result.success(exercise)
-    }
-
-    override suspend fun deleteCustomExercise(exerciseId: String): Result<Unit> {
-        exercises.remove(exerciseId)
-        return Result.success(Unit)
-    }
-
-    override suspend fun updateOneRepMax(exerciseId: String, oneRepMaxKg: Float?) {
-        exercises[exerciseId]?.let { exercise ->
-            exercises[exerciseId] = exercise.copy(oneRepMaxKg = oneRepMaxKg)
-        }
-    }
-
-    override fun getExercisesWithOneRepMax(): kotlinx.coroutines.flow.Flow<List<com.devil.phoenixproject.domain.model.Exercise>> {
-        return kotlinx.coroutines.flow.flowOf(exercises.values.filter { it.oneRepMaxKg != null })
-    }
-
-    override suspend fun findByName(name: String): com.devil.phoenixproject.domain.model.Exercise? {
-        return exercises.values.find { it.name == name }
-    }
 }

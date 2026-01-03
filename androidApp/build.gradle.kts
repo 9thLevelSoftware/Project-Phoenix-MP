@@ -123,14 +123,24 @@ dependencies {
     implementation(libs.coil.network.ktor)
     implementation(libs.ktor.client.okhttp)
 
-    // Testing
+    // Testing - Unit Tests
     testImplementation(libs.junit)
     testImplementation(libs.mockk)
     testImplementation(libs.kotlinx.coroutines.test)
     testImplementation(libs.turbine)
     testImplementation(libs.truth)
+    testImplementation(libs.koin.test)
+    testImplementation(libs.koin.test.junit4)
 
+    // Testing - Instrumented/E2E Tests
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso)
     androidTestImplementation(platform(libs.compose.bom))
+    androidTestImplementation("androidx.compose.ui:ui-test-junit4")
+    androidTestImplementation(libs.mockk.android)
+    androidTestImplementation(libs.kotlinx.coroutines.test)
+    androidTestImplementation(libs.truth)
+    androidTestImplementation(libs.koin.test)
+    androidTestImplementation(libs.koin.test.junit4)
+    debugImplementation("androidx.compose.ui:ui-test-manifest")
 }
