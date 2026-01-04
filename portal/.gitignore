@@ -1,0 +1,30 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build outputs
+.next/
+out/
+dist/
+build/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# IDE
+.idea/
+*.iml
+.vscode/
+
+# Kotlin/Gradle
+.gradle/
+apps/backend/build/
+
+# Supabase
+.supabase/
+
+# OS
+.DS_Store
+Thumbs.db

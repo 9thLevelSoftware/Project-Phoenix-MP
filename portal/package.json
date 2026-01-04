@@ -1,0 +1,18 @@
+{
+  "name": "phoenix-portal",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev:web": "npm run dev -w apps/web",
+    "dev:backend": "cd apps/backend && ./gradlew run",
+    "build:web": "npm run build -w apps/web",
+    "build:backend": "cd apps/backend && ./gradlew build",
+    "db:migrate": "supabase db push",
+    "db:reset": "supabase db reset",
+    "typecheck": "npm run typecheck -w apps/web"
+  }
+}
