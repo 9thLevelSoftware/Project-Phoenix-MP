@@ -13,7 +13,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.devil.phoenixproject.presentation.util.LocalWindowSizeClass
+import com.devil.phoenixproject.presentation.util.WindowWidthSizeClass
 import com.devil.phoenixproject.ui.theme.Spacing
 
 /**
@@ -171,10 +174,17 @@ fun WorkoutHistoryCardSkeleton(
 fun PersonalRecordCardSkeleton(
     modifier: Modifier = Modifier
 ) {
+    val windowSizeClass = LocalWindowSizeClass.current
+    val skeletonHeight = when (windowSizeClass.widthSizeClass) {
+        WindowWidthSizeClass.Expanded -> 140.dp
+        WindowWidthSizeClass.Medium -> 120.dp
+        WindowWidthSizeClass.Compact -> 100.dp
+    }
+
     Card(
         modifier = modifier
             .fillMaxWidth()
-            .height(100.dp),
+            .height(skeletonHeight),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         shape = RoundedCornerShape(20.dp), // Material 3 Expressive: More rounded (was 16dp)
         elevation = CardDefaults.cardElevation(defaultElevation = 8.dp) // Material 3 Expressive: Higher elevation (was 4dp)
