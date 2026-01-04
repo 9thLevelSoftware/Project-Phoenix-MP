@@ -30,6 +30,8 @@ import com.devil.phoenixproject.presentation.navigation.NavigationRoutes
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
 import com.devil.phoenixproject.presentation.components.AnimatedActionButton
 import com.devil.phoenixproject.presentation.components.IconAnimation
+import com.devil.phoenixproject.presentation.util.LocalWindowSizeClass
+import com.devil.phoenixproject.presentation.util.WindowWidthSizeClass
 import com.devil.phoenixproject.ui.theme.ThemeMode
 import kotlin.time.Instant
 import kotlinx.datetime.LocalDate
@@ -77,6 +79,14 @@ fun HomeScreen(
         ThemeMode.SYSTEM -> isSystemInDarkTheme()
         ThemeMode.LIGHT -> false
         ThemeMode.DARK -> true
+    }
+
+    // Responsive dimensions based on window size
+    val windowSizeClass = LocalWindowSizeClass.current
+    val fabSpacerHeight = when (windowSizeClass.widthSizeClass) {
+        WindowWidthSizeClass.Expanded -> 240.dp
+        WindowWidthSizeClass.Medium -> 210.dp
+        WindowWidthSizeClass.Compact -> 180.dp
     }
 
     // Clear global title so our custom header shines
@@ -133,7 +143,7 @@ fun HomeScreen(
 
                 // Spacer for FABs clearance
                 item(key = "fab-spacer") {
-                    Spacer(modifier = Modifier.height(180.dp))
+                    Spacer(modifier = Modifier.height(fabSpacerHeight))
                 }
             }
 
@@ -314,9 +324,22 @@ private fun ActiveCycleHero(
     val routine = cycleDay?.routineId?.let { id -> routines.find { it.id == id } }
     val isRest = cycleDay?.isRestDay == true || cycleDay?.routineId == null
 
+    // Responsive dimensions based on window size
+    val windowSizeClass = LocalWindowSizeClass.current
+    val heroCardHeight = when (windowSizeClass.widthSizeClass) {
+        WindowWidthSizeClass.Expanded -> 240.dp
+        WindowWidthSizeClass.Medium -> 210.dp
+        WindowWidthSizeClass.Compact -> 180.dp
+    }
+    val heroImageSize = when (windowSizeClass.widthSizeClass) {
+        WindowWidthSizeClass.Expanded -> 280.dp
+        WindowWidthSizeClass.Medium -> 240.dp
+        WindowWidthSizeClass.Compact -> 200.dp
+    }
+
     Card(
         onClick = onViewSchedule,
-        modifier = Modifier.fillMaxWidth().height(180.dp),
+        modifier = Modifier.fillMaxWidth().height(heroCardHeight),
         shape = RoundedCornerShape(28.dp), // Expressive shape
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
     ) {
@@ -327,7 +350,7 @@ private fun ActiveCycleHero(
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.05f),
                 modifier = Modifier
-                    .size(200.dp)
+                    .size(heroImageSize)
                     .align(Alignment.BottomEnd)
                     .offset(x = 40.dp, y = 40.dp)
             )
