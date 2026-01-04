@@ -30,6 +30,8 @@ import com.devil.phoenixproject.util.KmpUtils
 import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.domain.model.PersonalRecord
 import androidx.compose.foundation.lazy.items
+import com.devil.phoenixproject.presentation.util.LocalWindowSizeClass
+import com.devil.phoenixproject.presentation.util.WindowWidthSizeClass
 
 // Helper function for timestamp formatting
 private fun formatTimestamp(timestamp: Long): String {
@@ -185,6 +187,19 @@ fun AnalyticsScreen(
     val isAutoConnecting by viewModel.isAutoConnecting.collectAsState()
     val connectionError by viewModel.connectionError.collectAsState()
 
+    // Responsive sizing based on window size class
+    val windowSizeClass = LocalWindowSizeClass.current
+    val tabIndicatorHeight = when (windowSizeClass.widthSizeClass) {
+        WindowWidthSizeClass.Expanded -> 12.dp
+        WindowWidthSizeClass.Medium -> 10.dp
+        WindowWidthSizeClass.Compact -> 8.dp
+    }
+    val fabIconSize = when (windowSizeClass.widthSizeClass) {
+        WindowWidthSizeClass.Expanded -> 36.dp
+        WindowWidthSizeClass.Medium -> 32.dp
+        WindowWidthSizeClass.Compact -> 28.dp
+    }
+
     // Set global title
     LaunchedEffect(Unit) {
         viewModel.updateTopBarTitle("Analytics")
@@ -237,7 +252,7 @@ fun AnalyticsScreen(
                     TabRowDefaults.PrimaryIndicator(
                         modifier = Modifier
                             .tabIndicatorOffset(pagerState.currentPage)
-                            .height(8.dp),
+                            .height(tabIndicatorHeight),
                         color = MaterialTheme.colorScheme.primary
                     )
                 }
@@ -380,7 +395,7 @@ fun AnalyticsScreen(
             Icon(
                 Icons.Default.Share,
                 contentDescription = "Export data",
-                modifier = Modifier.size(28.dp) // Material 3 Expressive: Larger icon (was default)
+                modifier = Modifier.size(fabIconSize) // Material 3 Expressive: Responsive icon size
             )
         }
     }

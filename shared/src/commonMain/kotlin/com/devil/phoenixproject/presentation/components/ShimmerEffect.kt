@@ -13,8 +13,28 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.devil.phoenixproject.presentation.util.LocalWindowSizeClass
+import com.devil.phoenixproject.presentation.util.WindowWidthSizeClass
 import com.devil.phoenixproject.ui.theme.Spacing
+
+/**
+ * Calculate responsive dimension based on window size class.
+ * Scales the base dimension up for larger screens.
+ */
+@Composable
+private fun responsiveDimension(base: Dp): Dp {
+    val windowSizeClass = LocalWindowSizeClass.current
+    return when (windowSizeClass.widthSizeClass) {
+        WindowWidthSizeClass.Expanded -> base * 1.4f
+        WindowWidthSizeClass.Medium -> base * 1.2f
+        WindowWidthSizeClass.Compact -> base
+    }
+}
+
+// Extension for Dp multiplication
+private operator fun Dp.times(factor: Float): Dp = (this.value * factor).dp
 
 /**
  * Shimmer effect for skeleton loading screens.
@@ -88,7 +108,7 @@ fun WorkoutHistoryCardSkeleton(
     Card(
         modifier = modifier
             .fillMaxWidth()
-            .height(160.dp),
+            .height(responsiveDimension(160.dp)),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         shape = RoundedCornerShape(20.dp), // Material 3 Expressive: More rounded (was 16dp)
         elevation = CardDefaults.cardElevation(defaultElevation = 8.dp) // Material 3 Expressive: Higher elevation (was 4dp)
@@ -107,7 +127,7 @@ fun WorkoutHistoryCardSkeleton(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     // Icon placeholder
                     ShimmerBox(
-                        modifier = Modifier.size(48.dp)
+                        modifier = Modifier.size(responsiveDimension(48.dp))
                     )
 
                     Spacer(modifier = Modifier.width(Spacing.medium))
@@ -116,15 +136,15 @@ fun WorkoutHistoryCardSkeleton(
                         // Exercise name placeholder
                         ShimmerBox(
                             modifier = Modifier
-                                .width(120.dp)
-                                .height(20.dp)
+                                .width(responsiveDimension(120.dp))
+                                .height(responsiveDimension(20.dp))
                         )
                         Spacer(modifier = Modifier.height(6.dp))
                         // Mode placeholder
                         ShimmerBox(
                             modifier = Modifier
-                                .width(80.dp)
-                                .height(16.dp)
+                                .width(responsiveDimension(80.dp))
+                                .height(responsiveDimension(16.dp))
                         )
                     }
                 }
@@ -132,8 +152,8 @@ fun WorkoutHistoryCardSkeleton(
                 // Date placeholder
                 ShimmerBox(
                     modifier = Modifier
-                        .width(60.dp)
-                        .height(16.dp)
+                        .width(responsiveDimension(60.dp))
+                        .height(responsiveDimension(16.dp))
                 )
             }
 
@@ -148,14 +168,14 @@ fun WorkoutHistoryCardSkeleton(
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         ShimmerBox(
                             modifier = Modifier
-                                .width(40.dp)
-                                .height(24.dp)
+                                .width(responsiveDimension(40.dp))
+                                .height(responsiveDimension(24.dp))
                         )
                         Spacer(modifier = Modifier.height(4.dp))
                         ShimmerBox(
                             modifier = Modifier
-                                .width(50.dp)
-                                .height(14.dp)
+                                .width(responsiveDimension(50.dp))
+                                .height(responsiveDimension(14.dp))
                         )
                     }
                 }
@@ -174,7 +194,7 @@ fun PersonalRecordCardSkeleton(
     Card(
         modifier = modifier
             .fillMaxWidth()
-            .height(100.dp),
+            .height(responsiveDimension(100.dp)),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         shape = RoundedCornerShape(20.dp), // Material 3 Expressive: More rounded (was 16dp)
         elevation = CardDefaults.cardElevation(defaultElevation = 8.dp) // Material 3 Expressive: Higher elevation (was 4dp)
@@ -192,7 +212,7 @@ fun PersonalRecordCardSkeleton(
             ) {
                 // Rank placeholder
                 ShimmerBox(
-                    modifier = Modifier.size(40.dp)
+                    modifier = Modifier.size(responsiveDimension(40.dp))
                 )
 
                 Spacer(modifier = Modifier.width(Spacing.medium))
@@ -201,22 +221,22 @@ fun PersonalRecordCardSkeleton(
                     // Exercise name placeholder
                     ShimmerBox(
                         modifier = Modifier
-                            .width(140.dp)
-                            .height(20.dp)
+                            .width(responsiveDimension(140.dp))
+                            .height(responsiveDimension(20.dp))
                     )
                     Spacer(modifier = Modifier.height(6.dp))
                     // Weight placeholder
                     ShimmerBox(
                         modifier = Modifier
-                            .width(100.dp)
-                            .height(18.dp)
+                            .width(responsiveDimension(100.dp))
+                            .height(responsiveDimension(18.dp))
                     )
                     Spacer(modifier = Modifier.height(4.dp))
                     // Details placeholder
                     ShimmerBox(
                         modifier = Modifier
-                            .width(120.dp)
-                            .height(14.dp)
+                            .width(responsiveDimension(120.dp))
+                            .height(responsiveDimension(14.dp))
                     )
                 }
             }
@@ -234,7 +254,7 @@ fun RoutineCardSkeleton(
     Card(
         modifier = modifier
             .fillMaxWidth()
-            .height(140.dp),
+            .height(responsiveDimension(140.dp)),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         shape = RoundedCornerShape(20.dp), // Material 3 Expressive: More rounded (was 16dp)
         elevation = CardDefaults.cardElevation(defaultElevation = 8.dp) // Material 3 Expressive: Higher elevation (was 4dp)
@@ -247,8 +267,8 @@ fun RoutineCardSkeleton(
             // Title placeholder
             ShimmerBox(
                 modifier = Modifier
-                    .width(160.dp)
-                    .height(24.dp)
+                    .width(responsiveDimension(160.dp))
+                    .height(responsiveDimension(24.dp))
             )
 
             Spacer(modifier = Modifier.height(Spacing.small))
@@ -257,13 +277,13 @@ fun RoutineCardSkeleton(
             ShimmerBox(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(16.dp)
+                    .height(responsiveDimension(16.dp))
             )
             Spacer(modifier = Modifier.height(6.dp))
             ShimmerBox(
                 modifier = Modifier
                     .fillMaxWidth(0.7f)
-                    .height(16.dp)
+                    .height(responsiveDimension(16.dp))
             )
 
             Spacer(modifier = Modifier.height(Spacing.medium))
@@ -271,8 +291,8 @@ fun RoutineCardSkeleton(
             // Exercise count placeholder
             ShimmerBox(
                 modifier = Modifier
-                    .width(100.dp)
-                    .height(14.dp)
+                    .width(responsiveDimension(100.dp))
+                    .height(responsiveDimension(14.dp))
             )
         }
     }

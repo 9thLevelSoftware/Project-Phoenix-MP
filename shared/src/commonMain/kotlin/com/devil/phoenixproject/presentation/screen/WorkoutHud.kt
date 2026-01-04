@@ -23,6 +23,9 @@ import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.domain.model.*
 import com.devil.phoenixproject.presentation.components.CircularForceGauge
 import com.devil.phoenixproject.presentation.components.EnhancedCablePositionBar
+import com.devil.phoenixproject.presentation.util.ResponsiveDimensions
+import com.devil.phoenixproject.presentation.util.LocalWindowSizeClass
+import com.devil.phoenixproject.presentation.util.WindowWidthSizeClass
 
 /**
  * Workout Heads-Up Display (HUD)
@@ -207,11 +210,17 @@ private fun HudTopBar(
     workoutMode: String,
     onStopWorkout: () -> Unit
 ) {
+    val windowSizeClass = LocalWindowSizeClass.current
+    val buttonHeight = when (windowSizeClass.widthSizeClass) {
+        WindowWidthSizeClass.Expanded -> 80.dp
+        WindowWidthSizeClass.Medium -> 72.dp
+        WindowWidthSizeClass.Compact -> 64.dp
+    }
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .statusBarsPadding()
-            .height(64.dp)
+            .height(buttonHeight)
             .padding(horizontal = 16.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
@@ -405,13 +414,14 @@ private fun ExecutionPage(
                 formatWeight(perCableKg, weightUnit)
             }
 
+            val hudSize = ResponsiveDimensions.componentSize(baseSize = 200.dp)
             CircularForceGauge(
                 currentForce = perCableKg,
                 maxForce = gaugeMax,
                 velocity = (metric.velocityA + metric.velocityB) / 2.0,
                 label = forceLabel,
                 subLabel = "PER CABLE",
-                modifier = Modifier.size(200.dp)
+                modifier = Modifier.size(hudSize)
             )
         } else {
             Text("Waiting for data...", color = MaterialTheme.colorScheme.onSurfaceVariant)

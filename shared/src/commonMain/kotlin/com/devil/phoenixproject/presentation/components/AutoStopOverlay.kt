@@ -20,6 +20,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.devil.phoenixproject.data.repository.AutoStopUiState
+import com.devil.phoenixproject.presentation.util.LocalWindowSizeClass
+import com.devil.phoenixproject.presentation.util.WindowWidthSizeClass
 
 /**
  * Pop-over overlay that appears when auto-stop is active (handles are down).
@@ -42,6 +44,14 @@ fun AutoStopOverlay(
                scaleOut(targetScale = 0.8f, animationSpec = tween(150)),
         modifier = modifier
     ) {
+        // Responsive dialog width based on screen size
+        val windowSizeClass = LocalWindowSizeClass.current
+        val dialogMaxWidth = when (windowSizeClass.widthSizeClass) {
+            WindowWidthSizeClass.Expanded -> 400.dp
+            WindowWidthSizeClass.Medium -> 340.dp
+            WindowWidthSizeClass.Compact -> 280.dp
+        }
+
         // Pulsing animation for urgency
         val infiniteTransition = rememberInfiniteTransition(label = "autostop-pulse")
         val pulse by infiniteTransition.animateFloat(
@@ -57,7 +67,7 @@ fun AutoStopOverlay(
         Card(
             modifier = Modifier
                 .scale(pulse)
-                .widthIn(max = 280.dp),
+                .widthIn(max = dialogMaxWidth),
             shape = RoundedCornerShape(24.dp),
             colors = CardDefaults.cardColors(
                 containerColor = MaterialTheme.colorScheme.errorContainer
@@ -195,8 +205,16 @@ fun AutoStartOverlay(
                scaleOut(targetScale = 0.8f, animationSpec = tween(150)),
         modifier = modifier
     ) {
+        // Responsive dialog width based on screen size
+        val windowSizeClass = LocalWindowSizeClass.current
+        val dialogMaxWidth = when (windowSizeClass.widthSizeClass) {
+            WindowWidthSizeClass.Expanded -> 400.dp
+            WindowWidthSizeClass.Medium -> 340.dp
+            WindowWidthSizeClass.Compact -> 280.dp
+        }
+
         Card(
-            modifier = Modifier.widthIn(max = 280.dp),
+            modifier = Modifier.widthIn(max = dialogMaxWidth),
             shape = RoundedCornerShape(24.dp),
             colors = CardDefaults.cardColors(
                 containerColor = MaterialTheme.colorScheme.primaryContainer

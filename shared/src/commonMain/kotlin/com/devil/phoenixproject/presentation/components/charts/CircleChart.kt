@@ -6,8 +6,8 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.platform.LocalDensity
 import kotlin.math.PI
+import com.devil.phoenixproject.presentation.util.ResponsiveDimensions
 import kotlin.math.atan2
 import kotlin.math.min
 import kotlin.math.sqrt
@@ -75,24 +75,15 @@ fun MuscleGroupCircleChart(
         label = "chart_animation"
     )
 
-    // Use BoxWithConstraints to make chart responsive to screen size (tablet support)
-    BoxWithConstraints(
+    // Use ResponsiveDimensions for consistent tablet-responsive sizing
+    val chartSize = ResponsiveDimensions.chartHeight(baseHeight = 280.dp)
+
+    Box(
         modifier = modifier
             .fillMaxWidth()
             .padding(16.dp),
         contentAlignment = Alignment.Center
     ) {
-        // Calculate responsive chart size based on available width
-        // On phones (~360dp width), this gives ~280dp chart height
-        // On tablets (~800dp+ width), this scales up appropriately but caps at 400dp
-        val density = LocalDensity.current
-        val availableWidth = maxWidth
-        val chartSize = with(density) {
-            // Use 70% of available width, with min 240dp and max 400dp
-            val calculatedSize = availableWidth * 0.70f
-            calculatedSize.coerceIn(240.dp, 400.dp)
-        }
-
         Box(
             modifier = Modifier.size(chartSize),
             contentAlignment = Alignment.Center
@@ -195,21 +186,15 @@ fun MuscleGroupCircleChart(
 private fun EmptyChartState(
     modifier: Modifier = Modifier
 ) {
-    // Use BoxWithConstraints for responsive sizing on tablets
-    BoxWithConstraints(
+    // Use ResponsiveDimensions for consistent tablet-responsive sizing
+    val chartSize = ResponsiveDimensions.chartHeight(baseHeight = 280.dp)
+
+    Box(
         modifier = modifier
             .fillMaxWidth()
             .padding(16.dp),
         contentAlignment = Alignment.Center
     ) {
-        // Match the responsive sizing logic from the main chart
-        val density = LocalDensity.current
-        val availableWidth = maxWidth
-        val chartSize = with(density) {
-            val calculatedSize = availableWidth * 0.70f
-            calculatedSize.coerceIn(240.dp, 400.dp)
-        }
-
         Box(
             modifier = Modifier.size(chartSize),
             contentAlignment = Alignment.Center

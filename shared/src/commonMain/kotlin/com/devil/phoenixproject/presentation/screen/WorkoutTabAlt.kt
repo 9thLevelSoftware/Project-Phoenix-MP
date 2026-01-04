@@ -25,6 +25,9 @@ import com.devil.phoenixproject.presentation.components.AutoStopOverlay
 import com.devil.phoenixproject.presentation.components.EnhancedCablePositionBar
 import com.devil.phoenixproject.presentation.components.HapticFeedbackEffect
 import com.devil.phoenixproject.presentation.components.VideoPlayer
+import com.devil.phoenixproject.presentation.util.LocalWindowSizeClass
+import com.devil.phoenixproject.presentation.util.ResponsiveDimensions
+import com.devil.phoenixproject.presentation.util.WindowWidthSizeClass
 import com.devil.phoenixproject.ui.theme.screenBackgroundBrush
 
 /**
@@ -78,6 +81,14 @@ fun WorkoutTabAlt(
 ) {
     // Note: HapticFeedbackEffect is now global in EnhancedMainScreen
     // No need for local haptic effect here
+
+    // Responsive button height based on window size
+    val windowSizeClass = LocalWindowSizeClass.current
+    val buttonHeight = when (windowSizeClass.widthSizeClass) {
+        WindowWidthSizeClass.Expanded -> 80.dp
+        WindowWidthSizeClass.Medium -> 72.dp
+        WindowWidthSizeClass.Compact -> 64.dp
+    }
 
     // Gradient backgrounds
     val backgroundGradient = screenBackgroundBrush()
@@ -219,7 +230,7 @@ fun WorkoutTabAlt(
                     onClick = onStopWorkout,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(64.dp), // Large hit target
+                        .height(buttonHeight), // Responsive hit target (64/72/80dp)
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.errorContainer),
                     shape = RoundedCornerShape(32.dp)
                 ) {
@@ -716,9 +727,10 @@ private fun AltCompletedStateView(
  */
 @Composable
 private fun SimpleCountdownOverlay(secondsRemaining: Int) {
+    val countdownSize = ResponsiveDimensions.componentSize(baseSize = 200.dp)
     Card(
-        modifier = Modifier.size(200.dp),
-        shape = RoundedCornerShape(100.dp),
+        modifier = Modifier.size(countdownSize),
+        shape = RoundedCornerShape(countdownSize / 2), // Keep circular (radius = size/2)
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.95f)
         ),

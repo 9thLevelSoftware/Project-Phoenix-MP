@@ -45,6 +45,10 @@ import com.devil.phoenixproject.presentation.components.AddProfileDialog
 import com.devil.phoenixproject.presentation.components.ProfileSidePanel
 import kotlinx.coroutines.launch
 import org.koin.compose.koinInject
+import androidx.compose.runtime.CompositionLocalProvider
+import com.devil.phoenixproject.presentation.util.LocalWindowSizeClass
+import com.devil.phoenixproject.presentation.util.calculateWindowSizeClass
+import androidx.compose.foundation.layout.BoxWithConstraints
 
 /**
  * Enhanced main screen with dynamic top bar and bottom navigation.
@@ -129,7 +133,11 @@ fun EnhancedMainScreen(
         currentRoute != NavigationRoutes.Settings.route
     }
 
-    Scaffold(
+    BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+        val windowSizeClass = calculateWindowSizeClass(maxWidth, maxHeight)
+
+        CompositionLocalProvider(LocalWindowSizeClass provides windowSizeClass) {
+            Scaffold(
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         topBar = {
             if (shouldShowTopBar) {
@@ -335,31 +343,33 @@ fun EnhancedMainScreen(
         }
     }
 
-    // Show connection lost alert during workout (Issue #43)
-    if (connectionLostDuringWorkout) {
-        ConnectionLostDialog(
-            onReconnect = {
-                viewModel.dismissConnectionLostAlert()
-                viewModel.ensureConnection(
-                    onConnected = {},
-                    onFailed = {}
+            // Show connection lost alert during workout (Issue #43)
+            if (connectionLostDuringWorkout) {
+                ConnectionLostDialog(
+                    onReconnect = {
+                        viewModel.dismissConnectionLostAlert()
+                        viewModel.ensureConnection(
+                            onConnected = {},
+                            onFailed = {}
+                        )
+                    },
+                    onDismiss = {
+                        viewModel.dismissConnectionLostAlert()
+                    }
                 )
-            },
-            onDismiss = {
-                viewModel.dismissConnectionLostAlert()
             }
-        )
-    }
 
-    // Add Profile Dialog
-    if (showAddProfileDialog) {
-        AddProfileDialog(
-            profiles = profiles,
-            profileRepository = profileRepository,
-            scope = scope,
-            onDismiss = { showAddProfileDialog = false }
-        )
-    }
+            // Add Profile Dialog
+            if (showAddProfileDialog) {
+                AddProfileDialog(
+                    profiles = profiles,
+                    profileRepository = profileRepository,
+                    scope = scope,
+                    onDismiss = { showAddProfileDialog = false }
+                )
+            }
+        } // CompositionLocalProvider
+    } // BoxWithConstraints
 }
 
 /**

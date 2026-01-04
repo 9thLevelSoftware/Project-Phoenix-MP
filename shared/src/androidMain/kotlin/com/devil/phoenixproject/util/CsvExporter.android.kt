@@ -150,7 +150,10 @@ class AndroidCsvExporter(private val context: Context) : CsvExporter {
     override fun shareCSV(fileUri: String, fileName: String) {
         try {
             val file = File(fileUri)
-            if (!file.exists()) return
+            if (!file.exists()) {
+                android.util.Log.e("CsvExporter", "File does not exist: $fileUri")
+                return
+            }
 
             val uri: Uri = FileProvider.getUriForFile(
                 context,
@@ -171,7 +174,7 @@ class AndroidCsvExporter(private val context: Context) : CsvExporter {
             }
             context.startActivity(chooser)
         } catch (e: Exception) {
-            // Log error
+            android.util.Log.e("CsvExporter", "Failed to share CSV: ${e.message}", e)
         }
     }
 

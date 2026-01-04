@@ -12,6 +12,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import com.devil.phoenixproject.presentation.util.LocalWindowSizeClass
+import com.devil.phoenixproject.presentation.util.WindowWidthSizeClass
 
 /**
  * Screen for selecting the number of days in a training cycle.
@@ -53,11 +55,18 @@ fun DayCountPickerScreen(
             )
         }
     ) { paddingValues ->
+        val windowSizeClass = LocalWindowSizeClass.current
+        val horizontalPadding = when (windowSizeClass.widthSizeClass) {
+            WindowWidthSizeClass.Expanded -> 48.dp
+            WindowWidthSizeClass.Medium -> 36.dp
+            WindowWidthSizeClass.Compact -> 24.dp
+        }
+
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)
-                .padding(horizontal = 24.dp),
+                .padding(horizontal = horizontalPadding),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Spacer(modifier = Modifier.height(48.dp))

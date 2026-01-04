@@ -85,52 +85,58 @@ fun ExerciseEditBottomSheet(
 
             // Number of sets control
             Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Text("Sets:", modifier = Modifier.width(60.dp))
-                IconButton(
-                    onClick = {
-                        if (setReps.size > 1) {
-                            setReps = setReps.dropLast(1).toMutableList()
-                        }
-                    },
-                    enabled = setReps.size > 1
+                Text("Sets:", modifier = Modifier.weight(0.3f))
+                Row(
+                    modifier = Modifier.weight(0.7f),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Icon(Icons.Default.Remove, contentDescription = "Remove set")
-                }
-                Text(
-                    text = "${setReps.size}",
-                    style = MaterialTheme.typography.titleMedium
-                )
-                IconButton(
-                    onClick = {
-                        if (setReps.size < 10) {
-                            setReps = (setReps + listOf(setReps.lastOrNull() ?: 10)).toMutableList()
-                        }
-                    },
-                    enabled = setReps.size < 10
-                ) {
-                    Icon(Icons.Default.Add, contentDescription = "Add set")
+                    IconButton(
+                        onClick = {
+                            if (setReps.size > 1) {
+                                setReps = setReps.dropLast(1).toMutableList()
+                            }
+                        },
+                        enabled = setReps.size > 1
+                    ) {
+                        Icon(Icons.Default.Remove, contentDescription = "Remove set")
+                    }
+                    Text(
+                        text = "${setReps.size}",
+                        style = MaterialTheme.typography.titleMedium
+                    )
+                    IconButton(
+                        onClick = {
+                            if (setReps.size < 10) {
+                                setReps = (setReps + listOf(setReps.lastOrNull() ?: 10)).toMutableList()
+                            }
+                        },
+                        enabled = setReps.size < 10
+                    ) {
+                        Icon(Icons.Default.Add, contentDescription = "Add set")
+                    }
                 }
             }
 
             // Reps per set
             setReps.forEachIndexed { index, reps ->
                 Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
                         "Set ${index + 1}:",
-                        modifier = Modifier.width(60.dp),
+                        modifier = Modifier.weight(0.3f),
                         style = MaterialTheme.typography.bodyMedium
                     )
 
                     if (isAMRAP && index == setReps.lastIndex) {
                         Text(
                             "AMRAP",
+                            modifier = Modifier.weight(0.7f),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.primary
                         )
@@ -145,7 +151,7 @@ fun ExerciseEditBottomSheet(
                             },
                             label = { Text("Reps") },
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                            modifier = Modifier.width(100.dp),
+                            modifier = Modifier.weight(0.7f),
                             singleLine = true
                         )
                     }
@@ -216,8 +222,8 @@ fun ExerciseEditBottomSheet(
             )
 
             Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
             ) {
                 OutlinedTextField(
                     value = restSeconds.toString(),
@@ -226,17 +232,24 @@ fun ExerciseEditBottomSheet(
                     },
                     label = { Text("Seconds") },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    modifier = Modifier.width(120.dp),
+                    modifier = Modifier.weight(0.35f),
                     singleLine = true
                 )
 
+                Spacer(modifier = Modifier.width(8.dp))
+
                 // Quick select buttons
-                listOf(30, 60, 90, 120).forEach { seconds ->
-                    FilterChip(
-                        selected = restSeconds == seconds,
-                        onClick = { restSeconds = seconds },
-                        label = { Text("${seconds}s") }
-                    )
+                Row(
+                    modifier = Modifier.weight(0.65f),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    listOf(30, 60, 90, 120).forEach { seconds ->
+                        FilterChip(
+                            selected = restSeconds == seconds,
+                            onClick = { restSeconds = seconds },
+                            label = { Text("${seconds}s") }
+                        )
+                    }
                 }
             }
 

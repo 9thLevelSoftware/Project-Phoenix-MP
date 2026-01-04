@@ -23,6 +23,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import com.devil.phoenixproject.presentation.util.ResponsiveDimensions
 
 /**
  * Material 3 Expressive Gauge Chart
@@ -63,12 +64,13 @@ fun GaugeChart(
     }
 
     val surfaceContainerHighestColor = MaterialTheme.colorScheme.surfaceContainerHighest
+    val chartHeight = ResponsiveDimensions.chartHeight(baseHeight = 200.dp)
 
     Column(modifier = modifier) {
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(200.dp)
+                .height(chartHeight)
                 .padding(16.dp),
             contentAlignment = Alignment.Center
         ) {
@@ -162,6 +164,8 @@ private fun EmptyGaugeState(
     message: String,
     modifier: Modifier = Modifier
 ) {
+    val chartHeight = ResponsiveDimensions.chartHeight(baseHeight = 200.dp)
+
     Column(
         modifier = modifier,
         horizontalAlignment = Alignment.CenterHorizontally
@@ -169,7 +173,7 @@ private fun EmptyGaugeState(
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(200.dp)
+                .height(chartHeight)
                 .padding(16.dp),
             contentAlignment = Alignment.Center
         ) {
