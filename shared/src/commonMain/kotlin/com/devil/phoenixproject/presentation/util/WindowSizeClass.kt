@@ -76,3 +76,59 @@ fun calculateWindowSizeClass(widthDp: Dp, heightDp: Dp): WindowSizeClass {
         heightDp = heightDp
     )
 }
+
+/**
+ * Responsive dimension helpers for common UI patterns.
+ */
+object ResponsiveDimensions {
+
+    /**
+     * Calculate responsive chart height based on window size.
+     * @param baseHeight The phone-sized height (compact)
+     * @param mediumMultiplier Scale factor for medium tablets (default 1.25)
+     * @param expandedMultiplier Scale factor for large tablets (default 1.5)
+     */
+    @Composable
+    fun chartHeight(
+        baseHeight: Dp,
+        mediumMultiplier: Float = 1.25f,
+        expandedMultiplier: Float = 1.5f
+    ): Dp {
+        val windowSizeClass = LocalWindowSizeClass.current
+        return when (windowSizeClass.widthSizeClass) {
+            WindowWidthSizeClass.Expanded -> baseHeight * expandedMultiplier
+            WindowWidthSizeClass.Medium -> baseHeight * mediumMultiplier
+            WindowWidthSizeClass.Compact -> baseHeight
+        }
+    }
+
+    /**
+     * Calculate max width for cards to prevent over-stretching on tablets.
+     * Returns null for phones (use full width), or a max width for tablets.
+     */
+    @Composable
+    fun cardMaxWidth(): Dp? {
+        val windowSizeClass = LocalWindowSizeClass.current
+        return when (windowSizeClass.widthSizeClass) {
+            WindowWidthSizeClass.Expanded -> 600.dp
+            WindowWidthSizeClass.Medium -> 500.dp
+            WindowWidthSizeClass.Compact -> null  // No max, use full width
+        }
+    }
+
+    /**
+     * Calculate responsive component size (for gauges, HUDs, etc.)
+     */
+    @Composable
+    fun componentSize(baseSize: Dp): Dp {
+        val windowSizeClass = LocalWindowSizeClass.current
+        return when (windowSizeClass.widthSizeClass) {
+            WindowWidthSizeClass.Expanded -> baseSize * 1.6f
+            WindowWidthSizeClass.Medium -> baseSize * 1.3f
+            WindowWidthSizeClass.Compact -> baseSize
+        }
+    }
+}
+
+// Extension for Dp multiplication
+private operator fun Dp.times(factor: Float): Dp = (this.value * factor).dp
