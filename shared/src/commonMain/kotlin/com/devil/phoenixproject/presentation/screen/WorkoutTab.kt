@@ -2583,11 +2583,14 @@ fun ExercisePickerDialog(
             )
         },
         text = {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(max = 400.dp)
-            ) {
+            BoxWithConstraints {
+                val maxSheetHeight = (maxHeight * 0.8f).coerceIn(300.dp, 600.dp)
+
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = maxSheetHeight)
+                ) {
                 // Search field
                 OutlinedTextField(
                     value = searchQuery,
@@ -2680,6 +2683,7 @@ fun ExercisePickerDialog(
                             }
                         }
                     }
+                }
                 }
             }
         },

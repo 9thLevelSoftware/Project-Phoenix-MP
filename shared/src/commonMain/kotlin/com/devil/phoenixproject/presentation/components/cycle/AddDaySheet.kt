@@ -113,10 +113,13 @@ fun AddDaySheet(
             Spacer(modifier = Modifier.height(24.dp))
 
             // Routine list
-            LazyColumn(
-                modifier = Modifier.heightIn(max = 400.dp),
-                verticalArrangement = Arrangement.spacedBy(2.dp)
-            ) {
+            BoxWithConstraints {
+                val maxSheetHeight = (maxHeight * 0.8f).coerceIn(300.dp, 600.dp)
+
+                LazyColumn(
+                    modifier = Modifier.heightIn(max = maxSheetHeight),
+                    verticalArrangement = Arrangement.spacedBy(2.dp)
+                ) {
                 // Recent routines section
                 if (recentRoutines.isNotEmpty()) {
                     item {
@@ -170,6 +173,7 @@ fun AddDaySheet(
                             modifier = Modifier.padding(16.dp)
                         )
                     }
+                }
                 }
             }
         }
