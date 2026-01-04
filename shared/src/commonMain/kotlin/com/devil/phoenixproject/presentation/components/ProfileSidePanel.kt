@@ -27,11 +27,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import com.devil.phoenixproject.data.repository.UserProfile
 import com.devil.phoenixproject.data.repository.UserProfileRepository
+import com.devil.phoenixproject.presentation.util.LocalWindowSizeClass
+import com.devil.phoenixproject.presentation.util.WindowWidthSizeClass
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
-
-private val PANEL_WIDTH = 200.dp
 private val HANDLE_WIDTH = 24.dp
 private val HANDLE_HEIGHT = 48.dp
 private val EDGE_SWIPE_THRESHOLD = 20.dp
@@ -54,12 +54,20 @@ fun ProfileSidePanel(
     var showEditDialog by remember { mutableStateOf<UserProfile?>(null) }
     var showDeleteDialog by remember { mutableStateOf<UserProfile?>(null) }
 
+    // Responsive panel width based on screen size
+    val windowSizeClass = LocalWindowSizeClass.current
+    val panelWidth = when (windowSizeClass.widthSizeClass) {
+        WindowWidthSizeClass.Expanded -> 280.dp
+        WindowWidthSizeClass.Medium -> 240.dp
+        WindowWidthSizeClass.Compact -> 200.dp
+    }
+
     val density = LocalDensity.current
-    val panelWidthPx = with(density) { PANEL_WIDTH.toPx() }
+    val panelWidthPx = with(density) { panelWidth.toPx() }
 
     // Panel offset animation
     val panelOffset by animateDpAsState(
-        targetValue = if (isOpen) 0.dp else PANEL_WIDTH,
+        targetValue = if (isOpen) 0.dp else panelWidth,
         animationSpec = tween(durationMillis = 300),
         label = "panelOffset"
     )
@@ -122,7 +130,7 @@ fun ProfileSidePanel(
             // Main panel - wraps content height
             Surface(
                 modifier = Modifier
-                    .width(PANEL_WIDTH)
+                    .width(panelWidth)
                     .pointerInput(Unit) {
                         detectHorizontalDragGestures { _, dragAmount ->
                             if (dragAmount > 20) {
