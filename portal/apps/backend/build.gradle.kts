@@ -32,10 +32,14 @@ dependencies {
     implementation("io.ktor:ktor-server-status-pages-jvm:2.3.12")
     implementation("io.ktor:ktor-server-call-logging-jvm:2.3.12")
 
-    // Ktor Client (for Supabase calls)
-    implementation("io.ktor:ktor-client-core-jvm:2.3.12")
-    implementation("io.ktor:ktor-client-cio-jvm:2.3.12")
-    implementation("io.ktor:ktor-client-content-negotiation-jvm:2.3.12")
+    // Password hashing
+    implementation("at.favre.lib:bcrypt:0.10.2")
+
+    // Exposed ORM
+    implementation("org.jetbrains.exposed:exposed-core:0.52.0")
+    implementation("org.jetbrains.exposed:exposed-dao:0.52.0")
+    implementation("org.jetbrains.exposed:exposed-jdbc:0.52.0")
+    implementation("org.jetbrains.exposed:exposed-kotlin-datetime:0.52.0")
 
     // Kotlinx
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
@@ -56,4 +60,10 @@ dependencies {
 
 kotlin {
     jvmToolchain(17)
+}
+
+ktor {
+    fatJar {
+        archiveFileName.set("phoenix-portal-all.jar")
+    }
 }

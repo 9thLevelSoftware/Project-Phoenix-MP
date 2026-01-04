@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { createClient } from '@/lib/supabase/client'
+import { api } from '@/lib/api'
 
 export default function SignupPage() {
   const router = useRouter()
@@ -12,44 +12,21 @@ export default function SignupPage() {
   const [displayName, setDisplayName] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
-  const [success, setSuccess] = useState(false)
 
   const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true)
     setError(null)
 
-    const supabase = createClient()
-    const { error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: {
-        data: {
-          display_name: displayName,
-        },
-      },
-    })
-
-    if (error) {
-      setError(error.message)
+    try {
+      await api.signup(email, password, displayName)
+      router.push('/dashboard')
+      router.refresh()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Signup failed')
+    } finally {
       setLoading(false)
-    } else {
-      setSuccess(true)
     }
-  }
-
-  if (success) {
-    return (
-      <div className="mt-8 text-center">
-        <div className="bg-green-50 dark:bg-green-900/50 text-green-600 dark:text-green-400 p-4 rounded-md">
-          <p className="font-medium">Check your email!</p>
-          <p className="mt-1 text-sm">We&apos;ve sent you a confirmation link.</p>
-        </div>
-        <Link href="/login" className="mt-4 inline-block text-phoenix-500 hover:text-phoenix-600">
-          Back to login
-        </Link>
-      </div>
-    )
   }
 
   return (
@@ -98,9 +75,9 @@ export default function SignupPage() {
             type="password"
             required
             minLength={8}
-            aria-describedby="password-hint"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
+            aria-describedby="password-hint"
             className="mt-1 block w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-phoenix-500 focus:border-phoenix-500"
           />
           <p id="password-hint" className="mt-1 text-xs text-gray-500">Minimum 8 characters</p>

@@ -1,31 +1,20 @@
-import { createClient } from '@/lib/supabase/server'
-import { redirect } from 'next/navigation'
+'use client'
 
-export default async function DashboardPage() {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+import { useEffect, useState } from 'react'
+import { api, User } from '@/lib/api'
 
-  // Defensive null check (layout should protect, but be safe)
-  if (!user) {
-    redirect('/login')
-  }
+export default function DashboardPage() {
+  const [user, setUser] = useState<User | null>(null)
 
-  // Fetch profile with error handling
-  const { data: profile, error } = await supabase
-    .from('profiles')
-    .select('display_name')
-    .eq('id', user.id)
-    .single()
-
-  if (error && error.code !== 'PGRST116') {
-    console.error('Failed to fetch profile:', error.message)
-  }
+  useEffect(() => {
+    api.getMe().then(setUser).catch(() => {})
+  }, [])
 
   return (
     <div className="space-y-6">
       <div className="bg-white dark:bg-gray-800 shadow rounded-lg p-6">
         <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
-          Welcome, {profile?.display_name || 'Athlete'}!
+          Welcome, {user?.displayName || 'Athlete'}!
         </h2>
         <p className="mt-2 text-gray-600 dark:text-gray-400">
           Your premium analytics dashboard is coming soon.
