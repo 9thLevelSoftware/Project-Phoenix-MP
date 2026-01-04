@@ -34,6 +34,8 @@ import com.devil.phoenixproject.presentation.components.RpeIndicator
 import com.devil.phoenixproject.presentation.components.VideoPlayer
 import com.devil.phoenixproject.data.repository.ExerciseVideoEntity
 import com.devil.phoenixproject.ui.theme.Spacing
+import com.devil.phoenixproject.presentation.util.LocalWindowSizeClass
+import com.devil.phoenixproject.presentation.util.WindowWidthSizeClass
 import kotlinx.coroutines.flow.SharedFlow
 import kotlin.math.roundToInt
 import com.devil.phoenixproject.ui.theme.screenBackgroundBrush
@@ -1068,6 +1070,13 @@ fun LiveMetricsCard(
     weightUnit: WeightUnit,
     formatWeight: (Float, WeightUnit) -> String
 ) {
+    val windowSizeClass = LocalWindowSizeClass.current
+    val labelWidth = when (windowSizeClass.widthSizeClass) {
+        WindowWidthSizeClass.Expanded -> 80.dp
+        WindowWidthSizeClass.Medium -> 65.dp
+        WindowWidthSizeClass.Compact -> 50.dp
+    }
+
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest),
@@ -1130,7 +1139,7 @@ fun LiveMetricsCard(
                         "${metric.positionA.toInt()}mm",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.width(50.dp).padding(start = Spacing.extraSmall),
+                        modifier = Modifier.width(labelWidth).padding(start = Spacing.extraSmall),
                         textAlign = TextAlign.End
                     )
                 }
@@ -1160,7 +1169,7 @@ fun LiveMetricsCard(
                         "${metric.positionB.toInt()}mm",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.width(50.dp).padding(start = Spacing.extraSmall),
+                        modifier = Modifier.width(labelWidth).padding(start = Spacing.extraSmall),
                         textAlign = TextAlign.End
                     )
                 }
