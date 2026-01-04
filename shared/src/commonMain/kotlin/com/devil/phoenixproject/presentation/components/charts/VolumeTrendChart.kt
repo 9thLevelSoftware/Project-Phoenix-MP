@@ -20,6 +20,9 @@ import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.domain.model.WeightUnit
+import com.devil.phoenixproject.presentation.util.LocalWindowSizeClass
+import com.devil.phoenixproject.presentation.util.ResponsiveDimensions
+import com.devil.phoenixproject.presentation.util.WindowWidthSizeClass
 import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.ui.theme.DataColors
 import com.devil.phoenixproject.util.KmpUtils
@@ -69,6 +72,14 @@ fun VolumeTrendChart(
         animationProgress = 1f
     }
 
+    // Responsive column width for Y-axis labels
+    val windowSizeClass = LocalWindowSizeClass.current
+    val columnWidth = when (windowSizeClass.widthSizeClass) {
+        WindowWidthSizeClass.Expanded -> 80.dp
+        WindowWidthSizeClass.Medium -> 65.dp
+        WindowWidthSizeClass.Compact -> 50.dp
+    }
+
     Column(modifier = modifier.fillMaxWidth()) {
         // Chart area
         Row(
@@ -79,7 +90,7 @@ fun VolumeTrendChart(
             // Y-axis labels
             Column(
                 modifier = Modifier
-                    .width(50.dp)
+                    .width(columnWidth)
                     .fillMaxHeight()
                     .padding(end = 4.dp),
                 verticalArrangement = Arrangement.SpaceBetween
@@ -158,7 +169,7 @@ fun VolumeTrendChart(
             modifier = Modifier
                 .fillMaxWidth()
                 .horizontalScroll(rememberScrollState())
-                .padding(start = 54.dp, top = 4.dp)
+                .padding(start = columnWidth + 4.dp, top = 4.dp)
         ) {
             volumeData.forEach { data ->
                 Text(
