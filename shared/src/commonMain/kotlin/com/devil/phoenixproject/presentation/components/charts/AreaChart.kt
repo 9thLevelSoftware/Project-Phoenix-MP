@@ -19,6 +19,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import com.devil.phoenixproject.presentation.util.ResponsiveDimensions
 
 /**
  * Material 3 Expressive Area Chart
@@ -67,6 +68,8 @@ fun AreaChart(
     val gridColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)
     val density = LocalDensity.current
 
+    val chartHeight = ResponsiveDimensions.chartHeight(baseHeight = 200.dp)
+
     Column(modifier = modifier.padding(16.dp)) {
         // Title
         title?.let {
@@ -81,17 +84,17 @@ fun AreaChart(
         BoxWithConstraints(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(200.dp)
+                .height(chartHeight)
         ) {
-            val chartWidth = with(density) { maxWidth.toPx() }
-            val chartHeight = with(density) { maxHeight.toPx() }
+            val canvasWidth = with(density) { maxWidth.toPx() }
+            val canvasHeight = with(density) { maxHeight.toPx() }
             val paddingLeft = 40.dp
             val paddingBottom = 30.dp
             val paddingLeftPx = with(density) { paddingLeft.toPx() }
             val paddingBottomPx = with(density) { paddingBottom.toPx() }
 
-            val effectiveWidth = chartWidth - paddingLeftPx
-            val effectiveHeight = chartHeight - paddingBottomPx
+            val effectiveWidth = canvasWidth - paddingLeftPx
+            val effectiveHeight = canvasHeight - paddingBottomPx
 
             Canvas(modifier = Modifier.fillMaxSize()) {
                 val progress = animationProgress.value
@@ -103,8 +106,8 @@ fun AreaChart(
                         val y = paddingBottomPx + (effectiveHeight * i / 4f)
                         drawLine(
                             color = gridColor,
-                            start = Offset(paddingLeftPx, chartHeight - y),
-                            end = Offset(chartWidth, chartHeight - y),
+                            start = Offset(paddingLeftPx, canvasHeight - y),
+                            end = Offset(canvasWidth, canvasHeight - y),
                             strokeWidth = 1.dp.toPx()
                         )
                     }
@@ -116,7 +119,7 @@ fun AreaChart(
                         drawLine(
                             color = gridColor,
                             start = Offset(x, 0f),
-                            end = Offset(x, chartHeight - paddingBottomPx),
+                            end = Offset(x, canvasHeight - paddingBottomPx),
                             strokeWidth = 1.dp.toPx()
                         )
                     }
@@ -126,7 +129,7 @@ fun AreaChart(
                     // Just draw a single point
                     val x = paddingLeftPx + effectiveWidth / 2
                     val normalizedValue = (values[0] - minValue) / valueRange
-                    val y = chartHeight - paddingBottomPx - (normalizedValue * effectiveHeight * progress)
+                    val y = canvasHeight - paddingBottomPx - (normalizedValue * effectiveHeight * progress)
                     drawCircle(
                         color = lineColor,
                         radius = 6.dp.toPx(),
@@ -140,17 +143,17 @@ fun AreaChart(
                 val points = values.mapIndexed { index, value ->
                     val x = paddingLeftPx + stepX * index
                     val normalizedValue = (value - minValue) / valueRange
-                    val y = chartHeight - paddingBottomPx - (normalizedValue * effectiveHeight * progress)
+                    val y = canvasHeight - paddingBottomPx - (normalizedValue * effectiveHeight * progress)
                     Offset(x, y)
                 }
 
                 // Draw area fill with gradient
                 val areaPath = Path().apply {
-                    moveTo(points.first().x, chartHeight - paddingBottomPx)
+                    moveTo(points.first().x, canvasHeight - paddingBottomPx)
                     points.forEach { point ->
                         lineTo(point.x, point.y)
                     }
-                    lineTo(points.last().x, chartHeight - paddingBottomPx)
+                    lineTo(points.last().x, canvasHeight - paddingBottomPx)
                     close()
                 }
 
@@ -162,7 +165,7 @@ fun AreaChart(
                             areaColor.copy(alpha = 0.1f * progress)
                         ),
                         startY = 0f,
-                        endY = chartHeight - paddingBottomPx
+                        endY = canvasHeight - paddingBottomPx
                     )
                 )
 
@@ -233,10 +236,12 @@ internal fun EmptyChartState(
     message: String,
     modifier: Modifier = Modifier
 ) {
+    val emptyStateHeight = ResponsiveDimensions.chartHeight(baseHeight = 280.dp)
+
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .height(280.dp)
+            .height(emptyStateHeight)
             .padding(16.dp),
         contentAlignment = Alignment.Center
     ) {
