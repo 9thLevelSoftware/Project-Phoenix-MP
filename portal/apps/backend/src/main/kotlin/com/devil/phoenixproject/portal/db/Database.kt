@@ -61,7 +61,20 @@ object DatabaseFactory {
         }
 
         transaction {
-            SchemaUtils.createMissingTablesAndColumns(Users, WorkoutSessions, PersonalRecords)
+            SchemaUtils.createMissingTablesAndColumns(
+                Users,
+                WorkoutSessions,
+                PersonalRecords,
+                PhaseStatistics,
+                Routines,
+                Supersets,
+                RoutineExercises,
+                CustomExercises,
+                MetricSamples,
+                EarnedBadges,
+                GamificationStats,
+                SyncDevices
+            )
         }
         logger.info("Database schema initialized")
     }
