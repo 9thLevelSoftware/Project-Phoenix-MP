@@ -10,6 +10,9 @@ object Users : UUIDTable("users") {
     val isPremium = bool("is_premium").default(false)
     val createdAt = timestamp("created_at")
     val lastLoginAt = timestamp("last_login_at").nullable()
+    val lastSyncAt = timestamp("last_sync_at").nullable()
+    val subscriptionStatus = varchar("subscription_status", 50).default("free")
+    val subscriptionExpiresAt = timestamp("subscription_expires_at").nullable()
 }
 
 object WorkoutSessions : UUIDTable("workout_sessions") {
