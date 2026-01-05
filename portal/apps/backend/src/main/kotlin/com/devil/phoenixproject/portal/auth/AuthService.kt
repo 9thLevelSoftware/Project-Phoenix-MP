@@ -5,6 +5,8 @@ import com.auth0.jwt.JWT
 import com.auth0.jwt.algorithms.Algorithm
 import com.devil.phoenixproject.portal.db.Users
 import com.devil.phoenixproject.portal.models.*
+import io.ktor.server.application.*
+import io.ktor.server.request.*
 import kotlinx.datetime.Clock
 import org.jetbrains.exposed.sql.*
 import org.jetbrains.exposed.sql.SqlExpressionBuilder.eq
@@ -36,6 +38,13 @@ class AuthService {
         } catch (e: Exception) {
             null
         }
+    }
+
+    fun extractUserId(call: ApplicationCall): UUID? {
+        val authHeader = call.request.header("Authorization") ?: return null
+        if (!authHeader.startsWith("Bearer ")) return null
+        val token = authHeader.removePrefix("Bearer ")
+        return verifyToken(token)
     }
 
     fun hashPassword(password: String): String {
