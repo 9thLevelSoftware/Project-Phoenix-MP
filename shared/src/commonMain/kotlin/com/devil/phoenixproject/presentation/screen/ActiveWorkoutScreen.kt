@@ -5,7 +5,7 @@ import androidx.compose.runtime.*
 import androidx.navigation.NavController
 import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.domain.model.*
-import com.devil.phoenixproject.presentation.components.BadgeCelebrationQueue
+import com.devil.phoenixproject.presentation.components.BatchedBadgeCelebrationDialog
 import com.devil.phoenixproject.presentation.components.ConnectionErrorDialog
 import com.devil.phoenixproject.presentation.components.HapticFeedbackEffect
 import com.devil.phoenixproject.presentation.components.PRCelebrationDialog
@@ -276,17 +276,18 @@ fun ActiveWorkoutScreen(
         )
     }
 
-    // Badge Celebration Dialog Queue
+    // Batched Badge Celebration Dialog
     if (earnedBadges.isNotEmpty()) {
-        BadgeCelebrationQueue(
+        val scope = rememberCoroutineScope()
+        BatchedBadgeCelebrationDialog(
             badges = earnedBadges,
-            onAllCelebrated = { earnedBadges = emptyList() },
-            onMarkCelebrated = { badgeId ->
-                kotlinx.coroutines.MainScope().launch {
-                    gamificationRepository.markBadgeCelebrated(badgeId)
+            onDismiss = { earnedBadges = emptyList() },
+            onMarkAllCelebrated = { badgeIds ->
+                scope.launch {
+                    gamificationRepository.markBadgesCelebrated(badgeIds)
                 }
             },
-            onSoundTrigger = { viewModel.emitBadgeSound() }
+            onSoundTrigger = {}  // Empty - sound is now handled by ViewModel
         )
     }
 }
