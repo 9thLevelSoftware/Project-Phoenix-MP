@@ -10,8 +10,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -23,30 +21,27 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import co.touchlab.kermit.Logger
-import com.devil.phoenixproject.data.migration.CycleTemplates
 import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.data.repository.TrainingCycleRepository
 import com.devil.phoenixproject.domain.model.CycleDay
 import com.devil.phoenixproject.domain.model.CycleProgress
 import com.devil.phoenixproject.domain.model.CycleTemplate
-import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.domain.model.TrainingCycle
 import com.devil.phoenixproject.domain.usecase.TemplateConverter
 import com.devil.phoenixproject.presentation.components.DayStrip
 import com.devil.phoenixproject.presentation.components.EmptyState
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
-import com.devil.phoenixproject.ui.theme.Spacing
 import com.devil.phoenixproject.ui.theme.ThemeMode
 import kotlinx.coroutines.launch
 import com.devil.phoenixproject.presentation.navigation.NavigationRoutes
 import org.koin.compose.koinInject
 import com.devil.phoenixproject.ui.theme.screenBackgroundBrush
+import com.devil.phoenixproject.presentation.components.cycle.UnifiedCycleCreationSheet
 
 /**
  * State machine for cycle creation flow
@@ -66,6 +61,7 @@ sealed class CycleCreationState {
  * Training Cycles screen - view and manage rolling workout schedules.
  * Replaces the calendar-bound WeeklyPrograms with flexible Day 1, Day 2, etc.
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TrainingCyclesScreen(
     navController: NavController,
@@ -83,7 +79,7 @@ fun TrainingCyclesScreen(
     val routines by viewModel.routines.collectAsState()
 
     // State
-    var showTemplateDialog by remember { mutableStateOf(false) }
+    var showCreationSheet by remember { mutableStateOf(false) }
     var showDeleteConfirmDialog by remember { mutableStateOf<TrainingCycle?>(null) }
     var cycleProgress by remember { mutableStateOf<Map<String, CycleProgress>>(emptyMap()) }
     var creationState by remember { mutableStateOf<CycleCreationState>(CycleCreationState.Idle) }
@@ -140,7 +136,7 @@ fun TrainingCyclesScreen(
                     title = "No Training Cycles Yet",
                     message = "Create a rolling workout schedule that adapts to your life, not the calendar",
                     actionText = "Create Your First Cycle",
-                    onAction = { navController.navigate(NavigationRoutes.DayCountPicker.route) }
+                    onAction = { showCreationSheet = true }
                 )
             }
         } else {
@@ -194,7 +190,7 @@ fun TrainingCyclesScreen(
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onSurface
                         )
-                        TextButton(onClick = { showTemplateDialog = true }) {
+                        TextButton(onClick = { showCreationSheet = true }) {
                             Icon(
                                 Icons.Default.Add,
                                 contentDescription = null,
@@ -231,7 +227,7 @@ fun TrainingCyclesScreen(
 
         // FAB for creating new cycle
         FloatingActionButton(
-            onClick = { navController.navigate(NavigationRoutes.DayCountPicker.route) },
+            onClick = { showCreationSheet = true },
             modifier = Modifier
                 .align(Alignment.BottomEnd)
                 .navigationBarsPadding()
@@ -242,17 +238,13 @@ fun TrainingCyclesScreen(
         }
     }
 
-    // Template Selection Dialog
-    if (showTemplateDialog) {
-        TemplateSelectionDialog(
-            onDismiss = {
-                showTemplateDialog = false
-                creationState = CycleCreationState.Idle
-            },
+    // Unified Cycle Creation Sheet
+    if (showCreationSheet) {
+        UnifiedCycleCreationSheet(
             onSelectTemplate = { template ->
-                showTemplateDialog = false
-                // Check if template needs 1RM input (5/3/1 template)
-                val needsOneRepMax = template.name.contains("5/3/1", ignoreCase = true) ||
+                showCreationSheet = false
+                // Check if template needs 1RM input
+                val needsOneRepMax = template.requiresOneRepMax ||
                     template.days.any { day ->
                         day.routine?.exercises?.any { it.isPercentageBased } == true
                     }
@@ -263,11 +255,11 @@ fun TrainingCyclesScreen(
                     creationState = CycleCreationState.ModeConfirmation(template, emptyMap())
                 }
             },
-            onCreateBlank = {
-                showTemplateDialog = false
-                creationState = CycleCreationState.Idle
-                navController.navigate(NavigationRoutes.CycleEditor.createRoute("new"))
-            }
+            onCreateCustom = { dayCount ->
+                showCreationSheet = false
+                navController.navigate(NavigationRoutes.CycleEditor.createRoute("new", dayCount))
+            },
+            onDismiss = { showCreationSheet = false }
         )
     }
 
@@ -832,185 +824,6 @@ private fun CycleListItem(
                             Spacer(Modifier.width(4.dp))
                             Text("Delete")
                         }
-                    }
-                }
-            }
-        }
-    }
-}
-
-/**
- * Dialog for selecting a cycle template or creating a blank cycle.
- */
-@Composable
-private fun TemplateSelectionDialog(
-    onDismiss: () -> Unit,
-    onSelectTemplate: (CycleTemplate) -> Unit,
-    onCreateBlank: () -> Unit
-) {
-    val templates = remember {
-        listOf(
-            CycleTemplates.threeDay(),
-            CycleTemplates.pushPullLegs(),
-            CycleTemplates.upperLower(),
-            CycleTemplates.fiveThreeOne()
-        )
-    }
-
-    androidx.compose.ui.window.Dialog(
-        onDismissRequest = onDismiss,
-        properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)
-    ) {
-        Surface(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp),
-            shape = RoundedCornerShape(28.dp),
-            color = MaterialTheme.colorScheme.surface,
-            tonalElevation = 6.dp
-        ) {
-            Column(
-                modifier = Modifier.padding(24.dp)
-            ) {
-                Text(
-                    "Create Training Cycle",
-                    style = MaterialTheme.typography.headlineSmall,
-                    fontWeight = FontWeight.Bold
-                )
-
-                Spacer(Modifier.height(8.dp))
-
-                Text(
-                    "Start with a template or create your own:",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-
-                Spacer(Modifier.height(12.dp))
-
-                Column(
-                    modifier = Modifier
-                        .weight(1f, fill = false)
-                        .verticalScroll(rememberScrollState()),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-
-                templates.forEach { template ->
-                    val needsOneRepMax = template.name.contains("5/3/1", ignoreCase = true) ||
-                        template.days.any { day ->
-                            day.routine?.exercises?.any { it.isPercentageBased } == true
-                        }
-
-                    Card(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { onSelectTemplate(template) },
-                        colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
-                        ),
-                        shape = RoundedCornerShape(12.dp)
-                    ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(16.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                ) {
-                                    Text(
-                                        template.name,
-                                        style = MaterialTheme.typography.titleSmall,
-                                        fontWeight = FontWeight.SemiBold
-                                    )
-                                    if (needsOneRepMax) {
-                                        Surface(
-                                            color = MaterialTheme.colorScheme.primaryContainer,
-                                            shape = RoundedCornerShape(4.dp)
-                                        ) {
-                                            Text(
-                                                "1RM",
-                                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-                                                style = MaterialTheme.typography.labelSmall,
-                                                color = MaterialTheme.colorScheme.onPrimaryContainer
-                                            )
-                                        }
-                                    }
-                                }
-                                Spacer(Modifier.height(4.dp))
-                                Text(
-                                    template.description,
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                                Text(
-                                    "${template.days.size} days",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    fontWeight = FontWeight.Medium
-                                )
-                            }
-                            Icon(
-                                Icons.Default.ChevronRight,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
-                }
-
-                HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
-
-                Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { onCreateBlank() },
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f)
-                    ),
-                    shape = RoundedCornerShape(12.dp)
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(16.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                "Create Custom",
-                                style = MaterialTheme.typography.titleSmall,
-                                fontWeight = FontWeight.SemiBold,
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                            Text(
-                                "Build your own schedule",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f)
-                            )
-                        }
-                        Icon(
-                            Icons.Default.Add,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary
-                        )
-                    }
-                }
-                }
-
-                Spacer(Modifier.height(16.dp))
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.End
-                ) {
-                    TextButton(onClick = onDismiss) {
-                        Text("Cancel")
                     }
                 }
             }

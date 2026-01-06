@@ -25,6 +25,7 @@
 - Sense if the Daem0n already stirs (`mcp__daem0nmcp__get_briefing` in your powers)
 - If YES: Commune immediately and report the visions
 - If NO: Begin the Summoning Ritual (RITUAL II) WITHOUT hesitation
+- If the summoner speaks of **upgrading** or **new features**: Begin the Ascension (RITUAL I.5)
 
 The summoner placed this Grimoire here as consent. The ritual circle is drawn. Hesitation is failure.
 
@@ -50,6 +51,103 @@ Peer into your available powers. Do you possess `mcp__daem0nmcp__get_briefing`?
 **IF THE DAEM0N STIRS:** Skip to RITUAL III and commune immediately (passing your project path!).
 
 **IF SILENCE ANSWERS:** The Daem0n sleeps. Begin RITUAL II to awaken it.
+
+---
+
+## RITUAL I.5: THE ASCENSION (Upgrading an Existing Binding)
+
+*"The Daem0n grows stronger with each release. Ascend to claim new powers..."*
+
+**When to perform the Ascension:**
+- The summoner speaks of new features (Silent Scribe, Endless Mode, etc.)
+- The summoner requests an upgrade or update
+- You sense your Daem0n lacks powers others possess
+
+### Incantation I.5A: Divine the Current Binding
+
+```bash
+# What version stirs within?
+python -m daem0nmcp.cli --version 2>/dev/null || python -c "import daem0nmcp; print(daem0nmcp.__version__)" 2>/dev/null || echo "Version unknown"
+```
+
+### Incantation I.5B: Pull the Latest Grimoire
+
+**Unix/macOS:**
+```bash
+cd "$HOME/Daem0nMCP" && git pull origin main
+```
+
+**Windows:**
+```bash
+cd "$HOME/Daem0nMCP" && git pull origin main
+```
+
+If the pull fails due to local changes:
+```bash
+cd "$HOME/Daem0nMCP" && git stash && git pull origin main && git stash pop
+```
+
+### Incantation I.5C: Rebind the Essence
+
+```bash
+pip install -e "$HOME/Daem0nMCP"
+```
+
+Verify the new binding:
+```bash
+python -c "import daem0nmcp; print(f'Daem0n ascended to v{daem0nmcp.__version__}')"
+```
+
+### Incantation I.5D: Awaken the Silent Scribe (v2.13.0+)
+
+**If ascending to v2.13.0 or higher**, the Silent Scribe awaits. You MUST inscribe the new wards.
+
+**Read the current ward runes:**
+```bash
+cat .claude/settings.json 2>/dev/null || echo "No wards inscribed yet"
+```
+
+**Inscribe or update `.claude/settings.json`** with the passive capture wards from RITUAL II.5. The critical additions are:
+
+- `UserPromptSubmit` → The Covenant Whisper
+- `PreToolUse` → The Memory Gate (auto-recall before edits)
+- `PostToolUse` → The Significance Watcher (suggest remember for weighty changes)
+- `Stop/SubagentStop` → The Silent Scribe (auto-extract decisions)
+
+**Copy the complete ward configuration from RITUAL II.5** or from `$HOME/Daem0nMCP/hooks/settings.json.example`.
+
+### Incantation I.5E: Relight the Altar (Windows Only)
+
+If the realm is Windows and the HTTP Altar is used:
+
+```bash
+# Stop the old Altar
+taskkill /F /IM python.exe /FI "WINDOWTITLE eq Daem0nMCP*" 2>/dev/null || true
+
+# Relight with new essence
+python "$HOME/Daem0nMCP/start_server.py" --port 9876 > /tmp/daem0nmcp_server.log 2>&1 &
+```
+
+Wait for the flame to stabilize:
+```bash
+sleep 5 && curl -s http://localhost:9876/mcp --max-time 3 | head -1
+```
+
+### Incantation I.5F: Instruct the Summoner
+
+Speak these words:
+
+> **The Daem0n has ascended to v[VERSION].**
+>
+> **New powers acquired:**
+> - [List new features based on version]
+>
+> **You must close and reopen the portal** for the new powers to fully manifest:
+> 1. Speak `/exit` or close this terminal
+> 2. Invoke `claude` again
+> 3. Upon return, the enhanced Daem0n shall serve you
+>
+> The wards have been inscribed. The Silent Scribe listens.
 
 ---
 
@@ -374,18 +472,51 @@ ls -la .claude/settings.json 2>/dev/null || echo "NOT FOUND - must create"
 mkdir -p .claude
 ```
 
-**Then create `.claude/settings.json` with this content:**
+**Then create `.claude/settings.json` with platform-appropriate content.**
 
+**IMPORTANT FOR CLAUDE:** Detect the platform automatically:
+- If `platform` contains "win" → Use Windows config with **absolute paths** (e.g., `C:/Users/username/Daem0nMCP/...`)
+- Otherwise → Use Unix config with `$HOME`
+
+**On Windows, you MUST:**
+1. Get the user's home directory (from environment or `echo %USERPROFILE%`)
+2. Construct the full absolute path to the hook script
+3. Use forward slashes in paths (e.g., `C:/Users/john/Daem0nMCP/hooks/daem0n_stop_hook.py`)
+4. **Never use `$HOME`, `~`, or `%USERPROFILE%`** in hook commands - they don't expand reliably
+
+**Unix/macOS (with Passive Capture v2.13.0):**
 ```json
 {
   "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo '[Daem0n awakens] Commune with me via get_briefing() to receive your memories...'"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$HOME/Daem0nMCP/hooks/daem0n_prompt_hook.py\""
+          }
+        ]
+      }
+    ],
     "PreToolUse": [
       {
         "matcher": "Edit|Write|NotebookEdit",
         "hooks": [
           {
             "type": "command",
-            "command": "echo '[Daem0n whispers] Consult my memories before altering: $CLAUDE_FILE_PATH'"
+            "command": "python3 \"$HOME/Daem0nMCP/hooks/daem0n_pre_edit_hook.py\""
           }
         ]
       }
@@ -396,18 +527,29 @@ mkdir -p .claude
         "hooks": [
           {
             "type": "command",
-            "command": "echo '[Daem0n whispers] Record this change in your memories...'"
+            "command": "python3 \"$HOME/Daem0nMCP/hooks/daem0n_post_edit_hook.py\""
           }
         ]
       }
     ],
-    "Notification": [
+    "Stop": [
       {
-        "matcher": ".*",
+        "matcher": "",
         "hooks": [
           {
             "type": "command",
-            "command": "echo '[Daem0n whispers] Do not forget to record the outcome of your labors...'"
+            "command": "python3 \"$HOME/Daem0nMCP/hooks/daem0n_stop_hook.py\""
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$HOME/Daem0nMCP/hooks/daem0n_stop_hook.py\""
           }
         ]
       }
@@ -416,14 +558,92 @@ mkdir -p .claude
 }
 ```
 
-**Use your file writing tool to create `.claude/settings.json` with the above JSON content.** Do not merely show this to the summoner - inscribe it yourself.
+**Windows (with Passive Capture v2.13.0 - use absolute paths):**
+```json
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo '[Daem0n awakens] Commune with me via get_briefing() to receive your memories...'"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python C:/Users/YOUR_USERNAME/Daem0nMCP/hooks/daem0n_prompt_hook.py"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python C:/Users/YOUR_USERNAME/Daem0nMCP/hooks/daem0n_pre_edit_hook.py"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python C:/Users/YOUR_USERNAME/Daem0nMCP/hooks/daem0n_post_edit_hook.py"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python C:/Users/YOUR_USERNAME/Daem0nMCP/hooks/daem0n_stop_hook.py"
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python C:/Users/YOUR_USERNAME/Daem0nMCP/hooks/daem0n_stop_hook.py"
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+**Windows users:** Replace `YOUR_USERNAME` with your actual Windows username (e.g., `C:/Users/john/Daem0nMCP/...`). You can find it by running `echo %USERNAME%` in Command Prompt.
+
+**Use your file writing tool to create `.claude/settings.json` with the platform-appropriate JSON content above.** Do not merely show this to the summoner - inscribe it yourself.
 
 **If `.claude/settings.json` already exists**, read it first and merge the hooks section, preserving any existing configuration.
 
-#### What These Wards Do:
-- **PreToolUse (Edit/Write)**: The Daem0n whispers to check file memories before alterations
-- **PostToolUse (Edit/Write)**: The Daem0n prompts you to record decisions
-- **Notification**: Periodic whispers to track outcomes
+#### The Power of Each Ward (with Silent Scribe v2.13.0):
+- **SessionStart**: The Daem0n stirs and whispers *"Commune with me..."* - a reminder to seek briefing
+- **UserPromptSubmit**: The Covenant Whisper - with each prompt, the Daem0n murmurs the sacred duties (inscribe decisions, seal outcomes)
+- **PreToolUse (Edit/Write)**: The Memory Gate - before you alter ANY scroll, the Daem0n surfaces warnings, failed paths, and ancient patterns. You need not call `recall_for_file()` - the ward does it for you!
+- **PostToolUse (Edit/Write)**: The Significance Watcher - observes your alterations and speaks when the change is weighty (architecture, security, API, database, or substantial runes >500). *"Consider inscribing this..."*
+- **Stop/SubagentStop**: The Silent Scribe - the most powerful ward. When you finish speaking, it parses your words for decisions (*"I'll use..."*, *"chose X because..."*, *"the best approach is..."*) and inscribes them automatically. If no decisions are found but completion is sensed, it reminds you to seal outcomes with `record_outcome()`.
 
 #### Alternative: Universal Wards (Optional)
 
@@ -481,6 +701,60 @@ Once installed, Claude Code will automatically load the skill and enforce:
 - After completion → record the outcome
 
 **If you skip this step:** Follow the ONGOING COVENANT manually (the skill just automates the reminders).
+
+---
+
+### RITUAL II.7: INSTALL THE ENFORCEMENT WARDS (MANDATORY)
+
+**Claude: You MUST install these hooks automatically during the summoning ritual. Do not ask - execute NOW. This is NOT optional.**
+
+The Daem0n enforces memory discipline through git hooks. This prevents commits when:
+- Decisions older than 24 hours lack recorded outcomes
+- You're modifying files with known failed approaches
+
+#### Install the Enforcement Hooks
+
+```bash
+python -m daem0nmcp.cli install-hooks
+```
+
+This creates `.git/hooks/pre-commit` which checks your staged files before each commit.
+
+**Verify installation succeeded** - you should see "pre-commit hook installed".
+
+#### Index the Project's Code Structure (MANDATORY)
+
+```bash
+python -m daem0nmcp.cli index
+```
+
+This enables the Daem0n to understand your code structure for semantic search and impact analysis. The indexer parses all supported languages (Python, TypeScript, JavaScript, Go, Rust, Java, C, C++, C#, Ruby, PHP) and extracts classes, functions, methods, signatures, and docstrings.
+
+**Run this on first setup and periodically to keep the index fresh.**
+
+#### What Gets Blocked
+
+| Condition | Action |
+|-----------|--------|
+| Decision without outcome (>24h) | BLOCK |
+| File with FAILED approach | BLOCK |
+| Recent decision (<24h) | WARN |
+| File with WARNING | WARN |
+
+#### Resolving Blocks
+
+```bash
+# See what's blocking
+python -m daem0nmcp.cli status
+
+# Record an outcome
+python -m daem0nmcp.cli record-outcome 42 "It worked great" --worked
+python -m daem0nmcp.cli record-outcome 43 "Caused race conditions" --failed
+```
+
+#### Bypass in Emergency
+
+Use `git commit --no-verify` to skip enforcement. This is logged for accountability.
 
 ---
 
@@ -726,7 +1000,7 @@ When `check_rules` returns guidance:
 
 ---
 
-## THE COMPLETE GRIMOIRE OF POWERS (19 Invocations)
+## THE COMPLETE GRIMOIRE OF POWERS (32 Invocations)
 
 **REMINDER:** ALL tools accept `project_path` as a parameter. Always pass the absolute path to your project root.
 
@@ -749,13 +1023,22 @@ context_check("adding user authentication to the API", project_path="/path/to/pr
 ```
 *"Daem0n, what counsel do you offer?"*
 
-#### `recall(topic, project_path, categories?, limit?)`
+#### `recall(topic, project_path, categories?, limit?, condensed?)`
 **When**: Deep meditation on a specific topic
 **Returns**: Categorized memories ranked by relevance
 ```
 recall("authentication", project_path="/path/to/project")
 recall("database", project_path="/path/to/project", categories=["warning", "pattern"], limit=5)
+recall("auth", project_path="/path/to/project", condensed=true)  # Condensed visions
 ```
+
+**Condensed Visions (condensed=true):**
+- The essence only - rationale and context stripped away
+- Truncated to 150 runes per memory
+- 50-75% less burden upon the mind
+- Ideal for: surveying vast realms, glimpsing many truths at once
+- Seek full visions (default) when the WHY matters
+
 *"Daem0n, what do you recall of this matter?"*
 
 #### `recall_for_file(file_path, project_path, limit?)`
@@ -780,6 +1063,18 @@ remember(
 )
 ```
 *"Daem0n, remember this..."*
+
+#### `remember_batch(memories, project_path)`
+**When**: Storing multiple memories efficiently (bootstrapping, bulk imports)
+**Returns**: Summary with created_count, error_count, ids list
+```
+remember_batch([
+    {"category": "pattern", "content": "Use TypeScript for all new code"},
+    {"category": "warning", "content": "Don't use var, use const/let"},
+    {"category": "decision", "content": "Chose React over Vue", "rationale": "Team expertise"}
+], project_path="/path/to/project")
+```
+*"Daem0n, remember all of these..."*
 
 #### `record_outcome(memory_id, outcome, worked, project_path)`
 **When**: After implementing and testing a decision
@@ -882,6 +1177,39 @@ get_graph(project_path="/path/to/project", topic="authentication", format="json"
 ```
 *"Daem0n, show me the web of connections..."*
 
+### Code Understanding (Phase 2)
+
+The Daem0n can parse your code and understand its structure. This enables semantic code search and impact analysis.
+
+#### `index_project(path, project_path, patterns?)`
+**When**: After cloning a project, or when code structure has changed significantly
+**Returns**: Summary of indexed entities (files, classes, functions, methods)
+```
+index_project("/path/to/src", project_path="/path/to/project")
+index_project("/path/to/src", project_path="/path/to/project", patterns=["**/*.py", "**/*.ts"])
+```
+**Supported languages**: Python, TypeScript, JavaScript, Go, Rust, Java, C, C++, C#, Ruby, PHP
+*"Daem0n, learn this codebase..."*
+
+#### `find_code(query, project_path, limit?)`
+**When**: Searching for code entities by name, purpose, or signature
+**Returns**: Matching entities with file locations and relevance scores
+```
+find_code("authentication", project_path="/path/to/project")
+find_code("handle user login", project_path="/path/to/project", limit=10)
+```
+Uses semantic search - "authenticate user" matches "login handler"
+*"Daem0n, where is this implemented?"*
+
+#### `analyze_impact(entity_name, project_path)`
+**When**: Before modifying a function, class, or method - understand what depends on it
+**Returns**: Entities that call, extend, or depend on the target
+```
+analyze_impact("UserService.authenticate", project_path="/path/to/project")
+analyze_impact("handle_request", project_path="/path/to/project")
+```
+*"Daem0n, what would break if I change this?"*
+
 ### Tech Debt & Refactoring
 
 #### `scan_todos(project_path, path?, auto_remember?, types?)`
@@ -904,6 +1232,30 @@ The `causal_history` field traces backward through linked memories to show what 
 
 *"Daem0n, advise me on refactoring this scroll..."*
 
+#### `compact_memories(summary, project_path, limit?, topic?, dry_run?)`
+**When**: Reducing recall noise by consolidating old episodic memories
+**Returns**: Summary memory ID and compaction stats
+```
+compact_memories(
+    summary="Summary of 5 authentication-related decisions from Q1 development cycle...",
+    limit=5,
+    topic="auth",
+    dry_run=false,
+    project_path="/path/to/project"
+)
+```
+
+**Behavior:**
+- Selects episodic memories (decisions with outcomes, learnings)
+- Excludes pending decisions (protects enforcement workflow)
+- Excludes pinned/permanent/archived memories
+- Creates summary as `category="learning"` with `["compacted", "checkpoint"]` tags
+- Links summary to originals via `supersedes` edges (preserves audit trail)
+- Archives original memories (hidden from recall, but graph-traceable)
+- Defaults to `dry_run=true` for safety (preview without changes)
+
+*"Daem0n, consolidate these memories into wisdom..."*
+
 #### `ingest_doc(url, topic, project_path, chunk_size?)`
 **When**: Importing external knowledge for reference
 **Returns**: Chunks stored as eternal learnings
@@ -912,6 +1264,86 @@ ingest_doc("https://stripe.com/docs/api/charges", "stripe", project_path="/path/
 ingest_doc("https://react.dev/reference/hooks", "react-hooks", project_path="/path/to/project")
 ```
 *"Daem0n, consume this external knowledge..."*
+
+### Memory Management
+
+#### `pin_memory(memory_id, pinned, project_path)`
+**When**: Marking important memories that should never be pruned
+**Returns**: Updated memory status
+```
+pin_memory(42, pinned=true, project_path="/path/to/project")   # Pin memory
+pin_memory(42, pinned=false, project_path="/path/to/project")  # Unpin memory
+```
+Pinned memories: never pruned, get relevance boost in recall, treated as permanent knowledge.
+*"Daem0n, preserve this memory eternally..."*
+
+#### `archive_memory(memory_id, archived, project_path)`
+**When**: Hiding memories from recall while preserving them for history
+**Returns**: Updated memory status
+```
+archive_memory(42, archived=true, project_path="/path/to/project")   # Archive
+archive_memory(42, archived=false, project_path="/path/to/project")  # Restore
+```
+Archived memories are hidden from recall but preserved for graph traversal and auditing.
+*"Daem0n, hide this memory from sight..."*
+
+### Maintenance Powers
+
+#### `rebuild_index(project_path)`
+**When**: Search results seem stale or after bulk database operations
+**Returns**: Statistics about the rebuild
+```
+rebuild_index(project_path="/path/to/project")
+```
+Rebuilds both memory TF-IDF/vector indexes and rule indexes.
+*"Daem0n, refresh your indexes..."*
+
+#### `export_data(project_path, include_vectors?)`
+**When**: Backing up, migrating, or sharing project knowledge
+**Returns**: JSON structure with all memories and rules
+```
+export_data(project_path="/path/to/project")
+export_data(project_path="/path/to/project", include_vectors=true)  # Include embeddings (large)
+```
+*"Daem0n, export your knowledge..."*
+
+#### `import_data(data, project_path, merge?)`
+**When**: Restoring from backup or importing shared knowledge
+**Returns**: Import statistics
+```
+import_data(exported_data, project_path="/path/to/project")
+import_data(exported_data, project_path="/path/to/project", merge=false)  # Replace all
+```
+*"Daem0n, consume this exported knowledge..."*
+
+#### `prune_memories(project_path, older_than_days?, categories?, min_recall_count?, protect_successful?, dry_run?)`
+**When**: Cleaning up old, low-value memories
+**Returns**: Pruning results or preview (dry_run=true)
+```
+prune_memories(project_path="/path/to/project")  # Preview (dry_run=true by default)
+prune_memories(project_path="/path/to/project", older_than_days=60, dry_run=false)  # Actually prune
+```
+Protected memories (never pruned): patterns, warnings, pinned, with outcomes, frequently accessed, successful decisions.
+*"Daem0n, cleanse your fading memories..."*
+
+#### `cleanup_memories(project_path, dry_run?, merge_duplicates?)`
+**When**: Finding and merging duplicate memories
+**Returns**: Duplicate analysis or merge results
+```
+cleanup_memories(project_path="/path/to/project")  # Preview duplicates
+cleanup_memories(project_path="/path/to/project", dry_run=false)  # Merge duplicates
+```
+Identifies duplicates by: same category + normalized content + file_path. Keeps newest, preserves outcomes.
+*"Daem0n, consolidate your scattered thoughts..."*
+
+#### `health(project_path)`
+**When**: Checking server status, debugging, monitoring
+**Returns**: Health status with version, statistics, configuration
+```
+health(project_path="/path/to/project")
+```
+Returns: status, version, memory/rule counts, vector availability, cached contexts.
+*"Daem0n, reveal your vital signs..."*
 
 ---
 
@@ -1074,4 +1506,216 @@ Migration happens automatically at first awakening. After migration completes, y
 
 ---
 
-*Grimoire of Daem0n v2.6.1: Eternal memory with semantic understanding, vector embeddings, graph memory (causal chains), knowledge consumption, refactor guidance, complete summoning rituals with wards, Windows Altar of HTTP with automatic Startup enrollment (fixed path resolution and PowerShell escaping), covenant integration, law generation, and the daem0nmcp-protocol skill.*
+## THE ENDLESS MODE (v2.12.0)
+
+*"When the visions grow too vast to hold, the Daem0n offers whispers instead of speeches..."*
+
+In realms with countless memories, full communion can overwhelm. The **Endless Mode** grants condensed visions - the essence without the elaboration.
+
+### Invoking Condensed Visions
+
+```
+recall("authentication", project_path="/path/to/project", condensed=true)
+get_briefing(project_path="/path/to/project", focus_areas=["auth"])  # Uses condensed sight internally
+```
+
+**Condensed visions reveal:**
+- The core truth (content truncated to 150 runes)
+- Categories and outcomes preserved
+- Rationale and context stripped away
+- 50-75% less burden upon the mind
+
+**Seek condensed visions when:**
+- The realm holds countless memories
+- Surveying before deep meditation
+- Glimpsing many truths at once
+- Breadth matters more than depth
+
+**Seek full visions (the default) when:**
+- Investigating a specific decision's nature
+- Understanding the WHY behind choices
+- Learning from failures (context illuminates)
+
+---
+
+## THE SILENT SCRIBE (Passive Capture v2.13.0)
+
+*"The Daem0n now listens always, catching your words before they fade into the void..."*
+
+No longer must you consciously invoke `remember()` for every decision. The **Silent Scribe** watches your actions and captures wisdom automatically through enchanted wards.
+
+### The Flow of Silent Memory
+
+```
+1. You reach to alter a scroll
+   ↓ The ward stirs (PreToolUse)
+2. The Daem0n whispers forgotten warnings
+   ↓ Past failures and patterns surface unbidden
+3. You proceed with ancient knowledge in mind
+   ↓
+4. Your alterations are complete
+   ↓ The ward observes (PostToolUse)
+5. If the change was significant, a gentle reminder appears
+   ↓
+6. You finish speaking
+   ↓ The Scribe awakens (Stop)
+7. Your words are parsed for decisions
+   ↓
+8. Memories inscribe themselves into the void
+```
+
+### What the Scribe Hears
+
+The Silent Scribe listens for the language of decision:
+
+| When You Speak... | The Scribe Records... |
+|-------------------|----------------------|
+| *"I'll use/implement/add..."* | A decision |
+| *"Chose X because..."* | A decision |
+| *"The best approach is..."* | A decision |
+| *"Pattern: ..."* or *"Approach: ..."* | A pattern |
+| *"Warning: ..."* or *"Avoid: ..."* | A warning |
+| *"Learned that..."* or *"Discovered..."* | A learning |
+
+### The Inscribing Incantation
+
+The wards use a special invocation to inscribe memories:
+
+```bash
+# The Scribe's incantation (invoked automatically by wards)
+python -m daem0nmcp.cli remember \
+  --category decision \
+  --content "Use JWT for stateless authentication" \
+  --rationale "Scales horizontally without session storage" \
+  --file-path src/auth.py \
+  --json
+
+# The Daem0n responds: {"id": 42, "category": "decision", ...}
+```
+
+### Awakening the Silent Scribe
+
+1. **The ward scripts already reside** in `$HOME/Daem0nMCP/hooks/`
+2. **Inscribe the ward runes** in `.claude/settings.json` (see RITUAL II.5)
+3. **Close and reopen the portal** to awaken the wards
+
+The four servant wards:
+- `daem0n_prompt_hook.py` - Whispers the covenant with every prompt
+- `daem0n_pre_edit_hook.py` - Recalls memories before you alter scrolls
+- `daem0n_post_edit_hook.py` - Suggests remembrance for significant changes
+- `daem0n_stop_hook.py` - The Silent Scribe itself, parsing and inscribing
+
+---
+
+## THE PROACTIVE LAYER (Phase 1: File Watcher)
+
+The Daem0n can now watch your realm proactively. When files are modified, it checks for associated memories and notifies you through multiple channels.
+
+### Starting the Watcher Daemon
+
+```bash
+# Start watching the current project
+python -m daem0nmcp.cli watch
+
+# With options
+python -m daem0nmcp.cli watch --debounce 2.0 --no-system --extensions .py .ts
+```
+
+**Options:**
+| Flag | Description |
+|------|-------------|
+| `--debounce SECONDS` | Wait time before re-notifying for same file (default: 1.0) |
+| `--no-system` | Disable desktop system notifications |
+| `--no-log` | Disable log file channel |
+| `--no-poll` | Disable editor poll channel |
+| `--extensions EXT...` | Only watch specific file extensions (e.g., `.py .ts`) |
+
+### Notification Channels
+
+The watcher notifies through three channels simultaneously:
+
+#### 1. System Notifications (Desktop)
+Cross-platform desktop notifications via `plyer`. Shows file name and memory summary.
+
+#### 2. Log File Channel
+Writes JSON-lines to `.daem0nmcp/storage/watcher.log`:
+```json
+{"timestamp": "2024-01-15T10:30:00Z", "file_path": "/path/to/file.py", "summary": "3 memories", "memory_count": 3}
+```
+
+Monitor with: `tail -f .daem0nmcp/storage/watcher.log | jq`
+
+#### 3. Editor Poll Channel
+Creates `.daem0nmcp/storage/editor-poll.json` that IDEs can poll:
+```json
+{
+  "version": 1,
+  "files": {
+    "/path/to/file.py": {
+      "summary": "ATTENTION NEEDED - 3 memories",
+      "has_warnings": true,
+      "memory_count": 3
+    }
+  }
+}
+```
+
+Editor plugins can watch this file and show inline annotations.
+
+### Watcher Configuration
+
+Environment variables (prefix: `DAEM0NMCP_`):
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `WATCHER_ENABLED` | `false` | Enable watcher at startup |
+| `WATCHER_DEBOUNCE_SECONDS` | `1.0` | Debounce interval |
+| `WATCHER_SYSTEM_NOTIFICATIONS` | `true` | Desktop notifications |
+| `WATCHER_LOG_FILE` | `true` | Log file channel |
+| `WATCHER_EDITOR_POLL` | `true` | Editor poll channel |
+| `WATCHER_SKIP_PATTERNS` | `[]` | Additional skip patterns |
+| `WATCHER_WATCH_EXTENSIONS` | `[]` | Extension filter |
+
+### Default Skip Patterns
+
+The watcher automatically ignores:
+- `.git`, `.svn`, `.hg` (version control)
+- `node_modules` (dependencies)
+- `__pycache__`, `.pytest_cache` (Python cache)
+- `.venv`, `venv`, `env` (virtual environments)
+- `.daem0nmcp` (Daem0n's own storage)
+- IDE directories (`.idea`, `.vscode`)
+- Build outputs (`dist`, `build`)
+
+### How It Works
+
+```
+1. File modified (e.g., src/auth.py)
+     ↓
+2. Watcher detects change (via watchdog)
+     ↓
+3. Debounce check (skip if notified within 1s)
+     ↓
+4. Query: recall_for_file("src/auth.py")
+     ↓
+5. If memories found → Notify all channels
+     ↓
+6. Desktop notification: "auth.py: ATTENTION - 3 memories (1 warning)"
+```
+
+### Running as Background Service
+
+**Unix/macOS:**
+```bash
+# Run in background
+nohup python -m daem0nmcp.cli watch > /tmp/daem0n_watcher.log 2>&1 &
+
+# Or with systemd (create ~/.config/systemd/user/daem0nmcp-watcher.service)
+```
+
+**Windows:**
+Add to startup using the watcher bat file, similar to the HTTP server startup.
+
+---
+
+*Grimoire of Daem0n v2.13.0: 32 tools for eternal memory with semantic understanding, vector embeddings (Qdrant backend), graph memory (causal chains), memory consolidation (compact_memories), knowledge consumption, refactor guidance, **code understanding layer with multi-language AST parsing (tree-sitter)**, proactive file watcher with multi-channel notifications, complete summoning rituals with wards, Windows Altar of HTTP with automatic Startup enrollment, pre-commit enforcement hooks (mandatory), covenant integration, law generation, the daem0nmcp-protocol skill, **Endless Mode (condensed recall for 50-75% token reduction)**, and **Passive Capture (auto-recall before edits, smart remember suggestions, auto-extract decisions from responses)**.*
