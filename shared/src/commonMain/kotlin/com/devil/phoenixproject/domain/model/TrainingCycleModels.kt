@@ -122,6 +122,74 @@ data class CycleDay(
 }
 
 /**
+ * UI-facing representation of a cycle day.
+ * Sealed class forces distinct handling of workout vs rest days.
+ */
+sealed class CycleItem {
+    abstract val id: String
+    abstract val dayNumber: Int
+
+    data class Workout(
+        override val id: String,
+        override val dayNumber: Int,
+        val routineId: String,
+        val routineName: String,
+        val exerciseCount: Int,
+        val estimatedMinutes: Int? = null
+    ) : CycleItem()
+
+    data class Rest(
+        override val id: String,
+        override val dayNumber: Int,
+        val note: String? = null
+    ) : CycleItem()
+
+    companion object {
+        /**
+         * Convert a CycleDay to a CycleItem.
+         * Requires routine info for workout days.
+         */
+        fun fromCycleDay(
+            day: CycleDay,
+            routineName: String?,
+            exerciseCount: Int
+        ): CycleItem {
+            return if (day.isRestDay || day.routineId == null) {
+                Rest(
+                    id = day.id,
+                    dayNumber = day.dayNumber,
+                    note = day.name
+                )
+            } else {
+                Workout(
+                    id = day.id,
+                    dayNumber = day.dayNumber,
+                    routineId = day.routineId,
+                    routineName = routineName ?: "Unknown Routine",
+                    exerciseCount = exerciseCount
+                )
+            }
+        }
+    }
+}
+
+/**
+ * Cycle-wide progression settings.
+ * Applied every N cycle completions.
+ */
+data class CycleProgression(
+    val cycleId: String,
+    val frequencyCycles: Int = 2,
+    val weightIncreasePercent: Float? = null,
+    val echoLevelIncrease: Boolean = false,
+    val eccentricLoadIncreasePercent: Int? = null
+) {
+    companion object {
+        fun default(cycleId: String) = CycleProgression(cycleId = cycleId)
+    }
+}
+
+/**
  * Tracks user's current position in a training cycle.
  */
 data class CycleProgress(

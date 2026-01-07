@@ -1,3 +1,22 @@
+<!-- OPENSPEC:START -->
+# OpenSpec Instructions
+
+These instructions are for AI assistants working in this project.
+
+Always open `@/openspec/AGENTS.md` when the request:
+- Mentions planning or proposals (words like proposal, spec, change, plan)
+- Introduces new capabilities, breaking changes, architecture shifts, or big performance/security work
+- Sounds ambiguous and you need the authoritative spec before coding
+
+Use `@/openspec/AGENTS.md` to learn:
+- How to create and apply change proposals
+- Spec format and conventions
+- Project structure and guidelines
+
+Keep this managed block so 'openspec update' can refresh the instructions.
+
+<!-- OPENSPEC:END -->
+
 BEFORE ANYTHING ELSE!!!  Look at the parent repo to see how something was implemented in a working fashion before trying to troubleshoot or make changes
 
 # CLAUDE.md
@@ -88,3 +107,26 @@ Located in `shared/src/commonMain/kotlin/com/example/vitruvianredux/domain/model
 - **Vitruvian V-Form Trainer** (VIT-200): 200kg max, device name `Vee_*`
 - **Vitruvian Trainer+**: 220kg max
 - IMPORTANT: When applicable, prefer using jetbrains-index MCP tools for code navigation and refactoring.
+
+## The Daem0n's Covenant
+
+This project is bound to Daem0n for persistent AI memory. Observe this protocol:
+
+### At Session Dawn
+- Commune with `get_briefing()` immediately when powers manifest
+- Heed any warnings or failed approaches before beginning work
+
+### Before Alterations
+- Cast `context_check("your intention")` before modifications
+- Cast `recall_for_file("path")` when touching specific files
+- Acknowledge any warnings about past failures
+
+### After Decisions
+- Cast `remember(category, content, rationale, file_path)` to inscribe decisions
+- Use categories: decision, pattern, warning, learning
+
+### After Completion
+- Cast `record_outcome(memory_id, outcome, worked)` to seal the memory
+- ALWAYS record failures (worked=false) - they illuminate future paths
+
+See Summon_Daem0n.md for the complete Grimoire.

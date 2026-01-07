@@ -22,12 +22,12 @@ This app enables local control of Vitruvian Trainer machines after the company's
 
 ## Installation
 
-The app is now available on both app stores!
+The app is currently in beta! Install via the methods below:
 
-| Platform | App Store | Alternative |
-|----------|-----------|-------------|
-| **Android** | [Google Play Store](https://play.google.com/store/apps/details?id=com.devil.phoenixproject) | [APK Download](../../releases) |
-| **iOS** | [App Store](https://apps.apple.com/app/vitruvian-phoenix/id6740537270) | [TestFlight Beta](iOS_INSTALL.md#option-2-testflight-beta-testing) |
+| Platform | Beta Signup | Install Guide |
+|----------|-------------|---------------|
+| **Android** | [Join Beta](https://dasblueyeddevil.github.io/Project-Phoenix-MP/#beta-signup) | [Android Guide](ANDROID_INSTALL.md) |
+| **iOS** | [TestFlight](https://testflight.apple.com/join/TFw1m89R) | [iOS Guide](iOS_INSTALL.md) |
 
 For detailed installation instructions, see:
 - [Android Install Guide](ANDROID_INSTALL.md)
@@ -37,8 +37,8 @@ For detailed installation instructions, see:
 
 | Platform | Status | Notes |
 |----------|--------|-------|
-| **Android** | Released | Google Play Store + APK sideloading |
-| **iOS** | Released | App Store + TestFlight beta |
+| **Android** | Beta | APK sideloading via GitHub Releases |
+| **iOS** | Beta | TestFlight beta testing |
 
 ## Features
 

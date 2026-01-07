@@ -1,0 +1,205 @@
+name: iOS Release IPA
+
+on:
+  workflow_dispatch:  # Manual trigger only
+
+permissions:
+  contents: write  # Required to upload release assets
+
+concurrency:
+  group: ios-release-ipa
+  cancel-in-progress: true
+
+env:
+  BUNDLE_ID: com.devil.phoenixproject.projectphoenix
+  SCHEME: VitruvianPhoenix
+  PROJECT_PATH: iosApp/VitruvianPhoenix/VitruvianPhoenix.xcodeproj
+  GRADLE_OPTS: "-Dorg.gradle.jvmargs=-Xmx8g -XX:+UseParallelGC -XX:MaxMetaspaceSize=1g"
+
+jobs:
+  build-and-attach:
+    runs-on: macos-14
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Get latest release
+        id: latest_release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          RELEASE_INFO=$(gh release view --json tagName,uploadUrl,name 2>/dev/null || echo "")
+          if [ -z "$RELEASE_INFO" ]; then
+            echo "No releases found in this repository"
+            exit 1
+          fi
+          TAG_NAME=$(echo "$RELEASE_INFO" | jq -r '.tagName')
+          RELEASE_NAME=$(echo "$RELEASE_INFO" | jq -r '.name')
+          echo "tag_name=$TAG_NAME" >> $GITHUB_OUTPUT
+          echo "release_name=$RELEASE_NAME" >> $GITHUB_OUTPUT
+          echo "Found latest release: $RELEASE_NAME (tag: $TAG_NAME)"
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Cache Kotlin/Native compiler
+        uses: actions/cache@v4
+        with:
+          path: ~/.konan
+          key: ${{ runner.os }}-konan-2.3.0-iosArm64
+          restore-keys: |
+            ${{ runner.os }}-konan-2.3.0-
+            ${{ runner.os }}-konan-
+
+      - name: Generate build number
+        id: build_number
+        run: |
+          BUILD_NUM=$(date +%Y%m%d)${{ github.run_number }}
+          echo "build_number=$BUILD_NUM" >> $GITHUB_OUTPUT
+          echo "Build number: $BUILD_NUM"
+
+          # Update Xcode project with new build number
+          sed -i '' "s/CURRENT_PROJECT_VERSION = [0-9]*/CURRENT_PROJECT_VERSION = $BUILD_NUM/g" \
+            iosApp/VitruvianPhoenix/VitruvianPhoenix.xcodeproj/project.pbxproj
+
+          # Also update Info.plist for consistency
+          sed -i '' "s/<string>[0-9]*<\/string><!-- CFBundleVersion -->/<string>$BUILD_NUM<\/string><!-- CFBundleVersion -->/g" \
+            iosApp/VitruvianPhoenix/VitruvianPhoenix/Info.plist || true
+
+          # Show what was set
+          grep "CURRENT_PROJECT_VERSION" iosApp/VitruvianPhoenix/VitruvianPhoenix.xcodeproj/project.pbxproj | head -2
+
+      - name: Build shared framework and resources
+        run: |
+          # Build the framework
+          ./gradlew :shared:linkReleaseFrameworkIosArm64 --no-parallel
+          # Explicitly generate compose resources for iOS
+          ./gradlew :shared:generateComposeResClass
+          ./gradlew :shared:iosArm64ProcessResources || true
+
+          # Debug: Show what resource directories exist
+          echo "=== Checking resource directories ==="
+          find shared/build -type d -name "composeResources" 2>/dev/null | head -10
+          find shared/build -name "vitphoe_logo.png" 2>/dev/null | head -5
+
+      - name: Copy Compose resources to framework bundle
+        run: |
+          FRAMEWORK_PATH="shared/build/bin/iosArm64/releaseFramework/shared.framework"
+          RESOURCE_DST="$FRAMEWORK_PATH/composeResources"
+          mkdir -p "$RESOURCE_DST"
+
+          RESOURCE_PATHS=(
+            "shared/build/processedResources/iosArm64/main/composeResources"
+            "shared/build/kotlin-multiplatform-resources/aggregated-resources/iosArm64/composeResources"
+            "shared/build/generated/compose/resourceGenerator/assembledResources/iosArm64Main/composeResources"
+            "shared/build/generated/compose/resourceGenerator/preparedResources/commonMain/composeResources"
+          )
+
+          FOUND=false
+          for RESOURCE_SRC in "${RESOURCE_PATHS[@]}"; do
+            echo "Checking: $RESOURCE_SRC"
+            if [ -d "$RESOURCE_SRC" ] && [ "$(ls -A "$RESOURCE_SRC" 2>/dev/null)" ]; then
+              echo "Found compose resources at: $RESOURCE_SRC"
+              cp -R "$RESOURCE_SRC"/* "$RESOURCE_DST"/
+              FOUND=true
+              break
+            fi
+          done
+
+          if [ "$FOUND" = true ]; then
+            echo "=== Copied compose resources to framework bundle ==="
+            find "$RESOURCE_DST" -type f | head -20
+          else
+            echo "ERROR: No compose resources found!"
+            echo "Checked paths:"
+            printf '  - %s\n' "${RESOURCE_PATHS[@]}"
+            exit 1
+          fi
+
+      - name: Create XCFramework
+        run: |
+          xcodebuild -create-xcframework \
+            -framework shared/build/bin/iosArm64/releaseFramework/shared.framework \
+            -output shared/build/XCFrameworks/release/shared.xcframework
+
+      - name: Link framework to Xcode path
+        run: |
+          mkdir -p shared/build/bin/iosArm64/debugFramework
+          ln -sfn ../releaseFramework/shared.framework shared/build/bin/iosArm64/debugFramework/shared.framework
+
+      - name: Select Xcode
+        run: sudo xcode-select -s /Applications/Xcode_16.2.app/Contents/Developer
+
+      - name: Install certificate and profile
+        env:
+          BUILD_CERTIFICATE_BASE64: ${{ secrets.BUILD_CERTIFICATE_BASE64 }}
+          P12_PASSWORD: ${{ secrets.P12_PASSWORD }}
+          PROVISION_PROFILE_BASE64: ${{ secrets.PROVISION_PROFILE_BASE64 }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+        run: |
+          CERTIFICATE_PATH=$RUNNER_TEMP/build_certificate.p12
+          PP_PATH=$RUNNER_TEMP/build_pp.mobileprovision
+          KEYCHAIN_PATH=$RUNNER_TEMP/app-signing.keychain-db
+
+          echo -n "$BUILD_CERTIFICATE_BASE64" | base64 --decode -o $CERTIFICATE_PATH
+          echo -n "$PROVISION_PROFILE_BASE64" | base64 --decode -o $PP_PATH
+
+          security create-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
+          security set-keychain-settings -lut 21600 $KEYCHAIN_PATH
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
+          security import $CERTIFICATE_PATH -P "$P12_PASSWORD" -A -t cert -f pkcs12 -k $KEYCHAIN_PATH
+          security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
+          security list-keychain -d user -s $KEYCHAIN_PATH
+
+          mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
+          cp $PP_PATH ~/Library/MobileDevice/Provisioning\ Profiles
+
+      - name: Archive app
+        run: |
+          xcodebuild archive \
+            -project "$PROJECT_PATH" \
+            -scheme "$SCHEME" \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -archivePath $RUNNER_TEMP/VitruvianPhoenix.xcarchive \
+            DEVELOPMENT_TEAM="${{ secrets.TEAM_ID }}" \
+            CODE_SIGN_STYLE=Manual \
+            CODE_SIGN_IDENTITY="Apple Distribution" \
+            PROVISIONING_PROFILE_SPECIFIER="${{ secrets.PROVISIONING_PROFILE_NAME }}"
+
+      - name: Export .ipa
+        run: |
+          xcodebuild -exportArchive \
+            -archivePath $RUNNER_TEMP/VitruvianPhoenix.xcarchive \
+            -exportPath $RUNNER_TEMP/export \
+            -exportOptionsPlist iosApp/ExportOptions.plist
+
+      - name: Rename IPA with version
+        id: rename_ipa
+        run: |
+          IPA_PATH=$(find $RUNNER_TEMP/export -name "*.ipa" | head -1)
+          TAG="${{ steps.latest_release.outputs.tag_name }}"
+          NEW_NAME="ProjectPhoenix-${TAG}.ipa"
+          cp "$IPA_PATH" "$NEW_NAME"
+          echo "ipa_path=$NEW_NAME" >> $GITHUB_OUTPUT
+          echo "Renamed IPA to: $NEW_NAME"
+
+      - name: Upload IPA to release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release upload "${{ steps.latest_release.outputs.tag_name }}" \
+            "${{ steps.rename_ipa.outputs.ipa_path }}" \
+            --clobber
+          echo "Successfully uploaded IPA to release ${{ steps.latest_release.outputs.tag_name }}"
+
+      - name: Clean up keychain
+        if: always()
+        run: security delete-keychain $RUNNER_TEMP/app-signing.keychain-db || true

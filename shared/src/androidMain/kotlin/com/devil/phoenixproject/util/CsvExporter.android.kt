@@ -12,6 +12,7 @@ import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
 import java.io.File
 import java.io.FileWriter
+import java.util.Locale
 
 /**
  * Android implementation of CsvExporter.
@@ -49,7 +50,7 @@ class AndroidCsvExporter(private val context: Context) : CsvExporter {
                     val oneRM = calculateOneRM(pr.weightPerCableKg, pr.reps)
 
                     writer.appendLine(
-                        "${escapeCsv(exerciseName)},$weight,${pr.reps},$date,${pr.workoutMode},${String.format("%.1f", oneRM)}"
+                        "${escapeCsv(exerciseName)},$weight,${pr.reps},$date,${pr.workoutMode},${String.format(Locale.US, "%.1f", oneRM)}"
                     )
                 }
             }
@@ -81,7 +82,14 @@ class AndroidCsvExporter(private val context: Context) : CsvExporter {
                         ?: exerciseNames[session.exerciseId]
                         ?: "Unknown"
                     val date = formatDate(session.timestamp)
-                    val weight = formatWeight(session.weightPerCableKg, weightUnit)
+                    // For Echo mode, use peak weight (matches official app behavior); otherwise use configured weight
+                    val isEchoMode = session.mode.contains("Echo", ignoreCase = true)
+                    val effectiveWeight = if (isEchoMode) {
+                        session.peakWeightKg ?: session.workingAvgWeightKg ?: session.weightPerCableKg
+                    } else {
+                        session.weightPerCableKg
+                    }
+                    val weight = formatWeight(effectiveWeight, weightUnit)
                     val justLift = if (session.isJustLift) "Yes" else "No"
 
                     writer.appendLine(
@@ -125,15 +133,13 @@ class AndroidCsvExporter(private val context: Context) : CsvExporter {
                         val weight = formatWeight(pr.weightPerCableKg, weightUnit)
                         val date = formatDate(pr.timestamp)
                         val oneRM = calculateOneRM(pr.weightPerCableKg, pr.reps)
-                        val progress = if (previousWeight != null) {
-                            val diff = pr.weightPerCableKg - previousWeight!!
+                        val progress = previousWeight?.let { prevWeight ->
+                            val diff = pr.weightPerCableKg - prevWeight
                             if (diff > 0) "+${formatWeight(diff, weightUnit)}" else formatWeight(diff, weightUnit)
-                        } else {
-                            "-"
-                        }
+                        } ?: "-"
 
                         writer.appendLine(
-                            "${escapeCsv(exerciseName)},$date,$weight,${pr.reps},${pr.workoutMode},${String.format("%.1f", oneRM)},$progress"
+                            "${escapeCsv(exerciseName)},$date,$weight,${pr.reps},${pr.workoutMode},${String.format(Locale.US, "%.1f", oneRM)},$progress"
                         )
 
                         previousWeight = pr.weightPerCableKg
@@ -150,7 +156,10 @@ class AndroidCsvExporter(private val context: Context) : CsvExporter {
     override fun shareCSV(fileUri: String, fileName: String) {
         try {
             val file = File(fileUri)
-            if (!file.exists()) return
+            if (!file.exists()) {
+                android.util.Log.e("CsvExporter", "File does not exist: $fileUri")
+                return
+            }
 
             val uri: Uri = FileProvider.getUriForFile(
                 context,
@@ -171,7 +180,7 @@ class AndroidCsvExporter(private val context: Context) : CsvExporter {
             }
             context.startActivity(chooser)
         } catch (e: Exception) {
-            // Log error
+            android.util.Log.e("CsvExporter", "Failed to share CSV: ${e.message}", e)
         }
     }
 

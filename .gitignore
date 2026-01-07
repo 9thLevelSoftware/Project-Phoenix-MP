@@ -75,3 +75,6 @@ CHANGELOG.md
 # Git worktrees
 .worktrees/
 /.daem0nmcp/
+
+# Node.js
+node_modules/

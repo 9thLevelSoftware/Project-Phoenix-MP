@@ -99,6 +99,7 @@ class KableBleRepository : BleRepository {
         private const val HANDLE_REST_THRESHOLD = 5.0       // Position < 5.0mm = handles at rest (Increased from 2.5 to handle drift - matches parent repo)
         // Velocity is in mm/s (calculated from mm positions)
         private const val VELOCITY_THRESHOLD = 50.0         // Velocity > 50 mm/s = significant movement (matches official concentric threshold)
+        private const val AUTO_START_VELOCITY_THRESHOLD = 20.0  // Lower threshold for auto-start grab detection (Issue #96)
 
         // Velocity smoothing (Issue #204, #214)
         // EMA alpha: 0.3 = balanced smoothing (faster response during direction changes)
@@ -131,6 +132,10 @@ class KableBleRepository : BleRepository {
 
         // Handle state hysteresis (Task 14)
         private const val STATE_TRANSITION_DWELL_MS = 200L
+        
+        // WaitingForRest timeout (iOS autostart fix)
+        // If handles are pre-tensioned when screen loads, allow arming after timeout
+        private const val WAITING_FOR_REST_TIMEOUT_MS = 3000L
     }
 
     // Kable characteristic references - PRIMARY (required for basic operation)
@@ -260,6 +265,7 @@ class KableBleRepository : BleRepository {
 
     // Handle detection
     private var handleDetectionEnabled = false
+    private var isAutoStartMode = false  // Uses lower velocity threshold for grab detection (Issue #96)
 
     // Connected device info (for logging)
     private var connectedDeviceName: String = ""
@@ -294,6 +300,9 @@ class KableBleRepository : BleRepository {
     // Handle state hysteresis timers (Task 14)
     private var pendingGrabbedStartTime: Long? = null
     private var pendingReleasedStartTime: Long? = null
+    
+    // WaitingForRest timeout tracking (iOS autostart fix)
+    private var waitingForRestStartTime: Long? = null
 
     // Monitor polling job (for explicit control)
     private var monitorPollingJob: kotlinx.coroutines.Job? = null
@@ -1298,13 +1307,12 @@ class KableBleRepository : BleRepository {
             forceAboveGrabThresholdStart = null
             forceBelowReleaseThresholdStart = null
             handleDetectionEnabled = true
-            log.i { "🎯 Monitor polling for AUTO-START - waiting for handles at rest (pos < ${HANDLE_REST_THRESHOLD}mm)" }
+            isAutoStartMode = true  // Issue #96: Use lower velocity threshold for grab detection
+            // iOS autostart fix: Reset WaitingForRest timeout tracker
+            waitingForRestStartTime = null
+            log.i { "🎯 Monitor polling for AUTO-START - waiting for handles at rest (pos < ${HANDLE_REST_THRESHOLD}mm), vel threshold=${AUTO_START_VELOCITY_THRESHOLD}mm/s" }
         } else {
-            // ACTIVE WORKOUT MODE: Skip state machine initialization, set to Active
-            // Workout is already running, no need for grab detection
-            _handleState.value = HandleState.Grabbed
-            handleDetectionEnabled = false
-            log.i { "🏋️ Monitor polling for ACTIVE WORKOUT (handle detection disabled)" }
+            isAutoStartMode = false  // Normal mode uses standard velocity threshold
         }
 
         // Cancel any existing polling job before starting new one
@@ -1499,11 +1507,11 @@ class KableBleRepository : BleRepository {
         // Stop disco mode if running (safety - don't interfere with workout)
         stopDiscoMode()
 
-        log.i { "Starting workout with params: type=${params.workoutType}, weight=${params.weightPerCableKg}kg" }
+        log.i { "Starting workout with params: type=${params.programMode}, weight=${params.weightPerCableKg}kg" }
         return try {
             // Build workout start command based on parameters
             // Format matches parent repo protocol
-            val modeCode = params.workoutType.modeValue.toByte()
+            val modeCode = params.programMode.modeValue.toByte()
             val weightBytes = (params.weightPerCableKg * 100).toInt()  // Weight in hectograms
             val weightLow = (weightBytes and 0xFF).toByte()
             val weightHigh = ((weightBytes shr 8) and 0xFF).toByte()
@@ -1577,11 +1585,14 @@ class KableBleRepository : BleRepository {
                 // Task 14: Reset hysteresis timers
                 pendingGrabbedStartTime = null
                 pendingReleasedStartTime = null
+                // iOS autostart fix: Reset WaitingForRest timeout
+                waitingForRestStartTime = null
                 log.i { "🎮 Handle state machine reset (no peripheral - will arm when connected)" }
             }
         } else {
             // Disable handle detection but keep polling for metrics
             handleDetectionEnabled = false
+            isAutoStartMode = false  // Issue #96: Reset auto-start mode flag
             log.i { "🎮 Handle detection disabled (polling continues for metrics)" }
         }
     }
@@ -1600,7 +1611,7 @@ class KableBleRepository : BleRepository {
 
     override fun enableJustLiftWaitingMode() {
         log.i { "🎯 Enabling Just Lift waiting mode - ready for next set" }
-        log.i { "   Detection thresholds: grab pos>${HANDLE_GRABBED_THRESHOLD}mm + vel>${VELOCITY_THRESHOLD}mm/s, release pos<${HANDLE_REST_THRESHOLD}mm" }
+        log.i { "   Detection thresholds: grab pos>${HANDLE_GRABBED_THRESHOLD}mm + vel>${AUTO_START_VELOCITY_THRESHOLD}mm/s, release pos<${HANDLE_REST_THRESHOLD}mm" }
 
         // Reset position tracking for diagnostics
         minPositionSeen = Double.MAX_VALUE
@@ -1622,6 +1633,7 @@ class KableBleRepository : BleRepository {
 
         // Enable handle detection for the state machine
         handleDetectionEnabled = true
+        isAutoStartMode = true  // Issue #96: Use lower velocity threshold for grab detection
     }
 
     override fun restartMonitorPolling() {
@@ -1657,8 +1669,8 @@ class KableBleRepository : BleRepository {
         if (minPositionSeen != Double.MAX_VALUE && maxPositionSeen != Double.MIN_VALUE) {
             log.i { "========== WORKOUT ANALYSIS ==========" }
             log.i { "Position range: min=$minPositionSeen, max=$maxPositionSeen" }
-            log.i { "v0.5.1-beta detection thresholds:" }
-            log.i { "  Handle grab: pos > $HANDLE_GRABBED_THRESHOLD + velocity > $VELOCITY_THRESHOLD" }
+            log.i { "Detection thresholds (auto-start mode uses lower velocity):" }
+            log.i { "  Handle grab: pos > $HANDLE_GRABBED_THRESHOLD + velocity > ${if (isAutoStartMode) AUTO_START_VELOCITY_THRESHOLD else VELOCITY_THRESHOLD}${if (isAutoStartMode) " (auto-start)" else ""}" }
             log.i { "  Handle release: pos < $HANDLE_REST_THRESHOLD" }
             log.i { "======================================" }
         }
@@ -2052,15 +2064,17 @@ class KableBleRepository : BleRepository {
 
         // Check handles - support single-handle exercises
         // NOTE: Use abs(velocity) since velocity is now signed (Issue #204 fix)
+        // Issue #96: Use lower velocity threshold for auto-start grab detection
+        val velocityThreshold = if (isAutoStartMode) AUTO_START_VELOCITY_THRESHOLD else VELOCITY_THRESHOLD
         val handleAGrabbed = posA > HANDLE_GRABBED_THRESHOLD
         val handleBGrabbed = posB > HANDLE_GRABBED_THRESHOLD
-        val handleAMoving = kotlin.math.abs(velocityA) > VELOCITY_THRESHOLD
-        val handleBMoving = kotlin.math.abs(velocityB) > VELOCITY_THRESHOLD
+        val handleAMoving = kotlin.math.abs(velocityA) > velocityThreshold
+        val handleBMoving = kotlin.math.abs(velocityB) > velocityThreshold
 
         // Periodic diagnostic logging (every 200 samples at high poll rate)
         handleStateLogCounter++
         if (handleStateLogCounter % 200 == 0L) {
-            log.i { "🎯 HANDLE STATE: $currentState | posA=${posA.format(1)}mm posB=${posB.format(1)}mm | velA=${velocityA.format(0)} velB=${velocityB.format(0)} | thresholds: rest<$HANDLE_REST_THRESHOLD grab>$HANDLE_GRABBED_THRESHOLD vel>$VELOCITY_THRESHOLD" }
+            log.i { "🎯 HANDLE STATE: $currentState | posA=${posA.format(1)}mm posB=${posB.format(1)}mm | velA=${velocityA.format(0)} velB=${velocityB.format(0)} | thresholds: rest<$HANDLE_REST_THRESHOLD grab>$HANDLE_GRABBED_THRESHOLD vel>$velocityThreshold${if (isAutoStartMode) " (auto-start)" else ""}" }
         }
 
         return when (currentState) {
@@ -2069,8 +2083,20 @@ class KableBleRepository : BleRepository {
                 // This prevents immediate auto-start if cables already have tension
                 if (posA < HANDLE_REST_THRESHOLD && posB < HANDLE_REST_THRESHOLD) {
                     log.i { "✅ Handles at REST (posA=$posA, posB=$posB < $HANDLE_REST_THRESHOLD) - auto-start now ARMED" }
+                    waitingForRestStartTime = null
                     HandleState.Released  // SetComplete = "Released/Armed" state
                 } else {
+                    // iOS autostart fix: Add timeout to escape WaitingForRest trap
+                    // If user holds handles before screen loads (pre-tensioned cables),
+                    // the state machine would be stuck forever. After timeout, arm anyway.
+                    val currentTime = currentTimeMillis()
+                    if (waitingForRestStartTime == null) {
+                        waitingForRestStartTime = currentTime
+                    } else if (currentTime - waitingForRestStartTime!! > WAITING_FOR_REST_TIMEOUT_MS) {
+                        log.w { "⚠️ WaitingForRest TIMEOUT (${WAITING_FOR_REST_TIMEOUT_MS}ms) - arming with current position (posA=$posA, posB=$posB)" }
+                        waitingForRestStartTime = null
+                        HandleState.Released  // Force arm after timeout
+                    }
                     HandleState.WaitingForRest
                 }
             }

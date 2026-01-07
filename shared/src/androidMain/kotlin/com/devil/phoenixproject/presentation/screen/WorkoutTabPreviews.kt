@@ -55,7 +55,7 @@ private fun WorkoutTabActivePreview() {
     )
 
     val mockParameters = WorkoutParameters(
-        workoutType = WorkoutType.Program(ProgramMode.OldSchool),
+        programMode = ProgramMode.OldSchool,
         weightPerCableKg = 25f,
         reps = 12,
         warmupReps = 3,
@@ -205,7 +205,7 @@ private fun WorkoutTabDisconnectedPreview() {
             workoutState = WorkoutState.Idle,
             currentMetric = null,
             workoutParameters = WorkoutParameters(
-                workoutType = WorkoutType.Program(ProgramMode.OldSchool),
+                programMode = ProgramMode.OldSchool,
                 reps = 10
             ),
             repCount = RepCount(),
@@ -247,7 +247,7 @@ private fun WorkoutTabScanningPreview() {
             workoutState = WorkoutState.Idle,
             currentMetric = null,
             workoutParameters = WorkoutParameters(
-                workoutType = WorkoutType.Program(ProgramMode.OldSchool),
+                programMode = ProgramMode.OldSchool,
                 reps = 10
             ),
             repCount = RepCount(),
@@ -292,7 +292,7 @@ private fun WorkoutTabConnectedIdlePreview() {
             workoutState = WorkoutState.Idle,
             currentMetric = null,
             workoutParameters = WorkoutParameters(
-                workoutType = WorkoutType.Program(ProgramMode.OldSchool),
+                programMode = ProgramMode.OldSchool,
                 weightPerCableKg = 20f,
                 reps = 10
             ),
@@ -331,7 +331,7 @@ private fun WorkoutTabConnectedIdlePreview() {
 @Composable
 private fun WorkoutTabCountdownPreview() {
     val mockParameters = WorkoutParameters(
-        workoutType = WorkoutType.Program(ProgramMode.Pump),
+        programMode = ProgramMode.Pump,
         weightPerCableKg = 30f,
         reps = 15,
         warmupReps = 3,
@@ -370,7 +370,7 @@ private fun WorkoutTabCountdownPreview() {
                         weightPerCableKg = 30f,
                         setReps = listOf(12, 12, 12),
                         setWeightsPerCableKg = listOf(30f, 30f, 30f),
-                        workoutType = WorkoutType.Program(ProgramMode.Pump)
+                        programMode = ProgramMode.Pump
                     )
                 )
             ),
@@ -405,7 +405,7 @@ private fun WorkoutTabCountdownPreview() {
 @Composable
 private fun WorkoutTabRestingPreview() {
     val mockParameters = WorkoutParameters(
-        workoutType = WorkoutType.Program(ProgramMode.OldSchool),
+        programMode = ProgramMode.OldSchool,
         weightPerCableKg = 25f,
         reps = 12,
         warmupReps = 3
@@ -467,7 +467,7 @@ private fun WorkoutTabRestingPreview() {
 @Composable
 private fun WorkoutTabSetSummaryPreview() {
     val mockParameters = WorkoutParameters(
-        workoutType = WorkoutType.Program(ProgramMode.OldSchool),
+        programMode = ProgramMode.OldSchool,
         weightPerCableKg = 25f,
         reps = 12
     )
@@ -550,7 +550,7 @@ private fun WorkoutTabSetSummaryPreview() {
 @Composable
 private fun WorkoutTabSetSummaryAutoplayPreview() {
     val mockParameters = WorkoutParameters(
-        workoutType = WorkoutType.Program(ProgramMode.Pump),
+        programMode = ProgramMode.Pump,
         weightPerCableKg = 20f,
         reps = 15
     )
@@ -627,7 +627,7 @@ private fun WorkoutTabCompletedPreview() {
             workoutState = WorkoutState.Completed,
             currentMetric = null,
             workoutParameters = WorkoutParameters(
-                workoutType = WorkoutType.Program(ProgramMode.OldSchool),
+                programMode = ProgramMode.OldSchool,
                 weightPerCableKg = 25f,
                 reps = 12
             ),
@@ -685,7 +685,7 @@ private fun WorkoutTabCompletedWithNextExercisePreview() {
                 weightPerCableKg = 30f,
                 setReps = listOf(12, 12, 12),
                 setWeightsPerCableKg = listOf(30f, 30f, 30f),
-                workoutType = WorkoutType.Program(ProgramMode.OldSchool)
+                programMode = ProgramMode.OldSchool
             ),
             RoutineExercise(
                 id = "re-2",
@@ -700,7 +700,7 @@ private fun WorkoutTabCompletedWithNextExercisePreview() {
                 weightPerCableKg = 25f,
                 setReps = listOf(10, 10, 10),
                 setWeightsPerCableKg = listOf(25f, 25f, 25f),
-                workoutType = WorkoutType.Program(ProgramMode.OldSchool)
+                programMode = ProgramMode.OldSchool
             )
         )
     )
@@ -714,7 +714,7 @@ private fun WorkoutTabCompletedWithNextExercisePreview() {
             workoutState = WorkoutState.Completed,
             currentMetric = null,
             workoutParameters = WorkoutParameters(
-                workoutType = WorkoutType.Program(ProgramMode.OldSchool),
+                programMode = ProgramMode.OldSchool,
                 weightPerCableKg = 30f,
                 reps = 12
             ),
@@ -767,7 +767,7 @@ private fun WorkoutTabErrorPreview() {
             workoutState = WorkoutState.Error("Failed to start workout: Device not responding"),
             currentMetric = null,
             workoutParameters = WorkoutParameters(
-                workoutType = WorkoutType.Program(ProgramMode.OldSchool),
+                programMode = ProgramMode.OldSchool,
                 reps = 10
             ),
             repCount = RepCount(),
@@ -816,7 +816,7 @@ private fun WorkoutTabJustLiftAutoStopPreview() {
     )
 
     val mockParameters = WorkoutParameters(
-        workoutType = WorkoutType.Program(ProgramMode.OldSchool),
+        programMode = ProgramMode.OldSchool,
         weightPerCableKg = 20f,
         reps = 0,
         isJustLift = true
@@ -887,7 +887,7 @@ private fun WorkoutTabWarmupPreview() {
     )
 
     val mockParameters = WorkoutParameters(
-        workoutType = WorkoutType.Program(ProgramMode.OldSchool),
+        programMode = ProgramMode.OldSchool,
         weightPerCableKg = 25f,
         reps = 12,
         warmupReps = 3,
@@ -987,7 +987,7 @@ private fun WorkoutTabAltIdlePreview() {
             workoutState = WorkoutState.Idle,
             currentMetric = null,
             workoutParameters = WorkoutParameters(
-                workoutType = WorkoutType.Program(ProgramMode.OldSchool),
+                programMode = ProgramMode.OldSchool,
                 weightPerCableKg = 25f,
                 reps = 12
             ),
@@ -1052,7 +1052,7 @@ private fun WorkoutTabAltActivePreview() {
             workoutState = WorkoutState.Active,
             currentMetric = mockMetric,
             workoutParameters = WorkoutParameters(
-                workoutType = WorkoutType.Program(ProgramMode.OldSchool),
+                programMode = ProgramMode.OldSchool,
                 weightPerCableKg = 25f,
                 reps = 12,
                 warmupReps = 3
@@ -1115,7 +1115,7 @@ private fun WorkoutTabAltWarmupPreview() {
             workoutState = WorkoutState.Active,
             currentMetric = mockMetric,
             workoutParameters = WorkoutParameters(
-                workoutType = WorkoutType.Program(ProgramMode.OldSchool),
+                programMode = ProgramMode.OldSchool,
                 weightPerCableKg = 25f,
                 reps = 12,
                 warmupReps = 3
@@ -1183,7 +1183,7 @@ private fun WorkoutTabAltSummaryPreview() {
             ),
             currentMetric = null,
             workoutParameters = WorkoutParameters(
-                workoutType = WorkoutType.Program(ProgramMode.OldSchool),
+                programMode = ProgramMode.OldSchool,
                 weightPerCableKg = 25f,
                 reps = 12
             ),
@@ -1235,7 +1235,7 @@ private fun WorkoutTabAltRestingPreview() {
             ),
             currentMetric = null,
             workoutParameters = WorkoutParameters(
-                workoutType = WorkoutType.Program(ProgramMode.OldSchool),
+                programMode = ProgramMode.OldSchool,
                 weightPerCableKg = 25f,
                 reps = 12
             ),
@@ -1281,7 +1281,7 @@ private fun WorkoutTabAltCompletedPreview() {
             workoutState = WorkoutState.Completed,
             currentMetric = null,
             workoutParameters = WorkoutParameters(
-                workoutType = WorkoutType.Program(ProgramMode.OldSchool),
+                programMode = ProgramMode.OldSchool,
                 weightPerCableKg = 25f,
                 reps = 12
             ),
@@ -1332,7 +1332,7 @@ private fun WorkoutTabAltJustLiftAutoStartPreview() {
             workoutState = WorkoutState.Idle,
             currentMetric = null,
             workoutParameters = WorkoutParameters(
-                workoutType = WorkoutType.Program(ProgramMode.OldSchool),
+                programMode = ProgramMode.OldSchool,
                 weightPerCableKg = 30f,
                 reps = 0,
                 warmupReps = 0,
@@ -1394,7 +1394,7 @@ private fun WorkoutTabAltJustLiftActivePreview() {
             workoutState = WorkoutState.Active,
             currentMetric = mockMetric,
             workoutParameters = WorkoutParameters(
-                workoutType = WorkoutType.Program(ProgramMode.OldSchool),
+                programMode = ProgramMode.OldSchool,
                 weightPerCableKg = 30f,
                 reps = 0,
                 warmupReps = 0,
@@ -1464,7 +1464,7 @@ private fun WorkoutTabAltJustLiftAutoStopPreview() {
             workoutState = WorkoutState.Active,
             currentMetric = mockMetric,
             workoutParameters = WorkoutParameters(
-                workoutType = WorkoutType.Program(ProgramMode.OldSchool),
+                programMode = ProgramMode.OldSchool,
                 weightPerCableKg = 30f,
                 reps = 0,
                 warmupReps = 0,
@@ -1539,7 +1539,7 @@ private fun WorkoutTabAltAMRAPActivePreview() {
             workoutState = WorkoutState.Active,
             currentMetric = mockMetric,
             workoutParameters = WorkoutParameters(
-                workoutType = WorkoutType.Program(ProgramMode.OldSchool),
+                programMode = ProgramMode.OldSchool,
                 weightPerCableKg = 20f,
                 reps = 0,  // AMRAP doesn't have target reps
                 warmupReps = 3,
@@ -1604,7 +1604,7 @@ private fun WorkoutTabAltAMRAPAutoStopPreview() {
             workoutState = WorkoutState.Active,
             currentMetric = mockMetric,
             workoutParameters = WorkoutParameters(
-                workoutType = WorkoutType.Program(ProgramMode.OldSchool),
+                programMode = ProgramMode.OldSchool,
                 weightPerCableKg = 20f,
                 reps = 0,
                 warmupReps = 3,

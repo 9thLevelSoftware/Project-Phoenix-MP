@@ -9,31 +9,23 @@ This guide explains how to install Vitruvian Phoenix on your Android device.
 
 ---
 
-## Option 1: Google Play Store (Recommended)
+## Join the Beta
 
-The easiest way to install Vitruvian Phoenix is from the Google Play Store.
+The app is currently in closed beta. To get access:
 
-1. Open the **Google Play Store** on your Android device
-2. Search for **"Vitruvian Phoenix"** or [tap here to go directly to the listing](https://play.google.com/store/apps/details?id=com.devil.phoenixproject)
-3. Tap **Install**
-4. Once installed, tap **Open** or find the app in your app drawer
-
-**Benefits of Play Store installation:**
-- Automatic updates when new versions are released
-- Verified and signed by Google
-- No special permissions required to install
+1. **[Sign up for the beta](https://dasblueyeddevil.github.io/Project-Phoenix-MP/#beta-signup)** with your email address
+2. You'll receive an email with download instructions once approved
 
 ---
 
-## Option 2: Direct APK Download (Sideloading)
+## Installing the APK
 
-If you prefer to install directly from GitHub or need a specific version:
+Once you have access to the beta:
 
 ### Step 1: Download the APK
 
-1. On your Android device, go to our [GitHub Releases](../../releases) page
-2. Download the latest `androidApp-release.apk` file
-3. You may see a warning about downloading APK files - tap **Download anyway**
+1. Download the APK file from the link provided in your beta invitation email
+2. You may see a warning about downloading APK files - tap **Download anyway**
 
 ### Step 2: Enable Installation from Unknown Sources
 
@@ -78,14 +70,9 @@ When you first launch the app, you'll be asked to grant permissions:
 
 ## Updating the App
 
-### Play Store Users
-Updates are automatic! You'll receive new versions as they're released.
-
-### APK Users
 When a new version is released:
-1. Download the new APK from GitHub Releases
+1. Download the new APK from your beta access link
 2. Open and install it - Android will update the existing app
-3. **Your workout data is preserved** during updates
 
 ---
 
@@ -138,8 +125,8 @@ The app includes a built-in backup feature:
 
 ## FAQ
 
-**Q: Is the Play Store version different from the APK?**
-A: No, they're the same app. The Play Store version just has the convenience of automatic updates.
+**Q: Will there be a Play Store release?**
+A: Yes, we plan to release on Google Play once the app exits beta.
 
 **Q: Is it safe to install APKs?**
 A: APKs from trusted sources are safe. Our releases are built from the open-source code in this repository. You can verify or build it yourself.

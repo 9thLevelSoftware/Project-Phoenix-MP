@@ -2,6 +2,7 @@ package com.devil.phoenixproject.presentation.screen
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -215,21 +216,24 @@ fun ConnectionLogsScreen(
                         text = "Log content preview:",
                         style = MaterialTheme.typography.bodySmall
                     )
-                    Surface(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(200.dp)
-                            .padding(top = 8.dp),
-                        color = MaterialTheme.colorScheme.surfaceVariant,
-                        shape = RoundedCornerShape(4.dp)
-                    ) {
-                        Text(
-                            text = exportContent.take(2000) + if (exportContent.length > 2000) "\n..." else "",
-                            modifier = Modifier.padding(8.dp),
-                            style = MaterialTheme.typography.bodySmall,
-                            fontFamily = FontFamily.Monospace,
-                            fontSize = 10.sp
-                        )
+                    BoxWithConstraints {
+                        val previewHeight = (maxHeight * 0.4f).coerceIn(150.dp, 400.dp)
+                        Surface(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(previewHeight)
+                                .padding(top = 8.dp),
+                            color = MaterialTheme.colorScheme.surfaceVariant,
+                            shape = RoundedCornerShape(4.dp)
+                        ) {
+                            Text(
+                                text = exportContent.take(2000) + if (exportContent.length > 2000) "\n..." else "",
+                                modifier = Modifier.padding(8.dp),
+                                style = MaterialTheme.typography.bodySmall,
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = 10.sp
+                            )
+                        }
                     }
                 }
             },

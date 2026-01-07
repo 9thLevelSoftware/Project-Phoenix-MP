@@ -21,6 +21,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.devil.phoenixproject.domain.model.EccentricLoad
+import com.devil.phoenixproject.domain.model.EchoLevel
+import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.presentation.components.SliderWithButtons
 import com.devil.phoenixproject.ui.theme.*
@@ -54,11 +57,22 @@ fun RestTimerCard(
     onEndWorkout: () -> Unit,
     onUpdateReps: ((Int) -> Unit)? = null,
     onUpdateWeight: ((Float) -> Unit)? = null,
+    // Echo mode specific
+    programMode: ProgramMode? = null,
+    echoLevel: EchoLevel? = null,
+    eccentricLoadPercent: Int? = null,
+    onUpdateEchoLevel: ((EchoLevel) -> Unit)? = null,
+    onUpdateEccentricLoad: ((Int) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     // Local state for editing parameters
     var editedReps by remember(nextExerciseReps) { mutableStateOf(nextExerciseReps ?: 10) }
     var editedWeight by remember(nextExerciseWeight) { mutableStateOf(nextExerciseWeight ?: 20f) }
+    var editedEchoLevel by remember(echoLevel) { mutableStateOf(echoLevel ?: EchoLevel.HARD) }
+    var editedEccentricPercent by remember(eccentricLoadPercent) { mutableStateOf(eccentricLoadPercent ?: 100) }
+
+    // Determine if this is Echo mode
+    val isEchoMode = programMode == ProgramMode.Echo
 
     // Background gradient - respects theme mode
     Box(
@@ -197,7 +211,13 @@ fun RestTimerCard(
             }
 
             // Editable workout parameters (if available and not last exercise)
-            if (!isLastExercise && (nextExerciseWeight != null || nextExerciseReps != null)) {
+            // Show for: non-Echo modes with weight/reps, OR Echo mode with echo settings
+            val showConfigCard = !isLastExercise && (
+                (isEchoMode && (echoLevel != null || nextExerciseReps != null)) ||
+                (!isEchoMode && (nextExerciseWeight != null || nextExerciseReps != null))
+            )
+
+            if (showConfigCard) {
                 Spacer(modifier = Modifier.height(Spacing.small))
 
                 // Parameters config card
@@ -221,7 +241,7 @@ fun RestTimerCard(
                             letterSpacing = 1.sp
                         )
 
-                        // Reps adjuster with hybrid slider
+                        // Reps adjuster with hybrid slider (shown for all modes)
                         if (nextExerciseReps != null) {
                             SliderWithButtons(
                                 value = editedReps.toFloat(),
@@ -236,22 +256,41 @@ fun RestTimerCard(
                             )
                         }
 
-                        // Weight adjuster with hybrid slider
-                        if (nextExerciseWeight != null && formatWeightWithUnit != null) {
-                            val maxWeight = if (weightUnit == WeightUnit.LB) 220f else 100f
-                            val weightStep = if (weightUnit == WeightUnit.LB) 1f else 0.5f
-
-                            SliderWithButtons(
-                                value = editedWeight,
-                                onValueChange = { newWeight ->
-                                    editedWeight = newWeight.coerceIn(0f, maxWeight)
-                                    onUpdateWeight?.invoke(editedWeight)
-                                },
-                                valueRange = 0f..maxWeight,
-                                step = weightStep,
-                                label = "Weight per cable",
-                                formatValue = { formatWeightWithUnit(it, weightUnit) }
+                        if (isEchoMode) {
+                            // Echo mode: Show Echo Level selector + Eccentric Load slider
+                            RestTimerEchoLevelSelector(
+                                selectedLevel = editedEchoLevel,
+                                onLevelChange = { newLevel ->
+                                    editedEchoLevel = newLevel
+                                    onUpdateEchoLevel?.invoke(newLevel)
+                                }
                             )
+
+                            RestTimerEccentricLoadSlider(
+                                percent = editedEccentricPercent,
+                                onPercentChange = { newPercent ->
+                                    editedEccentricPercent = newPercent
+                                    onUpdateEccentricLoad?.invoke(newPercent)
+                                }
+                            )
+                        } else {
+                            // Non-Echo modes: Show weight adjuster
+                            if (nextExerciseWeight != null && formatWeightWithUnit != null) {
+                                val maxWeight = if (weightUnit == WeightUnit.LB) 242f else 110f  // 110kg per cable max
+                                val weightStep = if (weightUnit == WeightUnit.LB) 0.5f else 0.25f  // Match other weight selectors
+
+                                SliderWithButtons(
+                                    value = editedWeight,
+                                    onValueChange = { newWeight ->
+                                        editedWeight = newWeight.coerceIn(0f, maxWeight)
+                                        onUpdateWeight?.invoke(editedWeight)
+                                    },
+                                    valueRange = 0f..maxWeight,
+                                    step = weightStep,
+                                    label = "Weight per cable",
+                                    formatValue = { formatWeightWithUnit(it, weightUnit) }
+                                )
+                            }
                         }
                     }
                 }
@@ -383,6 +422,108 @@ fun WorkoutParamItem(
             label,
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+}
+
+/**
+ * Echo Level selector for Rest Timer - Row of 4 buttons (Hard/Harder/Hardest/Epic)
+ */
+@Composable
+private fun RestTimerEchoLevelSelector(
+    selectedLevel: EchoLevel,
+    onLevelChange: (EchoLevel) -> Unit
+) {
+    Column {
+        Text(
+            text = "ECHO LEVEL",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            letterSpacing = 1.sp
+        )
+
+        Spacer(modifier = Modifier.height(Spacing.small))
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(
+                    MaterialTheme.colorScheme.surfaceContainerLowest,
+                    RoundedCornerShape(Spacing.medium)
+                )
+                .padding(Spacing.extraSmall),
+            horizontalArrangement = Arrangement.spacedBy(Spacing.extraSmall)
+        ) {
+            EchoLevel.entries.forEach { level ->
+                val isSelected = level == selectedLevel
+
+                Surface(
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(Spacing.small),
+                    color = if (isSelected) {
+                        MaterialTheme.colorScheme.primaryContainer
+                    } else {
+                        MaterialTheme.colorScheme.surfaceContainerLowest
+                    },
+                    onClick = { onLevelChange(level) }
+                ) {
+                    Text(
+                        text = level.displayName,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = Spacing.small),
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                        color = if (isSelected) {
+                            MaterialTheme.colorScheme.onPrimaryContainer
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        },
+                        textAlign = TextAlign.Center
+                    )
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Eccentric Load slider for Rest Timer (100-150%)
+ */
+@Composable
+private fun RestTimerEccentricLoadSlider(
+    percent: Int,
+    onPercentChange: (Int) -> Unit
+) {
+    Column {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "ECCENTRIC LOAD",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                letterSpacing = 1.sp
+            )
+            Text(
+                text = "$percent%",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.primary
+            )
+        }
+
+        Spacer(modifier = Modifier.height(Spacing.small))
+
+        // Fine-grained slider (5% increments) - callback snaps to nearest valid EccentricLoad enum
+        Slider(
+            value = percent.toFloat(),
+            onValueChange = { onPercentChange(it.toInt()) },
+            valueRange = 0f..150f,
+            steps = 29, // 5% increments: 0, 5, 10, ... 150
+            modifier = Modifier.fillMaxWidth()
         )
     }
 }

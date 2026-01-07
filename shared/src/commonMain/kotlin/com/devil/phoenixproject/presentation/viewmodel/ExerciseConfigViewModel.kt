@@ -6,6 +6,7 @@ import com.devil.phoenixproject.domain.model.EchoLevel
 import com.devil.phoenixproject.domain.model.RoutineExercise
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.domain.model.WorkoutMode
+import com.devil.phoenixproject.domain.model.toWorkoutMode
 // import dagger.hilt.android.lifecycle.HiltViewModel
 // import javax.inject.Inject
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -162,7 +163,7 @@ class ExerciseConfigViewModel constructor() : ViewModel() {
 
         _sets.value = initialSets
 
-        _selectedMode.value = exercise.workoutType.toWorkoutMode()
+        _selectedMode.value = exercise.programMode.toWorkoutMode(exercise.echoLevel)
         _weightChange.value = kgToDisplay(exercise.progressionKg, weightUnit).toInt()
         _rest.value = exercise.setRestSeconds.firstOrNull()?.coerceIn(0, 300) ?: 60 // Use first rest time or default
         _perSetRestTime.value = exercise.perSetRestTime
@@ -293,9 +294,7 @@ class ExerciseConfigViewModel constructor() : ViewModel() {
             setReps = _sets.value.map { it.reps },
             weightPerCableKg = displayToKg(_sets.value.first().weightPerCable, weightUnit),
             setWeightsPerCableKg = _sets.value.map { displayToKg(it.weightPerCable, weightUnit) },
-            workoutType = _selectedMode.value.toWorkoutType(
-                eccentricLoad = if (_selectedMode.value is WorkoutMode.Echo) _eccentricLoad.value else EccentricLoad.LOAD_100
-            ),
+            programMode = _selectedMode.value.toProgramMode(),
             eccentricLoad = _eccentricLoad.value,
             echoLevel = _echoLevel.value,
             progressionKg = displayToKg(_weightChange.value.toFloat(), weightUnit),

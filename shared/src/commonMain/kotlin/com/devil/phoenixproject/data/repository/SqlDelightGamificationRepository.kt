@@ -135,6 +135,16 @@ class SqlDelightGamificationRepository(
         }
     }
 
+    override suspend fun markBadgesCelebrated(badgeIds: List<String>) {
+        if (badgeIds.isEmpty()) return
+        withContext(Dispatchers.IO) {
+            val now = Clock.System.now().toEpochMilliseconds()
+            queries.transaction {
+                queries.markBadgesCelebrated(now, badgeIds)
+            }
+        }
+    }
+
     override suspend fun updateStats() {
         withContext(Dispatchers.IO) {
             try {

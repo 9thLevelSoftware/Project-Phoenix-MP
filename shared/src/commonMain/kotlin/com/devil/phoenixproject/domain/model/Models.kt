@@ -102,6 +102,9 @@ sealed class WorkoutState {
 /**
  * Program modes that use command 0x4F (96-byte frame)
  * Note: Official app uses 0x4F, NOT 0x04
+ *
+ * Echo mode (modeValue 10) uses a different BLE command (0x4E) but is included
+ * here for unified mode selection in the UI layer.
  */
 sealed class ProgramMode(val modeValue: Int, val displayName: String) {
     object OldSchool : ProgramMode(0, "Old School")
@@ -109,6 +112,7 @@ sealed class ProgramMode(val modeValue: Int, val displayName: String) {
     object TUT : ProgramMode(3, "TUT")
     object TUTBeast : ProgramMode(4, "TUT Beast")
     object EccentricOnly : ProgramMode(6, "Eccentric Only")
+    object Echo : ProgramMode(10, "Echo")
 
     companion object {
         @Suppress("unused")
@@ -118,6 +122,7 @@ sealed class ProgramMode(val modeValue: Int, val displayName: String) {
             3 -> TUT
             4 -> TUTBeast
             6 -> EccentricOnly
+            10 -> Echo
             else -> OldSchool
         }
     }
@@ -125,7 +130,7 @@ sealed class ProgramMode(val modeValue: Int, val displayName: String) {
 
 /**
  * WorkoutMode - Legacy sealed class for UI compatibility
- * Maps to WorkoutType for protocol usage
+ * Maps to ProgramMode for protocol usage
  */
 sealed class WorkoutMode(val displayName: String) {
     object OldSchool : WorkoutMode("Old School")
@@ -136,49 +141,28 @@ sealed class WorkoutMode(val displayName: String) {
     data class Echo(val level: EchoLevel) : WorkoutMode("Echo")
 
     /**
-     * Convert WorkoutMode to WorkoutType
+     * Convert WorkoutMode to ProgramMode
      */
-    fun toWorkoutType(eccentricLoad: EccentricLoad = EccentricLoad.LOAD_100): WorkoutType = when (this) {
-        is OldSchool -> WorkoutType.Program(ProgramMode.OldSchool)
-        is Pump -> WorkoutType.Program(ProgramMode.Pump)
-        is TUT -> WorkoutType.Program(ProgramMode.TUT)
-        is TUTBeast -> WorkoutType.Program(ProgramMode.TUTBeast)
-        is EccentricOnly -> WorkoutType.Program(ProgramMode.EccentricOnly)
-        is Echo -> WorkoutType.Echo(level, eccentricLoad)
+    fun toProgramMode(): ProgramMode = when (this) {
+        is OldSchool -> ProgramMode.OldSchool
+        is Pump -> ProgramMode.Pump
+        is TUT -> ProgramMode.TUT
+        is TUTBeast -> ProgramMode.TUTBeast
+        is EccentricOnly -> ProgramMode.EccentricOnly
+        is Echo -> ProgramMode.Echo
     }
 }
 
 /**
- * Workout type - either Program (0x04) or Echo (0x4E)
+ * Extension function to convert ProgramMode to WorkoutMode for UI compatibility
  */
-sealed class WorkoutType {
-    data class Program(val mode: ProgramMode) : WorkoutType()
-    data class Echo(val level: EchoLevel, val eccentricLoad: EccentricLoad) : WorkoutType()
-
-    val displayName: String get() = when (this) {
-        is Program -> mode.displayName
-        is Echo -> "Echo"
-    }
-
-    @Suppress("unused")
-    val modeValue: Int get() = when (this) {
-        is Program -> mode.modeValue
-        is Echo -> 10
-    }
-
-    /**
-     * Convert WorkoutType to WorkoutMode for UI compatibility
-     */
-    fun toWorkoutMode(): WorkoutMode = when (this) {
-        is Program -> when (mode) {
-            ProgramMode.OldSchool -> WorkoutMode.OldSchool
-            ProgramMode.Pump -> WorkoutMode.Pump
-            ProgramMode.TUT -> WorkoutMode.TUT
-            ProgramMode.TUTBeast -> WorkoutMode.TUTBeast
-            ProgramMode.EccentricOnly -> WorkoutMode.EccentricOnly
-        }
-        is Echo -> WorkoutMode.Echo(level)
-    }
+fun ProgramMode.toWorkoutMode(echoLevel: EchoLevel = EchoLevel.HARD): WorkoutMode = when (this) {
+    ProgramMode.OldSchool -> WorkoutMode.OldSchool
+    ProgramMode.Pump -> WorkoutMode.Pump
+    ProgramMode.TUT -> WorkoutMode.TUT
+    ProgramMode.TUTBeast -> WorkoutMode.TUTBeast
+    ProgramMode.EccentricOnly -> WorkoutMode.EccentricOnly
+    ProgramMode.Echo -> WorkoutMode.Echo(echoLevel)
 }
 
 /**
@@ -218,7 +202,7 @@ enum class WeightUnit {
  * Workout parameters
  */
 data class WorkoutParameters(
-    val workoutType: WorkoutType,
+    val programMode: ProgramMode,
     val reps: Int,
     val weightPerCableKg: Float = 0f,  // Only used for Program modes
     val progressionRegressionKg: Float = 0f,  // Only used for Program modes (not TUT/TUTBeast)
@@ -230,8 +214,14 @@ data class WorkoutParameters(
     val isAMRAP: Boolean = false,  // AMRAP (As Many Reps As Possible) - disables auto-stop
     val lastUsedWeightKg: Float? = null,  // Last used weight for this exercise (for quick preset)
     val prWeightKg: Float? = null,  // Personal record weight for this exercise (for quick preset)
-    val stallDetectionEnabled: Boolean = true  // Enable stall detection auto-stop for Just Lift/AMRAP modes
-)
+    val stallDetectionEnabled: Boolean = true,  // Enable stall detection auto-stop for Just Lift/AMRAP modes
+    // Echo-specific settings (only used when programMode == ProgramMode.Echo)
+    val echoLevel: EchoLevel = EchoLevel.HARD,
+    val eccentricLoad: EccentricLoad = EccentricLoad.LOAD_100
+) {
+    /** True if this is an Echo workout */
+    val isEchoMode: Boolean get() = programMode == ProgramMode.Echo
+}
 
 /**
  * Real-time workout metric data from the device

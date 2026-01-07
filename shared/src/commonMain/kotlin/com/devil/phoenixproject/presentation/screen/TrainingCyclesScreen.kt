@@ -10,8 +10,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -23,30 +21,31 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import co.touchlab.kermit.Logger
-import com.devil.phoenixproject.data.migration.CycleTemplates
 import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.data.repository.TrainingCycleRepository
+import com.devil.phoenixproject.data.repository.WorkoutRepository
 import com.devil.phoenixproject.domain.model.CycleDay
 import com.devil.phoenixproject.domain.model.CycleProgress
 import com.devil.phoenixproject.domain.model.CycleTemplate
+import com.devil.phoenixproject.domain.model.ExerciseConfig
 import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.domain.model.TrainingCycle
 import com.devil.phoenixproject.domain.usecase.TemplateConverter
 import com.devil.phoenixproject.presentation.components.DayStrip
 import com.devil.phoenixproject.presentation.components.EmptyState
+import com.devil.phoenixproject.presentation.components.ResumeRoutineDialog
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
-import com.devil.phoenixproject.ui.theme.Spacing
 import com.devil.phoenixproject.ui.theme.ThemeMode
 import kotlinx.coroutines.launch
 import com.devil.phoenixproject.presentation.navigation.NavigationRoutes
 import org.koin.compose.koinInject
 import com.devil.phoenixproject.ui.theme.screenBackgroundBrush
+import com.devil.phoenixproject.presentation.components.cycle.UnifiedCycleCreationSheet
 
 /**
  * State machine for cycle creation flow
@@ -66,6 +65,7 @@ sealed class CycleCreationState {
  * Training Cycles screen - view and manage rolling workout schedules.
  * Replaces the calendar-bound WeeklyPrograms with flexible Day 1, Day 2, etc.
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TrainingCyclesScreen(
     navController: NavController,
@@ -74,8 +74,13 @@ fun TrainingCyclesScreen(
 ) {
     val cycleRepository: TrainingCycleRepository = koinInject()
     val exerciseRepository: ExerciseRepository = koinInject()
+    val workoutRepository: WorkoutRepository = koinInject()
     val templateConverter: TemplateConverter = koinInject()
+    val personalRecordRepository: com.devil.phoenixproject.data.repository.PersonalRecordRepository = koinInject()
     val scope = rememberCoroutineScope()
+
+    // User preferences for weight unit
+    val weightUnit by viewModel.weightUnit.collectAsState()
 
     // Collect cycles from repository
     val cycles by cycleRepository.getAllCycles().collectAsState(initial = emptyList())
@@ -83,7 +88,7 @@ fun TrainingCyclesScreen(
     val routines by viewModel.routines.collectAsState()
 
     // State
-    var showTemplateDialog by remember { mutableStateOf(false) }
+    var showCreationSheet by remember { mutableStateOf(false) }
     var showDeleteConfirmDialog by remember { mutableStateOf<TrainingCycle?>(null) }
     var cycleProgress by remember { mutableStateOf<Map<String, CycleProgress>>(emptyMap()) }
     var creationState by remember { mutableStateOf<CycleCreationState>(CycleCreationState.Idle) }
@@ -92,6 +97,12 @@ fun TrainingCyclesScreen(
 
     // Selected day for viewing different days in the active cycle
     var selectedDayNumber by remember { mutableStateOf<Int?>(null) }
+
+    // Resume/Restart dialog state (Issue #101)
+    var showResumeDialog by remember { mutableStateOf(false) }
+    var pendingRoutineId by remember { mutableStateOf<String?>(null) }
+    var pendingCycleId by remember { mutableStateOf<String?>(null) }
+    var pendingDayNumber by remember { mutableStateOf(0) }
 
     // When active cycle changes, reset selection to current day
     LaunchedEffect(activeCycle, cycleProgress) {
@@ -140,7 +151,7 @@ fun TrainingCyclesScreen(
                     title = "No Training Cycles Yet",
                     message = "Create a rolling workout schedule that adapts to your life, not the calendar",
                     actionText = "Create Your First Cycle",
-                    onAction = { navController.navigate(NavigationRoutes.DayCountPicker.route) }
+                    onAction = { showCreationSheet = true }
                 )
             }
         } else {
@@ -161,15 +172,25 @@ fun TrainingCyclesScreen(
                                 selectedDayNumber = dayNumber
                             },
                             onStartWorkout = { routineId, cycleId, dayNumber ->
-                                routineId?.let {
-                                    viewModel.ensureConnection(
-                                        onConnected = {
-                                            viewModel.loadRoutineFromCycle(it, cycleId, dayNumber)
-                                            viewModel.startWorkout()
-                                            navController.navigate(NavigationRoutes.ActiveWorkout.route)
-                                        },
-                                        onFailed = { /* Error shown via StateFlow */ }
-                                    )
+                                routineId?.let { rid ->
+                                    // Issue #101: Check for resumable progress
+                                    if (viewModel.hasResumableProgress(rid)) {
+                                        // Show resume dialog
+                                        pendingRoutineId = rid
+                                        pendingCycleId = cycleId
+                                        pendingDayNumber = dayNumber
+                                        showResumeDialog = true
+                                    } else {
+                                        // No progress - start fresh
+                                        viewModel.ensureConnection(
+                                            onConnected = {
+                                                viewModel.loadRoutineFromCycle(rid, cycleId, dayNumber)
+                                                viewModel.startWorkout()
+                                                navController.navigate(NavigationRoutes.ActiveWorkout.route)
+                                            },
+                                            onFailed = { /* Error shown via StateFlow */ }
+                                        )
+                                    }
                                 }
                             },
                             onAdvanceDay = {
@@ -194,7 +215,7 @@ fun TrainingCyclesScreen(
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onSurface
                         )
-                        TextButton(onClick = { showTemplateDialog = true }) {
+                        TextButton(onClick = { showCreationSheet = true }) {
                             Icon(
                                 Icons.Default.Add,
                                 contentDescription = null,
@@ -218,6 +239,11 @@ fun TrainingCyclesScreen(
                                 cycleRepository.setActiveCycle(cycle.id)
                             }
                         },
+                        onDeactivate = {
+                            scope.launch {
+                                cycleRepository.clearActiveCycle()
+                            }
+                        },
                         onEdit = {
                             navController.navigate(NavigationRoutes.CycleEditor.createRoute(cycle.id))
                         },
@@ -231,7 +257,7 @@ fun TrainingCyclesScreen(
 
         // FAB for creating new cycle
         FloatingActionButton(
-            onClick = { navController.navigate(NavigationRoutes.DayCountPicker.route) },
+            onClick = { showCreationSheet = true },
             modifier = Modifier
                 .align(Alignment.BottomEnd)
                 .navigationBarsPadding()
@@ -242,51 +268,61 @@ fun TrainingCyclesScreen(
         }
     }
 
-    // Template Selection Dialog
-    if (showTemplateDialog) {
-        TemplateSelectionDialog(
-            onDismiss = {
-                showTemplateDialog = false
-                creationState = CycleCreationState.Idle
-            },
+    // Unified Cycle Creation Sheet
+    if (showCreationSheet) {
+        UnifiedCycleCreationSheet(
             onSelectTemplate = { template ->
-                showTemplateDialog = false
-                // Check if template needs 1RM input (5/3/1 template)
-                val needsOneRepMax = template.name.contains("5/3/1", ignoreCase = true) ||
-                    template.days.any { day ->
-                        day.routine?.exercises?.any { it.isPercentageBased } == true
-                    }
-
-                if (needsOneRepMax) {
-                    creationState = CycleCreationState.OneRepMaxInput(template)
-                } else {
-                    creationState = CycleCreationState.ModeConfirmation(template, emptyMap())
-                }
+                showCreationSheet = false
+                // Always show 1RM input screen for ALL templates
+                // This allows users to optionally enter their maxes for better weight suggestions
+                // Users can skip if they don't want to enter 1RM values
+                creationState = CycleCreationState.OneRepMaxInput(template)
             },
-            onCreateBlank = {
-                showTemplateDialog = false
-                creationState = CycleCreationState.Idle
-                navController.navigate(NavigationRoutes.CycleEditor.createRoute("new"))
-            }
+            onCreateCustom = { dayCount ->
+                showCreationSheet = false
+                navController.navigate(NavigationRoutes.CycleEditor.createRoute("new", dayCount))
+            },
+            onDismiss = { showCreationSheet = false }
         )
     }
 
     // OneRepMaxInputScreen
     when (val state = creationState) {
         is CycleCreationState.OneRepMaxInput -> {
-            // Extract main lift names from template exercises
-            val mainLiftNames = state.template.days
+            // Extract exercise names from template - show all cable exercises (not just percentage-based)
+            // This allows users to enter 1RM values for any exercise they want
+            // Priority: percentage-based exercises first, then other cable exercises
+            val percentageBasedExercises = state.template.days
                 .flatMap { it.routine?.exercises ?: emptyList() }
                 .filter { it.isPercentageBased }
                 .map { it.exerciseName }
                 .distinct()
 
-            // Load existing 1RM values
+            val otherCableExercises = state.template.days
+                .flatMap { it.routine?.exercises ?: emptyList() }
+                .filter { !it.isPercentageBased && it.suggestedMode != null } // Cable exercises only
+                .map { it.exerciseName }
+                .distinct()
+                .filter { it !in percentageBasedExercises } // Avoid duplicates
+
+            val mainLiftNames = percentageBasedExercises + otherCableExercises
+
+            // Load existing 1RM values - prioritize PR value over stored 1RM
             val existingOneRepMaxValues = remember { mutableStateMapOf<String, Float>() }
             LaunchedEffect(mainLiftNames) {
                 mainLiftNames.forEach { exerciseName ->
                     exerciseRepository.findByName(exerciseName)?.let { exercise ->
-                        exercise.oneRepMaxKg?.let { oneRepMax ->
+                        val exerciseId = exercise.id ?: return@let
+
+                        // First try to get the PR (best weight ever achieved)
+                        val pr = personalRecordRepository.getBestWeightPR(exerciseId)
+                        val prOneRepMax = pr?.oneRepMax
+
+                        // Use PR's 1RM if available, else fall back to stored exercise 1RM
+                        val valueToUse = prOneRepMax?.takeIf { it > 0f }
+                            ?: exercise.oneRepMaxKg?.takeIf { it > 0f }
+
+                        valueToUse?.let { oneRepMax ->
                             existingOneRepMaxValues[exerciseName] = oneRepMax
                         }
                     }
@@ -296,6 +332,9 @@ fun TrainingCyclesScreen(
             OneRepMaxInputScreen(
                 mainLiftNames = mainLiftNames,
                 existingOneRepMaxValues = existingOneRepMaxValues,
+                weightUnit = weightUnit,
+                kgToDisplay = viewModel::kgToDisplay,
+                displayToKg = viewModel::displayToKg,
                 onConfirm = { oneRepMaxValues ->
                     creationState = CycleCreationState.ModeConfirmation(state.template, oneRepMaxValues)
                 },
@@ -307,7 +346,8 @@ fun TrainingCyclesScreen(
         is CycleCreationState.ModeConfirmation -> {
             ModeConfirmationScreen(
                 template = state.template,
-                onConfirm = { modeSelections ->
+                oneRepMaxValues = state.oneRepMaxValues,
+                onConfirm = { exerciseConfigs ->
                     creationState = CycleCreationState.Creating(state.template)
                     scope.launch {
                         try {
@@ -320,15 +360,20 @@ fun TrainingCyclesScreen(
                                 }
                             }
 
-                            // 2. Convert template using TemplateConverter
-                            val conversionResult = templateConverter.convert(state.template)
+                            // 2. Convert template using TemplateConverter (with user's exercise configs)
+                            val conversionResult = templateConverter.convert(
+                                template = state.template,
+                                exerciseConfigs = exerciseConfigs
+                            )
 
                             // 3. Save routines FIRST (CycleDay has FK to Routine)
+                            // CRITICAL: Must await each save - workoutRepository.saveRoutine is suspend
+                            // Using viewModel.saveRoutine() was fire-and-forget (launched coroutine without await)
                             conversionResult.routines.forEach { routine ->
-                                viewModel.saveRoutine(routine)
+                                workoutRepository.saveRoutine(routine)
                             }
 
-                            // 4. Save cycle via TrainingCycleRepository (after routines exist)
+                            // 4. Save cycle via TrainingCycleRepository (routines now guaranteed to exist)
                             cycleRepository.saveCycle(conversionResult.cycle)
 
                             // 5. Show warnings if any exercises weren't found
@@ -453,6 +498,41 @@ fun TrainingCyclesScreen(
             }
         )
     }
+
+    // Resume/Restart Dialog (Issue #101)
+    if (showResumeDialog) {
+        viewModel.getResumableProgressInfo()?.let { info ->
+            ResumeRoutineDialog(
+                progressInfo = info,
+                onResume = {
+                    showResumeDialog = false
+                    // Resume: skip loadRoutine to keep existing progress, just navigate and start
+                    viewModel.ensureConnection(
+                        onConnected = {
+                            viewModel.startWorkout()
+                            navController.navigate(NavigationRoutes.ActiveWorkout.route)
+                        },
+                        onFailed = { /* Error shown via StateFlow */ }
+                    )
+                },
+                onRestart = {
+                    showResumeDialog = false
+                    // Restart: call loadRoutineFromCycle to reset indices, then start
+                    pendingRoutineId?.let { rid ->
+                        viewModel.ensureConnection(
+                            onConnected = {
+                                viewModel.loadRoutineFromCycle(rid, pendingCycleId ?: "", pendingDayNumber)
+                                viewModel.startWorkout()
+                                navController.navigate(NavigationRoutes.ActiveWorkout.route)
+                            },
+                            onFailed = { /* Error shown via StateFlow */ }
+                        )
+                    }
+                },
+                onDismiss = { showResumeDialog = false }
+            )
+        }
+    }
 }
 
 /**
@@ -487,10 +567,11 @@ private fun ActiveCycleCard(
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.primaryContainer
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
         ),
         shape = RoundedCornerShape(20.dp),
-        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
+        border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary)
     ) {
         Column(
             modifier = Modifier
@@ -519,14 +600,14 @@ private fun ActiveCycleCard(
                 }
 
                 Surface(
-                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.2f),
+                    color = MaterialTheme.colorScheme.primaryContainer,
                     shape = RoundedCornerShape(8.dp)
                 ) {
                     Text(
                         "Day $displayedDayNumber of ${cycle.days.size}",
                         modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
                         style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.primary
+                        color = MaterialTheme.colorScheme.onPrimaryContainer
                     )
                 }
             }
@@ -538,7 +619,7 @@ private fun ActiveCycleCard(
                 displayedCycleDay?.name ?: "Day $displayedDayNumber",
                 style = MaterialTheme.typography.headlineMedium,
                 fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onPrimaryContainer
+                color = MaterialTheme.colorScheme.onSurface
             )
 
             if (displayedCycleDay?.isRestDay == true) {
@@ -547,14 +628,14 @@ private fun ActiveCycleCard(
                     Icon(
                         Icons.Default.SelfImprovement,
                         contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.size(20.dp)
                     )
                     Spacer(Modifier.width(8.dp))
                     Text(
                         "Rest Day - Take it easy!",
                         style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
             } else if (routine != null) {
@@ -562,13 +643,13 @@ private fun ActiveCycleCard(
                 Text(
                     routine.name,
                     style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.9f)
                 )
                 Text(
                     routine.exercises.joinToString(", ") { it.exercise.name }.take(50) +
                         if (routine.exercises.size > 3) "..." else "",
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.6f)
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
 
@@ -652,6 +733,7 @@ private fun CycleListItem(
     routines: List<Routine>,
     isActive: Boolean,
     onActivate: () -> Unit,
+    onDeactivate: () -> Unit,
     onEdit: () -> Unit,
     onDelete: () -> Unit
 ) {
@@ -783,30 +865,45 @@ private fun CycleListItem(
                     HorizontalDivider()
                     Spacer(Modifier.height(12.dp))
 
-                    // Action buttons
+                    // Action buttons - use filled tonal for visibility
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        if (!isActive) {
-                            OutlinedButton(
-                                onClick = onActivate,
-                                modifier = Modifier.weight(1f),
-                                shape = RoundedCornerShape(8.dp)
-                            ) {
-                                Icon(
-                                    Icons.Default.CheckCircle,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(16.dp)
-                                )
-                                Spacer(Modifier.width(4.dp))
-                                Text("Set Active")
-                            }
+                        // Show Activate or Deactivate based on current state
+                        FilledTonalButton(
+                            onClick = if (isActive) onDeactivate else onActivate,
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(8.dp),
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp),
+                            colors = ButtonDefaults.filledTonalButtonColors(
+                                containerColor = if (isActive)
+                                    MaterialTheme.colorScheme.surfaceVariant
+                                else
+                                    MaterialTheme.colorScheme.primaryContainer,
+                                contentColor = if (isActive)
+                                    MaterialTheme.colorScheme.onSurfaceVariant
+                                else
+                                    MaterialTheme.colorScheme.onPrimaryContainer
+                            )
+                        ) {
+                            Icon(
+                                if (isActive) Icons.Default.Cancel else Icons.Default.CheckCircle,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(Modifier.width(4.dp))
+                            Text(if (isActive) "Deactivate" else "Activate", maxLines = 1)
                         }
-                        OutlinedButton(
+                        FilledTonalButton(
                             onClick = onEdit,
                             modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(8.dp)
+                            shape = RoundedCornerShape(8.dp),
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp),
+                            colors = ButtonDefaults.filledTonalButtonColors(
+                                containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                                contentColor = MaterialTheme.colorScheme.onSecondaryContainer
+                            )
                         ) {
                             Icon(
                                 Icons.Default.Edit,
@@ -814,14 +911,16 @@ private fun CycleListItem(
                                 modifier = Modifier.size(16.dp)
                             )
                             Spacer(Modifier.width(4.dp))
-                            Text("Edit")
+                            Text("Edit", maxLines = 1)
                         }
-                        OutlinedButton(
+                        FilledTonalButton(
                             onClick = onDelete,
                             modifier = Modifier.weight(1f),
                             shape = RoundedCornerShape(8.dp),
-                            colors = ButtonDefaults.outlinedButtonColors(
-                                contentColor = MaterialTheme.colorScheme.error
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp),
+                            colors = ButtonDefaults.filledTonalButtonColors(
+                                containerColor = MaterialTheme.colorScheme.errorContainer,
+                                contentColor = MaterialTheme.colorScheme.onErrorContainer
                             )
                         ) {
                             Icon(
@@ -830,187 +929,8 @@ private fun CycleListItem(
                                 modifier = Modifier.size(16.dp)
                             )
                             Spacer(Modifier.width(4.dp))
-                            Text("Delete")
+                            Text("Delete", maxLines = 1)
                         }
-                    }
-                }
-            }
-        }
-    }
-}
-
-/**
- * Dialog for selecting a cycle template or creating a blank cycle.
- */
-@Composable
-private fun TemplateSelectionDialog(
-    onDismiss: () -> Unit,
-    onSelectTemplate: (CycleTemplate) -> Unit,
-    onCreateBlank: () -> Unit
-) {
-    val templates = remember {
-        listOf(
-            CycleTemplates.threeDay(),
-            CycleTemplates.pushPullLegs(),
-            CycleTemplates.upperLower(),
-            CycleTemplates.fiveThreeOne()
-        )
-    }
-
-    androidx.compose.ui.window.Dialog(
-        onDismissRequest = onDismiss,
-        properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)
-    ) {
-        Surface(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp),
-            shape = RoundedCornerShape(28.dp),
-            color = MaterialTheme.colorScheme.surface,
-            tonalElevation = 6.dp
-        ) {
-            Column(
-                modifier = Modifier.padding(24.dp)
-            ) {
-                Text(
-                    "Create Training Cycle",
-                    style = MaterialTheme.typography.headlineSmall,
-                    fontWeight = FontWeight.Bold
-                )
-
-                Spacer(Modifier.height(8.dp))
-
-                Text(
-                    "Start with a template or create your own:",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-
-                Spacer(Modifier.height(12.dp))
-
-                Column(
-                    modifier = Modifier
-                        .weight(1f, fill = false)
-                        .verticalScroll(rememberScrollState()),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-
-                templates.forEach { template ->
-                    val needsOneRepMax = template.name.contains("5/3/1", ignoreCase = true) ||
-                        template.days.any { day ->
-                            day.routine?.exercises?.any { it.isPercentageBased } == true
-                        }
-
-                    Card(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { onSelectTemplate(template) },
-                        colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
-                        ),
-                        shape = RoundedCornerShape(12.dp)
-                    ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(16.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                ) {
-                                    Text(
-                                        template.name,
-                                        style = MaterialTheme.typography.titleSmall,
-                                        fontWeight = FontWeight.SemiBold
-                                    )
-                                    if (needsOneRepMax) {
-                                        Surface(
-                                            color = MaterialTheme.colorScheme.primaryContainer,
-                                            shape = RoundedCornerShape(4.dp)
-                                        ) {
-                                            Text(
-                                                "1RM",
-                                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-                                                style = MaterialTheme.typography.labelSmall,
-                                                color = MaterialTheme.colorScheme.onPrimaryContainer
-                                            )
-                                        }
-                                    }
-                                }
-                                Spacer(Modifier.height(4.dp))
-                                Text(
-                                    template.description,
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                                Text(
-                                    "${template.days.size} days",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    fontWeight = FontWeight.Medium
-                                )
-                            }
-                            Icon(
-                                Icons.Default.ChevronRight,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
-                }
-
-                HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
-
-                Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { onCreateBlank() },
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f)
-                    ),
-                    shape = RoundedCornerShape(12.dp)
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(16.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                "Create Custom",
-                                style = MaterialTheme.typography.titleSmall,
-                                fontWeight = FontWeight.SemiBold,
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                            Text(
-                                "Build your own schedule",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f)
-                            )
-                        }
-                        Icon(
-                            Icons.Default.Add,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary
-                        )
-                    }
-                }
-                }
-
-                Spacer(Modifier.height(16.dp))
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.End
-                ) {
-                    TextButton(onClick = onDismiss) {
-                        Text("Cancel")
                     }
                 }
             }

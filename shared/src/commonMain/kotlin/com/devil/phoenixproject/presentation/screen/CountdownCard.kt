@@ -21,6 +21,8 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.devil.phoenixproject.presentation.util.LocalWindowSizeClass
+import com.devil.phoenixproject.presentation.util.WindowWidthSizeClass
 import com.devil.phoenixproject.ui.theme.*
 
 /**
@@ -43,6 +45,19 @@ fun CountdownCard(
     onEndWorkout: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    // Responsive sizing based on window size class
+    val windowSizeClass = LocalWindowSizeClass.current
+    val countdownSize = when (windowSizeClass.widthSizeClass) {
+        WindowWidthSizeClass.Expanded -> 320.dp
+        WindowWidthSizeClass.Medium -> 270.dp
+        WindowWidthSizeClass.Compact -> 220.dp
+    }
+    val countdownFontSize = when (windowSizeClass.widthSizeClass) {
+        WindowWidthSizeClass.Expanded -> 120.sp
+        WindowWidthSizeClass.Medium -> 105.sp
+        WindowWidthSizeClass.Compact -> 90.sp
+    }
+
     // Background gradient - respects theme mode
     Box(
         modifier = modifier
@@ -91,17 +106,17 @@ fun CountdownCard(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(220.dp),
+                    .height(countdownSize),
                 contentAlignment = Alignment.Center
             ) {
                 // Circular background with pulse effect
                 Box(
                     modifier = Modifier
-                        .size(220.dp)
+                        .size(countdownSize)
                         .scale(pulse)
                         .background(
                             color = MaterialTheme.colorScheme.surfaceContainerHighest,
-                            shape = RoundedCornerShape(200.dp)
+                            shape = RoundedCornerShape(countdownSize)
                         )
                 )
 
@@ -114,7 +129,7 @@ fun CountdownCard(
 
                 Text(
                     text = countdownText,
-                    style = MaterialTheme.typography.displayLarge.copy(fontSize = 90.sp),
+                    style = MaterialTheme.typography.displayLarge.copy(fontSize = countdownFontSize),
                     fontWeight = FontWeight.ExtraBold,
                     color = if (countdownSecondsRemaining == 0)
                         MaterialTheme.colorScheme.tertiary

@@ -5,11 +5,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -17,36 +13,44 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.domain.model.CycleTemplate
+import com.devil.phoenixproject.domain.model.ExerciseConfig
 import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.TemplateExercise
+import com.devil.phoenixproject.presentation.components.ExerciseConfigModal
 import com.devil.phoenixproject.ui.theme.Spacing
 
 /**
  * Mode Confirmation Screen
  *
  * Shows users the exercises in a template with their suggested modes.
- * Users can adjust modes before the cycle is created.
+ * Users can tap exercise cards to open a modal and configure mode + settings.
  *
  * @param template The cycle template being configured
- * @param onConfirm Callback with exercise name to mode mapping when user confirms
+ * @param oneRepMaxValues Map of exercise name to 1RM value in kg (if available)
+ * @param onConfirm Callback with exercise name to ExerciseConfig mapping when user confirms
  * @param onCancel Callback when user cancels
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ModeConfirmationScreen(
     template: CycleTemplate,
-    onConfirm: (Map<String, ProgramMode>) -> Unit,
+    oneRepMaxValues: Map<String, Float> = emptyMap(),
+    onConfirm: (Map<String, ExerciseConfig>) -> Unit,
     onCancel: () -> Unit
 ) {
-    // State: Map of exercise name to selected ProgramMode
+    // State: Map of exercise name to ExerciseConfig
     // Note: Bodyweight exercises (null suggestedMode) are excluded - they don't use cables
-    val modeSelections = remember {
-        mutableStateMapOf<String, ProgramMode>().apply {
-            // Initialize with suggested modes from template (skip bodyweight exercises)
+    val exerciseConfigs = remember {
+        mutableStateMapOf<String, ExerciseConfig>().apply {
+            // Initialize with ExerciseConfig from template (skip bodyweight exercises)
             template.days.forEach { day ->
                 day.routine?.exercises?.forEach { exercise ->
                     exercise.suggestedMode?.let { mode ->
-                        put(exercise.exerciseName, mode)
+                        put(exercise.exerciseName, ExerciseConfig.fromTemplate(
+                            exerciseName = exercise.exerciseName,
+                            suggestedMode = mode,
+                            oneRepMaxKg = oneRepMaxValues[exercise.exerciseName]
+                        ))
                     }
                 }
             }
@@ -92,7 +96,7 @@ fun ModeConfirmationScreen(
                     }
 
                     Button(
-                        onClick = { onConfirm(modeSelections.toMap()) },
+                        onClick = { onConfirm(exerciseConfigs.toMap()) },
                         modifier = Modifier.weight(1f).height(56.dp),
                         colors = ButtonDefaults.buttonColors(
                             containerColor = MaterialTheme.colorScheme.primary
@@ -191,12 +195,16 @@ fun ModeConfirmationScreen(
                         items = cableExercises,
                         key = { exercise -> "${day.dayNumber}_${exercise.exerciseName}" }
                     ) { exercise ->
-                        ExerciseModeCard(
+                        ConfigurableExerciseCard(
                             exercise = exercise,
-                            // suggestedMode is guaranteed non-null due to filter above
-                            selectedMode = modeSelections[exercise.exerciseName] ?: exercise.suggestedMode!!,
-                            onModeChanged = { newMode ->
-                                modeSelections[exercise.exerciseName] = newMode
+                            config = exerciseConfigs[exercise.exerciseName] ?: ExerciseConfig.fromTemplate(
+                                exerciseName = exercise.exerciseName,
+                                suggestedMode = exercise.suggestedMode,
+                                oneRepMaxKg = oneRepMaxValues[exercise.exerciseName]
+                            ),
+                            oneRepMaxKg = oneRepMaxValues[exercise.exerciseName],
+                            onConfigUpdated = { newConfig ->
+                                exerciseConfigs[exercise.exerciseName] = newConfig
                             }
                         )
                     }
@@ -212,141 +220,116 @@ fun ModeConfirmationScreen(
 }
 
 /**
- * Card showing a single exercise with mode selection dropdown
+ * Tappable card showing exercise info with mode and weight badges.
+ * Tapping opens the ExerciseConfigModal for detailed configuration.
  */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun ExerciseModeCard(
+private fun ConfigurableExerciseCard(
     exercise: TemplateExercise,
-    selectedMode: ProgramMode,
-    onModeChanged: (ProgramMode) -> Unit
+    config: ExerciseConfig,
+    oneRepMaxKg: Float?,
+    onConfigUpdated: (ExerciseConfig) -> Unit
 ) {
-    var showModeDropdown by remember { mutableStateOf(false) }
+    var showConfigModal by remember { mutableStateOf(false) }
 
     Card(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { showConfigModal = true },
         shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceContainer
         )
     ) {
-        Column(
+        Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(Spacing.medium),
-            verticalArrangement = Arrangement.spacedBy(Spacing.small)
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            // Exercise name
-            Text(
-                text = exercise.exerciseName,
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.onSurface
-            )
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = exercise.exerciseName,
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
 
-            // Sets x Reps info
-            val setsRepsText = if (exercise.isPercentageBased) {
-                "${exercise.percentageSets?.size ?: exercise.sets} sets (5/3/1 progression)"
-            } else {
-                "${exercise.sets} x ${exercise.reps ?: "AMRAP"}"
+                // Sets x Reps info
+                val setsRepsText = if (exercise.isPercentageBased) {
+                    "${exercise.percentageSets?.size ?: exercise.sets} sets (5/3/1)"
+                } else {
+                    "${exercise.sets} x ${exercise.reps ?: "AMRAP"}"
+                }
+
+                Text(
+                    text = setsRepsText,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
 
-            Text(
-                text = setsRepsText,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-
-            Spacer(modifier = Modifier.height(Spacing.extraSmall))
-
-            // Mode dropdown
-            Text(
-                text = "Workout Mode",
-                style = MaterialTheme.typography.labelMedium,
-                fontWeight = FontWeight.Medium,
-                color = MaterialTheme.colorScheme.onSurface
-            )
-
-            Box {
-                OutlinedTextField(
-                    value = getProgramModeDisplayName(selectedMode),
-                    onValueChange = {},
-                    readOnly = true,
-                    trailingIcon = {
-                        Icon(
-                            Icons.Default.KeyboardArrowDown,
-                            "Select mode",
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = MaterialTheme.colorScheme.primary,
-                        unfocusedBorderColor = MaterialTheme.colorScheme.outline
-                    )
-                )
-
-                // Transparent clickable overlay
-                Box(
-                    modifier = Modifier
-                        .matchParentSize()
-                        .clickable { showModeDropdown = true }
-                )
-
-                DropdownMenu(
-                    expanded = showModeDropdown,
-                    onDismissRequest = { showModeDropdown = false }
+            // Mode + Weight badges
+            Row(horizontalArrangement = Arrangement.spacedBy(Spacing.extraSmall)) {
+                // Mode badge
+                Surface(
+                    shape = RoundedCornerShape(Spacing.small),
+                    color = MaterialTheme.colorScheme.primaryContainer
                 ) {
-                    // Available program modes
-                    listOf(
-                        ProgramMode.OldSchool,
-                        ProgramMode.Pump,
-                        ProgramMode.TUT,
-                        ProgramMode.TUTBeast,
-                        ProgramMode.EccentricOnly
-                    ).forEach { mode ->
-                        DropdownMenuItem(
-                            text = {
-                                Column {
-                                    Text(
-                                        getProgramModeDisplayName(mode),
-                                        fontWeight = FontWeight.Medium
-                                    )
-                                    Text(
-                                        getProgramModeDescription(mode),
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
-                            },
-                            onClick = {
-                                onModeChanged(mode)
-                                showModeDropdown = false
-                            }
+                    Text(
+                        text = getModeAbbreviation(config.mode),
+                        modifier = Modifier.padding(horizontal = Spacing.small, vertical = Spacing.extraSmall),
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                    )
+                }
+
+                // Weight badge (if configured)
+                if (config.weightPerCableKg > 0f) {
+                    Surface(
+                        shape = RoundedCornerShape(Spacing.small),
+                        color = MaterialTheme.colorScheme.secondaryContainer
+                    ) {
+                        Text(
+                            text = "${config.weightPerCableKg.toInt()}kg",
+                            modifier = Modifier.padding(horizontal = Spacing.small, vertical = Spacing.extraSmall),
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSecondaryContainer
                         )
                     }
                 }
             }
         }
     }
-}
 
-/**
- * Get display name for ProgramMode
- */
-private fun getProgramModeDisplayName(mode: ProgramMode): String {
-    return mode.displayName
-}
-
-/**
- * Get description for ProgramMode
- */
-private fun getProgramModeDescription(mode: ProgramMode): String {
-    return when (mode) {
-        is ProgramMode.OldSchool -> "Classic resistance training"
-        is ProgramMode.Pump -> "High volume, shorter ROM"
-        is ProgramMode.TUT -> "Time under tension focused"
-        is ProgramMode.TUTBeast -> "Extended time under tension"
-        is ProgramMode.EccentricOnly -> "Eccentric-only training"
+    // Show config modal when tapped
+    if (showConfigModal) {
+        ExerciseConfigModal(
+            exerciseName = exercise.exerciseName,
+            templateSets = exercise.sets,
+            templateReps = exercise.reps,
+            oneRepMaxKg = oneRepMaxKg,
+            initialConfig = config,
+            onConfirm = { newConfig ->
+                onConfigUpdated(newConfig)
+                showConfigModal = false
+            },
+            onDismiss = { showConfigModal = false }
+        )
     }
+}
+
+/**
+ * Get short abbreviation for ProgramMode for badge display.
+ */
+private fun getModeAbbreviation(mode: ProgramMode): String = when (mode) {
+    ProgramMode.OldSchool -> "OLD"
+    ProgramMode.TUT -> "TUT"
+    ProgramMode.Pump -> "PUMP"
+    ProgramMode.EccentricOnly -> "ECC"
+    ProgramMode.TUTBeast -> "BEAST"
+    ProgramMode.Echo -> "ECHO"
 }

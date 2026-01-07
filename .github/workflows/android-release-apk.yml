@@ -1,0 +1,96 @@
+name: Android Release APK
+
+on:
+  workflow_dispatch:  # Manual trigger only
+
+permissions:
+  contents: write  # Required to upload release assets
+
+concurrency:
+  group: android-release-apk
+  cancel-in-progress: true
+
+jobs:
+  build-and-attach:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Cache Gradle packages
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-
+
+      - name: Get latest release
+        id: latest_release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          RELEASE_INFO=$(gh release view --json tagName,uploadUrl,name 2>/dev/null || echo "")
+          if [ -z "$RELEASE_INFO" ]; then
+            echo "No releases found in this repository"
+            exit 1
+          fi
+          TAG_NAME=$(echo "$RELEASE_INFO" | jq -r '.tagName')
+          RELEASE_NAME=$(echo "$RELEASE_INFO" | jq -r '.name')
+          echo "tag_name=$TAG_NAME" >> $GITHUB_OUTPUT
+          echo "release_name=$RELEASE_NAME" >> $GITHUB_OUTPUT
+          echo "Found latest release: $RELEASE_NAME (tag: $TAG_NAME)"
+
+      - name: Generate version code
+        id: version
+        run: |
+          VERSION_CODE=$(date +%Y%m%d)${{ github.run_number }}
+          echo "version_code=$VERSION_CODE" >> $GITHUB_OUTPUT
+          echo "Version code: $VERSION_CODE"
+
+      - name: Build Release APK (signed)
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          echo "$KEYSTORE_BASE64" | base64 --decode > keystore.jks
+          ./gradlew :androidApp:assembleRelease \
+            -Pandroid.injected.signing.store.file=$PWD/keystore.jks \
+            -Pandroid.injected.signing.store.password="$KEYSTORE_PASSWORD" \
+            -Pandroid.injected.signing.key.alias="$KEY_ALIAS" \
+            -Pandroid.injected.signing.key.password="$KEY_PASSWORD" \
+            -Pversion.code=${{ steps.version.outputs.version_code }}
+          rm keystore.jks
+
+      - name: Rename APK with version
+        id: rename_apk
+        run: |
+          APK_PATH=$(find androidApp/build/outputs/apk/release -name "*.apk" | head -1)
+          TAG="${{ steps.latest_release.outputs.tag_name }}"
+          NEW_NAME="ProjectPhoenix-${TAG}.apk"
+          cp "$APK_PATH" "$NEW_NAME"
+          echo "apk_path=$NEW_NAME" >> $GITHUB_OUTPUT
+          echo "Renamed APK to: $NEW_NAME"
+
+      - name: Upload APK to release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release upload "${{ steps.latest_release.outputs.tag_name }}" \
+            "${{ steps.rename_apk.outputs.apk_path }}" \
+            --clobber
+          echo "Successfully uploaded APK to release ${{ steps.latest_release.outputs.tag_name }}"

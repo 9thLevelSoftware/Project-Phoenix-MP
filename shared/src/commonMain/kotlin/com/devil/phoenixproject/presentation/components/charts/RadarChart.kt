@@ -24,6 +24,7 @@ import androidx.compose.ui.graphics.drawscope.Fill
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import com.devil.phoenixproject.presentation.util.ResponsiveDimensions
 import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.sin
@@ -69,11 +70,12 @@ fun RadarChart(
     val density = LocalDensity.current
     val numPoints = animatedData.size
     val angleStep = (2 * PI) / numPoints
+    val chartHeight = ResponsiveDimensions.chartHeight(baseHeight = 320.dp)
 
     BoxWithConstraints(
         modifier = modifier
             .fillMaxWidth()
-            .height(320.dp)
+            .height(chartHeight)
             .padding(24.dp)
     ) {
         val boxWidth = with(density) { maxWidth.toPx() }
@@ -202,10 +204,11 @@ private fun RadarEmptyChartState(
     message: String,
     modifier: Modifier = Modifier
 ) {
+    val chartHeight = ResponsiveDimensions.chartHeight(baseHeight = 320.dp)
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .height(320.dp)
+            .height(chartHeight)
             .padding(24.dp),
         contentAlignment = Alignment.Center
     ) {

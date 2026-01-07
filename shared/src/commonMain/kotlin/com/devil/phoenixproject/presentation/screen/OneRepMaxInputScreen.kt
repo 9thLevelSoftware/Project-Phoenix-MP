@@ -6,6 +6,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -13,6 +15,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.ui.theme.Spacing
 
 /**
@@ -23,7 +26,10 @@ import com.devil.phoenixproject.ui.theme.Spacing
  *
  * @param mainLiftNames List of exercise names that need 1RM input (e.g., ["Bench Press", "Squat", "Shoulder Press", "Deadlift"])
  * @param existingOneRepMaxValues Pre-fill values from stored data (exercise name to 1RM in kg)
- * @param onConfirm Callback with exercise name to 1RM mapping when user continues
+ * @param weightUnit User's preferred weight unit (KG or LB)
+ * @param kgToDisplay Conversion function from kg to display unit
+ * @param displayToKg Conversion function from display unit back to kg
+ * @param onConfirm Callback with exercise name to 1RM mapping (always in kg) when user continues
  * @param onCancel Callback when user cancels
  */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -31,16 +37,27 @@ import com.devil.phoenixproject.ui.theme.Spacing
 fun OneRepMaxInputScreen(
     mainLiftNames: List<String>,
     existingOneRepMaxValues: Map<String, Float> = emptyMap(),
+    weightUnit: WeightUnit = WeightUnit.KG,
+    kgToDisplay: (Float, WeightUnit) -> Float = { kg, unit -> if (unit == WeightUnit.LB) kg * 2.205f else kg },
+    displayToKg: (Float, WeightUnit) -> Float = { display, unit -> if (unit == WeightUnit.LB) display / 2.205f else display },
     onConfirm: (Map<String, Float>) -> Unit,
     onCancel: () -> Unit
 ) {
-    // State: Map of exercise name to text input value
-    val inputValues = remember {
+    // Unit label based on user preference
+    val unitLabel = if (weightUnit == WeightUnit.LB) "lbs" else "kg"
+    // State: Map of exercise name to text input value (displayed in user's preferred unit)
+    val inputValues = remember(existingOneRepMaxValues, weightUnit) {
         mutableStateMapOf<String, String>().apply {
-            // Initialize with existing values converted to strings
+            // Initialize with existing values converted to display unit
             mainLiftNames.forEach { name ->
-                val existingValue = existingOneRepMaxValues[name]
-                put(name, existingValue?.toString() ?: "")
+                val existingValueKg = existingOneRepMaxValues[name]
+                if (existingValueKg != null && existingValueKg > 0f) {
+                    // Convert from kg to display unit and format nicely
+                    val displayValue = kgToDisplay(existingValueKg, weightUnit)
+                    put(name, displayValue.toInt().toString())
+                } else {
+                    put(name, "")
+                }
             }
         }
     }
@@ -83,18 +100,32 @@ fun OneRepMaxInputScreen(
                         .padding(Spacing.medium),
                     verticalArrangement = Arrangement.spacedBy(Spacing.small)
                 ) {
-                    // Optional skip button
-                    TextButton(
+                    // Skip button - styled as a distinct outlined button
+                    OutlinedButton(
                         onClick = {
                             // Continue with zeros for all lifts
                             val emptyMap = mainLiftNames.associateWith { 0f }
                             onConfirm(emptyMap)
                         },
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.outlinedButtonColors(
+                            contentColor = MaterialTheme.colorScheme.tertiary
+                        ),
+                        border = ButtonDefaults.outlinedButtonBorder(enabled = true).copy(
+                            brush = androidx.compose.ui.graphics.SolidColor(
+                                MaterialTheme.colorScheme.tertiary.copy(alpha = 0.5f)
+                            )
+                        )
                     ) {
+                        Icon(
+                            Icons.Default.SkipNext,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(Modifier.width(8.dp))
                         Text(
-                            "Skip (I'll enter these later)",
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            "Skip for now",
+                            style = MaterialTheme.typography.labelLarge
                         )
                     }
 
@@ -115,11 +146,13 @@ fun OneRepMaxInputScreen(
 
                         Button(
                             onClick = {
-                                // Parse valid inputs, use 0 for empty
+                                // Parse valid inputs and convert back to kg, use 0 for empty
                                 val oneRepMaxValues = inputValues.mapNotNull { (name, value) ->
-                                    val floatValue = value.toFloatOrNull()
-                                    if (floatValue != null && floatValue > 0) {
-                                        name to floatValue
+                                    val displayValue = value.toFloatOrNull()
+                                    if (displayValue != null && displayValue > 0) {
+                                        // Convert display value back to kg for storage
+                                        val kgValue = displayToKg(displayValue, weightUnit)
+                                        name to kgValue
                                     } else if (value.isBlank()) {
                                         name to 0f
                                     } else {
@@ -202,7 +235,8 @@ fun OneRepMaxInputScreen(
                                 val isValid = newValue.isBlank() || newValue.toFloatOrNull() != null
                                 validationErrors[exerciseName] = !isValid
                             },
-                            isError = validationErrors[exerciseName] == true
+                            isError = validationErrors[exerciseName] == true,
+                            unitLabel = unitLabel
                         )
                     }
                 }
@@ -252,7 +286,8 @@ private fun OneRepMaxInputField(
     exerciseName: String,
     value: String,
     onValueChange: (String) -> Unit,
-    isError: Boolean
+    isError: Boolean,
+    unitLabel: String = "kg"
 ) {
     Column(
         modifier = Modifier.fillMaxWidth(),
@@ -291,9 +326,9 @@ private fun OneRepMaxInputField(
                 )
             )
 
-            // Units indicator
+            // Units indicator (dynamic based on user preference)
             Text(
-                text = "kg",
+                text = unitLabel,
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Medium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,

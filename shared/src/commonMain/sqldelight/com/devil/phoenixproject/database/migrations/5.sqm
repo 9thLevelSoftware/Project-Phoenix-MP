@@ -1,7 +1,37 @@
--- Migration 5: Add subscription-related columns to UserProfile
+-- Migration 5: Combined updates
+-- Part A: Add subscription-related columns to UserProfile (Premium)
 -- Enables tracking of Supabase auth and RevenueCat subscription status
 
 ALTER TABLE UserProfile ADD COLUMN supabase_user_id TEXT;
 ALTER TABLE UserProfile ADD COLUMN subscription_status TEXT DEFAULT 'free';
 ALTER TABLE UserProfile ADD COLUMN subscription_expires_at INTEGER;
 ALTER TABLE UserProfile ADD COLUMN last_auth_at INTEGER;
+
+-- Part B: Add set summary metrics columns to WorkoutSession
+-- These columns store aggregate workout statistics calculated at the end of each set
+
+-- Peak force measurements (nullable since not all sessions will have these)
+ALTER TABLE WorkoutSession ADD COLUMN peakForceConcentricA REAL;
+ALTER TABLE WorkoutSession ADD COLUMN peakForceConcentricB REAL;
+ALTER TABLE WorkoutSession ADD COLUMN peakForceEccentricA REAL;
+ALTER TABLE WorkoutSession ADD COLUMN peakForceEccentricB REAL;
+
+-- Average force measurements
+ALTER TABLE WorkoutSession ADD COLUMN avgForceConcentricA REAL;
+ALTER TABLE WorkoutSession ADD COLUMN avgForceConcentricB REAL;
+ALTER TABLE WorkoutSession ADD COLUMN avgForceEccentricA REAL;
+ALTER TABLE WorkoutSession ADD COLUMN avgForceEccentricB REAL;
+
+-- Summary statistics
+ALTER TABLE WorkoutSession ADD COLUMN heaviestLiftKg REAL;
+ALTER TABLE WorkoutSession ADD COLUMN totalVolumeKg REAL;
+ALTER TABLE WorkoutSession ADD COLUMN estimatedCalories REAL;
+
+-- Average weights by workout phase
+ALTER TABLE WorkoutSession ADD COLUMN warmupAvgWeightKg REAL;
+ALTER TABLE WorkoutSession ADD COLUMN workingAvgWeightKg REAL;
+ALTER TABLE WorkoutSession ADD COLUMN burnoutAvgWeightKg REAL;
+ALTER TABLE WorkoutSession ADD COLUMN peakWeightKg REAL;
+
+-- Rate of Perceived Exertion (1-10 scale, user-entered)
+ALTER TABLE WorkoutSession ADD COLUMN rpe INTEGER;

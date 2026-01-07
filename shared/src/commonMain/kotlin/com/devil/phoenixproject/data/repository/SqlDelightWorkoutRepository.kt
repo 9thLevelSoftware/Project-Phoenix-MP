@@ -15,7 +15,6 @@ import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.domain.model.RoutineExercise
 import com.devil.phoenixproject.domain.model.Superset
 import com.devil.phoenixproject.domain.model.WorkoutSession
-import com.devil.phoenixproject.domain.model.WorkoutType
 import com.devil.phoenixproject.domain.model.currentTimeMillis
 import com.devil.phoenixproject.domain.model.generateUUID
 import kotlinx.coroutines.Dispatchers
@@ -241,7 +240,7 @@ class SqlDelightWorkoutRepository(
                 val eccentricLoad = mapEccentricLoadFromDb(row.eccentricLoad)
                 val echoLevel = EchoLevel.values().getOrNull(row.echoLevel.toInt()) ?: EchoLevel.HARDER
 
-                val workoutType = parseWorkoutType(row.mode, eccentricLoad, echoLevel)
+                val programMode = parseProgramMode(row.mode)
 
                 RoutineExercise(
                     id = row.id,
@@ -251,7 +250,7 @@ class SqlDelightWorkoutRepository(
                     setReps = setReps,
                     weightPerCableKg = row.weightPerCableKg.toFloat(),
                     setWeightsPerCableKg = setWeights,
-                    workoutType = workoutType,
+                    programMode = programMode,
                     eccentricLoad = eccentricLoad,
                     echoLevel = echoLevel,
                     progressionKg = row.progressionKg.toFloat(),
@@ -297,40 +296,35 @@ class SqlDelightWorkoutRepository(
         }
     }
 
-    private fun parseWorkoutType(modeStr: String, eccentricLoad: EccentricLoad = EccentricLoad.LOAD_100, echoLevel: EchoLevel = EchoLevel.HARDER): WorkoutType {
+    private fun parseProgramMode(modeStr: String): ProgramMode {
         return when {
             modeStr.startsWith("Program:") -> {
                 val programModeName = modeStr.removePrefix("Program:")
-                val programMode = when (programModeName) {
+                when (programModeName) {
                     "OldSchool" -> ProgramMode.OldSchool
                     "Pump" -> ProgramMode.Pump
                     "TUT" -> ProgramMode.TUT
                     "TUTBeast" -> ProgramMode.TUTBeast
                     "EccentricOnly" -> ProgramMode.EccentricOnly
+                    "Echo" -> ProgramMode.Echo
                     else -> ProgramMode.OldSchool
                 }
-                WorkoutType.Program(programMode)
             }
             modeStr == "Echo" || modeStr.startsWith("Echo") -> {
-                WorkoutType.Echo(echoLevel, eccentricLoad)
+                ProgramMode.Echo
             }
-            else -> WorkoutType.Program(ProgramMode.OldSchool)
+            else -> ProgramMode.OldSchool
         }
     }
 
-    private fun serializeWorkoutType(workoutType: WorkoutType): String {
-        return when (workoutType) {
-            is WorkoutType.Program -> {
-                val modeName = when (workoutType.mode) {
-                    ProgramMode.OldSchool -> "OldSchool"
-                    ProgramMode.Pump -> "Pump"
-                    ProgramMode.TUT -> "TUT"
-                    ProgramMode.TUTBeast -> "TUTBeast"
-                    ProgramMode.EccentricOnly -> "EccentricOnly"
-                }
-                "Program:$modeName"
-            }
-            is WorkoutType.Echo -> "Echo"  // EchoLevel and EccentricLoad are stored separately in DB columns
+    private fun serializeProgramMode(programMode: ProgramMode): String {
+        return when (programMode) {
+            ProgramMode.OldSchool -> "Program:OldSchool"
+            ProgramMode.Pump -> "Program:Pump"
+            ProgramMode.TUT -> "Program:TUT"
+            ProgramMode.TUTBeast -> "Program:TUTBeast"
+            ProgramMode.EccentricOnly -> "Program:EccentricOnly"
+            ProgramMode.Echo -> "Echo"  // EchoLevel and EccentricLoad are stored separately in DB columns
         }
     }
 
@@ -473,7 +467,7 @@ class SqlDelightWorkoutRepository(
             setReps = exercise.setReps.joinToString(",") { it?.toString() ?: "AMRAP" },
             weightPerCableKg = exercise.weightPerCableKg.toDouble(),
             setWeights = exercise.setWeightsPerCableKg.joinToString(","),
-            mode = serializeWorkoutType(exercise.workoutType),
+            mode = serializeProgramMode(exercise.programMode),
             eccentricLoad = exercise.eccentricLoad.percentage.toLong(),
             echoLevel = exercise.echoLevel.ordinal.toLong(),
             progressionKg = exercise.progressionKg.toDouble(),

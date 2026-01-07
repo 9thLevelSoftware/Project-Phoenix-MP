@@ -25,6 +25,9 @@ import com.devil.phoenixproject.presentation.components.AutoStopOverlay
 import com.devil.phoenixproject.presentation.components.EnhancedCablePositionBar
 import com.devil.phoenixproject.presentation.components.HapticFeedbackEffect
 import com.devil.phoenixproject.presentation.components.VideoPlayer
+import com.devil.phoenixproject.presentation.util.LocalWindowSizeClass
+import com.devil.phoenixproject.presentation.util.ResponsiveDimensions
+import com.devil.phoenixproject.presentation.util.WindowWidthSizeClass
 import com.devil.phoenixproject.ui.theme.screenBackgroundBrush
 
 /**
@@ -56,6 +59,7 @@ fun WorkoutTabAlt(
     loadedRoutine: Routine? = null,
     currentExerciseIndex: Int = 0,
     autoplayEnabled: Boolean = false,
+    summaryCountdownSeconds: Int = 10,  // Countdown duration for SetSummary auto-continue (0 = Off)
     kgToDisplay: (Float, WeightUnit) -> Float,
     displayToKg: (Float, WeightUnit) -> Float,
     formatWeight: (Float, WeightUnit) -> String,
@@ -78,6 +82,14 @@ fun WorkoutTabAlt(
 ) {
     // Note: HapticFeedbackEffect is now global in EnhancedMainScreen
     // No need for local haptic effect here
+
+    // Responsive button height based on window size
+    val windowSizeClass = LocalWindowSizeClass.current
+    val buttonHeight = when (windowSizeClass.widthSizeClass) {
+        WindowWidthSizeClass.Expanded -> 80.dp
+        WindowWidthSizeClass.Medium -> 72.dp
+        WindowWidthSizeClass.Compact -> 64.dp
+    }
 
     // Gradient backgrounds
     val backgroundGradient = screenBackgroundBrush()
@@ -118,7 +130,7 @@ fun WorkoutTabAlt(
                 onScan = onScan,
                 onCancelScan = onCancelScan,
                 exerciseName = currentExercise?.exercise?.name ?: exerciseEntity?.name ?: "Quick Workout",
-                workoutType = workoutParameters.workoutType.displayName
+                workoutType = workoutParameters.programMode.displayName
             )
 
             Spacer(modifier = Modifier.height(8.dp))
@@ -162,12 +174,13 @@ fun WorkoutTabAlt(
                         // Re-use existing summary component
                         SetSummaryCard(
                             summary = workoutState,
-                            workoutMode = workoutParameters.workoutType.displayName,
+                            workoutMode = workoutParameters.programMode.displayName,
                             weightUnit = weightUnit,
                             kgToDisplay = kgToDisplay,
                             formatWeight = formatWeight,
                             onContinue = onProceedFromSummary,
-                            autoplayEnabled = autoplayEnabled
+                            autoplayEnabled = autoplayEnabled,
+                            summaryCountdownSeconds = summaryCountdownSeconds
                         )
                     }
                     is WorkoutState.Resting -> {
@@ -180,7 +193,7 @@ fun WorkoutTabAlt(
                             totalSets = workoutState.totalSets,
                             nextExerciseWeight = workoutParameters.weightPerCableKg,
                             nextExerciseReps = workoutParameters.reps,
-                            nextExerciseMode = workoutParameters.workoutType.displayName,
+                            nextExerciseMode = workoutParameters.programMode.displayName,
                             currentExerciseIndex = if (loadedRoutine != null) currentExerciseIndex else null,
                             totalExercises = loadedRoutine?.exercises?.size,
                             formatWeight = { weight -> formatWeight(weight, weightUnit) },
@@ -193,6 +206,20 @@ fun WorkoutTabAlt(
                             },
                             onUpdateWeight = { newWeight ->
                                 onUpdateParameters(workoutParameters.copy(weightPerCableKg = newWeight))
+                            },
+                            // Echo mode specific
+                            programMode = workoutParameters.programMode,
+                            echoLevel = workoutParameters.echoLevel,
+                            eccentricLoadPercent = workoutParameters.eccentricLoad.percentage,
+                            onUpdateEchoLevel = { newLevel ->
+                                onUpdateParameters(workoutParameters.copy(echoLevel = newLevel))
+                            },
+                            onUpdateEccentricLoad = { newPercent ->
+                                // Snap to nearest EccentricLoad enum value (0-150 range)
+                                val newLoad = com.devil.phoenixproject.domain.model.EccentricLoad.entries
+                                    .minByOrNull { kotlin.math.abs(it.percentage - newPercent) }
+                                    ?: com.devil.phoenixproject.domain.model.EccentricLoad.LOAD_100
+                                onUpdateParameters(workoutParameters.copy(eccentricLoad = newLoad))
                             }
                         )
                     }
@@ -219,7 +246,7 @@ fun WorkoutTabAlt(
                     onClick = onStopWorkout,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(64.dp), // Large hit target
+                        .height(buttonHeight), // Responsive hit target (64/72/80dp)
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.errorContainer),
                     shape = RoundedCornerShape(32.dp)
                 ) {
@@ -502,8 +529,13 @@ private fun AltActiveStateDashboard(
                                     fontWeight = FontWeight.Bold,
                                     color = MaterialTheme.colorScheme.onSurface
                                 )
+                                val currentSetWeightText = if (workoutParameters.isEchoMode) {
+                                    "Adaptive"
+                                } else {
+                                    formatWeight(workoutParameters.weightPerCableKg, weightUnit)
+                                }
                                 Text(
-                                    text = "${workoutParameters.reps} Reps @ ${formatWeight(workoutParameters.weightPerCableKg, weightUnit)}",
+                                    text = "${workoutParameters.reps} Reps @ $currentSetWeightText",
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
@@ -537,17 +569,20 @@ private fun AltActiveStateDashboard(
                     Spacer(modifier = Modifier.height(8.dp))
 
                     // Echo uses heuristic, normal uses config or live total/2
-                    val perCableKg = if (workoutParameters.workoutType is WorkoutType.Echo && currentHeuristicKgMax > 0) {
+                    val isEchoMode = workoutParameters.isEchoMode
+                    val perCableKg = if (isEchoMode && currentHeuristicKgMax > 0) {
                         currentHeuristicKgMax
                     } else {
                         (currentMetric?.totalLoad ?: 0f) / 2f
                     }
+                    // For Echo mode: show "—" when force data isn't available yet (Issue #52)
+                    val loadLabel = if (isEchoMode && perCableKg <= 0f) "—" else formatWeight(perCableKg, weightUnit)
 
                     Column(
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
                         Text(
-                            text = formatWeight(perCableKg, weightUnit),
+                            text = loadLabel,
                             style = MaterialTheme.typography.headlineLarge,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.secondary
@@ -626,8 +661,13 @@ private fun AltIdleStateView(
                 ) {
                     Column {
                         Text("Ready to Start", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+                        val readyWeightText = if (workoutParameters.isEchoMode) {
+                            "Adaptive"
+                        } else {
+                            formatWeight(workoutParameters.weightPerCableKg, weightUnit)
+                        }
                         Text(
-                            "${workoutParameters.reps} Reps • ${formatWeight(workoutParameters.weightPerCableKg, weightUnit)}",
+                            "${workoutParameters.reps} Reps • $readyWeightText",
                             style = MaterialTheme.typography.bodyLarge,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -713,9 +753,10 @@ private fun AltCompletedStateView(
  */
 @Composable
 private fun SimpleCountdownOverlay(secondsRemaining: Int) {
+    val countdownSize = ResponsiveDimensions.componentSize(baseSize = 200.dp)
     Card(
-        modifier = Modifier.size(200.dp),
-        shape = RoundedCornerShape(100.dp),
+        modifier = Modifier.size(countdownSize),
+        shape = RoundedCornerShape(countdownSize / 2), // Keep circular (radius = size/2)
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.95f)
         ),

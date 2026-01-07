@@ -11,9 +11,6 @@ sealed class NavigationRoutes(val route: String) {
     object DailyRoutines : NavigationRoutes("daily_routines")
     object ActiveWorkout : NavigationRoutes("active_workout")
     object TrainingCycles : NavigationRoutes("training_cycles")
-    object CycleBuilder : NavigationRoutes("cycle_builder/{cycleId}") {
-        fun createRoute(cycleId: String = "new") = "cycle_builder/$cycleId"
-    }
     object Analytics : NavigationRoutes("analytics")
     object ExerciseDetail : NavigationRoutes("exercise_detail/{exerciseId}") {
         fun createRoute(exerciseId: String) = "exercise_detail/$exerciseId"
@@ -31,8 +28,6 @@ sealed class NavigationRoutes(val route: String) {
             return if (dayCount != null) "$base?dayCount=$dayCount" else base
         }
     }
-
-    object DayCountPicker : NavigationRoutes("dayCountPicker")
 
     object CycleReview : NavigationRoutes("cycleReview/{cycleId}") {
         fun createRoute(cycleId: String) = "cycleReview/$cycleId"

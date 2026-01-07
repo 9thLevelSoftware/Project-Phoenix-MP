@@ -1,0 +1,853 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Exercise Config Modal - Phoenix Project</title>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      /* Core palette - Industrial Dark */
+      --surface-1: #0f1114;
+      --surface-2: #181b20;
+      --surface-3: #1f2328;
+      --surface-4: #282d35;
+      --surface-elevated: #23272e;
+
+      /* Text hierarchy */
+      --text-primary: #f4f5f6;
+      --text-secondary: #9ba1ab;
+      --text-tertiary: #5c6370;
+
+      /* Accent - Amber Gold (premium equipment) */
+      --accent: #f5a623;
+      --accent-dim: rgba(245, 166, 35, 0.15);
+      --accent-glow: rgba(245, 166, 35, 0.4);
+
+      /* Mode colors */
+      --mode-oldschool: #f5a623;
+      --mode-tut: #7c5cff;
+      --mode-pump: #ff5c8a;
+      --mode-eccentric: #5ce1e6;
+      --mode-echo: #5cff7c;
+
+      /* Functional */
+      --border: rgba(255, 255, 255, 0.08);
+      --border-focus: rgba(245, 166, 35, 0.5);
+
+      /* Spacing scale */
+      --space-xs: 4px;
+      --space-sm: 8px;
+      --space-md: 16px;
+      --space-lg: 24px;
+      --space-xl: 32px;
+
+      /* Radius */
+      --radius-sm: 8px;
+      --radius-md: 12px;
+      --radius-lg: 16px;
+      --radius-pill: 100px;
+    }
+
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'Inter', -apple-system, sans-serif;
+      background: var(--surface-1);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: var(--space-lg);
+
+      /* Subtle noise texture */
+      background-image:
+        url("data:image/svg+xml,%3Csvg viewBox='0 0 400 400' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E");
+      background-blend-mode: overlay;
+      background-size: 200px;
+    }
+
+    /* Demo wrapper */
+    .demo-container {
+      display: flex;
+      flex-direction: column;
+      gap: var(--space-xl);
+      align-items: center;
+    }
+
+    .demo-label {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.15em;
+      color: var(--text-tertiary);
+    }
+
+    /* ============================================
+       EXERCISE CONFIG MODAL
+       ============================================ */
+
+    .exercise-config-modal {
+      width: 100%;
+      max-width: 380px;
+      background: var(--surface-2);
+      border-radius: var(--radius-lg);
+      border: 1px solid var(--border);
+      overflow: hidden;
+      box-shadow:
+        0 4px 24px rgba(0, 0, 0, 0.4),
+        0 0 0 1px rgba(255, 255, 255, 0.03) inset;
+    }
+
+    /* Header with exercise info */
+    .modal-header {
+      padding: var(--space-lg);
+      border-bottom: 1px solid var(--border);
+      background: linear-gradient(180deg, var(--surface-3) 0%, var(--surface-2) 100%);
+    }
+
+    .exercise-name {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 16px;
+      font-weight: 600;
+      color: var(--text-primary);
+      margin-bottom: var(--space-xs);
+    }
+
+    .exercise-meta {
+      display: flex;
+      gap: var(--space-md);
+      font-size: 13px;
+      color: var(--text-secondary);
+    }
+
+    .meta-item {
+      display: flex;
+      align-items: center;
+      gap: var(--space-xs);
+    }
+
+    .meta-value {
+      font-family: 'JetBrains Mono', monospace;
+      font-weight: 500;
+      color: var(--accent);
+    }
+
+    /* Mode selector - segmented control */
+    .mode-selector {
+      padding: var(--space-md);
+      border-bottom: 1px solid var(--border);
+    }
+
+    .mode-label {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      color: var(--text-tertiary);
+      margin-bottom: var(--space-sm);
+    }
+
+    .mode-pills {
+      display: flex;
+      gap: var(--space-xs);
+      background: var(--surface-1);
+      padding: var(--space-xs);
+      border-radius: var(--radius-md);
+    }
+
+    .mode-pill {
+      flex: 1;
+      padding: var(--space-sm) var(--space-xs);
+      border: none;
+      background: transparent;
+      border-radius: var(--radius-sm);
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 10px;
+      font-weight: 500;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--text-tertiary);
+      cursor: pointer;
+      transition: all 0.2s ease;
+      position: relative;
+    }
+
+    .mode-pill:hover {
+      color: var(--text-secondary);
+      background: var(--surface-3);
+    }
+
+    .mode-pill.active {
+      background: var(--surface-elevated);
+      color: var(--text-primary);
+      box-shadow:
+        0 2px 8px rgba(0, 0, 0, 0.3),
+        0 0 0 1px rgba(255, 255, 255, 0.05) inset;
+    }
+
+    .mode-pill.active::after {
+      content: '';
+      position: absolute;
+      bottom: 0;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 20px;
+      height: 2px;
+      border-radius: 2px;
+      background: var(--current-mode-color, var(--accent));
+    }
+
+    .mode-pill[data-mode="oldschool"].active { --current-mode-color: var(--mode-oldschool); }
+    .mode-pill[data-mode="tut"].active { --current-mode-color: var(--mode-tut); }
+    .mode-pill[data-mode="pump"].active { --current-mode-color: var(--mode-pump); }
+    .mode-pill[data-mode="eccentric"].active { --current-mode-color: var(--mode-eccentric); }
+    .mode-pill[data-mode="echo"].active { --current-mode-color: var(--mode-echo); }
+
+    /* Config panels container */
+    .config-panels {
+      padding: var(--space-lg);
+      min-height: 180px;
+      position: relative;
+    }
+
+    .config-panel {
+      display: none;
+      animation: panelFadeIn 0.25s ease;
+    }
+
+    .config-panel.active {
+      display: block;
+    }
+
+    @keyframes panelFadeIn {
+      from {
+        opacity: 0;
+        transform: translateY(8px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    /* Config field styles */
+    .config-field {
+      margin-bottom: var(--space-md);
+    }
+
+    .config-field:last-child {
+      margin-bottom: 0;
+    }
+
+    .field-label {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      color: var(--text-tertiary);
+      margin-bottom: var(--space-sm);
+    }
+
+    /* Weight input with stepper */
+    .weight-input-group {
+      display: flex;
+      align-items: center;
+      gap: var(--space-sm);
+      background: var(--surface-1);
+      border-radius: var(--radius-md);
+      padding: var(--space-xs);
+      border: 1px solid var(--border);
+      transition: border-color 0.2s ease;
+    }
+
+    .weight-input-group:focus-within {
+      border-color: var(--border-focus);
+    }
+
+    .weight-stepper-btn {
+      width: 36px;
+      height: 36px;
+      border: none;
+      background: var(--surface-3);
+      border-radius: var(--radius-sm);
+      color: var(--text-secondary);
+      font-size: 18px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .weight-stepper-btn:hover {
+      background: var(--surface-4);
+      color: var(--text-primary);
+    }
+
+    .weight-stepper-btn:active {
+      transform: scale(0.95);
+    }
+
+    .weight-value {
+      flex: 1;
+      text-align: center;
+    }
+
+    .weight-number {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 24px;
+      font-weight: 700;
+      color: var(--text-primary);
+      line-height: 1;
+    }
+
+    .weight-unit {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 11px;
+      color: var(--text-tertiary);
+      margin-top: 2px;
+    }
+
+    /* Segmented selector (for Echo Level) */
+    .segment-selector {
+      display: flex;
+      gap: var(--space-xs);
+      background: var(--surface-1);
+      padding: var(--space-xs);
+      border-radius: var(--radius-md);
+    }
+
+    .segment-option {
+      flex: 1;
+      padding: var(--space-sm) var(--space-md);
+      border: none;
+      background: transparent;
+      border-radius: var(--radius-sm);
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 11px;
+      font-weight: 500;
+      color: var(--text-tertiary);
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .segment-option:hover {
+      color: var(--text-secondary);
+      background: var(--surface-3);
+    }
+
+    .segment-option.active {
+      background: var(--mode-echo);
+      color: var(--surface-1);
+    }
+
+    /* Percentage slider */
+    .percent-slider-group {
+      background: var(--surface-1);
+      border-radius: var(--radius-md);
+      padding: var(--space-md);
+      border: 1px solid var(--border);
+    }
+
+    .percent-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: var(--space-sm);
+    }
+
+    .percent-value {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 18px;
+      font-weight: 600;
+      color: var(--text-primary);
+    }
+
+    .percent-value span {
+      font-size: 12px;
+      color: var(--text-tertiary);
+    }
+
+    .percent-slider {
+      width: 100%;
+      height: 6px;
+      border-radius: 3px;
+      background: var(--surface-3);
+      appearance: none;
+      cursor: pointer;
+    }
+
+    .percent-slider::-webkit-slider-thumb {
+      appearance: none;
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      background: var(--text-primary);
+      border: 3px solid var(--surface-2);
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+      cursor: pointer;
+      transition: transform 0.15s ease;
+    }
+
+    .percent-slider::-webkit-slider-thumb:hover {
+      transform: scale(1.1);
+    }
+
+    .percent-slider::-webkit-slider-runnable-track {
+      height: 6px;
+      border-radius: 3px;
+    }
+
+    /* Toggle switch */
+    .toggle-field {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: var(--surface-1);
+      border-radius: var(--radius-md);
+      padding: var(--space-md);
+      border: 1px solid var(--border);
+    }
+
+    .toggle-info {
+      flex: 1;
+    }
+
+    .toggle-title {
+      font-family: 'Inter', sans-serif;
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--text-primary);
+      margin-bottom: 2px;
+    }
+
+    .toggle-desc {
+      font-size: 11px;
+      color: var(--text-tertiary);
+    }
+
+    .toggle-switch {
+      position: relative;
+      width: 44px;
+      height: 26px;
+      background: var(--surface-3);
+      border-radius: 13px;
+      cursor: pointer;
+      transition: background 0.2s ease;
+    }
+
+    .toggle-switch.active {
+      background: var(--accent);
+    }
+
+    .toggle-switch::after {
+      content: '';
+      position: absolute;
+      top: 3px;
+      left: 3px;
+      width: 20px;
+      height: 20px;
+      background: var(--text-primary);
+      border-radius: 50%;
+      transition: transform 0.2s ease;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+    }
+
+    .toggle-switch.active::after {
+      transform: translateX(18px);
+    }
+
+    /* Footer actions */
+    .modal-footer {
+      padding: var(--space-md) var(--space-lg);
+      border-top: 1px solid var(--border);
+      display: flex;
+      gap: var(--space-sm);
+    }
+
+    .btn {
+      flex: 1;
+      padding: var(--space-md);
+      border: none;
+      border-radius: var(--radius-md);
+      font-family: 'Inter', sans-serif;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .btn-secondary {
+      background: var(--surface-3);
+      color: var(--text-secondary);
+    }
+
+    .btn-secondary:hover {
+      background: var(--surface-4);
+      color: var(--text-primary);
+    }
+
+    .btn-primary {
+      background: var(--accent);
+      color: var(--surface-1);
+    }
+
+    .btn-primary:hover {
+      background: #ffb740;
+      transform: translateY(-1px);
+      box-shadow: 0 4px 12px var(--accent-glow);
+    }
+
+    .btn-primary:active {
+      transform: translateY(0);
+    }
+
+    /* ============================================
+       DAY CARD (for context)
+       ============================================ */
+
+    .day-card {
+      width: 100%;
+      max-width: 380px;
+      background: var(--surface-2);
+      border-radius: var(--radius-lg);
+      border: 1px solid var(--border);
+      padding: var(--space-lg);
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .day-card:hover {
+      border-color: var(--accent-dim);
+      transform: translateY(-2px);
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+    }
+
+    .day-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: var(--space-md);
+    }
+
+    .day-number {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--accent);
+    }
+
+    .day-name {
+      font-size: 18px;
+      font-weight: 600;
+      color: var(--text-primary);
+    }
+
+    .day-exercises {
+      display: flex;
+      flex-direction: column;
+      gap: var(--space-sm);
+    }
+
+    .exercise-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: var(--space-sm) var(--space-md);
+      background: var(--surface-1);
+      border-radius: var(--radius-sm);
+    }
+
+    .exercise-row-name {
+      font-size: 13px;
+      color: var(--text-primary);
+    }
+
+    .exercise-row-config {
+      display: flex;
+      align-items: center;
+      gap: var(--space-sm);
+    }
+
+    .config-badge {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 10px;
+      font-weight: 500;
+      padding: 3px 8px;
+      border-radius: var(--radius-pill);
+      background: var(--accent-dim);
+      color: var(--accent);
+    }
+
+    .config-weight {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 12px;
+      color: var(--text-secondary);
+    }
+
+    .tap-hint {
+      margin-top: var(--space-md);
+      text-align: center;
+      font-size: 11px;
+      color: var(--text-tertiary);
+    }
+
+    /* ============================================
+       RESPONSIVE
+       ============================================ */
+
+    @media (max-width: 420px) {
+      .mode-pill {
+        font-size: 9px;
+        padding: var(--space-sm) 2px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="demo-container">
+    <!-- Day Card (context) -->
+    <div>
+      <div class="demo-label">Day Card (tap to configure)</div>
+      <div class="day-card" onclick="document.querySelector('.exercise-config-modal').style.display='block'">
+        <div class="day-header">
+          <span class="day-number">Day 1</span>
+        </div>
+        <div class="day-name">Push A</div>
+        <div class="day-exercises">
+          <div class="exercise-row">
+            <span class="exercise-row-name">Bench Press</span>
+            <div class="exercise-row-config">
+              <span class="config-badge">OLD</span>
+              <span class="config-weight">70kg</span>
+            </div>
+          </div>
+          <div class="exercise-row">
+            <span class="exercise-row-name">Incline Press</span>
+            <div class="exercise-row-config">
+              <span class="config-badge">OLD</span>
+              <span class="config-weight">55kg</span>
+            </div>
+          </div>
+          <div class="exercise-row">
+            <span class="exercise-row-name">Shoulder Press</span>
+            <div class="exercise-row-config">
+              <span class="config-badge">TUT</span>
+              <span class="config-weight">40kg</span>
+            </div>
+          </div>
+        </div>
+        <div class="tap-hint">Tap exercise to configure</div>
+      </div>
+    </div>
+
+    <!-- Exercise Config Modal -->
+    <div>
+      <div class="demo-label">Exercise Configuration Modal</div>
+      <div class="exercise-config-modal">
+        <!-- Header -->
+        <div class="modal-header">
+          <div class="exercise-name">Bench Press</div>
+          <div class="exercise-meta">
+            <div class="meta-item">
+              <span>Sets</span>
+              <span class="meta-value">5</span>
+            </div>
+            <div class="meta-item">
+              <span>Reps</span>
+              <span class="meta-value">5</span>
+            </div>
+            <div class="meta-item">
+              <span>1RM</span>
+              <span class="meta-value">100kg</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Mode Selector -->
+        <div class="mode-selector">
+          <div class="mode-label">Workout Mode</div>
+          <div class="mode-pills">
+            <button class="mode-pill active" data-mode="oldschool" onclick="selectMode('oldschool')">Old School</button>
+            <button class="mode-pill" data-mode="tut" onclick="selectMode('tut')">TUT</button>
+            <button class="mode-pill" data-mode="pump" onclick="selectMode('pump')">Pump</button>
+            <button class="mode-pill" data-mode="eccentric" onclick="selectMode('eccentric')">Eccen</button>
+            <button class="mode-pill" data-mode="echo" onclick="selectMode('echo')">Echo</button>
+          </div>
+        </div>
+
+        <!-- Config Panels -->
+        <div class="config-panels">
+          <!-- OldSchool Config -->
+          <div class="config-panel active" id="panel-oldschool">
+            <div class="config-field">
+              <div class="field-label">Starting Weight</div>
+              <div class="weight-input-group">
+                <button class="weight-stepper-btn" onclick="adjustWeight(-2.5)">−</button>
+                <div class="weight-value">
+                  <div class="weight-number" id="weight-display">70</div>
+                  <div class="weight-unit">kg per cable</div>
+                </div>
+                <button class="weight-stepper-btn" onclick="adjustWeight(2.5)">+</button>
+              </div>
+            </div>
+            <div class="config-field">
+              <div class="toggle-field">
+                <div class="toggle-info">
+                  <div class="toggle-title">Auto Progression</div>
+                  <div class="toggle-desc">+2.5% after each completed cycle</div>
+                </div>
+                <div class="toggle-switch active" onclick="this.classList.toggle('active')"></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- TUT Config -->
+          <div class="config-panel" id="panel-tut">
+            <div class="config-field">
+              <div class="field-label">Starting Weight</div>
+              <div class="weight-input-group">
+                <button class="weight-stepper-btn" onclick="adjustWeight(-2.5)">−</button>
+                <div class="weight-value">
+                  <div class="weight-number" id="weight-display-tut">55</div>
+                  <div class="weight-unit">kg per cable</div>
+                </div>
+                <button class="weight-stepper-btn" onclick="adjustWeight(2.5)">+</button>
+              </div>
+            </div>
+            <div style="padding: var(--space-md); background: var(--surface-1); border-radius: var(--radius-md); border: 1px solid var(--border);">
+              <div style="font-size: 12px; color: var(--text-secondary); line-height: 1.5;">
+                <strong style="color: var(--mode-tut);">Time Under Tension</strong> mode maintains constant resistance throughout the movement for maximum muscle engagement.
+              </div>
+            </div>
+          </div>
+
+          <!-- Pump Config -->
+          <div class="config-panel" id="panel-pump">
+            <div class="config-field">
+              <div class="field-label">Starting Weight</div>
+              <div class="weight-input-group">
+                <button class="weight-stepper-btn" onclick="adjustWeight(-2.5)">−</button>
+                <div class="weight-value">
+                  <div class="weight-number" id="weight-display-pump">45</div>
+                  <div class="weight-unit">kg per cable</div>
+                </div>
+                <button class="weight-stepper-btn" onclick="adjustWeight(2.5)">+</button>
+              </div>
+            </div>
+            <div style="padding: var(--space-md); background: var(--surface-1); border-radius: var(--radius-md); border: 1px solid var(--border);">
+              <div style="font-size: 12px; color: var(--text-secondary); line-height: 1.5;">
+                <strong style="color: var(--mode-pump);">Pump</strong> mode uses shorter ROM with sustained tension for maximum blood flow and muscle volume.
+              </div>
+            </div>
+          </div>
+
+          <!-- Eccentric Config -->
+          <div class="config-panel" id="panel-eccentric">
+            <div class="config-field">
+              <div class="field-label">Starting Weight</div>
+              <div class="weight-input-group">
+                <button class="weight-stepper-btn" onclick="adjustWeight(-2.5)">−</button>
+                <div class="weight-value">
+                  <div class="weight-number" id="weight-display-ecc">80</div>
+                  <div class="weight-unit">kg per cable</div>
+                </div>
+                <button class="weight-stepper-btn" onclick="adjustWeight(2.5)">+</button>
+              </div>
+            </div>
+            <div class="config-field">
+              <div class="field-label">Eccentric Overload</div>
+              <div class="percent-slider-group">
+                <div class="percent-header">
+                  <span style="font-size: 12px; color: var(--text-secondary);">Additional load on lowering phase</span>
+                  <span class="percent-value"><span id="ecc-percent">120</span><span>%</span></span>
+                </div>
+                <input type="range" class="percent-slider" min="100" max="150" value="120"
+                       oninput="document.getElementById('ecc-percent').textContent = this.value"
+                       style="background: linear-gradient(to right, var(--mode-eccentric) 0%, var(--mode-eccentric) calc((var(--val, 120) - 100) * 2%), var(--surface-3) calc((var(--val, 120) - 100) * 2%));">
+              </div>
+            </div>
+          </div>
+
+          <!-- Echo Config -->
+          <div class="config-panel" id="panel-echo">
+            <div class="config-field">
+              <div class="field-label">Echo Level</div>
+              <div class="segment-selector">
+                <button class="segment-option active" onclick="selectEchoLevel(this)">Hard</button>
+                <button class="segment-option" onclick="selectEchoLevel(this)">Harder</button>
+                <button class="segment-option" onclick="selectEchoLevel(this)">Hardest</button>
+              </div>
+            </div>
+            <div class="config-field">
+              <div class="field-label">Eccentric Load</div>
+              <div class="percent-slider-group">
+                <div class="percent-header">
+                  <span style="font-size: 12px; color: var(--text-secondary);">Resistance on lowering phase</span>
+                  <span class="percent-value"><span id="echo-ecc-percent">100</span><span>%</span></span>
+                </div>
+                <input type="range" class="percent-slider" min="50" max="150" value="100"
+                       oninput="document.getElementById('echo-ecc-percent').textContent = this.value">
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Footer -->
+        <div class="modal-footer">
+          <button class="btn btn-secondary">Cancel</button>
+          <button class="btn btn-primary">Apply</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let currentWeight = 70;
+
+    function selectMode(mode) {
+      // Update pill states
+      document.querySelectorAll('.mode-pill').forEach(pill => {
+        pill.classList.remove('active');
+      });
+      document.querySelector(`[data-mode="${mode}"]`).classList.add('active');
+
+      // Update panel visibility
+      document.querySelectorAll('.config-panel').forEach(panel => {
+        panel.classList.remove('active');
+      });
+      document.getElementById(`panel-${mode}`).classList.add('active');
+    }
+
+    function adjustWeight(delta) {
+      currentWeight = Math.max(0, currentWeight + delta);
+      document.querySelectorAll('[id^="weight-display"]').forEach(el => {
+        el.textContent = currentWeight;
+      });
+    }
+
+    function selectEchoLevel(btn) {
+      document.querySelectorAll('.segment-option').forEach(opt => {
+        opt.classList.remove('active');
+      });
+      btn.classList.add('active');
+    }
+
+    // Slider gradient update
+    document.querySelectorAll('.percent-slider').forEach(slider => {
+      slider.addEventListener('input', function() {
+        const percent = ((this.value - this.min) / (this.max - this.min)) * 100;
+        this.style.background = `linear-gradient(to right, var(--mode-eccentric) 0%, var(--mode-eccentric) ${percent}%, var(--surface-3) ${percent}%)`;
+      });
+    });
+  </script>
+</body>
+</html>

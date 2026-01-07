@@ -13,6 +13,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -32,6 +36,9 @@ fun AlphabetStrip(
             .clip(RoundedCornerShape(8.dp))
             .background(MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.9f))
             .padding(horizontal = 4.dp, vertical = 8.dp)
+            .semantics {
+                contentDescription = "Alphabet navigation. Tap a letter to jump to exercises starting with that letter."
+            }
     ) {
         Column(
             verticalArrangement = Arrangement.spacedBy(2.dp),
@@ -41,6 +48,10 @@ fun AlphabetStrip(
                 Text(
                     text = letter.toString(),
                     modifier = Modifier
+                        .semantics {
+                            contentDescription = "Jump to $letter"
+                            role = Role.Button
+                        }
                         .clickable { onLetterTap(letter) }
                         .padding(horizontal = 6.dp, vertical = 2.dp),
                     style = MaterialTheme.typography.labelSmall.copy(

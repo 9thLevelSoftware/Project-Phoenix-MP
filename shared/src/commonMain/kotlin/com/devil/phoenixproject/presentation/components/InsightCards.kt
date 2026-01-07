@@ -22,6 +22,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -163,7 +165,11 @@ fun ThisWeekSummaryCard(
     }
 
     Card(
-        modifier = modifier.fillMaxWidth(),
+        modifier = modifier
+            .fillMaxWidth()
+            .semantics {
+                contentDescription = "This week summary: ${thisWeek.workouts} workouts, $volumeText volume, ${thisWeek.totalReps} reps, ${thisWeek.prsHit} PRs"
+            },
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest),
         shape = RoundedCornerShape(20.dp)
     ) {
@@ -398,7 +404,11 @@ fun ConsistencyGaugeCard(
     val target = 12f
 
     Card(
-        modifier = modifier.fillMaxWidth(),
+        modifier = modifier
+            .fillMaxWidth()
+            .semantics {
+                contentDescription = "Monthly consistency: $stats workouts in the last 30 days, target is ${target.toInt()}"
+            },
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest),
         shape = RoundedCornerShape(20.dp)
     ) {
@@ -533,9 +543,10 @@ fun WorkoutModeDistributionCard(
 
             if (modeData.isNotEmpty()) {
                 // Using MuscleGroupCircleChart as a donut chart
+                // Chart is now responsive and self-sizing for tablet support
                 MuscleGroupCircleChart(
                     data = modeData,
-                    modifier = Modifier.height(300.dp)
+                    modifier = Modifier.fillMaxWidth()
                 )
             } else {
                 Text(
@@ -1201,8 +1212,17 @@ fun CalendarHeatmapCard(
     val cellGap = 2.dp
     val dayLabels = listOf("M", "T", "W", "T", "F", "S", "S")
 
+    // Count workout days for accessibility
+    val workoutDays = remember(dailyActivities) {
+        dailyActivities.count { it.workoutCount > 0 }
+    }
+
     Card(
-        modifier = modifier.fillMaxWidth(),
+        modifier = modifier
+            .fillMaxWidth()
+            .semantics {
+                contentDescription = "Activity heatmap: $workoutDays workout days in the last 13 weeks"
+            },
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest),
         shape = RoundedCornerShape(20.dp)
     ) {

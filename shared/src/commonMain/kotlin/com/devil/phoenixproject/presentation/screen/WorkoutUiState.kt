@@ -39,7 +39,7 @@ data class WorkoutUiState(
     val currentMetric: WorkoutMetric? = null,
     val currentHeuristicKgMax: Float = 0f, // Echo mode: actual measured force per cable (kg)
     val workoutParameters: WorkoutParameters = WorkoutParameters(
-        workoutType = WorkoutType.Program(ProgramMode.OldSchool),
+        programMode = ProgramMode.OldSchool,
         reps = 10
     ),
     val repCount: RepCount = RepCount(),
@@ -54,6 +54,7 @@ data class WorkoutUiState(
     val skippedExercises: Set<Int> = emptySet(),
     val completedExercises: Set<Int> = emptySet(),
     val autoplayEnabled: Boolean = false,
+    val summaryCountdownSeconds: Int = 10,  // Countdown duration for SetSummary auto-continue (0 = Off)
     val canGoBack: Boolean = false,
     val canSkipForward: Boolean = false,
     val isWorkoutSetupDialogVisible: Boolean = false,

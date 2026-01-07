@@ -19,9 +19,14 @@ compose-navigation = "2.9.6"
 activity-compose = "1.12.2"
 
 # AndroidX
+junit-androidx = "1.2.1"
+espresso-androidx = "3.6.1"
 androidx-core = "1.17.0"
 androidx-lifecycle = "2.10.0"
 androidx-splashscreen = "1.2.0"
+androidx-lifecycle-viewmodel-compose = "2.10.0-alpha07"
+androidx-navigation-compose = "2.9.1"
+androidx-savedstate = "1.4.0"
 
 # Dependency Injection - Koin (Multiplatform alternative to Hilt)
 koin = "4.1.1"
@@ -36,12 +41,18 @@ multiplatform-settings = "1.3.0"
 # BLE - Kable (Kotlin Multiplatform)
 kable = "0.40.2"
 
+# Ktor
+ktor = "3.3.3"
+
 # Logging
 kermit = "2.0.8"
 
 # Image Loading (Multiplatform)
 coil = "3.3.0"
 reorderable = "3.0.0"
+
+# Lottie (Multiplatform)
+compottie = "2.0.2"
 
 # Testing
 junit = "4.13.2"
@@ -50,8 +61,17 @@ espresso = "3.7.0"
 mockk = "1.14.7"
 turbine = "1.2.1"
 truth = "1.4.5"
+koin-test = "4.1.1"
+multiplatform-settings-test = "1.3.0"
 
 [libraries]
+mockk = { module = "io.mockk:mockk", version.ref = "mockk" }
+mockk-android = { module = "io.mockk:mockk-android", version.ref = "mockk" }
+junit = { module = "junit:junit", version.ref = "junit" }
+turbine = { module = "app.cash.turbine:turbine", version.ref = "turbine" }
+truth = { module = "com.google.truth:truth", version.ref = "truth" }
+koin-test = { module = "io.insert-koin:koin-test", version.ref = "koin-test" }
+multiplatform-settings-test = { module = "com.russhwolf:multiplatform-settings-test", version.ref = "multiplatform-settings-test" }
 # Kotlin
 kotlin-test = { module = "org.jetbrains.kotlin:kotlin-test", version.ref = "kotlin" }
 
@@ -66,9 +86,14 @@ kotlinx-datetime = { module = "org.jetbrains.kotlinx:kotlinx-datetime", version.
 compose-bom = { module = "androidx.compose:compose-bom", version.ref = "compose-bom" }
 
 # AndroidX
+androidx-test-junit = { module = "androidx.test.ext:junit", version.ref = "junit-androidx" }
+androidx-test-espresso = { module = "androidx.test.espresso:espresso-core", version.ref = "espresso-androidx" }
 androidx-core-ktx = { module = "androidx.core:core-ktx", version.ref = "androidx-core" }
 androidx-lifecycle-runtime = { module = "androidx.lifecycle:lifecycle-runtime-ktx", version.ref = "androidx-lifecycle" }
 androidx-lifecycle-viewmodel = { module = "androidx.lifecycle:lifecycle-viewmodel-ktx", version.ref = "androidx-lifecycle" }
+androidx-lifecycle-viewmodel-compose = { module = "org.jetbrains.androidx.lifecycle:lifecycle-viewmodel-compose", version.ref = "androidx-lifecycle-viewmodel-compose" }
+androidx-navigation-compose = { module = "org.jetbrains.androidx.navigation:navigation-compose", version.ref = "androidx-navigation-compose" }
+androidx-savedstate = { module = "org.jetbrains.androidx.savedstate:savedstate", version.ref = "androidx-savedstate" }
 androidx-activity-compose = { module = "androidx.activity:activity-compose", version.ref = "activity-compose" }
 androidx-splashscreen = { module = "androidx.core:core-splashscreen", version.ref = "androidx-splashscreen" }
 
@@ -77,6 +102,9 @@ compose-ui = { module = "androidx.compose.ui:ui" }
 compose-ui-graphics = { module = "androidx.compose.ui:ui-graphics" }
 compose-ui-tooling = { module = "androidx.compose.ui:ui-tooling" }
 compose-ui-tooling-preview = { module = "androidx.compose.ui:ui-tooling-preview" }
+compose-ui-test-junit4 = { module = "androidx.compose.ui:ui-test-junit4" }
+compose-ui-test-manifest = { module = "androidx.compose.ui:ui-test-manifest" }
+compose-ui-test = { module = "androidx.compose.ui:ui-test" }
 compose-material3 = { module = "androidx.compose.material3:material3" }
 compose-material-icons-extended = { module = "androidx.compose.material:material-icons-extended" }
 compose-navigation = { module = "androidx.navigation:navigation-compose", version.ref = "compose-navigation" }
@@ -86,12 +114,14 @@ koin-core = { module = "io.insert-koin:koin-core", version.ref = "koin" }
 koin-android = { module = "io.insert-koin:koin-android", version.ref = "koin" }
 koin-compose = { module = "io.insert-koin:koin-compose", version.ref = "koin-compose" }
 koin-compose-viewmodel = { module = "io.insert-koin:koin-compose-viewmodel", version.ref = "koin-compose" }
+koin-test-junit4 = { module = "io.insert-koin:koin-test-junit4", version.ref = "koin" }
 
 # SQLDelight (Multiplatform Database)
 sqldelight-runtime = { module = "app.cash.sqldelight:runtime", version.ref = "sqldelight" }
 sqldelight-coroutines = { module = "app.cash.sqldelight:coroutines-extensions", version.ref = "sqldelight" }
 sqldelight-android-driver = { module = "app.cash.sqldelight:android-driver", version.ref = "sqldelight" }
 sqldelight-native-driver = { module = "app.cash.sqldelight:native-driver", version.ref = "sqldelight" }
+sqldelight-sqlite-driver = { module = "app.cash.sqldelight:sqlite-driver", version.ref = "sqldelight" }
 
 # Multiplatform Settings
 multiplatform-settings = { module = "com.russhwolf:multiplatform-settings", version.ref = "multiplatform-settings" }
@@ -108,31 +138,29 @@ coil-compose = { module = "io.coil-kt.coil3:coil-compose", version.ref = "coil" 
 coil-network-ktor = { module = "io.coil-kt.coil3:coil-network-ktor3", version.ref = "coil" }
 
 # Ktor (for Coil network support and HTTP API calls)
-ktor-client-core = { module = "io.ktor:ktor-client-core", version = "3.3.3" }
-ktor-client-okhttp = { module = "io.ktor:ktor-client-okhttp", version = "3.3.3" }
-ktor-client-darwin = { module = "io.ktor:ktor-client-darwin", version = "3.3.3" }
+ktor-client-core = { module = "io.ktor:ktor-client-core", version.ref = "ktor" }
+ktor-client-okhttp = { module = "io.ktor:ktor-client-okhttp", version.ref = "ktor" }
+ktor-client-darwin = { module = "io.ktor:ktor-client-darwin", version.ref = "ktor" }
+ktor-client-content-negotiation = { module = "io.ktor:ktor-client-content-negotiation", version.ref = "ktor" }
+ktor-serialization-kotlinx-json = { module = "io.ktor:ktor-serialization-kotlinx-json", version.ref = "ktor" }
 
 # Vico Charts (Android only)
 vico-charts = { module = "com.patrykandpatrick.vico:compose-m3", version = "2.3.6" }
 
 reorderable = { module = "sh.calvin.reorderable:reorderable", version.ref = "reorderable" }
 
-# Supabase
+# Compottie (Multiplatform Lottie)
+compottie = { module = "io.github.alexzhirkevich:compottie", version.ref = "compottie" }
+compottie-resources = { module = "io.github.alexzhirkevich:compottie-resources", version.ref = "compottie" }
+
+# Supabase (Premium)
 supabase-bom = { module = "io.github.jan-tennert.supabase:bom", version.ref = "supabase" }
 supabase-auth = { module = "io.github.jan-tennert.supabase:auth-kt" }
 supabase-postgrest = { module = "io.github.jan-tennert.supabase:postgrest-kt" }
 supabase-realtime = { module = "io.github.jan-tennert.supabase:realtime-kt" }
 
-# RevenueCat (KMP)
+# RevenueCat (Premium KMP)
 revenuecat-purchases-core = { module = "com.revenuecat.purchases:purchases-kmp-core", version.ref = "revenuecat" }
-
-# Testing
-junit = { module = "junit:junit", version.ref = "junit" }
-androidx-junit = { module = "androidx.test.ext:junit", version.ref = "junit-version" }
-androidx-espresso = { module = "androidx.test.espresso:espresso-core", version.ref = "espresso" }
-mockk = { module = "io.mockk:mockk", version.ref = "mockk" }
-turbine = { module = "app.cash.turbine:turbine", version.ref = "turbine" }
-truth = { module = "com.google.truth:truth", version.ref = "truth" }
 
 [plugins]
 # Android

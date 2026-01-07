@@ -52,14 +52,14 @@ kotlin {
                 implementation(compose.ui)
                 implementation(compose.components.resources)
 
-                // Lifecycle ViewModel for Compose (must match Compose MP 1.10.0 requirements)
-                implementation("org.jetbrains.androidx.lifecycle:lifecycle-viewmodel-compose:2.10.0-alpha06")
+                // Lifecycle ViewModel for Compose
+                implementation(libs.androidx.lifecycle.viewmodel.compose)
 
-                // Navigation Compose (Multiplatform) - 2.9.1 required for Compose MP 1.10.0
-                implementation("org.jetbrains.androidx.navigation:navigation-compose:2.9.1")
+                // Navigation Compose (Multiplatform)
+                implementation(libs.androidx.navigation.compose)
 
-                // SavedState (required for navigation arguments in 2.9.x)
-                implementation("org.jetbrains.androidx.savedstate:savedstate:1.4.0")
+                // SavedState
+                implementation(libs.androidx.savedstate)
 
                 // Kotlinx
                 implementation(libs.kotlinx.coroutines.core)
@@ -88,8 +88,8 @@ kotlin {
 
                 // Ktor Client (for Coil network and HTTP API)
                 implementation(libs.ktor.client.core)
-                implementation("io.ktor:ktor-client-content-negotiation:3.1.1")
-                implementation("io.ktor:ktor-serialization-kotlinx-json:3.1.1")
+                implementation(libs.ktor.client.content.negotiation)
+                implementation(libs.ktor.serialization.kotlinx.json)
 
                 // BLE - Kable (Multiplatform)
                 implementation(libs.kable.core)
@@ -98,15 +98,15 @@ kotlin {
                 api(libs.reorderable)
 
                 // Lottie Animations (Compose Multiplatform)
-                implementation("io.github.alexzhirkevich:compottie:2.0.0-rc01")
-                implementation("io.github.alexzhirkevich:compottie-resources:2.0.0-rc01")
+                implementation(libs.compottie)
+                implementation(libs.compottie.resources)
 
-                // Supabase (Auth and Database)
+                // Supabase (Premium - Auth and Database)
                 implementation(project.dependencies.platform(libs.supabase.bom))
                 implementation(libs.supabase.auth)
                 implementation(libs.supabase.postgrest)
 
-                // RevenueCat (Subscriptions)
+                // RevenueCat (Premium - Subscriptions)
                 implementation(libs.revenuecat.purchases.core)
             }
         }
@@ -115,6 +115,19 @@ kotlin {
             dependencies {
                 implementation(libs.kotlin.test)
                 implementation(libs.kotlinx.coroutines.test)
+                implementation(libs.turbine)
+                implementation(libs.koin.test)
+                implementation(libs.multiplatform.settings.test)
+            }
+        }
+
+        val androidUnitTest by getting {
+            dependencies {
+                implementation(libs.junit)
+                implementation(libs.truth)
+                implementation(libs.sqldelight.sqlite.driver)
+                implementation(libs.koin.test.junit4)
+                implementation(libs.multiplatform.settings.test)
             }
         }
         
@@ -141,6 +154,7 @@ kotlin {
         }
         
         val iosArm64Main by getting
+        val iosArm64Test by getting
         val iosMain by creating {
             dependsOn(commonMain)
             iosArm64Main.dependsOn(this)
@@ -151,6 +165,15 @@ kotlin {
 
                 // Ktor Darwin engine for iOS
                 implementation(libs.ktor.client.darwin)
+            }
+        }
+
+        val iosTest by creating {
+            dependsOn(commonTest)
+            iosArm64Test.dependsOn(this)
+
+            dependencies {
+                implementation(libs.sqldelight.native.driver)
             }
         }
 

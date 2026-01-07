@@ -37,6 +37,8 @@ import com.devil.phoenixproject.data.local.BadgeDefinitions
 import com.devil.phoenixproject.data.repository.BadgeWithProgress
 import com.devil.phoenixproject.domain.model.*
 import com.devil.phoenixproject.presentation.viewmodel.GamificationViewModel
+import com.devil.phoenixproject.presentation.util.LocalWindowSizeClass
+import com.devil.phoenixproject.presentation.util.WindowWidthSizeClass
 import com.devil.phoenixproject.ui.theme.Spacing
 import org.koin.compose.koinInject
 
@@ -110,8 +112,14 @@ fun BadgesScreen(
                     CircularProgressIndicator()
                 }
             } else {
+                val windowSizeClass = LocalWindowSizeClass.current
+                val gridColumns = when (windowSizeClass.widthSizeClass) {
+                    WindowWidthSizeClass.Expanded -> 6
+                    WindowWidthSizeClass.Medium -> 4
+                    WindowWidthSizeClass.Compact -> 3
+                }
                 LazyVerticalGrid(
-                    columns = GridCells.Fixed(3),
+                    columns = GridCells.Fixed(gridColumns),
                     contentPadding = PaddingValues(Spacing.medium),
                     horizontalArrangement = Arrangement.spacedBy(Spacing.small),
                     verticalArrangement = Arrangement.spacedBy(Spacing.small),

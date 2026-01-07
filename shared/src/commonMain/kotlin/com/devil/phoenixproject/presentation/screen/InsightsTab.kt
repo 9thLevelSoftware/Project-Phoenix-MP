@@ -17,6 +17,33 @@ import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.ui.theme.Spacing
 import com.devil.phoenixproject.presentation.components.*
+import com.devil.phoenixproject.presentation.util.ResponsiveDimensions
+
+/**
+ * Wrapper composable that constrains card width on tablets to prevent over-stretching.
+ */
+@Composable
+private fun ResponsiveCardWrapper(
+    modifier: Modifier = Modifier,
+    content: @Composable () -> Unit
+) {
+    val maxWidth = ResponsiveDimensions.cardMaxWidth()
+
+    Box(
+        modifier = modifier.fillMaxWidth(),
+        contentAlignment = Alignment.Center
+    ) {
+        Box(
+            modifier = if (maxWidth != null) {
+                Modifier.widthIn(max = maxWidth).fillMaxWidth()
+            } else {
+                Modifier.fillMaxWidth()
+            }
+        ) {
+            content()
+        }
+    }
+}
 
 /**
  * Improved Insights Tab - Clear, actionable analytics with proper formatting
@@ -54,99 +81,113 @@ fun InsightsTab(
 
         // This Week Summary Card - week-over-week comparison
         item {
-            ThisWeekSummaryCard(
-                workoutSessions = workoutSessions,
-                personalRecords = prs,
-                weightUnit = weightUnit,
-                modifier = Modifier.fillMaxWidth()
-            )
-        }
-
-        // 1. Muscle Balance Radar Chart (Replaces linear progress bars)
-        if (prs.isNotEmpty()) {
-            item {
-                MuscleBalanceRadarCard(
+            ResponsiveCardWrapper {
+                ThisWeekSummaryCard(
+                    workoutSessions = workoutSessions,
                     personalRecords = prs,
-                    exerciseRepository = exerciseRepository,
+                    weightUnit = weightUnit,
                     modifier = Modifier.fillMaxWidth()
                 )
             }
         }
 
+        // 1. Muscle Balance Radar Chart (Replaces linear progress bars)
+        if (prs.isNotEmpty()) {
+            item {
+                ResponsiveCardWrapper {
+                    MuscleBalanceRadarCard(
+                        personalRecords = prs,
+                        exerciseRepository = exerciseRepository,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            }
+        }
+
         // 2. Workout Consistency Gauge (Replaces circular progress)
         item {
-            ConsistencyGaugeCard(
-                workoutSessions = workoutSessions,
-                modifier = Modifier.fillMaxWidth()
-            )
+            ResponsiveCardWrapper {
+                ConsistencyGaugeCard(
+                    workoutSessions = workoutSessions,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
         }
 
         // 3. Volume vs Intensity Combo Chart (New Metric)
         if (workoutSessions.isNotEmpty()) {
             item {
-                VolumeVsIntensityCard(
-                    workoutSessions = workoutSessions,
-                    weightUnit = weightUnit,
-                    modifier = Modifier.fillMaxWidth()
-                )
+                ResponsiveCardWrapper {
+                    VolumeVsIntensityCard(
+                        workoutSessions = workoutSessions,
+                        weightUnit = weightUnit,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
             }
         }
 
         // 4. Total Volume Trend (User Request)
         if (workoutSessions.isNotEmpty()) {
             item {
-                TotalVolumeCard(
-                    workoutSessions = workoutSessions,
-                    weightUnit = weightUnit,
-                    formatWeight = formatWeight,
-                    modifier = Modifier.fillMaxWidth()
-                )
+                ResponsiveCardWrapper {
+                    TotalVolumeCard(
+                        workoutSessions = workoutSessions,
+                        weightUnit = weightUnit,
+                        formatWeight = formatWeight,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
             }
         }
         
         // 5. Mode Distribution Donut Chart (New Metric)
         if (workoutSessions.isNotEmpty()) {
             item {
-                WorkoutModeDistributionCard(
-                    workoutSessions = workoutSessions,
-                    modifier = Modifier.fillMaxWidth()
-                )
+                ResponsiveCardWrapper {
+                    WorkoutModeDistributionCard(
+                        workoutSessions = workoutSessions,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
             }
         }
 
         // Empty state
         if (prs.isEmpty() && workoutSessions.isEmpty()) {
             item {
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceContainerHighest
-                    )
-                ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(32.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally
+                ResponsiveCardWrapper {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceContainerHighest
+                        )
                     ) {
-                        Icon(
-                            Icons.Default.Insights,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(64.dp)
-                        )
-                        Spacer(modifier = Modifier.height(16.dp))
-                        Text(
-                            text = "No Insights Yet",
-                            style = MaterialTheme.typography.titleLarge,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text(
-                            text = "Complete workouts to unlock insights",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(32.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Icon(
+                                Icons.Default.Insights,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(64.dp)
+                            )
+                            Spacer(modifier = Modifier.height(16.dp))
+                            Text(
+                                text = "No Insights Yet",
+                                style = MaterialTheme.typography.titleLarge,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(
+                                text = "Complete workouts to unlock insights",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                     }
                 }
             }

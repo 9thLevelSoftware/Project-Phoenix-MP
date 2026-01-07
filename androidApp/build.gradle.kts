@@ -14,7 +14,7 @@ android {
         targetSdk = 36
         // CI can override versionCode via -Pversion.code=XXX
         versionCode = (project.findProperty("version.code") as String?)?.toInt() ?: 3
-        versionName = "0.2.0"
+        versionName = "0.3.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
@@ -126,14 +126,27 @@ dependencies {
     implementation(libs.coil.network.ktor)
     implementation(libs.ktor.client.okhttp)
 
-    // Testing
+    // Testing - Unit Tests
     testImplementation(libs.junit)
     testImplementation(libs.mockk)
     testImplementation(libs.kotlinx.coroutines.test)
     testImplementation(libs.turbine)
     testImplementation(libs.truth)
+    testImplementation(libs.koin.test)
+    testImplementation(libs.koin.test.junit4)
 
-    androidTestImplementation(libs.androidx.junit)
-    androidTestImplementation(libs.androidx.espresso)
+    // Testing - Instrumented/E2E Tests
+    androidTestImplementation(libs.androidx.test.junit)
+    androidTestImplementation(libs.androidx.test.espresso)
     androidTestImplementation(platform(libs.compose.bom))
+    androidTestImplementation("androidx.compose.ui:ui-test-junit4")
+    androidTestImplementation("androidx.compose.ui:ui-test")
+    androidTestImplementation(libs.mockk.android)
+    androidTestImplementation(libs.kotlinx.coroutines.test)
+    androidTestImplementation(libs.truth)
+    androidTestImplementation(libs.koin.test)
+    androidTestImplementation(libs.koin.test.junit4)
+    androidTestImplementation(libs.multiplatform.settings.test)
+    androidTestImplementation(libs.multiplatform.settings)
+    debugImplementation("androidx.compose.ui:ui-test-manifest")
 }

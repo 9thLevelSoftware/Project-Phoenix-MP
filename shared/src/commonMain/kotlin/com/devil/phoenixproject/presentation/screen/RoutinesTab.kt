@@ -1,8 +1,16 @@
 package com.devil.phoenixproject.presentation.screen
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -17,6 +25,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.dp
 import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.data.repository.ExerciseRepository
@@ -45,6 +54,7 @@ fun RoutinesTab(
     displayToKg: (Float, WeightUnit) -> Float,
     onStartWorkout: (Routine) -> Unit,
     onDeleteRoutine: (String) -> Unit,
+    onDeleteRoutines: (Set<String>) -> Unit,  // Batch delete for multi-select
     onSaveRoutine: (Routine) -> Unit,
     // onUpdateRoutine removed as it is replaced by Editor Screen
     onEditRoutine: (String) -> Unit,
@@ -56,12 +66,31 @@ fun RoutinesTab(
 
     Logger.d { "RoutinesTab: ${routines.size} routines loaded" }
 
+    // Selection mode state
+    var selectionMode by remember { mutableStateOf(false) }
+    val selectedIds = remember { mutableStateSetOf<String>() }
+    var showBatchDeleteDialog by remember { mutableStateOf(false) }
+    var showBatchCopyDialog by remember { mutableStateOf(false) }
+
+    // Helper to clear selection
+    fun clearSelection() {
+        selectedIds.clear()
+        selectionMode = false
+    }
+
     val backgroundGradient = screenBackgroundBrush()
 
     Box(
         modifier = modifier
             .fillMaxSize()
             .background(backgroundGradient)
+            .pointerInput(selectionMode) {
+                if (selectionMode) {
+                    detectTapGestures {
+                        clearSelection()
+                    }
+                }
+            }
     ) {
         Column(
             modifier = Modifier
@@ -86,10 +115,25 @@ fun RoutinesTab(
                     items(routines, key = { it.id }) { routine ->
                         RoutineCard(
                             routine = routine,
-                            onStartWorkout = { onStartWorkout(routine) },
-                            onEdit = {
-                                onEditRoutine(routine.id)
+                            isSelectionMode = selectionMode,
+                            isSelected = selectedIds.contains(routine.id),
+                            onLongPress = {
+                                selectionMode = true
+                                selectedIds.add(routine.id)
                             },
+                            onSelectionToggle = {
+                                if (selectedIds.contains(routine.id)) {
+                                    selectedIds.remove(routine.id)
+                                    // Exit selection mode if nothing selected
+                                    if (selectedIds.isEmpty()) {
+                                        selectionMode = false
+                                    }
+                                } else {
+                                    selectedIds.add(routine.id)
+                                }
+                            },
+                            onStartWorkout = { onStartWorkout(routine) },
+                            onEdit = { onEditRoutine(routine.id) },
                             onDelete = { onDeleteRoutine(routine.id) },
                             onDuplicate = {
                                 // Generate new IDs explicitly and create deep copies
@@ -137,33 +181,190 @@ fun RoutinesTab(
             }
         }
 
-        // Floating Action Button for creating new routine
-        FloatingActionButton(
-            onClick = onCreateRoutine,
+        // FAB Area - transforms based on selection mode
+        Box(
             modifier = Modifier
                 .align(Alignment.BottomEnd)
-                .padding(Spacing.medium),
-            containerColor = MaterialTheme.colorScheme.primary,
-            contentColor = MaterialTheme.colorScheme.onPrimary,
-            shape = RoundedCornerShape(16.dp)
+                .padding(Spacing.medium)
         ) {
-            Icon(
-                Icons.Default.Add,
-                contentDescription = "Add new routine",
-                modifier = Modifier.size(28.dp)
-            )
+            // Normal mode: Single + FAB
+            AnimatedVisibility(
+                visible = !selectionMode,
+                enter = fadeIn() + scaleIn(),
+                exit = fadeOut() + scaleOut()
+            ) {
+                FloatingActionButton(
+                    onClick = onCreateRoutine,
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    contentColor = MaterialTheme.colorScheme.onPrimary,
+                    shape = RoundedCornerShape(16.dp)
+                ) {
+                    Icon(
+                        Icons.Default.Add,
+                        contentDescription = "Add new routine",
+                        modifier = Modifier.size(28.dp)
+                    )
+                }
+            }
+
+            // Selection mode: Vertical stack of action buttons
+            AnimatedVisibility(
+                visible = selectionMode,
+                enter = fadeIn() + scaleIn(),
+                exit = fadeOut() + scaleOut()
+            ) {
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                    horizontalAlignment = Alignment.End
+                ) {
+                    // Cancel button (small)
+                    SmallFloatingActionButton(
+                        onClick = { clearSelection() },
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                        contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                    ) {
+                        Icon(Icons.Default.Close, contentDescription = "Cancel selection")
+                    }
+
+                    // Copy button
+                    FloatingActionButton(
+                        onClick = { showBatchCopyDialog = true },
+                        containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                        contentColor = MaterialTheme.colorScheme.onSecondaryContainer
+                    ) {
+                        BadgedBox(
+                            badge = {
+                                Badge(containerColor = MaterialTheme.colorScheme.primary) {
+                                    Text("${selectedIds.size}")
+                                }
+                            }
+                        ) {
+                            Icon(Icons.Default.ContentCopy, contentDescription = "Copy selected")
+                        }
+                    }
+
+                    // Delete button (red)
+                    FloatingActionButton(
+                        onClick = { showBatchDeleteDialog = true },
+                        containerColor = MaterialTheme.colorScheme.errorContainer,
+                        contentColor = MaterialTheme.colorScheme.error
+                    ) {
+                        BadgedBox(
+                            badge = {
+                                Badge(containerColor = MaterialTheme.colorScheme.error) {
+                                    Text("${selectedIds.size}")
+                                }
+                            }
+                        ) {
+                            Icon(Icons.Default.Delete, contentDescription = "Delete selected")
+                        }
+                    }
+                }
+            }
         }
     }
 
-    // RoutineBuilderDialog removed
+    // Batch Delete Confirmation Dialog
+    if (showBatchDeleteDialog) {
+        AlertDialog(
+            onDismissRequest = { showBatchDeleteDialog = false },
+            title = { Text("Delete ${selectedIds.size} routines?") },
+            text = { Text("This cannot be undone.") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        onDeleteRoutines(selectedIds.toSet())
+                        showBatchDeleteDialog = false
+                        clearSelection()
+                    }
+                ) {
+                    Text("Delete", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showBatchDeleteDialog = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+
+    // Batch Copy Confirmation Dialog
+    if (showBatchCopyDialog) {
+        AlertDialog(
+            onDismissRequest = { showBatchCopyDialog = false },
+            title = { Text("Duplicate ${selectedIds.size} routines?") },
+            text = { Text("New copies will be created with '(Copy)' suffix.") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        // Copy each selected routine using existing duplicate logic
+                        selectedIds.forEach { routineId ->
+                            routines.find { it.id == routineId }?.let { routine ->
+                                val newRoutineId = generateUUID()
+                                val newExercises = routine.exercises.map { exercise ->
+                                    exercise.copy(
+                                        id = generateUUID(),
+                                        exercise = exercise.exercise.copy()
+                                    )
+                                }
+
+                                // Smart duplicate naming
+                                val baseName = routine.name.replace(Regex(""" \(Copy( \d+)?\)$"""), "")
+                                val copyPattern = Regex("""^${Regex.escape(baseName)} \(Copy( (\d+))?\)$""")
+                                val existingCopyNumbers = routines
+                                    .mapNotNull { r ->
+                                        when {
+                                            r.name == baseName -> 0
+                                            r.name == "$baseName (Copy)" -> 1
+                                            else -> copyPattern.find(r.name)?.groups?.get(2)?.value?.toIntOrNull()
+                                        }
+                                    }
+                                val nextCopyNumber = (existingCopyNumbers.maxOrNull() ?: 0) + 1
+                                val newName = if (nextCopyNumber == 1) {
+                                    "$baseName (Copy)"
+                                } else {
+                                    "$baseName (Copy $nextCopyNumber)"
+                                }
+
+                                val duplicated = routine.copy(
+                                    id = newRoutineId,
+                                    name = newName,
+                                    createdAt = KmpUtils.currentTimeMillis(),
+                                    useCount = 0,
+                                    lastUsed = null,
+                                    exercises = newExercises
+                                )
+                                onSaveRoutine(duplicated)
+                            }
+                        }
+                        showBatchCopyDialog = false
+                        clearSelection()
+                    }
+                ) {
+                    Text("Copy")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showBatchCopyDialog = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
 }
 
 /**
  * Card displaying a single routine with expandable details.
+ * Supports multi-select mode with checkbox and long-press gestures.
  */
 @Composable
 fun RoutineCard(
     routine: Routine,
+    isSelectionMode: Boolean,
+    isSelected: Boolean,
+    onLongPress: () -> Unit,
+    onSelectionToggle: () -> Unit,
     onStartWorkout: () -> Unit,
     onEdit: () -> Unit,
     onDelete: () -> Unit,
@@ -171,18 +372,41 @@ fun RoutineCard(
 ) {
     var expanded by remember { mutableStateOf(false) }
     var showDeleteDialog by remember { mutableStateOf(false) }
+    val interactionSource = remember { MutableInteractionSource() }
 
+    @OptIn(ExperimentalFoundationApi::class)
     Card(
-        onClick = { expanded = !expanded },
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .combinedClickable(
+                interactionSource = interactionSource,
+                indication = null,
+                onClick = {
+                    if (isSelectionMode) onSelectionToggle()
+                    else expanded = !expanded
+                },
+                onLongClick = {
+                    if (!isSelectionMode) onLongPress()
+                    else onSelectionToggle()
+                }
+            ),
         shape = RoundedCornerShape(20.dp),
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceContainerHighest
+            containerColor = if (isSelected)
+                MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f)
+            else
+                MaterialTheme.colorScheme.surfaceContainerHighest
         ),
         elevation = CardDefaults.cardElevation(
             defaultElevation = if (expanded) 8.dp else 2.dp
         ),
-        border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f))
+        border = BorderStroke(
+            2.dp,
+            if (isSelected)
+                MaterialTheme.colorScheme.primary
+            else
+                MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)
+        )
     ) {
         Column(
             modifier = Modifier
@@ -191,27 +415,17 @@ fun RoutineCard(
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(16.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // Icon Box
-                Box(
-                    modifier = Modifier
-                        .size(64.dp)
-                        .shadow(8.dp, RoundedCornerShape(20.dp))
-                        .background(
-                            Brush.linearGradient(
-                                colors = listOf(Color(0xFF9333EA), Color(0xFF7E22CE))
-                            ),
-                            RoundedCornerShape(20.dp)
-                        ),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.FitnessCenter,
-                        contentDescription = "Fitness routine",
-                        tint = MaterialTheme.colorScheme.onPrimary,
-                        modifier = Modifier.size(32.dp)
+                // Checkbox - only visible in selection mode
+                AnimatedVisibility(visible = isSelectionMode) {
+                    Checkbox(
+                        checked = isSelected,
+                        onCheckedChange = { onSelectionToggle() },
+                        colors = CheckboxDefaults.colors(
+                            checkedColor = MaterialTheme.colorScheme.primary
+                        )
                     )
                 }
 
@@ -233,12 +447,14 @@ fun RoutineCard(
                     )
                 }
 
-                // Expand Icon
-                Icon(
-                    imageVector = if (expanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
-                    contentDescription = if (expanded) "Collapse" else "Expand",
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                // Expand Icon - hide in selection mode
+                if (!isSelectionMode) {
+                    Icon(
+                        imageVector = if (expanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                        contentDescription = if (expanded) "Collapse" else "Expand",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             }
 
             // Expanded Content

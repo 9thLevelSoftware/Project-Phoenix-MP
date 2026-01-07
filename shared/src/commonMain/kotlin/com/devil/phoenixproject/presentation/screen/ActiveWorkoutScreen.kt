@@ -5,7 +5,7 @@ import androidx.compose.runtime.*
 import androidx.navigation.NavController
 import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.domain.model.*
-import com.devil.phoenixproject.presentation.components.BadgeCelebrationQueue
+import com.devil.phoenixproject.presentation.components.BatchedBadgeCelebrationDialog
 import com.devil.phoenixproject.presentation.components.ConnectionErrorDialog
 import com.devil.phoenixproject.presentation.components.HapticFeedbackEffect
 import com.devil.phoenixproject.presentation.components.PRCelebrationDialog
@@ -161,11 +161,15 @@ fun ActiveWorkoutScreen(
     }
 
     // Use the new state holder pattern for cleaner API
+    // Issue #53: Compute canGoBack/canSkipForward based on routine and exercise index
+    val canGoBack = loadedRoutine != null && currentExerciseIndex > 0
+    val canSkipForward = loadedRoutine != null && currentExerciseIndex < (loadedRoutine?.exercises?.size ?: 0) - 1
+
     val workoutUiState = remember(
         connectionState, workoutState, currentMetric, currentHeuristicKgMax, workoutParameters,
         repCount, repRanges, autoStopState, weightUnit, enableVideoPlayback,
         loadedRoutine, currentExerciseIndex, currentSetIndex, userPreferences.autoplayEnabled,
-        loadBaselineA, loadBaselineB
+        userPreferences.summaryCountdownSeconds, loadBaselineA, loadBaselineB, canGoBack, canSkipForward
     ) {
         WorkoutUiState(
             connectionState = connectionState,
@@ -182,11 +186,14 @@ fun ActiveWorkoutScreen(
             currentExerciseIndex = currentExerciseIndex,
             currentSetIndex = currentSetIndex,
             autoplayEnabled = userPreferences.autoplayEnabled,
+            summaryCountdownSeconds = userPreferences.summaryCountdownSeconds,
             isWorkoutSetupDialogVisible = false,
             showConnectionCard = false,
             showWorkoutSetupCard = false,
             loadBaselineA = loadBaselineA,
-            loadBaselineB = loadBaselineB
+            loadBaselineB = loadBaselineB,
+            canGoBack = canGoBack,
+            canSkipForward = canSkipForward
         )
     }
 
@@ -270,17 +277,18 @@ fun ActiveWorkoutScreen(
         )
     }
 
-    // Badge Celebration Dialog Queue
+    // Batched Badge Celebration Dialog
     if (earnedBadges.isNotEmpty()) {
-        BadgeCelebrationQueue(
+        val scope = rememberCoroutineScope()
+        BatchedBadgeCelebrationDialog(
             badges = earnedBadges,
-            onAllCelebrated = { earnedBadges = emptyList() },
-            onMarkCelebrated = { badgeId ->
-                kotlinx.coroutines.MainScope().launch {
-                    gamificationRepository.markBadgeCelebrated(badgeId)
+            onDismiss = { earnedBadges = emptyList() },
+            onMarkAllCelebrated = { badgeIds ->
+                scope.launch {
+                    gamificationRepository.markBadgesCelebrated(badgeIds)
                 }
             },
-            onSoundTrigger = { viewModel.emitBadgeSound() }
+            onSoundTrigger = {}  // Empty - sound is now handled by ViewModel
         )
     }
 }

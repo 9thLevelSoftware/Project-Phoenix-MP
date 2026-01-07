@@ -36,7 +36,7 @@ import kotlin.math.roundToInt
  * - Tap row or expand icon -> Expands to show exercises with sets/reps
  * - Rest days show rest icon and "Rest", no expand option
  * - [Back] -> Returns to editor
- * - [Save Cycle] -> Commits and navigates home
+ * - [Confirm & Finish] -> Commits and navigates home
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -56,7 +56,7 @@ fun CycleReviewScreen(
                 title = {
                     Column {
                         Text(
-                            text = "Review Your Cycle",
+                            text = "Preview Your Cycle",
                             style = MaterialTheme.typography.titleLarge,
                             fontWeight = FontWeight.Bold
                         )
@@ -92,7 +92,7 @@ fun CycleReviewScreen(
                         shape = RoundedCornerShape(12.dp)
                     ) {
                         Text(
-                            text = "Save Cycle",
+                            text = "Confirm & Finish",
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold
                         )

@@ -9,27 +9,9 @@ This guide explains how to install Vitruvian Phoenix on your iPhone or iPad.
 
 ---
 
-## Option 1: App Store (Recommended)
+## Option 1: TestFlight Beta (Recommended)
 
-The easiest way to install Vitruvian Phoenix is from the App Store.
-
-1. Open the **App Store** on your iPhone or iPad
-2. Search for **"Vitruvian Phoenix"** or [tap here to go directly to the listing](https://apps.apple.com/app/vitruvian-phoenix/id6740537270)
-3. Tap **Get** (or the download icon)
-4. Authenticate with Face ID, Touch ID, or your Apple ID password
-5. Once installed, tap **Open** or find the app on your home screen
-
-**Benefits of App Store installation:**
-- Automatic updates when new versions are released
-- Reviewed and signed by Apple
-- No expiration or re-signing required
-- Easy to install and manage
-
----
-
-## Option 2: TestFlight (Beta Testing)
-
-Want early access to new features? Join our TestFlight beta program.
+The app is currently in beta. Join our TestFlight beta program for easy installation and updates.
 
 ### Step 1: Install TestFlight
 
@@ -38,8 +20,8 @@ Want early access to new features? Join our TestFlight beta program.
 
 ### Step 2: Join the Beta
 
-1. [Tap here to join the Vitruvian Phoenix beta](https://testflight.apple.com/join/YourTestFlightLink)
-2. Or open this link on your device: `https://testflight.apple.com/join/YourTestFlightLink`
+1. [Tap here to join the Vitruvian Phoenix beta](https://testflight.apple.com/join/TFw1m89R)
+2. Or open this link on your device: `https://testflight.apple.com/join/TFw1m89R`
 3. Tap **Accept** to join the beta program
 4. Tap **Install** to download the beta version
 
@@ -51,7 +33,7 @@ Want early access to new features? Join our TestFlight beta program.
 
 ---
 
-## Option 3: Sideloading (Advanced)
+## Option 2: Sideloading (Advanced)
 
 If you prefer to install directly from GitHub or need a specific version, you can sideload the app.
 
@@ -162,13 +144,10 @@ The app includes a built-in backup feature:
 ## FAQ
 
 **Q: Which installation method should I use?**
-A: Use the App Store for the easiest experience. Use TestFlight if you want early access to new features.
+A: Use TestFlight for the easiest experience with automatic updates. Sideloading is available if you need a specific version.
 
-**Q: Will I lose my data when updating?**
-A: No. Updates preserve all your workout history and settings.
-
-**Q: Can I switch from TestFlight to App Store?**
-A: Yes. Install from the App Store and your data will be preserved.
+**Q: Will there be an App Store release?**
+A: Yes, we plan to release on the App Store once the app exits beta.
 
 **Q: What Vitruvian devices are supported?**
 A:

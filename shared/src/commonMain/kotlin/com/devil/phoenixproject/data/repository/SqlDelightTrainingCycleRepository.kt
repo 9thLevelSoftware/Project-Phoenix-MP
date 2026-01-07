@@ -5,7 +5,9 @@ import app.cash.sqldelight.coroutines.mapToList
 import app.cash.sqldelight.coroutines.mapToOneOrNull
 import com.devil.phoenixproject.database.VitruvianDatabase
 import com.devil.phoenixproject.domain.model.CycleDay
+import com.devil.phoenixproject.domain.model.CycleItem
 import com.devil.phoenixproject.domain.model.CycleProgress
+import com.devil.phoenixproject.domain.model.CycleProgression
 import com.devil.phoenixproject.domain.model.EchoLevel
 import com.devil.phoenixproject.domain.model.TrainingCycle
 import com.devil.phoenixproject.domain.model.currentTimeMillis
@@ -301,6 +303,12 @@ class SqlDelightTrainingCycleRepository(
         }
     }
 
+    override suspend fun clearActiveCycle() {
+        withContext(Dispatchers.IO) {
+            queries.deactivateAllCycles()
+        }
+    }
+
     override suspend fun deleteCycle(cycleId: String) {
         withContext(Dispatchers.IO) {
             db.transaction {
@@ -542,6 +550,57 @@ class SqlDelightTrainingCycleRepository(
             } else {
                 progress
             }
+        }
+    }
+
+    // ==================== Cycle Progression ====================
+
+    override suspend fun getCycleProgression(cycleId: String): CycleProgression? {
+        return queries.selectCycleProgression(cycleId).executeAsOneOrNull()?.let { row ->
+            CycleProgression(
+                cycleId = row.cycle_id,
+                frequencyCycles = row.frequency_cycles.toInt(),
+                weightIncreasePercent = row.weight_increase_percent?.toFloat(),
+                echoLevelIncrease = row.echo_level_increase != 0L,
+                eccentricLoadIncreasePercent = row.eccentric_load_increase_percent?.toInt()
+            )
+        }
+    }
+
+    override suspend fun saveCycleProgression(progression: CycleProgression) {
+        queries.upsertCycleProgression(
+            cycle_id = progression.cycleId,
+            frequency_cycles = progression.frequencyCycles.toLong(),
+            weight_increase_percent = progression.weightIncreasePercent?.toDouble(),
+            echo_level_increase = if (progression.echoLevelIncrease) 1L else 0L,
+            eccentric_load_increase_percent = progression.eccentricLoadIncreasePercent?.toLong()
+        )
+    }
+
+    override suspend fun deleteCycleProgression(cycleId: String) {
+        queries.deleteCycleProgression(cycleId)
+    }
+
+    override suspend fun getCycleItems(cycleId: String): List<CycleItem> {
+        val days = getCycleDays(cycleId)
+        val routineIds = days.mapNotNull { it.routineId }.distinct()
+
+        // Fetch routine info for all referenced routines
+        val routineInfo = mutableMapOf<String, Pair<String, Int>>() // id -> (name, exerciseCount)
+        routineIds.forEach { routineId ->
+            queries.selectRoutineById(routineId).executeAsOneOrNull()?.let { routine ->
+                val exerciseCount = queries.selectExercisesByRoutine(routineId).executeAsList().size
+                routineInfo[routineId] = Pair(routine.name, exerciseCount)
+            }
+        }
+
+        return days.map { day ->
+            val info = day.routineId?.let { routineInfo[it] }
+            CycleItem.fromCycleDay(
+                day = day,
+                routineName = info?.first,
+                exerciseCount = info?.second ?: 0
+            )
         }
     }
 }

@@ -25,6 +25,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
+import com.devil.phoenixproject.presentation.util.LocalWindowSizeClass
+import com.devil.phoenixproject.presentation.util.WindowWidthSizeClass
 import com.devil.phoenixproject.ui.theme.HomeButtonColors
 import kotlinx.coroutines.isActive
 import kotlin.math.sin
@@ -165,6 +167,14 @@ fun AnimatedActionButton(
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
 
+    // Responsive button height based on device size
+    val windowSizeClass = LocalWindowSizeClass.current
+    val buttonHeight = when (windowSizeClass.widthSizeClass) {
+        WindowWidthSizeClass.Expanded -> 80.dp
+        WindowWidthSizeClass.Medium -> 72.dp
+        WindowWidthSizeClass.Compact -> 64.dp
+    }
+
     // Press feedback animation
     val scale by animateFloatAsState(
         targetValue = if (isPressed) 0.95f else 1f,
@@ -254,7 +264,7 @@ fun AnimatedActionButton(
         Box(
             modifier = modifier
                 .fillMaxWidth()
-                .height(64.dp)
+                .height(buttonHeight)
                 .scale(scale * pulseScale)
                 .clip(RoundedCornerShape(28.dp))
                 .onFire()
@@ -305,7 +315,7 @@ fun AnimatedActionButton(
                 interactionSource = interactionSource,
                 modifier = modifier
                     .fillMaxWidth()
-                    .height(64.dp)
+                    .height(buttonHeight)
                     .scale(scale * pulseScale),
                 icon = {
                     Icon(
@@ -324,7 +334,7 @@ fun AnimatedActionButton(
                 interactionSource = interactionSource,
                 modifier = modifier
                     .fillMaxWidth()
-                    .height(64.dp)
+                    .height(buttonHeight)
                     .scale(scale * pulseScale),
                 content = { Text(label, style = MaterialTheme.typography.titleMedium) }
             )

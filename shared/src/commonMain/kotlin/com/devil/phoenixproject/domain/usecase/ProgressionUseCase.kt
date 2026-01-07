@@ -69,7 +69,7 @@ class ProgressionUseCase(
 
         // Check for RPE-based progression first (more immediate signal)
         val rpeProgression = checkRpeBasedProgression(recentSets, currentWeight, targetRpe)
-        if (rpeProgression != null) {
+        if (rpeProgression) {
             log.i { "RPE-based progression suggested for exercise $exerciseId" }
             return createProgressionEvent(exerciseId, currentWeight, ProgressionReason.LOW_RPE)
         }

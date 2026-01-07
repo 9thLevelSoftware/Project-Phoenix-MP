@@ -19,6 +19,10 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -76,6 +80,10 @@ fun WeightAdjustmentControls(
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 modifier = Modifier
+                    .semantics {
+                        contentDescription = "Current weight: ${formatWeight(currentWeightKg, weightUnit)} per cable. Tap to open weight picker."
+                        role = Role.Button
+                    }
                     .clip(RoundedCornerShape(12.dp))
                     .clickable(enabled = enabled) { showWeightPicker = true }
                     .padding(horizontal = Spacing.medium, vertical = Spacing.small)
@@ -402,7 +410,11 @@ fun CompactWeightAdjustment(
                 style = MaterialTheme.typography.labelLarge,
                 fontWeight = FontWeight.Bold,
                 textAlign = TextAlign.Center,
-                modifier = Modifier.padding(horizontal = 8.dp)
+                modifier = Modifier
+                    .padding(horizontal = 8.dp)
+                    .semantics {
+                        contentDescription = "Current weight: ${formatWeight(currentWeightKg, weightUnit)}"
+                    }
             )
 
             IconButton(

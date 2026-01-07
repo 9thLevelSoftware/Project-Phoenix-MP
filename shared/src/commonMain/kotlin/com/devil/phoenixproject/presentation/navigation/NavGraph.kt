@@ -257,6 +257,9 @@ fun NavGraph(
                 darkModeEnabled = themeMode == ThemeMode.DARK,
                 stallDetectionEnabled = userPreferences.stallDetectionEnabled,
                 audioRepCountEnabled = userPreferences.audioRepCountEnabled,
+                summaryCountdownSeconds = userPreferences.summaryCountdownSeconds,
+                autoStartCountdownSeconds = userPreferences.autoStartCountdownSeconds,
+                selectedColorSchemeIndex = userPreferences.colorScheme,
                 onWeightUnitChange = { viewModel.setWeightUnit(it) },
                 onAutoplayChange = { viewModel.setAutoplayEnabled(it) },
                 onStopAtTopChange = { viewModel.setStopAtTop(it) },
@@ -264,6 +267,8 @@ fun NavGraph(
                 onDarkModeChange = { enabled -> onThemeModeChange(if (enabled) ThemeMode.DARK else ThemeMode.LIGHT) },
                 onStallDetectionChange = { viewModel.setStallDetectionEnabled(it) },
                 onAudioRepCountChange = { viewModel.setAudioRepCountEnabled(it) },
+                onSummaryCountdownChange = { viewModel.setSummaryCountdownSeconds(it) },
+                onAutoStartCountdownChange = { viewModel.setAutoStartCountdownSeconds(it) },
                 onColorSchemeChange = { viewModel.setColorScheme(it) },
                 onDeleteAllWorkouts = { viewModel.deleteAllWorkouts() },
                 onNavigateToConnectionLogs = { navController.navigate(NavigationRoutes.ConnectionLogs.route) },
@@ -336,16 +341,6 @@ fun NavGraph(
                 kgToDisplay = viewModel::kgToDisplay,
                 displayToKg = viewModel::displayToKg,
                 enableVideoPlayback = enableVideo
-            )
-        }
-
-        // Day Count Picker - select number of days for new cycle
-        composable(NavigationRoutes.DayCountPicker.route) {
-            DayCountPickerScreen(
-                onDayCountSelected = { dayCount ->
-                    navController.navigate(NavigationRoutes.CycleEditor.createRoute("new", dayCount))
-                },
-                onBack = { navController.popBackStack() }
             )
         }
 

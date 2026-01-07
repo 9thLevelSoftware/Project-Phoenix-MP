@@ -23,6 +23,9 @@ import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.domain.model.*
 import com.devil.phoenixproject.presentation.components.CircularForceGauge
 import com.devil.phoenixproject.presentation.components.EnhancedCablePositionBar
+import com.devil.phoenixproject.presentation.util.ResponsiveDimensions
+import com.devil.phoenixproject.presentation.util.LocalWindowSizeClass
+import com.devil.phoenixproject.presentation.util.WindowWidthSizeClass
 
 /**
  * Workout Heads-Up Display (HUD)
@@ -58,9 +61,9 @@ fun WorkoutHud(
     modifier: Modifier = Modifier
 ) {
     // Determine if we're in Echo mode
-    val isEchoMode = workoutParameters.workoutType is WorkoutType.Echo
+    val isEchoMode = workoutParameters.isEchoMode
     val pagerState = rememberPagerState(pageCount = { 3 })
-    
+
     // Determine gradient for background based on phase?
     // For now, keep it simple dark/light surface
     Scaffold(
@@ -68,7 +71,7 @@ fun WorkoutHud(
         topBar = {
             HudTopBar(
                 connectionState = connectionState,
-                workoutMode = workoutParameters.workoutType.displayName,
+                workoutMode = workoutParameters.programMode.displayName,
                 onStopWorkout = onStopWorkout
             )
         },
@@ -207,11 +210,17 @@ private fun HudTopBar(
     workoutMode: String,
     onStopWorkout: () -> Unit
 ) {
+    val windowSizeClass = LocalWindowSizeClass.current
+    val buttonHeight = when (windowSizeClass.widthSizeClass) {
+        WindowWidthSizeClass.Expanded -> 80.dp
+        WindowWidthSizeClass.Medium -> 72.dp
+        WindowWidthSizeClass.Compact -> 64.dp
+    }
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .statusBarsPadding()
-            .height(64.dp)
+            .height(buttonHeight)
             .padding(horizontal = 16.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
@@ -397,13 +406,22 @@ private fun ExecutionPage(
             val targetWeight = workoutParameters.weightPerCableKg
             val gaugeMax = (targetWeight * 1.5f).coerceAtLeast(20f)
 
+            // For Echo mode: show "—" when force data isn't available yet (Issue #52)
+            // This prevents showing "0 kg" during initial reps before heuristic data populates
+            val forceLabel = if (isEchoMode && perCableKg <= 0f) {
+                "—"
+            } else {
+                formatWeight(perCableKg, weightUnit)
+            }
+
+            val hudSize = ResponsiveDimensions.componentSize(baseSize = 200.dp)
             CircularForceGauge(
                 currentForce = perCableKg,
                 maxForce = gaugeMax,
                 velocity = (metric.velocityA + metric.velocityB) / 2.0,
-                label = formatWeight(perCableKg, weightUnit),
+                label = forceLabel,
                 subLabel = "PER CABLE",
-                modifier = Modifier.size(200.dp)
+                modifier = Modifier.size(hudSize)
             )
         } else {
             Text("Waiting for data...", color = MaterialTheme.colorScheme.onSurfaceVariant)

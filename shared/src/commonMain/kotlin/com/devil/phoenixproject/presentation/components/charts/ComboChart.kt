@@ -24,6 +24,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import com.devil.phoenixproject.presentation.util.ResponsiveDimensions
 
 /**
  * Material 3 Expressive Combo Chart
@@ -123,22 +124,24 @@ fun ComboChart(
             )
         }
 
+        val chartHeight = ResponsiveDimensions.chartHeight(baseHeight = 200.dp)
+
         BoxWithConstraints(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(200.dp)
+                .height(chartHeight)
         ) {
-            val chartWidth = with(density) { maxWidth.toPx() }
-            val chartHeight = with(density) { maxHeight.toPx() }
+            val chartWidthPx = with(density) { maxWidth.toPx() }
+            val chartHeightPx = with(density) { maxHeight.toPx() }
             val paddingBottom = 30.dp
             val paddingBottomPx = with(density) { paddingBottom.toPx() }
-            val effectiveHeight = chartHeight - paddingBottomPx
+            val effectiveHeight = chartHeightPx - paddingBottomPx
 
             Canvas(modifier = Modifier.fillMaxSize()) {
                 val progress = animationProgress.value
                 val barCount = labels.size.coerceAtLeast(1)
-                val barWidth = (chartWidth / barCount) * 0.6f
-                val barSpacing = (chartWidth / barCount) * 0.4f / 2f
+                val barWidth = (chartWidthPx / barCount) * 0.6f
+                val barSpacing = (chartWidthPx / barCount) * 0.4f / 2f
 
                 // Draw horizontal grid
                 for (i in 0..4) {
@@ -146,7 +149,7 @@ fun ComboChart(
                     drawLine(
                         color = gridColor,
                         start = Offset(0f, y),
-                        end = Offset(chartWidth, y),
+                        end = Offset(chartWidthPx, y),
                         strokeWidth = 1.dp.toPx()
                     )
                 }

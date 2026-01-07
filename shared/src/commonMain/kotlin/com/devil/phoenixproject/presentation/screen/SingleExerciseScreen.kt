@@ -201,7 +201,7 @@ fun SingleExerciseScreen(
                                     setWeightsPerCableKg = savedDefaults.setWeightsPerCableKg,
                                     progressionKg = savedDefaults.progressionKg,
                                     setRestSeconds = savedDefaults.setRestSeconds,
-                                    workoutType = savedDefaults.toWorkoutType(),
+                                    programMode = savedDefaults.toProgramMode(),
                                     eccentricLoad = savedDefaults.getEccentricLoad(),
                                     echoLevel = savedDefaults.getEchoLevel(),
                                     duration = savedDefaults.duration.takeIf { it > 0 },
@@ -219,7 +219,7 @@ fun SingleExerciseScreen(
                                     weightPerCableKg = 20f,
                                     progressionKg = 0f,
                                     setRestSeconds = listOf(60, 60, 60),
-                                    workoutType = WorkoutType.Program(ProgramMode.OldSchool),
+                                    programMode = ProgramMode.OldSchool,
                                     eccentricLoad = EccentricLoad.LOAD_100,
                                     echoLevel = EchoLevel.HARDER
                                 )

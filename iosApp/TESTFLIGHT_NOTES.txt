@@ -1,0 +1,31 @@
+Project Phoenix - iOS Beta 1
+
+Community-built app to keep Vitruvian Trainer machines working after company closure.
+
+CORE FEATURES:
+- BLE connection to V-Form Trainer and Trainer+ machines
+- 572 exercises with video demonstrations
+- Real-time workout metrics (load, position, velocity, power)
+
+WORKOUT MODES:
+- Old School - Standard resistance training
+- Pump - High-rep pump mode
+- TUT / TUT Beast - Time Under Tension modes
+- Eccentric Only - Lowering phase focus
+- Echo - Adaptive mode (Hard/Harder/Hardest/Epic levels, 0-150% eccentric load)
+
+TRAINING FEATURES:
+- Just Lift - Quick start with auto weight detection
+- Custom Routines with superset support
+- Training Cycles - Rolling workout schedules
+- AMRAP (As Many Reps As Possible) sets
+- Warmup rep tracking
+- Rest timers between sets
+
+TRACKING:
+- Personal Record detection with 1RM calculations
+- Workout history and analytics
+- Badge achievements and streak tracking
+
+Early beta - requires physical Vitruvian Trainer.
+Report issues: github.com/DasBluEyedDevil/VitruvianProjectPhoenix

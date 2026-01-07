@@ -25,6 +25,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.domain.model.RoutineExercise
 import com.devil.phoenixproject.domain.model.WeightUnit
+import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.ui.theme.SupersetTheme
 
 /**
@@ -136,10 +137,16 @@ fun SupersetExerciseItem(
                         text = exercise.exercise.name,
                         style = MaterialTheme.typography.bodyLarge
                     )
-                    val weight = kgToDisplay(exercise.weightPerCableKg, weightUnit)
-                    val unitLabel = if (weightUnit == WeightUnit.KG) "kg" else "lbs"
+                    val isEchoMode = exercise.programMode == ProgramMode.Echo
+                    val weightText = if (isEchoMode) {
+                        "Adaptive"
+                    } else {
+                        val weight = kgToDisplay(exercise.weightPerCableKg, weightUnit)
+                        val unitLabel = if (weightUnit == WeightUnit.KG) "kg" else "lbs"
+                        "${weight.toInt()} $unitLabel"
+                    }
                     Text(
-                        text = "${exercise.sets} sets x ${exercise.reps} reps @ ${weight.toInt()} $unitLabel",
+                        text = "${exercise.sets} sets x ${exercise.reps} reps @ $weightText",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )

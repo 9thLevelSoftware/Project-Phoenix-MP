@@ -1,5 +1,6 @@
 package com.devil.phoenixproject.data.preferences
 
+import com.devil.phoenixproject.domain.model.UserPreferences
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.russhwolf.settings.Settings
 import kotlinx.coroutines.flow.Flow
@@ -8,21 +9,6 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
-
-/**
- * User preferences data class
- */
-data class UserPreferences(
-    val weightUnit: WeightUnit = WeightUnit.LB,
-    val autoplayEnabled: Boolean = true,
-    val stopAtTop: Boolean = false,
-    val enableVideoPlayback: Boolean = true,
-    val beepsEnabled: Boolean = true,
-    val colorScheme: Int = 0,
-    val stallDetectionEnabled: Boolean = true,  // NEW - default enabled
-    val discoModeUnlocked: Boolean = false,  // Easter egg - unlocked by tapping LED header 7 times
-    val audioRepCountEnabled: Boolean = false  // Audio rep count announcements during workout
-)
 
 /**
  * Single exercise defaults for saving/loading exercise configurations
@@ -60,15 +46,15 @@ data class SingleExerciseDefaults(
             ?: com.devil.phoenixproject.domain.model.EchoLevel.HARDER
     }
 
-    fun toWorkoutType(): com.devil.phoenixproject.domain.model.WorkoutType {
+    fun toProgramMode(): com.devil.phoenixproject.domain.model.ProgramMode {
         return when (workoutModeId) {
-            0 -> com.devil.phoenixproject.domain.model.WorkoutType.Program(com.devil.phoenixproject.domain.model.ProgramMode.OldSchool)
-            2 -> com.devil.phoenixproject.domain.model.WorkoutType.Program(com.devil.phoenixproject.domain.model.ProgramMode.Pump)
-            3 -> com.devil.phoenixproject.domain.model.WorkoutType.Program(com.devil.phoenixproject.domain.model.ProgramMode.TUT)
-            4 -> com.devil.phoenixproject.domain.model.WorkoutType.Program(com.devil.phoenixproject.domain.model.ProgramMode.TUTBeast)
-            6 -> com.devil.phoenixproject.domain.model.WorkoutType.Program(com.devil.phoenixproject.domain.model.ProgramMode.EccentricOnly)
-            10 -> com.devil.phoenixproject.domain.model.WorkoutType.Echo(getEchoLevel(), getEccentricLoad())
-            else -> com.devil.phoenixproject.domain.model.WorkoutType.Program(com.devil.phoenixproject.domain.model.ProgramMode.OldSchool)
+            0 -> com.devil.phoenixproject.domain.model.ProgramMode.OldSchool
+            2 -> com.devil.phoenixproject.domain.model.ProgramMode.Pump
+            3 -> com.devil.phoenixproject.domain.model.ProgramMode.TUT
+            4 -> com.devil.phoenixproject.domain.model.ProgramMode.TUTBeast
+            6 -> com.devil.phoenixproject.domain.model.ProgramMode.EccentricOnly
+            10 -> com.devil.phoenixproject.domain.model.ProgramMode.Echo
+            else -> com.devil.phoenixproject.domain.model.ProgramMode.OldSchool
         }
     }
 }
@@ -97,15 +83,15 @@ data class JustLiftDefaults(
             ?: com.devil.phoenixproject.domain.model.EchoLevel.HARDER
     }
 
-    fun toWorkoutType(): com.devil.phoenixproject.domain.model.WorkoutType {
+    fun toProgramMode(): com.devil.phoenixproject.domain.model.ProgramMode {
         return when (workoutModeId) {
-            0 -> com.devil.phoenixproject.domain.model.WorkoutType.Program(com.devil.phoenixproject.domain.model.ProgramMode.OldSchool)
-            2 -> com.devil.phoenixproject.domain.model.WorkoutType.Program(com.devil.phoenixproject.domain.model.ProgramMode.Pump)
-            3 -> com.devil.phoenixproject.domain.model.WorkoutType.Program(com.devil.phoenixproject.domain.model.ProgramMode.TUT)
-            4 -> com.devil.phoenixproject.domain.model.WorkoutType.Program(com.devil.phoenixproject.domain.model.ProgramMode.TUTBeast)
-            6 -> com.devil.phoenixproject.domain.model.WorkoutType.Program(com.devil.phoenixproject.domain.model.ProgramMode.EccentricOnly)
-            10 -> com.devil.phoenixproject.domain.model.WorkoutType.Echo(getEchoLevel(), getEccentricLoad())
-            else -> com.devil.phoenixproject.domain.model.WorkoutType.Program(com.devil.phoenixproject.domain.model.ProgramMode.OldSchool)
+            0 -> com.devil.phoenixproject.domain.model.ProgramMode.OldSchool
+            2 -> com.devil.phoenixproject.domain.model.ProgramMode.Pump
+            3 -> com.devil.phoenixproject.domain.model.ProgramMode.TUT
+            4 -> com.devil.phoenixproject.domain.model.ProgramMode.TUTBeast
+            6 -> com.devil.phoenixproject.domain.model.ProgramMode.EccentricOnly
+            10 -> com.devil.phoenixproject.domain.model.ProgramMode.Echo
+            else -> com.devil.phoenixproject.domain.model.ProgramMode.OldSchool
         }
     }
 }
@@ -126,6 +112,8 @@ interface PreferencesManager {
     suspend fun setStallDetectionEnabled(enabled: Boolean)
     suspend fun setDiscoModeUnlocked(unlocked: Boolean)
     suspend fun setAudioRepCountEnabled(enabled: Boolean)
+    suspend fun setSummaryCountdownSeconds(seconds: Int)
+    suspend fun setAutoStartCountdownSeconds(seconds: Int)
 
     suspend fun getSingleExerciseDefaults(exerciseId: String, cableConfig: String): SingleExerciseDefaults?
     suspend fun saveSingleExerciseDefaults(defaults: SingleExerciseDefaults)
@@ -162,6 +150,8 @@ class SettingsPreferencesManager(
         private const val KEY_STALL_DETECTION = "stall_detection_enabled"
         private const val KEY_DISCO_MODE_UNLOCKED = "disco_mode_unlocked"
         private const val KEY_AUDIO_REP_COUNT = "audio_rep_count_enabled"
+        private const val KEY_SUMMARY_COUNTDOWN_SECONDS = "summary_countdown_seconds"
+        private const val KEY_AUTOSTART_COUNTDOWN_SECONDS = "autostart_countdown_seconds"
         private const val KEY_JUST_LIFT_DEFAULTS = "just_lift_defaults"
         private const val KEY_PREFIX_EXERCISE = "exercise_defaults_"
     }
@@ -181,7 +171,9 @@ class SettingsPreferencesManager(
             colorScheme = settings.getInt(KEY_COLOR_SCHEME, 0),
             stallDetectionEnabled = settings.getBoolean(KEY_STALL_DETECTION, true),
             discoModeUnlocked = settings.getBoolean(KEY_DISCO_MODE_UNLOCKED, false),
-            audioRepCountEnabled = settings.getBoolean(KEY_AUDIO_REP_COUNT, false)
+            audioRepCountEnabled = settings.getBoolean(KEY_AUDIO_REP_COUNT, false),
+            summaryCountdownSeconds = settings.getInt(KEY_SUMMARY_COUNTDOWN_SECONDS, 10),
+            autoStartCountdownSeconds = settings.getInt(KEY_AUTOSTART_COUNTDOWN_SECONDS, 5)
         )
     }
 
@@ -231,6 +223,16 @@ class SettingsPreferencesManager(
     override suspend fun setAudioRepCountEnabled(enabled: Boolean) {
         settings.putBoolean(KEY_AUDIO_REP_COUNT, enabled)
         updateAndEmit { copy(audioRepCountEnabled = enabled) }
+    }
+
+    override suspend fun setSummaryCountdownSeconds(seconds: Int) {
+        settings.putInt(KEY_SUMMARY_COUNTDOWN_SECONDS, seconds)
+        updateAndEmit { copy(summaryCountdownSeconds = seconds) }
+    }
+
+    override suspend fun setAutoStartCountdownSeconds(seconds: Int) {
+        settings.putInt(KEY_AUTOSTART_COUNTDOWN_SECONDS, seconds)
+        updateAndEmit { copy(autoStartCountdownSeconds = seconds) }
     }
 
     override suspend fun getSingleExerciseDefaults(exerciseId: String, cableConfig: String): SingleExerciseDefaults? {

@@ -12,6 +12,8 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.navigation.NavController
 import com.devil.phoenixproject.data.repository.ExerciseRepository
+import com.devil.phoenixproject.domain.model.Routine
+import com.devil.phoenixproject.presentation.components.ResumeRoutineDialog
 import com.devil.phoenixproject.presentation.navigation.NavigationRoutes
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
 import com.devil.phoenixproject.ui.theme.screenBackgroundBrush
@@ -34,6 +36,10 @@ fun DailyRoutinesScreen(
     @Suppress("UNUSED_VARIABLE") // Reserved for future connecting overlay
     val isAutoConnecting by viewModel.isAutoConnecting.collectAsState()
     val connectionError by viewModel.connectionError.collectAsState()
+
+    // Resume/Restart dialog state (Issue #101)
+    var showResumeDialog by remember { mutableStateOf(false) }
+    var pendingRoutine by remember { mutableStateOf<Routine?>(null) }
 
     // Set global title
     LaunchedEffect(Unit) {
@@ -58,16 +64,25 @@ fun DailyRoutinesScreen(
             kgToDisplay = viewModel::kgToDisplay,
             displayToKg = viewModel::displayToKg,
             onStartWorkout = { routine ->
-                viewModel.ensureConnection(
-                    onConnected = {
-                        viewModel.loadRoutine(routine)
-                        viewModel.startWorkout()
-                        navController.navigate(NavigationRoutes.ActiveWorkout.route)
-                    },
-                    onFailed = { /* Error shown via StateFlow */ }
-                )
+                // Issue #101: Check for resumable progress
+                if (viewModel.hasResumableProgress(routine.id)) {
+                    // Show resume dialog
+                    pendingRoutine = routine
+                    showResumeDialog = true
+                } else {
+                    // No progress - start fresh
+                    viewModel.ensureConnection(
+                        onConnected = {
+                            viewModel.loadRoutine(routine)
+                            viewModel.startWorkout()
+                            navController.navigate(NavigationRoutes.ActiveWorkout.route)
+                        },
+                        onFailed = { /* Error shown via StateFlow */ }
+                    )
+                }
             },
             onDeleteRoutine = { routineId -> viewModel.deleteRoutine(routineId) },
+            onDeleteRoutines = { routineIds -> viewModel.deleteRoutines(routineIds) },
             onSaveRoutine = { routine -> viewModel.saveRoutine(routine) },
             onEditRoutine = { routineId -> 
                 navController.navigate(NavigationRoutes.RoutineEditor.createRoute(routineId)) 
@@ -85,6 +100,41 @@ fun DailyRoutinesScreen(
                 message = error,
                 onDismiss = { viewModel.clearConnectionError() }
             )
+        }
+
+        // Resume/Restart Dialog (Issue #101)
+        if (showResumeDialog) {
+            viewModel.getResumableProgressInfo()?.let { info ->
+                ResumeRoutineDialog(
+                    progressInfo = info,
+                    onResume = {
+                        showResumeDialog = false
+                        // Resume: skip loadRoutine to keep existing progress, just navigate and start
+                        viewModel.ensureConnection(
+                            onConnected = {
+                                viewModel.startWorkout()
+                                navController.navigate(NavigationRoutes.ActiveWorkout.route)
+                            },
+                            onFailed = { /* Error shown via StateFlow */ }
+                        )
+                    },
+                    onRestart = {
+                        showResumeDialog = false
+                        // Restart: call loadRoutine to reset indices, then start
+                        pendingRoutine?.let { routine ->
+                            viewModel.ensureConnection(
+                                onConnected = {
+                                    viewModel.loadRoutine(routine)
+                                    viewModel.startWorkout()
+                                    navController.navigate(NavigationRoutes.ActiveWorkout.route)
+                                },
+                                onFailed = { /* Error shown via StateFlow */ }
+                            )
+                        }
+                    },
+                    onDismiss = { showResumeDialog = false }
+                )
+            }
         }
     }
 }

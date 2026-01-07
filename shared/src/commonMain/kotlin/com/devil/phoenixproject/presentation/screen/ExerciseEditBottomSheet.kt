@@ -70,9 +70,9 @@ fun ExerciseEditBottomSheet(
 
     // Fetch initial PR for exercise
     var initialPR by remember { mutableStateOf<PersonalRecord?>(null) }
-    LaunchedEffect(exercise.exercise.id, exercise.workoutType) {
+    LaunchedEffect(exercise.exercise.id, exercise.programMode) {
         exercise.exercise.id?.let { exerciseId ->
-            val workoutMode = exercise.workoutType.toWorkoutMode()
+            val workoutMode = exercise.programMode.toWorkoutMode(exercise.echoLevel)
             if (workoutMode !is WorkoutMode.Echo) {
                 try {
                     val modeString = when (workoutMode) {
@@ -137,7 +137,7 @@ fun ExerciseEditBottomSheet(
     }
 
     val weightSuffix = if (weightUnit == WeightUnit.LB) "lbs" else "kg"
-    val maxWeight = if (weightUnit == WeightUnit.LB) 220f else 100f
+    val maxWeight = if (weightUnit == WeightUnit.LB) 242f else 110f  // 110kg per cable max
     val weightStep = if (weightUnit == WeightUnit.LB) 0.5f else 0.25f
     val maxWeightChange = 10
 

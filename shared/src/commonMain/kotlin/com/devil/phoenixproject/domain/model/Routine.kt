@@ -53,8 +53,8 @@ data class RoutineExercise(
     val weightPerCableKg: Float,
     // Optional per-set weights in kg per cable; when empty, fall back to weightPerCableKg
     val setWeightsPerCableKg: List<Float> = emptyList(),
-    // Selected workout type for this exercise in routines
-    val workoutType: WorkoutType = WorkoutType.Program(ProgramMode.OldSchool),
+    // Selected program mode for this exercise in routines
+    val programMode: ProgramMode = ProgramMode.OldSchool,
     // Echo-specific configuration
     val eccentricLoad: EccentricLoad = EccentricLoad.LOAD_100,
     val echoLevel: EchoLevel = EchoLevel.HARDER,

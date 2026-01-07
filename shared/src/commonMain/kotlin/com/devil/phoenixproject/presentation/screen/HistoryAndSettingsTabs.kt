@@ -15,7 +15,6 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.rememberScrollState
@@ -43,6 +42,7 @@ import com.devil.phoenixproject.presentation.viewmodel.HistoryItem
 import com.devil.phoenixproject.util.ColorScheme
 import com.devil.phoenixproject.util.ColorSchemes
 import kotlinx.coroutines.launch
+import com.devil.phoenixproject.presentation.components.CountdownDropdown
 import com.devil.phoenixproject.presentation.components.EmptyState
 import com.devil.phoenixproject.ui.theme.*
 import com.devil.phoenixproject.util.KmpUtils
@@ -334,6 +334,7 @@ fun WorkoutHistoryCard(
                             formatWeight = formatWeight,
                             onContinue = { },
                             autoplayEnabled = false,
+                            summaryCountdownSeconds = 0,  // History view - no auto-continue
                             isHistoryView = true,
                             savedRpe = session.rpe
                         )
@@ -721,6 +722,7 @@ fun GroupedRoutineCard(
                                 formatWeight = formatWeight,
                                 onContinue = { },
                                 autoplayEnabled = false,
+                                summaryCountdownSeconds = 0,  // History view - no auto-continue
                                 isHistoryView = true,
                                 savedRpe = session.rpe
                             )
@@ -927,6 +929,8 @@ fun SettingsTab(
     darkModeEnabled: Boolean,
     stallDetectionEnabled: Boolean = true,
     audioRepCountEnabled: Boolean = false,
+    summaryCountdownSeconds: Int = 10,
+    autoStartCountdownSeconds: Int = 5,
     selectedColorSchemeIndex: Int = 0,
     onWeightUnitChange: (WeightUnit) -> Unit,
     onAutoplayChange: (Boolean) -> Unit,
@@ -935,6 +939,8 @@ fun SettingsTab(
     onDarkModeChange: (Boolean) -> Unit,
     onStallDetectionChange: (Boolean) -> Unit,
     onAudioRepCountChange: (Boolean) -> Unit,
+    onSummaryCountdownChange: (Int) -> Unit = {},
+    onAutoStartCountdownChange: (Int) -> Unit = {},
     onColorSchemeChange: (Int) -> Unit,
     onDeleteAllWorkouts: () -> Unit,
     onNavigateToConnectionLogs: () -> Unit = {},
@@ -1285,6 +1291,71 @@ fun SettingsTab(
                     )
                 }
 
+                // Summary Countdown - only show when autoplay is enabled
+                if (autoplayEnabled) {
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Summary Countdown",
+                                style = MaterialTheme.typography.titleMedium,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Text(
+                                text = "Time before auto-advancing to next exercise",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.width(16.dp))
+
+                        CountdownDropdown(
+                            label = "",
+                            selectedValue = summaryCountdownSeconds,
+                            options = listOf(0, 5, 10, 15, 20, 25, 30),
+                            onValueSelected = { onSummaryCountdownChange(it) },
+                            modifier = Modifier.width(100.dp),
+                            formatLabel = { if (it == 0) "Off" else "${it}s" }
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                // Autostart Countdown - always visible
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Autostart Countdown",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Text(
+                            text = "Just Lift countdown when handles are grabbed",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.width(16.dp))
+
+                    CountdownDropdown(
+                        label = "",
+                        selectedValue = autoStartCountdownSeconds,
+                        options = (2..10).toList(),
+                        onValueSelected = { onAutoStartCountdownChange(it) },
+                        modifier = Modifier.width(100.dp)
+                    )
+                }
+
                 Spacer(modifier = Modifier.height(Spacing.medium))
 
                 // Stop At Top toggle
@@ -1480,22 +1551,72 @@ fun SettingsTab(
 
             Spacer(modifier = Modifier.height(Spacing.medium))
 
-            // Compact horizontal scrollable color chips
+            // Color scheme slider with preview
             val colorSchemes = ColorSchemes.ALL
-            Row(
+            val currentScheme = colorSchemes.getOrElse(selectedColorSchemeIndex) { colorSchemes.first() }
+            val isNoneScheme = currentScheme.name == "None"
+
+            // Convert RGB colors to Compose Color for preview
+            val previewColors = if (isNoneScheme) {
+                listOf(Color.DarkGray, Color.Gray, Color.DarkGray)
+            } else {
+                currentScheme.colors.map { Color(it.r, it.g, it.b) }
+            }
+
+            // Color preview box with current scheme name
+            Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(Spacing.small)
+                    .height(56.dp)
+                    .shadow(4.dp, RoundedCornerShape(12.dp))
+                    .background(
+                        Brush.horizontalGradient(previewColors),
+                        RoundedCornerShape(12.dp)
+                    ),
+                contentAlignment = Alignment.Center
             ) {
-                colorSchemes.forEachIndexed { index, scheme ->
-                    ColorSchemeChip(
-                        scheme = scheme,
-                        isSelected = index == selectedColorSchemeIndex,
-                        onClick = { onColorSchemeChange(index) }
-                    )
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        if (isNoneScheme) {
+                            Icon(
+                                imageVector = Icons.Default.PowerSettingsNew,
+                                contentDescription = "LEDs Off",
+                                tint = MaterialTheme.colorScheme.onSurface,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                        }
+                        Text(
+                            text = currentScheme.name,
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                    }
                 }
             }
+
+            Spacer(modifier = Modifier.height(Spacing.medium))
+
+            // Slider for color selection
+            Slider(
+                value = selectedColorSchemeIndex.toFloat(),
+                onValueChange = { onColorSchemeChange(it.toInt()) },
+                valueRange = 0f..(colorSchemes.size - 1).toFloat(),
+                steps = colorSchemes.size - 2, // steps = divisions - 1
+                modifier = Modifier.fillMaxWidth(),
+                colors = SliderDefaults.colors(
+                    thumbColor = MaterialTheme.colorScheme.primary,
+                    activeTrackColor = MaterialTheme.colorScheme.primary,
+                    inactiveTrackColor = MaterialTheme.colorScheme.surfaceVariant
+                )
+            )
 
             // Disco mode toggle (only visible when unlocked)
             if (discoModeUnlocked) {
@@ -1606,7 +1727,7 @@ fun SettingsTab(
                     Spacer(modifier = Modifier.width(Spacing.small))
                     Text(
                         "Delete All Workouts",
-                        style = MaterialTheme.typography.titleLarge, // Material 3 Expressive: Larger text
+                        style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold
                     )
                 }
@@ -1677,7 +1798,7 @@ fun SettingsTab(
                 Spacer(modifier = Modifier.width(Spacing.small))
                 Text(
                     "View Badges & Streaks",
-                    style = MaterialTheme.typography.titleLarge,
+                    style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold
                 )
             }
@@ -1833,7 +1954,7 @@ fun SettingsTab(
                     Spacer(modifier = Modifier.width(Spacing.small))
                     Text(
                         "Connection Logs",
-                        style = MaterialTheme.typography.titleLarge,
+                        style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold
                     )
                 }
@@ -1866,7 +1987,7 @@ fun SettingsTab(
                     Spacer(modifier = Modifier.width(Spacing.small))
                     Text(
                         "Test Sounds",
-                        style = MaterialTheme.typography.titleLarge,
+                        style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold
                     )
                 }
@@ -1925,7 +2046,7 @@ fun SettingsTab(
                 )
             }
                 Spacer(modifier = Modifier.height(Spacing.small))
-                Text("Version: 0.2.1", color = MaterialTheme.colorScheme.onSurface)
+                Text("Version: 0.3.0", color = MaterialTheme.colorScheme.onSurface)
                 Spacer(modifier = Modifier.height(Spacing.small))
                 Text(
                     "Open source community project to control Vitruvian Trainer machines locally.",
@@ -2189,127 +2310,3 @@ private fun formatDuration(millis: Long): String {
     return "$minutes:${seconds.toString().padStart(2, '0')}"
 }
 
-/**
- * Compact color scheme chip with visual preview
- */
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun ColorSchemeChip(
-    scheme: ColorScheme,
-    isSelected: Boolean,
-    onClick: () -> Unit
-) {
-    var isPressed by remember { mutableStateOf(false) }
-    val scale by animateFloatAsState(
-        targetValue = if (isPressed) 0.9f else 1f,
-        animationSpec = spring(
-            dampingRatio = Spring.DampingRatioMediumBouncy,
-            stiffness = Spring.StiffnessMedium
-        ),
-        label = "scale"
-    )
-
-    // Check if this is the "None" color scheme (turns off LEDs)
-    val isNoneScheme = scheme.name == "None"
-
-    // Convert RGB colors to Compose Color
-    val composeColors = scheme.colors.map { rgbColor ->
-        Color(rgbColor.r, rgbColor.g, rgbColor.b)
-    }
-
-    // Create gradient from the color scheme
-    // For "None", use a gray gradient to make it visible
-    val gradientColors = if (isNoneScheme) {
-        listOf(Color.DarkGray, Color.Gray, Color.DarkGray)
-    } else if (composeColors.size >= 2) {
-        composeColors
-    } else {
-        listOf(composeColors.firstOrNull() ?: Color.Gray, Color.DarkGray)
-    }
-
-    Surface(
-        onClick = {
-            isPressed = true
-            onClick()
-        },
-        modifier = Modifier
-            .width(80.dp)
-            .height(100.dp)
-            .scale(scale)
-            .shadow(if (isSelected) 8.dp else 4.dp, RoundedCornerShape(16.dp)),
-        shape = RoundedCornerShape(16.dp),
-        color = Color.Transparent,
-        border = BorderStroke(
-            width = if (isSelected) 3.dp else 2.dp,
-            color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)
-        ),
-        tonalElevation = if (isSelected) 4.dp else 2.dp
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(
-                    Brush.verticalGradient(gradientColors),
-                    RoundedCornerShape(16.dp)
-                )
-                .padding(8.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.SpaceBetween
-        ) {
-            // Color preview (gradient box) or "Off" icon for None
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(48.dp)
-                    .background(
-                        Brush.horizontalGradient(gradientColors),
-                        RoundedCornerShape(8.dp)
-                    ),
-                contentAlignment = Alignment.Center
-            ) {
-                if (isNoneScheme) {
-                    // Show power off icon for "None" scheme
-                    Icon(
-                        imageVector = Icons.Default.PowerSettingsNew,
-                        contentDescription = "LEDs Off",
-                        tint = Color.White.copy(alpha = 0.7f),
-                        modifier = Modifier.size(24.dp)
-                    )
-                }
-            }
-
-            // Color name with background for readability
-            Surface(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(4.dp),
-                color = MaterialTheme.colorScheme.surface.copy(alpha = 0.85f)
-            ) {
-                Text(
-                    text = scheme.name,
-                    style = MaterialTheme.typography.labelSmall,
-                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    maxLines = 1,
-                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
-                )
-            }
-
-            // Selected indicator
-            if (isSelected) {
-                Icon(
-                    imageVector = Icons.Default.CheckCircle,
-                    contentDescription = "Selected",
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(16.dp)
-                )
-            }
-        }
-    }
-    
-    LaunchedEffect(isPressed) {
-        if (isPressed) {
-            kotlinx.coroutines.delay(100)
-            isPressed = false
-        }
-    }
-}

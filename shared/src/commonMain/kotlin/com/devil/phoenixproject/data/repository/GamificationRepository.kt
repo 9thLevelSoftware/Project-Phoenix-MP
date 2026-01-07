@@ -44,6 +44,12 @@ interface GamificationRepository {
     suspend fun markBadgeCelebrated(badgeId: String)
 
     /**
+     * Mark multiple badges as celebrated in a single transaction
+     * @param badgeIds List of badge IDs to mark as celebrated
+     */
+    suspend fun markBadgesCelebrated(badgeIds: List<String>)
+
+    /**
      * Update gamification stats after a workout
      * This recalculates all stats from the database
      */
