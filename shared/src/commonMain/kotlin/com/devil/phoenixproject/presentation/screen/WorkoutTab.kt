@@ -187,6 +187,8 @@ fun WorkoutTab(
             currentHeuristicKgMax = currentHeuristicKgMax,
             loadBaselineA = loadBaselineA,
             loadBaselineB = loadBaselineB,
+            cableConfig = loadedRoutine?.exercises?.getOrNull(currentExerciseIndex)?.cableConfig
+                ?: CableConfiguration.DOUBLE,
             modifier = modifier
         )
         return

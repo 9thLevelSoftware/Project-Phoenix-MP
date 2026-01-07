@@ -58,6 +58,7 @@ fun WorkoutHud(
     currentHeuristicKgMax: Float = 0f, // Echo mode: actual measured force per cable (kg)
     loadBaselineA: Float = 0f, // Load baseline for cable A (base tension to subtract)
     loadBaselineB: Float = 0f, // Load baseline for cable B (base tension to subtract)
+    cableConfig: CableConfiguration = CableConfiguration.DOUBLE, // Cable configuration for weight calculation
     modifier: Modifier = Modifier
 ) {
     // Determine if we're in Echo mode
@@ -116,7 +117,8 @@ fun WorkoutHud(
                             loadBaselineB = loadBaselineB,
                             exerciseName = exerciseName,
                             currentSetIndex = currentSetIndex,
-                            totalSets = totalSets
+                            totalSets = totalSets,
+                            cableConfig = cableConfig
                         )
                     }
                     1 -> InstructionPage(
@@ -319,7 +321,8 @@ private fun ExecutionPage(
     loadBaselineB: Float = 0f, // Load baseline for cable B (base tension to subtract)
     exerciseName: String? = null, // Current exercise name (null for Just Lift)
     currentSetIndex: Int = 0, // Current set (0-based)
-    totalSets: Int = 0 // Total number of sets for current exercise
+    totalSets: Int = 0, // Total number of sets for current exercise
+    cableConfig: CableConfiguration = CableConfiguration.DOUBLE // Cable configuration for weight calculation
 ) {
     Column(
         modifier = Modifier.fillMaxSize(),
@@ -388,9 +391,10 @@ private fun ExecutionPage(
 
         // Circular Force Gauge
         if (metric != null) {
-            // Current Load - show per-cable resistance (matching parent repo)
-            // For Echo mode: use heuristic kgMax (actual measured force from device)
-            // For other modes: use totalLoad / 2f (raw sensor average per cable)
+            // Current Load - show per-cable resistance
+            // For SINGLE cable: use max of both loads (whichever cable is active)
+            // For DOUBLE cable: use totalLoad / 2 (average per cable)
+            // For Echo mode: use heuristic kgMax (actual measured force)
             //
             // The heuristic data provides actual measured force via the machine's
             // force telemetry (c7b73007-b245-4503-a1ed-9e4e97eb9802), polled at 4Hz.
@@ -398,9 +402,11 @@ private fun ExecutionPage(
             // For other modes, totalLoad from the monitor characteristic is reliable.
             val perCableKg = if (isEchoMode && echoForceKgMax > 0f) {
                 echoForceKgMax
+            } else if (cableConfig == CableConfiguration.SINGLE) {
+                // Single cable exercise - show the active cable's load
+                maxOf(metric.loadA, metric.loadB)
             } else {
-                // Use totalLoad / 2f - matching parent repo exactly
-                // No baseline subtraction needed - the machine reports actual tension
+                // Double cable - average per cable
                 metric.totalLoad / 2f
             }
             val targetWeight = workoutParameters.weightPerCableKg
