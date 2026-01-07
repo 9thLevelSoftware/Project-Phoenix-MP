@@ -8,30 +8,48 @@ import platform.Foundation.NSLog
 
 actual class DriverFactory {
     actual fun createDriver(): SqlDriver {
+        // PHASE 1: Run migrations with FK disabled
+        // Create a temporary driver that runs schema migrations, then close it immediately.
+        // This works around iOS SQLite driver issues where migrations fail silently with FK enabled.
+        // See: https://github.com/cashapp/sqldelight/issues/1356
+        try {
+            NativeSqliteDriver(
+                schema = VitruvianDatabase.Schema,
+                name = "vitruvian.db",
+                onConfiguration = { config ->
+                    config.copy(
+                        extendedConfig = DatabaseConfiguration.Extended(
+                            foreignKeyConstraints = false
+                        )
+                    )
+                }
+            ).close()
+            NSLog("iOS DB: Phase 1 complete - migrations applied")
+        } catch (e: Exception) {
+            NSLog("iOS DB: Phase 1 migration error: ${e.message}")
+            // Continue anyway - phase 2 fallback will try to recover
+        }
+
+        // PHASE 2: Create the real driver with FK enabled but migrations skipped
         val driver = NativeSqliteDriver(
             schema = VitruvianDatabase.Schema,
             name = "vitruvian.db",
             onConfiguration = { config ->
                 config.copy(
-                    // Disable FK constraints during schema creation/migration
-                    // This prevents FK errors when creating tables with references
+                    // Skip migrations - already done in phase 1
+                    upgrade = { _, _, _ -> },
                     extendedConfig = DatabaseConfiguration.Extended(
-                        foreignKeyConstraints = false
+                        foreignKeyConstraints = true
                     )
                 )
             }
         )
 
-        // Ensure all Training Cycle tables exist (resilient migration fallback)
-        // This handles cases where SQLDelight migrations may have failed silently
+        // PHASE 3: Verify/create tables as fallback for users with corrupted state
         ensureTrainingCycleTablesExist(driver)
-
-        // Verify critical tables exist - fail fast if not
         verifyCriticalTablesExist(driver)
 
-        // Re-enable foreign key constraints for normal operation
-        driver.execute(null, "PRAGMA foreign_keys = ON", 0)
-
+        NSLog("iOS DB: Driver initialization complete")
         return driver
     }
 
