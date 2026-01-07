@@ -20,6 +20,15 @@ import com.devil.phoenixproject.util.format
 /**
  * Weight input with +/- stepper buttons.
  * Increments/decrements by 2.5kg (standard plate increment).
+ *
+ * @param weight Current weight value in kg
+ * @param onWeightChange Callback when weight is changed
+ * @param modifier Modifier for the composable
+ * @param minWeight Minimum allowed weight (default 0)
+ * @param maxWeight Maximum allowed weight (default 220kg)
+ * @param step Weight increment/decrement step (default 2.5kg)
+ * @param label Label text displayed above the control
+ * @param prWeight Optional PR weight to show percentage indicator
  */
 @Composable
 fun WeightStepper(
@@ -29,15 +38,31 @@ fun WeightStepper(
     minWeight: Float = 0f,
     maxWeight: Float = 220f,
     step: Float = 2.5f,
-    label: String = "Weight"
+    label: String = "Weight",
+    prWeight: Float? = null
 ) {
     Column(modifier = modifier) {
-        Text(
-            text = label.uppercase(),
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            letterSpacing = 1.sp
-        )
+        // Header row with label and PR indicator
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = label.uppercase(),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                letterSpacing = 1.sp
+            )
+
+            // PR Indicator shown when prWeight is provided
+            if (prWeight != null) {
+                PRIndicator(
+                    currentWeight = weight,
+                    prWeight = prWeight
+                )
+            }
+        }
 
         Spacer(modifier = Modifier.height(Spacing.small))
 
