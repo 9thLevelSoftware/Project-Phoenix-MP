@@ -16,6 +16,7 @@ import com.devil.phoenixproject.data.repository.WorkoutRepository
 import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.domain.model.*
 import com.devil.phoenixproject.domain.usecase.RepCounterFromMachine
+import com.devil.phoenixproject.domain.usecase.ResolveRoutineWeightsUseCase
 import com.devil.phoenixproject.util.BlePacketFactory
 import com.devil.phoenixproject.util.KmpLocalDate
 import com.devil.phoenixproject.util.KmpUtils
@@ -81,7 +82,8 @@ class MainViewModel constructor(
     private val repCounter: RepCounterFromMachine,
     private val preferencesManager: PreferencesManager,
     private val gamificationRepository: GamificationRepository,
-    private val trainingCycleRepository: TrainingCycleRepository
+    private val trainingCycleRepository: TrainingCycleRepository,
+    private val resolveWeightsUseCase: ResolveRoutineWeightsUseCase
 ) : ViewModel() {
 
     companion object {
@@ -1593,6 +1595,41 @@ class MainViewModel constructor(
             return
         }
 
+        // Launch coroutine to resolve PR percentage weights before loading
+        viewModelScope.launch {
+            val resolvedRoutine = resolveRoutineWeights(routine)
+            loadRoutineInternal(resolvedRoutine)
+        }
+    }
+
+    /**
+     * Resolve PR percentage weights to absolute values for all exercises in a routine.
+     * Called at workout start time to get current weights based on latest PRs.
+     */
+    private suspend fun resolveRoutineWeights(routine: Routine): Routine {
+        val resolvedExercises = routine.exercises.map { exercise ->
+            if (exercise.usePercentOfPR) {
+                val resolved = resolveWeightsUseCase(exercise, exercise.programMode)
+                if (resolved.fallbackReason != null) {
+                    Logger.w { "PR weight fallback for ${exercise.exercise.name}: ${resolved.fallbackReason}" }
+                } else if (resolved.isFromPR) {
+                    Logger.d { "Resolved ${exercise.exercise.name} weight from PR: ${resolved.percentOfPR}% of ${resolved.usedPR}kg = ${resolved.baseWeight}kg" }
+                }
+                exercise.copy(
+                    weightPerCableKg = resolved.baseWeight,
+                    setWeightsPerCableKg = resolved.setWeights
+                )
+            } else {
+                exercise
+            }
+        }
+        return routine.copy(exercises = resolvedExercises)
+    }
+
+    /**
+     * Internal function to load a routine after weights have been resolved.
+     */
+    private fun loadRoutineInternal(routine: Routine) {
         _loadedRoutine.value = routine
         _currentExerciseIndex.value = 0
         _currentSetIndex.value = 0

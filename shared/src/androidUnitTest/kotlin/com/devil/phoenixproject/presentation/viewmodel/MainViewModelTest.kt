@@ -11,6 +11,7 @@ import com.devil.phoenixproject.domain.model.WorkoutParameters
 import com.devil.phoenixproject.domain.model.WorkoutState
 import com.devil.phoenixproject.domain.model.WorkoutMetric
 import com.devil.phoenixproject.domain.usecase.RepCounterFromMachine
+import com.devil.phoenixproject.domain.usecase.ResolveRoutineWeightsUseCase
 import com.devil.phoenixproject.testutil.FakeBleRepository
 import com.devil.phoenixproject.testutil.FakeExerciseRepository
 import com.devil.phoenixproject.testutil.FakeGamificationRepository
@@ -47,6 +48,7 @@ class MainViewModelTest {
     private lateinit var fakeGamificationRepository: FakeGamificationRepository
     private lateinit var fakeTrainingCycleRepository: FakeTrainingCycleRepository
     private lateinit var repCounter: RepCounterFromMachine
+    private lateinit var resolveWeightsUseCase: ResolveRoutineWeightsUseCase
 
     @Before
     fun setup() {
@@ -58,6 +60,7 @@ class MainViewModelTest {
         fakeGamificationRepository = FakeGamificationRepository()
         fakeTrainingCycleRepository = FakeTrainingCycleRepository()
         repCounter = RepCounterFromMachine()
+        resolveWeightsUseCase = ResolveRoutineWeightsUseCase(fakePersonalRecordRepository)
 
         viewModel = MainViewModel(
             bleRepository = fakeBleRepository,
@@ -67,7 +70,8 @@ class MainViewModelTest {
             repCounter = repCounter,
             preferencesManager = fakePreferencesManager,
             gamificationRepository = fakeGamificationRepository,
-            trainingCycleRepository = fakeTrainingCycleRepository
+            trainingCycleRepository = fakeTrainingCycleRepository,
+            resolveWeightsUseCase = resolveWeightsUseCase
         )
     }
 

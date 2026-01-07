@@ -2,6 +2,7 @@ package com.devil.phoenixproject.e2e
 
 import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.usecase.RepCounterFromMachine
+import com.devil.phoenixproject.domain.usecase.ResolveRoutineWeightsUseCase
 import com.devil.phoenixproject.e2e.robot.WorkoutRobot
 import com.devil.phoenixproject.e2e.robot.workoutRobot
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
@@ -39,6 +40,7 @@ class WorkoutFlowE2ETest {
     private lateinit var fakeGamificationRepository: FakeGamificationRepository
     private lateinit var fakeTrainingCycleRepository: FakeTrainingCycleRepository
     private lateinit var repCounter: RepCounterFromMachine
+    private lateinit var resolveWeightsUseCase: ResolveRoutineWeightsUseCase
     private lateinit var robot: WorkoutRobot
 
     @Before
@@ -51,6 +53,7 @@ class WorkoutFlowE2ETest {
         fakeGamificationRepository = FakeGamificationRepository()
         fakeTrainingCycleRepository = FakeTrainingCycleRepository()
         repCounter = RepCounterFromMachine()
+        resolveWeightsUseCase = ResolveRoutineWeightsUseCase(fakePersonalRecordRepository)
 
         viewModel = MainViewModel(
             bleRepository = fakeBleRepository,
@@ -60,7 +63,8 @@ class WorkoutFlowE2ETest {
             repCounter = repCounter,
             preferencesManager = fakePreferencesManager,
             gamificationRepository = fakeGamificationRepository,
-            trainingCycleRepository = fakeTrainingCycleRepository
+            trainingCycleRepository = fakeTrainingCycleRepository,
+            resolveWeightsUseCase = resolveWeightsUseCase
         )
 
         robot = WorkoutRobot(viewModel, fakeBleRepository)

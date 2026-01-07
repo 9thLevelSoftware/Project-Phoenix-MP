@@ -141,7 +141,11 @@ class SqlDelightCompletedSetRepositoryTest {
             perSetRestTime = 0L,
             isAMRAP = 0L,
             supersetId = null,
-            orderInSuperset = 0L
+            orderInSuperset = 0L,
+            usePercentOfPR = 0L,
+            weightPercentOfPR = 80L,
+            prTypeForScaling = "MAX_WEIGHT",
+            setWeightsPercentOfPR = null
         )
     }
 
