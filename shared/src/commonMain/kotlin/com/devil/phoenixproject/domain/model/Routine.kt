@@ -1,5 +1,7 @@
 package com.devil.phoenixproject.domain.model
 
+import kotlin.math.roundToInt
+
 /**
  * Domain model for a workout routine
  */
@@ -70,7 +72,12 @@ data class RoutineExercise(
     val stallDetectionEnabled: Boolean = true,
     // Superset configuration (container model)
     val supersetId: String? = null,       // Reference to parent Superset container
-    val orderInSuperset: Int = 0          // Position within the superset
+    val orderInSuperset: Int = 0,         // Position within the superset
+    // PR percentage scaling (Issue #57)
+    val usePercentOfPR: Boolean = false,           // Toggle: use % instead of absolute weight
+    val weightPercentOfPR: Int = 80,               // Percentage (e.g., 80 = 80%)
+    val prTypeForScaling: PRType = PRType.MAX_WEIGHT,  // Which PR type to scale from
+    val setWeightsPercentOfPR: List<Int> = emptyList() // Per-set percentages
 ) {
     /** Returns true if this exercise is part of a superset */
     val isInSuperset: Boolean get() = supersetId != null
@@ -95,6 +102,48 @@ data class RoutineExercise(
         }
         return copy(setRestSeconds = normalizedRest)
     }
+
+    /**
+     * Resolve weight given current PR value.
+     * If usePercentOfPR is true and a valid PR is provided, calculates weight as a percentage.
+     * Otherwise falls back to the absolute weightPerCableKg value.
+     *
+     * @param currentPR The current PR value in kg (from PersonalRecord based on prTypeForScaling)
+     * @return The resolved weight in kg, rounded to nearest 0.5kg increment
+     */
+    fun resolveWeight(currentPR: Float?): Float {
+        return if (usePercentOfPR && currentPR != null && currentPR > 0) {
+            (currentPR * weightPercentOfPR / 100f).roundToHalfKg()
+        } else {
+            weightPerCableKg
+        }
+    }
+
+    /**
+     * Resolve per-set weights given current PR value.
+     * If usePercentOfPR is true and per-set percentages are defined, calculates each set's weight.
+     * Otherwise falls back to setWeightsPerCableKg (or weightPerCableKg if that's also empty).
+     *
+     * @param currentPR The current PR value in kg (from PersonalRecord based on prTypeForScaling)
+     * @return List of resolved weights in kg, each rounded to nearest 0.5kg increment
+     */
+    fun resolveSetWeights(currentPR: Float?): List<Float> {
+        return if (usePercentOfPR && currentPR != null && currentPR > 0 && setWeightsPercentOfPR.isNotEmpty()) {
+            setWeightsPercentOfPR.map { percent ->
+                (currentPR * percent / 100f).roundToHalfKg()
+            }
+        } else {
+            setWeightsPerCableKg
+        }
+    }
+}
+
+/**
+ * Round to nearest 0.5kg increment.
+ * Vitruvian machines use 0.5kg increments, so this ensures valid weight values.
+ */
+private fun Float.roundToHalfKg(): Float {
+    return (this * 2).roundToInt() / 2f
 }
 
 /**
