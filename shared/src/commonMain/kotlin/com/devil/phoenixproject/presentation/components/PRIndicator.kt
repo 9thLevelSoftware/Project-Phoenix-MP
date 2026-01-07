@@ -46,7 +46,8 @@ fun PRIndicator(
 
     val percentage = ((currentWeight / prWeight) * 100).toInt().coerceIn(0, 200)
     val isAbovePR = currentWeight > prWeight
-    val isAtPR = currentWeight == prWeight
+    // Use epsilon comparison for float equality (0.01f = 10g, safely below 0.5kg increments)
+    val isAtPR = kotlin.math.abs(currentWeight - prWeight) < 0.01f
 
     Row(
         modifier = modifier,
