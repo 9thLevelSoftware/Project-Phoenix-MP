@@ -100,6 +100,29 @@ interface PersonalRecordRepository {
     suspend fun getBestVolumePR(exerciseId: String): PersonalRecord?
 
     /**
+     * Get the best weight PR for an exercise in a specific mode
+     * @param exerciseId Exercise ID
+     * @param workoutMode Workout mode (e.g., "OldSchool", "Pump", "TUT")
+     * @return PersonalRecord with highest weight for this mode, or null if no PR exists
+     */
+    suspend fun getBestWeightPR(exerciseId: String, workoutMode: String): PersonalRecord?
+
+    /**
+     * Get the best volume PR for an exercise in a specific mode
+     * @param exerciseId Exercise ID
+     * @param workoutMode Workout mode (e.g., "OldSchool", "Pump", "TUT")
+     * @return PersonalRecord with highest volume for this mode, or null if no PR exists
+     */
+    suspend fun getBestVolumePR(exerciseId: String, workoutMode: String): PersonalRecord?
+
+    /**
+     * Get all PRs for an exercise (all modes) for display
+     * @param exerciseId Exercise ID
+     * @return List of all PRs for the exercise, ordered by mode, type, and date
+     */
+    suspend fun getAllPRsForExercise(exerciseId: String): List<PersonalRecord>
+
+    /**
      * Update PRs if the new performance is better
      * Checks both weight and volume PRs and updates each if beaten
      *

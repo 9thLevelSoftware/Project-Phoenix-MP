@@ -430,6 +430,30 @@ WHERE exerciseId = ? AND prType = 'MAX_VOLUME'
 ORDER BY volume DESC
 LIMIT 1;
 
+-- Get best weight PR for exercise BY MODE
+selectBestWeightPRByMode:
+SELECT * FROM PersonalRecord
+WHERE exerciseId = :exerciseId
+AND prType = 'MAX_WEIGHT'
+AND workoutMode = :workoutMode
+ORDER BY weight DESC
+LIMIT 1;
+
+-- Get best volume PR for exercise BY MODE
+selectBestVolumePRByMode:
+SELECT * FROM PersonalRecord
+WHERE exerciseId = :exerciseId
+AND prType = 'MAX_VOLUME'
+AND workoutMode = :workoutMode
+ORDER BY volume DESC
+LIMIT 1;
+
+-- Get all PRs for an exercise (all modes) for display
+selectAllPRsForExercise:
+SELECT * FROM PersonalRecord
+WHERE exerciseId = :exerciseId
+ORDER BY workoutMode, prType, achievedAt DESC;
+
 -- Get the best overall PR for an exercise (prefers weight, for backwards compatibility)
 selectBestPR:
 SELECT * FROM PersonalRecord

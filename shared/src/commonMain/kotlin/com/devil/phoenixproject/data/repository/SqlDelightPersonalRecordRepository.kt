@@ -138,6 +138,27 @@ class SqlDelightPersonalRecordRepository(
         }
     }
 
+    override suspend fun getBestWeightPR(exerciseId: String, workoutMode: String): PersonalRecord? {
+        return withContext(Dispatchers.IO) {
+            queries.selectBestWeightPRByMode(exerciseId, workoutMode, ::mapToPR)
+                .executeAsOneOrNull()
+        }
+    }
+
+    override suspend fun getBestVolumePR(exerciseId: String, workoutMode: String): PersonalRecord? {
+        return withContext(Dispatchers.IO) {
+            queries.selectBestVolumePRByMode(exerciseId, workoutMode, ::mapToPR)
+                .executeAsOneOrNull()
+        }
+    }
+
+    override suspend fun getAllPRsForExercise(exerciseId: String): List<PersonalRecord> {
+        return withContext(Dispatchers.IO) {
+            queries.selectAllPRsForExercise(exerciseId, ::mapToPR)
+                .executeAsList()
+        }
+    }
+
     override suspend fun updatePRsIfBetter(
         exerciseId: String,
         weightPerCableKg: Float,
