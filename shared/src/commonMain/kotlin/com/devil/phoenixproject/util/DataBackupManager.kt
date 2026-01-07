@@ -183,7 +183,12 @@ abstract class BaseDataBackupManager(
                         perSetRestTime = exercise.perSetRestTime != 0L,
                         isAMRAP = exercise.isAMRAP != 0L,
                         supersetId = exercise.supersetId,
-                        orderInSuperset = exercise.orderInSuperset.toInt()
+                        orderInSuperset = exercise.orderInSuperset.toInt(),
+                        // PR percentage scaling fields
+                        usePercentOfPR = exercise.usePercentOfPR != 0L,
+                        weightPercentOfPR = exercise.weightPercentOfPR.toInt(),
+                        prTypeForScaling = exercise.prTypeForScaling,
+                        setWeightsPercentOfPR = exercise.setWeightsPercentOfPR
                     )
                 },
                 personalRecords = personalRecords,
@@ -354,7 +359,12 @@ abstract class BaseDataBackupManager(
                         perSetRestTime = if (exercise.perSetRestTime) 1L else 0L,
                         isAMRAP = if (exercise.isAMRAP) 1L else 0L,
                         supersetId = exercise.supersetId,
-                        orderInSuperset = exercise.orderInSuperset.toLong()
+                        orderInSuperset = exercise.orderInSuperset.toLong(),
+                        // PR percentage scaling fields
+                        usePercentOfPR = if (exercise.usePercentOfPR) 1L else 0L,
+                        weightPercentOfPR = exercise.weightPercentOfPR.toLong(),
+                        prTypeForScaling = exercise.prTypeForScaling,
+                        setWeightsPercentOfPR = exercise.setWeightsPercentOfPR
                     )
                     routineExercisesImported++
                 }

@@ -117,7 +117,12 @@ data class RoutineExerciseBackup(
     val isAMRAP: Boolean = false,
     // KMP extension: superset support (updated field names)
     val supersetId: String? = null,
-    val orderInSuperset: Int = 0
+    val orderInSuperset: Int = 0,
+    // PR percentage scaling (Issue #57)
+    val usePercentOfPR: Boolean = false,
+    val weightPercentOfPR: Int = 80,
+    val prTypeForScaling: String = "MAX_WEIGHT",
+    val setWeightsPercentOfPR: String? = null  // JSON array as string
 )
 
 /**

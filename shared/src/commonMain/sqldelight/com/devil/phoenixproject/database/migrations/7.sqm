@@ -1,0 +1,18 @@
+-- Migration 7: Add PR percentage scaling columns to RoutineExercise
+-- Issue #57: Support weight-as-percentage-of-PR in routine exercises
+--
+-- IMPORTANT: Using simple ALTER TABLE ADD COLUMN for iOS compatibility.
+-- iOS NativeSqliteDriver has a known issue where PRAGMA settings don't persist
+-- across connections, so we avoid complex migrations with foreign keys.
+
+-- Toggle: use percentage of PR instead of absolute weight
+ALTER TABLE RoutineExercise ADD COLUMN usePercentOfPR INTEGER NOT NULL DEFAULT 0;
+
+-- Percentage of PR to use (e.g., 80 = 80%)
+ALTER TABLE RoutineExercise ADD COLUMN weightPercentOfPR INTEGER NOT NULL DEFAULT 80;
+
+-- Which PR type to scale from (MAX_WEIGHT or MAX_VOLUME)
+ALTER TABLE RoutineExercise ADD COLUMN prTypeForScaling TEXT NOT NULL DEFAULT 'MAX_WEIGHT';
+
+-- Per-set percentages as JSON array (nullable, falls back to weightPercentOfPR when null/empty)
+ALTER TABLE RoutineExercise ADD COLUMN setWeightsPercentOfPR TEXT;

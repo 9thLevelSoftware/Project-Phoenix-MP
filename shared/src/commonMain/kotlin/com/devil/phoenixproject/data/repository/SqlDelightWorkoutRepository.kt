@@ -234,6 +234,22 @@ class SqlDelightWorkoutRepository(
 
                 val programMode = parseProgramMode(row.mode)
 
+                // Parse PR percentage scaling fields
+                val prTypeForScaling = try {
+                    PRType.valueOf(row.prTypeForScaling)
+                } catch (e: Exception) {
+                    Logger.w(e) { "Invalid prTypeForScaling '${row.prTypeForScaling}' for exercise ${row.exerciseName}, using MAX_WEIGHT" }
+                    PRType.MAX_WEIGHT
+                }
+
+                val setWeightsPercentOfPR: List<Int> = try {
+                    if (row.setWeightsPercentOfPR.isNullOrBlank()) emptyList()
+                    else json.decodeFromString<List<Int>>(row.setWeightsPercentOfPR)
+                } catch (e: Exception) {
+                    Logger.w(e) { "Failed to parse setWeightsPercentOfPR '${row.setWeightsPercentOfPR}' for exercise ${row.exerciseName}, using empty list" }
+                    emptyList()
+                }
+
                 RoutineExercise(
                     id = row.id,
                     exercise = exercise,
@@ -251,7 +267,12 @@ class SqlDelightWorkoutRepository(
                     isAMRAP = row.isAMRAP == 1L,
                     perSetRestTime = row.perSetRestTime == 1L,
                     supersetId = row.supersetId,
-                    orderInSuperset = row.orderInSuperset.toInt()
+                    orderInSuperset = row.orderInSuperset.toInt(),
+                    // PR percentage scaling fields
+                    usePercentOfPR = row.usePercentOfPR == 1L,
+                    weightPercentOfPR = row.weightPercentOfPR.toInt(),
+                    prTypeForScaling = prTypeForScaling,
+                    setWeightsPercentOfPR = setWeightsPercentOfPR
                 )
             } catch (e: Exception) {
                 Logger.e(e) { "Failed to map routine exercise: ${row.exerciseId}" }
@@ -469,7 +490,12 @@ class SqlDelightWorkoutRepository(
             perSetRestTime = if (exercise.perSetRestTime) 1L else 0L,
             isAMRAP = if (exercise.isAMRAP) 1L else 0L,
             supersetId = exercise.supersetId,
-            orderInSuperset = exercise.orderInSuperset.toLong()
+            orderInSuperset = exercise.orderInSuperset.toLong(),
+            // PR percentage scaling fields
+            usePercentOfPR = if (exercise.usePercentOfPR) 1L else 0L,
+            weightPercentOfPR = exercise.weightPercentOfPR.toLong(),
+            prTypeForScaling = exercise.prTypeForScaling.name,
+            setWeightsPercentOfPR = if (exercise.setWeightsPercentOfPR.isEmpty()) null else json.encodeToString(exercise.setWeightsPercentOfPR)
         )
     }
 
