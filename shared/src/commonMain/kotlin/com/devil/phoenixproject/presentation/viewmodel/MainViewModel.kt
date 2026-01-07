@@ -1034,11 +1034,45 @@ class MainViewModel constructor(
     }
 
     fun pauseWorkout() {
-        _workoutState.value = WorkoutState.Paused
+        if (_workoutState.value is WorkoutState.Active) {
+            // Cancel collection jobs to prevent stale data during pause
+            monitorDataCollectionJob?.cancel()
+            repEventsCollectionJob?.cancel()
+
+            _workoutState.value = WorkoutState.Paused
+            Logger.d { "MainViewModel: Workout paused, collection jobs cancelled" }
+        }
     }
 
     fun resumeWorkout() {
-        _workoutState.value = WorkoutState.Active
+        if (_workoutState.value is WorkoutState.Paused) {
+            _workoutState.value = WorkoutState.Active
+
+            // Restart collection jobs
+            restartCollectionJobs()
+            Logger.d { "MainViewModel: Workout resumed, collection jobs restarted" }
+        }
+    }
+
+    private fun restartCollectionJobs() {
+        // Restart monitor data collection
+        monitorDataCollectionJob = viewModelScope.launch {
+            Logger.d("MainViewModel") { "Restarting global metricsFlow collection after resume..." }
+            bleRepository.metricsFlow.collect { metric ->
+                _currentMetric.value = metric
+                handleMonitorMetric(metric)
+            }
+        }
+
+        // Restart rep events collection
+        repEventsCollectionJob = viewModelScope.launch {
+            bleRepository.repEvents.collect { notification ->
+                val state = _workoutState.value
+                if (state is WorkoutState.Active) {
+                    handleRepNotification(notification)
+                }
+            }
+        }
     }
 
     fun setWeightUnit(unit: WeightUnit) {
