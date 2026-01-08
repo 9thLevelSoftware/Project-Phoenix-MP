@@ -5,7 +5,7 @@ package com.devil.phoenixproject.util
  */
 object Constants {
     // App version
-    const val APP_VERSION = "0.3.0"
+    const val APP_VERSION = "0.3.1"
 
     // Weight limits (in kg)
     const val MIN_WEIGHT_KG = 0f

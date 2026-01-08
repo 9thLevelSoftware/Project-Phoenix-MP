@@ -190,6 +190,13 @@ actual class DriverFactory(private val context: Context) {
                             "CREATE INDEX IF NOT EXISTS idx_completed_set_session ON CompletedSet(session_id)",
                             "CREATE INDEX IF NOT EXISTS idx_progression_event_exercise ON ProgressionEvent(exercise_id)"
                         )
+                        7 -> listOf(
+                            // PR percentage scaling columns for RoutineExercise (Issue #57)
+                            "ALTER TABLE RoutineExercise ADD COLUMN usePercentOfPR INTEGER NOT NULL DEFAULT 0",
+                            "ALTER TABLE RoutineExercise ADD COLUMN weightPercentOfPR INTEGER NOT NULL DEFAULT 80",
+                            "ALTER TABLE RoutineExercise ADD COLUMN prTypeForScaling TEXT NOT NULL DEFAULT 'MAX_WEIGHT'",
+                            "ALTER TABLE RoutineExercise ADD COLUMN setWeightsPercentOfPR TEXT"
+                        )
                         else -> emptyList()
                     }
                 }
