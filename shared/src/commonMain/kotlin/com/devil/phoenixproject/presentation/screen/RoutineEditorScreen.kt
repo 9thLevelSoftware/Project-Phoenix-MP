@@ -28,6 +28,7 @@ import com.devil.phoenixproject.data.repository.PersonalRecordRepository
 import com.devil.phoenixproject.domain.model.*
 import com.devil.phoenixproject.presentation.components.ConnectorPosition
 import com.devil.phoenixproject.presentation.components.ExercisePickerDialog
+import com.devil.phoenixproject.presentation.components.ExerciseRowInSuperset
 import com.devil.phoenixproject.presentation.components.ExerciseRowWithConnector
 import com.devil.phoenixproject.presentation.components.RestTimePickerDialog
 import com.devil.phoenixproject.presentation.components.SelectionActionBar
@@ -433,15 +434,15 @@ fun RoutineEditorScreen(
                                         onDelete = { supersetToDelete = superset }
                                     )
 
-                                    // Exercises in superset - use ExerciseRowWithConnector without connectors
+                                    // Exercises in superset
                                     superset.exercises.forEach { exercise ->
-                                        ExerciseRowWithConnector(
+                                        ExerciseRowInSuperset(
                                             exercise = exercise,
-                                            elevation = 0.dp,
+                                            supersetRestSeconds = superset.restBetweenSeconds,
                                             weightUnit = weightUnit,
                                             kgToDisplay = kgToDisplay,
-                                            supersetColorIndex = null,
-                                            connectorPosition = null,
+                                            isSelectionMode = selectionMode,
+                                            isSelected = selectedExerciseIds.contains(exercise.id),
                                             onClick = {
                                                 if (!selectionMode) {
                                                     exerciseToConfig = exercise
@@ -449,10 +450,6 @@ fun RoutineEditorScreen(
                                                     editingIndex = state.exercises.indexOf(exercise)
                                                 }
                                             },
-                                            onMenuClick = { exerciseMenuFor = exercise.id },
-                                            dragModifier = Modifier,
-                                            isSelectionMode = selectionMode,
-                                            isSelected = selectedExerciseIds.contains(exercise.id),
                                             onLongPress = {
                                                 selectionMode = true
                                                 selectedExerciseIds.add(exercise.id)
