@@ -99,4 +99,4 @@ CREATE INDEX IF NOT EXISTS idx_cycle_day_cycle ON CycleDay(cycle_id);
 CREATE INDEX IF NOT EXISTS idx_cycle_progress_cycle ON CycleProgress(cycle_id);
 CREATE INDEX IF NOT EXISTS idx_planned_set_exercise ON PlannedSet(routine_exercise_id);
 CREATE INDEX IF NOT EXISTS idx_completed_set_session ON CompletedSet(session_id);
-CREATE INDEX IF NOT EXISTS idx_progression_event_exercise ON ProgressionEvent(exercise_id);
+CREATE INDEX IF NOT EXISTS idx_progression_exercise ON ProgressionEvent(exercise_id);
