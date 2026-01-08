@@ -142,6 +142,9 @@ kotlin {
 
                 // Compose Preview Tooling (for @Preview in shared module)
                 implementation(compose.uiTooling)
+
+                // Activity Compose (for file picker Activity Result APIs)
+                implementation(libs.androidx.activity.compose)
             }
         }
         
