@@ -40,21 +40,19 @@ import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.domain.model.ProgramMode
 
 /**
- * Unified exercise row that handles both standalone and superset exercises.
- * When in a superset, shows connector line on the left.
+ * Exercise row for standalone exercises (not in supersets).
+ * Exercises inside supersets use ExerciseRowInSuperset instead.
  *
  * This component provides:
- * - Optional superset connector on the left (when part of a superset)
  * - Drag handle for reordering
  * - Exercise card with name and set/rep/weight info
  * - Menu button for additional actions
+ * - Selection mode support for multi-select operations
  *
  * @param exercise The routine exercise to display
  * @param elevation Shadow elevation for drag feedback
  * @param weightUnit User's preferred weight unit (KG or LB)
  * @param kgToDisplay Function to convert kg to display unit
- * @param supersetColorIndex Color index for superset connector (null if standalone)
- * @param connectorPosition Position in superset (null if standalone)
  * @param onClick Called when the row is tapped
  * @param onMenuClick Called when the menu button is tapped
  * @param dragModifier Modifier for the drag handle (for drag-and-drop)
@@ -71,9 +69,6 @@ fun ExerciseRowWithConnector(
     elevation: Dp,
     weightUnit: WeightUnit,
     kgToDisplay: (Float, WeightUnit) -> Float,
-    // Superset connector info
-    supersetColorIndex: Int?,
-    connectorPosition: ConnectorPosition?,
     // Callbacks
     onClick: () -> Unit,
     onMenuClick: () -> Unit,
@@ -105,15 +100,6 @@ fun ExerciseRowWithConnector(
             ),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        // Connector column (if in superset)
-        if (supersetColorIndex != null && connectorPosition != null) {
-            SupersetConnector(
-                colorIndex = supersetColorIndex,
-                position = connectorPosition,
-                modifier = Modifier
-            )
-        }
-
         // Selection checkbox (visible in selection mode)
         AnimatedVisibility(
             visible = isSelectionMode,

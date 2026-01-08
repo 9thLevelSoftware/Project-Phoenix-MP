@@ -26,7 +26,6 @@ import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.data.repository.PersonalRecordRepository
 import com.devil.phoenixproject.domain.model.*
-import com.devil.phoenixproject.presentation.components.ConnectorPosition
 import com.devil.phoenixproject.presentation.components.ExercisePickerDialog
 import com.devil.phoenixproject.presentation.components.ExerciseRowInSuperset
 import com.devil.phoenixproject.presentation.components.ExerciseRowWithConnector
@@ -298,18 +297,18 @@ fun RoutineEditorScreen(
     // Reorderable state for drag-and-drop on flat list
     val reorderState = rememberReorderableLazyListState(lazyListState) { from, to ->
         val routine = state.routine ?: return@rememberReorderableLazyListState
-        val flatItems = routine.flattenWithConnectors().toMutableList()
+        val exercises = routine.exercises.toMutableList()
         val fromIndex = from.index
         val toIndex = to.index
 
-        if (fromIndex in flatItems.indices && toIndex in flatItems.indices) {
-            // Move in flat list
-            val moved = flatItems.removeAt(fromIndex)
-            flatItems.add(toIndex, moved)
+        if (fromIndex in exercises.indices && toIndex in exercises.indices) {
+            // Move in exercise list
+            val moved = exercises.removeAt(fromIndex)
+            exercises.add(toIndex, moved)
 
             // Rebuild exercises with new order
-            val newExercises = flatItems.mapIndexed { index, item ->
-                item.exercise.copy(orderIndex = index)
+            val newExercises = exercises.mapIndexed { index, exercise ->
+                exercise.copy(orderIndex = index)
             }
 
             // Preserve existing supersetId - exercises stay in their supersets
@@ -477,8 +476,6 @@ fun RoutineEditorScreen(
                                         elevation = 0.dp,
                                         weightUnit = weightUnit,
                                         kgToDisplay = kgToDisplay,
-                                        supersetColorIndex = null,
-                                        connectorPosition = null,
                                         onClick = {
                                             if (!selectionMode) {
                                                 exerciseToConfig = exercise
@@ -796,52 +793,4 @@ fun RoutineEditorScreen(
             }
         )
     }
-}
-
-/**
- * Represents an exercise in the flat list with its superset position info.
- */
-data class FlatExerciseItem(
-    val exercise: RoutineExercise,
-    val supersetColorIndex: Int?,
-    val connectorPosition: ConnectorPosition?
-)
-
-/**
- * Flattens routine into a list of exercises with connector info.
- * Exercises in supersets are ordered together.
- */
-fun Routine.flattenWithConnectors(): List<FlatExerciseItem> {
-    val items = getItems()
-    val result = mutableListOf<FlatExerciseItem>()
-
-    for (item in items) {
-        when (item) {
-            is RoutineItem.Single -> {
-                result.add(FlatExerciseItem(
-                    exercise = item.exercise,
-                    supersetColorIndex = null,
-                    connectorPosition = null
-                ))
-            }
-            is RoutineItem.SupersetItem -> {
-                val exercises = item.superset.exercises
-                exercises.forEachIndexed { index, exercise ->
-                    val position = when {
-                        exercises.size == 1 -> null // Single item, no connector
-                        index == 0 -> ConnectorPosition.TOP
-                        index == exercises.lastIndex -> ConnectorPosition.BOTTOM
-                        else -> ConnectorPosition.MIDDLE
-                    }
-                    result.add(FlatExerciseItem(
-                        exercise = exercise,
-                        supersetColorIndex = item.superset.colorIndex,
-                        connectorPosition = position
-                    ))
-                }
-            }
-        }
-    }
-
-    return result
 }
