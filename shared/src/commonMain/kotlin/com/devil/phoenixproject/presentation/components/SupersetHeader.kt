@@ -7,11 +7,14 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.ColorLens
 import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.DragHandle
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.MoreVert
@@ -47,10 +50,13 @@ fun SupersetHeader(
     superset: Superset,
     onRename: () -> Unit,
     onChangeRestTime: () -> Unit,
+    onChangeColor: () -> Unit,
     onAddExercise: () -> Unit,
     onCopy: () -> Unit,
     onDelete: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    showDragHandle: Boolean = true,
+    dragModifier: Modifier = Modifier
 ) {
     val color = SupersetTheme.colorForIndex(superset.colorIndex)
     var showMenu by remember { mutableStateOf(false) }
@@ -104,6 +110,17 @@ fun SupersetHeader(
 
             Spacer(Modifier.width(8.dp))
 
+            if (showDragHandle) {
+                Icon(
+                    Icons.Default.DragHandle,
+                    contentDescription = "Reorder superset",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                    modifier = Modifier.size(20.dp).then(dragModifier)
+                )
+
+                Spacer(Modifier.width(4.dp))
+            }
+
             // Overflow menu
             IconButton(onClick = { showMenu = true }) {
                 Icon(
@@ -124,6 +141,14 @@ fun SupersetHeader(
                         onRename()
                     },
                     leadingIcon = { Icon(Icons.Default.Edit, null) }
+                )
+                DropdownMenuItem(
+                    text = { Text("Change Color") },
+                    onClick = {
+                        showMenu = false
+                        onChangeColor()
+                    },
+                    leadingIcon = { Icon(Icons.Default.ColorLens, null) }
                 )
                 DropdownMenuItem(
                     text = { Text("Add Exercise") },

@@ -6,12 +6,16 @@ import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.LinkOff
@@ -41,6 +45,7 @@ fun SelectionActionBar(
     canRemoveFromSuperset: Boolean,
     hasExistingSupersets: Boolean,
     onCancel: () -> Unit,
+    onCopy: () -> Unit,
     onDelete: () -> Unit,
     onAddToSuperset: () -> Unit,
     onRemoveFromSuperset: () -> Unit,
@@ -52,8 +57,11 @@ fun SelectionActionBar(
         exit = slideOutVertically { it },
         modifier = modifier
     ) {
+        val showAddToSuperset = selectedCount > 0 && (hasExistingSupersets || canAddToSuperset)
         Surface(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .windowInsetsPadding(WindowInsets.navigationBars),
             color = MaterialTheme.colorScheme.surfaceContainerHigh,
             tonalElevation = 8.dp,
             shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp)
@@ -89,8 +97,17 @@ fun SelectionActionBar(
                         }
                     }
 
+                    // Copy selected exercises
+                    FloatingActionButton(
+                        onClick = onCopy,
+                        containerColor = MaterialTheme.colorScheme.tertiaryContainer,
+                        contentColor = MaterialTheme.colorScheme.onTertiaryContainer
+                    ) {
+                        Icon(Icons.Default.ContentCopy, contentDescription = "Copy selected")
+                    }
+
                     // Add to Superset (if 2+ selected)
-                    if (canAddToSuperset) {
+                    if (showAddToSuperset) {
                         ExtendedFloatingActionButton(
                             onClick = onAddToSuperset,
                             containerColor = MaterialTheme.colorScheme.primaryContainer,

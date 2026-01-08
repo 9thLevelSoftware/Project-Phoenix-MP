@@ -2750,7 +2750,8 @@ class MainViewModel constructor(
                                     exerciseName = exercise?.name ?: "Unknown Exercise",
                                     weightPerCableKg = measuredPerCableKg,
                                     reps = working,
-                                    workoutMode = workoutMode
+                                    workoutMode = workoutMode,
+                                    brokenPRTypes = brokenPRs
                                 )
                             )
                             Logger.d("NEW PR ($prTypeDescription): ${exercise?.name} - $measuredPerCableKg kg x $working reps in $workoutMode mode")

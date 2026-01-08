@@ -381,6 +381,21 @@ class ExerciseConfigViewModel constructor(
         logDebug("Rest times to save: $restTimes")
         logDebug("Weights to save: ${_sets.value.map { displayToKg(it.weightPerCable, weightUnit) }}")
 
+        val existingPercentages = originalExercise.setWeightsPercentOfPR
+        val hasCustomPercentages = existingPercentages.isNotEmpty() &&
+            existingPercentages.any { it != originalExercise.weightPercentOfPR }
+        val resolvedSetWeightsPercentOfPR = if (_usePercentOfPR.value) {
+            if (hasCustomPercentages) {
+                List(_sets.value.size) { index ->
+                    existingPercentages.getOrNull(index) ?: _weightPercentOfPR.value
+                }
+            } else {
+                List(_sets.value.size) { _weightPercentOfPR.value }
+            }
+        } else {
+            emptyList()
+        }
+
         val updatedExercise = originalExercise.copy(
             setReps = _sets.value.map { it.reps },
             weightPerCableKg = displayToKg(_sets.value.first().weightPerCable, weightUnit),
@@ -399,7 +414,8 @@ class ExerciseConfigViewModel constructor(
             // PR percentage scaling fields (Issue #57)
             usePercentOfPR = _usePercentOfPR.value,
             weightPercentOfPR = _weightPercentOfPR.value,
-            prTypeForScaling = _prTypeForScaling.value
+            prTypeForScaling = _prTypeForScaling.value,
+            setWeightsPercentOfPR = resolvedSetWeightsPercentOfPR
         )
 
         logDebug("Updated exercise to save:")

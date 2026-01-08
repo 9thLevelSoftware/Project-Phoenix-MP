@@ -121,20 +121,28 @@ data class RoutineExercise(
 
     /**
      * Resolve per-set weights given current PR value.
-     * If usePercentOfPR is true and per-set percentages are defined, calculates each set's weight.
-     * Otherwise falls back to setWeightsPerCableKg (or weightPerCableKg if that's also empty).
+     * If usePercentOfPR is true, applies per-set percentages when available,
+     * otherwise applies the base weightPercentOfPR to all sets.
+     * Falls back to setWeightsPerCableKg (or weightPerCableKg if empty) when PR is unavailable.
      *
      * @param currentPR The current PR value in kg (from PersonalRecord based on prTypeForScaling)
      * @return List of resolved weights in kg, each rounded to nearest 0.5kg increment
      */
     fun resolveSetWeights(currentPR: Float?): List<Float> {
-        return if (usePercentOfPR && currentPR != null && currentPR > 0 && setWeightsPercentOfPR.isNotEmpty()) {
-            setWeightsPercentOfPR.map { percent ->
+        if (usePercentOfPR && currentPR != null && currentPR > 0) {
+            val percents = if (setWeightsPercentOfPR.isNotEmpty()) {
+                List(sets) { index ->
+                    setWeightsPercentOfPR.getOrNull(index) ?: weightPercentOfPR
+                }
+            } else {
+                List(sets) { weightPercentOfPR }
+            }
+            return percents.map { percent ->
                 if (percent > 0) (currentPR * percent / 100f).roundToHalfKg() else weightPerCableKg
             }
-        } else {
-            setWeightsPerCableKg.ifEmpty { List(sets) { weightPerCableKg } }
         }
+
+        return setWeightsPerCableKg.ifEmpty { List(sets) { weightPerCableKg } }
     }
 }
 

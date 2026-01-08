@@ -477,7 +477,7 @@ class ResolveRoutineWeightsUseCaseTest {
     }
 
     @Test
-    fun `set weights fallback to absolute weight when no per-set percentages defined`() = runTest {
+    fun `set weights default to base percentage when no per-set percentages defined`() = runTest {
         // Given: Exercise uses PR percentage for base weight, but no per-set percentages
         prRepository.addRecord(
             PersonalRecord(
@@ -515,11 +515,10 @@ class ResolveRoutineWeightsUseCaseTest {
         assertEquals(40f, result.baseWeight)
         assertTrue(result.isFromPR)
 
-        // Per-set weights fall back to absolute weightPerCableKg when no setWeightsPercentOfPR defined
-        // This is by design - the resolveSetWeights() method uses weightPerCableKg as fallback
+        // Per-set weights default to base percentage when no setWeightsPercentOfPR defined
         assertEquals(3, result.setWeights.size)
         result.setWeights.forEach { weight ->
-            assertEquals(30f, weight) // Falls back to weightPerCableKg, not PR-resolved weight
+            assertEquals(40f, weight) // Uses base 80% of PR for all sets
         }
     }
 }

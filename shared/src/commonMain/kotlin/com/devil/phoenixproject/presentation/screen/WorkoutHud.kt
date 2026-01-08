@@ -402,12 +402,18 @@ private fun ExecutionPage(
             // For other modes, totalLoad from the monitor characteristic is reliable.
             val perCableKg = if (isEchoMode && echoForceKgMax > 0f) {
                 echoForceKgMax
-            } else if (cableConfig == CableConfiguration.SINGLE) {
-                // Single cable exercise - show the active cable's load
-                maxOf(metric.loadA, metric.loadB)
             } else {
-                // Double cable - average per cable
-                metric.totalLoad / 2f
+                when (cableConfig) {
+                    CableConfiguration.SINGLE,
+                    CableConfiguration.EITHER -> {
+                        // Single cable exercise - show the active cable's load
+                        maxOf(metric.loadA, metric.loadB)
+                    }
+                    CableConfiguration.DOUBLE -> {
+                        // Double cable - average per cable
+                        metric.totalLoad / 2f
+                    }
+                }
             }
             val targetWeight = workoutParameters.weightPerCableKg
             val gaugeMax = (targetWeight * 1.5f).coerceAtLeast(20f)

@@ -18,6 +18,8 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -48,6 +50,7 @@ fun ConnectionLogsScreen(
     val isLoggingEnabled by logsViewModel.isLoggingEnabled.collectAsState()
 
     val listState = rememberLazyListState()
+    val clipboardManager = LocalClipboardManager.current
 
     var showExportDialog by remember { mutableStateOf(false) }
     var showClearDialog by remember { mutableStateOf(false) }
@@ -239,7 +242,7 @@ fun ConnectionLogsScreen(
             },
             confirmButton = {
                 TextButton(onClick = {
-                    // In real app, trigger platform-specific share sheet
+                    clipboardManager.setText(AnnotatedString(exportContent))
                     showExportDialog = false
                 }) {
                     Text("Copy to Clipboard")

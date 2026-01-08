@@ -33,6 +33,7 @@ import com.devil.phoenixproject.presentation.viewmodel.SetConfiguration
 import com.devil.phoenixproject.presentation.viewmodel.SetMode
 import com.devil.phoenixproject.ui.theme.Spacing
 import kotlinx.coroutines.launch
+import kotlin.math.roundToInt
 
 /**
  * Exercise configuration bottom sheet for SingleExerciseScreen
@@ -1077,7 +1078,7 @@ fun WeightConfigurationCard(
 
                 // Calculate resolved weight
                 val resolvedWeight = (currentExercisePR.weightPerCableKg * weightPercentOfPR / 100f)
-                    .let { (it * 2).toInt() / 2f } // Round to 0.5kg
+                    .let { (it * 2).roundToInt() / 2f } // Round to 0.5kg
 
                 // Display current percentage and resolved weight
                 Row(
