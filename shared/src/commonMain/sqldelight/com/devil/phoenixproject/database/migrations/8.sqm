@@ -1,4 +1,4 @@
--- Migration 7: Add sync tracking fields for cloud sync
+-- Migration 8: Add sync tracking fields for cloud sync
 -- Adds updatedAt, serverId, deletedAt to sync-enabled tables
 
 -- WorkoutSession sync fields
