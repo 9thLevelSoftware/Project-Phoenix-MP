@@ -1,7 +1,9 @@
 package com.devil.phoenixproject.presentation.components
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.IntrinsicSize
@@ -21,6 +23,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.shadow
@@ -50,8 +53,13 @@ import com.devil.phoenixproject.domain.model.ProgramMode
  * @param onClick Called when the row is tapped
  * @param onMenuClick Called when the menu button is tapped
  * @param dragModifier Modifier for the drag handle (for drag-and-drop)
+ * @param isSelectionMode Whether selection mode is active
+ * @param isSelected Whether this exercise is currently selected
+ * @param onLongPress Called when long-pressed (to enter selection mode)
+ * @param onSelectionToggle Called to toggle selection state
  * @param modifier Optional modifier for the component
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun ExerciseRowWithConnector(
     exercise: RoutineExercise,
@@ -65,6 +73,11 @@ fun ExerciseRowWithConnector(
     onClick: () -> Unit,
     onMenuClick: () -> Unit,
     dragModifier: Modifier,
+    // Selection mode support
+    isSelectionMode: Boolean = false,
+    isSelected: Boolean = false,
+    onLongPress: () -> Unit = {},
+    onSelectionToggle: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     Row(
@@ -73,7 +86,18 @@ fun ExerciseRowWithConnector(
             .height(IntrinsicSize.Min)
             .shadow(elevation, RoundedCornerShape(12.dp))
             .background(MaterialTheme.colorScheme.background)
-            .clickable(onClick = onClick),
+            .combinedClickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                onClick = {
+                    if (isSelectionMode) onSelectionToggle()
+                    else onClick()
+                },
+                onLongClick = {
+                    if (!isSelectionMode) onLongPress()
+                    else onSelectionToggle()
+                }
+            ),
         verticalAlignment = Alignment.CenterVertically
     ) {
         // Connector column (if in superset)
