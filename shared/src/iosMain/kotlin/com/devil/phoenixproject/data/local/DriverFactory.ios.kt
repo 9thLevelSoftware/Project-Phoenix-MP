@@ -53,6 +53,9 @@ actual class DriverFactory {
         ensureRoutineExercisePRColumnsExist(driver)
         // Data migration: Legacy superset data
         migrateLegacySupersetData(driver)
+        // Migration 8 fixes
+        cleanupInvalidSupersetData(driver)
+        fixProgressionEventIndex(driver)
 
         // Now enable foreign keys for normal operation
         try {
@@ -673,6 +676,38 @@ actual class DriverFactory {
         } catch (e: Exception) {
             NSLog("iOS DB ERROR: Failed to migrate legacy superset data: ${e.message}")
             // Don't throw - app should still work, just without legacy superset data
+        }
+    }
+
+    /**
+     * Clean up invalid Superset data from Migration 4.
+     * Migration 4 didn't filter empty strings, creating invalid Superset rows.
+     */
+    private fun cleanupInvalidSupersetData(driver: SqlDriver) {
+        try {
+            // Clear invalid supersetId references
+            driver.execute(null, "UPDATE RoutineExercise SET supersetId = NULL WHERE supersetId = ''", 0)
+            // Delete invalid Superset rows
+            driver.execute(null, "DELETE FROM Superset WHERE id = ''", 0)
+            NSLog("iOS DB: Cleaned up invalid Superset data")
+        } catch (e: Exception) {
+            NSLog("iOS DB: Superset cleanup note: ${e.message}")
+        }
+    }
+
+    /**
+     * Fix ProgressionEvent index name inconsistency.
+     * Migration 6 created idx_progression_event_exercise but schema uses idx_progression_exercise.
+     */
+    private fun fixProgressionEventIndex(driver: SqlDriver) {
+        try {
+            // Drop incorrectly named index
+            driver.execute(null, "DROP INDEX IF EXISTS idx_progression_event_exercise", 0)
+            // Ensure correctly named index exists
+            driver.execute(null, "CREATE INDEX IF NOT EXISTS idx_progression_exercise ON ProgressionEvent(exercise_id)", 0)
+            NSLog("iOS DB: ProgressionEvent index standardized")
+        } catch (e: Exception) {
+            NSLog("iOS DB: Index fix note: ${e.message}")
         }
     }
 }
