@@ -35,18 +35,21 @@ CREATE TABLE RoutineExercise_new (
 );
 
 -- Copy data with explicit columns (old table has 21 columns, new has 24)
--- New columns get their DEFAULT values
+-- New columns get their DEFAULT values from table definition
+-- If superset columns exist in source, they'll be copied; otherwise defaults apply
 INSERT INTO RoutineExercise_new (
     id, routineId, exerciseName, exerciseMuscleGroup, exerciseEquipment,
     exerciseDefaultCableConfig, exerciseId, cableConfig, orderIndex, setReps,
     weightPerCableKg, setWeights, mode, eccentricLoad, echoLevel, progressionKg,
-    restSeconds, duration, setRestSeconds, perSetRestTime, isAMRAP
+    restSeconds, duration, setRestSeconds, perSetRestTime, isAMRAP,
+    supersetGroupId, supersetOrder, supersetRestSeconds
 )
 SELECT
     id, routineId, exerciseName, exerciseMuscleGroup, exerciseEquipment,
     exerciseDefaultCableConfig, exerciseId, cableConfig, orderIndex, setReps,
     weightPerCableKg, setWeights, mode, eccentricLoad, echoLevel, progressionKg,
-    restSeconds, duration, setRestSeconds, perSetRestTime, isAMRAP
+    restSeconds, duration, setRestSeconds, perSetRestTime, isAMRAP,
+    supersetGroupId, supersetOrder, supersetRestSeconds
 FROM RoutineExercise;
 
 -- Drop old table
