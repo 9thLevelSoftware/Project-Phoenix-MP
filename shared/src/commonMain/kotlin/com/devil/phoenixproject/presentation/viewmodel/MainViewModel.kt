@@ -1803,7 +1803,9 @@ class MainViewModel constructor(
         // Get weight for this set
         val setWeight = exercise.setWeightsPerCableKg.getOrNull(setIndex)
             ?: exercise.weightPerCableKg
-        val setReps = exercise.setReps.getOrNull(setIndex) ?: exercise.reps
+        // Issue #129: Check raw value for AMRAP before fallback
+        val rawSetReps = exercise.setReps.getOrNull(setIndex)
+        val setReps = rawSetReps ?: exercise.reps
 
         _routineFlowState.value = RoutineFlowState.SetReady(
             exerciseIndex = exerciseIndex,
@@ -1814,6 +1816,10 @@ class MainViewModel constructor(
             eccentricLoadPercent = if (exercise.programMode is ProgramMode.Echo) exercise.eccentricLoad.percentage else null
         )
 
+        // Issue #129: Determine if this specific set is AMRAP (null reps = AMRAP)
+        val isSetAmrap = rawSetReps == null
+        Logger.d { "enterSetReady: exercise=${exercise.exercise.name}, set=$setIndex, isAMRAP=$isSetAmrap, stallDetection=${exercise.stallDetectionEnabled}" }
+
         // Update workout parameters for this set
         _workoutParameters.value = _workoutParameters.value.copy(
             programMode = exercise.programMode,
@@ -1822,7 +1828,8 @@ class MainViewModel constructor(
             echoLevel = exercise.echoLevel,
             eccentricLoad = exercise.eccentricLoad,
             selectedExerciseId = exercise.exercise.id,
-            stallDetectionEnabled = exercise.stallDetectionEnabled
+            stallDetectionEnabled = exercise.stallDetectionEnabled,
+            isAMRAP = isSetAmrap  // Issue #129: Set per-set AMRAP flag
         )
     }
 
@@ -1845,6 +1852,11 @@ class MainViewModel constructor(
             eccentricLoadPercent = if (exercise.programMode is ProgramMode.Echo) exercise.eccentricLoad.percentage else null
         )
 
+        // Issue #129: Check raw value for AMRAP - null reps in setReps list = AMRAP
+        val rawSetReps = exercise.setReps.getOrNull(setIndex)
+        val isSetAmrap = rawSetReps == null
+        Logger.d { "enterSetReadyWithAdjustments: exercise=${exercise.exercise.name}, set=$setIndex, isAMRAP=$isSetAmrap, stallDetection=${exercise.stallDetectionEnabled}" }
+
         // Update workout parameters with adjusted values
         _workoutParameters.value = _workoutParameters.value.copy(
             programMode = exercise.programMode,
@@ -1853,7 +1865,8 @@ class MainViewModel constructor(
             echoLevel = exercise.echoLevel,
             eccentricLoad = exercise.eccentricLoad,
             selectedExerciseId = exercise.exercise.id,
-            stallDetectionEnabled = exercise.stallDetectionEnabled
+            stallDetectionEnabled = exercise.stallDetectionEnabled,
+            isAMRAP = isSetAmrap  // Issue #129: Set per-set AMRAP flag
         )
     }
 
