@@ -1780,6 +1780,30 @@ class MainViewModel constructor(
     }
 
     /**
+     * Update echo level in set-ready state for Echo mode.
+     */
+    fun updateSetReadyEchoLevel(level: EchoLevel) {
+        val state = _routineFlowState.value
+        if (state is RoutineFlowState.SetReady) {
+            _routineFlowState.value = state.copy(echoLevel = level)
+            _workoutParameters.value = _workoutParameters.value.copy(echoLevel = level)
+        }
+    }
+
+    /**
+     * Update eccentric load percentage in set-ready state for Echo mode.
+     */
+    fun updateSetReadyEccentricLoad(percent: Int) {
+        val state = _routineFlowState.value
+        if (state is RoutineFlowState.SetReady) {
+            _routineFlowState.value = state.copy(eccentricLoadPercent = percent)
+            val load = EccentricLoad.entries.minByOrNull { kotlin.math.abs(it.percentage - percent) }
+                ?: EccentricLoad.LOAD_100
+            _workoutParameters.value = _workoutParameters.value.copy(eccentricLoad = load)
+        }
+    }
+
+    /**
      * Navigate to previous set/exercise in set-ready.
      */
     fun setReadyPrev() {
