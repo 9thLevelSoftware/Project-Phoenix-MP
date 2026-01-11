@@ -10,19 +10,24 @@ import platform.Foundation.NSLog
 
 actual class DriverFactory {
     actual fun createDriver(): SqlDriver {
-        // IMPORTANT: Previous implementation had a critical bug where Phase 2 used an empty
-        // upgrade callback `upgrade = { _, _, _ -> }`. This caused data loss because:
-        // 1. If Phase 1 failed, Phase 2 would mark the DB as "migrated" without running migrations
-        // 2. Database version was updated but schema remained old/incomplete
-        // 3. Future app launches skipped migrations (version matched) leaving DB corrupted
+        // CRITICAL FIX (Jan 2026): Migration exceptions on iOS worker threads abort the app
+        // before try-catch can intercept them. The NativeSqliteDriver runs migrations during
+        // construction on worker threads - exceptions propagate through Kotlin/Native's
+        // coroutine machinery to terminateWithUnhandledException, bypassing try-catch.
         //
-        // FIX: Use a single driver creation with resilient migration handling.
-        // Let SQLDelight run migrations normally, then use fallback functions to fix any gaps.
-        // If migrations fail, catch the error and use manual recovery.
+        // Solution: Pre-add columns BEFORE running SQLDelight migrations. We:
+        // 1. Open DB with no-op schema (no migrations)
+        // 2. Add all columns that migrations expect to exist
+        // 3. Close that connection
+        // 4. Open DB normally - migrations now succeed since columns exist
 
-        NSLog("iOS DB: Creating driver with resilient migration handling")
+        NSLog("iOS DB: Creating driver with pre-migration column fixes")
 
-        // Try normal driver creation with SQLDelight migrations
+        // Phase 1: Pre-add columns that migrations expect
+        // This prevents "no such column" crashes during Migration 10
+        preMigrationColumnFixes()
+
+        // Phase 2: Now open with full schema - migrations should succeed
         val driver = try {
             NativeSqliteDriver(
                 schema = VitruvianDatabase.Schema,
@@ -907,5 +912,145 @@ actual class DriverFactory {
         }
 
         NSLog("iOS DB: Gamification tables verified/created")
+    }
+
+    /**
+     * CRITICAL FIX (Jan 2026): Pre-add columns BEFORE SQLDelight migrations run.
+     *
+     * Problem: Migration 10 expects columns (supersetId, orderInSuperset, usePercentOfPR, etc.)
+     * to exist in RoutineExercise. If earlier migrations failed silently, these columns
+     * don't exist and Migration 10 crashes with "no such column" error.
+     *
+     * The iOS NativeSqliteDriver runs migrations on worker threads - exceptions propagate
+     * through Kotlin/Native coroutine machinery and abort the app BEFORE try-catch can
+     * intercept them.
+     *
+     * Solution: Open DB with no-op schema, add all required columns, close, then let
+     * SQLDelight open it properly. Migrations will now succeed since columns exist.
+     */
+    private fun preMigrationColumnFixes() {
+        NSLog("iOS DB: Running pre-migration column fixes...")
+
+        // Open database with no-op schema that doesn't run any migrations
+        val noOpSchema = object : SqlSchema<QueryResult.Value<Unit>> {
+            override val version: Long = 1L  // Low version, won't trigger migrations
+
+            override fun create(driver: SqlDriver): QueryResult.Value<Unit> {
+                // Don't create anything - DB already exists
+                return QueryResult.Value(Unit)
+            }
+
+            override fun migrate(
+                driver: SqlDriver,
+                oldVersion: Long,
+                newVersion: Long,
+                vararg callbacks: app.cash.sqldelight.db.AfterVersion
+            ): QueryResult.Value<Unit> {
+                // Don't run any migrations
+                return QueryResult.Value(Unit)
+            }
+        }
+
+        val preDriver: SqlDriver
+        try {
+            preDriver = NativeSqliteDriver(
+                schema = noOpSchema,
+                name = "vitruvian.db",
+                onConfiguration = { config ->
+                    config.copy(
+                        // Don't run create/upgrade, just open
+                        create = { _ -> },
+                        upgrade = { _, _, _ -> },
+                        extendedConfig = DatabaseConfiguration.Extended(
+                            foreignKeyConstraints = false
+                        )
+                    )
+                }
+            )
+        } catch (e: Exception) {
+            NSLog("iOS DB: Pre-migration driver failed (fresh install?): ${e.message}")
+            // If we can't open the database, it's likely a fresh install - migrations will handle it
+            return
+        }
+
+        try {
+            // Pre-add columns that Migration 10 expects to exist in RoutineExercise
+            // These are added by migrations 4 and 7, but may be missing if those failed
+
+            // Superset columns from Migration 4
+            safeAddColumn(preDriver, "RoutineExercise", "supersetId", "TEXT")
+            safeAddColumn(preDriver, "RoutineExercise", "orderInSuperset", "INTEGER NOT NULL DEFAULT 0")
+
+            // PR percentage columns from Migration 7
+            safeAddColumn(preDriver, "RoutineExercise", "usePercentOfPR", "INTEGER NOT NULL DEFAULT 0")
+            safeAddColumn(preDriver, "RoutineExercise", "weightPercentOfPR", "INTEGER NOT NULL DEFAULT 80")
+            safeAddColumn(preDriver, "RoutineExercise", "prTypeForScaling", "TEXT NOT NULL DEFAULT 'MAX_WEIGHT'")
+            safeAddColumn(preDriver, "RoutineExercise", "setWeightsPercentOfPR", "TEXT")
+
+            // Ensure Superset table exists (Migration 4 creates it)
+            try {
+                preDriver.execute(null, """
+                    CREATE TABLE IF NOT EXISTS Superset (
+                        id TEXT PRIMARY KEY NOT NULL,
+                        routineId TEXT NOT NULL,
+                        name TEXT NOT NULL,
+                        colorIndex INTEGER NOT NULL DEFAULT 0,
+                        restBetweenSeconds INTEGER NOT NULL DEFAULT 10,
+                        orderIndex INTEGER NOT NULL,
+                        FOREIGN KEY (routineId) REFERENCES Routine(id) ON DELETE CASCADE
+                    )
+                """.trimIndent(), 0)
+                preDriver.execute(null, "CREATE INDEX IF NOT EXISTS idx_superset_routine ON Superset(routineId)", 0)
+            } catch (e: Exception) {
+                NSLog("iOS DB Pre-migration: Superset table note: ${e.message}")
+            }
+
+            NSLog("iOS DB: Pre-migration column fixes complete")
+        } catch (e: Exception) {
+            NSLog("iOS DB ERROR: Pre-migration fixes failed: ${e.message}")
+        } finally {
+            // Close the pre-migration driver
+            try {
+                preDriver.close()
+            } catch (e: Exception) {
+                NSLog("iOS DB: Pre-driver close note: ${e.message}")
+            }
+        }
+    }
+
+    /**
+     * Safely add a column to a table, ignoring errors if it already exists.
+     */
+    private fun safeAddColumn(driver: SqlDriver, table: String, column: String, type: String) {
+        try {
+            // First check if column already exists
+            var exists = false
+            driver.executeQuery(
+                null,
+                "PRAGMA table_info($table)",
+                { cursor ->
+                    while (cursor.next().value) {
+                        val name = cursor.getString(1)
+                        if (name == column) {
+                            exists = true
+                            break
+                        }
+                    }
+                    app.cash.sqldelight.db.QueryResult.Value(Unit)
+                },
+                0
+            )
+
+            if (!exists) {
+                driver.execute(null, "ALTER TABLE $table ADD COLUMN $column $type", 0)
+                NSLog("iOS DB Pre-migration: Added $table.$column")
+            }
+        } catch (e: Exception) {
+            val msg = e.message ?: ""
+            if (!msg.contains("duplicate column", ignoreCase = true) &&
+                !msg.contains("no such table", ignoreCase = true)) {
+                NSLog("iOS DB Pre-migration: $table.$column note: $msg")
+            }
+        }
     }
 }
