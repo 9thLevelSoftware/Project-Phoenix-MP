@@ -7,6 +7,9 @@ import app.cash.sqldelight.driver.native.NativeSqliteDriver
 import co.touchlab.sqliter.DatabaseConfiguration
 import com.devil.phoenixproject.database.VitruvianDatabase
 import platform.Foundation.NSLog
+import platform.Foundation.NSFileManager
+import platform.Foundation.NSLibraryDirectory
+import platform.Foundation.NSUserDomainMask
 
 actual class DriverFactory {
     actual fun createDriver(): SqlDriver {
@@ -927,8 +930,23 @@ actual class DriverFactory {
      *
      * Solution: Open DB with no-op schema, add all required columns, close, then let
      * SQLDelight open it properly. Migrations will now succeed since columns exist.
+     *
+     * CRITICAL (Jan 2026 - Fresh Install Fix): For BRAND NEW users, the database doesn't exist.
+     * If we open it with a no-op schema, SQLite creates the file and sets version = 1,
+     * but creates NO TABLES. Then SQLDelight sees version 1 < 11 and runs migrations
+     * against an EMPTY database, causing crashes. For fresh installs, we MUST let
+     * SQLDelight create the schema properly - skip pre-migration fixes entirely.
      */
     private fun preMigrationColumnFixes() {
+        // CRITICAL: Check if database exists BEFORE trying to open it
+        // For fresh installs, we must let SQLDelight create the schema from scratch
+        val dbPath = getDatabasePath()
+        val fileManager = NSFileManager.defaultManager
+        if (!fileManager.fileExistsAtPath(dbPath)) {
+            NSLog("iOS DB: Fresh install detected (no database file), skipping pre-migration fixes")
+            return
+        }
+
         NSLog("iOS DB: Running pre-migration column fixes...")
 
         // Open database with no-op schema that doesn't run any migrations
@@ -1290,5 +1308,18 @@ actual class DriverFactory {
                 driver.execute(null, "DROP TABLE IF EXISTS CycleProgress_premig_backup", 0)
             } catch (_: Exception) {}
         }
+    }
+
+    /**
+     * Get the path where SQLite database will be stored.
+     * NativeSqliteDriver stores databases in the app's Library directory by default.
+     */
+    private fun getDatabasePath(): String {
+        val fileManager = NSFileManager.defaultManager
+        val urls = fileManager.URLsForDirectory(NSLibraryDirectory, NSUserDomainMask)
+        @Suppress("UNCHECKED_CAST")
+        val libraryUrl = (urls as List<platform.Foundation.NSURL>).firstOrNull()
+        val libraryPath = libraryUrl?.path ?: ""
+        return "$libraryPath/vitruvian.db"
     }
 }
