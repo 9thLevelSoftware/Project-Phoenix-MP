@@ -17,13 +17,51 @@ DELETE FROM Superset WHERE id = '';
 -- ============================================================
 -- FIX 2: Ensure CycleDay has all columns
 -- Migration 6 used CREATE TABLE IF NOT EXISTS which doesn't add
--- missing columns to existing tables
+-- missing columns to existing tables. We use Copy-Drop-Recreate.
 -- ============================================================
 
--- Note: SQLite ALTER TABLE ADD COLUMN is idempotent-ish in newer versions,
--- but older SQLite will error on duplicate column. SQLDelight handles this
--- at the driver level, so we rely on driver fallbacks for this.
--- These are here for documentation and fresh installs.
+-- Create temp table to hold existing data (BASE columns only)
+CREATE TABLE IF NOT EXISTS CycleDay_fix8_temp (
+    id TEXT PRIMARY KEY NOT NULL,
+    cycle_id TEXT NOT NULL,
+    day_number INTEGER NOT NULL,
+    name TEXT,
+    routine_id TEXT,
+    is_rest_day INTEGER NOT NULL DEFAULT 0
+);
+
+-- Copy existing data (if CycleDay exists)
+INSERT OR IGNORE INTO CycleDay_fix8_temp (id, cycle_id, day_number, name, routine_id, is_rest_day)
+SELECT id, cycle_id, day_number, name, routine_id, is_rest_day FROM CycleDay;
+
+-- Drop the potentially broken table
+DROP TABLE IF EXISTS CycleDay;
+
+-- Recreate with full schema including new columns
+CREATE TABLE CycleDay (
+    id TEXT PRIMARY KEY NOT NULL,
+    cycle_id TEXT NOT NULL,
+    day_number INTEGER NOT NULL,
+    name TEXT,
+    routine_id TEXT,
+    is_rest_day INTEGER NOT NULL DEFAULT 0,
+    echo_level TEXT,
+    eccentric_load_percent INTEGER,
+    weight_progression_percent REAL,
+    rep_modifier INTEGER,
+    rest_time_override_seconds INTEGER,
+    FOREIGN KEY (cycle_id) REFERENCES TrainingCycle(id) ON DELETE CASCADE,
+    FOREIGN KEY (routine_id) REFERENCES Routine(id) ON DELETE SET NULL
+);
+
+-- Restore data from temp (new columns get default NULL values)
+INSERT OR IGNORE INTO CycleDay (id, cycle_id, day_number, name, routine_id, is_rest_day)
+SELECT id, cycle_id, day_number, name, routine_id, is_rest_day FROM CycleDay_fix8_temp;
+
+-- Clean up temp table
+DROP TABLE IF EXISTS CycleDay_fix8_temp;
+
+CREATE INDEX IF NOT EXISTS idx_cycle_day_cycle ON CycleDay(cycle_id);
 
 -- ============================================================
 -- FIX 3: Standardize ProgressionEvent index name
