@@ -1949,15 +1949,54 @@ class KableBleRepository : BleRepository {
             lastTimestamp = currentTime
 
             // Create metric with SMOOTHED velocity (absolute value for backwards compatibility)
+            // Issue #144: For single-cable exercises, use max(posA, posB) for both channels
+            // This matches the official Vitruvian app behavior: "Max of left/right for position/force"
+            // This ensures the position bar shows movement regardless of which physical cable is used,
+            // since the machine may report position on either channel for single-cable exercises.
+            val effectivePosA: Float
+            val effectivePosB: Float
+            val effectiveVelA: Double
+            val effectiveVelB: Double
+
+            when (currentCableConfig) {
+                com.devil.phoenixproject.domain.model.CableConfiguration.SINGLE,
+                com.devil.phoenixproject.domain.model.CableConfiguration.EITHER -> {
+                    // Use max position/velocity for single-cable exercises (matches official app)
+                    val maxPos = maxOf(posA, posB)
+                    val maxVel = if (kotlin.math.abs(smoothedVelocityA) > kotlin.math.abs(smoothedVelocityB)) {
+                        smoothedVelocityA
+                    } else {
+                        smoothedVelocityB
+                    }
+                    effectivePosA = maxPos
+                    effectivePosB = maxPos
+                    effectiveVelA = maxVel
+                    effectiveVelB = maxVel
+                }
+                com.devil.phoenixproject.domain.model.CableConfiguration.DOUBLE -> {
+                    // Two-cable exercises: use each channel independently
+                    effectivePosA = posA
+                    effectivePosB = posB
+                    effectiveVelA = smoothedVelocityA
+                    effectiveVelB = smoothedVelocityB
+                }
+            }
+
+            // Log position values periodically for single-cable debugging (Issue #144)
+            if (monitorNotificationCount % 200 == 0L &&
+                currentCableConfig != com.devil.phoenixproject.domain.model.CableConfiguration.DOUBLE) {
+                log.i { "📊 SINGLE-CABLE POSITION: raw(A=$posA, B=$posB) -> max=$effectivePosA config=$currentCableConfig" }
+            }
+
             val metric = WorkoutMetric(
                 timestamp = currentTime,
                 loadA = loadA,
                 loadB = loadB,
-                positionA = posA,
-                positionB = posB,
+                positionA = effectivePosA,
+                positionB = effectivePosB,
                 ticks = ticks,
-                velocityA = smoothedVelocityA,  // Smoothed, signed velocity
-                velocityB = smoothedVelocityB,  // Smoothed, signed velocity
+                velocityA = effectiveVelA,  // Smoothed, signed velocity
+                velocityB = effectiveVelB,  // Smoothed, signed velocity
                 status = status
             )
 

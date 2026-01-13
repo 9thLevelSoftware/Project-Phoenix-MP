@@ -663,6 +663,29 @@ class MainViewModel constructor(
         }
 
         val currentPositions = _currentMetric.value
+        val rawPosA = currentPositions?.positionA ?: 0f
+        val rawPosB = currentPositions?.positionB ?: 0f
+
+        // Issue #144: Apply max(posA, posB) for single-cable exercises to handle race condition
+        // between metrics flow and rep events flow. The metrics flow applies this fix at the
+        // BLE layer, but rep events might arrive before the updated metric, causing stale
+        // position data to be used for ROM range calculation.
+        val currentExercise = getCurrentExercise()
+        val cableConfig = currentExercise?.cableConfig
+            ?: com.devil.phoenixproject.domain.model.CableConfiguration.DOUBLE
+
+        val (effectivePosA, effectivePosB) = when (cableConfig) {
+            com.devil.phoenixproject.domain.model.CableConfiguration.SINGLE,
+            com.devil.phoenixproject.domain.model.CableConfiguration.EITHER -> {
+                // Use max position for single-cable exercises (matches official app behavior)
+                val maxPos = maxOf(rawPosA, rawPosB)
+                Pair(maxPos, maxPos)
+            }
+            com.devil.phoenixproject.domain.model.CableConfiguration.DOUBLE -> {
+                // Two-cable exercises: use each channel independently
+                Pair(rawPosA, rawPosB)
+            }
+        }
 
         // Use machine's ROM and Set counters directly (official app method)
         // Position values are in mm (Issue #197)
@@ -674,8 +697,8 @@ class MainViewModel constructor(
             repsSetCount = notification.repsSetCount,
             up = notification.topCounter,
             down = notification.completeCounter,
-            posA = currentPositions?.positionA ?: 0f,
-            posB = currentPositions?.positionB ?: 0f,
+            posA = effectivePosA,
+            posB = effectivePosB,
             isLegacyFormat = notification.isLegacyFormat
         )
 
@@ -3075,6 +3098,10 @@ class MainViewModel constructor(
             Logger.d("Set summary: heaviest=${summary.heaviestLiftKgPerCable}kg, reps=$completedReps, duration=${summary.durationMs}ms")
 
             // Handle based on workout mode
+            // Get user's summary countdown preference (0 = Off/no auto-advance)
+            val summaryCountdownSeconds = userPreferences.value.summaryCountdownSeconds
+            val summaryDelayMs = summaryCountdownSeconds * 1000L
+
             if (isJustLift) {
                 // Just Lift mode: Auto-advance to next set after showing summary
                 Logger.d("⏱️ Just Lift: IMMEDIATE reset for next set (while showing summary)")
@@ -3090,20 +3117,24 @@ class MainViewModel constructor(
                 enableHandleDetection()
                 bleRepository.enableJustLiftWaitingMode()
 
-                Logger.d("⏱️ Just Lift: Machine armed & ready. Showing summary for 5s...")
+                Logger.d("⏱️ Just Lift: Machine armed & ready. Showing summary for ${summaryCountdownSeconds}s...")
 
-                // 4. Show summary for 5 seconds (User preference)
+                // 4. Show summary for user's configured duration (0 = no auto-advance)
                 // Note: If user grabs handles during this delay, auto-start logic in handleState collector
                 // will interrupt this and start the next set immediately.
-                delay(5000)
+                if (summaryDelayMs > 0) {
+                    delay(summaryDelayMs)
 
-                // 4. Transition UI to Idle (only if we haven't already started a new set)
-                if (_workoutState.value is WorkoutState.SetSummary) {
-                    Logger.d("⏱️ Just Lift: Summary complete, UI transitioning to Idle")
-                    resetForNewWorkout() // Ensures clean state
-                    _workoutState.value = WorkoutState.Idle
+                    // 5. Transition UI to Idle (only if we haven't already started a new set)
+                    if (_workoutState.value is WorkoutState.SetSummary) {
+                        Logger.d("⏱️ Just Lift: Summary complete, UI transitioning to Idle")
+                        resetForNewWorkout() // Ensures clean state
+                        _workoutState.value = WorkoutState.Idle
+                    } else {
+                        Logger.d("⏱️ Just Lift: Summary interrupted by user action (state is ${_workoutState.value})")
+                    }
                 } else {
-                    Logger.d("⏱️ Just Lift: Summary interrupted by user action (state is ${_workoutState.value})")
+                    Logger.d("⏱️ Just Lift: Summary countdown disabled (0s), waiting for user action")
                 }
             } else if (params.isAMRAP) {
                 // AMRAP mode: Auto-advance to rest timer and next set (like Just Lift)
@@ -3121,13 +3152,18 @@ class MainViewModel constructor(
                 enableHandleDetection()
                 bleRepository.enableJustLiftWaitingMode()
 
-                Logger.d("AMRAP: Machine armed & ready. Showing summary for 5s...")
+                Logger.d("AMRAP: Machine armed & ready. Showing summary for ${summaryCountdownSeconds}s...")
 
-                delay(5000) // Show summary for 5 seconds
+                // Show summary for user's configured duration (0 = no auto-advance)
+                if (summaryDelayMs > 0) {
+                    delay(summaryDelayMs)
 
-                // Auto-start rest timer if we haven't already started a new set
-                if (_workoutState.value is WorkoutState.SetSummary) {
-                    startRestTimer()
+                    // Auto-start rest timer if we haven't already started a new set
+                    if (_workoutState.value is WorkoutState.SetSummary) {
+                        startRestTimer()
+                    }
+                } else {
+                    Logger.d("AMRAP: Summary countdown disabled (0s), waiting for user action")
                 }
             } else {
                 // Routine/Program mode: Let UI countdown handle progression
