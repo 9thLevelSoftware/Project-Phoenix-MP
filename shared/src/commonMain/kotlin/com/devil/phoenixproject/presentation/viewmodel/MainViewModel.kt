@@ -3880,7 +3880,8 @@ class MainViewModel constructor(
 
     /**
      * Progress to the next set or exercise in a routine.
-     * Handles superset progression: cycles through superset exercises before advancing sets.
+     * Issue #156: Refactored to use getNextStep() for unified superset-aware navigation.
+     * This ensures consistent behavior between autoplay ON and OFF modes.
      */
     private fun startNextSetOrExercise() {
         val currentState = _workoutState.value
@@ -3893,204 +3894,66 @@ class MainViewModel constructor(
         bodyweightTimerJob = null
 
         val routine = _loadedRoutine.value ?: return
-        val currentExercise = routine.exercises.getOrNull(_currentExerciseIndex.value) ?: return
 
-        // Check for superset progression
-        if (isInSuperset()) {
-            val nextSupersetIndex = getNextSupersetExerciseIndex()
+        // Issue #156: Use getNextStep() for unified navigation logic
+        // This ensures identical behavior between autoplay ON (this function) and OFF (proceedFromSummary)
+        val nextStep = getNextStep(routine, _currentExerciseIndex.value, _currentSetIndex.value)
 
-            if (nextSupersetIndex != null) {
-                // More exercises in this superset cycle - move to next superset exercise (same set)
-                // Issue #53: Skip exercises that have completed all their sets
-                val nextExercise = routine.exercises[nextSupersetIndex]
-                val nextSetReps = nextExercise.setReps.getOrNull(_currentSetIndex.value)
+        Logger.d { "startNextSetOrExercise: current=(${_currentExerciseIndex.value}, ${_currentSetIndex.value}), nextStep=$nextStep" }
 
-                if (nextSetReps == null && nextExercise.setReps.isNotEmpty()) {
-                    // This exercise has no more sets - find next valid exercise or end cycle
-                    // Recursively find an exercise that still has sets at this index
-                    var candidateIndex = -1
-                    var candidateExercise: com.devil.phoenixproject.domain.model.RoutineExercise? = null
-                    val supersetExercises = getCurrentSupersetExercises()
-                    val startPos = supersetExercises.indexOfFirst { routine.exercises.indexOf(it) == nextSupersetIndex }
+        if (nextStep != null) {
+            val (nextExIdx, nextSetIdx) = nextStep
+            val nextExercise = routine.exercises[nextExIdx]
 
-                    for (i in (startPos + 1) until supersetExercises.size) {
-                        val candidate = supersetExercises[i]
-                        if (candidate.setReps.getOrNull(_currentSetIndex.value) != null) {
-                            candidateIndex = routine.exercises.indexOf(candidate)
-                            candidateExercise = candidate
-                            break
-                        }
-                    }
+            // Determine if we're changing exercises (for counter reset behavior)
+            val isChangingExercise = nextExIdx != _currentExerciseIndex.value
 
-                    if (candidateExercise == null || candidateIndex < 0) {
-                        // No more exercises in this cycle have sets - fall through to next set check
-                    } else {
-                        // Found a valid exercise with sets remaining
-                        _currentExerciseIndex.value = candidateIndex
-                        _userAdjustedWeightDuringRest = false // Issue #108: Reset flag when changing exercises
-                        val setReps = candidateExercise.setReps.getOrNull(_currentSetIndex.value)
-                        val setWeight = candidateExercise.setWeightsPerCableKg.getOrNull(_currentSetIndex.value)
-                            ?: candidateExercise.weightPerCableKg
+            // Update indices
+            _currentExerciseIndex.value = nextExIdx
+            _currentSetIndex.value = nextSetIdx
 
-                        _workoutParameters.value = _workoutParameters.value.copy(
-                            weightPerCableKg = setWeight,
-                            reps = setReps ?: 0,
-                            programMode = candidateExercise.programMode,
-                            echoLevel = candidateExercise.echoLevel,
-                            eccentricLoad = candidateExercise.eccentricLoad,
-                            progressionRegressionKg = candidateExercise.progressionKg,
-                            selectedExerciseId = candidateExercise.exercise.id,
-                            isAMRAP = setReps == null,
-                            stallDetectionEnabled = candidateExercise.stallDetectionEnabled
-                        )
-
-                        repCounter.resetCountsOnly()
-                        resetAutoStopState()
-                        startWorkoutOrSetReady()
-                        return
-                    }
-                } else {
-                    // Normal case - next exercise has sets at this index
-                    _currentExerciseIndex.value = nextSupersetIndex
-                    _userAdjustedWeightDuringRest = false // Issue #108: Reset flag when changing exercises
-                    val nextSetWeight = nextExercise.setWeightsPerCableKg.getOrNull(_currentSetIndex.value)
-                        ?: nextExercise.weightPerCableKg
-
-                    _workoutParameters.value = _workoutParameters.value.copy(
-                        weightPerCableKg = nextSetWeight,
-                        reps = nextSetReps ?: 0,
-                        programMode = nextExercise.programMode,
-                        echoLevel = nextExercise.echoLevel,
-                        eccentricLoad = nextExercise.eccentricLoad,
-                        progressionRegressionKg = nextExercise.progressionKg,
-                        selectedExerciseId = nextExercise.exercise.id,
-                        isAMRAP = nextSetReps == null,
-                        stallDetectionEnabled = nextExercise.stallDetectionEnabled
-                    )
-
-                    repCounter.resetCountsOnly()
-                    resetAutoStopState()
-                    startWorkoutOrSetReady()
-                    return
-                }
-            }
-
-            // End of superset cycle or no valid exercises found - check if more sets in superset
-            // Issue #53: Use maxOfOrNull to ensure all exercises complete all their sets
-            val supersetExercises = getCurrentSupersetExercises()
-            val maxSetsInSuperset = supersetExercises.maxOfOrNull { it.setReps.size } ?: 0
-
-            if (_currentSetIndex.value < maxSetsInSuperset - 1) {
-                // More sets in superset - find first exercise that has a set at the next index
-                _currentSetIndex.value++
-                val nextSetIndex = _currentSetIndex.value
-
-                // Find the first exercise in the superset that has this set
-                var targetExercise: com.devil.phoenixproject.domain.model.RoutineExercise? = null
-                var targetIndex = -1
-                for (exercise in supersetExercises) {
-                    if (exercise.setReps.getOrNull(nextSetIndex) != null) {
-                        targetExercise = exercise
-                        targetIndex = routine.exercises.indexOf(exercise)
-                        break
-                    }
-                }
-
-                if (targetExercise != null && targetIndex >= 0) {
-                    _currentExerciseIndex.value = targetIndex
-                    _userAdjustedWeightDuringRest = false // Issue #108: Reset flag when changing exercises
-                    val nextSetReps = targetExercise.setReps.getOrNull(nextSetIndex)
-                    val nextSetWeight = targetExercise.setWeightsPerCableKg.getOrNull(nextSetIndex)
-                        ?: targetExercise.weightPerCableKg
-
-                    _workoutParameters.value = _workoutParameters.value.copy(
-                        weightPerCableKg = nextSetWeight,
-                        reps = nextSetReps ?: 0,
-                        programMode = targetExercise.programMode,
-                        echoLevel = targetExercise.echoLevel,
-                        eccentricLoad = targetExercise.eccentricLoad,
-                        progressionRegressionKg = targetExercise.progressionKg,
-                        selectedExerciseId = targetExercise.exercise.id,
-                        isAMRAP = nextSetReps == null,
-                        stallDetectionEnabled = targetExercise.stallDetectionEnabled
-                    )
-
-                    repCounter.resetCountsOnly()
-                    resetAutoStopState()
-                    startWorkoutOrSetReady()
-                    return
-                }
-                // No exercise found with sets at this index - fall through to complete superset
-            }
-            // Superset complete - fall through to move to next exercise after superset
-        }
-
-        // Normal (non-superset) progression
-        if (_currentSetIndex.value < currentExercise.setReps.size - 1 && !isInSuperset()) {
-            // More sets in current exercise (non-superset)
-            _currentSetIndex.value++
-            val targetReps = currentExercise.setReps[_currentSetIndex.value]
-
-            // Issue #108: Preserve user-adjusted weight, otherwise use preset
-            val setWeight = if (_userAdjustedWeightDuringRest) {
+            // Issue #108: Handle user-adjusted weight during rest
+            // Preserve user's weight adjustment only if staying on same exercise and same set progression
+            val nextSetReps = nextExercise.setReps.getOrNull(nextSetIdx)
+            val nextSetWeight = if (!isChangingExercise && _userAdjustedWeightDuringRest) {
                 _workoutParameters.value.weightPerCableKg
             } else {
-                currentExercise.setWeightsPerCableKg.getOrNull(_currentSetIndex.value)
-                    ?: currentExercise.weightPerCableKg
+                nextExercise.setWeightsPerCableKg.getOrNull(nextSetIdx)
+                    ?: nextExercise.weightPerCableKg
             }
             _userAdjustedWeightDuringRest = false // Reset flag after use
 
             _workoutParameters.value = _workoutParameters.value.copy(
-                reps = targetReps ?: 0,
-                weightPerCableKg = setWeight,
-                isAMRAP = targetReps == null,
-                stallDetectionEnabled = currentExercise.stallDetectionEnabled,
-                progressionRegressionKg = currentExercise.progressionKg  // Issue #110: Reset to prevent stale values
+                weightPerCableKg = nextSetWeight,
+                reps = nextSetReps ?: 0,
+                programMode = nextExercise.programMode,
+                echoLevel = nextExercise.echoLevel,
+                eccentricLoad = nextExercise.eccentricLoad,
+                progressionRegressionKg = nextExercise.progressionKg,
+                selectedExerciseId = nextExercise.exercise.id,
+                isAMRAP = nextSetReps == null,
+                stallDetectionEnabled = nextExercise.stallDetectionEnabled
             )
 
-            repCounter.resetCountsOnly()
+            // Use full reset when changing exercises, counts-only reset for same exercise
+            if (isChangingExercise) {
+                repCounter.reset()
+            } else {
+                repCounter.resetCountsOnly()
+            }
             resetAutoStopState()
             startWorkoutOrSetReady()
         } else {
-            // Move to next exercise (or find next after superset)
-            val nextExerciseIndex = findNextExerciseAfterCurrent()
-
-            if (nextExerciseIndex != null && nextExerciseIndex < routine.exercises.size) {
-                _currentExerciseIndex.value = nextExerciseIndex
-                _currentSetIndex.value = 0
-                _userAdjustedWeightDuringRest = false // Issue #108: Reset flag when changing exercises
-
-                val nextExercise = routine.exercises[nextExerciseIndex]
-                val nextSetReps = nextExercise.setReps.getOrNull(0)
-                val nextSetWeight = nextExercise.setWeightsPerCableKg.getOrNull(0)
-                    ?: nextExercise.weightPerCableKg
-
-                _workoutParameters.value = _workoutParameters.value.copy(
-                    weightPerCableKg = nextSetWeight,
-                    reps = nextSetReps ?: 0,
-                    programMode = nextExercise.programMode,
-                    echoLevel = nextExercise.echoLevel,
-                    eccentricLoad = nextExercise.eccentricLoad,
-                    progressionRegressionKg = nextExercise.progressionKg,
-                    selectedExerciseId = nextExercise.exercise.id,
-                    isAMRAP = nextSetReps == null,
-                    stallDetectionEnabled = nextExercise.stallDetectionEnabled
-                )
-
-                repCounter.reset()
-                resetAutoStopState()
-                startWorkoutOrSetReady()
-            } else {
-                // Routine complete
-                _workoutState.value = WorkoutState.Completed
-                _loadedRoutine.value = null
-                _currentSetIndex.value = 0
-                _currentExerciseIndex.value = 0
-                currentRoutineSessionId = null
-                currentRoutineName = null
-                repCounter.reset()
-                resetAutoStopState()
-            }
+            // Routine complete
+            Logger.d { "startNextSetOrExercise: No more steps - routine complete" }
+            _workoutState.value = WorkoutState.Completed
+            _loadedRoutine.value = null
+            _currentSetIndex.value = 0
+            _currentExerciseIndex.value = 0
+            currentRoutineSessionId = null
+            currentRoutineName = null
+            repCounter.reset()
+            resetAutoStopState()
         }
     }
 

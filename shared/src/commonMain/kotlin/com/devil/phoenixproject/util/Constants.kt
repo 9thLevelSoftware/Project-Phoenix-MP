@@ -5,7 +5,7 @@ package com.devil.phoenixproject.util
  */
 object Constants {
     // App version
-    const val APP_VERSION = "0.3.1"
+    const val APP_VERSION = "0.3.2"
 
     // EULA version - increment when EULA text changes materially
     // Users must re-accept when this version increases
