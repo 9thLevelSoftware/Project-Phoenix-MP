@@ -41,6 +41,9 @@ fun DailyRoutinesScreen(
     var showResumeDialog by remember { mutableStateOf(false) }
     var pendingRoutine by remember { mutableStateOf<Routine?>(null) }
 
+    // Issue #130: Block routine editing during active workout
+    var showWorkoutActiveDialog by remember { mutableStateOf(false) }
+
     // Set global title
     LaunchedEffect(Unit) {
         viewModel.updateTopBarTitle("Daily Routines")
@@ -70,25 +73,29 @@ fun DailyRoutinesScreen(
                     pendingRoutine = routine
                     showResumeDialog = true
                 } else {
-                    // No progress - start fresh
-                    viewModel.ensureConnection(
-                        onConnected = {
-                            viewModel.loadRoutine(routine)
-                            viewModel.startWorkout()
-                            navController.navigate(NavigationRoutes.ActiveWorkout.route)
-                        },
-                        onFailed = { /* Error shown via StateFlow */ }
-                    )
+                    // No progress - enter routine overview (new workflow)
+                    viewModel.enterRoutineOverview(routine)
+                    navController.navigate(NavigationRoutes.RoutineOverview.route)
                 }
             },
             onDeleteRoutine = { routineId -> viewModel.deleteRoutine(routineId) },
             onDeleteRoutines = { routineIds -> viewModel.deleteRoutines(routineIds) },
             onSaveRoutine = { routine -> viewModel.saveRoutine(routine) },
-            onEditRoutine = { routineId -> 
-                navController.navigate(NavigationRoutes.RoutineEditor.createRoute(routineId)) 
+            onEditRoutine = { routineId ->
+                // Issue #130: Block editing during active workout
+                if (viewModel.isWorkoutActive) {
+                    showWorkoutActiveDialog = true
+                } else {
+                    navController.navigate(NavigationRoutes.RoutineEditor.createRoute(routineId))
+                }
             },
             onCreateRoutine = {
-                navController.navigate(NavigationRoutes.RoutineEditor.createRoute("new")) 
+                // Issue #130: Block creating during active workout
+                if (viewModel.isWorkoutActive) {
+                    showWorkoutActiveDialog = true
+                } else {
+                    navController.navigate(NavigationRoutes.RoutineEditor.createRoute("new"))
+                }
             },
             themeMode = themeMode,
             modifier = Modifier.fillMaxSize()
@@ -120,21 +127,28 @@ fun DailyRoutinesScreen(
                     },
                     onRestart = {
                         showResumeDialog = false
-                        // Restart: call loadRoutine to reset indices, then start
                         pendingRoutine?.let { routine ->
-                            viewModel.ensureConnection(
-                                onConnected = {
-                                    viewModel.loadRoutine(routine)
-                                    viewModel.startWorkout()
-                                    navController.navigate(NavigationRoutes.ActiveWorkout.route)
-                                },
-                                onFailed = { /* Error shown via StateFlow */ }
-                            )
+                            viewModel.enterRoutineOverview(routine)
+                            navController.navigate(NavigationRoutes.RoutineOverview.route)
                         }
                     },
                     onDismiss = { showResumeDialog = false }
                 )
             }
+        }
+
+        // Issue #130: Workout Active Dialog - blocks routine editing during workout
+        if (showWorkoutActiveDialog) {
+            AlertDialog(
+                onDismissRequest = { showWorkoutActiveDialog = false },
+                title = { Text("Workout in Progress") },
+                text = { Text("Please stop the current workout before editing routines.") },
+                confirmButton = {
+                    TextButton(onClick = { showWorkoutActiveDialog = false }) {
+                        Text("OK")
+                    }
+                }
+            )
         }
     }
 }

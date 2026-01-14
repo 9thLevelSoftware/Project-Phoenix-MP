@@ -88,6 +88,9 @@ interface WorkoutActions {
     /** Skip rest timer and proceed immediately */
     fun onSkipRest()
 
+    /** Skip countdown and start workout immediately */
+    fun onSkipCountdown()
+
     /** Proceed from set summary to next set/exercise */
     fun onProceedFromSummary()
 
@@ -132,6 +135,7 @@ object PreviewWorkoutActions : WorkoutActions {
     override fun onStartWorkout() {}
     override fun onStopWorkout() {}
     override fun onSkipRest() {}
+    override fun onSkipCountdown() {}
     override fun onProceedFromSummary() {}
     override fun onRpeLogged(rpe: Int) {}
     override fun onResetForNewWorkout() {}
@@ -156,6 +160,7 @@ fun workoutActions(
     onStartWorkout: () -> Unit,
     onStopWorkout: () -> Unit,
     onSkipRest: () -> Unit,
+    onSkipCountdown: () -> Unit,
     onProceedFromSummary: () -> Unit,
     onRpeLogged: (Int) -> Unit,
     onResetForNewWorkout: () -> Unit,
@@ -174,6 +179,7 @@ fun workoutActions(
     override fun onStartWorkout() = onStartWorkout()
     override fun onStopWorkout() = onStopWorkout()
     override fun onSkipRest() = onSkipRest()
+    override fun onSkipCountdown() = onSkipCountdown()
     override fun onProceedFromSummary() = onProceedFromSummary()
     override fun onRpeLogged(rpe: Int) = onRpeLogged(rpe)
     override fun onResetForNewWorkout() = onResetForNewWorkout()

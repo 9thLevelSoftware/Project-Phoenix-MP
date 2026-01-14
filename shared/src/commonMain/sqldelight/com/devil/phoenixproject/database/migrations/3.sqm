@@ -1,8 +1,14 @@
 -- Migration: Add foreign key constraint on RoutineExercise.exerciseId
 -- SQLite requires table recreation to add FK constraints
+--
+-- NOTE: We do NOT use PRAGMA foreign_keys = OFF here because:
+-- 1. iOS NativeSqliteDriver doesn't persist PRAGMA across connections
+-- 2. At this schema version, no other table references RoutineExercise
+-- 3. The Create-Copy-Drop-Rename pattern works without it
 
--- Disable foreign keys during migration
-PRAGMA foreign_keys = OFF;
+-- CRITICAL: Clean up any leftover temp table from a previous failed migration attempt
+-- Without this, a user who crashed mid-migration would crash again on "table already exists"
+DROP TABLE IF EXISTS RoutineExercise_new;
 
 -- Create new table with FK constraint
 CREATE TABLE RoutineExercise_new (
@@ -34,8 +40,48 @@ CREATE TABLE RoutineExercise_new (
     FOREIGN KEY (exerciseId) REFERENCES Exercise(id) ON DELETE SET NULL
 );
 
--- Copy data from old table
-INSERT INTO RoutineExercise_new SELECT * FROM RoutineExercise;
+-- Copy data from old table (which does NOT have superset columns)
+-- New superset columns (supersetGroupId, supersetOrder, supersetRestSeconds)
+-- get their DEFAULT values from the new table definition
+-- IMPORTANT: Do NOT select columns that don't exist in the old table!
+--
+-- ORPHAN PROTECTION: Filter out exerciseId/routineId that point to deleted records
+-- Without this, FK constraints will cause INSERT to fail for dirty data
+INSERT INTO RoutineExercise_new (
+    id, routineId, exerciseName, exerciseMuscleGroup, exerciseEquipment,
+    exerciseDefaultCableConfig, exerciseId, cableConfig, orderIndex, setReps,
+    weightPerCableKg, setWeights, mode, eccentricLoad, echoLevel, progressionKg,
+    restSeconds, duration, setRestSeconds, perSetRestTime, isAMRAP
+)
+SELECT
+    id,
+    routineId,
+    exerciseName,
+    exerciseMuscleGroup,
+    exerciseEquipment,
+    exerciseDefaultCableConfig,
+    -- Only copy exerciseId if it actually exists in Exercise table (prevents FK crash)
+    CASE
+        WHEN exerciseId IS NOT NULL AND exerciseId IN (SELECT id FROM Exercise) THEN exerciseId
+        ELSE NULL
+    END,
+    cableConfig,
+    orderIndex,
+    setReps,
+    weightPerCableKg,
+    setWeights,
+    mode,
+    eccentricLoad,
+    echoLevel,
+    progressionKg,
+    restSeconds,
+    duration,
+    setRestSeconds,
+    perSetRestTime,
+    isAMRAP
+FROM RoutineExercise
+-- Only copy rows where routineId exists (orphaned routine exercises are useless anyway)
+WHERE routineId IN (SELECT id FROM Routine);
 
 -- Drop old table
 DROP TABLE RoutineExercise;
@@ -44,7 +90,4 @@ DROP TABLE RoutineExercise;
 ALTER TABLE RoutineExercise_new RENAME TO RoutineExercise;
 
 -- Recreate index
-CREATE INDEX idx_routine_exercise_routine ON RoutineExercise(routineId);
-
--- Re-enable foreign keys
-PRAGMA foreign_keys = ON;
+CREATE INDEX IF NOT EXISTS idx_routine_exercise_routine ON RoutineExercise(routineId);

@@ -58,6 +58,11 @@ fun ConnectionLogsScreen(
     var showCopiedMessage by remember { mutableStateOf(false) }
     val snackbarHostState = remember { SnackbarHostState() }
 
+    // Clear topbar title to allow dynamic title from EnhancedMainScreen
+    LaunchedEffect(Unit) {
+        mainViewModel.updateTopBarTitle("")
+    }
+
     // Auto-scroll to top when new logs arrive
     LaunchedEffect(logs.size, isAutoScrollEnabled) {
         if (isAutoScrollEnabled && logs.isNotEmpty()) {

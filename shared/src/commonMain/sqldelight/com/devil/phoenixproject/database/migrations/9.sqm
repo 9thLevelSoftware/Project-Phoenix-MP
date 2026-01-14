@@ -1,0 +1,73 @@
+-- Migration 9: Schema Healing Phase 2
+-- Fixes issues from migrations 3-8 for existing users who ran old versions
+-- All statements are idempotent (safe to re-run)
+
+-- ============================================================
+-- NOTE: CycleDay columns (echo_level, etc.) are NOT added here.
+-- Migration 6 already creates CycleDay with all these columns.
+-- Adding them here would cause "duplicate column name" crash.
+-- If a user somehow has CycleDay without these columns, they have
+-- a fundamentally broken database that requires manual intervention.
+-- ============================================================
+
+-- Create dummy Superset if missing (so SELECT/UPDATE/DELETE below don't crash)
+-- Users who crashed during Migration 4 or 8 may not have this table
+CREATE TABLE IF NOT EXISTS Superset (
+    id TEXT PRIMARY KEY NOT NULL,
+    routineId TEXT NOT NULL,
+    name TEXT NOT NULL,
+    colorIndex INTEGER NOT NULL DEFAULT 0,
+    restBetweenSeconds INTEGER NOT NULL DEFAULT 10,
+    orderIndex INTEGER NOT NULL
+);
+
+-- ============================================================
+-- FIX 1: Regenerate Superset IDs to composite format
+-- Old Migration 4 used supersetGroupId as Superset.id
+-- This caused PK collisions when same group ID used across routines
+-- New format: routineId || '_' || originalId
+--
+-- CRITICAL: We check for routineId prefix, not just underscore presence.
+-- This handles cases where user-created superset names contain underscores
+-- (e.g., "leg_day" should become "routine123_leg_day", not be skipped)
+-- ============================================================
+
+-- Step 2a: Create new Superset rows with composite IDs
+-- Only for rows where ID is NOT already prefixed with routineId
+INSERT OR IGNORE INTO Superset (id, routineId, name, colorIndex, restBetweenSeconds, orderIndex)
+SELECT
+    routineId || '_' || id,  -- New composite ID
+    routineId,
+    name,
+    colorIndex,
+    restBetweenSeconds,
+    orderIndex
+FROM Superset
+-- CRITICAL FIX: Check if ID is NOT already prefixed with routineId (not just any underscore)
+WHERE id NOT LIKE routineId || '_%';
+
+-- Step 2b: Update RoutineExercise references to use new composite IDs
+UPDATE RoutineExercise
+SET supersetId = routineId || '_' || supersetId
+WHERE supersetId IS NOT NULL
+  AND supersetId != ''
+  -- CRITICAL FIX: Only update if not already prefixed with routineId
+  AND supersetId NOT LIKE routineId || '_%'
+  AND EXISTS (
+      SELECT 1 FROM Superset
+      WHERE Superset.id = RoutineExercise.routineId || '_' || RoutineExercise.supersetId
+  );
+
+-- Step 2c: Delete old non-composite Superset rows (now orphaned)
+DELETE FROM Superset
+WHERE id NOT LIKE routineId || '_%'
+  AND NOT EXISTS (SELECT 1 FROM RoutineExercise WHERE supersetId = Superset.id);
+
+-- ============================================================
+-- FIX 2: Final cleanup of orphaned references
+-- Catch any supersetId that points to non-existent Superset
+-- ============================================================
+
+UPDATE RoutineExercise SET supersetId = NULL
+WHERE supersetId IS NOT NULL
+  AND supersetId NOT IN (SELECT id FROM Superset);

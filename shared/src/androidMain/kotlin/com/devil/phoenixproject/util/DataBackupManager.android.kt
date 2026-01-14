@@ -127,7 +127,7 @@ class AndroidDataBackupManager(
     /**
      * Share backup via Android share sheet
      */
-    suspend fun shareBackup() {
+    override suspend fun shareBackup() {
         val backup = exportAllData()
         val cacheResult = saveToCache(backup)
 

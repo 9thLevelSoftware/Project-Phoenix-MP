@@ -31,6 +31,10 @@ import com.devil.phoenixproject.ui.theme.Spacing
  * @param onConfirm Callback with exercise name to ExerciseConfig mapping when user confirms
  * @param onCancel Callback when user cancels
  */
+/**
+ * Note: This screen is rendered inside EnhancedMainScreen's Scaffold and should NOT
+ * have its own Scaffold/TopAppBar to avoid visual conflicts (Unified Bar spec).
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ModeConfirmationScreen(
@@ -59,70 +63,31 @@ fun ModeConfirmationScreen(
         }
     }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = {
-                    Text(
-                        text = "Confirm Modes",
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Bold
-                    )
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.surface,
-                    titleContentColor = MaterialTheme.colorScheme.onSurface
-                )
-            )
-        },
-        bottomBar = {
-            Surface(
-                color = MaterialTheme.colorScheme.surface,
-                tonalElevation = 3.dp
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .navigationBarsPadding()
-                        .padding(Spacing.medium),
-                    horizontalArrangement = Arrangement.spacedBy(Spacing.small)
-                ) {
-                    OutlinedButton(
-                        onClick = onCancel,
-                        modifier = Modifier.weight(1f).height(56.dp),
-                        colors = ButtonDefaults.outlinedButtonColors(
-                            contentColor = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    ) {
-                        Text("Cancel")
-                    }
-
-                    Button(
-                        onClick = { onConfirm(exerciseConfigs.toMap()) },
-                        modifier = Modifier.weight(1f).height(56.dp),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = MaterialTheme.colorScheme.primary
-                        ),
-                        shape = RoundedCornerShape(20.dp)
-                    ) {
-                        Text(
-                            "Create Cycle",
-                            style = MaterialTheme.typography.titleSmall,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
-                }
-            }
-        }
-    ) { paddingValues ->
+    // Use Box with bottom bar instead of Scaffold to avoid double TopAppBar
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
+    ) {
+        // Main content - scrollable list
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(paddingValues)
-                .background(MaterialTheme.colorScheme.background),
+                .padding(bottom = 100.dp), // Space for bottom bar
             contentPadding = PaddingValues(Spacing.medium),
             verticalArrangement = Arrangement.spacedBy(Spacing.medium)
         ) {
+            // Header with title
+            item(key = "title") {
+                Text(
+                    text = "Confirm Modes",
+                    style = MaterialTheme.typography.headlineMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onBackground,
+                    modifier = Modifier.padding(bottom = Spacing.small)
+                )
+            }
+
             // Template name and description header
             item(key = "header") {
                 Column(
@@ -131,7 +96,7 @@ fun ModeConfirmationScreen(
                 ) {
                     Text(
                         text = template.name,
-                        style = MaterialTheme.typography.headlineMedium,
+                        style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onBackground
                     )
@@ -219,7 +184,49 @@ fun ModeConfirmationScreen(
                 Spacer(modifier = Modifier.height(Spacing.medium))
             }
         }
-    }
+
+        // Bottom action bar
+        Surface(
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth(),
+            color = MaterialTheme.colorScheme.surface,
+            tonalElevation = 3.dp
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .navigationBarsPadding()
+                    .padding(Spacing.medium),
+                horizontalArrangement = Arrangement.spacedBy(Spacing.small)
+            ) {
+                OutlinedButton(
+                    onClick = onCancel,
+                    modifier = Modifier.weight(1f).height(56.dp),
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                ) {
+                    Text("Cancel")
+                }
+
+                Button(
+                    onClick = { onConfirm(exerciseConfigs.toMap()) },
+                    modifier = Modifier.weight(1f).height(56.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.primary
+                    ),
+                    shape = RoundedCornerShape(20.dp)
+                ) {
+                    Text(
+                        "Create Cycle",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+        }
+    } // End Box
 }
 
 /**

@@ -12,6 +12,7 @@ import com.devil.phoenixproject.presentation.components.PRCelebrationDialog
 import org.koin.compose.koinInject
 import com.devil.phoenixproject.data.repository.GamificationRepository
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
+import com.devil.phoenixproject.presentation.navigation.NavigationRoutes
 import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.util.setKeepScreenOn
 import kotlinx.coroutines.delay
@@ -49,6 +50,7 @@ fun ActiveWorkoutScreen(
     val isAutoConnecting by viewModel.isAutoConnecting.collectAsState()
     val connectionError by viewModel.connectionError.collectAsState()
     val userPreferences by viewModel.userPreferences.collectAsState()
+    val routineFlowState by viewModel.routineFlowState.collectAsState()
 
     // State for confirmation dialog
     var showExitConfirmation by remember { mutableStateOf(false) }
@@ -160,6 +162,46 @@ fun ActiveWorkoutScreen(
         }
     }
 
+    // Watch for routine flow state changes to navigate to SetReady or Complete screens
+    // This handles the autoplay OFF case where Summary -> SetReady (no rest timer)
+    // IMPORTANT: Only navigate when workout is Idle - otherwise we create a navigation loop
+    // because startSetFromReady() sets workoutState to Countdown/Active but keeps routineFlowState
+    // as SetReady. SetReadyScreen navigates here on workoutState change, and if we navigate back
+    // immediately based on routineFlowState still being SetReady, we get infinite flickering.
+    LaunchedEffect(routineFlowState, workoutState) {
+        if (hasNavigatedAway) return@LaunchedEffect
+
+        // Only navigate to SetReady when workout has finished (Idle state)
+        // During Active/Countdown/Summary/Resting, we should stay on this screen
+        // Issue #142: Added SetSummary and Resting to prevent immediate navigation away
+        // before user can see the set summary screen with countdown
+        val isWorkoutActive = workoutState is WorkoutState.Active ||
+                              workoutState is WorkoutState.Countdown ||
+                              workoutState is WorkoutState.Initializing ||
+                              workoutState is WorkoutState.SetSummary ||
+                              workoutState is WorkoutState.Resting
+
+        when (routineFlowState) {
+            is RoutineFlowState.SetReady -> {
+                if (!isWorkoutActive) {
+                    Logger.d { "ActiveWorkoutScreen: RoutineFlowState.SetReady + Idle - navigating to SetReady" }
+                    hasNavigatedAway = true
+                    navController.navigate(NavigationRoutes.SetReady.route) {
+                        popUpTo(NavigationRoutes.RoutineOverview.route) { inclusive = false }
+                    }
+                }
+            }
+            is RoutineFlowState.Complete -> {
+                Logger.d { "ActiveWorkoutScreen: RoutineFlowState.Complete - navigating to RoutineComplete" }
+                hasNavigatedAway = true
+                navController.navigate(NavigationRoutes.RoutineComplete.route) {
+                    popUpTo(NavigationRoutes.RoutineOverview.route) { inclusive = false }
+                }
+            }
+            else -> {}
+        }
+    }
+
     // Use the new state holder pattern for cleaner API
     // Issue #53: Compute canGoBack/canSkipForward based on routine and exercise index
     val canGoBack = loadedRoutine != null && currentExerciseIndex > 0
@@ -210,6 +252,7 @@ fun ActiveWorkoutScreen(
             },
             onStopWorkout = { showExitConfirmation = true },
             onSkipRest = { viewModel.skipRest() },
+            onSkipCountdown = { viewModel.skipCountdown() },
             onProceedFromSummary = { viewModel.proceedFromSummary() },
             onRpeLogged = { rpe -> viewModel.logRpeForCurrentSet(rpe) },
             onResetForNewWorkout = { viewModel.resetForNewWorkout() },
@@ -243,6 +286,9 @@ fun ActiveWorkoutScreen(
                 Button(
                     onClick = {
                         viewModel.stopWorkout()
+                        // Issue #142: Reset routineFlowState to Overview before navigating
+                        // Otherwise RoutineOverviewScreen sees SetReady state and renders blank
+                        viewModel.returnToOverview()
                         showExitConfirmation = false
                         navController.navigateUp()
                     }

@@ -142,6 +142,9 @@ kotlin {
 
                 // Compose Preview Tooling (for @Preview in shared module)
                 implementation(compose.uiTooling)
+
+                // Activity Compose (for file picker Activity Result APIs)
+                implementation(libs.androidx.activity.compose)
             }
         }
         
@@ -190,6 +193,9 @@ sqldelight {
     databases {
         create("VitruvianDatabase") {
             packageName.set("com.devil.phoenixproject.database")
+            // Version 11 = initial schema (1) + 10 migrations (1.sqm through 10.sqm)
+            // Explicit version ensures migration 10 runs on devices stuck at version 10
+            version = 11
         }
     }
 }

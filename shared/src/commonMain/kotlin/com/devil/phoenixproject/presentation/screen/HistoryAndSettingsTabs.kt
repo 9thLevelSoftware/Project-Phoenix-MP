@@ -41,7 +41,11 @@ import com.devil.phoenixproject.domain.model.toSetSummary
 import com.devil.phoenixproject.presentation.viewmodel.HistoryItem
 import com.devil.phoenixproject.util.ColorScheme
 import com.devil.phoenixproject.util.ColorSchemes
+import com.devil.phoenixproject.util.DataBackupManager
+import com.devil.phoenixproject.util.ImportResult
+import com.devil.phoenixproject.util.rememberFilePicker
 import kotlinx.coroutines.launch
+import org.koin.compose.koinInject
 import com.devil.phoenixproject.presentation.components.CountdownDropdown
 import com.devil.phoenixproject.presentation.components.EmptyState
 import com.devil.phoenixproject.ui.theme.*
@@ -959,16 +963,39 @@ fun SettingsTab(
     onDiscoModeToggle: (Boolean) -> Unit = {},
     onPlayDiscoSound: () -> Unit = {},
     onTestSounds: () -> Unit = {},
+    // Simulator mode Easter egg
+    simulatorModeUnlocked: Boolean = false,
+    simulatorModeEnabled: Boolean = false,
+    onSimulatorModeUnlocked: () -> Unit = {},
+    onSimulatorModeToggle: (Boolean) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     var showDeleteAllDialog by remember { mutableStateOf(false) }
+    // Backup/Restore state
+    var showBackupDialog by remember { mutableStateOf(false) }
+    var showRestoreDialog by remember { mutableStateOf(false) }
+    var backupInProgress by remember { mutableStateOf(false) }
+    var restoreInProgress by remember { mutableStateOf(false) }
+    var backupResult by remember { mutableStateOf<String?>(null) }
+    var restoreResult by remember { mutableStateOf<ImportResult?>(null) }
+    var showResultDialog by remember { mutableStateOf(false) }
+    var launchFilePicker by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
     // Easter egg tap counter for disco mode
     var easterEggTapCount by remember { mutableStateOf(0) }
     var lastTapTime by remember { mutableStateOf(0L) }
     // Disco mode unlock celebration dialog
     var showDiscoUnlockDialog by remember { mutableStateOf(false) }
+    // Simulator mode unlock celebration dialog
+    var showSimulatorUnlockDialog by remember { mutableStateOf(false) }
+    // Separate easter egg tap counter for simulator mode
+    var simulatorEasterEggTapCount by remember { mutableStateOf(0) }
+    var simulatorLastTapTime by remember { mutableStateOf(0L) }
     // Optimistic UI state for immediate visual feedback
     var localWeightUnit by remember(weightUnit) { mutableStateOf(weightUnit) }
+
+    // Inject DataBackupManager
+    val backupManager: DataBackupManager = koinInject()
 
     // Set global title
     LaunchedEffect(Unit) {
@@ -1706,6 +1733,60 @@ fun SettingsTab(
             }
                 Spacer(modifier = Modifier.height(Spacing.small))
 
+                // Backup Button
+                OutlinedButton(
+                    onClick = { showBackupDialog = true },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(56.dp),
+                    shape = RoundedCornerShape(20.dp),
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        contentColor = MaterialTheme.colorScheme.primary
+                    ),
+                    border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary)
+                ) {
+                    Icon(
+                        Icons.Default.CloudUpload,
+                        contentDescription = "Backup data",
+                        modifier = Modifier.size(24.dp)
+                    )
+                    Spacer(modifier = Modifier.width(Spacing.small))
+                    Text(
+                        "Backup All Data",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(Spacing.small))
+
+                // Restore Button
+                OutlinedButton(
+                    onClick = { showRestoreDialog = true },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(56.dp),
+                    shape = RoundedCornerShape(20.dp),
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        contentColor = MaterialTheme.colorScheme.secondary
+                    ),
+                    border = BorderStroke(2.dp, MaterialTheme.colorScheme.secondary)
+                ) {
+                    Icon(
+                        Icons.Default.CloudDownload,
+                        contentDescription = "Restore data",
+                        modifier = Modifier.size(24.dp)
+                    )
+                    Spacer(modifier = Modifier.width(Spacing.small))
+                    Text(
+                        "Restore from Backup",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(Spacing.medium))
+
                 Button(
                     onClick = { showDeleteAllDialog = true },
                     modifier = Modifier
@@ -1826,25 +1907,49 @@ fun SettingsTab(
                     .fillMaxWidth()
                     .padding(Spacing.medium)
             ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            // Easter egg: tap the header 7 times rapidly to unlock simulator mode
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.clickable {
+                    val currentTime = KmpUtils.currentTimeMillis()
+                    // Reset if more than 2 seconds since last tap
+                    if (currentTime - simulatorLastTapTime > 2000L) {
+                        simulatorEasterEggTapCount = 1
+                    } else {
+                        simulatorEasterEggTapCount++
+                    }
+                    simulatorLastTapTime = currentTime
+
+                    // Unlock simulator mode after 7 rapid taps
+                    if (simulatorEasterEggTapCount >= 7 && !simulatorModeUnlocked) {
+                        showSimulatorUnlockDialog = true
+                        onSimulatorModeUnlocked()
+                        simulatorEasterEggTapCount = 0
+                    }
+                }
+            ) {
                 Box(
                     modifier = Modifier
                         .size(48.dp) // Material 3 Expressive: Larger (was 40dp)
                         .shadow(8.dp, RoundedCornerShape(20.dp)) // Material 3 Expressive: More shadow, more rounded (was 16dp)
                         .background(
                             Brush.linearGradient(
-                                colors = listOf(Color(0xFFF59E0B), Color(0xFFEF4444))
+                                colors = if (simulatorModeUnlocked) {
+                                    listOf(Color(0xFF9333EA), Color(0xFF4F46E5)) // Purple gradient when unlocked
+                                } else {
+                                    listOf(Color(0xFFF59E0B), Color(0xFFEF4444))
+                                }
                             ),
                             RoundedCornerShape(20.dp) // Material 3 Expressive: More rounded (was 16dp)
                         ),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
-                        Icons.Default.BugReport,
-                        contentDescription = "View connection logs",
+                        if (simulatorModeUnlocked) Icons.Default.Code else Icons.Default.BugReport,
+                        contentDescription = "Developer Tools",
                         tint = MaterialTheme.colorScheme.onPrimary,
                         modifier = Modifier.size(24.dp) // Material 3 Expressive: Larger icon
-                    ) 
+                    )
                 }
                 Spacer(modifier = Modifier.width(Spacing.medium))
                 Text(
@@ -1920,6 +2025,54 @@ fun SettingsTab(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
 
+                // Simulator mode toggle (only visible when unlocked)
+                if (simulatorModeUnlocked) {
+                    Spacer(modifier = Modifier.height(Spacing.medium))
+                    HorizontalDivider(
+                        modifier = Modifier.padding(vertical = Spacing.small),
+                        color = MaterialTheme.colorScheme.outlineVariant
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                "🔧",
+                                style = MaterialTheme.typography.titleMedium
+                            )
+                            Spacer(modifier = Modifier.width(Spacing.small))
+                            Column {
+                                Text(
+                                    "BLE Simulator",
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    fontWeight = FontWeight.Medium,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                                Text(
+                                    "Use virtual machine for testing",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                        Switch(
+                            checked = simulatorModeEnabled,
+                            onCheckedChange = { onSimulatorModeToggle(it) }
+                        )
+                    }
+
+                    // Info text about restart
+                    Spacer(modifier = Modifier.height(Spacing.small))
+                    Text(
+                        if (simulatorModeEnabled) "Restart the app to connect to the virtual machine"
+                        else "Enable to use simulated BLE device instead of real hardware",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (simulatorModeEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+
             }
         }
 
@@ -1967,7 +2120,7 @@ fun SettingsTab(
                 )
             }
                 Spacer(modifier = Modifier.height(Spacing.small))
-                Text("Version: 0.3.0", color = MaterialTheme.colorScheme.onSurface)
+                Text("Version: 0.3.2", color = MaterialTheme.colorScheme.onSurface)
                 Spacer(modifier = Modifier.height(Spacing.small))
                 Text(
                     "Open source community project to control Vitruvian Trainer machines locally.",
@@ -2044,6 +2197,213 @@ fun SettingsTab(
         DiscoModeUnlockDialog(
             onDismiss = { showDiscoUnlockDialog = false }
         )
+    }
+
+    // Simulator Mode Unlock Dialog
+    if (showSimulatorUnlockDialog) {
+        AlertDialog(
+            onDismissRequest = { showSimulatorUnlockDialog = false },
+            title = {
+                Text(
+                    "🔧 Developer Tools Unlocked!",
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.Bold
+                )
+            },
+            text = {
+                Text(
+                    "You've unlocked BLE Simulator mode!\n\nEnable it in Developer Tools, then restart the app to connect to a virtual machine instead of real hardware.",
+                    style = MaterialTheme.typography.bodyLarge
+                )
+            },
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+            shape = RoundedCornerShape(28.dp),
+            confirmButton = {
+                TextButton(
+                    onClick = { showSimulatorUnlockDialog = false },
+                    modifier = Modifier.height(56.dp),
+                    shape = RoundedCornerShape(20.dp)
+                ) {
+                    Text(
+                        "Got it!",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
+            }
+        )
+    }
+
+    // Backup confirmation dialog
+    if (showBackupDialog) {
+        AlertDialog(
+            onDismissRequest = { showBackupDialog = false },
+            title = { Text("Backup All Data", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold) },
+            text = {
+                Text("This will export all your workout history, routines, training cycles, achievements, and settings to a JSON file.\n\nYou can use this file to restore your data later or transfer to another device.")
+            },
+            confirmButton = {
+                Row(horizontalArrangement = Arrangement.spacedBy(Spacing.small)) {
+                    // Save to Files button
+                    Button(
+                        onClick = {
+                            showBackupDialog = false
+                            backupInProgress = true
+                            scope.launch {
+                                try {
+                                    val backup = backupManager.exportAllData()
+                                    val result = backupManager.saveToFile(backup)
+                                    result.onSuccess { path ->
+                                        backupResult = path
+                                        showResultDialog = true
+                                    }.onFailure { error ->
+                                        backupResult = "Error: ${error.message}"
+                                        showResultDialog = true
+                                    }
+                                } catch (e: Exception) {
+                                    // Handle SQLite exceptions and other errors gracefully
+                                    // instead of crashing the app
+                                    backupResult = "Export failed: ${e.message ?: "Unknown database error"}"
+                                    showResultDialog = true
+                                } finally {
+                                    backupInProgress = false
+                                }
+                            }
+                        }
+                    ) {
+                        Text("Save")
+                    }
+                    // Share button
+                    OutlinedButton(
+                        onClick = {
+                            showBackupDialog = false
+                            scope.launch {
+                                try {
+                                    backupManager.shareBackup()
+                                } catch (e: Exception) {
+                                    backupResult = "Share failed: ${e.message ?: "Unknown error"}"
+                                    showResultDialog = true
+                                }
+                            }
+                        }
+                    ) {
+                        Icon(
+                            Icons.Default.Share,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Share")
+                    }
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showBackupDialog = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+
+    // Restore confirmation dialog
+    if (showRestoreDialog) {
+        AlertDialog(
+            onDismissRequest = { showRestoreDialog = false },
+            title = { Text("Restore from Backup", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold) },
+            text = {
+                Text("Select a backup file to restore your data.\n\nExisting data will NOT be overwritten - only new records will be imported.")
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showRestoreDialog = false
+                        launchFilePicker = true
+                    }
+                ) {
+                    Text("Select File")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showRestoreDialog = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+
+    // Result dialog
+    if (showResultDialog) {
+        AlertDialog(
+            onDismissRequest = { showResultDialog = false },
+            title = { Text(if (backupResult != null) "Backup Complete" else "Restore Complete", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold) },
+            text = {
+                if (backupResult != null) {
+                    Text("Backup saved successfully to:\n$backupResult")
+                } else {
+                    restoreResult?.let { result ->
+                        Column {
+                            Text("Import completed!")
+                            Spacer(modifier = Modifier.height(Spacing.small))
+                            Text("Records imported: ${result.totalImported}")
+                            Text("Records skipped (duplicates): ${result.totalSkipped}")
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Button(onClick = {
+                    showResultDialog = false
+                    backupResult = null
+                    restoreResult = null
+                }) {
+                    Text("OK")
+                }
+            }
+        )
+    }
+
+    // Loading indicator dialog
+    if (backupInProgress || restoreInProgress) {
+        AlertDialog(
+            onDismissRequest = { },
+            title = { Text(if (backupInProgress) "Creating Backup..." else "Restoring Data...", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold) },
+            text = {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(Spacing.medium)
+                ) {
+                    CircularProgressIndicator()
+                    Text("Please wait...")
+                }
+            },
+            confirmButton = { }
+        )
+    }
+
+    // File picker for restore operation
+    if (launchFilePicker) {
+        val filePicker = rememberFilePicker()
+        filePicker.LaunchFilePicker { selectedFile ->
+            launchFilePicker = false
+            if (selectedFile != null) {
+                restoreInProgress = true
+                scope.launch {
+                    try {
+                        val result = backupManager.importFromFile(selectedFile)
+                        result.onSuccess { importResult ->
+                            restoreResult = importResult
+                            showResultDialog = true
+                        }.onFailure { error ->
+                            backupResult = "Import failed: ${error.message}"
+                            showResultDialog = true
+                        }
+                    } finally {
+                        restoreInProgress = false
+                    }
+                }
+            }
+        }
     }
 }
 

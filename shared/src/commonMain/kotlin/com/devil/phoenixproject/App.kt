@@ -6,7 +6,9 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.presentation.screen.EnhancedMainScreen
+import com.devil.phoenixproject.presentation.screen.EulaScreen
 import com.devil.phoenixproject.presentation.screen.SplashScreen
+import com.devil.phoenixproject.presentation.viewmodel.EulaViewModel
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
 import com.devil.phoenixproject.presentation.viewmodel.ThemeViewModel
 import com.devil.phoenixproject.ui.theme.VitruvianTheme
@@ -18,34 +20,49 @@ import org.koin.compose.koinInject
 fun App() {
     val viewModel = koinViewModel<MainViewModel>()
     val themeViewModel = koinViewModel<ThemeViewModel>()
+    val eulaViewModel = koinViewModel<EulaViewModel>()
     val exerciseRepository = koinInject<ExerciseRepository>()
 
     // Theme state - persisted via ThemeViewModel
     val themeMode by themeViewModel.themeMode.collectAsState()
 
-    // Splash screen state
-    var showSplash by remember { mutableStateOf(true) }
+    // EULA acceptance state
+    val eulaAccepted by eulaViewModel.eulaAccepted.collectAsState()
+
+    // Splash screen state - only show splash if EULA is already accepted
+    var showSplash by remember { mutableStateOf(eulaAccepted) }
 
     // Hide splash after animation completes (2500ms for full effect)
-    LaunchedEffect(Unit) {
-        delay(2500)
-        showSplash = false
+    // Only run if EULA is accepted
+    LaunchedEffect(eulaAccepted) {
+        if (eulaAccepted) {
+            showSplash = true
+            delay(2500)
+            showSplash = false
+        }
     }
 
     VitruvianTheme(themeMode = themeMode) {
         Box(modifier = Modifier.fillMaxSize()) {
-            // Main content (always rendered, splash overlays it)
-            if (!showSplash) {
-                EnhancedMainScreen(
-                    viewModel = viewModel,
-                    exerciseRepository = exerciseRepository,
-                    themeMode = themeMode,
-                    onThemeModeChange = { themeViewModel.setThemeMode(it) }
+            // EULA acceptance screen - shown first if not accepted
+            if (!eulaAccepted) {
+                EulaScreen(
+                    onAccept = { eulaViewModel.acceptEula() }
                 )
-            }
+            } else {
+                // Main content (only rendered after EULA accepted)
+                if (!showSplash) {
+                    EnhancedMainScreen(
+                        viewModel = viewModel,
+                        exerciseRepository = exerciseRepository,
+                        themeMode = themeMode,
+                        onThemeModeChange = { themeViewModel.setThemeMode(it) }
+                    )
+                }
 
-            // Splash screen overlay with fade animation
-            SplashScreen(visible = showSplash)
+                // Splash screen overlay with fade animation
+                SplashScreen(visible = showSplash)
+            }
         }
     }
 }

@@ -1,5 +1,5 @@
 -- Migration: Add UserProfile table for multi-user support
-CREATE TABLE UserProfile (
+CREATE TABLE IF NOT EXISTS UserProfile (
     id TEXT PRIMARY KEY NOT NULL,
     name TEXT NOT NULL,
     colorIndex INTEGER NOT NULL DEFAULT 0,

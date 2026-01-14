@@ -84,8 +84,10 @@ fun WorkoutHud(
                 formatWeight = formatWeight,
                 weightUnit = weightUnit,
                 onUpdateParameters = onUpdateParameters,
-                onNextExercise = onStartNextExercise, // Only if applicable, e.g. Just Lift doesn't really have next, but Routine does
-                showNextButton = loadedRoutine != null
+                onNextExercise = onStartNextExercise,
+                // Issue #125: Never show Next button during Active state - exercise navigation
+                // should only be allowed when the machine is not engaged. Official app behavior.
+                showNextButton = false
             )
         },
         containerColor = MaterialTheme.colorScheme.surface
@@ -283,7 +285,7 @@ private fun HudBottomBar(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Weight Controls (Simulated for now, could be +/- buttons)
+            // Weight Controls - Echo mode shows "Adaptive" since weight is dynamic
             Column {
                 Text(
                     "Weight / Cable",
@@ -291,7 +293,7 @@ private fun HudBottomBar(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Text(
-                    formatWeight(workoutParameters.weightPerCableKg, weightUnit),
+                    if (workoutParameters.isEchoMode) "Adaptive" else formatWeight(workoutParameters.weightPerCableKg, weightUnit),
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Bold
                 )

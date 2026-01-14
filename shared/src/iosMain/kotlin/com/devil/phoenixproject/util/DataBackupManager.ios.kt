@@ -7,6 +7,14 @@ import kotlinx.coroutines.IO
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.encodeToString
 import platform.Foundation.*
+import platform.darwin.NSObject
+import platform.UIKit.UIActivityViewController
+import platform.UIKit.UIApplication
+import platform.UIKit.UIWindowScene
+import platform.UIKit.UIDevice
+import platform.UIKit.UIUserInterfaceIdiomPad
+import platform.darwin.dispatch_async
+import platform.darwin.dispatch_get_main_queue
 
 /**
  * iOS implementation of DataBackupManager.
@@ -95,6 +103,61 @@ class IosDataBackupManager(
                 ?: emptyList()
         } catch (e: Exception) {
             emptyList()
+        }
+    }
+
+    /**
+     * Share backup via iOS share sheet (UIActivityViewController)
+     */
+    override suspend fun shareBackup() {
+        val backup = exportAllData()
+        val jsonString = json.encodeToString(backup)
+        val timestamp = KmpUtils.formatTimestamp(KmpUtils.currentTimeMillis(), "yyyy-MM-dd")
+            .replace("-", "") + "_" +
+            KmpUtils.formatTimestamp(KmpUtils.currentTimeMillis(), "HH:mm:ss")
+                .replace(":", "")
+        val fileName = "vitruvian_backup_$timestamp.json"
+
+        // Save to temp file
+        val tempDir = NSTemporaryDirectory()
+        val filePath = "$tempDir$fileName"
+
+        val nsContent = (jsonString as NSString)
+        val success = nsContent.writeToFile(
+            filePath,
+            atomically = true,
+            encoding = NSUTF8StringEncoding,
+            error = null
+        )
+
+        if (!success) return
+
+        val fileURL = NSURL.fileURLWithPath(filePath)
+
+        // Present share sheet on main thread
+        dispatch_async(dispatch_get_main_queue()) {
+            val scenes = UIApplication.sharedApplication.connectedScenes
+            val windowScene = scenes.firstOrNull { it is UIWindowScene } as? UIWindowScene
+            val rootViewController = windowScene?.keyWindow?.rootViewController ?: return@dispatch_async
+
+            val activityVC = UIActivityViewController(
+                activityItems = listOf(fileURL),
+                applicationActivities = null
+            )
+
+            // Configure popover for iPad - required to prevent crash
+            // Access popoverPresentationController via ObjC KVC since K/N bindings don't expose it directly
+            if (UIDevice.currentDevice.userInterfaceIdiom == UIUserInterfaceIdiomPad) {
+                activityVC.valueForKey("popoverPresentationController")?.let { popover ->
+                    (popover as? NSObject)?.setValue(rootViewController.view, forKey = "sourceView")
+                }
+            }
+
+            rootViewController.presentViewController(
+                activityVC,
+                animated = true,
+                completion = null
+            )
         }
     }
 }

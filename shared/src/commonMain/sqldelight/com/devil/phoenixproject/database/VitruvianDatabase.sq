@@ -592,6 +592,15 @@ SELECT COUNT(*) FROM Superset WHERE routineId = ?;
 selectAllSupersetsSync:
 SELECT * FROM Superset;
 
+-- Get all superset IDs for duplicate detection during import
+selectAllSupersetIds:
+SELECT id FROM Superset;
+
+-- Insert superset, ignoring duplicates (for backup import)
+insertSupersetIgnore:
+INSERT OR IGNORE INTO Superset (id, routineId, name, colorIndex, restBetweenSeconds, orderIndex)
+VALUES (?, ?, ?, ?, ?, ?);
+
 -- Update exercise superset reference (for migration and CRUD operations)
 updateExerciseSupersetRef:
 UPDATE RoutineExercise
@@ -1101,6 +1110,88 @@ SELECT * FROM Exercise WHERE one_rep_max_kg IS NOT NULL;
 
 findExerciseByName:
 SELECT * FROM Exercise WHERE TRIM(name) = TRIM(?) LIMIT 1;
+
+-- ==================== BACKUP SYNC QUERIES ====================
+-- These queries select all data from tables for backup/restore functionality
+
+-- Backup sync queries for training cycle related tables
+selectAllTrainingCyclesSync:
+SELECT * FROM TrainingCycle;
+
+selectAllCycleDaysSync:
+SELECT * FROM CycleDay;
+
+selectAllCycleProgressSync:
+SELECT * FROM CycleProgress;
+
+selectAllCycleProgressionsSync:
+SELECT * FROM CycleProgression;
+
+selectAllPlannedSetsSync:
+SELECT * FROM PlannedSet;
+
+selectAllCompletedSetsSync:
+SELECT * FROM CompletedSet;
+
+selectAllProgressionEventsSync:
+SELECT * FROM ProgressionEvent;
+
+-- Backup sync queries for gamification tables
+selectAllEarnedBadgesSync:
+SELECT * FROM EarnedBadge;
+
+selectAllStreakHistorySync:
+SELECT * FROM StreakHistory;
+
+selectGamificationStatsSync:
+SELECT * FROM GamificationStats WHERE id = 1;
+
+-- Backup sync queries for user profiles
+selectAllUserProfilesSync:
+SELECT * FROM UserProfile;
+
+selectAllUserProfileIds:
+SELECT id FROM UserProfile;
+
+-- ==================== IMPORT QUERIES WITH DUPLICATE HANDLING ====================
+-- INSERT OR IGNORE queries for backup import (skips duplicates)
+
+insertTrainingCycleIgnore:
+INSERT OR IGNORE INTO TrainingCycle (id, name, description, created_at, is_active)
+VALUES (?, ?, ?, ?, ?);
+
+insertCycleDayIgnore:
+INSERT OR IGNORE INTO CycleDay (id, cycle_id, day_number, name, routine_id, is_rest_day, echo_level, eccentric_load_percent, weight_progression_percent, rep_modifier, rest_time_override_seconds)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+insertCycleProgressIgnore:
+INSERT OR IGNORE INTO CycleProgress (id, cycle_id, current_day_number, last_completed_date, cycle_start_date, last_advanced_at, completed_days, missed_days, rotation_count)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+insertCycleProgressionIgnore:
+INSERT OR IGNORE INTO CycleProgression (cycle_id, frequency_cycles, weight_increase_percent, echo_level_increase, eccentric_load_increase_percent)
+VALUES (?, ?, ?, ?, ?);
+
+insertPlannedSetIgnore:
+INSERT OR IGNORE INTO PlannedSet (id, routine_exercise_id, set_number, set_type, target_reps, target_weight_kg, target_rpe, rest_seconds)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?);
+
+insertCompletedSetIgnore:
+INSERT OR IGNORE INTO CompletedSet (id, session_id, planned_set_id, set_number, set_type, actual_reps, actual_weight_kg, logged_rpe, is_pr, completed_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+insertProgressionEventIgnore:
+INSERT OR IGNORE INTO ProgressionEvent (id, exercise_id, suggested_weight_kg, previous_weight_kg, reason, user_response, actual_weight_kg, timestamp)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?);
+
+insertEarnedBadgeIgnore:
+INSERT OR IGNORE INTO EarnedBadge (badgeId, earnedAt, celebratedAt) VALUES (?, ?, ?);
+
+insertStreakHistoryIgnore:
+INSERT OR IGNORE INTO StreakHistory (startDate, endDate, length) VALUES (?, ?, ?);
+
+insertUserProfileIgnore:
+INSERT OR IGNORE INTO UserProfile (id, name, colorIndex, createdAt, isActive) VALUES (?, ?, ?, ?, ?);
 
 -- ==================== USER PROFILES ====================
 -- User Profiles for multi-user support

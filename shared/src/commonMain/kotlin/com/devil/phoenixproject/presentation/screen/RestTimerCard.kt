@@ -87,6 +87,7 @@ fun RestTimerCard(
                     )
                 )
             )
+            .systemBarsPadding()
             .padding(20.dp)
     ) {
         // Subtle pulsing overlay to create an immersive feel

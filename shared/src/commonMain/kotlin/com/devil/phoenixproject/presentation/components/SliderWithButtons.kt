@@ -12,6 +12,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.ui.theme.Spacing
+import kotlin.math.roundToInt
 
 /**
  * Hybrid slider with fine-tuning +/- buttons
@@ -28,6 +29,10 @@ fun SliderWithButtons(
     modifier: Modifier = Modifier,
     enabled: Boolean = true
 ) {
+    // Calculate number of discrete steps for the slider
+    // steps = number of intervals - 1 (excluding start and end)
+    val range = valueRange.endInclusive - valueRange.start
+    val sliderSteps = ((range / step).roundToInt() - 1).coerceAtLeast(0)
     Column(
         modifier = modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(Spacing.small)
@@ -77,11 +82,18 @@ fun SliderWithButtons(
                 )
             }
 
-            // Slider
+            // Slider with discrete steps matching the +/- button increments
             ExpressiveSlider(
                 value = value,
-                onValueChange = if (enabled) onValueChange else { _ -> },
+                onValueChange = { rawValue ->
+                    if (enabled) {
+                        // Snap to nearest step to avoid floating point precision issues
+                        val snapped = (rawValue / step).roundToInt() * step
+                        onValueChange(snapped.coerceIn(valueRange))
+                    }
+                },
                 valueRange = valueRange,
+                steps = sliderSteps,
                 modifier = Modifier.weight(1f),
             )
 

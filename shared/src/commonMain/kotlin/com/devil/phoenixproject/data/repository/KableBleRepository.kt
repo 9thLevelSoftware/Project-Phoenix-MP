@@ -1459,32 +1459,64 @@ class KableBleRepository : BleRepository {
 
         // Send to NUS TX using WriteWithResponse (V-Form only supports this mode)
         // Note: V-Form devices do NOT advertise WriteWithoutResponse property
-        return try {
-            log.d { "Sending ${command.size}-byte command to NUS TX" }
-            log.d { "Command hex: $commandHex" }
+        // Issue #125: Retry on WriteRequestBusy with exponential backoff
+        val maxRetries = 3
+        var lastException: Exception? = null
 
-            p.write(txCharacteristic, command, WriteType.WithResponse)
-            log.i { "✅ Command sent via NUS TX: ${command.size} bytes" }
+        for (attempt in 0 until maxRetries) {
+            try {
+                if (attempt > 0) {
+                    log.d { "Retry attempt $attempt for ${command.size}-byte command" }
+                } else {
+                    log.d { "Sending ${command.size}-byte command to NUS TX" }
+                    log.d { "Command hex: $commandHex" }
+                }
 
-            logRepo.debug(
-                LogEventType.COMMAND_SENT,
-                "Command sent (NUS TX)",
-                connectedDeviceName,
-                connectedDeviceAddress,
-                "Size: ${command.size} bytes"
-            )
-            Result.success(Unit)
-        } catch (e: Exception) {
-            log.e { "Failed to send command: ${e.message}" }
-            logRepo.error(
-                LogEventType.ERROR,
-                "Failed to send command",
-                connectedDeviceName,
-                connectedDeviceAddress,
-                e.message
-            )
-            Result.failure(e)
+                p.write(txCharacteristic, command, WriteType.WithResponse)
+                log.i { "✅ Command sent via NUS TX: ${command.size} bytes" }
+
+                logRepo.debug(
+                    LogEventType.COMMAND_SENT,
+                    "Command sent (NUS TX)",
+                    connectedDeviceName,
+                    connectedDeviceAddress,
+                    "Size: ${command.size} bytes"
+                )
+                return Result.success(Unit)
+            } catch (e: Exception) {
+                lastException = e
+                // Check if this is a WriteRequestBusy error (retryable)
+                val isBusyError = e.message?.contains("Busy", ignoreCase = true) == true ||
+                    e.message?.contains("WriteRequestBusy", ignoreCase = true) == true
+
+                if (isBusyError && attempt < maxRetries - 1) {
+                    val delayMs = 50L * (attempt + 1)  // 50ms, 100ms, 150ms
+                    log.w { "BLE write busy, retrying in ${delayMs}ms (attempt ${attempt + 1}/$maxRetries)" }
+                    logRepo.warning(
+                        LogEventType.ERROR,
+                        "Write busy, retrying",
+                        connectedDeviceName,
+                        connectedDeviceAddress,
+                        "Attempt ${attempt + 1}, delay ${delayMs}ms"
+                    )
+                    kotlinx.coroutines.delay(delayMs)
+                } else {
+                    // Non-retryable error or max retries reached
+                    break
+                }
+            }
         }
+
+        // All retries failed
+        log.e { "Failed to send command after $maxRetries attempts: ${lastException?.message}" }
+        logRepo.error(
+            LogEventType.ERROR,
+            "Failed to send command",
+            connectedDeviceName,
+            connectedDeviceAddress,
+            lastException?.message
+        )
+        return Result.failure(lastException ?: IllegalStateException("Unknown error"))
     }
 
     // ===== HIGH-LEVEL WORKOUT CONTROL (parity with parent repo) =====
@@ -1917,15 +1949,54 @@ class KableBleRepository : BleRepository {
             lastTimestamp = currentTime
 
             // Create metric with SMOOTHED velocity (absolute value for backwards compatibility)
+            // Issue #144: For single-cable exercises, use max(posA, posB) for both channels
+            // This matches the official Vitruvian app behavior: "Max of left/right for position/force"
+            // This ensures the position bar shows movement regardless of which physical cable is used,
+            // since the machine may report position on either channel for single-cable exercises.
+            val effectivePosA: Float
+            val effectivePosB: Float
+            val effectiveVelA: Double
+            val effectiveVelB: Double
+
+            when (currentCableConfig) {
+                com.devil.phoenixproject.domain.model.CableConfiguration.SINGLE,
+                com.devil.phoenixproject.domain.model.CableConfiguration.EITHER -> {
+                    // Use max position/velocity for single-cable exercises (matches official app)
+                    val maxPos = maxOf(posA, posB)
+                    val maxVel = if (kotlin.math.abs(smoothedVelocityA) > kotlin.math.abs(smoothedVelocityB)) {
+                        smoothedVelocityA
+                    } else {
+                        smoothedVelocityB
+                    }
+                    effectivePosA = maxPos
+                    effectivePosB = maxPos
+                    effectiveVelA = maxVel
+                    effectiveVelB = maxVel
+                }
+                com.devil.phoenixproject.domain.model.CableConfiguration.DOUBLE -> {
+                    // Two-cable exercises: use each channel independently
+                    effectivePosA = posA
+                    effectivePosB = posB
+                    effectiveVelA = smoothedVelocityA
+                    effectiveVelB = smoothedVelocityB
+                }
+            }
+
+            // Log position values periodically for single-cable debugging (Issue #144)
+            if (monitorNotificationCount % 200 == 0L &&
+                currentCableConfig != com.devil.phoenixproject.domain.model.CableConfiguration.DOUBLE) {
+                log.i { "📊 SINGLE-CABLE POSITION: raw(A=$posA, B=$posB) -> max=$effectivePosA config=$currentCableConfig" }
+            }
+
             val metric = WorkoutMetric(
                 timestamp = currentTime,
                 loadA = loadA,
                 loadB = loadB,
-                positionA = posA,
-                positionB = posB,
+                positionA = effectivePosA,
+                positionB = effectivePosB,
                 ticks = ticks,
-                velocityA = smoothedVelocityA,  // Smoothed, signed velocity
-                velocityB = smoothedVelocityB,  // Smoothed, signed velocity
+                velocityA = effectiveVelA,  // Smoothed, signed velocity
+                velocityB = effectiveVelB,  // Smoothed, signed velocity
                 status = status
             )
 
@@ -2325,6 +2396,15 @@ class KableBleRepository : BleRepository {
 
             val emitted = _repEvents.tryEmit(notification)
             log.d { "🔥 Emitted rep event (RX): success=$emitted, legacy=${notification.isLegacyFormat}" }
+
+            // Log to user-visible connection logs for Issue #123 diagnosis
+            logRepo.debug(
+                LogEventType.REP_RECEIVED,
+                if (notification.isLegacyFormat) "Legacy rep (6-byte)" else "Modern rep (24-byte)",
+                connectedDeviceName.ifEmpty { null },
+                connectedDeviceAddress.ifEmpty { null },
+                "up=${notification.topCounter}, setCount=${notification.repsSetCount}, legacy=${notification.isLegacyFormat}"
+            )
         } catch (e: Exception) {
             log.e { "Error parsing rep notification: ${e.message}" }
         }
@@ -2412,6 +2492,15 @@ class KableBleRepository : BleRepository {
 
             val emitted = _repEvents.tryEmit(notification)
             log.i { "🔥 Emitted rep event (REPS char): success=$emitted, legacy=${notification.isLegacyFormat}, repsSetCount=${notification.repsSetCount}" }
+
+            // Log to user-visible connection logs for Issue #123 diagnosis
+            logRepo.debug(
+                LogEventType.REP_RECEIVED,
+                if (notification.isLegacyFormat) "Legacy rep (6-byte)" else "Modern rep (24-byte)",
+                connectedDeviceName.ifEmpty { null },
+                connectedDeviceAddress.ifEmpty { null },
+                "up=${notification.topCounter}, setCount=${notification.repsSetCount}, legacy=${notification.isLegacyFormat}"
+            )
         } catch (e: Exception) {
             log.e { "Error parsing REPS characteristic data: ${e.message}" }
         }

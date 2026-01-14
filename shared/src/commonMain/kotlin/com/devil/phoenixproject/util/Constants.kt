@@ -5,7 +5,11 @@ package com.devil.phoenixproject.util
  */
 object Constants {
     // App version
-    const val APP_VERSION = "0.3.0"
+    const val APP_VERSION = "0.3.2"
+
+    // EULA version - increment when EULA text changes materially
+    // Users must re-accept when this version increases
+    const val EULA_VERSION = 1
 
     // Weight limits (in kg)
     const val MIN_WEIGHT_KG = 0f

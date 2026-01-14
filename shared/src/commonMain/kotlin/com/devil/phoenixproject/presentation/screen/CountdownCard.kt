@@ -8,6 +8,7 @@ import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -16,9 +17,13 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.devil.phoenixproject.presentation.util.LocalWindowSizeClass
@@ -28,7 +33,7 @@ import com.devil.phoenixproject.ui.theme.*
 /**
  * Countdown Card Component
  *
- * Displays 3-2-1-GO countdown before workout begins in autoplay mode.
+ * Displays countdown before workout begins in autoplay mode.
  * Shows animated countdown with exercise preparation info.
  */
 @Composable
@@ -41,6 +46,7 @@ fun CountdownCard(
     currentExerciseIndex: Int? = null,
     totalExercises: Int? = null,
     formatWeight: ((Float) -> String)? = null,
+    isEchoMode: Boolean = false,
     onSkipCountdown: () -> Unit,
     onEndWorkout: () -> Unit,
     modifier: Modifier = Modifier
@@ -48,17 +54,29 @@ fun CountdownCard(
     // Responsive sizing based on window size class
     val windowSizeClass = LocalWindowSizeClass.current
     val countdownSize = when (windowSizeClass.widthSizeClass) {
-        WindowWidthSizeClass.Expanded -> 320.dp
-        WindowWidthSizeClass.Medium -> 270.dp
-        WindowWidthSizeClass.Compact -> 220.dp
+        WindowWidthSizeClass.Expanded -> 280.dp
+        WindowWidthSizeClass.Medium -> 240.dp
+        WindowWidthSizeClass.Compact -> 200.dp
     }
     val countdownFontSize = when (windowSizeClass.widthSizeClass) {
-        WindowWidthSizeClass.Expanded -> 120.sp
-        WindowWidthSizeClass.Medium -> 105.sp
-        WindowWidthSizeClass.Compact -> 90.sp
+        WindowWidthSizeClass.Expanded -> 100.sp
+        WindowWidthSizeClass.Medium -> 88.sp
+        WindowWidthSizeClass.Compact -> 76.sp
     }
 
-    // Background gradient - respects theme mode
+    // Pulsing animation
+    val infinite = rememberInfiniteTransition(label = "countdown-pulse")
+    val pulse by infinite.animateFloat(
+        initialValue = 1f,
+        targetValue = 1.06f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 1000, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "pulse"
+    )
+
+    // Background gradient
     Box(
         modifier = modifier
             .fillMaxSize()
@@ -66,143 +84,159 @@ fun CountdownCard(
                 Brush.verticalGradient(
                     colors = listOf(
                         MaterialTheme.colorScheme.background,
-                        MaterialTheme.colorScheme.surface,
-                        MaterialTheme.colorScheme.surfaceVariant
+                        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
                     )
                 )
             )
-            .padding(20.dp)
+            .systemBarsPadding()
+            .padding(horizontal = 24.dp, vertical = 16.dp)
     ) {
-        // Subtle pulsing overlay to create an immersive feel
-        val infinite = rememberInfiniteTransition(label = "countdown-pulse")
-        val pulse by infinite.animateFloat(
-            initialValue = 1f,
-            targetValue = 1.08f,
-            animationSpec = infiniteRepeatable(
-                animation = tween(durationMillis = 1000, easing = FastOutSlowInEasing),
-                repeatMode = RepeatMode.Reverse
-            ),
-            label = "pulse"
-        )
-
         Column(
-            modifier = Modifier
-                .fillMaxSize(),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.SpaceBetween
+            modifier = Modifier.fillMaxSize(),
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Spacer(modifier = Modifier.height(8.dp))
+            // Top section: Exercise info
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier.padding(top = 8.dp)
+            ) {
+                // Progress indicator (if in routine)
+                if (currentExerciseIndex != null && totalExercises != null && totalExercises > 1) {
+                    Surface(
+                        color = MaterialTheme.colorScheme.primaryContainer,
+                        shape = RoundedCornerShape(16.dp)
+                    ) {
+                        Text(
+                            text = "Exercise ${currentExerciseIndex + 1} of $totalExercises",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(12.dp))
+                }
 
-            // GET READY Header - Material 3 Expressive
-            Text(
-                text = "GET READY",
-                style = MaterialTheme.typography.titleMedium, // Material 3 Expressive: Larger (was labelLarge)
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                letterSpacing = 1.5.sp
-            )
+                // Exercise name - prominent display
+                Text(
+                    text = nextExerciseName,
+                    style = MaterialTheme.typography.headlineMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    textAlign = TextAlign.Center,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(horizontal = 16.dp)
+                )
+            }
 
-            // Countdown number - large centered text with pulsing animation
+            Spacer(modifier = Modifier.weight(0.5f))
+
+            // Center section: Countdown circle
             Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(countdownSize),
+                modifier = Modifier.size(countdownSize),
                 contentAlignment = Alignment.Center
             ) {
-                // Circular background with pulse effect
+                // Outer pulsing ring
                 Box(
                     modifier = Modifier
                         .size(countdownSize)
                         .scale(pulse)
+                        .clip(CircleShape)
                         .background(
-                            color = MaterialTheme.colorScheme.surfaceContainerHighest,
-                            shape = RoundedCornerShape(countdownSize)
+                            Brush.radialGradient(
+                                colors = listOf(
+                                    MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
+                                    MaterialTheme.colorScheme.primary.copy(alpha = 0.05f)
+                                )
+                            )
                         )
                 )
 
-                // Countdown text or "GO!"
-                val countdownText = if (countdownSecondsRemaining > 0) {
-                    countdownSecondsRemaining.toString()
-                } else {
-                    "GO!"
-                }
+                // Inner circle
+                Box(
+                    modifier = Modifier
+                        .size(countdownSize - 24.dp)
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.surfaceContainerHigh),
+                    contentAlignment = Alignment.Center
+                ) {
+                    val countdownText = if (countdownSecondsRemaining > 0) {
+                        countdownSecondsRemaining.toString()
+                    } else {
+                        "GO!"
+                    }
 
-                Text(
-                    text = countdownText,
-                    style = MaterialTheme.typography.displayLarge.copy(fontSize = countdownFontSize),
-                    fontWeight = FontWeight.ExtraBold,
-                    color = if (countdownSecondsRemaining == 0)
-                        MaterialTheme.colorScheme.tertiary
-                    else
-                        MaterialTheme.colorScheme.primary
-                )
+                    Text(
+                        text = countdownText,
+                        fontSize = countdownFontSize,
+                        fontWeight = FontWeight.Black,
+                        color = if (countdownSecondsRemaining == 0)
+                            MaterialTheme.colorScheme.tertiary
+                        else
+                            MaterialTheme.colorScheme.primary
+                    )
+                }
             }
 
-            // UP NEXT section - Material 3 Expressive
-            Text(
-                text = "UP NEXT",
-                style = MaterialTheme.typography.titleMedium, // Material 3 Expressive: Larger (was labelMedium)
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                letterSpacing = 1.2.sp
-            )
+            Spacer(modifier = Modifier.weight(0.3f))
 
-            // Next exercise name - Material 3 Expressive
-            Text(
-                text = nextExerciseName,
-                style = MaterialTheme.typography.headlineSmall, // Material 3 Expressive: Larger (was titleLarge)
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurface
-            )
-
-            // Workout parameters preview (if available)
-            if (nextExerciseWeight != null || nextExerciseReps != null) {
-                Spacer(modifier = Modifier.height(Spacing.small))
-
-                // Parameters card - Material 3 Expressive
-                Card(
+            // Parameters section
+            if (nextExerciseWeight != null || nextExerciseReps != null || nextExerciseMode != null) {
+                Surface(
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(20.dp), // Material 3 Expressive: More rounded (was 12dp)
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest), // Material 3 Expressive: Higher contrast
-                    elevation = CardDefaults.cardElevation(defaultElevation = 8.dp) // Material 3 Expressive: Higher elevation
+                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    shape = RoundedCornerShape(20.dp),
+                    tonalElevation = 2.dp
                 ) {
                     Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(Spacing.medium),
-                        verticalArrangement = Arrangement.spacedBy(Spacing.small)
+                        modifier = Modifier.padding(20.dp),
+                        verticalArrangement = Arrangement.spacedBy(16.dp)
                     ) {
+                        // Section header
                         Text(
-                            "WORKOUT PARAMETERS",
-                            style = MaterialTheme.typography.labelLarge, // Material 3 Expressive: Larger (was labelSmall)
+                            text = "SET CONFIGURATION",
+                            style = MaterialTheme.typography.labelMedium,
                             fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            color = MaterialTheme.colorScheme.primary,
                             letterSpacing = 1.sp
                         )
 
+                        // Parameters in a clean grid
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceEvenly
                         ) {
-                            if (nextExerciseWeight != null && formatWeight != null) {
-                                WorkoutParamItemCountdown(
-                                    icon = Icons.Default.Settings,
+                            // Echo mode shows "Adaptive" instead of weight
+                            if (isEchoMode) {
+                                CountdownParamChip(
+                                    icon = Icons.Default.FitnessCenter,
                                     label = "Weight",
-                                    value = formatWeight(nextExerciseWeight)
+                                    value = "Adaptive",
+                                    modifier = Modifier.weight(1f)
+                                )
+                            } else if (nextExerciseWeight != null && formatWeight != null) {
+                                CountdownParamChip(
+                                    icon = Icons.Default.FitnessCenter,
+                                    label = "Weight",
+                                    value = formatWeight(nextExerciseWeight),
+                                    modifier = Modifier.weight(1f)
                                 )
                             }
                             if (nextExerciseReps != null) {
-                                WorkoutParamItemCountdown(
-                                    icon = Icons.Default.Refresh,
-                                    label = "Target Reps",
-                                    value = nextExerciseReps.toString()
+                                CountdownParamChip(
+                                    icon = Icons.Default.Repeat,
+                                    label = "Reps",
+                                    value = nextExerciseReps.toString(),
+                                    modifier = Modifier.weight(1f)
                                 )
                             }
                             if (nextExerciseMode != null) {
-                                WorkoutParamItemCountdown(
-                                    icon = Icons.Default.Settings,
+                                CountdownParamChip(
+                                    icon = Icons.Default.Speed,
                                     label = "Mode",
-                                    value = nextExerciseMode.take(8)
+                                    value = nextExerciseMode,
+                                    modifier = Modifier.weight(1f)
                                 )
                             }
                         }
@@ -210,88 +244,57 @@ fun CountdownCard(
                 }
             }
 
-            // Progress through routine (if multi-exercise)
-            if (currentExerciseIndex != null && totalExercises != null && totalExercises > 1) {
-                Spacer(modifier = Modifier.height(Spacing.small))
+            Spacer(modifier = Modifier.weight(0.3f))
 
-                Column(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Text(
-                        "Exercise ${currentExerciseIndex + 1} of $totalExercises",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Spacer(modifier = Modifier.height(4.dp))
-                    LinearProgressIndicator(
-                        progress = { (currentExerciseIndex + 1).toFloat() / totalExercises },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(4.dp),
-                        color = MaterialTheme.colorScheme.primary,
-                        trackColor = MaterialTheme.colorScheme.surfaceContainerHighest,
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(Spacing.medium))
-
-            // Action buttons
+            // Bottom section: Action buttons
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(bottom = 8.dp),
-                verticalArrangement = Arrangement.spacedBy(Spacing.small)
+                verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                // Skip Countdown button (primary action) - Material 3 Expressive
+                // Skip Countdown - Primary action
                 Button(
                     onClick = onSkipCountdown,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(56.dp), // Material 3 Expressive: Taller button
+                        .height(56.dp),
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.primary,
-                        contentColor = MaterialTheme.colorScheme.onPrimary
+                        containerColor = MaterialTheme.colorScheme.primary
                     ),
-                    shape = RoundedCornerShape(20.dp), // Material 3 Expressive: More rounded (was 16dp)
-                    elevation = ButtonDefaults.buttonElevation(
-                        defaultElevation = 4.dp, // Material 3 Expressive: Higher elevation
-                        pressedElevation = 2.dp
-                    )
+                    shape = RoundedCornerShape(16.dp)
                 ) {
                     Icon(
                         Icons.Default.PlayArrow,
-                        contentDescription = "Skip countdown",
-                        modifier = Modifier.size(24.dp) // Material 3 Expressive: Larger icon (was 20dp)
+                        contentDescription = null,
+                        modifier = Modifier.size(24.dp)
                     )
-                    Spacer(modifier = Modifier.width(Spacing.small))
+                    Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = "Skip Countdown",
-                        style = MaterialTheme.typography.titleLarge, // Material 3 Expressive: Larger (was labelLarge)
+                        text = "Start Now",
+                        style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold
                     )
                 }
 
-                // End Workout button (secondary/destructive action) - Material 3 Expressive
+                // End Workout - Secondary action
                 TextButton(
                     onClick = onEndWorkout,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(56.dp), // Material 3 Expressive: Taller button
-                    shape = RoundedCornerShape(20.dp) // Material 3 Expressive: More rounded (was 16dp)
+                        .height(48.dp)
                 ) {
                     Icon(
                         Icons.Default.Close,
-                        contentDescription = "End workout",
-                        modifier = Modifier.size(18.dp),
+                        contentDescription = null,
+                        modifier = Modifier.size(20.dp),
                         tint = MaterialTheme.colorScheme.error
                     )
-                    Spacer(modifier = Modifier.width(Spacing.small))
+                    Spacer(modifier = Modifier.width(8.dp))
                     Text(
                         text = "End Workout",
-                        style = MaterialTheme.typography.titleMedium, // Material 3 Expressive: Larger (was labelMedium)
-                        fontWeight = FontWeight.Bold, // Material 3 Expressive: Bolder
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.SemiBold,
                         color = MaterialTheme.colorScheme.error
                     )
                 }
@@ -300,34 +303,54 @@ fun CountdownCard(
     }
 }
 
+/**
+ * Individual parameter chip for the countdown card
+ */
 @Composable
-fun WorkoutParamItemCountdown(
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
+private fun CountdownParamChip(
+    icon: ImageVector,
     label: String,
     value: String,
     modifier: Modifier = Modifier
 ) {
     Column(
-        modifier = modifier,
+        modifier = modifier.padding(horizontal = 4.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(4.dp)
+        verticalArrangement = Arrangement.spacedBy(6.dp)
     ) {
-        Icon(
-            icon,
-            contentDescription = label,
-            modifier = Modifier.size(20.dp),
-            tint = MaterialTheme.colorScheme.primary
-        )
+        // Icon in a subtle circle
+        Box(
+            modifier = Modifier
+                .size(36.dp)
+                .clip(CircleShape)
+                .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                icon,
+                contentDescription = label,
+                modifier = Modifier.size(20.dp),
+                tint = MaterialTheme.colorScheme.primary
+            )
+        }
+
+        // Value - prominent
         Text(
-            value,
-            style = MaterialTheme.typography.titleSmall,
+            text = value,
+            style = MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.onSurface
+            color = MaterialTheme.colorScheme.onSurface,
+            textAlign = TextAlign.Center,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
         )
+
+        // Label - subtle
         Text(
-            label,
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
+            text = label,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center
         )
     }
 }

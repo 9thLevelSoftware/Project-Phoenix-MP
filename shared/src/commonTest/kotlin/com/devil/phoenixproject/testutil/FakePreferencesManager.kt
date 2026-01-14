@@ -98,4 +98,14 @@ class FakePreferencesManager : PreferencesManager {
     override suspend fun setAutoStartCountdownSeconds(seconds: Int) {
         _preferencesFlow.value = _preferencesFlow.value.copy(autoStartCountdownSeconds = seconds)
     }
+
+    private var simulatorModeUnlocked = false
+
+    override suspend fun setSimulatorModeUnlocked(unlocked: Boolean) {
+        simulatorModeUnlocked = unlocked
+    }
+
+    override fun isSimulatorModeUnlocked(): Boolean {
+        return simulatorModeUnlocked
+    }
 }

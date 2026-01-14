@@ -105,7 +105,9 @@ fun SingleExerciseScreen(
         viewModel.updateTopBarTitle("Single Exercise")
     }
 
-    Scaffold { padding ->
+    Scaffold(
+        contentWindowInsets = WindowInsets.navigationBars
+    ) { padding ->
         Box(modifier = Modifier.padding(padding)) {
             // Always show the picker content as the background
             ExercisePickerContent(

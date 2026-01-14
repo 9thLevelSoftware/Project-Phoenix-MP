@@ -6,8 +6,11 @@ import com.devil.phoenixproject.domain.model.WorkoutSession
 import kotlinx.cinterop.BetaInteropApi
 import kotlinx.cinterop.ExperimentalForeignApi
 import platform.Foundation.*
+import platform.darwin.NSObject
 import platform.UIKit.UIActivityViewController
 import platform.UIKit.UIApplication
+import platform.UIKit.UIDevice
+import platform.UIKit.UIUserInterfaceIdiomPad
 import platform.darwin.dispatch_async
 import platform.darwin.dispatch_get_main_queue
 
@@ -148,6 +151,14 @@ class IosCsvExporter : CsvExporter {
                 activityItems = listOf(url),
                 applicationActivities = null
             )
+
+            // Configure popover for iPad - required to prevent crash
+            // Access popoverPresentationController via ObjC KVC since K/N bindings don't expose it directly
+            if (UIDevice.currentDevice.userInterfaceIdiom == UIUserInterfaceIdiomPad) {
+                activityVC.valueForKey("popoverPresentationController")?.let { popover ->
+                    (popover as? NSObject)?.setValue(rootViewController.view, forKey = "sourceView")
+                }
+            }
 
             rootViewController.presentViewController(
                 activityVC,

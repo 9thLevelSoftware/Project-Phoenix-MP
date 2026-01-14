@@ -40,6 +40,7 @@ object LogEventType {
     const val COMMAND_SENT = "COMMAND_SENT"
     const val COMMAND_RESPONSE = "COMMAND_RESPONSE"
     const val HEARTBEAT = "HEARTBEAT"
+    const val REP_RECEIVED = "REP_RECEIVED"
 }
 
 /**

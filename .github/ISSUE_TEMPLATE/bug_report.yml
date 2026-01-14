@@ -42,18 +42,6 @@ body:
     validations:
       required: true
 
-  - type: dropdown
-    id: trainer-model
-    attributes:
-      label: Trainer Model
-      description: Which Vitruvian trainer do you have?
-      options:
-        - V-Form Trainer (VIT-200)
-        - Trainer+
-        - Unknown/Other
-    validations:
-      required: true
-
   - type: textarea
     id: description
     attributes:

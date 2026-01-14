@@ -143,6 +143,19 @@ data class PersonalRecordBackup(
 )
 
 /**
+ * Backup representation of Superset (groups exercises within a routine)
+ */
+@Serializable
+data class SupersetBackup(
+    val id: String,
+    val routineId: String,
+    val name: String,
+    val colorIndex: Int = 0,
+    val restBetweenSeconds: Int = 10,
+    val orderIndex: Int = 0
+)
+
+/**
  * Backup representation of TrainingCycle (KMP extension)
  */
 @Serializable
@@ -168,6 +181,132 @@ data class CycleDayBackup(
 )
 
 /**
+ * Backup representation of UserProfile
+ */
+@Serializable
+data class UserProfileBackup(
+    val id: String,
+    val name: String,
+    val colorIndex: Int = 0,
+    val createdAt: Long,
+    val isActive: Boolean = false
+)
+
+/**
+ * Backup representation of CycleProgress (current position in training cycle)
+ */
+@Serializable
+data class CycleProgressBackup(
+    val id: String,
+    val cycleId: String,
+    val currentDayNumber: Int = 1,
+    val lastCompletedDate: Long? = null,
+    val cycleStartDate: Long,
+    val lastAdvancedAt: Long? = null,
+    val completedDays: String? = null,
+    val missedDays: String? = null,
+    val rotationCount: Int = 0
+)
+
+/**
+ * Backup representation of CycleProgression (auto-progression rules)
+ */
+@Serializable
+data class CycleProgressionBackup(
+    val cycleId: String,
+    val frequencyCycles: Int = 2,
+    val weightIncreasePercent: Float? = null,
+    val echoLevelIncrease: Int = 0,
+    val eccentricLoadIncreasePercent: Int? = null
+)
+
+/**
+ * Backup representation of PlannedSet
+ */
+@Serializable
+data class PlannedSetBackup(
+    val id: String,
+    val routineExerciseId: String,
+    val setNumber: Int,
+    val setType: String = "STANDARD",
+    val targetReps: Int? = null,
+    val targetWeightKg: Float? = null,
+    val targetRpe: Int? = null,
+    val restSeconds: Int? = null
+)
+
+/**
+ * Backup representation of CompletedSet
+ */
+@Serializable
+data class CompletedSetBackup(
+    val id: String,
+    val sessionId: String,
+    val plannedSetId: String? = null,
+    val setNumber: Int,
+    val setType: String = "STANDARD",
+    val actualReps: Int,
+    val actualWeightKg: Float,
+    val loggedRpe: Int? = null,
+    val isPr: Boolean = false,
+    val completedAt: Long
+)
+
+/**
+ * Backup representation of ProgressionEvent
+ */
+@Serializable
+data class ProgressionEventBackup(
+    val id: String,
+    val exerciseId: String,
+    val suggestedWeightKg: Float,
+    val previousWeightKg: Float,
+    val reason: String,
+    val userResponse: String? = null,
+    val actualWeightKg: Float? = null,
+    val timestamp: Long
+)
+
+/**
+ * Backup representation of EarnedBadge
+ */
+@Serializable
+data class EarnedBadgeBackup(
+    val id: Long = 0,
+    val badgeId: String,
+    val earnedAt: Long,
+    val celebratedAt: Long? = null
+)
+
+/**
+ * Backup representation of StreakHistory
+ */
+@Serializable
+data class StreakHistoryBackup(
+    val id: Long = 0,
+    val startDate: Long,
+    val endDate: Long,
+    val length: Int
+)
+
+/**
+ * Backup representation of GamificationStats
+ */
+@Serializable
+data class GamificationStatsBackup(
+    val totalWorkouts: Int = 0,
+    val totalReps: Int = 0,
+    val totalVolumeKg: Int = 0,
+    val longestStreak: Int = 0,
+    val currentStreak: Int = 0,
+    val uniqueExercisesUsed: Int = 0,
+    val prsAchieved: Int = 0,
+    val lastWorkoutDate: Long? = null,
+    val streakStartDate: Long? = null,
+    val lastUpdated: Long
+)
+
+/**
  * Root backup data structure containing all exportable data
  */
 @Serializable
@@ -187,10 +326,20 @@ data class BackupContent(
     val metricSamples: List<MetricSampleBackup> = emptyList(),
     val routines: List<RoutineBackup> = emptyList(),
     val routineExercises: List<RoutineExerciseBackup> = emptyList(),
+    val supersets: List<SupersetBackup> = emptyList(),
     val personalRecords: List<PersonalRecordBackup> = emptyList(),
     // KMP extensions
     val trainingCycles: List<TrainingCycleBackup> = emptyList(),
-    val cycleDays: List<CycleDayBackup> = emptyList()
+    val cycleDays: List<CycleDayBackup> = emptyList(),
+    val cycleProgress: List<CycleProgressBackup> = emptyList(),
+    val cycleProgressions: List<CycleProgressionBackup> = emptyList(),
+    val plannedSets: List<PlannedSetBackup> = emptyList(),
+    val completedSets: List<CompletedSetBackup> = emptyList(),
+    val progressionEvents: List<ProgressionEventBackup> = emptyList(),
+    val earnedBadges: List<EarnedBadgeBackup> = emptyList(),
+    val streakHistory: List<StreakHistoryBackup> = emptyList(),
+    val gamificationStats: GamificationStatsBackup? = null,
+    val userProfiles: List<UserProfileBackup> = emptyList()
 )
 
 /**
@@ -203,18 +352,33 @@ data class ImportResult(
     val routinesImported: Int,
     val routinesSkipped: Int,
     val routineExercisesImported: Int,
+    val supersetsImported: Int = 0,
+    val supersetsSkipped: Int = 0,
     val personalRecordsImported: Int,
     val personalRecordsSkipped: Int,
     val trainingCyclesImported: Int = 0,
     val trainingCyclesSkipped: Int = 0,
-    val cycleDaysImported: Int = 0
+    val cycleDaysImported: Int = 0,
+    val cycleProgressImported: Int = 0,
+    val cycleProgressionsImported: Int = 0,
+    val plannedSetsImported: Int = 0,
+    val completedSetsImported: Int = 0,
+    val progressionEventsImported: Int = 0,
+    val earnedBadgesImported: Int = 0,
+    val streakHistoryImported: Int = 0,
+    val gamificationStatsImported: Boolean = false,
+    val userProfilesImported: Int = 0,
+    val userProfilesSkipped: Int = 0
 ) {
     val totalImported: Int
         get() = sessionsImported + metricsImported + routinesImported +
-                routineExercisesImported + personalRecordsImported +
-                trainingCyclesImported + cycleDaysImported
+                routineExercisesImported + supersetsImported + personalRecordsImported +
+                trainingCyclesImported + cycleDaysImported + cycleProgressImported +
+                cycleProgressionsImported + plannedSetsImported + completedSetsImported +
+                progressionEventsImported + earnedBadgesImported + streakHistoryImported +
+                (if (gamificationStatsImported) 1 else 0) + userProfilesImported
 
     val totalSkipped: Int
-        get() = sessionsSkipped + routinesSkipped + personalRecordsSkipped +
-                trainingCyclesSkipped
+        get() = sessionsSkipped + routinesSkipped + supersetsSkipped + personalRecordsSkipped +
+                trainingCyclesSkipped + userProfilesSkipped
 }

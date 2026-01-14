@@ -17,7 +17,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -46,6 +45,7 @@ import org.koin.compose.koinInject
 @Composable
 fun BadgesScreen(
     onBack: () -> Unit,
+    mainViewModel: com.devil.phoenixproject.presentation.viewmodel.MainViewModel,
     viewModel: GamificationViewModel = koinInject()
 ) {
     val badges by viewModel.filteredBadges.collectAsState()
@@ -56,21 +56,12 @@ fun BadgesScreen(
 
     var selectedBadge by remember { mutableStateOf<BadgeWithProgress?>(null) }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("Achievements") },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.surface
-                )
-            )
-        }
-    ) { paddingValues ->
+    // Clear topbar title to allow dynamic title from EnhancedMainScreen
+    LaunchedEffect(Unit) {
+        mainViewModel.updateTopBarTitle("")
+    }
+
+    Scaffold { paddingValues ->
         Column(
             modifier = Modifier
                 .fillMaxSize()

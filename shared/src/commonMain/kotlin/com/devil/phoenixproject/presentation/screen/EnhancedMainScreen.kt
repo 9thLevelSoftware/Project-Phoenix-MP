@@ -72,6 +72,18 @@ fun EnhancedMainScreen(
     val topBarActions by viewModel.topBarActions.collectAsState()
     val topBarBackAction by viewModel.topBarBackAction.collectAsState()
 
+    // Dynamic title sources
+    val loadedRoutine by viewModel.loadedRoutine.collectAsState()
+    val currentRoutineName = loadedRoutine?.name ?: ""
+
+    // For cycle screens - check if editingCycle exists in ViewModel
+    // If not, leave empty for now - we'll handle it when updating cycle screens
+    val editingCycleName = "" // TODO: Add viewModel.editingCycle if needed
+
+    // For exercise detail - derive from loaded routine and current exercise index
+    val currentExerciseIndex by viewModel.currentExerciseIndex.collectAsState()
+    val selectedExerciseName = loadedRoutine?.exercises?.getOrNull(currentExerciseIndex)?.exercise?.name ?: ""
+
     // Profile management
     val scope = rememberCoroutineScope()
     val profileRepository: UserProfileRepository = koinInject()
@@ -112,9 +124,10 @@ fun EnhancedMainScreen(
         currentRoute.startsWith(NavigationRoutes.CycleEditor.route.replace("/{cycleId}", ""))
     }
 
-    // Always show TopBar unless in Active Workout (HUD handles it)
+    // Always show TopBar unless in Active Workout or RoutineComplete (HUD handles it)
     val shouldShowTopBar = remember(currentRoute) {
-        currentRoute != NavigationRoutes.ActiveWorkout.route
+        currentRoute != NavigationRoutes.ActiveWorkout.route &&
+        currentRoute != NavigationRoutes.RoutineComplete.route
     }
 
     // Show BottomBar only for main tabs
@@ -126,12 +139,13 @@ fun EnhancedMainScreen(
         currentRoute == NavigationRoutes.Settings.route
     }
 
-    // Show back button for all screens except main tabs
+    // Show back button for all screens except Home
     val showBackButton = remember(currentRoute) {
-        currentRoute != NavigationRoutes.Home.route &&
-        currentRoute != NavigationRoutes.Analytics.route &&
-        currentRoute != NavigationRoutes.Settings.route
+        currentRoute != NavigationRoutes.Home.route
     }
+
+    // Exit confirmation dialog state for routine flow
+    var showExitRoutineConfirmation by remember { mutableStateOf(false) }
 
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
         val windowSizeClass = calculateWindowSizeClass(maxWidth, maxHeight)
@@ -149,7 +163,13 @@ fun EnhancedMainScreen(
                         ) {
                             // Main title - either dynamic or default based on route
                             Text(
-                                text = if (topBarTitle.isNotEmpty()) topBarTitle else getScreenTitle(currentRoute),
+                                text = if (topBarTitle.isNotEmpty()) topBarTitle
+                                       else getScreenTitle(
+                                           route = currentRoute,
+                                           routineName = currentRoutineName,
+                                           exerciseName = selectedExerciseName,
+                                           cycleName = editingCycleName
+                                       ),
                                 style = MaterialTheme.typography.titleLarge,
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.onSurface,
@@ -174,10 +194,24 @@ fun EnhancedMainScreen(
                     navigationIcon = {
                         if (showBackButton) {
                             IconButton(onClick = {
-                                if (topBarBackAction != null) {
-                                    topBarBackAction?.invoke()
-                                } else {
-                                    navController.navigateUp()
+                                when (currentRoute) {
+                                    // Routine flow - needs confirmation
+                                    NavigationRoutes.RoutineOverview.route -> {
+                                        showExitRoutineConfirmation = true
+                                    }
+                                    // Set ready - go back to overview
+                                    NavigationRoutes.SetReady.route -> {
+                                        viewModel.returnToOverview()
+                                        navController.navigateUp()
+                                    }
+                                    // All other screens - standard back or custom action
+                                    else -> {
+                                        if (topBarBackAction != null) {
+                                            topBarBackAction?.invoke()
+                                        } else {
+                                            navController.navigateUp()
+                                        }
+                                    }
                                 }
                             }) {
                                 Icon(
@@ -359,6 +393,27 @@ fun EnhancedMainScreen(
                 )
             }
 
+            // Exit routine confirmation dialog
+            if (showExitRoutineConfirmation) {
+                AlertDialog(
+                    onDismissRequest = { showExitRoutineConfirmation = false },
+                    title = { Text("Exit Routine?") },
+                    text = { Text("Progress will be saved.") },
+                    confirmButton = {
+                        Button(onClick = {
+                            showExitRoutineConfirmation = false
+                            viewModel.exitRoutineFlow()
+                            navController.navigateUp()
+                        }) { Text("Exit") }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { showExitRoutineConfirmation = false }) {
+                            Text("Cancel")
+                        }
+                    }
+                )
+            }
+
             // Add Profile Dialog
             if (showAddProfileDialog) {
                 AddProfileDialog(
@@ -471,19 +526,47 @@ private fun ConnectionStatusIndicator(
 
 /**
  * Get the screen title based on the current route.
+ * Supports dynamic titles for routine, exercise, and cycle flows.
  */
-private fun getScreenTitle(route: String): String {
+private fun getScreenTitle(
+    route: String,
+    routineName: String = "",
+    exerciseName: String = "",
+    cycleName: String = ""
+): String {
     return when {
+        // Main tabs (static titles)
         route == NavigationRoutes.Home.route -> "Choose Your Workout"
+        route == NavigationRoutes.DailyRoutines.route -> "Daily Routines"
+        route == NavigationRoutes.TrainingCycles.route -> "Training Cycles"
         route == NavigationRoutes.Analytics.route -> "Analytics"
         route == NavigationRoutes.Settings.route -> "Settings"
         route == NavigationRoutes.JustLift.route -> "Just Lift"
         route == NavigationRoutes.SingleExercise.route -> "Single Exercise"
-        route == NavigationRoutes.DailyRoutines.route -> "Daily Routines"
-        route == NavigationRoutes.TrainingCycles.route -> "Training Cycles"
-        route == NavigationRoutes.ActiveWorkout.route -> "Active Workout"
+
+        // Routine flow (dynamic - uses routine name)
+        route == NavigationRoutes.RoutineOverview.route -> routineName.ifEmpty { "Routine" }
+        route == NavigationRoutes.SetReady.route -> routineName.ifEmpty { "Routine" }
+
+        // Exercise detail (dynamic - uses exercise name)
+        route.startsWith("exercise_detail") -> exerciseName.ifEmpty { "Exercise" }
+
+        // Cycle flow (dynamic - uses cycle name)
+        route.startsWith("cycle_editor") -> cycleName.ifEmpty { "Training Cycle" }
+        route.startsWith("cycleReview") -> cycleName.ifEmpty { "Cycle Review" }
+
+        // Routine editor (dynamic - uses routine name)
+        route.startsWith("routine_editor") -> routineName.ifEmpty { "Edit Routine" }
+
+        // Static titles
+        route == NavigationRoutes.Badges.route -> "Achievements"
         route == NavigationRoutes.ConnectionLogs.route -> "Connection Logs"
-        route.startsWith("cycle_editor") -> "Cycle Editor"
-        else -> "Choose Your Workout"
+        route == NavigationRoutes.RoutineComplete.route -> "Complete"
+
+        // Active workout - hidden, but provide fallback
+        route == NavigationRoutes.ActiveWorkout.route -> "Workout"
+
+        // Fallback
+        else -> "Project Phoenix"
     }
 }

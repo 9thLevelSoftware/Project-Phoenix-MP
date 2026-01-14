@@ -106,8 +106,11 @@ fun ProgressTab(
         } else {
             // Group PRs by workout mode for organized display
             // Note: No 'remember' needed here - LazyColumn scope recalculates on recomposition
+            // Using toList().sortedBy().toMap() instead of toSortedMap() for Kotlin/Native compatibility
             val prsByMode = personalRecords.groupBy { it.workoutMode }
-                .toSortedMap() // Alphabetical order for consistency
+                .toList()
+                .sortedBy { it.first }
+                .toMap()
 
             prsByMode.forEach { (mode, modePRs) ->
                 // Mode header

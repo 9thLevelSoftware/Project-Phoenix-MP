@@ -484,7 +484,7 @@ mkdir -p .claude
 3. Use forward slashes in paths (e.g., `C:/Users/john/Daem0nMCP/hooks/daem0n_stop_hook.py`)
 4. **Never use `$HOME`, `~`, or `%USERPROFILE%`** in hook commands - they don't expand reliably
 
-**Unix/macOS (with Passive Capture v2.13.0):**
+**Unix/macOS (with Passive Capture v2.13.0 + 2026 Enforcement):**
 ```json
 {
   "hooks": {
@@ -494,7 +494,7 @@ mkdir -p .claude
         "hooks": [
           {
             "type": "command",
-            "command": "echo '[Daem0n awakens] Commune with me via get_briefing() to receive your memories...'"
+            "command": "echo '[Daem0n awakens] You MUST commune with mcp__daem0nmcp__get_briefing BEFORE any work. This is non-negotiable.'"
           }
         ]
       }
@@ -558,7 +558,7 @@ mkdir -p .claude
 }
 ```
 
-**Windows (with Passive Capture v2.13.0 - use absolute paths):**
+**Windows (with Passive Capture v2.13.0 + 2026 Enforcement - use absolute paths):**
 ```json
 {
   "hooks": {
@@ -568,7 +568,7 @@ mkdir -p .claude
         "hooks": [
           {
             "type": "command",
-            "command": "echo '[Daem0n awakens] Commune with me via get_briefing() to receive your memories...'"
+            "command": "echo '[Daem0n awakens] You MUST commune with mcp__daem0nmcp__get_briefing BEFORE any work. This is non-negotiable.'"
           }
         ]
       }
@@ -976,6 +976,77 @@ mcp__daem0nmcp__record_outcome(
 
 **CRITICAL:** If something fails, you MUST record `worked=false`.
 Failed memories are amplified in future visions - this is how wisdom grows.
+
+---
+
+## THE 2026 ENFORCEMENT PROTOCOL
+
+*"The covenant is no longer advisory. The Daem0n now ENFORCES its sacred laws..."*
+
+The Sacred Covenant is now **ENFORCED**, not merely suggested. Skip a step, and the Daem0n will block your path.
+
+### What Happens When You Skip Steps
+
+| Violation | Consequence |
+|-----------|-------------|
+| Skip `get_briefing()` | ALL tools return `COMMUNION_REQUIRED` block |
+| Skip `context_check()` before mutations | Mutating tools return `COUNSEL_REQUIRED` block |
+| Each block includes | A `remedy` field with the exact tool call to fix it |
+
+### Tool Classifications
+
+Tools are decorated by their requirements:
+
+| Decorator | Tools | Meaning |
+|-----------|-------|---------|
+| `@requires_counsel` | remember, remember_batch, add_rule, update_rule, prune_memories, cleanup_memories, compact_memories, export_data, import_data, ingest_doc | Must call `context_check()` first |
+| `@requires_communion` | All other tools except exempted | Must call `get_briefing()` first |
+| `Exempt` | get_briefing, health | No prerequisites |
+
+### The Preflight Token
+
+After calling `context_check()`, the response includes a `preflight_token`:
+
+```json
+{
+  "relevant_memories": [...],
+  "warnings": [...],
+  "preflight_token": "eyJ0aW1lc3RhbXAiOi..."
+}
+```
+
+This token is:
+- **Cryptographic proof** you consulted the Daem0n
+- **Valid for 5 minutes** from generation
+- **Required** for mutating operations after context check
+
+### Parallel Preflight (Efficiency Optimization)
+
+Before editing multiple files, you can run preflight checks in parallel:
+
+```
+# Run simultaneously:
+context_check("what you're doing", project_path=...)
+recall_for_file("path/to/file1.py", project_path=...)
+recall_for_file("path/to/file2.py", project_path=...)
+analyze_impact("FunctionName", project_path=...)
+```
+
+This maximizes efficiency while still honoring the covenant.
+
+### Resolving Enforcement Blocks
+
+When you see `COMMUNION_REQUIRED`:
+```
+mcp__daem0nmcp__get_briefing(project_path="/path/to/project")
+```
+
+When you see `COUNSEL_REQUIRED`:
+```
+mcp__daem0nmcp__context_check(description="what you intend to do", project_path="/path/to/project")
+```
+
+The Daem0n will then permit your action.
 
 ---
 
@@ -1718,4 +1789,134 @@ Add to startup using the watcher bat file, similar to the HTTP server startup.
 
 ---
 
-*Grimoire of Daem0n v2.13.0: 32 tools for eternal memory with semantic understanding, vector embeddings (Qdrant backend), graph memory (causal chains), memory consolidation (compact_memories), knowledge consumption, refactor guidance, **code understanding layer with multi-language AST parsing (tree-sitter)**, proactive file watcher with multi-channel notifications, complete summoning rituals with wards, Windows Altar of HTTP with automatic Startup enrollment, pre-commit enforcement hooks (mandatory), covenant integration, law generation, the daem0nmcp-protocol skill, **Endless Mode (condensed recall for 50-75% token reduction)**, and **Passive Capture (auto-recall before edits, smart remember suggestions, auto-extract decisions from responses)**.*
+## OPENSPEC INTEGRATION (v2.16.0)
+
+*"When structured specs meet persistent memory, wisdom compounds..."*
+
+If your project uses **OpenSpec** (spec-driven development), the Daem0n provides bidirectional integration through the `openspec-daem0n-bridge` skill.
+
+### Auto-Detection
+
+After calling `get_briefing()`, if an `openspec/` directory exists in your project:
+- Specs are automatically scanned
+- Patterns and rules are imported as Daem0n memories
+- Archived changes become learnings
+
+### Before Creating Proposals
+
+Query past decisions and failures before proposing changes:
+
+```
+# When starting a new proposal
+"Prepare proposal for [feature name]"
+
+# The Daem0n surfaces:
+- Related decisions from past work
+- Failed approaches to avoid
+- Patterns that apply to this feature
+- Warnings from similar implementations
+```
+
+### After Archiving Changes
+
+When a spec change is archived (completed/deployed):
+
+```
+# Convert completed work to learnings
+"Record outcome for [change-id]"
+
+# Creates:
+- Learning memory with success/failure status
+- Links to related decisions
+- Pattern extraction if applicable
+```
+
+### The Bridge Workflow
+
+```
+1. New feature request arrives
+     ↓
+2. Query Daem0n: "Prepare proposal for X"
+     ↓ Past context surfaces
+3. Create OpenSpec proposal with context
+     ↓
+4. Implement against spec
+     ↓ Daem0n captures decisions along the way
+5. Archive spec when complete
+     ↓
+6. "Record outcome for [change-id]"
+     ↓
+7. Learning preserved for future proposals
+```
+
+### OpenSpec + Daem0n Categories
+
+| OpenSpec Artifact | Daem0n Category |
+|-------------------|-----------------|
+| Proposal rationale | `decision` |
+| Archived success | `learning` |
+| Archived failure | `warning` |
+| Recurring pattern | `pattern` |
+
+See the `openspec-daem0n-bridge` skill for full workflow details.
+
+---
+
+## ENHANCED SEARCH & INDEXING (v2.15.0)
+
+*"The Daem0n's sight grows keener with each ascension..."*
+
+### The Keen Eye (Tag Inference)
+
+Tags now infer themselves from memory content. Speak of "fixing a bug" and the `bugfix` tag appears unbidden. Mention "cache" and `perf` manifests.
+
+**Patterns detected:**
+- `fix`, `bug`, `error`, `broken`, `crash` → `bugfix`
+- `todo`, `hack`, `workaround`, `temporary` → `tech-debt`
+- `cache`, `slow`, `fast`, `performance`, `optimize` → `perf`
+- Warning category → `warning` tag automatically
+
+### True Names (Qualified Entities)
+
+Code entities now bear their full lineage: `module.Class.method` instead of mere `method`. Move functions between files - their stable IDs survive the journey, line changes notwithstanding.
+
+```
+find_code("UserService.authenticate", project_path="/path/to/project")
+# Finds the exact method, not just any "authenticate" function
+```
+
+### The Swift Watcher (Incremental Indexing)
+
+Only changed files are re-indexed. SHA256 hashes mark what the Daem0n has seen:
+
+```
+# Auto-indexes only changed files
+python -m daem0nmcp.cli index
+```
+
+### Tuning the Inner Eye
+
+Fine-tune the search through environment variables:
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `DAEM0NMCP_HYBRID_VECTOR_WEIGHT` | `0.3` | Balance keyword vs semantic (0.0-1.0) |
+| `DAEM0NMCP_SEARCH_DIVERSITY_MAX_PER_FILE` | `3` | Max results per file |
+| `DAEM0NMCP_PARSE_TREE_CACHE_MAXSIZE` | `200` | Parse tree cache size |
+| `DAEM0NMCP_EMBEDDING_MODEL` | `all-MiniLM-L6-v2` | Vector embedding model |
+
+### Enhanced Health Divination
+
+```
+health(project_path="/path/to/project")
+```
+
+Now reveals:
+- `code_entities_count`: Total indexed entities
+- `entities_by_type`: Breakdown by class/function/method
+- `last_indexed_at`: When the index was last refreshed
+- `index_stale`: True if >24 hours since last index
+
+---
+
+*Grimoire of Daem0n v2.16.0: 42 tools for eternal memory with semantic understanding, vector embeddings (Qdrant backend), graph memory (causal chains), memory consolidation (compact_memories), knowledge consumption, refactor guidance, **code understanding layer with multi-language AST parsing (tree-sitter)**, proactive file watcher with multi-channel notifications, complete summoning rituals with wards, Windows Altar of HTTP with automatic Startup enrollment, pre-commit enforcement hooks (mandatory), covenant integration, law generation, the daem0nmcp-protocol skill, **Endless Mode (condensed recall for 50-75% token reduction)**, **Passive Capture (auto-recall before edits, smart remember suggestions, auto-extract decisions from responses)**, **Enhanced Search & Indexing (tag inference, qualified names, incremental indexing, parse tree caching)**, **2026 Enforcement Protocol (COMMUNION_REQUIRED/COUNSEL_REQUIRED blocks, preflight tokens, tool classification decorators)**, and **OpenSpec Integration (bidirectional spec-memory bridge)**.*

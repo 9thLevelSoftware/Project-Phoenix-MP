@@ -12,7 +12,6 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -116,6 +115,11 @@ fun RoutineEditorScreen(
 
     // Get PersonalRecordRepository for the bottom sheet
     val personalRecordRepository: PersonalRecordRepository = koinInject()
+
+    // Clear topbar title to allow dynamic title from EnhancedMainScreen
+    LaunchedEffect(Unit) {
+        viewModel.updateTopBarTitle("")
+    }
 
     // Load routine if editing
     LaunchedEffect(routineId) {
@@ -342,47 +346,7 @@ fun RoutineEditorScreen(
     }
 
     Scaffold(
-        topBar = {
-            TopAppBar(
-                title = {
-                    TextField(
-                        value = state.routineName,
-                        onValueChange = { state = state.copy(routineName = it) },
-                        placeholder = { Text("Routine Name") },
-                        colors = TextFieldDefaults.colors(
-                            focusedContainerColor = Color.Transparent,
-                            unfocusedContainerColor = Color.Transparent,
-                            focusedIndicatorColor = Color.Transparent,
-                            unfocusedIndicatorColor = Color.Transparent
-                        ),
-                        textStyle = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold),
-                        singleLine = true
-                    )
-                },
-                navigationIcon = {
-                    IconButton(onClick = { navController.popBackStack() }) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
-                    }
-                },
-                actions = {
-                    TextButton(
-                        onClick = {
-                            val routineToSave = state.routine?.copy(
-                                id = if (routineId == "new") generateUUID() else routineId,
-                                name = state.routineName.ifBlank { "Unnamed Routine" }
-                            ) ?: Routine(
-                                id = generateUUID(),
-                                name = state.routineName.ifBlank { "Unnamed Routine" }
-                            )
-                            viewModel.saveRoutine(routineToSave)
-                            navController.popBackStack()
-                        }
-                    ) {
-                        Text("Save", fontWeight = FontWeight.Bold)
-                    }
-                }
-            )
-        },
+        contentWindowInsets = WindowInsets.navigationBars,
         floatingActionButton = {
             AnimatedVisibility(
                 visible = !selectionMode,
@@ -398,9 +362,10 @@ fun RoutineEditorScreen(
             }
         }
     ) { padding ->
-        Box(
+        Column(
             modifier = Modifier
                 .fillMaxSize()
+                .padding(top = padding.calculateTopPadding())
                 .then(
                     if (selectionMode) {
                         Modifier.clickable(
@@ -412,32 +377,68 @@ fun RoutineEditorScreen(
                     }
                 )
         ) {
-            LazyColumn(
-                state = lazyListState,
-                contentPadding = PaddingValues(
-                    bottom = 100.dp,
-                    top = padding.calculateTopPadding(),
-                    start = 16.dp,
-                    end = 16.dp
-                ),
-                verticalArrangement = Arrangement.spacedBy(4.dp), // Tighter spacing for connected items
+            // Editable name row with Save button
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                OutlinedTextField(
+                    value = state.routineName,
+                    onValueChange = { state = state.copy(routineName = it) },
+                    modifier = Modifier.weight(1f),
+                    placeholder = { Text("Routine Name") },
+                    textStyle = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
+                    singleLine = true
+                )
+                Button(
+                    onClick = {
+                        val routineToSave = state.routine?.copy(
+                            id = if (routineId == "new") generateUUID() else routineId,
+                            name = state.routineName.ifBlank { "Unnamed Routine" }
+                        ) ?: Routine(
+                            id = generateUUID(),
+                            name = state.routineName.ifBlank { "Unnamed Routine" }
+                        )
+                        viewModel.saveRoutine(routineToSave)
+                        navController.popBackStack()
+                    }
+                ) {
+                    Text("Save")
+                }
+            }
+
+            // Exercise list content
+            Box(
                 modifier = Modifier.fillMaxSize()
             ) {
-                val routineItems = state.routine?.getItems() ?: emptyList()
+                LazyColumn(
+                    state = lazyListState,
+                    contentPadding = PaddingValues(
+                        bottom = 100.dp,
+                        start = 16.dp,
+                        end = 16.dp
+                    ),
+                    verticalArrangement = Arrangement.spacedBy(4.dp), // Tighter spacing for connected items
+                    modifier = Modifier.fillMaxSize()
+                ) {
+                    val routineItems = state.routine?.getItems() ?: emptyList()
 
-                if (routineItems.isEmpty()) {
-                    item {
-                        Box(
-                            modifier = Modifier.fillMaxWidth().padding(top = 100.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(
-                                "Tap + to add your first exercise",
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
+                    if (routineItems.isEmpty()) {
+                        item {
+                            Box(
+                                modifier = Modifier.fillMaxWidth().padding(top = 100.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    "Tap + to add your first exercise",
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
                         }
                     }
-                }
 
                 routineItems.forEach { routineItem ->
                     when (routineItem) {
@@ -643,6 +644,7 @@ fun RoutineEditorScreen(
                 },
                 modifier = Modifier.align(Alignment.BottomCenter)
             )
+        }
         }
     }
 

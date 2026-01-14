@@ -92,6 +92,7 @@ fun WorkoutTab(
         onStartWorkout = actions::onStartWorkout,
         onStopWorkout = actions::onStopWorkout,
         onSkipRest = actions::onSkipRest,
+        onSkipCountdown = actions::onSkipCountdown,
         onProceedFromSummary = actions::onProceedFromSummary,
         onRpeLogged = actions::onRpeLogged,
         onResetForNewWorkout = actions::onResetForNewWorkout,
@@ -146,6 +147,7 @@ fun WorkoutTab(
     onStartWorkout: () -> Unit,
     onStopWorkout: () -> Unit,
     onSkipRest: () -> Unit,
+    onSkipCountdown: () -> Unit,
     onProceedFromSummary: () -> Unit = {},
     onRpeLogged: ((Int) -> Unit)? = null,  // Optional RPE callback for set summary
     onResetForNewWorkout: () -> Unit,
@@ -357,23 +359,53 @@ fun WorkoutTab(
                             currentExerciseIndex = if (loadedRoutine != null) currentExerciseIndex else null,
                             totalExercises = loadedRoutine?.exercises?.size,
                             formatWeight = { weight -> formatWeight(weight, weightUnit) },
-                            onSkipCountdown = onStartWorkout,
+                            isEchoMode = workoutParameters.isEchoMode,
+                            onSkipCountdown = onSkipCountdown,
                             onEndWorkout = onStopWorkout
                         )
                     }
                 }
                 is WorkoutState.SetSummary -> {
-                    SetSummaryCard(
-                        summary = workoutState,
-                        workoutMode = workoutParameters.programMode.displayName,
-                        weightUnit = weightUnit,
-                        kgToDisplay = kgToDisplay,
-                        formatWeight = formatWeight,
-                        onContinue = onProceedFromSummary,
-                        autoplayEnabled = autoplayEnabled,
-                        summaryCountdownSeconds = summaryCountdownSeconds,
-                        onRpeLogged = onRpeLogged
-                    )
+                    // Compute contextual button label
+                    val buttonLabel = run {
+                        val routine = loadedRoutine
+                        if (routine == null) {
+                            "Done" // Just Lift / Single Exercise
+                        } else {
+                            val currentExercise = routine.exercises.getOrNull(currentExerciseIndex)
+                            val isLastSetOfExercise = currentExercise != null &&
+                                currentSetIndex >= currentExercise.setReps.size - 1
+                            val isLastExercise = currentExerciseIndex >= routine.exercises.size - 1
+
+                            when {
+                                isLastSetOfExercise && isLastExercise -> "Complete Routine"
+                                isLastSetOfExercise -> "Next Exercise"
+                                else -> "Next Set"
+                            }
+                        }
+                    }
+
+                    // Full-screen wrapper with proper system bar padding
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(screenBackgroundBrush())
+                            .systemBarsPadding()
+                            .padding(horizontal = 16.dp, vertical = 8.dp)
+                    ) {
+                        SetSummaryCard(
+                            summary = workoutState,
+                            workoutMode = workoutParameters.programMode.displayName,
+                            weightUnit = weightUnit,
+                            kgToDisplay = kgToDisplay,
+                            formatWeight = formatWeight,
+                            onContinue = onProceedFromSummary,
+                            autoplayEnabled = autoplayEnabled,
+                            summaryCountdownSeconds = summaryCountdownSeconds,
+                            onRpeLogged = onRpeLogged,
+                            buttonLabel = buttonLabel
+                        )
+                    }
                 }
                 is WorkoutState.Resting -> {
                     RestTimerCard(
@@ -1316,11 +1348,19 @@ fun CurrentExerciseCard(
     val currentExercise = loadedRoutine?.exercises?.getOrNull(currentExerciseIndex)
 
     // Get exercise entity and video for display
-    var exerciseEntity by remember { mutableStateOf<Exercise?>(null) }
-    var videoEntity by remember { mutableStateOf<ExerciseVideoEntity?>(null) }
+    // Issue #142: Key the remember on currentExerciseIndex so state resets when exercise changes.
+    var exerciseEntity by remember(currentExerciseIndex) { mutableStateOf<Exercise?>(null) }
+    var videoEntity by remember(currentExerciseIndex) { mutableStateOf<ExerciseVideoEntity?>(null) }
 
     // Load exercise and video data
-    LaunchedEffect(currentExercise?.exercise?.id, workoutParameters.selectedExerciseId) {
+    // Issue #142: Include currentExerciseIndex in the key to ensure video reloads when
+    // navigating to a different exercise position. This handles cases where the same
+    // exercise appears multiple times in a routine (same exercise.id but different index).
+    LaunchedEffect(currentExerciseIndex, currentExercise?.exercise?.id, workoutParameters.selectedExerciseId) {
+        // Clear stale data first
+        exerciseEntity = null
+        videoEntity = null
+        // Load new exercise and video data
         val exerciseId = currentExercise?.exercise?.id ?: workoutParameters.selectedExerciseId
         if (exerciseId != null) {
             exerciseEntity = exerciseRepository.getExerciseById(exerciseId)
@@ -1444,20 +1484,33 @@ fun SetSummaryCard(
     summaryCountdownSeconds: Int,  // Configurable countdown duration (0 = Off, no auto-continue)
     onRpeLogged: ((Int) -> Unit)? = null,  // Optional RPE callback
     isHistoryView: Boolean = false,  // Hide interactive elements when viewing from history
-    savedRpe: Int? = null  // Show saved RPE value in history view
+    savedRpe: Int? = null,  // Show saved RPE value in history view
+    buttonLabel: String = "Done"  // Contextual label: "Next Set", "Next Exercise", "Complete Routine"
 ) {
     // State for RPE tracking
     var loggedRpe by remember { mutableStateOf<Int?>(null) }
-    // Auto-continue countdown when autoplay is enabled and countdown > 0
-    var autoCountdown by remember { mutableStateOf(if (autoplayEnabled && summaryCountdownSeconds > 0) summaryCountdownSeconds else -1) }
 
-    LaunchedEffect(autoplayEnabled, summaryCountdownSeconds) {
-        if (autoplayEnabled && summaryCountdownSeconds > 0) {
+    // Issue #142: Use a unique key derived from the summary to ensure countdown resets for each new set.
+    // Using durationMs and repCount as a composite identifier since these are unique per set completion.
+    val summaryKey = remember(summary) { "${summary.durationMs}_${summary.repCount}_${summary.totalVolumeKg}" }
+
+    // Auto-continue countdown - reset when summary changes
+    var autoCountdown by remember(summaryKey) {
+        mutableStateOf(if (autoplayEnabled && summaryCountdownSeconds > 0) summaryCountdownSeconds else -1)
+    }
+
+    // Issue #142: Auto-advance countdown for routine progression.
+    // The summaryKey ensures this effect restarts for each unique set completion.
+    // Note: LaunchedEffect is automatically cancelled when composable leaves composition,
+    // so we don't need explicit isActive checks - delay() will throw CancellationException.
+    LaunchedEffect(summaryKey, autoplayEnabled, summaryCountdownSeconds) {
+        if (autoplayEnabled && summaryCountdownSeconds > 0 && !isHistoryView) {
             autoCountdown = summaryCountdownSeconds
             while (autoCountdown > 0) {
                 kotlinx.coroutines.delay(1000)
                 autoCountdown--
             }
+            // Countdown completed - advance to next set/exercise
             if (autoCountdown == 0) {
                 onContinue()
             }
@@ -1700,9 +1753,9 @@ fun SetSummaryCard(
             ) {
                 Text(
                     text = if (autoplayEnabled && summaryCountdownSeconds > 0 && autoCountdown > 0) {
-                        "Done ($autoCountdown)"
+                        "$buttonLabel ($autoCountdown)"
                     } else {
-                        "Done"
+                        buttonLabel
                     },
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,

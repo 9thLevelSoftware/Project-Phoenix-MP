@@ -7,7 +7,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.TrendingDown
 import androidx.compose.material.icons.automirrored.filled.TrendingUp
 import androidx.compose.material.icons.filled.EmojiEvents
@@ -60,6 +59,8 @@ fun ExerciseDetailScreen(
     LaunchedEffect(exerciseId) {
         val exercise = viewModel.exerciseRepository.getExerciseById(exerciseId)
         exerciseName = exercise?.name ?: "Unknown Exercise"
+        // Clear topbar title to allow dynamic title from EnhancedMainScreen
+        viewModel.updateTopBarTitle("")
     }
 
     // Calculate 1RM progression
@@ -83,25 +84,6 @@ fun ExerciseDetailScreen(
             .background(backgroundGradient)
     ) {
         Column(modifier = Modifier.fillMaxSize()) {
-            // Top bar
-            TopAppBar(
-                title = {
-                    Text(
-                        exerciseName,
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Bold
-                    )
-                },
-                navigationIcon = {
-                    IconButton(onClick = { navController.popBackStack() }) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = Color.Transparent
-                )
-            )
-
             LazyColumn(
                 modifier = Modifier
                     .fillMaxSize()

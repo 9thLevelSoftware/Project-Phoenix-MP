@@ -114,6 +114,8 @@ interface PreferencesManager {
     suspend fun setAudioRepCountEnabled(enabled: Boolean)
     suspend fun setSummaryCountdownSeconds(seconds: Int)
     suspend fun setAutoStartCountdownSeconds(seconds: Int)
+    suspend fun setSimulatorModeUnlocked(unlocked: Boolean)
+    fun isSimulatorModeUnlocked(): Boolean
 
     suspend fun getSingleExerciseDefaults(exerciseId: String, cableConfig: String): SingleExerciseDefaults?
     suspend fun saveSingleExerciseDefaults(defaults: SingleExerciseDefaults)
@@ -154,6 +156,7 @@ class SettingsPreferencesManager(
         private const val KEY_AUTOSTART_COUNTDOWN_SECONDS = "autostart_countdown_seconds"
         private const val KEY_JUST_LIFT_DEFAULTS = "just_lift_defaults"
         private const val KEY_PREFIX_EXERCISE = "exercise_defaults_"
+        private const val KEY_SIMULATOR_MODE_UNLOCKED = "simulator_mode_unlocked"
     }
 
     private val _preferencesFlow = MutableStateFlow(loadPreferences())
@@ -272,5 +275,13 @@ class SettingsPreferencesManager(
 
     override suspend fun clearJustLiftDefaults() {
         settings.remove(KEY_JUST_LIFT_DEFAULTS)
+    }
+
+    override suspend fun setSimulatorModeUnlocked(unlocked: Boolean) {
+        settings.putBoolean(KEY_SIMULATOR_MODE_UNLOCKED, unlocked)
+    }
+
+    override fun isSimulatorModeUnlocked(): Boolean {
+        return settings.getBoolean(KEY_SIMULATOR_MODE_UNLOCKED, false)
     }
 }

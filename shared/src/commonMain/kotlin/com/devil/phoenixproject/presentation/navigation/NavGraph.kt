@@ -150,6 +150,32 @@ fun NavGraph(
             )
         }
 
+        // Routine Overview screen - browse exercises before starting
+        composable(NavigationRoutes.RoutineOverview.route) {
+            RoutineOverviewScreen(
+                navController = navController,
+                viewModel = viewModel,
+                exerciseRepository = exerciseRepository
+            )
+        }
+
+        // Set Ready screen - configure set before starting
+        composable(NavigationRoutes.SetReady.route) {
+            SetReadyScreen(
+                navController = navController,
+                viewModel = viewModel,
+                exerciseRepository = exerciseRepository
+            )
+        }
+
+        // Routine Complete screen - celebration after finishing
+        composable(NavigationRoutes.RoutineComplete.route) {
+            RoutineCompleteScreen(
+                navController = navController,
+                viewModel = viewModel
+            )
+        }
+
         // Training Cycles screen - new rolling schedule system
         composable(
             route = NavigationRoutes.TrainingCycles.route,
@@ -226,7 +252,16 @@ fun NavGraph(
                 )
             }
         ) { backStackEntry ->
-            val exerciseId = backStackEntry.arguments?.read { getStringOrNull("exerciseId") } ?: return@composable
+            val exerciseId = backStackEntry.arguments?.read { getStringOrNull("exerciseId") }
+
+            // Handle null/invalid exerciseId - navigate back instead of blank screen
+            if (exerciseId.isNullOrBlank()) {
+                LaunchedEffect(Unit) {
+                    navController.popBackStack()
+                }
+                return@composable
+            }
+
             ExerciseDetailScreen(
                 exerciseId = exerciseId,
                 navController = navController,
@@ -283,7 +318,12 @@ fun NavGraph(
                 onDiscoModeUnlocked = { viewModel.unlockDiscoMode() },
                 onDiscoModeToggle = { viewModel.toggleDiscoMode(it) },
                 onPlayDiscoSound = { viewModel.emitDiscoSound() },
-                onTestSounds = { viewModel.testSounds() }
+                onTestSounds = { viewModel.testSounds() },
+                // Simulator mode Easter egg
+                simulatorModeUnlocked = viewModel.isSimulatorModeUnlocked(),
+                simulatorModeEnabled = viewModel.isSimulatorModeUnlocked(),
+                onSimulatorModeUnlocked = { viewModel.unlockSimulatorMode() },
+                onSimulatorModeToggle = { viewModel.toggleSimulatorMode(it) }
             )
         }
 
@@ -314,7 +354,8 @@ fun NavGraph(
             }
         ) {
             BadgesScreen(
-                onBack = { navController.popBackStack() }
+                onBack = { navController.popBackStack() },
+                mainViewModel = viewModel
             )
         }
 
@@ -371,7 +412,16 @@ fun NavGraph(
             route = NavigationRoutes.CycleReview.route,
             arguments = listOf(navArgument("cycleId") { type = NavType.StringType })
         ) { backStackEntry ->
-            val cycleId = backStackEntry.arguments?.read { getStringOrNull("cycleId") } ?: return@composable
+            val cycleId = backStackEntry.arguments?.read { getStringOrNull("cycleId") }
+
+            // Handle null/invalid cycleId - navigate back instead of blank screen
+            if (cycleId.isNullOrBlank()) {
+                LaunchedEffect(Unit) {
+                    navController.popBackStack()
+                }
+                return@composable
+            }
+
             val routines by viewModel.routines.collectAsState()
             val cycleRepository: TrainingCycleRepository = koinInject()
 
@@ -412,7 +462,8 @@ fun NavGraph(
                             navController.navigate(NavigationRoutes.TrainingCycles.route) {
                                 popUpTo(NavigationRoutes.TrainingCycles.route) { inclusive = true }
                             }
-                        }
+                        },
+                        viewModel = viewModel
                     )
                 }
             }
