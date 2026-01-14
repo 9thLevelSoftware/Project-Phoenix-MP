@@ -214,7 +214,7 @@ fun ActiveWorkoutScreen(
             onRpeLogged = { rpe -> viewModel.logRpeForCurrentSet(rpe) },
             onResetForNewWorkout = { viewModel.resetForNewWorkout() },
             onStartNextExercise = { viewModel.advanceToNextExercise() },
-            onJumpToExercise = { /* Not used in ActiveWorkoutScreen */ },
+            onJumpToExercise = { viewModel.jumpToExercise(it) },
             onUpdateParameters = { viewModel.updateWorkoutParameters(it) },
             onShowWorkoutSetupDialog = { /* Not used in ActiveWorkoutScreen */ },
             onHideWorkoutSetupDialog = { /* Not used in ActiveWorkoutScreen */ },
