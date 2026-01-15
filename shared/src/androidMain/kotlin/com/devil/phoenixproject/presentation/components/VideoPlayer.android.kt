@@ -1,8 +1,7 @@
 package com.devil.phoenixproject.presentation.components
 
-import android.media.AudioManager
 import android.view.ViewGroup
-import android.widget.VideoView
+import androidx.annotation.OptIn as AndroidOptIn
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.CircularProgressIndicator
@@ -12,15 +11,28 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
-import androidx.core.net.toUri
+import androidx.media3.common.MediaItem
+import androidx.media3.common.PlaybackException
+import androidx.media3.common.Player
+import androidx.media3.common.util.UnstableApi
+import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.ui.AspectRatioFrameLayout
+import androidx.media3.ui.PlayerView
 import co.touchlab.kermit.Logger
 
 /**
- * Android video player implementation using VideoView.
+ * Android video player implementation using Media3 ExoPlayer.
+ *
+ * Supports:
+ * - Progressive MP4 downloads (stream.mux.com)
+ * - HLS streaming (cdn.jwplayer.com .m3u8)
+ *
  * Plays video in a loop without controls (like a GIF preview).
  */
+@AndroidOptIn(markerClass = [UnstableApi::class])
 @Composable
 actual fun VideoPlayer(
     videoUrl: String?,
@@ -34,60 +46,88 @@ actual fun VideoPlayer(
         return
     }
 
+    val context = LocalContext.current
     var isLoading by remember { mutableStateOf(true) }
     var hasError by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf("") }
+
+    // Create ExoPlayer instance with proper lifecycle management
+    val exoPlayer = remember {
+        ExoPlayer.Builder(context).build().apply {
+            repeatMode = Player.REPEAT_MODE_ALL
+            volume = 0f // Mute - these are silent preview videos
+            playWhenReady = true
+        }
+    }
+
+    // Update media item when URL changes
+    LaunchedEffect(videoUrl) {
+        Logger.d("VideoPlayer") { "Setting media item: $videoUrl" }
+        isLoading = true
+        hasError = false
+        errorMessage = ""
+
+        val mediaItem = MediaItem.fromUri(videoUrl)
+        exoPlayer.setMediaItem(mediaItem)
+        exoPlayer.prepare()
+    }
+
+    // Add player listener for state changes
+    DisposableEffect(exoPlayer) {
+        val listener = object : Player.Listener {
+            override fun onPlaybackStateChanged(playbackState: Int) {
+                when (playbackState) {
+                    Player.STATE_READY -> {
+                        Logger.d("VideoPlayer") { "Video ready, playing" }
+                        isLoading = false
+                    }
+                    Player.STATE_BUFFERING -> {
+                        Logger.d("VideoPlayer") { "Video buffering" }
+                        isLoading = true
+                    }
+                    Player.STATE_ENDED -> {
+                        Logger.d("VideoPlayer") { "Video ended (should loop)" }
+                    }
+                    Player.STATE_IDLE -> {
+                        Logger.d("VideoPlayer") { "Player idle" }
+                    }
+                }
+            }
+
+            override fun onPlayerError(error: PlaybackException) {
+                Logger.e("VideoPlayer") { "Player error: ${error.errorCodeName} - ${error.message}" }
+                isLoading = false
+                hasError = true
+                errorMessage = error.message ?: "Unknown error"
+            }
+        }
+
+        exoPlayer.addListener(listener)
+
+        onDispose {
+            exoPlayer.removeListener(listener)
+            exoPlayer.release()
+            Logger.d("VideoPlayer") { "ExoPlayer released" }
+        }
+    }
 
     Box(
         modifier = modifier.background(MaterialTheme.colorScheme.surfaceVariant),
         contentAlignment = Alignment.Center
     ) {
-        // Only show VideoView if no error
+        // Only show PlayerView if no error
         if (!hasError) {
             AndroidView(
                 factory = { ctx ->
-                    Logger.d("VideoPlayer") { "Creating VideoView for: $videoUrl" }
-                    VideoView(ctx).apply {
+                    Logger.d("VideoPlayer") { "Creating PlayerView" }
+                    PlayerView(ctx).apply {
                         layoutParams = ViewGroup.LayoutParams(
                             ViewGroup.LayoutParams.MATCH_PARENT,
                             ViewGroup.LayoutParams.MATCH_PARENT
                         )
-
-                        // Prevent audio focus theft - these are silent preview videos (like GIFs)
-                        // Without this, even muted videos interrupt Spotify and other audio apps
-                        setAudioFocusRequest(AudioManager.AUDIOFOCUS_NONE)
-
-                        try {
-                            setVideoURI(videoUrl.toUri())
-
-                            setOnPreparedListener { mp ->
-                                Logger.d("VideoPlayer") { "Video prepared, starting playback" }
-                                isLoading = false
-                                mp.isLooping = true
-                                // Mute the video to prevent audio focus theft from other apps (e.g., Spotify)
-                                // These are silent preview videos that play like GIFs
-                                mp.setVolume(0f, 0f)
-                                start()
-                            }
-
-                            setOnErrorListener { _, what, extra ->
-                                Logger.e("VideoPlayer") { "Video error: what=$what, extra=$extra" }
-                                isLoading = false
-                                hasError = true
-                                errorMessage = "Error: $what/$extra"
-                                true
-                            }
-
-                            setOnCompletionListener {
-                                Logger.d("VideoPlayer") { "Video completed, restarting" }
-                                start()
-                            }
-                        } catch (e: Exception) {
-                            Logger.e("VideoPlayer", e) { "Exception setting up VideoView" }
-                            isLoading = false
-                            hasError = true
-                            errorMessage = e.message ?: "Unknown error"
-                        }
+                        player = exoPlayer
+                        useController = false // No playback controls
+                        resizeMode = AspectRatioFrameLayout.RESIZE_MODE_ZOOM
                     }
                 },
                 modifier = Modifier.fillMaxSize()

@@ -140,6 +140,11 @@ kotlin {
                 // Charts - Vico (Android only)
                 implementation(libs.vico.charts)
 
+                // Media3 ExoPlayer (for HLS video playback)
+                implementation(libs.media3.exoplayer)
+                implementation(libs.media3.exoplayer.hls)
+                implementation(libs.media3.ui)
+
                 // Compose Preview Tooling (for @Preview in shared module)
                 implementation(compose.uiTooling)
 

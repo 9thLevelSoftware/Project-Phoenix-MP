@@ -185,6 +185,122 @@ jobs:
             --apiKey "$APPSTORE_API_KEY_ID" \
             --apiIssuer "$APPSTORE_ISSUER_ID"
 
+      - name: Add build to TestFlight test group
+        env:
+          APPSTORE_API_KEY: ${{ secrets.APPSTORE_API_KEY }}
+          APPSTORE_API_KEY_ID: ${{ secrets.APPSTORE_API_KEY_ID }}
+          APPSTORE_ISSUER_ID: ${{ secrets.APPSTORE_ISSUER_ID }}
+          TESTFLIGHT_GROUP_NAME: ${{ secrets.TESTFLIGHT_GROUP_NAME }}  # e.g., "Internal Testers"
+        run: |
+          set -e
+
+          # Generate JWT for App Store Connect API
+          generate_jwt() {
+            local header=$(echo -n '{"alg":"ES256","kid":"'"$APPSTORE_API_KEY_ID"'","typ":"JWT"}' | base64 | tr -d '=' | tr '/+' '_-' | tr -d '\n')
+            local now=$(date +%s)
+            local exp=$((now + 1200))
+            local payload=$(echo -n '{"iss":"'"$APPSTORE_ISSUER_ID"'","iat":'"$now"',"exp":'"$exp"',"aud":"appstoreconnect-v1"}' | base64 | tr -d '=' | tr '/+' '_-' | tr -d '\n')
+            local unsigned="$header.$payload"
+            local key_file=~/.appstoreconnect/private_keys/AuthKey_${APPSTORE_API_KEY_ID}.p8
+            local signature=$(echo -n "$unsigned" | openssl dgst -sha256 -sign "$key_file" | base64 | tr -d '=' | tr '/+' '_-' | tr -d '\n')
+            echo "$unsigned.$signature"
+          }
+
+          JWT=$(generate_jwt)
+          API_BASE="https://api.appstoreconnect.apple.com/v1"
+
+          echo "=== Waiting for build to process (this may take several minutes) ==="
+
+          # Get App ID
+          APP_RESPONSE=$(curl -s -H "Authorization: Bearer $JWT" \
+            "$API_BASE/apps?filter[bundleId]=$BUNDLE_ID")
+          APP_ID=$(echo "$APP_RESPONSE" | python3 -c "import sys,json; print(json.load(sys.stdin)['data'][0]['id'])")
+          echo "App ID: $APP_ID"
+
+          # Get beta group ID
+          GROUPS_RESPONSE=$(curl -s -H "Authorization: Bearer $JWT" \
+            "$API_BASE/apps/$APP_ID/betaGroups")
+          GROUP_ID=$(echo "$GROUPS_RESPONSE" | python3 -c "
+          import sys,json
+          data = json.load(sys.stdin)
+          target = '$TESTFLIGHT_GROUP_NAME'
+          for g in data['data']:
+              if g['attributes']['name'] == target:
+                  print(g['id'])
+                  break
+          ")
+          echo "Beta Group ID: $GROUP_ID"
+
+          if [ -z "$GROUP_ID" ]; then
+            echo "ERROR: Could not find beta group '$TESTFLIGHT_GROUP_NAME'"
+            echo "Available groups:"
+            echo "$GROUPS_RESPONSE" | python3 -c "import sys,json; [print('  -', g['attributes']['name']) for g in json.load(sys.stdin)['data']]"
+            exit 1
+          fi
+
+          # Wait for build to finish processing (check every 30 seconds, max 20 minutes)
+          BUILD_ID=""
+          BUILD_VERSION="${{ steps.build_number.outputs.build_number }}"
+
+          for i in {1..40}; do
+            # Refresh JWT if needed (they expire after 20 min)
+            if [ $((i % 20)) -eq 0 ]; then
+              JWT=$(generate_jwt)
+            fi
+
+            BUILDS_RESPONSE=$(curl -s -H "Authorization: Bearer $JWT" \
+              "$API_BASE/builds?filter[app]=$APP_ID&filter[version]=$BUILD_VERSION&limit=1")
+
+            BUILD_STATUS=$(echo "$BUILDS_RESPONSE" | python3 -c "
+          import sys,json
+          data = json.load(sys.stdin)
+          if data.get('data'):
+              b = data['data'][0]
+              status = b['attributes'].get('processingState', 'UNKNOWN')
+              print(status)
+          else:
+              print('NOT_FOUND')
+          " 2>/dev/null || echo "NOT_FOUND")
+
+            echo "Build status: $BUILD_STATUS (attempt $i/40)"
+
+            if [ "$BUILD_STATUS" = "VALID" ]; then
+              BUILD_ID=$(echo "$BUILDS_RESPONSE" | python3 -c "import sys,json; print(json.load(sys.stdin)['data'][0]['id'])")
+              break
+            elif [ "$BUILD_STATUS" = "INVALID" ]; then
+              echo "ERROR: Build is invalid and cannot be distributed"
+              exit 1
+            fi
+
+            sleep 30
+          done
+
+          if [ -z "$BUILD_ID" ]; then
+            echo "ERROR: Build did not finish processing in time"
+            exit 1
+          fi
+
+          echo "Build ID: $BUILD_ID"
+
+          # Add build to beta group
+          echo "=== Adding build to test group '$TESTFLIGHT_GROUP_NAME' ==="
+          ADD_RESPONSE=$(curl -s -w "\n%{http_code}" -X POST \
+            -H "Authorization: Bearer $JWT" \
+            -H "Content-Type: application/json" \
+            -d '{"data":[{"type":"builds","id":"'"$BUILD_ID"'"}]}' \
+            "$API_BASE/betaGroups/$GROUP_ID/relationships/builds")
+
+          HTTP_CODE=$(echo "$ADD_RESPONSE" | tail -1)
+          RESPONSE_BODY=$(echo "$ADD_RESPONSE" | head -n -1)
+
+          if [ "$HTTP_CODE" = "204" ] || [ "$HTTP_CODE" = "200" ]; then
+            echo "SUCCESS: Build added to test group '$TESTFLIGHT_GROUP_NAME'"
+          else
+            echo "WARNING: Unexpected response code $HTTP_CODE"
+            echo "$RESPONSE_BODY"
+            # Don't fail - build was uploaded successfully
+          fi
+
       - name: Clean up keychain
         if: always()
         run: security delete-keychain $RUNNER_TEMP/app-signing.keychain-db || true

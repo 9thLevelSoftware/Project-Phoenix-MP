@@ -61,11 +61,12 @@ jobs:
             -Pversion.code=${{ steps.version.outputs.version_code }}
           rm keystore.jks
 
-      - name: Upload to Play Store Internal Testing
+      - name: Upload to Play Store Open Testing and Submit for Review
         uses: r0adkll/upload-google-play@v1
         with:
           serviceAccountJsonPlainText: ${{ secrets.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}
           packageName: com.devil.phoenixproject
           releaseFiles: androidApp/build/outputs/bundle/release/*.aab
-          track: internal
+          track: beta  # Open Testing track (use 'production' for full release)
           status: completed
+          changesNotSentForReview: false  # Automatically submit for review

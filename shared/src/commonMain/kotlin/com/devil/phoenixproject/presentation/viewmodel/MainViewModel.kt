@@ -393,6 +393,13 @@ class MainViewModel constructor(
     )
     val hapticEvents: SharedFlow<HapticEvent> = _hapticEvents.asSharedFlow()
 
+    // Issue #172: User feedback events for navigation/UI messages
+    private val _userFeedbackEvents = MutableSharedFlow<String>(
+        extraBufferCapacity = 5,
+        onBufferOverflow = kotlinx.coroutines.channels.BufferOverflow.DROP_OLDEST
+    )
+    val userFeedbackEvents: SharedFlow<String> = _userFeedbackEvents.asSharedFlow()
+
     private val _connectionLostDuringWorkout = MutableStateFlow(false)
     val connectionLostDuringWorkout: StateFlow<Boolean> = _connectionLostDuringWorkout.asStateFlow()
 
@@ -816,6 +823,12 @@ class MainViewModel constructor(
     }
 
     fun updateWorkoutParameters(params: WorkoutParameters) {
+        // Issue #170: Track if user edits parameters during rest period
+        // This ensures edits made on rest screen persist through exercise transitions
+        if (_workoutState.value is WorkoutState.Resting) {
+            _userAdjustedWeightDuringRest = true
+            Logger.d("updateWorkoutParameters: User edited params during rest - will preserve on transition")
+        }
         _workoutParameters.value = params
     }
 
@@ -1647,6 +1660,10 @@ class MainViewModel constructor(
         // This matches official app behavior and prevents BLE command collisions that crash the machine
         if (_workoutState.value is WorkoutState.Active) {
             Logger.w("MainViewModel") { "Cannot jump to exercise $index while workout is Active - stop workout first" }
+            // Issue #172: Provide user feedback when navigation is blocked
+            viewModelScope.launch {
+                _userFeedbackEvents.emit("Stop the current set first")
+            }
             return
         }
 
@@ -1667,10 +1684,24 @@ class MainViewModel constructor(
         bodyweightTimerJob?.cancel()
         resetAutoStopState()
 
-        // Navigate and auto-start (Active state is blocked above, so this is safe)
-        navigateToExerciseInternal(routine, index)
-        // Auto-start the next exercise with countdown (Issue #93 fix)
-        startWorkout(skipCountdown = false)
+        // Issue #172: Async navigation with proper BLE cleanup to ensure machine is in BASELINE mode
+        // This matches official app behavior which requires explicit stop before mode transitions
+        viewModelScope.launch {
+            try {
+                // Send stop command to ensure machine is in BASELINE mode before mode transition
+                // This prevents BLE protocol conflicts when switching between workout modes (Echo <-> Old School)
+                bleRepository.stopWorkout()
+                delay(150)  // Brief settling time for machine to process stop command
+                Logger.d("MainViewModel") { "BLE stop sent before navigation to exercise $index" }
+            } catch (e: Exception) {
+                Logger.w(e) { "Stop command before navigation failed (non-fatal): ${e.message}" }
+                // Continue anyway - the stop may have succeeded partially
+            }
+
+            navigateToExerciseInternal(routine, index)
+            // Auto-start the next exercise with countdown (Issue #93 fix)
+            startWorkout(skipCountdown = false)
+        }
     }
 
     /**
@@ -3800,6 +3831,29 @@ class MainViewModel constructor(
                 null
             }
 
+            // Issue #170: Update workoutParameters with NEXT exercise settings when transitioning
+            // This ensures the rest screen shows the correct mode, weight, reps for the upcoming exercise
+            // instead of the just-completed exercise's parameters
+            if (nextExercise != null) {
+                val nextSetIdx = if (isInSupersetTransition) _currentSetIndex.value else 0
+                val nextSetReps = nextExercise.setReps.getOrNull(nextSetIdx)
+                val nextSetWeight = nextExercise.setWeightsPerCableKg.getOrNull(nextSetIdx)
+                    ?: nextExercise.weightPerCableKg
+
+                _workoutParameters.value = _workoutParameters.value.copy(
+                    weightPerCableKg = nextSetWeight,
+                    reps = nextSetReps ?: 0,
+                    programMode = nextExercise.programMode,
+                    echoLevel = nextExercise.echoLevel,
+                    eccentricLoad = nextExercise.eccentricLoad,
+                    progressionRegressionKg = nextExercise.progressionKg,
+                    selectedExerciseId = nextExercise.exercise.id,
+                    isAMRAP = nextSetReps == null,
+                    stallDetectionEnabled = nextExercise.stallDetectionEnabled
+                )
+                Logger.d { "startRestTimer: Updated params for next exercise: ${nextExercise.exercise.name}, mode=${nextExercise.programMode}" }
+            }
+
             // Calculate display values for the rest timer
             // UI adds +1 to displaySetIndex for display, so we pass the 0-indexed value of the UPCOMING set
             val displaySetIndex = when {
@@ -3918,18 +3972,24 @@ class MainViewModel constructor(
         if (_currentSetIndex.value < currentExercise.setReps.size - 1) {
             _currentSetIndex.value++
             val targetReps = currentExercise.setReps[_currentSetIndex.value]
+            val currentParams = _workoutParameters.value
 
-            // Issue #108: Preserve user-adjusted weight, otherwise use preset
+            // Issue #108/#170: Preserve user-adjusted params, otherwise use preset
             val setWeight = if (_userAdjustedWeightDuringRest) {
-                _workoutParameters.value.weightPerCableKg
+                currentParams.weightPerCableKg
             } else {
                 currentExercise.setWeightsPerCableKg.getOrNull(_currentSetIndex.value)
                     ?: currentExercise.weightPerCableKg
             }
+            val setReps = if (_userAdjustedWeightDuringRest) {
+                currentParams.reps
+            } else {
+                targetReps ?: 0
+            }
             _userAdjustedWeightDuringRest = false // Reset flag after use
 
-            _workoutParameters.value = _workoutParameters.value.copy(
-                reps = targetReps ?: 0,
+            _workoutParameters.value = currentParams.copy(
+                reps = setReps,
                 weightPerCableKg = setWeight,
                 isAMRAP = targetReps == null,
                 stallDetectionEnabled = currentExercise.stallDetectionEnabled,
@@ -4008,23 +4068,44 @@ class MainViewModel constructor(
             _currentExerciseIndex.value = nextExIdx
             _currentSetIndex.value = nextSetIdx
 
-            // Issue #108: Handle user-adjusted weight during rest
-            // Preserve user's weight adjustment only if staying on same exercise and same set progression
+            // Issue #108/#170: Handle user-adjusted parameters during rest
+            // With Issue #170 fix, workoutParameters are updated to NEXT exercise's values when entering rest.
+            // If user edited during rest, preserve their edits (weight, reps, echoLevel, eccentricLoad).
+            // Always update non-editable fields (mode, exerciseId, etc.) from routine.
             val nextSetReps = nextExercise.setReps.getOrNull(nextSetIdx)
-            val nextSetWeight = if (!isChangingExercise && _userAdjustedWeightDuringRest) {
-                _workoutParameters.value.weightPerCableKg
+            val currentParams = _workoutParameters.value
+
+            val nextSetWeight = if (_userAdjustedWeightDuringRest) {
+                // User edited during rest - preserve their weight choice
+                currentParams.weightPerCableKg
             } else {
                 nextExercise.setWeightsPerCableKg.getOrNull(nextSetIdx)
                     ?: nextExercise.weightPerCableKg
             }
+            val nextReps = if (_userAdjustedWeightDuringRest) {
+                // User edited during rest - preserve their reps choice
+                currentParams.reps
+            } else {
+                nextSetReps ?: 0
+            }
+            val nextEchoLevel = if (_userAdjustedWeightDuringRest) {
+                currentParams.echoLevel
+            } else {
+                nextExercise.echoLevel
+            }
+            val nextEccentricLoad = if (_userAdjustedWeightDuringRest) {
+                currentParams.eccentricLoad
+            } else {
+                nextExercise.eccentricLoad
+            }
             _userAdjustedWeightDuringRest = false // Reset flag after use
 
-            _workoutParameters.value = _workoutParameters.value.copy(
+            _workoutParameters.value = currentParams.copy(
                 weightPerCableKg = nextSetWeight,
-                reps = nextSetReps ?: 0,
+                reps = nextReps,
                 programMode = nextExercise.programMode,
-                echoLevel = nextExercise.echoLevel,
-                eccentricLoad = nextExercise.eccentricLoad,
+                echoLevel = nextEchoLevel,
+                eccentricLoad = nextEccentricLoad,
                 progressionRegressionKg = nextExercise.progressionKg,
                 selectedExerciseId = nextExercise.exercise.id,
                 isAMRAP = nextSetReps == null,

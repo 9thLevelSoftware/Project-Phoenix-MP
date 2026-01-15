@@ -1,7 +1,9 @@
 package com.devil.phoenixproject.presentation.screen
 
+import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Modifier
 import androidx.navigation.NavController
 import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.domain.model.*
@@ -69,6 +71,20 @@ fun ActiveWorkoutScreen(
     LaunchedEffect(Unit) {
         viewModel.badgeEarnedEvents.collect { badges ->
             earnedBadges = badges
+        }
+    }
+
+    // Issue #172: Snackbar for user feedback messages (e.g., navigation blocked)
+    val snackbarHostState = remember { SnackbarHostState() }
+    val snackbarScope = rememberCoroutineScope()
+    LaunchedEffect(Unit) {
+        viewModel.userFeedbackEvents.collect { message ->
+            snackbarScope.launch {
+                snackbarHostState.showSnackbar(
+                    message = message,
+                    duration = SnackbarDuration.Short
+                )
+            }
         }
     }
 
@@ -271,12 +287,18 @@ fun ActiveWorkoutScreen(
         )
     }
 
-    WorkoutTab(
-        state = workoutUiState,
-        actions = workoutActions,
-        exerciseRepository = exerciseRepository,
-        hapticEvents = hapticEvents
-    )
+    // Issue #172: Scaffold wrapper for Snackbar support (user feedback messages)
+    Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) }
+    ) { paddingValues ->
+        WorkoutTab(
+            state = workoutUiState,
+            actions = workoutActions,
+            exerciseRepository = exerciseRepository,
+            hapticEvents = hapticEvents,
+            modifier = Modifier.padding(paddingValues)
+        )
+    }
 
     // Exit confirmation dialog
     if (showExitConfirmation) {
