@@ -164,7 +164,7 @@ class MainViewModelTest {
                 topCounter = 1,
                 completeCounter = 0,
                 repsRomCount = 0,
-                repsSetCount = 1,
+                repsSetCount = 0,
                 rawData = byteArrayOf(),
                 isLegacyFormat = false
             )
@@ -183,7 +183,7 @@ class MainViewModelTest {
                 topCounter = 1,
                 completeCounter = 1,
                 repsRomCount = 0,
-                repsSetCount = 1,
+                repsSetCount = 0,
                 rawData = byteArrayOf(),
                 isLegacyFormat = false
             )

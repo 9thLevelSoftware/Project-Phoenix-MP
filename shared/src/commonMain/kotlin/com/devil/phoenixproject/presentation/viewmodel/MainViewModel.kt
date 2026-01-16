@@ -766,7 +766,23 @@ class MainViewModel constructor(
             }
 
             // Standard Auto-Stop (rep target reached)
-            if (repCounter.shouldStopWorkout() && isAtStopPosition(metric, params.stopAtTop)) {
+            // IMPORTANT: UI can display a "pending" rep (workingReps + 1) at the top of ROM.
+            // If the machine stops tension before confirming the last rep via repsSetCount,
+            // the UI can show target reps while shouldStopWorkout() remains false.
+            // Use effectiveWorkingReps (including pending) to avoid getting stuck at e.g. 9/10.
+            val repCount = _repCount.value
+            val effectiveWorkingReps = repCount.workingReps + if (repCount.hasPendingRep) 1 else 0
+            if (!params.isJustLift && !params.isAMRAP && params.reps > 0 &&
+                effectiveWorkingReps >= params.reps &&
+                isAtStopPosition(metric, params.stopAtTop)
+            ) {
+                // If we are completing due to a pending rep (no machine confirm), announce the number once.
+                if (repCount.hasPendingRep && repCount.workingReps == params.reps - 1) {
+                    val prefs = userPreferences.value
+                    if (prefs.audioRepCountEnabled) {
+                        _hapticEvents.tryEmit(HapticEvent.REP_COUNT_ANNOUNCED(params.reps))
+                    }
+                }
                 handleSetCompletion()
             }
         } else {
