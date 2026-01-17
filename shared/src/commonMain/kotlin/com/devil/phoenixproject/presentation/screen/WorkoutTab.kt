@@ -104,7 +104,8 @@ fun WorkoutTab(
         showConnectionCard = state.showConnectionCard,
         showWorkoutSetupCard = state.showWorkoutSetupCard,
         loadBaselineA = state.loadBaselineA,
-        loadBaselineB = state.loadBaselineB
+        loadBaselineB = state.loadBaselineB,
+        timedExerciseRemainingSeconds = state.timedExerciseRemainingSeconds
     )
 }
 
@@ -159,7 +160,8 @@ fun WorkoutTab(
     showConnectionCard: Boolean = true,
     showWorkoutSetupCard: Boolean = true,
     loadBaselineA: Float = 0f,
-    loadBaselineB: Float = 0f
+    loadBaselineB: Float = 0f,
+    timedExerciseRemainingSeconds: Int? = null  // Issue #192: Countdown for timed exercises
 ) {
     // Note: HapticFeedbackEffect is now global in EnhancedMainScreen
     // No need for local haptic effect here
@@ -189,6 +191,7 @@ fun WorkoutTab(
             currentHeuristicKgMax = currentHeuristicKgMax,
             loadBaselineA = loadBaselineA,
             loadBaselineB = loadBaselineB,
+            timedExerciseRemainingSeconds = timedExerciseRemainingSeconds,
             modifier = modifier
         )
         return

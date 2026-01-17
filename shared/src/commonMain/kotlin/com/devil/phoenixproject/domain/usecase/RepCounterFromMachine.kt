@@ -331,14 +331,18 @@ class RepCounterFromMachine {
     /**
      * MODERN rep counting - matches official app approach.
      *
-     * REP COUNTING (matches official app):
+     * REP COUNTING (Issue #187 fix - matches official app Yj/p.java):
      * - warmupReps = repsRomCount (directly from machine)
      * - workingReps calculation depends on stopAtTop setting:
-     *   - stopAtTop=false: down - repsRomCount (rep confirmed at BOTTOM, before weight release)
-     *   - stopAtTop=true: up - warmupTarget (rep confirmed at TOP, before weight release)
+     *   - stopAtTop=false: down - warmupTarget (rep confirmed at BOTTOM)
+     *   - stopAtTop=true: up - warmupTarget (rep confirmed at TOP)
+     * - SAFETY NET: If machine's repsSetCount > our calculated workingReps, trust the machine
      *
-     * This ensures single-side exercises work correctly since counters
-     * always increment regardless of which cable is used.
+     * The official app uses repsRomTotal (the configured target) not repsRomCount (the live counter).
+     * Using warmupTarget (our equivalent of repsRomTotal) avoids timing issues between counter updates.
+     *
+     * The repsSetCount fallback ensures we capture the final rep even if the machine deloads
+     * before we receive the final down counter increment.
      *
      * VISUAL FEEDBACK:
      * - UP counter: triggers PENDING (grey) preview at top of rep (stopAtTop=false only)
@@ -406,7 +410,8 @@ class RepCounterFromMachine {
                     }
                 } else if (!stopAtTop && warmupComplete && !hasPendingRep) {
                     // stopAtTop=false: Show PENDING (grey) at TOP, confirm at BOTTOM
-                    val calculatedWorking = maxOf(0, down - repsRomCount)
+                    // Use warmupTarget (constant) instead of repsRomCount (live counter) for stability
+                    val calculatedWorking = maxOf(0, down - warmupTarget)
                     hasPendingRep = true
                     pendingRepProgress = 0f
                     logDebug("📈 TOP - WORKING_PENDING: showing grey rep ${calculatedWorking + 1}")
@@ -464,14 +469,23 @@ class RepCounterFromMachine {
         }
 
         // WORKING REP TRACKING (stopAtTop=false only - stopAtTop=true handled above)
-        // Formula: working = down - repsRomCount (official app formula)
-        // This works for ALL exercises including single-side because down counter always increments
+        // Issue #187 fix: Use warmupTarget (constant) instead of repsRomCount (live counter)
+        // This matches official app formula: working = down - repsRomTotal
         if (!stopAtTop) {
-            val calculatedWorking = maxOf(0, down - repsRomCount)
+            // Primary formula: down - warmupTarget (using constant target for stability)
+            val calculatedWorking = maxOf(0, down - warmupTarget)
 
-            if (calculatedWorking > workingReps) {
+            // Safety net: Also check machine's repsSetCount (Issue #187)
+            // The machine knows the correct rep count even if we miss the final notification
+            // Only use this fallback after warmup is complete (repsRomCount >= warmupTarget)
+            val machineWorking = if (repsRomCount >= warmupTarget) repsSetCount else 0
+
+            // Use the higher of calculated or machine-reported (catches final rep if down doesn't increment)
+            val effectiveWorking = maxOf(calculatedWorking, machineWorking)
+
+            if (effectiveWorking > workingReps) {
                 // Emit WARMUP_COMPLETE for warmupTarget=0 case (no warmup configured)
-                if (warmupTarget == 0 && workingReps == 0 && calculatedWorking > 0) {
+                if (warmupTarget == 0 && workingReps == 0 && effectiveWorking > 0) {
                     logDebug("🎯 Warmup complete - no warmup configured, starting working reps")
                     onRepEvent?.invoke(
                         RepEvent(
@@ -482,14 +496,19 @@ class RepCounterFromMachine {
                     )
                 }
 
-                workingReps = calculatedWorking
+                val usedMachineFallback = machineWorking > calculatedWorking
+                workingReps = effectiveWorking
 
                 // Clear pending state when rep is confirmed
                 hasPendingRep = false
                 activePhase = RepPhase.IDLE
                 phaseProgress = 0f
 
-                logDebug("💪 WORKING_COMPLETED: rep $workingReps confirmed (down=$down - repsRomCount=$repsRomCount)")
+                if (usedMachineFallback) {
+                    logDebug("💪 WORKING_COMPLETED: rep $workingReps from machine repsSetCount (fallback)")
+                } else {
+                    logDebug("💪 WORKING_COMPLETED: rep $workingReps confirmed (down=$down - warmupTarget=$warmupTarget)")
+                }
 
                 onRepEvent?.invoke(
                     RepEvent(
@@ -785,6 +804,24 @@ data class RepRanges(
     val lastRepBottomA: Float? = null,
     val lastRepBottomB: Float? = null
 ) {
+    /**
+     * Check if cable A is active (has built meaningful range of motion).
+     * Used to determine whether to show cable position indicators.
+     */
+    fun isCableAActive(minRangeThreshold: Float = 50f): Boolean {
+        if (minPosA == null || maxPosA == null) return false
+        return (maxPosA - minPosA) > minRangeThreshold
+    }
+
+    /**
+     * Check if cable B is active (has built meaningful range of motion).
+     * Used to determine whether to show cable position indicators.
+     */
+    fun isCableBActive(minRangeThreshold: Float = 50f): Boolean {
+        if (minPosB == null || maxPosB == null) return false
+        return (maxPosB - minPosB) > minRangeThreshold
+    }
+
     /**
      * Check if position is in danger zone (within 5% of ROM minimum).
      * Used to trigger red color warning on position bars.

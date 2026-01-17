@@ -62,6 +62,7 @@ fun WorkoutHud(
     currentHeuristicKgMax: Float = 0f, // Echo mode: actual measured force per cable (kg)
     loadBaselineA: Float = 0f, // Load baseline for cable A (base tension to subtract)
     loadBaselineB: Float = 0f, // Load baseline for cable B (base tension to subtract)
+    timedExerciseRemainingSeconds: Int? = null, // Issue #192: Countdown for timed exercises
     modifier: Modifier = Modifier
 ) {
     // Determine if we're in Echo mode
@@ -122,7 +123,8 @@ fun WorkoutHud(
                             loadBaselineB = loadBaselineB,
                             exerciseName = exerciseName,
                             currentSetIndex = currentSetIndex,
-                            totalSets = totalSets
+                            totalSets = totalSets,
+                            timedExerciseRemainingSeconds = timedExerciseRemainingSeconds
                         )
                     }
                     1 -> InstructionPage(
@@ -164,48 +166,55 @@ fun WorkoutHud(
             }
 
             // PERIPHERAL VISION BARS (Pinned to edges, overlaying the pager)
+            // Only show bars for cables that have built meaningful range of motion
             if (metric != null) {
                 // Calculate danger zone status for both cables
                 val isDangerA = repRanges?.isInDangerZone(metric.positionA, metric.positionB) ?: false
                 val isDangerB = isDangerA  // Same check applies to both (symmetric)
 
-                // Left Bar
-                EnhancedCablePositionBar(
-                    label = "L",
-                    currentPosition = metric.positionA,
-                    velocity = metric.velocityA,
-                    minPosition = repRanges?.minPosA,
-                    maxPosition = repRanges?.maxPosA,
-                    // Ghost indicators: use last rep's rolling average positions
-                    ghostMin = repRanges?.lastRepBottomA,
-                    ghostMax = repRanges?.lastRepTopA,
-                    // isActive defaults to true - bars only shown during Active state anyway
-                    isDanger = isDangerA,
-                    modifier = Modifier
-                        .align(Alignment.CenterStart)
-                        .width(24.dp) // Thinner for HUD
-                        .fillMaxHeight(0.6f)
-                        .padding(start = 4.dp)
-                )
+                // Determine which cables are active (have meaningful ROM)
+                val isCableAActive = repRanges?.isCableAActive() ?: false
+                val isCableBActive = repRanges?.isCableBActive() ?: false
 
-                // Right Bar
-                EnhancedCablePositionBar(
-                    label = "R",
-                    currentPosition = metric.positionB,
-                    velocity = metric.velocityB,
-                    minPosition = repRanges?.minPosB,
-                    maxPosition = repRanges?.maxPosB,
-                    // Ghost indicators: use last rep's rolling average positions
-                    ghostMin = repRanges?.lastRepBottomB,
-                    ghostMax = repRanges?.lastRepTopB,
-                    // isActive defaults to true - bars only shown during Active state anyway
-                    isDanger = isDangerB,
-                    modifier = Modifier
-                        .align(Alignment.CenterEnd)
-                        .width(24.dp) // Thinner for HUD
-                        .fillMaxHeight(0.6f)
-                        .padding(end = 4.dp)
-                )
+                // Left Bar - only show if cable A has meaningful movement
+                if (isCableAActive) {
+                    EnhancedCablePositionBar(
+                        label = "L",
+                        currentPosition = metric.positionA,
+                        velocity = metric.velocityA,
+                        minPosition = repRanges?.minPosA,
+                        maxPosition = repRanges?.maxPosA,
+                        // Ghost indicators: use last rep's rolling average positions
+                        ghostMin = repRanges?.lastRepBottomA,
+                        ghostMax = repRanges?.lastRepTopA,
+                        isDanger = isDangerA,
+                        modifier = Modifier
+                            .align(Alignment.CenterStart)
+                            .width(24.dp) // Thinner for HUD
+                            .fillMaxHeight(0.6f)
+                            .padding(start = 4.dp)
+                    )
+                }
+
+                // Right Bar - only show if cable B has meaningful movement
+                if (isCableBActive) {
+                    EnhancedCablePositionBar(
+                        label = "R",
+                        currentPosition = metric.positionB,
+                        velocity = metric.velocityB,
+                        minPosition = repRanges?.minPosB,
+                        maxPosition = repRanges?.maxPosB,
+                        // Ghost indicators: use last rep's rolling average positions
+                        ghostMin = repRanges?.lastRepBottomB,
+                        ghostMax = repRanges?.lastRepTopB,
+                        isDanger = isDangerB,
+                        modifier = Modifier
+                            .align(Alignment.CenterEnd)
+                            .width(24.dp) // Thinner for HUD
+                            .fillMaxHeight(0.6f)
+                            .padding(end = 4.dp)
+                    )
+                }
             }
         }
     }
@@ -326,8 +335,12 @@ private fun ExecutionPage(
     loadBaselineB: Float = 0f, // Load baseline for cable B (base tension to subtract)
     exerciseName: String? = null, // Current exercise name (null for Just Lift)
     currentSetIndex: Int = 0, // Current set (0-based)
-    totalSets: Int = 0 // Total number of sets for current exercise
+    totalSets: Int = 0, // Total number of sets for current exercise
+    timedExerciseRemainingSeconds: Int? = null // Issue #192: Countdown for timed exercises
 ) {
+    // Issue #192: Check if this is a timed exercise
+    val isTimedExercise = timedExerciseRemainingSeconds != null
+
     Column(
         modifier = Modifier.fillMaxSize(),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -362,49 +375,73 @@ private fun ExecutionPage(
             Spacer(modifier = Modifier.height(24.dp))
         }
 
-        // Issue #163: Animated Rep Counter with stable progress display
-        // Shows phase label and animated counter during working reps
-        // Shows warmup counter during warmup phase
-        Text(
-            if (repCount.isWarmupComplete) "REP" else "WARMUP",
-            style = MaterialTheme.typography.labelLarge,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            letterSpacing = 2.sp
-        )
-
-        if (repCount.isWarmupComplete) {
-            // Issue #163: Animated working rep counter
-            // Shows the current rep being performed with animated visual feedback:
-            // - IDLE: Solid confirmed count
-            // - CONCENTRIC: Outline reveals bottom-to-top
-            // - ECCENTRIC: Fill reveals top-to-bottom
-            AnimatedRepCounter(
-                nextRepNumber = repCount.workingReps + 1,
-                phase = repCount.activeRepPhase,
-                phaseProgress = repCount.phaseProgress,
-                confirmedReps = repCount.workingReps,
-                targetReps = workoutParameters.reps,
-                showStableCounter = false,  // We show it separately below
-                size = 120.dp
+        // Issue #192: Show countdown timer for timed exercises, rep counter for normal exercises
+        if (isTimedExercise && timedExerciseRemainingSeconds != null) {
+            // Timed exercise - show countdown timer
+            val remainingSeconds = timedExerciseRemainingSeconds // Smart cast to non-null
+            Text(
+                "TIME",
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                letterSpacing = 2.sp
             )
 
-            Spacer(modifier = Modifier.height(8.dp))
-
-            // Stable "X / Y" progress display - always visible and stable
-            if (!workoutParameters.isJustLift && !workoutParameters.isAMRAP && workoutParameters.reps > 0) {
-                StableRepProgress(
-                    confirmedReps = repCount.workingReps,
-                    targetReps = workoutParameters.reps
-                )
-            }
-        } else {
-            // Warmup counter (non-animated)
+            // Large countdown display
             Text(
-                text = "${repCount.warmupReps} / ${workoutParameters.warmupReps}",
+                text = "${remainingSeconds}s",
                 style = MaterialTheme.typography.displayLarge.copy(fontSize = 120.sp),
                 fontWeight = FontWeight.Black,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = if (remainingSeconds <= 5)
+                    MaterialTheme.colorScheme.error // Highlight last 5 seconds
+                else
+                    MaterialTheme.colorScheme.primary
             )
+        } else {
+            // Normal exercise - show rep counter
+            // Issue #163: Animated Rep Counter with stable progress display
+            // Shows phase label and animated counter during working reps
+            // Shows warmup counter during warmup phase
+            Text(
+                if (repCount.isWarmupComplete) "REP" else "WARMUP",
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                letterSpacing = 2.sp
+            )
+
+            if (repCount.isWarmupComplete) {
+                // Issue #163: Animated working rep counter
+                // Shows the current rep being performed with animated visual feedback:
+                // - IDLE: Solid confirmed count
+                // - CONCENTRIC: Outline reveals bottom-to-top
+                // - ECCENTRIC: Fill reveals top-to-bottom
+                AnimatedRepCounter(
+                    nextRepNumber = repCount.workingReps + 1,
+                    phase = repCount.activeRepPhase,
+                    phaseProgress = repCount.phaseProgress,
+                    confirmedReps = repCount.workingReps,
+                    targetReps = workoutParameters.reps,
+                    showStableCounter = false,  // We show it separately below
+                    size = 120.dp
+                )
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                // Stable "X / Y" progress display - always visible and stable
+                if (!workoutParameters.isJustLift && !workoutParameters.isAMRAP && workoutParameters.reps > 0) {
+                    StableRepProgress(
+                        confirmedReps = repCount.workingReps,
+                        targetReps = workoutParameters.reps
+                    )
+                }
+            } else {
+                // Warmup counter (non-animated)
+                Text(
+                    text = "${repCount.warmupReps} / ${workoutParameters.warmupReps}",
+                    style = MaterialTheme.typography.displayLarge.copy(fontSize = 120.sp),
+                    fontWeight = FontWeight.Black,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
         }
 
         Spacer(modifier = Modifier.height(32.dp))

@@ -32,6 +32,7 @@ import com.devil.phoenixproject.domain.usecase.RepRanges
  * @property showWorkoutSetupCard Whether to show workout setup button
  * @property loadBaselineA Load baseline for cable A (base tension to subtract, ~4kg)
  * @property loadBaselineB Load baseline for cable B (base tension to subtract, ~4kg)
+ * @property timedExerciseRemainingSeconds Countdown timer for timed exercises (null = not timed)
  */
 data class WorkoutUiState(
     val connectionState: ConnectionState = ConnectionState.Disconnected,
@@ -61,7 +62,8 @@ data class WorkoutUiState(
     val showConnectionCard: Boolean = true,
     val showWorkoutSetupCard: Boolean = true,
     val loadBaselineA: Float = 0f,
-    val loadBaselineB: Float = 0f
+    val loadBaselineB: Float = 0f,
+    val timedExerciseRemainingSeconds: Int? = null
 )
 
 /**

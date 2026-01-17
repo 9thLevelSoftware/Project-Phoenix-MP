@@ -183,13 +183,18 @@ object BlePacketFactory {
         val totalWeightKg = adjustedWeightPerCable
         val effectiveKg = adjustedWeightPerCable + 10.0f
 
-        Logger.d("BlePacketFactory") { "=== WORKOUT MODE: ${params.programMode}, Weight: ${params.weightPerCableKg}kg ===" }
-        Logger.d("BlePacketFactory") { "Issue #164: progressionRegressionKg=${params.progressionRegressionKg}kg (sending at offset 0x5c)" }
-        Logger.d("BlePacketFactory") { "Issue #164: adjustedWeightPerCable=${adjustedWeightPerCable}kg (compensated for rep 0 quirk)" }
+        println("Issue188-BLE: === WORKOUT MODE: ${params.programMode}, Weight: ${params.weightPerCableKg}kg ===")
+        println("Issue188-BLE: progressionRegressionKg=${params.progressionRegressionKg}kg (sending at offset 0x5c)")
+        println("Issue188-BLE: adjustedWeightPerCable=${adjustedWeightPerCable}kg (compensated for rep 0 quirk)")
 
         putFloatLE(frame, 0x54, effectiveKg)
         putFloatLE(frame, 0x58, totalWeightKg)
         putFloatLE(frame, 0x5c, params.progressionRegressionKg)
+
+        // Issue #188: Log exact bytes at critical offsets
+        val repsHex = frame[0x04].toUByte().toString(16).padStart(2, '0').uppercase()
+        val prog5c = frame.slice(0x5c..0x5f).joinToString(" ") { it.toUByte().toString(16).padStart(2, '0').uppercase() }
+        println("Issue188-BLE: reps[0x04]=0x$repsHex, progression[0x5c-5f]=$prog5c (isAMRAP=${params.isAMRAP})")
 
         return frame
     }

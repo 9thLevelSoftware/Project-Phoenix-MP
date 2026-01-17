@@ -152,16 +152,68 @@ fun ExerciseRowWithConnector(
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold
                     )
-                    val isEchoMode = exercise.programMode == ProgramMode.Echo
-                    val weightText = if (isEchoMode) {
-                        "Adaptive"
+                    // Display format depends on whether this is a timed exercise
+                    // Check if bodyweight (equipment empty or "bodyweight") vs timed cable exercise
+                    val isBodyweight = exercise.exercise.equipment.isEmpty() ||
+                        exercise.exercise.equipment.equals("bodyweight", ignoreCase = true)
+
+                    val exerciseText = if (exercise.duration != null && isBodyweight) {
+                        // Bodyweight timed exercise (no cable weight needed)
+                        "${exercise.sets} sets x ${exercise.duration}s"
+                    } else if (exercise.duration != null) {
+                        // Timed cable exercise - show duration AND weight/progression
+                        val isEchoMode = exercise.programMode == ProgramMode.Echo
+                        val weightText = if (isEchoMode) {
+                            "Adaptive"
+                        } else {
+                            val weight = kgToDisplay(exercise.weightPerCableKg, weightUnit)
+                            val unitLabel = if (weightUnit == WeightUnit.KG) "kg" else "lbs"
+                            "${weight.toInt()} $unitLabel"
+                        }
+                        val progressionText = when {
+                            exercise.progressionKg > 0 -> {
+                                val progWeight = kgToDisplay(exercise.progressionKg, weightUnit)
+                                val unitLabel = if (weightUnit == WeightUnit.KG) "kg" else "lb"
+                                " (+${progWeight}$unitLabel)"
+                            }
+                            exercise.progressionKg < 0 -> {
+                                val regWeight = kgToDisplay(-exercise.progressionKg, weightUnit)
+                                val unitLabel = if (weightUnit == WeightUnit.KG) "kg" else "lb"
+                                " (-${regWeight}$unitLabel)"
+                            }
+                            else -> ""
+                        }
+                        "${exercise.sets} sets x ${exercise.duration}s @ $weightText$progressionText"
                     } else {
-                        val weight = kgToDisplay(exercise.weightPerCableKg, weightUnit)
-                        val unitLabel = if (weightUnit == WeightUnit.KG) "kg" else "lbs"
-                        "${weight.toInt()} $unitLabel"
+                        // Rep-based exercise with weight
+                        val isEchoMode = exercise.programMode == ProgramMode.Echo
+                        val weightText = if (isEchoMode) {
+                            "Adaptive"
+                        } else {
+                            val weight = kgToDisplay(exercise.weightPerCableKg, weightUnit)
+                            val unitLabel = if (weightUnit == WeightUnit.KG) "kg" else "lbs"
+                            "${weight.toInt()} $unitLabel"
+                        }
+                        // Handle AMRAP vs fixed reps display
+                        val repsText = if (exercise.isAMRAP) "AMRAP" else "${exercise.reps} reps"
+                        // Build progression/regression suffix if configured
+                        val progressionText = when {
+                            exercise.progressionKg > 0 -> {
+                                val progWeight = kgToDisplay(exercise.progressionKg, weightUnit)
+                                val unitLabel = if (weightUnit == WeightUnit.KG) "kg" else "lb"
+                                " (+${progWeight}$unitLabel/rep)"
+                            }
+                            exercise.progressionKg < 0 -> {
+                                val regWeight = kgToDisplay(-exercise.progressionKg, weightUnit)
+                                val unitLabel = if (weightUnit == WeightUnit.KG) "kg" else "lb"
+                                " (-${regWeight}$unitLabel/rep)"
+                            }
+                            else -> ""
+                        }
+                        "${exercise.sets} sets x $repsText @ $weightText$progressionText"
                     }
                     Text(
-                        "${exercise.sets} sets x ${exercise.reps} reps @ $weightText",
+                        exerciseText,
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )

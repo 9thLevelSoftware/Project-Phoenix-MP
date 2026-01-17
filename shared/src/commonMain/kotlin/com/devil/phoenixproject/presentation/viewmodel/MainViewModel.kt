@@ -172,6 +172,11 @@ class MainViewModel constructor(
     private val _repCount = MutableStateFlow(RepCount())
     val repCount: StateFlow<RepCount> = _repCount.asStateFlow()
 
+    // Issue #192: Timed exercise countdown - remaining seconds for duration-based exercises
+    // null = not a timed exercise or timer not running, positive = seconds remaining
+    private val _timedExerciseRemainingSeconds = MutableStateFlow<Int?>(null)
+    val timedExerciseRemainingSeconds: StateFlow<Int?> = _timedExerciseRemainingSeconds.asStateFlow()
+
     private val _repRanges = MutableStateFlow<com.devil.phoenixproject.domain.usecase.RepRanges?>(null)
     val repRanges: StateFlow<com.devil.phoenixproject.domain.usecase.RepRanges?> = _repRanges.asStateFlow()
 
@@ -405,6 +410,7 @@ class MainViewModel constructor(
 
     private var currentSessionId: String? = null
     private var workoutStartTime: Long = 0
+    private var routineStartTime: Long = 0  // Issue #195: Track routine start separately from per-set start
     private val collectedMetrics = mutableListOf<WorkoutMetric>()
 
     private var currentRoutineSessionId: String? = null
@@ -904,14 +910,24 @@ class MainViewModel constructor(
                 // Start timer
                 _workoutState.value = WorkoutState.Active
                 workoutStartTime = currentTimeMillis()
+                // Issue #195: Track routine start separately - only set on first set
+                if (_loadedRoutine.value != null && routineStartTime == 0L) {
+                    routineStartTime = workoutStartTime
+                }
                 currentSessionId = KmpUtils.randomUUID()
                 collectedMetrics.clear()  // Clear metrics from previous workout
                 _hapticEvents.emit(HapticEvent.WORKOUT_START)
 
-                // Bodyweight timer - auto-complete after duration
+                // Bodyweight timer - auto-complete after duration with countdown display
+                // Issue #192: Show countdown timer in UI during timed exercises
                 bodyweightTimerJob?.cancel()
                 bodyweightTimerJob = viewModelScope.launch {
-                    delay(bodyweightDuration * 1000L)
+                    _timedExerciseRemainingSeconds.value = bodyweightDuration
+                    for (remaining in bodyweightDuration downTo 1) {
+                        _timedExerciseRemainingSeconds.value = remaining
+                        delay(1000L)
+                    }
+                    _timedExerciseRemainingSeconds.value = 0
                     handleSetCompletion()
                 }
 
@@ -919,6 +935,21 @@ class MainViewModel constructor(
             }
 
             // Normal cable-based exercise
+
+            // Issue #188: Comprehensive workout parameters dump for debugging
+            println("Issue188: ╔══════════════════════════════════════════════════════════════")
+            println("Issue188: ║ PRE-BLE WORKOUT PARAMETERS")
+            println("Issue188: ╠══════════════════════════════════════════════════════════════")
+            println("Issue188: ║ Mode: ${params.programMode.displayName}")
+            println("Issue188: ║ Weight: ${params.weightPerCableKg}kg per cable")
+            println("Issue188: ║ Reps: ${params.reps} (isAMRAP=${params.isAMRAP})")
+            println("Issue188: ║ Warmup: ${params.warmupReps}")
+            println("Issue188: ║ Progression: ${params.progressionRegressionKg}kg per rep")
+            println("Issue188: ║ isJustLift: ${params.isJustLift}")
+            println("Issue188: ║ isEchoMode: ${params.isEchoMode}")
+            println("Issue188: ║ stopAtTop: ${params.stopAtTop}")
+            println("Issue188: ║ stallDetection: ${params.stallDetectionEnabled}")
+            println("Issue188: ╚══════════════════════════════════════════════════════════════")
 
             // 1. Build Command - Use full 96-byte PROGRAM params (matches parent repo)
             val command = if (params.isEchoMode) {
@@ -994,9 +1025,10 @@ class MainViewModel constructor(
             } else {
                 repCounter.reset()
             }
-            // Timed cable exercises still need warmup (ROM calibration) since cables are used
+            // Issue #196: Duration/timed exercises should NEVER have warmup reps
+            // They should immediately start the countdown timer, not wait for ROM calibration
             repCounter.configure(
-                warmupTarget = params.warmupReps,
+                warmupTarget = if (isTimedCableExercise) 0 else params.warmupReps,
                 workingTarget = params.reps,
                 isJustLift = isJustLiftMode,
                 stopAtTop = params.stopAtTop,
@@ -1020,14 +1052,24 @@ class MainViewModel constructor(
             // 7. Start Monitoring
             _workoutState.value = WorkoutState.Active
             workoutStartTime = currentTimeMillis()
+            // Issue #195: Track routine start separately - only set on first set
+            if (_loadedRoutine.value != null && routineStartTime == 0L) {
+                routineStartTime = workoutStartTime
+            }
             collectedMetrics.clear()  // Clear metrics from previous workout
             _hapticEvents.emit(HapticEvent.WORKOUT_START)
 
-            // For timed cable exercises, start auto-complete timer
+            // For timed cable exercises, start auto-complete timer with countdown display
+            // Issue #192: Show countdown timer in UI during timed exercises
             if (isTimedCableExercise && exerciseDuration != null) {
                 bodyweightTimerJob?.cancel()
                 bodyweightTimerJob = viewModelScope.launch {
-                    delay(exerciseDuration * 1000L)
+                    _timedExerciseRemainingSeconds.value = exerciseDuration
+                    for (remaining in exerciseDuration downTo 1) {
+                        _timedExerciseRemainingSeconds.value = remaining
+                        delay(1000L)
+                    }
+                    _timedExerciseRemainingSeconds.value = 0
                     handleSetCompletion()
                 }
             }
@@ -1088,6 +1130,8 @@ class MainViewModel constructor(
         // after transitioning to the next exercise (would cause premature completion)
         bodyweightTimerJob?.cancel()
         bodyweightTimerJob = null
+        // Issue #192: Clear timed exercise countdown display
+        _timedExerciseRemainingSeconds.value = null
 
         // Cancel any running rest timer to prevent it from starting the next set
         // after user has manually stopped the workout (fixes haptic firing and edit-blocking bugs)
@@ -1180,6 +1224,7 @@ class MainViewModel constructor(
                  _workoutState.value = WorkoutState.Idle
                  _routineFlowState.value = RoutineFlowState.NotInRoutine
                  _loadedRoutine.value = null
+                 routineStartTime = 0  // Issue #195: Reset for next routine
              } else {
                  // Normal stop - show summary so user can see workout results
                  _workoutState.value = summary
@@ -1681,6 +1726,8 @@ class MainViewModel constructor(
         // Cancel any active timers
         restTimerJob?.cancel()
         bodyweightTimerJob?.cancel()
+        // Issue #192: Clear timed exercise countdown display
+        _timedExerciseRemainingSeconds.value = null
         resetAutoStopState()
 
         // Issue #172: Async navigation with proper BLE cleanup to ensure machine is in BASELINE mode
@@ -1894,12 +1941,18 @@ class MainViewModel constructor(
         // Check if first exercise is duration-based (timed exercise)
         val isDurationBased = firstExercise.duration != null && firstExercise.duration > 0
 
-        Logger.d { "Loading routine: ${routine.name}" }
-        Logger.d { "  First exercise: ${firstExercise.exercise.displayName}" }
-        Logger.d { "  First set weight: ${firstSetWeight}kg, reps: $firstSetReps" }
-        Logger.d { "  Program mode: ${firstExercise.programMode.displayName}" }
-        Logger.d { "  Duration-based: $isDurationBased (duration=${firstExercise.duration})" }
-        Logger.d { "  Issue #164: progressionKg=${firstExercise.progressionKg}kg" }
+        // Issue #188: Trace routine loading with println for reliable logcat output
+        println("Issue188-Load: ╔══════════════════════════════════════════════════════════════")
+        println("Issue188-Load: ║ LOADING ROUTINE: ${routine.name}")
+        println("Issue188-Load: ╠══════════════════════════════════════════════════════════════")
+        println("Issue188-Load: ║ First exercise: ${firstExercise.exercise.displayName}")
+        println("Issue188-Load: ║ setReps list: ${firstExercise.setReps}")
+        println("Issue188-Load: ║ firstSetReps (firstOrNull): $firstSetReps")
+        println("Issue188-Load: ║ isAMRAP field on exercise: ${firstExercise.isAMRAP}")
+        println("Issue188-Load: ║ progressionKg: ${firstExercise.progressionKg}kg")
+        println("Issue188-Load: ║ weightPerCableKg: ${firstSetWeight}kg")
+        println("Issue188-Load: ║ programMode: ${firstExercise.programMode.displayName}")
+        println("Issue188-Load: ╚══════════════════════════════════════════════════════════════")
 
         val params = WorkoutParameters(
             programMode = firstExercise.programMode,
@@ -1917,8 +1970,11 @@ class MainViewModel constructor(
             stallDetectionEnabled = firstExercise.stallDetectionEnabled
         )
 
-        Logger.d { "Created WorkoutParameters: isAMRAP=${params.isAMRAP}, isJustLift=${params.isJustLift}, stallDetection=${params.stallDetectionEnabled}" }
-        Logger.d { "  Issue #164: progressionRegressionKg=${params.progressionRegressionKg}kg" }
+        // Issue #188: Log computed params
+        println("Issue188-Load: ║ COMPUTED WorkoutParameters:")
+        println("Issue188-Load: ║   isAMRAP=${params.isAMRAP} (from firstSetReps == null)")
+        println("Issue188-Load: ║   reps=${params.reps}")
+        println("Issue188-Load: ║   progressionRegressionKg=${params.progressionRegressionKg}kg")
         updateWorkoutParameters(params)
     }
 
@@ -1992,7 +2048,8 @@ class MainViewModel constructor(
             eccentricLoad = exercise.eccentricLoad,
             selectedExerciseId = exercise.exercise.id,
             stallDetectionEnabled = exercise.stallDetectionEnabled,
-            isAMRAP = isSetAmrap  // Issue #129: Set per-set AMRAP flag
+            isAMRAP = isSetAmrap,  // Issue #129: Set per-set AMRAP flag
+            progressionRegressionKg = exercise.progressionKg  // Issue #188: Include progression from exercise
         )
     }
 
@@ -2029,7 +2086,8 @@ class MainViewModel constructor(
             eccentricLoad = exercise.eccentricLoad,
             selectedExerciseId = exercise.exercise.id,
             stallDetectionEnabled = exercise.stallDetectionEnabled,
-            isAMRAP = isSetAmrap  // Issue #129: Set per-set AMRAP flag
+            isAMRAP = isSetAmrap,  // Issue #129: Set per-set AMRAP flag
+            progressionRegressionKg = exercise.progressionKg  // Issue #188: Include progression from exercise
         )
     }
 
@@ -2275,15 +2333,19 @@ class MainViewModel constructor(
         _routineFlowState.value = RoutineFlowState.NotInRoutine
         _loadedRoutine.value = null
         _workoutState.value = WorkoutState.Idle
+        routineStartTime = 0  // Issue #195: Reset for next routine
     }
 
     /**
      * Show routine complete screen.
+     * Issue #195: Use routineStartTime for accurate total duration across all sets.
      */
     fun showRoutineComplete() {
         val routine = _loadedRoutine.value ?: return
-        val duration = if (workoutStartTime > 0) {
-            currentTimeMillis() - workoutStartTime
+        // Issue #195: Use routineStartTime (set on first set) for total duration,
+        // not workoutStartTime (reset each set)
+        val duration = if (routineStartTime > 0) {
+            currentTimeMillis() - routineStartTime
         } else {
             0L
         }
@@ -2328,6 +2390,7 @@ class MainViewModel constructor(
     fun clearLoadedRoutine() {
         _loadedRoutine.value = null
         clearCycleContext()
+        routineStartTime = 0  // Issue #195: Reset for next routine
     }
 
     fun getCurrentExercise(): RoutineExercise? {
@@ -2912,7 +2975,7 @@ class MainViewModel constructor(
         val hasMeaningfulRange = repCounter.hasMeaningfulRange(MIN_RANGE_THRESHOLD)
         val params = _workoutParameters.value
 
-        // ===== 1. VELOCITY-BASED STALL DETECTION (Issue #204, #214, #216) =====
+        // ===== 1. VELOCITY-BASED STALL DETECTION (Issue #204, #214, #216, #198) =====
         // Only run if stallDetectionEnabled is true (user preference in Settings)
         if (params.stallDetectionEnabled) {
             // Two-tier hysteresis matching official app (<2.5 stalled, >10 moving):
@@ -2925,15 +2988,25 @@ class MainViewModel constructor(
             val isDefinitelyStalled = maxVelocity < STALL_VELOCITY_LOW
             val isDefinitelyMoving = maxVelocity > STALL_VELOCITY_HIGH
 
-            // Check if handles are actively being used (position > 10mm OR meaningful range achieved)
+            // Issue #198: Check if handles are actively being used
+            // During an active workout, we should detect stalls even when:
+            // - Position drops to ~0 (user dropped weights entirely)
+            // - No meaningful range was established (short ROM exercise)
+            // The key insight: if we're in Active state and velocity is ~0 for 5 seconds,
+            // the user has stopped regardless of position.
+            // We add "handles at rest" as an additional trigger condition to catch the case
+            // where user drops weights entirely (position ~0, no range established).
             val maxPosition = maxOf(metric.positionA, metric.positionB)
             val isActivelyUsing = maxPosition > STALL_MIN_POSITION || hasMeaningfulRange
+            val handlesAtRest = maxPosition < HANDLE_REST_THRESHOLD  // Position < 2.5mm = dropped
 
             // Hysteresis state machine:
             // - Definitely stalled (< LOW): start timer if not already running
             // - Definitely moving (> HIGH): reset timer
             // - Hysteresis band (LOW to HIGH): maintain current state, keep timer running if active
-            if (isDefinitelyStalled && isActivelyUsing && stallStartTime == null) {
+            // Issue #198: Also start timer if handles are at rest (dropped entirely) - this catches
+            // the edge case where position drops below 10mm AND no meaningful range was established
+            if (isDefinitelyStalled && (isActivelyUsing || handlesAtRest) && stallStartTime == null) {
                 // Velocity below LOW threshold - start stall timer
                 stallStartTime = currentTimeMillis()
                 isCurrentlyStalled = true
@@ -2972,10 +3045,44 @@ class MainViewModel constructor(
         }
 
         // ===== 2. POSITION-BASED DETECTION (always active) =====
-        // Only check if we have meaningful range established
+        // Issue #198: Added fallback for "handles at rest" when no meaningful range established
+        val maxPosition = maxOf(metric.positionA, metric.positionB)
+        val handlesCompletelyAtRest = maxPosition < HANDLE_REST_THRESHOLD  // Both cables < 2.5mm
+
+        // If no meaningful range established, check if handles are completely at rest
+        // This catches the edge case where user drops weights before establishing ROM
         if (!hasMeaningfulRange) {
-            resetAutoStopTimer()
-            return
+            if (handlesCompletelyAtRest) {
+                // Fallback: handles at rest with no range - start/continue timer
+                val startTime = autoStopStartTime ?: run {
+                    autoStopStartTime = currentTimeMillis()
+                    currentTimeMillis()
+                }
+
+                val elapsed = (currentTimeMillis() - startTime) / 1000f
+
+                // Only update UI if stall detection isn't already showing (stall takes priority)
+                if (!isCurrentlyStalled) {
+                    val progress = (elapsed / AUTO_STOP_DURATION_SECONDS).coerceIn(0f, 1f)
+                    val remaining = (AUTO_STOP_DURATION_SECONDS - elapsed).coerceAtLeast(0f)
+
+                    _autoStopState.value = AutoStopUiState(
+                        isActive = true,
+                        progress = progress,
+                        secondsRemaining = ceil(remaining).toInt()
+                    )
+                }
+
+                // Trigger auto-stop if timer expired
+                if (elapsed >= AUTO_STOP_DURATION_SECONDS && !autoStopTriggered) {
+                    requestAutoStop()
+                }
+                return
+            } else {
+                // No meaningful range and handles not at rest - reset and wait
+                resetAutoStopTimer()
+                return
+            }
         }
 
         val inDangerZone = repCounter.isInDangerZone(metric.positionA, metric.positionB, MIN_RANGE_THRESHOLD)
@@ -3132,6 +3239,8 @@ class MainViewModel constructor(
         // (e.g., rep target reached) while a duration timer is still running
         bodyweightTimerJob?.cancel()
         bodyweightTimerJob = null
+        // Issue #192: Clear timed exercise countdown display
+        _timedExerciseRemainingSeconds.value = null
 
         viewModelScope.launch {
             val params = _workoutParameters.value
@@ -3813,6 +3922,8 @@ class MainViewModel constructor(
                 val nextSetReps = nextExercise.setReps.getOrNull(nextSetIdx)
                 val nextSetWeight = nextExercise.setWeightsPerCableKg.getOrNull(nextSetIdx)
                     ?: nextExercise.weightPerCableKg
+                // Issue #196: Duration exercises should never have warmup reps
+                val nextIsDurationBased = nextExercise.duration != null && nextExercise.duration > 0
 
                 _workoutParameters.value = _workoutParameters.value.copy(
                     weightPerCableKg = nextSetWeight,
@@ -3823,9 +3934,10 @@ class MainViewModel constructor(
                     progressionRegressionKg = nextExercise.progressionKg,
                     selectedExerciseId = nextExercise.exercise.id,
                     isAMRAP = nextSetReps == null,
-                    stallDetectionEnabled = nextExercise.stallDetectionEnabled
+                    stallDetectionEnabled = nextExercise.stallDetectionEnabled,
+                    warmupReps = if (nextIsDurationBased) 0 else _workoutParameters.value.warmupReps
                 )
-                Logger.d { "startRestTimer: Updated params for next exercise: ${nextExercise.exercise.name}, mode=${nextExercise.programMode}" }
+                Logger.d { "startRestTimer: Updated params for next exercise: ${nextExercise.exercise.name}, mode=${nextExercise.programMode}, isDuration=$nextIsDurationBased" }
             }
 
             // Calculate display values for the rest timer
@@ -3887,6 +3999,7 @@ class MainViewModel constructor(
 
     /**
      * Calculate the name of the next exercise/set for display during rest.
+     * Uses getNextStep() for superset-aware navigation (Issue #193).
      */
     private fun calculateNextExerciseName(
         isSingleExercise: Boolean,
@@ -3897,14 +4010,22 @@ class MainViewModel constructor(
             return currentExercise?.exercise?.name ?: "Next Set"
         }
 
-        // Check if more sets in current exercise
-        if (_currentSetIndex.value < (currentExercise.setReps.size - 1)) {
-            return "${currentExercise.exercise.name} - Set ${_currentSetIndex.value + 2}"
+        if (routine == null) return "Next Set"
+
+        // Use getNextStep for superset-aware navigation (fixes Issue #193)
+        val nextStep = getNextStep(routine, _currentExerciseIndex.value, _currentSetIndex.value)
+        if (nextStep == null) {
+            return "Routine Complete"
         }
 
-        // Moving to next exercise
-        val nextExercise = routine?.exercises?.getOrNull(_currentExerciseIndex.value + 1)
-        return nextExercise?.exercise?.name ?: "Routine Complete"
+        val (nextExIndex, nextSetIndex) = nextStep
+        val nextExercise = routine.exercises.getOrNull(nextExIndex)
+
+        return if (nextExercise != null) {
+            "${nextExercise.exercise.name} - Set ${nextSetIndex + 1}"
+        } else {
+            "Routine Complete"
+        }
     }
 
     /**
@@ -3977,6 +4098,7 @@ class MainViewModel constructor(
             // All sets complete
             _workoutState.value = WorkoutState.Completed
             _loadedRoutine.value = null
+            routineStartTime = 0  // Issue #195: Reset for next routine
             _currentSetIndex.value = 0
             _currentExerciseIndex.value = 0
             repCounter.reset()
@@ -4022,6 +4144,8 @@ class MainViewModel constructor(
         // This prevents premature completion of the next exercise
         bodyweightTimerJob?.cancel()
         bodyweightTimerJob = null
+        // Issue #192: Clear timed exercise countdown display
+        _timedExerciseRemainingSeconds.value = null
 
         val routine = _loadedRoutine.value ?: return
 
@@ -4074,6 +4198,9 @@ class MainViewModel constructor(
             }
             _userAdjustedWeightDuringRest = false // Reset flag after use
 
+            // Issue #196: Duration exercises should never have warmup reps
+            val nextIsDurationBased = nextExercise.duration != null && nextExercise.duration > 0
+
             _workoutParameters.value = currentParams.copy(
                 weightPerCableKg = nextSetWeight,
                 reps = nextReps,
@@ -4083,9 +4210,10 @@ class MainViewModel constructor(
                 progressionRegressionKg = nextExercise.progressionKg,
                 selectedExerciseId = nextExercise.exercise.id,
                 isAMRAP = nextSetReps == null,
-                stallDetectionEnabled = nextExercise.stallDetectionEnabled
+                stallDetectionEnabled = nextExercise.stallDetectionEnabled,
+                warmupReps = if (nextIsDurationBased) 0 else currentParams.warmupReps
             )
-            Logger.d { "startNextSetOrExercise: Issue #164: progressionKg=${nextExercise.progressionKg}kg for ${nextExercise.exercise.displayName}" }
+            Logger.d { "startNextSetOrExercise: Issue #164: progressionKg=${nextExercise.progressionKg}kg for ${nextExercise.exercise.displayName}, isDuration=$nextIsDurationBased" }
 
             // Use full reset when changing exercises, counts-only reset for same exercise
             if (isChangingExercise) {
@@ -4096,10 +4224,13 @@ class MainViewModel constructor(
             resetAutoStopState()
             startWorkoutOrSetReady()
         } else {
-            // Routine complete
-            Logger.d { "startNextSetOrExercise: No more steps - routine complete" }
-            _workoutState.value = WorkoutState.Completed
-            _loadedRoutine.value = null
+            // Routine complete - Issue #189: Show completion screen instead of going blank
+            // MUST call showRoutineComplete() BEFORE clearing _loadedRoutine, as it needs
+            // the routine data to populate the completion screen.
+            // exitRoutineFlow() will clear the routine state when user clicks "Done".
+            Logger.d { "startNextSetOrExercise: No more steps - showing routine complete" }
+            showRoutineComplete()
+            _workoutState.value = WorkoutState.Idle
             _currentSetIndex.value = 0
             _currentExerciseIndex.value = 0
             currentRoutineSessionId = null

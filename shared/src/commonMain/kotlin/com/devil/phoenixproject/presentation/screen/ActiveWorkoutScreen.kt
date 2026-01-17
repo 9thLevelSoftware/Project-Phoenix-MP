@@ -48,6 +48,8 @@ fun ActiveWorkoutScreen(
     // Load baseline for base tension subtraction (~4kg per cable)
     val loadBaselineA by viewModel.loadBaselineA.collectAsState()
     val loadBaselineB by viewModel.loadBaselineB.collectAsState()
+    // Issue #192: Timed exercise countdown for duration-based exercises
+    val timedExerciseRemainingSeconds by viewModel.timedExerciseRemainingSeconds.collectAsState()
     @Suppress("UNUSED_VARIABLE") // Reserved for future connecting overlay
     val isAutoConnecting by viewModel.isAutoConnecting.collectAsState()
     val connectionError by viewModel.connectionError.collectAsState()
@@ -231,7 +233,8 @@ fun ActiveWorkoutScreen(
         connectionState, workoutState, currentMetric, currentHeuristicKgMax, workoutParameters,
         repCount, repRanges, autoStopState, weightUnit, enableVideoPlayback,
         loadedRoutine, currentExerciseIndex, currentSetIndex, autoplayEnabled,
-        userPreferences.summaryCountdownSeconds, loadBaselineA, loadBaselineB, canGoBack, canSkipForward
+        userPreferences.summaryCountdownSeconds, loadBaselineA, loadBaselineB, canGoBack, canSkipForward,
+        timedExerciseRemainingSeconds
     ) {
         WorkoutUiState(
             connectionState = connectionState,
@@ -255,7 +258,8 @@ fun ActiveWorkoutScreen(
             loadBaselineA = loadBaselineA,
             loadBaselineB = loadBaselineB,
             canGoBack = canGoBack,
-            canSkipForward = canSkipForward
+            canSkipForward = canSkipForward,
+            timedExerciseRemainingSeconds = timedExerciseRemainingSeconds
         )
     }
 
