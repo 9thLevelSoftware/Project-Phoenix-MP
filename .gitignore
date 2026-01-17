@@ -79,3 +79,5 @@ CHANGELOG.md
 # Node.js
 node_modules/
 tmpclaude-*-cwd
+/.gemini/
+/.agent/

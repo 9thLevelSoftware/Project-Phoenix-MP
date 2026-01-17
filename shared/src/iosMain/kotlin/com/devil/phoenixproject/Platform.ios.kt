@@ -2,6 +2,8 @@ package com.devil.phoenixproject
 
 import platform.UIKit.UIDevice
 
+actual fun getDeviceName(): String = UIDevice.currentDevice.name
+
 /**
  * iOS platform implementation.
  */

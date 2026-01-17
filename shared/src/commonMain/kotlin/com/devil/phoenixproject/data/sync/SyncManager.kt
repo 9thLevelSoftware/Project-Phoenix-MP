@@ -169,8 +169,7 @@ class SyncManager(
         }
     }
 
-    private fun getDeviceName(): String? {
-        // TODO: Get actual device name from platform
-        return null
+    private fun getDeviceName(): String {
+        return com.devil.phoenixproject.getDeviceName()
     }
 }

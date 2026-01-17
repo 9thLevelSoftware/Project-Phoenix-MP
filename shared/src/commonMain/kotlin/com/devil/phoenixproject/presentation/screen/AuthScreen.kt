@@ -1,5 +1,6 @@
 package com.devil.phoenixproject.presentation.screen
 
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -42,6 +43,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusDirection
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
@@ -289,6 +296,8 @@ fun AuthScreen(
                     },
                     enabled = !isLoading
                 ) {
+                    GoogleIcon(modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
                     Text("Google")
                 }
 
@@ -305,11 +314,90 @@ fun AuthScreen(
                     },
                     enabled = !isLoading
                 ) {
+                    AppleIcon(modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
                     Text("Apple")
                 }
             }
 
             Spacer(modifier = Modifier.height(24.dp))
         }
+    }
+}
+
+/**
+ * Google "G" logo icon using Canvas drawing.
+ */
+@Composable
+private fun GoogleIcon(modifier: Modifier = Modifier) {
+    Canvas(modifier = modifier) {
+        val size = size.minDimension
+        val strokeWidth = size * 0.15f
+        val radius = size * 0.4f
+        val center = Offset(size / 2, size / 2)
+        
+        // Google G arc (multicolored simplified as blue outline)
+        drawArc(
+            color = Color(0xFF4285F4), // Google Blue
+            startAngle = 45f,
+            sweepAngle = 270f,
+            useCenter = false,
+            topLeft = Offset(center.x - radius, center.y - radius),
+            size = Size(radius * 2, radius * 2),
+            style = Stroke(width = strokeWidth, cap = StrokeCap.Round)
+        )
+        
+        // Horizontal bar of G
+        drawLine(
+            color = Color(0xFF4285F4),
+            start = Offset(center.x, center.y),
+            end = Offset(center.x + radius, center.y),
+            strokeWidth = strokeWidth,
+            cap = StrokeCap.Round
+        )
+    }
+}
+
+/**
+ * Apple logo icon using Canvas drawing.
+ */
+@Composable
+private fun AppleIcon(modifier: Modifier = Modifier) {
+    Canvas(modifier = modifier) {
+        val size = size.minDimension
+        val centerX = size / 2
+        
+        // Simplified Apple shape using path
+        val path = Path().apply {
+            // Apple body - simplified teardrop shape
+            moveTo(centerX, size * 0.15f)
+            // Right curve
+            cubicTo(
+                centerX + size * 0.5f, size * 0.2f,
+                centerX + size * 0.4f, size * 0.7f,
+                centerX, size * 0.95f
+            )
+            // Left curve
+            cubicTo(
+                centerX - size * 0.4f, size * 0.7f,
+                centerX - size * 0.5f, size * 0.2f,
+                centerX, size * 0.15f
+            )
+            close()
+        }
+        
+        drawPath(
+            path = path,
+            color = Color.Black
+        )
+        
+        // Leaf stem
+        drawLine(
+            color = Color.Black,
+            start = Offset(centerX + size * 0.05f, size * 0.15f),
+            end = Offset(centerX + size * 0.15f, size * 0.02f),
+            strokeWidth = size * 0.08f,
+            cap = StrokeCap.Round
+        )
     }
 }

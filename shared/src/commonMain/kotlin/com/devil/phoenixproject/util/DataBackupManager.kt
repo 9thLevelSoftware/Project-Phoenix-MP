@@ -82,7 +82,7 @@ abstract class BaseDataBackupManager(
         val routineExercises = queries.selectAllRoutineExercisesSync().executeAsList()
         // Supersets table might not exist on older databases
         val supersets = runCatching { queries.selectAllSupersetsSync().executeAsList() }.getOrElse { emptyList() }
-        val personalRecords = queries.selectAllRecords { id, exerciseId, exerciseName, weight, reps, oneRepMax, achievedAt, workoutMode, prType, volume ->
+        val personalRecords = queries.selectAllRecords { id, exerciseId, exerciseName, weight, reps, oneRepMax, achievedAt, workoutMode, prType, volume, updatedAt, serverId, deletedAt ->
             PersonalRecordBackup(
                 id = id,
                 exerciseId = exerciseId,

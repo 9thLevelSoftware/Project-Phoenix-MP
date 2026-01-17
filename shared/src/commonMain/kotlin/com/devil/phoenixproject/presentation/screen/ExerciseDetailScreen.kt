@@ -25,6 +25,7 @@ import androidx.navigation.NavController
 import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.domain.model.WorkoutSession
+import com.devil.phoenixproject.presentation.components.charts.ProgressionLineChart
 import com.devil.phoenixproject.presentation.components.charts.VolumeTrendChart
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
 import com.devil.phoenixproject.ui.theme.Spacing
@@ -275,22 +276,17 @@ private fun ProgressionChartCard(
                         ),
                     contentAlignment = Alignment.Center
                 ) {
-                    // Chart placeholder - would use a proper charting library
+                // Chart placeholder - would use a proper charting library
                     Column(
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
-                        val minVal = filteredData.minOf { it.second }
-                        val maxVal = filteredData.maxOf { it.second }
-                        Text(
-                            "${formatWeight(minVal, weightUnit)} → ${formatWeight(maxVal, weightUnit)}",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                        Text(
-                            "${filteredData.size} data points",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        ProgressionLineChart(
+                            data = filteredData,
+                            weightUnit = weightUnit,
+                            formatWeight = formatWeight,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(150.dp)
                         )
                     }
                 }

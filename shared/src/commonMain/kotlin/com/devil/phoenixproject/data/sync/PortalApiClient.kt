@@ -15,7 +15,6 @@ class PortalApiClient(
     private val tokenProvider: () -> String?
 ) {
     companion object {
-        // TODO: Update to production URL when deployed
         const val DEFAULT_PORTAL_URL = "https://phoenix-portal-backend.railway.app"
     }
 

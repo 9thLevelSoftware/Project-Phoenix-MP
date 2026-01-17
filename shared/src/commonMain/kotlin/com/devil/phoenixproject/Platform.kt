@@ -11,4 +11,6 @@ interface Platform {
 /**
  * Returns the current platform implementation.
  */
+expect fun getDeviceName(): String
+
 expect fun getPlatform(): Platform

@@ -6,7 +6,7 @@ import com.devil.phoenixproject.domain.model.WorkoutSession
 import kotlinx.coroutines.flow.Flow
 
 /**
- * Personal record entity - stub for database
+ * Personal record entity.
  */
 data class PersonalRecordEntity(
     val id: Long = 0,

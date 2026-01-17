@@ -1,0 +1,55 @@
+-- Migration 11: Add Premium/Sync Columns
+-- Adds sync fields to WorkoutSession, PersonalRecord, Routine, Exercise, EarnedBadge, GamificationStats
+-- Adds subscription fields to UserProfile
+--
+-- These columns were added to the schema in premium_features branch but migration was deferred
+-- during the main-to-premium merge (see merge decision #88)
+
+-- ============================================================
+-- STEP 1: Add sync columns to WorkoutSession
+-- ============================================================
+ALTER TABLE WorkoutSession ADD COLUMN updatedAt INTEGER;
+ALTER TABLE WorkoutSession ADD COLUMN serverId TEXT;
+ALTER TABLE WorkoutSession ADD COLUMN deletedAt INTEGER;
+
+-- ============================================================
+-- STEP 2: Add subscription columns to UserProfile
+-- ============================================================
+ALTER TABLE UserProfile ADD COLUMN supabase_user_id TEXT;
+ALTER TABLE UserProfile ADD COLUMN subscription_status TEXT DEFAULT 'free';
+ALTER TABLE UserProfile ADD COLUMN subscription_expires_at INTEGER;
+ALTER TABLE UserProfile ADD COLUMN last_auth_at INTEGER;
+
+-- ============================================================
+-- STEP 3: Add sync columns to PersonalRecord
+-- ============================================================
+ALTER TABLE PersonalRecord ADD COLUMN updatedAt INTEGER;
+ALTER TABLE PersonalRecord ADD COLUMN serverId TEXT;
+ALTER TABLE PersonalRecord ADD COLUMN deletedAt INTEGER;
+
+-- ============================================================
+-- STEP 4: Add sync columns to Routine
+-- ============================================================
+ALTER TABLE Routine ADD COLUMN updatedAt INTEGER;
+ALTER TABLE Routine ADD COLUMN serverId TEXT;
+ALTER TABLE Routine ADD COLUMN deletedAt INTEGER;
+
+-- ============================================================
+-- STEP 5: Add sync columns to Exercise
+-- ============================================================
+ALTER TABLE Exercise ADD COLUMN updatedAt INTEGER;
+ALTER TABLE Exercise ADD COLUMN serverId TEXT;
+ALTER TABLE Exercise ADD COLUMN deletedAt INTEGER;
+
+-- ============================================================
+-- STEP 6: Add sync columns to EarnedBadge
+-- ============================================================
+ALTER TABLE EarnedBadge ADD COLUMN updatedAt INTEGER;
+ALTER TABLE EarnedBadge ADD COLUMN serverId TEXT;
+ALTER TABLE EarnedBadge ADD COLUMN deletedAt INTEGER;
+
+-- ============================================================
+-- STEP 7: Add sync columns to GamificationStats
+-- ============================================================
+ALTER TABLE GamificationStats ADD COLUMN updatedAt INTEGER;
+ALTER TABLE GamificationStats ADD COLUMN serverId TEXT;
