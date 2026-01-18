@@ -1585,7 +1585,9 @@ class MainViewModel constructor(
                         ?: nextExercise.weightPerCableKg
                     val nextSetReps = nextExercise.setReps.getOrNull(nextSetIdx)
                     // Issue #203: Fallback to exercise-level isAMRAP flag for legacy ExerciseEditDialog compatibility
-                    val nextIsAMRAP = nextSetReps == null || nextExercise.isAMRAP
+                    // Legacy "Last set AMRAP" only applies when we're on the last set
+                    val isNextSetLastSet = nextSetIdx >= nextExercise.setReps.size - 1
+                    val nextIsAMRAP = nextSetReps == null || (nextExercise.isAMRAP && isNextSetLastSet)
 
                     _workoutParameters.value = _workoutParameters.value.copy(
                         weightPerCableKg = nextSetWeight,
@@ -1982,7 +1984,9 @@ class MainViewModel constructor(
         println("Issue188-Load: ╚══════════════════════════════════════════════════════════════")
 
         // Issue #203: Fallback to exercise-level isAMRAP flag for legacy ExerciseEditDialog compatibility
-        val firstIsAMRAP = firstSetReps == null || firstExercise.isAMRAP
+        // Legacy "Last set AMRAP" only applies when we're on the last set (set index 0 for single-set exercises)
+        val isFirstSetLastSet = firstExercise.setReps.size <= 1
+        val firstIsAMRAP = firstSetReps == null || (firstExercise.isAMRAP && isFirstSetLastSet)
 
         val params = WorkoutParameters(
             programMode = firstExercise.programMode,
@@ -4000,7 +4004,9 @@ class MainViewModel constructor(
                     // Issue #196: Duration exercises should never have warmup reps
                     val nextIsDurationBased = exerciseForNextSet.duration != null && exerciseForNextSet.duration > 0
                     // Issue #203: Fallback to exercise-level isAMRAP flag for legacy ExerciseEditDialog compatibility
-                    val nextIsAMRAP = nextSetReps == null || exerciseForNextSet.isAMRAP
+                    // Legacy "Last set AMRAP" only applies when we're on the last set
+                    val isNextSetLastSet = nextSetIdx >= exerciseForNextSet.setReps.size - 1
+                    val nextIsAMRAP = nextSetReps == null || (exerciseForNextSet.isAMRAP && isNextSetLastSet)
 
                     _workoutParameters.value = _workoutParameters.value.copy(
                         weightPerCableKg = nextSetWeight,
@@ -4162,7 +4168,9 @@ class MainViewModel constructor(
             _userAdjustedWeightDuringRest = false // Reset flag after use
 
             // Issue #203: Fallback to exercise-level isAMRAP flag for legacy ExerciseEditDialog compatibility
-            val nextIsAMRAP = targetReps == null || currentExercise.isAMRAP
+            // Legacy "Last set AMRAP" only applies when we're on the last set
+            val isLastSet = _currentSetIndex.value >= currentExercise.setReps.size - 1
+            val nextIsAMRAP = targetReps == null || (currentExercise.isAMRAP && isLastSet)
 
             _workoutParameters.value = currentParams.copy(
                 reps = setReps,
@@ -4284,7 +4292,9 @@ class MainViewModel constructor(
             val nextIsDurationBased = nextExercise.duration != null && nextExercise.duration > 0
 
             // Issue #203: Fallback to exercise-level isAMRAP flag for legacy ExerciseEditDialog compatibility
-            val nextIsAMRAP = nextSetReps == null || nextExercise.isAMRAP
+            // Legacy "Last set AMRAP" only applies when we're on the last set
+            val isNextSetLastSet = nextSetIdx >= nextExercise.setReps.size - 1
+            val nextIsAMRAP = nextSetReps == null || (nextExercise.isAMRAP && isNextSetLastSet)
 
             _workoutParameters.value = currentParams.copy(
                 weightPerCableKg = nextSetWeight,
