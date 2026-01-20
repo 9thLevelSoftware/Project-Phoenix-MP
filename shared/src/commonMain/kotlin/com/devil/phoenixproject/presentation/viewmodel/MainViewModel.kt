@@ -593,17 +593,22 @@ class MainViewModel constructor(
 
                     // Issue #204: Don't start stall timer during AMRAP startup grace period
                     // This prevents premature auto-stop when transitioning from target-rep to AMRAP exercise
+                    // Issue #209: Don't start stall timer until meaningful ROM established (warmup complete)
+                    //             This prevents premature auto-stop when user hasn't started exercising yet.
                     val hasMeaningfulRange = repCounter.hasMeaningfulRange(MIN_RANGE_THRESHOLD)
                     val inGrace = isInAmrapStartupGrace(hasMeaningfulRange)
 
                     // Start the stall timer for velocity-based auto-stop countdown
                     // This uses the 5-second STALL_DURATION_SECONDS timer
-                    if (stallStartTime == null && !inGrace) {
+                    // Issue #209: Only start if meaningful ROM established (warmup reps complete)
+                    if (stallStartTime == null && !inGrace && hasMeaningfulRange) {
                         stallStartTime = currentTimeMillis()
                         isCurrentlyStalled = true
                         Logger.d("🛑 Auto-stop stall timer STARTED via DELOAD_OCCURRED flag")
                     } else if (inGrace) {
                         Logger.d("🛑 DELOAD_OCCURRED ignored - in AMRAP startup grace period")
+                    } else if (!hasMeaningfulRange) {
+                        Logger.d("🛑 DELOAD_OCCURRED ignored - no meaningful ROM established yet (warmup incomplete)")
                     }
                 }
             }
@@ -1035,6 +1040,10 @@ class MainViewModel constructor(
             // 5. Reset State
             currentSessionId = KmpUtils.randomUUID()
             _repCount.value = RepCount()
+            // Issue #213: Reset Echo mode force telemetry to avoid showing stale data from previous set
+            // Without this reset, the weight display stays stuck at the previous set's value until
+            // new heuristic data arrives, which can take a moment after workout starts
+            _currentHeuristicKgMax.value = 0f
             // For Just Lift mode, preserve position ranges built during handle detection
             // A full reset() would wipe out hasMeaningfulRange() data needed for auto-stop
             if (isJustLiftMode) {
@@ -3041,8 +3050,11 @@ class MainViewModel constructor(
             // Issue #198: Also start timer if handles are at rest (dropped entirely) - this catches
             // the edge case where position drops below 10mm AND no meaningful range was established
             // Issue #204: Don't start stall timer during AMRAP startup grace period
+            // Issue #209: Don't start stall timer until meaningful ROM established (warmup complete)
+            //             This prevents premature auto-stop when user hasn't started exercising yet.
+            //             Stall detection only makes sense AFTER user has established their ROM.
             val inGrace = isInAmrapStartupGrace(hasMeaningfulRange)
-            if (isDefinitelyStalled && (isActivelyUsing || handlesAtRest) && stallStartTime == null && !inGrace) {
+            if (isDefinitelyStalled && (isActivelyUsing || handlesAtRest) && stallStartTime == null && !inGrace && hasMeaningfulRange) {
                 // Velocity below LOW threshold - start stall timer
                 stallStartTime = currentTimeMillis()
                 isCurrentlyStalled = true
@@ -3080,48 +3092,59 @@ class MainViewModel constructor(
             resetStallTimer()
         }
 
-        // ===== 2. POSITION-BASED DETECTION (always active) =====
-        // Issue #198: Added fallback for "handles at rest" when no meaningful range established
+        // ===== 2. POSITION-BASED DETECTION (requires ROM) =====
+        // Issue #198: Original fallback for "handles at rest" when no meaningful range established
+        // Issue #209: Now requires ROM for ALL exercises (not just Just Lift/AMRAP).
+        //             Stall detection only makes sense after user has established their ROM.
+        //             If user hasn't started exercising (ROM < 50mm), don't trigger auto-stop.
         val maxPosition = maxOf(metric.positionA, metric.positionB)
         val handlesCompletelyAtRest = maxPosition < HANDLE_REST_THRESHOLD  // Both cables < 2.5mm
 
-        // If no meaningful range established, check if handles are completely at rest
-        // This catches the edge case where user drops weights before establishing ROM
+        // If no meaningful range established, reset timer and return
+        // Issue #209: Don't auto-stop before warmup/ROM reps are complete
         if (!hasMeaningfulRange) {
-            // Issue #204: Check grace period for position-based fallback
+            // Check grace period for diagnostic logging
             val inGraceForPositionCheck = isInAmrapStartupGrace(hasMeaningfulRange)
 
-            if (handlesCompletelyAtRest && !inGraceForPositionCheck) {
-                // Fallback: handles at rest with no range AND past grace period - start/continue timer
-                val startTime = autoStopStartTime ?: run {
-                    autoStopStartTime = currentTimeMillis()
-                    currentTimeMillis()
-                }
-
-                val elapsed = (currentTimeMillis() - startTime) / 1000f
-
-                // Only update UI if stall detection isn't already showing (stall takes priority)
-                if (!isCurrentlyStalled) {
-                    val progress = (elapsed / AUTO_STOP_DURATION_SECONDS).coerceIn(0f, 1f)
-                    val remaining = (AUTO_STOP_DURATION_SECONDS - elapsed).coerceAtLeast(0f)
-
-                    _autoStopState.value = AutoStopUiState(
-                        isActive = true,
-                        progress = progress,
-                        secondsRemaining = ceil(remaining).toInt()
-                    )
-                }
-
-                // Trigger auto-stop if timer expired
-                if (elapsed >= AUTO_STOP_DURATION_SECONDS && !autoStopTriggered) {
-                    requestAutoStop()
-                }
-                return
-            } else {
-                // Either user is moving OR in grace period - reset and wait
-                resetAutoStopTimer()
-                return
+            if (handlesCompletelyAtRest) {
+                // Issue #209: Handles at rest but no ROM - just wait, don't trigger auto-stop
+                Logger.v("AutoStop: Handles at rest but no ROM yet - waiting for warmup (grace=$inGraceForPositionCheck)")
             }
+            // Reset timer and return - can't auto-stop without ROM
+            resetAutoStopTimer()
+            return
+        }
+
+        // ROM is established - now we can do position-based detection
+        if (handlesCompletelyAtRest) {
+            // Handles at rest with meaningful range established - start/continue timer
+            val startTime = autoStopStartTime ?: run {
+                autoStopStartTime = currentTimeMillis()
+                currentTimeMillis()
+            }
+
+            val elapsed = (currentTimeMillis() - startTime) / 1000f
+
+            // Only update UI if stall detection isn't already showing (stall takes priority)
+            if (!isCurrentlyStalled) {
+                val progress = (elapsed / AUTO_STOP_DURATION_SECONDS).coerceIn(0f, 1f)
+                val remaining = (AUTO_STOP_DURATION_SECONDS - elapsed).coerceAtLeast(0f)
+
+                _autoStopState.value = AutoStopUiState(
+                    isActive = true,
+                    progress = progress,
+                    secondsRemaining = ceil(remaining).toInt()
+                )
+            }
+
+            // Trigger auto-stop if timer expired
+            if (elapsed >= AUTO_STOP_DURATION_SECONDS && !autoStopTriggered) {
+                requestAutoStop()
+            }
+            return
+        } else {
+            // User is moving or not at rest - reset position-based timer
+            resetAutoStopTimer()
         }
 
         val inDangerZone = repCounter.isInDangerZone(metric.positionA, metric.positionB, MIN_RANGE_THRESHOLD)

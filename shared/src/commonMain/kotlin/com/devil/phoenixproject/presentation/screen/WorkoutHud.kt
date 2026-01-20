@@ -30,6 +30,7 @@ import com.devil.phoenixproject.presentation.components.StableRepProgress
 import com.devil.phoenixproject.presentation.util.ResponsiveDimensions
 import com.devil.phoenixproject.presentation.util.LocalWindowSizeClass
 import com.devil.phoenixproject.presentation.util.WindowWidthSizeClass
+import kotlinx.coroutines.delay
 
 /**
  * Workout Heads-Up Display (HUD)
@@ -167,17 +168,48 @@ fun WorkoutHud(
 
             // PERIPHERAL VISION BARS (Pinned to edges, overlaying the pager)
             // Only show bars for cables that have built meaningful range of motion
+            // Issue #194: Add 6-second delay before hiding inactive cables to prevent flickering
             if (metric != null) {
                 // Calculate danger zone status for both cables
                 val isDangerA = repRanges?.isInDangerZone(metric.positionA, metric.positionB) ?: false
                 val isDangerB = isDangerA  // Same check applies to both (symmetric)
 
-                // Determine which cables are active (have meaningful ROM)
-                val isCableAActive = repRanges?.isCableAActive() ?: false
-                val isCableBActive = repRanges?.isCableBActive() ?: false
+                // Determine which cables are currently active (have meaningful ROM)
+                val isCableACurrentlyActive = repRanges?.isCableAActive() ?: false
+                val isCableBCurrentlyActive = repRanges?.isCableBActive() ?: false
 
-                // Left Bar - only show if cable A has meaningful movement
-                if (isCableAActive) {
+                // Issue #194: Delayed visibility - cables stay visible for 6 seconds after becoming inactive
+                // This prevents flickering when users hit stopping points during reps
+                val hideDelayMs = 6000L
+
+                // Cable A visibility with delay
+                var showCableA by remember { mutableStateOf(false) }
+                LaunchedEffect(isCableACurrentlyActive) {
+                    if (isCableACurrentlyActive) {
+                        // Immediately show when active
+                        showCableA = true
+                    } else if (showCableA) {
+                        // Delay hiding when becoming inactive
+                        delay(hideDelayMs)
+                        showCableA = false
+                    }
+                }
+
+                // Cable B visibility with delay
+                var showCableB by remember { mutableStateOf(false) }
+                LaunchedEffect(isCableBCurrentlyActive) {
+                    if (isCableBCurrentlyActive) {
+                        // Immediately show when active
+                        showCableB = true
+                    } else if (showCableB) {
+                        // Delay hiding when becoming inactive
+                        delay(hideDelayMs)
+                        showCableB = false
+                    }
+                }
+
+                // Left Bar - only show if cable A is visible (with delay)
+                if (showCableA) {
                     EnhancedCablePositionBar(
                         label = "L",
                         currentPosition = metric.positionA,
@@ -196,8 +228,8 @@ fun WorkoutHud(
                     )
                 }
 
-                // Right Bar - only show if cable B has meaningful movement
-                if (isCableBActive) {
+                // Right Bar - only show if cable B is visible (with delay)
+                if (showCableB) {
                     EnhancedCablePositionBar(
                         label = "R",
                         currentPosition = metric.positionB,

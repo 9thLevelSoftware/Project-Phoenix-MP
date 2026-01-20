@@ -1900,8 +1900,16 @@ class KableBleRepository : BleRepository {
             }
 
             // ===== SAMPLE VALIDATION =====
-            if (!validateSample(posA, loadA, posB, loadB)) {
-                return  // Skip invalid sample
+            // Issue #210 Fix: Store previous positions and update tracking BEFORE validation
+            // This prevents cascading filter failures where every sample after one jump is filtered
+            // because lastPositionA/B were never updated (early return skipped the update)
+            val previousPosA = lastPositionA
+            val previousPosB = lastPositionB
+            lastPositionA = posA
+            lastPositionB = posB
+
+            if (!validateSample(posA, loadA, posB, loadB, previousPosA, previousPosB)) {
+                return  // Skip invalid sample, but position tracking is updated for next sample
             }
 
             // ===== VELOCITY CALCULATION =====
@@ -1934,15 +1942,16 @@ class KableBleRepository : BleRepository {
 
             // Calculate raw velocity (SIGNED for proper EMA smoothing - Issue #204, #214)
             // Using signed velocity allows jitter oscillations (+2, -3, +1mm) to average toward 0
+            // Issue #210: Use previousPosA/B since lastPositionA/B was updated before validateSample
             val rawVelocityA = if (lastTimestamp > 0L) {
                 val deltaTime = (currentTime - lastTimestamp) / 1000.0
-                val deltaPos = posA - lastPositionA
+                val deltaPos = posA - previousPosA
                 if (deltaTime > 0) deltaPos / deltaTime else 0.0
             } else 0.0
 
             val rawVelocityB = if (lastTimestamp > 0L) {
                 val deltaTime = (currentTime - lastTimestamp) / 1000.0
-                val deltaPos = posB - lastPositionB
+                val deltaPos = posB - previousPosB
                 if (deltaTime > 0) deltaPos / deltaTime else 0.0
             } else 0.0
 
@@ -1961,9 +1970,8 @@ class KableBleRepository : BleRepository {
                         (1 - VELOCITY_SMOOTHING_ALPHA) * smoothedVelocityB
             }
 
-            // Update tracking state for next velocity calculation
-            lastPositionA = posA
-            lastPositionB = posB
+            // Update timestamp for next velocity calculation
+            // Issue #210: lastPositionA/B are now updated before validateSample (see above)
             lastTimestamp = currentTime
 
             // Create metric with SMOOTHED velocity (absolute value for backwards compatibility)
@@ -2054,8 +2062,15 @@ class KableBleRepository : BleRepository {
     /**
      * Validate sample data is within acceptable ranges.
      * Position values are in millimeters (Issue #197).
+     *
+     * Issue #210: previousPosA/B are passed in explicitly for jump detection since
+     * lastPositionA/B are now updated BEFORE calling this function to prevent
+     * cascading filter failures.
      */
-    private fun validateSample(posA: Float, loadA: Float, posB: Float, loadB: Float): Boolean {
+    private fun validateSample(
+        posA: Float, loadA: Float, posB: Float, loadB: Float,
+        previousPosA: Float, previousPosB: Float
+    ): Boolean {
         // Official app range: -1000 to +1000 mm (Float for mm precision - Issue #197)
         if (posA !in MIN_POSITION.toFloat()..MAX_POSITION.toFloat() ||
             posB !in MIN_POSITION.toFloat()..MAX_POSITION.toFloat()) {
@@ -2071,9 +2086,10 @@ class KableBleRepository : BleRepository {
 
         // STRICT VALIDATION: Filter >20mm jumps between samples (matching parent repo)
         // This catches BLE glitches that produce sudden position changes
+        // Issue #210: Use passed-in previous positions, not class fields
         if (strictValidationEnabled && lastTimestamp > 0L) {
-            val jumpA = kotlin.math.abs(posA - lastPositionA)
-            val jumpB = kotlin.math.abs(posB - lastPositionB)
+            val jumpA = kotlin.math.abs(posA - previousPosA)
+            val jumpB = kotlin.math.abs(posB - previousPosB)
             if (jumpA > POSITION_JUMP_THRESHOLD || jumpB > POSITION_JUMP_THRESHOLD) {
                 log.w { "⚠️ Position jump filtered: jumpA=${jumpA}mm, jumpB=${jumpB}mm (threshold: ${POSITION_JUMP_THRESHOLD}mm)" }
                 return false
