@@ -84,7 +84,7 @@ class MainViewModel constructor(
     private val preferencesManager: PreferencesManager,
     private val gamificationRepository: GamificationRepository,
     private val trainingCycleRepository: TrainingCycleRepository,
-    private val syncTriggerManager: SyncTriggerManager,
+    private val syncTriggerManager: SyncTriggerManager? = null,
     private val resolveWeightsUseCase: ResolveRoutineWeightsUseCase
 ) : ViewModel() {
 
@@ -1241,7 +1241,7 @@ class MainViewModel constructor(
 
              // Trigger sync after workout saved
              viewModelScope.launch {
-                 syncTriggerManager.onWorkoutCompleted()
+                 syncTriggerManager?.onWorkoutCompleted()
              }
 
              // Save exercise defaults for next time (only for Just Lift and Single Exercise modes)
@@ -3572,7 +3572,7 @@ class MainViewModel constructor(
 
         // Trigger sync after workout saved
         viewModelScope.launch {
-            syncTriggerManager.onWorkoutCompleted()
+            syncTriggerManager?.onWorkoutCompleted()
         }
 
         if (metricsSnapshot.isNotEmpty()) {
