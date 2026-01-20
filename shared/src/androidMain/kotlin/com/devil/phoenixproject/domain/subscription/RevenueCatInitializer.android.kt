@@ -1,10 +1,19 @@
 package com.devil.phoenixproject.domain.subscription
 
 import android.app.Application
-import com.devil.phoenixproject.config.PlatformConfig
-import com.revenuecat.purchases.kmp.Purchases
-import com.revenuecat.purchases.kmp.PurchasesConfiguration
 
+/**
+ * Android RevenueCat initializer stub.
+ *
+ * NOTE: RevenueCat integration is DISABLED until properly configured.
+ * This is a no-op stub to allow the code to compile without the RevenueCat dependency.
+ *
+ * To re-enable RevenueCat:
+ * 1. Uncomment revenuecat-purchases-core in shared/build.gradle.kts
+ * 2. Configure valid API keys in PlatformConfig.android.kt
+ * 3. Uncomment RevenueCat initialization in VitruvianApp.kt
+ * 4. Restore the original implementation that uses Purchases.configure()
+ */
 actual object RevenueCatInitializer {
     private var application: Application? = null
 
@@ -13,14 +22,9 @@ actual object RevenueCatInitializer {
     }
 
     actual fun initialize() {
-        val app = application ?: throw IllegalStateException(
-            "Application not set. Call setApplication() first."
-        )
-
-        Purchases.configure(
-            PurchasesConfiguration(
-                apiKey = PlatformConfig.revenueCatApiKey
-            )
-        )
+        // No-op: RevenueCat is disabled
+        // Original implementation would call:
+        // val app = application ?: throw IllegalStateException("Application not set")
+        // Purchases.configure(PurchasesConfiguration(apiKey = PlatformConfig.revenueCatApiKey))
     }
 }

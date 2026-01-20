@@ -102,7 +102,12 @@ kotlin {
                 implementation(libs.compottie.resources)
 
                 // RevenueCat (Premium - Subscriptions)
-                implementation(libs.revenuecat.purchases.core)
+                // DISABLED: Commented out until RevenueCat is properly configured.
+                // The KMP library creates native iOS SDK references that require linking
+                // the RevenueCat framework in Xcode. Since premium features are disabled
+                // (Issue #215), we remove the dependency to fix iOS build failures.
+                // To re-enable: uncomment this line and add RevenueCat framework to Xcode project
+                // implementation(libs.revenuecat.purchases.core)
             }
         }
 

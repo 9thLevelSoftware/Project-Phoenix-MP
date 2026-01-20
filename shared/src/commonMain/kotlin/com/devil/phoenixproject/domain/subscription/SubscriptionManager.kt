@@ -1,12 +1,7 @@
 package com.devil.phoenixproject.domain.subscription
 
-import com.devil.phoenixproject.config.AppConfig
 import com.devil.phoenixproject.data.repository.SubscriptionStatus
 import com.devil.phoenixproject.data.repository.UserProfileRepository
-import com.revenuecat.purchases.kmp.CustomerInfo
-import com.revenuecat.purchases.kmp.Purchases
-import com.revenuecat.purchases.kmp.PurchasesDelegate
-import com.revenuecat.purchases.kmp.PurchasesError
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -14,17 +9,24 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
-import kotlin.coroutines.resume
-import kotlin.coroutines.resumeWithException
-import kotlin.coroutines.suspendCoroutine
 
+/**
+ * Subscription manager that handles premium feature access.
+ *
+ * NOTE: RevenueCat integration is DISABLED until properly configured.
+ * This stub version uses local profile subscription status only.
+ *
+ * To re-enable RevenueCat:
+ * 1. Uncomment revenuecat-purchases-core in shared/build.gradle.kts
+ * 2. Add RevenueCat framework to iOS Xcode project (via SPM or CocoaPods)
+ * 3. Configure valid API keys in PlatformConfig (Android/iOS)
+ * 4. Uncomment RevenueCat initialization in VitruvianApp.kt and VitruvianPhoenixApp.swift
+ * 5. Restore the original SubscriptionManager implementation
+ */
 class SubscriptionManager(
     private val userProfileRepository: UserProfileRepository
-) : PurchasesDelegate {
+) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-
-    private val _customerInfo = MutableStateFlow<CustomerInfo?>(null)
-    val customerInfo: StateFlow<CustomerInfo?> = _customerInfo.asStateFlow()
 
     private val _isProSubscriber = MutableStateFlow(false)
     val hasProAccess: StateFlow<Boolean> = _isProSubscriber.asStateFlow()
@@ -36,119 +38,46 @@ class SubscriptionManager(
     val canUseHealthIntegrations: StateFlow<Boolean> = hasProAccess
 
     init {
-        // Watch local profile subscription status as backup/initial state
+        // Watch local profile subscription status
         scope.launch {
             userProfileRepository.getActiveProfileSubscriptionStatus().collect { status ->
-                if (_customerInfo.value == null) {
-                    // Use local status if RevenueCat hasn't loaded yet
-                    _isProSubscriber.value = status == SubscriptionStatus.ACTIVE
-                }
+                _isProSubscriber.value = status == SubscriptionStatus.ACTIVE
             }
         }
     }
 
+    /**
+     * Stub: RevenueCat delegate setup is disabled.
+     */
     fun setupDelegate() {
-        try {
-            Purchases.sharedInstance.delegate = this
-        } catch (e: Exception) {
-            // RevenueCat not initialized yet
-        }
+        // No-op: RevenueCat is disabled
     }
 
-    override fun onCustomerInfoUpdated(customerInfo: CustomerInfo) {
-        _customerInfo.value = customerInfo
-        updateProStatus(customerInfo)
+    /**
+     * Stub: Returns failure since RevenueCat is disabled.
+     */
+    suspend fun refreshCustomerInfo(): Result<Unit> {
+        return Result.failure(Exception("RevenueCat is not configured"))
     }
 
-    override fun onPurchasePromoProduct(
-        product: com.revenuecat.purchases.kmp.models.StoreProduct,
-        startPurchase: (onError: (error: PurchasesError, userCancelled: Boolean) -> Unit, onSuccess: (storeTransaction: com.revenuecat.purchases.kmp.models.StoreTransaction, customerInfo: CustomerInfo) -> Unit) -> Unit
-    ) {
-        // Handle promotional purchases if needed
+    /**
+     * Stub: Returns failure since RevenueCat is disabled.
+     */
+    suspend fun restorePurchases(): Result<Unit> {
+        return Result.failure(Exception("RevenueCat is not configured"))
     }
 
-    private fun updateProStatus(customerInfo: CustomerInfo) {
-        val hasEntitlement = customerInfo.entitlements
-            .active
-            .containsKey(AppConfig.RevenueCat.ENTITLEMENT_PRO)
-        _isProSubscriber.value = hasEntitlement
-
-        // Sync to local database
-        scope.launch {
-            userProfileRepository.activeProfile.value?.let { profile ->
-                val status = if (hasEntitlement) SubscriptionStatus.ACTIVE else SubscriptionStatus.FREE
-                val expiresAt = customerInfo.entitlements
-                    .active[AppConfig.RevenueCat.ENTITLEMENT_PRO]
-                    ?.expirationDateMillis
-                userProfileRepository.updateSubscriptionStatus(profile.id, status, expiresAt)
-            }
-        }
-    }
-
-    suspend fun refreshCustomerInfo(): Result<CustomerInfo> = suspendCoroutine { cont ->
-        try {
-            Purchases.sharedInstance.getCustomerInfo(
-                onError = { error ->
-                    cont.resumeWithException(Exception(error.message))
-                },
-                onSuccess = { info ->
-                    _customerInfo.value = info
-                    updateProStatus(info)
-                    cont.resume(Result.success(info))
-                }
-            )
-        } catch (e: Exception) {
-            cont.resume(Result.failure(e))
-        }
-    }
-
-    suspend fun restorePurchases(): Result<CustomerInfo> = suspendCoroutine { cont ->
-        try {
-            Purchases.sharedInstance.restorePurchases(
-                onError = { error ->
-                    cont.resumeWithException(Exception(error.message))
-                },
-                onSuccess = { info ->
-                    _customerInfo.value = info
-                    updateProStatus(info)
-                    cont.resume(Result.success(info))
-                }
-            )
-        } catch (e: Exception) {
-            cont.resume(Result.failure(e))
-        }
-    }
-
+    /**
+     * Stub: RevenueCat login is disabled.
+     */
     fun loginToRevenueCat(userId: String) {
-        scope.launch {
-            try {
-                Purchases.sharedInstance.logIn(
-                    newAppUserID = userId,
-                    onError = { /* Handle error silently */ },
-                    onSuccess = { info, _ ->
-                        _customerInfo.value = info
-                        updateProStatus(info)
-                    }
-                )
-            } catch (e: Exception) {
-                // Handle error silently - will retry on next app launch
-            }
-        }
+        // No-op: RevenueCat is disabled
     }
 
+    /**
+     * Stub: RevenueCat logout is disabled.
+     */
     fun logoutFromRevenueCat() {
-        scope.launch {
-            try {
-                Purchases.sharedInstance.logOut(
-                    onError = { /* Handle error silently */ },
-                    onSuccess = { info ->
-                        _customerInfo.value = info
-                        _isProSubscriber.value = false
-                    }
-                )
-            } catch (e: Exception) {
-                // Handle error silently
-            }
-        }
+        // No-op: RevenueCat is disabled
     }
 }

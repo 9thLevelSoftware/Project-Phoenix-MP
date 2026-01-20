@@ -1,8 +1,5 @@
 package com.devil.phoenixproject.presentation.screen
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -14,41 +11,40 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.Button
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.domain.subscription.SubscriptionManager
-import com.revenuecat.purchases.kmp.Purchases
-import com.revenuecat.purchases.kmp.models.Offering
-import com.revenuecat.purchases.kmp.models.Package
-import kotlinx.coroutines.launch
 
+/**
+ * Paywall screen for premium subscriptions.
+ *
+ * NOTE: RevenueCat integration is DISABLED until properly configured.
+ * This is a stub screen that shows a "coming soon" message.
+ *
+ * To re-enable the full paywall:
+ * 1. Uncomment revenuecat-purchases-core in shared/build.gradle.kts
+ * 2. Add RevenueCat framework to iOS Xcode project (via SPM or CocoaPods)
+ * 3. Configure valid API keys in PlatformConfig (Android/iOS)
+ * 4. Uncomment the Paywall route in NavGraph.kt
+ * 5. Restore the original PaywallScreen implementation with RevenueCat
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PaywallScreen(
@@ -57,35 +53,6 @@ fun PaywallScreen(
     onPurchaseSuccess: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val scope = rememberCoroutineScope()
-
-    var isLoading by remember { mutableStateOf(true) }
-    var offerings by remember { mutableStateOf<List<Offering>>(emptyList()) }
-    var selectedPackage by remember { mutableStateOf<Package?>(null) }
-    var isPurchasing by remember { mutableStateOf(false) }
-    var errorMessage by remember { mutableStateOf<String?>(null) }
-
-    // Load offerings
-    LaunchedEffect(Unit) {
-        try {
-            Purchases.sharedInstance.getOfferings(
-                onError = { error ->
-                    errorMessage = error.message
-                    isLoading = false
-                },
-                onSuccess = { fetchedOfferings ->
-                    offerings = fetchedOfferings.all.values.toList()
-                    // Auto-select the current offering's default package
-                    selectedPackage = fetchedOfferings.current?.availablePackages?.firstOrNull()
-                    isLoading = false
-                }
-            )
-        } catch (e: Exception) {
-            errorMessage = e.message
-            isLoading = false
-        }
-    }
-
     Scaffold(
         topBar = {
             TopAppBar(
@@ -118,122 +85,53 @@ fun PaywallScreen(
             Spacer(modifier = Modifier.height(16.dp))
 
             Text(
-                text = "Unlock Phoenix Pro",
+                text = "Phoenix Pro",
                 style = MaterialTheme.typography.headlineMedium,
                 fontWeight = FontWeight.Bold
             )
 
             Text(
-                text = "Get access to all premium features",
+                text = "Premium features coming soon!",
                 style = MaterialTheme.typography.bodyLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
 
             Spacer(modifier = Modifier.height(32.dp))
 
-            // Features list
+            // Features list (preview of what's coming)
             FeaturesList(
                 modifier = Modifier.padding(horizontal = 24.dp)
             )
 
             Spacer(modifier = Modifier.height(32.dp))
 
-            // Loading or offerings
-            if (isLoading) {
-                CircularProgressIndicator()
-            } else if (errorMessage != null) {
+            // Status message
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 24.dp),
+                contentAlignment = Alignment.Center
+            ) {
                 Text(
-                    text = errorMessage ?: "Unknown error",
-                    color = MaterialTheme.colorScheme.error,
-                    modifier = Modifier.padding(16.dp)
+                    text = "Subscription services are not yet configured.\n" +
+                            "Stay tuned for premium features!",
+                    style = MaterialTheme.typography.bodyMedium,
+                    textAlign = TextAlign.Center,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-            } else {
-                // Package selection
-                Column(
-                    modifier = Modifier.padding(horizontal = 24.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    offerings.flatMap { it.availablePackages }.forEach { pkg ->
-                        PackageOption(
-                            pkg = pkg,
-                            isSelected = selectedPackage == pkg,
-                            onClick = { selectedPackage = pkg }
-                        )
-                    }
-                }
             }
 
             Spacer(modifier = Modifier.height(24.dp))
 
-            // Purchase button
+            // Back button
             Button(
-                onClick = {
-                    selectedPackage?.let { pkg ->
-                        scope.launch {
-                            isPurchasing = true
-                            errorMessage = null
-                            try {
-                                Purchases.sharedInstance.purchase(
-                                    pkg,
-                                    onError = { error, userCancelled ->
-                                        if (!userCancelled) {
-                                            errorMessage = error.message
-                                        }
-                                        isPurchasing = false
-                                    },
-                                    onSuccess = { _, customerInfo ->
-                                        isPurchasing = false
-                                        onPurchaseSuccess()
-                                    }
-                                )
-                            } catch (e: Exception) {
-                                errorMessage = e.message
-                                isPurchasing = false
-                            }
-                        }
-                    }
-                },
+                onClick = onBackClick,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 24.dp),
-                enabled = selectedPackage != null && !isPurchasing && !isLoading
+                    .padding(horizontal = 24.dp)
             ) {
-                if (isPurchasing) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(20.dp),
-                        strokeWidth = 2.dp,
-                        color = MaterialTheme.colorScheme.onPrimary
-                    )
-                } else {
-                    Text("Subscribe Now")
-                }
+                Text("Go Back")
             }
-
-            // Restore purchases
-            TextButton(
-                onClick = {
-                    scope.launch {
-                        isLoading = true
-                        subscriptionManager.restorePurchases().fold(
-                            onSuccess = { onPurchaseSuccess() },
-                            onFailure = { e -> errorMessage = e.message }
-                        )
-                        isLoading = false
-                    }
-                }
-            ) {
-                Text("Restore Purchases")
-            }
-
-            // Terms
-            Text(
-                text = "By subscribing, you agree to our Terms of Service and Privacy Policy. " +
-                        "Subscriptions auto-renew unless cancelled.",
-                style = MaterialTheme.typography.bodySmall,
-                textAlign = TextAlign.Center,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(24.dp)
-            )
 
             Spacer(modifier = Modifier.height(24.dp))
         }
@@ -271,61 +169,6 @@ private fun FeaturesList(modifier: Modifier = Modifier) {
                     style = MaterialTheme.typography.bodyMedium
                 )
             }
-        }
-    }
-}
-
-@Composable
-private fun PackageOption(
-    pkg: Package,
-    isSelected: Boolean,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    val borderColor = if (isSelected) {
-        MaterialTheme.colorScheme.primary
-    } else {
-        MaterialTheme.colorScheme.outline
-    }
-
-    val backgroundColor = if (isSelected) {
-        MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
-    } else {
-        MaterialTheme.colorScheme.surface
-    }
-
-    Box(
-        modifier = modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
-            .border(2.dp, borderColor, RoundedCornerShape(12.dp))
-            .background(backgroundColor)
-            .clickable(onClick = onClick)
-            .padding(16.dp)
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Column {
-                Text(
-                    text = pkg.identifier.replaceFirstChar { it.uppercase() },
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold
-                )
-                Text(
-                    text = pkg.storeProduct.title,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-            Text(
-                text = pkg.storeProduct.price.formatted,
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.primary
-            )
         }
     }
 }
