@@ -363,7 +363,7 @@ jobs:
             "$API_BASE/betaGroups/$GROUP_ID/relationships/builds")
 
           HTTP_CODE=$(echo "$ADD_RESPONSE" | tail -1)
-          RESPONSE_BODY=$(echo "$ADD_RESPONSE" | head -n -1)
+          RESPONSE_BODY=$(echo "$ADD_RESPONSE" | sed '$d')
 
           if [ "$HTTP_CODE" = "204" ] || [ "$HTTP_CODE" = "200" ]; then
             echo "SUCCESS: Build added to test group '$TESTFLIGHT_GROUP_NAME'"

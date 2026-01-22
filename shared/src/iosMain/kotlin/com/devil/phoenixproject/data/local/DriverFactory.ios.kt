@@ -979,6 +979,56 @@ actual class DriverFactory {
     }
 
     /**
+     * Add sync columns from Migration 11 to all required tables.
+     * Migration 11 adds: updatedAt, serverId, deletedAt to WorkoutSession, PersonalRecord,
+     * Routine, Exercise, EarnedBadge, GamificationStats.
+     * Also adds subscription columns to UserProfile.
+     *
+     * This must be called BEFORE setting user_version to 12 to prevent migration 11→12
+     * from trying to add these columns again (which would crash with duplicate column error).
+     */
+    private fun addMigration11SyncColumns(driver: SqlDriver) {
+        NSLog("iOS DB Pre-migration: Adding Migration 11 sync columns...")
+
+        // WorkoutSession sync columns
+        safeAddColumn(driver, "WorkoutSession", "updatedAt", "INTEGER")
+        safeAddColumn(driver, "WorkoutSession", "serverId", "TEXT")
+        safeAddColumn(driver, "WorkoutSession", "deletedAt", "INTEGER")
+
+        // UserProfile subscription columns
+        safeAddColumn(driver, "UserProfile", "supabase_user_id", "TEXT")
+        safeAddColumn(driver, "UserProfile", "subscription_status", "TEXT DEFAULT 'free'")
+        safeAddColumn(driver, "UserProfile", "subscription_expires_at", "INTEGER")
+        safeAddColumn(driver, "UserProfile", "last_auth_at", "INTEGER")
+
+        // PersonalRecord sync columns
+        safeAddColumn(driver, "PersonalRecord", "updatedAt", "INTEGER")
+        safeAddColumn(driver, "PersonalRecord", "serverId", "TEXT")
+        safeAddColumn(driver, "PersonalRecord", "deletedAt", "INTEGER")
+
+        // Routine sync columns
+        safeAddColumn(driver, "Routine", "updatedAt", "INTEGER")
+        safeAddColumn(driver, "Routine", "serverId", "TEXT")
+        safeAddColumn(driver, "Routine", "deletedAt", "INTEGER")
+
+        // Exercise sync columns
+        safeAddColumn(driver, "Exercise", "updatedAt", "INTEGER")
+        safeAddColumn(driver, "Exercise", "serverId", "TEXT")
+        safeAddColumn(driver, "Exercise", "deletedAt", "INTEGER")
+
+        // EarnedBadge sync columns
+        safeAddColumn(driver, "EarnedBadge", "updatedAt", "INTEGER")
+        safeAddColumn(driver, "EarnedBadge", "serverId", "TEXT")
+        safeAddColumn(driver, "EarnedBadge", "deletedAt", "INTEGER")
+
+        // GamificationStats sync columns
+        safeAddColumn(driver, "GamificationStats", "updatedAt", "INTEGER")
+        safeAddColumn(driver, "GamificationStats", "serverId", "TEXT")
+
+        NSLog("iOS DB Pre-migration: Migration 11 sync columns added")
+    }
+
+    /**
      * CRITICAL FIX (Jan 2026): Pre-add columns BEFORE SQLDelight migrations run.
      *
      * Problem: Migration 10 expects columns (supersetId, orderInSuperset, usePercentOfPR, etc.)
@@ -1090,10 +1140,12 @@ actual class DriverFactory {
             // regardless of migration state. CREATE TABLE IF NOT EXISTS is idempotent.
             createTrainingCycleTablesPreMigration(preDriver)
 
-            // CRITICAL FIX (Jan 2026): After adding all columns and tables, update user_version to 11
+            // CRITICAL FIX (Jan 2026): After adding all columns and tables, update user_version to 12
             // This prevents SQLDelight from running migrations, which would try to ADD COLUMN
             // on columns we just added, causing "duplicate column" errors that crash on iOS.
-            // Note: Update if current version < 11 (including version 0) to avoid migration attempts.
+            // Note: Schema version is 12 (11 migrations), so we must set to 12 to skip ALL migrations.
+            // Previous bug: Set to 11 which still allowed migration 11→12 to run.
+            val targetVersion = 12L  // MUST match current schema version (1 + number of .sqm files)
             var currentVersion = 0L
             try {
                 preDriver.executeQuery(
@@ -1107,12 +1159,30 @@ actual class DriverFactory {
                     },
                     0
                 )
-                if (currentVersion < 11L) {
-                    preDriver.execute(null, "PRAGMA user_version = 11", 0)
-                    NSLog("iOS DB Pre-migration: Updated user_version from $currentVersion to 11 (skipping SQLDelight migrations)")
+                if (currentVersion < targetVersion) {
+                    // Add sync columns from migration 11 BEFORE setting version to 12
+                    // This prevents migration 11→12 from running (which would add these columns)
+                    addMigration11SyncColumns(preDriver)
+
+                    preDriver.execute(null, "PRAGMA user_version = $targetVersion", 0)
+                    NSLog("iOS DB Pre-migration: Updated user_version from $currentVersion to $targetVersion (skipping ALL SQLDelight migrations)")
                 }
             } catch (e: Exception) {
                 NSLog("iOS DB Pre-migration: Could not update user_version: ${e.message}")
+                // CRITICAL: If version update fails, delete the database to force fresh creation
+                // This prevents the app from crashing on migration errors
+                try {
+                    preDriver.close()
+                    val dbPath = getDatabasePath()
+                    val fileManager = NSFileManager.defaultManager
+                    fileManager.removeItemAtPath(dbPath, null)
+                    fileManager.removeItemAtPath("$dbPath-wal", null)
+                    fileManager.removeItemAtPath("$dbPath-shm", null)
+                    NSLog("iOS DB Pre-migration: DELETED database due to version update failure - will recreate fresh")
+                } catch (deleteError: Exception) {
+                    NSLog("iOS DB Pre-migration: Could not delete database: ${deleteError.message}")
+                }
+                return  // Exit early - database will be recreated by SQLDelight
             }
 
             NSLog("iOS DB: Pre-migration column fixes complete")
@@ -1487,10 +1557,11 @@ actual class DriverFactory {
     @OptIn(kotlinx.cinterop.ExperimentalForeignApi::class)
     private fun purgeCorruptedDatabaseIfNeeded() {
         val defaults = NSUserDefaults.standardUserDefaults
-        // Jan 2026: Updated marker key to force re-check. Previous check only caught versions 1-10,
-        // but version 0 (partial/corrupted DB) slipped through and caused migration crashes.
-        // New check catches version 0 as well.
-        val markerKey = "phoenix_db_purge_20260121_completed"
+        // Jan 22 2026: Updated marker key AGAIN to force re-check. Previous version set
+        // user_version to 11 but schema is 12, so migration 11→12 would still run.
+        // Also, the version update was failing silently for some users causing migration
+        // 10→11 to run and crash on duplicate column names.
+        val markerKey = "phoenix_db_purge_20260122_v2"
 
         // Check if we've already run the corruption check
         if (defaults.boolForKey(markerKey)) {
@@ -1677,11 +1748,12 @@ actual class DriverFactory {
             }
 
             // Version handling:
-            // - Version 0-10: Needs migration - iOS migrations can crash, so PURGE
+            // - Version 0-11: Needs migration - iOS migrations can crash, so PURGE
             //   Note: Version 0 CAN happen if previous schema creation failed partway through,
             //   leaving a database file with no user_version set. This was causing crashes.
-            // - Version 11+: Current or future schema, OK (SQLDelight handles forward migrations)
-            val minimumVersion = 11L
+            //   Note: Previous fix set version to 11 but schema is 12, so we need version 12.
+            // - Version 12+: Current or future schema, OK (SQLDelight handles forward migrations)
+            val minimumVersion = 12L  // Updated from 11 to 12 (current schema version)
             if (schemaVersion < minimumVersion) {
                 NSLog("iOS DB: SCHEMA VERSION TOO OLD - have v$schemaVersion, need v$minimumVersion+")
                 NSLog("iOS DB: Purging to avoid migration crash (iOS migrations are not recoverable)")
