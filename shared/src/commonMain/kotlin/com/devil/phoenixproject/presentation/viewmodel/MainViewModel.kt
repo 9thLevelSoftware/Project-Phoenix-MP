@@ -4073,6 +4073,17 @@ class MainViewModel constructor(
             // This supports use cases like alternating arms where user wants no rest between sides
             if (restDuration == 0) {
                 Logger.d { "Rest duration is 0 - skipping rest timer, advancing immediately" }
+                // Issue #222: Add STOP/RESET sequence even for 0-rest transitions
+                // Same pattern as skipRest() to prevent yellow light faults
+                try {
+                    bleRepository.sendStopCommand()
+                    delay(100)
+                    bleRepository.stopWorkout()
+                    delay(150)
+                    Logger.d("MainViewModel") { "Issue #222: BLE stop sequence sent for 0-rest transition" }
+                } catch (e: Exception) {
+                    Logger.w(e) { "Stop command for 0-rest transition failed (non-fatal): ${e.message}" }
+                }
                 if (isSingleExerciseMode()) {
                     advanceToNextSetInSingleExercise()
                 } else {
@@ -4188,6 +4199,18 @@ class MainViewModel constructor(
             }
 
             if (autoplay) {
+                // Issue #222: Add STOP/RESET sequence before starting next set
+                // Even with rest timer countdown, need to ensure clean machine state
+                // especially for short rest times (5s superset minimum)
+                try {
+                    bleRepository.sendStopCommand()
+                    delay(100)
+                    bleRepository.stopWorkout()
+                    delay(150)
+                    Logger.d("MainViewModel") { "Issue #222: BLE stop sequence sent after rest timer" }
+                } catch (e: Exception) {
+                    Logger.w(e) { "Stop command after rest timer failed (non-fatal): ${e.message}" }
+                }
                 if (isSingleExercise) {
                     advanceToNextSetInSingleExercise()
                 } else {
@@ -4464,16 +4487,39 @@ class MainViewModel constructor(
 
     /**
      * Skip the current rest timer and immediately start the next set/exercise.
+     * Issue #222: Added STOP/RESET sequence to prevent yellow light errors when
+     * skipping rest during superset Quick Rest screen. This matches the pattern
+     * established in Issue #205 for jumpToExercise().
      */
     fun skipRest() {
         if (_workoutState.value is WorkoutState.Resting) {
             restTimerJob?.cancel()
             restTimerJob = null
 
-            if (isSingleExerciseMode()) {
-                advanceToNextSetInSingleExercise()
-            } else {
-                startNextSetOrExercise()
+            // Issue #222: Need to perform BLE cleanup before starting next set
+            // This is async to allow proper timing between commands
+            viewModelScope.launch {
+                try {
+                    // Issue #222: Clear any fault state with StopPacket (0x50)
+                    // Same pattern as Issue #205 fix in jumpToExercise()
+                    bleRepository.sendStopCommand()
+                    delay(100)  // Allow fault clear to process
+
+                    // Full reset with RESET command (0x0A)
+                    bleRepository.stopWorkout()
+                    delay(150)  // Settling time for machine to process
+
+                    Logger.d("MainViewModel") { "Issue #222: BLE stop sequence sent before skip rest" }
+                } catch (e: Exception) {
+                    Logger.w(e) { "Stop command before skip rest failed (non-fatal): ${e.message}" }
+                    // Continue anyway - the stop may have succeeded partially
+                }
+
+                if (isSingleExerciseMode()) {
+                    advanceToNextSetInSingleExercise()
+                } else {
+                    startNextSetOrExercise()
+                }
             }
         }
     }
@@ -4481,14 +4527,28 @@ class MainViewModel constructor(
     /**
      * Manually trigger starting the next set when autoplay is disabled.
      * Called from UI when user taps "Start Next Set" button.
+     * Issue #222: Added STOP/RESET sequence to prevent yellow light faults.
      */
     fun startNextSet() {
         val state = _workoutState.value
         if (state is WorkoutState.Resting && state.restSecondsRemaining == 0) {
-            if (isSingleExerciseMode()) {
-                advanceToNextSetInSingleExercise()
-            } else {
-                startNextSetOrExercise()
+            // Issue #222: Same STOP/RESET pattern as skipRest()
+            viewModelScope.launch {
+                try {
+                    bleRepository.sendStopCommand()
+                    delay(100)
+                    bleRepository.stopWorkout()
+                    delay(150)
+                    Logger.d("MainViewModel") { "Issue #222: BLE stop sequence sent for startNextSet" }
+                } catch (e: Exception) {
+                    Logger.w(e) { "Stop command for startNextSet failed (non-fatal): ${e.message}" }
+                }
+
+                if (isSingleExerciseMode()) {
+                    advanceToNextSetInSingleExercise()
+                } else {
+                    startNextSetOrExercise()
+                }
             }
         }
     }
