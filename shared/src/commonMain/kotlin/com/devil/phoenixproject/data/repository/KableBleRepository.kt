@@ -2674,47 +2674,72 @@ class KableBleRepository : BleRepository {
             log.i { "🔥 REPS CHAR notification: ${data.size} bytes" }
             log.d { "  hex=${data.joinToString(" ") { (it.toInt() and 0xFF).toString(16).padStart(2, '0').uppercase() }}" }
 
-            // Check if we have full 24-byte rep data (NO opcode prefix from REPS characteristic)
-            if (data.size >= 24) {
-                // FULL 24-byte packet - parse all fields (data starts at offset 0)
-                // Issue #210: Parse ALL 8 fields to match official app (Reps.java)
+            // Issue #210: Three-tier parsing to match official Reps.java
+            // The bug was treating 16-byte packets as "legacy 6-byte" which caused first rep to be lost
+            notification = if (data.size >= 16) {
+                // Parse first 16 bytes: up/down as int32, range as float (matches official Reps.java)
                 val upCounter = getInt32LE(data, 0)
                 val downCounter = getInt32LE(data, 4)
                 val rangeTop = getFloatLE(data, 8)
                 val rangeBottom = getFloatLE(data, 12)
-                val repsRomCount = getUInt16LE(data, 16)
-                val repsRomTotal = getUInt16LE(data, 18)  // Issue #210: Machine's warmup target
-                val repsSetCount = getUInt16LE(data, 20)
-                val repsSetTotal = getUInt16LE(data, 22)  // Issue #210: Machine's working target
 
-                log.i { "🔥 REPS (24-byte official format):" }
-                log.i { "  up=$upCounter, down=$downCounter" }
-                log.i { "  repsRomCount=$repsRomCount (warmup done), repsRomTotal=$repsRomTotal (warmup target)" }
-                log.i { "  repsSetCount=$repsSetCount (working done), repsSetTotal=$repsSetTotal (working target)" }
-                log.i { "  rangeTop=$rangeTop, rangeBottom=$rangeBottom" }
+                if (data.size >= 24) {
+                    // FULL 24-byte packet with rep counts
+                    val repsRomCount = getUInt16LE(data, 16)
+                    val repsRomTotal = getUInt16LE(data, 18)
+                    val repsSetCount = getUInt16LE(data, 20)
+                    val repsSetTotal = getUInt16LE(data, 22)
 
-                notification = RepNotification(
-                    topCounter = upCounter,
-                    completeCounter = downCounter,
-                    repsRomCount = repsRomCount,
-                    repsRomTotal = repsRomTotal,
-                    repsSetCount = repsSetCount,
-                    repsSetTotal = repsSetTotal,
-                    rangeTop = rangeTop,
-                    rangeBottom = rangeBottom,
-                    rawData = data,
-                    timestamp = currentTime,
-                    isLegacyFormat = false
-                )
+                    log.i { "🔥 REPS (24-byte with rep counts):" }
+                    log.i { "  up=$upCounter, down=$downCounter" }
+                    log.i { "  repsRomCount=$repsRomCount (warmup done), repsRomTotal=$repsRomTotal (warmup target)" }
+                    log.i { "  repsSetCount=$repsSetCount (working done), repsSetTotal=$repsSetTotal (working target)" }
+                    log.i { "  rangeTop=$rangeTop, rangeBottom=$rangeBottom" }
+
+                    RepNotification(
+                        topCounter = upCounter,
+                        completeCounter = downCounter,
+                        repsRomCount = repsRomCount,
+                        repsRomTotal = repsRomTotal,
+                        repsSetCount = repsSetCount,
+                        repsSetTotal = repsSetTotal,
+                        rangeTop = rangeTop,
+                        rangeBottom = rangeBottom,
+                        rawData = data,
+                        timestamp = currentTime,
+                        isLegacyFormat = false
+                    )
+                } else {
+                    // 16-byte packet WITHOUT rep counts (NOT legacy!)
+                    // This is a valid modern packet, just without rep data yet
+                    // Issue #210: CRITICAL - do NOT set isLegacyFormat=true here!
+                    log.i { "🔥 REPS (16-byte, no rep counts yet):" }
+                    log.i { "  up=$upCounter, down=$downCounter" }
+                    log.i { "  rangeTop=$rangeTop, rangeBottom=$rangeBottom" }
+
+                    RepNotification(
+                        topCounter = upCounter,
+                        completeCounter = downCounter,
+                        repsRomCount = 0,  // No rep data in this packet
+                        repsRomTotal = 0,
+                        repsSetCount = 0,
+                        repsSetTotal = 0,
+                        rangeTop = rangeTop,
+                        rangeBottom = rangeBottom,
+                        rawData = data,
+                        timestamp = currentTime,
+                        isLegacyFormat = false  // CRITICAL: Still modern, just no rep counts!
+                    )
+                }
             } else {
-                // LEGACY 6-byte packet (data starts at offset 0)
+                // TRUE legacy 6-byte format (very old firmware only)
                 val topCounter = getUInt16LE(data, 0)
                 val completeCounter = getUInt16LE(data, 4)
 
-                log.w { "🔥 REPS (LEGACY 6-byte format):" }
+                log.w { "🔥 REPS (TRUE LEGACY 6-byte format):" }
                 log.w { "  top=$topCounter, complete=$completeCounter" }
 
-                notification = RepNotification(
+                RepNotification(
                     topCounter = topCounter,
                     completeCounter = completeCounter,
                     repsRomCount = 0,
@@ -2725,17 +2750,22 @@ class KableBleRepository : BleRepository {
                     rangeBottom = 0f,
                     rawData = data,
                     timestamp = currentTime,
-                    isLegacyFormat = true
+                    isLegacyFormat = true  // Only true for actual 6-byte legacy packets
                 )
             }
 
             val emitted = _repEvents.tryEmit(notification)
             log.i { "🔥 Emitted rep event (REPS char): success=$emitted, legacy=${notification.isLegacyFormat}, repsSetCount=${notification.repsSetCount}" }
 
-            // Log to user-visible connection logs for Issue #123 diagnosis
+            // Log to user-visible connection logs for Issue #123/#210 diagnosis
+            val packetDesc = when {
+                notification.isLegacyFormat -> "Legacy rep (6-byte)"
+                data.size >= 24 -> "Modern rep (24-byte)"
+                else -> "Modern rep (16-byte, no counts)"
+            }
             logRepo.debug(
                 LogEventType.REP_RECEIVED,
-                if (notification.isLegacyFormat) "Legacy rep (6-byte)" else "Modern rep (24-byte)",
+                packetDesc,
                 connectedDeviceName.ifEmpty { null },
                 connectedDeviceAddress.ifEmpty { null },
                 "up=${notification.topCounter}, setCount=${notification.repsSetCount}, legacy=${notification.isLegacyFormat}"

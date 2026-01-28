@@ -174,84 +174,102 @@ fun WorkoutHud(
             // PERIPHERAL VISION BARS (Pinned to edges, overlaying the pager)
             // Only show bars for cables that have built meaningful range of motion
             // Issue #194: Add 6-second delay before hiding inactive cables to prevent flickering
-            if (metric != null && !isCurrentExerciseBodyweight) {
-                // Calculate danger zone status for both cables
+
+            // IMPORTANT: Hoist state OUTSIDE the conditional to prevent reset when metric is briefly null
+            // Issue #210: Show bars immediately when cable is being used, not just after 50mm range
+            // Cable is "active" if:
+            // 1. Current position > rest threshold (150mm) - cable is currently extended, OR
+            // 2. Range > 50mm - cable has been used (maintains visibility during eccentric)
+            val handleRestThreshold = 150f  // Position above which cable is considered "in use"
+
+            val isCableACurrentlyActive = metric != null && !isCurrentExerciseBodyweight &&
+                (metric.positionA > handleRestThreshold || (repRanges?.isCableAActive() ?: false))
+            val isCableBCurrentlyActive = metric != null && !isCurrentExerciseBodyweight &&
+                (metric.positionB > handleRestThreshold || (repRanges?.isCableBActive() ?: false))
+
+            // Track if cable has ever been active (latching - once true, stays true for this workout)
+            var cableAEverActive by remember { mutableStateOf(false) }
+            var cableBEverActive by remember { mutableStateOf(false) }
+            if (isCableACurrentlyActive) cableAEverActive = true
+            if (isCableBCurrentlyActive) cableBEverActive = true
+
+            // Issue #194: Delayed visibility - cables stay visible for 6 seconds after becoming inactive
+            // This prevents flickering when users hit stopping points during reps
+            val hideDelayMs = 6000L
+
+            // Cable A visibility with delay
+            // Key: isCableACurrentlyActive - effect restarts whenever activity changes
+            var showCableA by remember { mutableStateOf(false) }
+            LaunchedEffect(isCableACurrentlyActive) {
+                if (isCableACurrentlyActive) {
+                    // Immediately show when active
+                    showCableA = true
+                } else if (cableAEverActive) {
+                    // Cable was previously active - delay before hiding
+                    // If cable becomes active during delay, this effect restarts and takes the if-branch
+                    delay(hideDelayMs)
+                    showCableA = false
+                }
+                // If cableAEverActive is false, leave showCableA unchanged (stays false)
+            }
+
+            // Cable B visibility with delay
+            var showCableB by remember { mutableStateOf(false) }
+            LaunchedEffect(isCableBCurrentlyActive) {
+                if (isCableBCurrentlyActive) {
+                    // Immediately show when active
+                    showCableB = true
+                } else if (cableBEverActive) {
+                    // Cable was previously active - delay before hiding
+                    delay(hideDelayMs)
+                    showCableB = false
+                }
+            }
+
+            // Left Bar - only show if cable A is visible (with delay) AND we have metric data
+            if (showCableA && metric != null && !isCurrentExerciseBodyweight) {
+                // Calculate danger zone status
                 val isDangerA = repRanges?.isInDangerZone(metric.positionA, metric.positionB) ?: false
-                val isDangerB = isDangerA  // Same check applies to both (symmetric)
 
-                // Determine which cables are currently active (have meaningful ROM)
-                val isCableACurrentlyActive = repRanges?.isCableAActive() ?: false
-                val isCableBCurrentlyActive = repRanges?.isCableBActive() ?: false
+                EnhancedCablePositionBar(
+                    label = "L",
+                    currentPosition = metric.positionA,
+                    velocity = metric.velocityA,
+                    minPosition = repRanges?.minPosA,
+                    maxPosition = repRanges?.maxPosA,
+                    // Ghost indicators: use last rep's rolling average positions
+                    ghostMin = repRanges?.lastRepBottomA,
+                    ghostMax = repRanges?.lastRepTopA,
+                    isDanger = isDangerA,
+                    modifier = Modifier
+                        .align(Alignment.CenterStart)
+                        .width(24.dp) // Thinner for HUD
+                        .fillMaxHeight(0.6f)
+                        .padding(start = 4.dp)
+                )
+            }
 
-                // Issue #194: Delayed visibility - cables stay visible for 6 seconds after becoming inactive
-                // This prevents flickering when users hit stopping points during reps
-                val hideDelayMs = 6000L
+            // Right Bar - only show if cable B is visible (with delay) AND we have metric data
+            if (showCableB && metric != null && !isCurrentExerciseBodyweight) {
+                // Calculate danger zone status
+                val isDangerB = repRanges?.isInDangerZone(metric.positionA, metric.positionB) ?: false
 
-                // Cable A visibility with delay
-                var showCableA by remember { mutableStateOf(false) }
-                LaunchedEffect(isCableACurrentlyActive) {
-                    if (isCableACurrentlyActive) {
-                        // Immediately show when active
-                        showCableA = true
-                    } else if (showCableA) {
-                        // Delay hiding when becoming inactive
-                        delay(hideDelayMs)
-                        showCableA = false
-                    }
-                }
-
-                // Cable B visibility with delay
-                var showCableB by remember { mutableStateOf(false) }
-                LaunchedEffect(isCableBCurrentlyActive) {
-                    if (isCableBCurrentlyActive) {
-                        // Immediately show when active
-                        showCableB = true
-                    } else if (showCableB) {
-                        // Delay hiding when becoming inactive
-                        delay(hideDelayMs)
-                        showCableB = false
-                    }
-                }
-
-                // Left Bar - only show if cable A is visible (with delay)
-                if (showCableA) {
-                    EnhancedCablePositionBar(
-                        label = "L",
-                        currentPosition = metric.positionA,
-                        velocity = metric.velocityA,
-                        minPosition = repRanges?.minPosA,
-                        maxPosition = repRanges?.maxPosA,
-                        // Ghost indicators: use last rep's rolling average positions
-                        ghostMin = repRanges?.lastRepBottomA,
-                        ghostMax = repRanges?.lastRepTopA,
-                        isDanger = isDangerA,
-                        modifier = Modifier
-                            .align(Alignment.CenterStart)
-                            .width(24.dp) // Thinner for HUD
-                            .fillMaxHeight(0.6f)
-                            .padding(start = 4.dp)
-                    )
-                }
-
-                // Right Bar - only show if cable B is visible (with delay)
-                if (showCableB) {
-                    EnhancedCablePositionBar(
-                        label = "R",
-                        currentPosition = metric.positionB,
-                        velocity = metric.velocityB,
-                        minPosition = repRanges?.minPosB,
-                        maxPosition = repRanges?.maxPosB,
-                        // Ghost indicators: use last rep's rolling average positions
-                        ghostMin = repRanges?.lastRepBottomB,
-                        ghostMax = repRanges?.lastRepTopB,
-                        isDanger = isDangerB,
-                        modifier = Modifier
-                            .align(Alignment.CenterEnd)
-                            .width(24.dp) // Thinner for HUD
-                            .fillMaxHeight(0.6f)
-                            .padding(end = 4.dp)
-                    )
-                }
+                EnhancedCablePositionBar(
+                    label = "R",
+                    currentPosition = metric.positionB,
+                    velocity = metric.velocityB,
+                    minPosition = repRanges?.minPosB,
+                    maxPosition = repRanges?.maxPosB,
+                    // Ghost indicators: use last rep's rolling average positions
+                    ghostMin = repRanges?.lastRepBottomB,
+                    ghostMax = repRanges?.lastRepTopB,
+                    isDanger = isDangerB,
+                    modifier = Modifier
+                        .align(Alignment.CenterEnd)
+                        .width(24.dp) // Thinner for HUD
+                        .fillMaxHeight(0.6f)
+                        .padding(end = 4.dp)
+                )
             }
         }
     }
