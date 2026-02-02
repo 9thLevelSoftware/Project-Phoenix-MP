@@ -32,6 +32,7 @@ import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.data.repository.PersonalRecordRepository
 import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.domain.model.WeightUnit
+import com.devil.phoenixproject.domain.model.generateSupersetId
 import com.devil.phoenixproject.domain.model.generateUUID
 import com.devil.phoenixproject.presentation.components.EmptyState
 import com.devil.phoenixproject.ui.theme.*
@@ -138,13 +139,24 @@ fun RoutinesTab(
                             onDuplicate = {
                                 // Generate new IDs explicitly and create deep copies
                                 val newRoutineId = generateUUID()
+
+                                // Deep-copy supersets with new IDs and remap to new routine
+                                val supersetIdMap = routine.supersets.associate { it.id to generateSupersetId() }
+                                val newSupersets = routine.supersets.map { superset ->
+                                    superset.copy(
+                                        id = supersetIdMap[superset.id] ?: generateSupersetId(),
+                                        routineId = newRoutineId
+                                    )
+                                }
+
+                                // Deep-copy exercises, remapping supersetId references
                                 val newExercises = routine.exercises.map { exercise ->
                                     Logger.d { "Duplicating exercise '${exercise.exercise.name}': setReps=${exercise.setReps}" }
-                                    val copied = exercise.copy(
+                                    exercise.copy(
                                         id = generateUUID(),
-                                        exercise = exercise.exercise.copy()
+                                        exercise = exercise.exercise.copy(),
+                                        supersetId = exercise.supersetId?.let { supersetIdMap[it] }
                                     )
-                                    copied
                                 }
 
                                 // Smart duplicate naming: extract base name and find next copy number
@@ -171,7 +183,8 @@ fun RoutinesTab(
                                     createdAt = KmpUtils.currentTimeMillis(),
                                     useCount = 0,
                                     lastUsed = null,
-                                    exercises = newExercises
+                                    exercises = newExercises,
+                                    supersets = newSupersets
                                 )
                                 onSaveRoutine(duplicated)
                             }
@@ -302,10 +315,22 @@ fun RoutinesTab(
                         selectedIds.forEach { routineId ->
                             routines.find { it.id == routineId }?.let { routine ->
                                 val newRoutineId = generateUUID()
+
+                                // Deep-copy supersets with new IDs and remap to new routine
+                                val supersetIdMap = routine.supersets.associate { it.id to generateSupersetId() }
+                                val newSupersets = routine.supersets.map { superset ->
+                                    superset.copy(
+                                        id = supersetIdMap[superset.id] ?: generateSupersetId(),
+                                        routineId = newRoutineId
+                                    )
+                                }
+
+                                // Deep-copy exercises, remapping supersetId references
                                 val newExercises = routine.exercises.map { exercise ->
                                     exercise.copy(
                                         id = generateUUID(),
-                                        exercise = exercise.exercise.copy()
+                                        exercise = exercise.exercise.copy(),
+                                        supersetId = exercise.supersetId?.let { supersetIdMap[it] }
                                     )
                                 }
 
@@ -333,7 +358,8 @@ fun RoutinesTab(
                                     createdAt = KmpUtils.currentTimeMillis(),
                                     useCount = 0,
                                     lastUsed = null,
-                                    exercises = newExercises
+                                    exercises = newExercises,
+                                    supersets = newSupersets
                                 )
                                 onSaveRoutine(duplicated)
                             }
