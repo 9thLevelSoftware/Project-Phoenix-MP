@@ -895,6 +895,8 @@ class MainViewModel constructor(
         // Reset stopWorkout guard for new workout (Issue #97)
         stopWorkoutInProgress = false
         setCompletionInProgress = false
+        // Parent parity: reset auto-stop state at start of every workout
+        resetAutoStopState()
         // Reset skip countdown flag for new workout
         skipCountdownRequested = skipCountdown
 
@@ -3459,7 +3461,7 @@ class MainViewModel constructor(
         // This prevents premature auto-stop before user grabs handles
         // (Issue: Exercise was ending in ~2 seconds if handles weren't grabbed immediately)
         val params = _workoutParameters.value
-        if (!params.isAMRAP && !params.isJustLift) return false
+        if (!params.isAMRAP && !params.isJustLift && !isCurrentTimedCableExercise) return false
 
         // If meaningful range established, user has started exercising - no grace needed
         if (hasMeaningfulRange) return false
@@ -3546,10 +3548,12 @@ class MainViewModel constructor(
             previousExerciseWasBodyweight = wasBodyweight
             Logger.d { "Issue #222 v8: Set previousExerciseWasBodyweight=$wasBodyweight" }
 
-            // Parent auto-completion always calls stopWorkout (bodyweight timer also flows here).
-            println("Issue222 TRACE: handleSetCompletion -> stopWorkout (auto-complete), wasBodyweight=$wasBodyweight")
-            bleRepository.stopWorkout()
-            Logger.d("handleSetCompletion: Called stopWorkout() (auto-complete)")
+            if (!wasBodyweight) {
+                bleRepository.stopWorkout()
+                Logger.d("handleSetCompletion: Called stopWorkout() (auto-complete)")
+            } else {
+                Logger.d("handleSetCompletion: Skipping BLE stop (bodyweight exercise)")
+            }
             _hapticEvents.emit(HapticEvent.WORKOUT_END)
 
             // Save session
@@ -4139,29 +4143,15 @@ class MainViewModel constructor(
     /**
      * Check if the given exercise is a bodyweight exercise.
      *
-     * Issue #227: Improved detection to handle edge cases where equipment field may be
-     * empty due to database default or save issues. A true bodyweight exercise:
-     * - Has empty/bodyweight equipment AND
-     * - Has no significant weight configured (bodyweight exercises don't use cables)
-     *
-     * This prevents cable exercises from being incorrectly treated as bodyweight when
-     * the equipment field is missing but weight is configured.
+     * Bodyweight = no cable accessories (HANDLES, BAR, ROPE, SHORT_BAR, BELT, STRAPS)
+     * in the exercise's equipment list. Non-cable equipment like BENCH is allowed.
      */
     private fun isBodyweightExercise(exercise: RoutineExercise?): Boolean {
         return exercise?.let {
-            val equipment = it.exercise.equipment
-            val hasBodyweightEquipment = equipment.isEmpty() || equipment.equals("bodyweight", ignoreCase = true)
-
-            // Issue #227: Also check weight - if weight > 0, it's likely a cable exercise
-            // even if equipment field is empty (defensive check for data issues)
-            val hasSignificantWeight = it.weightPerCableKg > 0.5f
-
-            // True bodyweight: has bodyweight equipment AND no significant weight
-            // If weight is configured, treat as cable exercise to avoid skipping BLE commands
-            val isBodyweight = hasBodyweightEquipment && !hasSignificantWeight
-
-            Logger.d { "Issue227: isBodyweightExercise check - exercise=${it.exercise.name}, equipment='$equipment', weight=${it.weightPerCableKg}kg, result=$isBodyweight" }
-
+            // Bodyweight = no cable accessories in equipment list.
+            // Exercises like "Sit Up" have equipment="BENCH" which is NOT a cable accessory.
+            val isBodyweight = !it.exercise.hasCableAccessory
+            Logger.d { "isBodyweightExercise: exercise=${it.exercise.name}, equipment='${it.exercise.equipment}', hasCableAccessory=${it.exercise.hasCableAccessory}, result=$isBodyweight" }
             isBodyweight
         } ?: false
     }

@@ -263,9 +263,8 @@ private fun ExerciseOverviewCard(
     val maxWeight = if (weightUnit == WeightUnit.LB) 242f else 110f  // 110kg per cable max
     val weightStep = if (weightUnit == WeightUnit.LB) 0.5f else 0.25f  // Fine-grained like RestTimerCard
 
-    // Issue #222: Check if bodyweight exercise (no cable configuration needed)
-    val equipment = exercise.exercise.equipment
-    val isBodyweight = equipment.isEmpty() || equipment.equals("bodyweight", ignoreCase = true)
+    // Bodyweight = no cable accessories (handles, bar, rope, etc.) in equipment list
+    val isBodyweight = !exercise.exercise.hasCableAccessory
 
     Card(
         modifier = Modifier.fillMaxSize(),

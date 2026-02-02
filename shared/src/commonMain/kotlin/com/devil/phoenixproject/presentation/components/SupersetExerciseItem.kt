@@ -138,13 +138,13 @@ fun SupersetExerciseItem(
                         style = MaterialTheme.typography.bodyLarge
                     )
                     // Display format depends on whether this is a timed exercise
-                    // Check if bodyweight (equipment empty or "bodyweight") vs timed cable exercise
-                    val isBodyweight = exercise.exercise.equipment.isEmpty() ||
-                        exercise.exercise.equipment.equals("bodyweight", ignoreCase = true)
+                    // Bodyweight = no cable accessories (handles, bar, rope, etc.) in equipment list
+                    val isBodyweight = !exercise.exercise.hasCableAccessory
 
-                    val exerciseText = if (exercise.duration != null && isBodyweight) {
-                        // Bodyweight timed exercise (no cable weight needed)
-                        "${exercise.sets} sets x ${exercise.duration}s"
+                    val exerciseText = if (isBodyweight) {
+                        // Bodyweight exercise - always duration, never reps (no cables engaged)
+                        val duration = exercise.duration ?: 30
+                        "${exercise.sets} sets x ${duration}s"
                     } else if (exercise.duration != null) {
                         // Timed cable exercise - show duration AND weight/progression
                         val isEchoMode = exercise.programMode == ProgramMode.Echo

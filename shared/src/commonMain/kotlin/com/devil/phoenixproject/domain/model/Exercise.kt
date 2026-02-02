@@ -29,6 +29,18 @@ data class Exercise(
      */
     val displayName: String
         get() = name
+
+    /**
+     * Whether this exercise uses any cable accessory (handles, bar, rope, etc.).
+     * Exercises with only non-cable equipment (e.g., bench) or no equipment are bodyweight.
+     */
+    val hasCableAccessory: Boolean
+        get() = equipment.split(",").any { it.trim().uppercase() in CABLE_ACCESSORIES }
+
+    companion object {
+        /** Equipment that physically attaches to the machine's cables */
+        private val CABLE_ACCESSORIES = setOf("HANDLES", "BAR", "ROPE", "SHORT_BAR", "BELT", "STRAPS")
+    }
 }
 
 /**

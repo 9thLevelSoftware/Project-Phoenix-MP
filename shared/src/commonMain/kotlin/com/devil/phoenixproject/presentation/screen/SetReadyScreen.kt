@@ -67,9 +67,8 @@ fun SetReadyScreen(
     val isEchoMode = currentExercise.programMode is ProgramMode.Echo
     val isAMRAP = currentExercise.isAMRAP
 
-    // Issue #222: Check if bodyweight exercise (no cable configuration needed)
-    val equipment = currentExercise.exercise.equipment
-    val isBodyweight = equipment.isEmpty() || equipment.equals("bodyweight", ignoreCase = true)
+    // Bodyweight = no cable accessories (handles, bar, rope, etc.) in equipment list
+    val isBodyweight = !currentExercise.exercise.hasCableAccessory
 
     // Weight parameters matching RestTimerCard exactly
     val maxWeight = if (weightUnit == WeightUnit.LB) 242f else 110f  // 110kg per cable max

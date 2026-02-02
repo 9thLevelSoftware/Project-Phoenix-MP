@@ -108,29 +108,48 @@ Located in `shared/src/commonMain/kotlin/com/example/vitruvianredux/domain/model
 - **Vitruvian Trainer+**: 220kg max
 - IMPORTANT: When applicable, prefer using jetbrains-index MCP tools for code navigation and refactoring.
 
-## The Daem0n's Covenant (v3.0.0 - Enforced)
+## The Daem0n's Covenant (v6.0.0 - Enforced)
 
-This project is bound to Daem0n for persistent AI memory. **The covenant is now ENFORCED at the protocol layer** - mutating tools will block with `COMMUNION_REQUIRED` or `COUNSEL_REQUIRED` errors until proper rituals are observed.
+This project is bound to Daem0n for persistent AI memory. **The covenant is ENFORCED at the protocol layer** - mutating tools block with `COMMUNION_REQUIRED` or `COUNSEL_REQUIRED` errors until proper rituals are observed.
+
+**11 MCP tools (8 workflows + 3 cognitive), 63 actions.** The Daem0n speaks through workflow tools with `action` parameters:
+
+| Workflow | Purpose |
+|----------|---------|
+| `commune` | Session start & status (`briefing`, `active_context`, `triggers`, `health`, `covenant`, `updates`) |
+| `consult` | Pre-action intelligence (`preflight`, `recall`, `recall_file`, `recall_entity`, `recall_hierarchical`, `search`, `check_rules`, `compress`) |
+| `inscribe` | Memory writing & linking (`remember`, `remember_batch`, `link`, `unlink`, `pin`, `activate`, `deactivate`, `clear_active`, `ingest`) |
+| `reflect` | Outcomes & verification (`outcome`, `verify`, `execute`) |
+| `understand` | Code comprehension (`index`, `find`, `impact`, `todos`, `refactor`) |
+| `govern` | Rules & triggers (`add_rule`, `update_rule`, `list_rules`, `add_trigger`, `list_triggers`, `remove_trigger`) |
+| `explore` | Graph & discovery (`related`, `chain`, `graph`, `stats`, `communities`, `community_detail`, `rebuild_communities`, `entities`, `backfill_entities`, `evolution`, `versions`, `at_time`) |
+| `maintain` | Housekeeping & federation (`prune`, `archive`, `cleanup`, `compact`, `rebuild_index`, `export`, `import_data`, `link_project`, `unlink_project`, `list_projects`, `consolidate`) |
 
 ### At Session Dawn (MANDATORY)
-- Commune with `get_briefing(project_path="C:/Users/dasbl/AndroidStudioProjects/Project-Phoenix-MP")` immediately
+- Commune with `commune(action="briefing", project_path="C:/Users/dasbl/AndroidStudioProjects/Project-Phoenix-MP")` immediately
 - **This is enforced** - other tools will refuse to act until communion is complete
 - Heed any warnings or failed approaches before beginning work
 
 ### Before Alterations (MANDATORY for mutations)
-- Cast `context_check("your intention", project_path="...")` before modifications
+- Cast `consult(action="preflight", description="your intention", project_path="...")` before modifications
 - This grants a **preflight token** valid for 5 minutes proving consultation
-- Cast `recall_for_file("path", project_path="...")` when touching specific files
+- Cast `consult(action="recall_file", file_path="path", project_path="...")` when touching specific files
 - Acknowledge any warnings about past failures
 
 ### After Decisions
-- Cast `remember(category, content, rationale, file_path, project_path="...")` to inscribe decisions
+- Cast `inscribe(action="remember", category=..., content=..., rationale=..., file_path=..., project_path="...")` to inscribe decisions
 - Use categories: decision, pattern, warning, learning
 - **Always pass project_path** on every invocation
 
 ### After Completion
-- Cast `record_outcome(memory_id, outcome, worked, project_path="...")` to seal the memory
+- Cast `reflect(action="outcome", memory_id=..., outcome_text=..., worked=..., project_path="...")` to seal the memory
 - ALWAYS record failures (worked=false) - they illuminate future paths
+
+### Cognitive Tools (v6.0.0 - The Three Minds)
+Three standalone reasoning tools for autonomous thought:
+- `simulate_decision(decision_id=..., project_path="...")` - Temporal scrying: replay a past decision with current knowledge
+- `evolve_rule(rule_id=..., project_path="...")` - Rule entropy analysis: detect staleness and suggest evolution
+- `debate_internal(topic=..., advocate_position=..., challenger_position=..., project_path="...")` - Adversarial council: evidence-grounded debate with convergence detection
 
 ### MCP Resources (Auto-Injected Context)
 The Daem0n provides subscribable resources for automatic context injection:
@@ -138,4 +157,4 @@ The Daem0n provides subscribable resources for automatic context injection:
 - `daem0n://failed/{project_path}` - Failed approaches to avoid
 - `daem0n://context/{project_path}` - Combined context
 
-See Summon_Daem0n.md for the complete Grimoire (53 tools available).
+See Summon_Daem0n.md for the complete Grimoire (11 tools, 63 actions).
