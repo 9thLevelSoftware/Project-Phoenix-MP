@@ -459,8 +459,14 @@ class MainViewModel constructor(
     private var skipCountdownRequested: Boolean = false
     // Track if current workout is duration-based (timed exercise) to show countdown timer
     private var isCurrentWorkoutTimed: Boolean = false
-    // Track if current exercise is a timed CABLE exercise (not bodyweight) for auto-stop via handle release
-    private var isCurrentTimedCableExercise: Boolean = false
+    // Track if current exercise is a timed CABLE exercise (not bodyweight) for auto-stop via handle release.
+    // Kept in StateFlow-backed storage for consistent visibility across collectors/coroutines.
+    private val _isCurrentTimedCableExercise = MutableStateFlow(false)
+    private var isCurrentTimedCableExercise: Boolean
+        get() = _isCurrentTimedCableExercise.value
+        set(value) {
+            _isCurrentTimedCableExercise.value = value
+        }
     // Track if current exercise is bodyweight to skip rep processing (no cable engagement)
     private val _isCurrentExerciseBodyweight = MutableStateFlow(false)
     val isCurrentExerciseBodyweight: StateFlow<Boolean> = _isCurrentExerciseBodyweight.asStateFlow()
@@ -602,9 +608,9 @@ class MainViewModel constructor(
                 val params = _workoutParameters.value
                 val currentState = _workoutState.value
 
-                // Only trigger auto-stop in Just Lift, AMRAP, or timed cable modes when workout is active
-                // Duration cable exercises should auto-stop when user puts handles down (like AMRAP)
-                if ((params.isJustLift || params.isAMRAP || isCurrentTimedCableExercise) && currentState is WorkoutState.Active) {
+                // Only trigger auto-stop when mode allows it and workout is active.
+                // Timed cable exercises are eligible ONLY after warmup completes.
+                if (shouldEnableAutoStop(params) && currentState is WorkoutState.Active) {
                     Logger.d("🛑 DELOAD_OCCURRED: Machine detected cable release - starting auto-stop timer")
 
                     // Issue #204: Don't start stall timer during AMRAP startup grace period
@@ -815,7 +821,7 @@ class MainViewModel constructor(
             // Stall (velocity) detection inside is gated by stallDetectionEnabled.
             // Duration cable exercises auto-stop when user puts handles down (like AMRAP).
             // Issue #203: Debug logging to track auto-stop check conditions
-            if (params.isJustLift || params.isAMRAP || isCurrentTimedCableExercise) {
+            if (shouldEnableAutoStop(params)) {
                 Logger.d { "Issue203 DEBUG: checkAutoStop called - isJustLift=${params.isJustLift}, isAMRAP=${params.isAMRAP}, isTimedCable=$isCurrentTimedCableExercise, setIndex=${_currentSetIndex.value}" }
                 checkAutoStop(metric)
             } else {
@@ -3184,6 +3190,17 @@ class MainViewModel constructor(
     // ==================== AUTO-STOP FUNCTIONS ====================
 
     /**
+     * Whether auto-stop logic should run for the current mode/state.
+     *
+     * Timed cable exercises are gated on warmup completion to prevent
+     * pre-warmup auto-stop/auto-skip when handles are still at rest.
+     */
+    private fun shouldEnableAutoStop(params: WorkoutParameters): Boolean {
+        val timedCableReadyForAutoStop = isCurrentTimedCableExercise && _repCount.value.isWarmupComplete
+        return params.isJustLift || params.isAMRAP || timedCableReadyForAutoStop
+    }
+
+    /**
      * Check if auto-stop should be triggered based on velocity stall detection OR position-based detection.
      * Called on every metric update during workout.
      *
@@ -3200,6 +3217,13 @@ class MainViewModel constructor(
     private fun checkAutoStop(metric: WorkoutMetric) {
         // Don't check if workout isn't active
         if (_workoutState.value !is WorkoutState.Active) {
+            resetAutoStopTimer()
+            resetStallTimer()
+            return
+        }
+
+        // Defensive guard: timed cable exercises should never auto-stop before warmup completes.
+        if (isCurrentTimedCableExercise && !_repCount.value.isWarmupComplete) {
             resetAutoStopTimer()
             resetStallTimer()
             return
@@ -3450,7 +3474,7 @@ class MainViewModel constructor(
      * 1. 8 seconds have elapsed since workout start, OR
      * 2. Meaningful ROM has been established (user has started exercising)
      *
-     * Applies to both AMRAP and Just Lift modes - without this, the position-based auto-stop
+     * Applies to AMRAP and Just Lift modes - without this, the position-based auto-stop
      * would trigger in ~2.5 seconds if handles aren't grabbed immediately.
      *
      * @param hasMeaningfulRange Whether meaningful ROM (> 50mm) has been established
@@ -3461,7 +3485,7 @@ class MainViewModel constructor(
         // This prevents premature auto-stop before user grabs handles
         // (Issue: Exercise was ending in ~2 seconds if handles weren't grabbed immediately)
         val params = _workoutParameters.value
-        if (!params.isAMRAP && !params.isJustLift && !isCurrentTimedCableExercise) return false
+        if (!params.isAMRAP && !params.isJustLift) return false
 
         // If meaningful range established, user has started exercising - no grace needed
         if (hasMeaningfulRange) return false
@@ -3491,6 +3515,8 @@ class MainViewModel constructor(
         autoStopTriggered = true
 
         // Update UI state
+        // UI completion state should reflect mode, not re-check warmup gate here.
+        // Warmup gating happens before requestAutoStop/triggerAutoStop can be reached.
         if (_workoutParameters.value.isJustLift || _workoutParameters.value.isAMRAP || isCurrentTimedCableExercise) {
             _autoStopState.value = _autoStopState.value.copy(
                 progress = 1f,

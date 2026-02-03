@@ -2,10 +2,13 @@ package com.devil.phoenixproject.presentation.viewmodel
 
 import app.cash.turbine.test
 import com.devil.phoenixproject.domain.model.UserPreferences
+import com.devil.phoenixproject.data.repository.RepNotification
 import com.devil.phoenixproject.data.repository.ScannedDevice
 import com.devil.phoenixproject.domain.model.ConnectionState
+import com.devil.phoenixproject.domain.model.Exercise
 import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.Routine
+import com.devil.phoenixproject.domain.model.RoutineExercise
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.domain.model.WorkoutParameters
 import com.devil.phoenixproject.domain.model.WorkoutState
@@ -22,6 +25,7 @@ import com.devil.phoenixproject.testutil.FakeWorkoutRepository
 import com.devil.phoenixproject.testutil.TestCoroutineRule
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.Before
 import org.junit.Rule
@@ -394,6 +398,101 @@ class MainViewModelTest {
         advanceUntilIdle()
 
         assertTrue(viewModel.connectionLostDuringWorkout.value)
+    }
+
+    @Test
+    fun `timed cable exercise blocks auto stop before warmup and allows it after warmup`() = runTest {
+        val timedCableExercise = RoutineExercise(
+            id = "timed-cable-1",
+            exercise = Exercise(
+                name = "Bench Press",
+                muscleGroup = "Chest",
+                equipment = "HANDLES"
+            ),
+            orderIndex = 0,
+            setReps = listOf(10),
+            weightPerCableKg = 20f,
+            duration = 60
+        )
+        viewModel.loadRoutine(
+            Routine(
+                id = "routine-timed-1",
+                name = "Timed Cable Warmup Regression",
+                exercises = listOf(timedCableExercise)
+            )
+        )
+        advanceUntilIdle()
+
+        val restingMetric = WorkoutMetric(
+            positionA = 0f,
+            positionB = 0f,
+            velocityA = 0.0,
+            velocityB = 0.0,
+            loadA = 0f,
+            loadB = 0f
+        )
+        fakeBleRepository.emitMetric(restingMetric)
+        viewModel.startWorkout(skipCountdown = true)
+        advanceUntilIdle()
+
+        assertEquals(WorkoutState.Active, viewModel.workoutState.value)
+        assertFalse(viewModel.repCount.value.isWarmupComplete)
+
+        // Reproduce "expired timer while warmup incomplete" path deterministically.
+        // If warmup gate regresses, this immediately auto-completes the set.
+        forceAutoStopTimerElapsed()
+        fakeBleRepository.emitMetric(restingMetric)
+        runCurrent()
+
+        assertEquals(WorkoutState.Active, viewModel.workoutState.value)
+        assertEquals(0, fakeWorkoutRepository.getRecentSessionsSync(10).size)
+
+        // Complete warmup and verify auto-stop can now trigger for timed cable.
+        val activeMetric = WorkoutMetric(
+            positionA = 120f,
+            positionB = 120f,
+            velocityA = 80.0,
+            velocityB = 80.0,
+            loadA = 10f,
+            loadB = 10f
+        )
+        for (warmupRep in 1..3) {
+            fakeBleRepository.emitMetric(activeMetric)
+            fakeBleRepository.emitRepNotification(
+                RepNotification(
+                    topCounter = warmupRep,
+                    completeCounter = warmupRep,
+                    repsRomCount = warmupRep,
+                    repsRomTotal = 3,
+                    repsSetCount = 0,
+                    repsSetTotal = 10,
+                    rangeTop = 800f,
+                    rangeBottom = 0f,
+                    rawData = ByteArray(24),
+                    timestamp = warmupRep.toLong()
+                )
+            )
+            runCurrent()
+        }
+
+        assertTrue(viewModel.repCount.value.isWarmupComplete)
+        assertEquals(WorkoutState.Active, viewModel.workoutState.value)
+
+        // Once warmup is complete, the same expired timer should allow auto-stop.
+        forceAutoStopTimerElapsed()
+        fakeBleRepository.emitMetric(restingMetric)
+        runCurrent()
+        runCurrent()
+
+        assertEquals(1, fakeWorkoutRepository.getRecentSessionsSync(10).size)
+        assertIs<WorkoutState.SetSummary>(viewModel.workoutState.value)
+        assertEquals(1, fakeWorkoutRepository.getRecentSessionsSync(10).size)
+    }
+
+    private fun forceAutoStopTimerElapsed() {
+        val field = MainViewModel::class.java.getDeclaredField("autoStopStartTime")
+        field.isAccessible = true
+        field.set(viewModel, System.currentTimeMillis() - 10_000L)
     }
 
     private suspend fun emitRepNotification(repIndex: Int, metric: WorkoutMetric, warmupCount: Int = 0, warmupTarget: Int = 3, workingTarget: Int = 10) {
