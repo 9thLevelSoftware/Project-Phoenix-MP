@@ -445,10 +445,12 @@ class SqlDelightTrainingCycleRepository(
 
             // Calculate next day number, wrapping to 1 if at the end
             val totalDays = cycle.days.size
-            val nextDayNumber = if (progress.currentDayNumber >= totalDays) {
-                1
+            val isWraparound = progress.currentDayNumber >= totalDays
+            val nextDayNumber = if (isWraparound) 1 else progress.currentDayNumber + 1
+            val newRotationCount = if (isWraparound) {
+                progress.rotationCount + 1
             } else {
-                progress.currentDayNumber + 1
+                progress.rotationCount
             }
 
             val now = currentTimeMillis()
@@ -456,6 +458,7 @@ class SqlDelightTrainingCycleRepository(
             queries.advanceCycleDay(
                 current_day_number = nextDayNumber.toLong(),
                 last_completed_date = now,
+                rotation_count = newRotationCount.toLong(),
                 cycle_id = cycleId
             )
 
@@ -498,13 +501,14 @@ class SqlDelightTrainingCycleRepository(
                 ?: throw IllegalStateException("No progress found for cycle $cycleId")
 
             val now = currentTimeMillis()
+            val updatedCompletedDays = progress.completedDays + progress.currentDayNumber
 
             queries.updateCycleProgress(
                 current_day_number = progress.currentDayNumber.toLong(),
                 last_completed_date = now,
                 cycle_start_date = progress.cycleStartDate,
                 last_advanced_at = progress.lastAdvancedAt,
-                completed_days = intSetToJson(progress.completedDays),
+                completed_days = intSetToJson(updatedCompletedDays),
                 missed_days = intSetToJson(progress.missedDays),
                 rotation_count = progress.rotationCount.toLong(),
                 cycle_id = cycleId

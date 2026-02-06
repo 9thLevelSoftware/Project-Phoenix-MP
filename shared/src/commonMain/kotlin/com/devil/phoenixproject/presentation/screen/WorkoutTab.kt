@@ -1613,9 +1613,9 @@ fun SetSummaryCard(
                     modifier = Modifier.weight(1f)
                 )
                 SummaryStatCard(
-                    label = "Heaviest Lift",
+                    label = "Set Weight",
                     value = "${heaviestLiftDisplay.roundToInt()}",
-                    unit = "($unitLabel)",
+                    unit = "($unitLabel/cable)",
                     icon = Icons.Default.FitnessCenter,
                     modifier = Modifier.weight(1f)
                 )
@@ -1627,13 +1627,13 @@ fun SetSummaryCard(
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 SummaryForceCard(
-                    label = "Peak force ($unitLabel/cable)",
+                    label = "Peak Dynamic ($unitLabel)",
                     concentricValue = peakConcentric,
                     eccentricValue = peakEccentric,
                     modifier = Modifier.weight(1f)
                 )
                 SummaryForceCard(
-                    label = "Avg force ($unitLabel/cable)",
+                    label = "Avg Active ($unitLabel)",
                     concentricValue = avgConcentric,
                     eccentricValue = avgEccentric,
                     modifier = Modifier.weight(1f)

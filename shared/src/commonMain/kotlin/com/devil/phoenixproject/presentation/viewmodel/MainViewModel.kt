@@ -1309,7 +1309,9 @@ class MainViewModel constructor(
                  fallbackWeightKg = params.weightPerCableKg,
                  isEchoMode = params.isEchoMode,
                  warmupRepsCount = repCount.warmupReps,
-                 workingRepsCount = repCount.workingReps
+                 workingRepsCount = repCount.workingReps,
+                 baselineLoadA = _loadBaselineA.value,
+                 baselineLoadB = _loadBaselineB.value
              )
 
              val session = WorkoutSession(
@@ -3597,7 +3599,9 @@ class MainViewModel constructor(
                 fallbackWeightKg = params.weightPerCableKg,
                 isEchoMode = params.isEchoMode,
                 warmupRepsCount = warmupReps,
-                workingRepsCount = completedReps
+                workingRepsCount = completedReps,
+                baselineLoadA = _loadBaselineA.value,
+                baselineLoadB = _loadBaselineB.value
             )
 
             Logger.d("Set summary: heaviest=${summary.heaviestLiftKgPerCable}kg, reps=$completedReps, duration=${summary.durationMs}ms")
@@ -3743,9 +3747,11 @@ class MainViewModel constructor(
         // (metrics are being collected on another coroutine)
         val metricsSnapshot = collectedMetrics.toList()
 
-        // Calculate actual measured weight from metrics (if available)
+        // Calculate actual measured weight from metrics (baseline-adjusted)
+        val blA = _loadBaselineA.value.coerceAtLeast(0f)
+        val blB = _loadBaselineB.value.coerceAtLeast(0f)
         val measuredPerCableKg = if (metricsSnapshot.isNotEmpty()) {
-            metricsSnapshot.maxOf { it.totalLoad } / 2f
+            metricsSnapshot.maxOf { maxOf(it.loadA - blA, it.loadB - blB).coerceAtLeast(0f) }
         } else {
             params.weightPerCableKg
         }
@@ -3762,7 +3768,9 @@ class MainViewModel constructor(
             fallbackWeightKg = params.weightPerCableKg,
             isEchoMode = params.isEchoMode,
             warmupRepsCount = warmup,
-            workingRepsCount = working
+            workingRepsCount = working,
+            baselineLoadA = _loadBaselineA.value,
+            baselineLoadB = _loadBaselineB.value
         )
 
         val session = WorkoutSession(
@@ -3942,7 +3950,9 @@ class MainViewModel constructor(
         fallbackWeightKg: Float,
         isEchoMode: Boolean = false,
         warmupRepsCount: Int = 0,
-        workingRepsCount: Int = 0
+        workingRepsCount: Int = 0,
+        baselineLoadA: Float = 0f,
+        baselineLoadB: Float = 0f
     ): WorkoutState.SetSummary {
         if (metrics.isEmpty()) {
             return WorkoutState.SetSummary(
@@ -3957,40 +3967,65 @@ class MainViewModel constructor(
         // Duration from first to last metric
         val durationMs = metrics.last().timestamp - metrics.first().timestamp
 
-        // Heaviest lift (max load per cable)
-        val heaviestLiftKgPerCable = metrics.maxOf { maxOf(it.loadA, it.loadB) }
+        // Subtract baseline cable tension (~4kg/cable) from raw BLE load values.
+        // The machine exerts base tension even at rest; without subtraction all stats are inflated.
+        val blA = baselineLoadA.coerceAtLeast(0f)
+        val blB = baselineLoadB.coerceAtLeast(0f)
+        fun adjA(raw: Float) = (raw - blA).coerceAtLeast(0f)
+        fun adjB(raw: Float) = (raw - blB).coerceAtLeast(0f)
 
-        // Total volume = average load × reps
-        val avgTotalLoad = metrics.map { it.totalLoad }.average().toFloat()
-        val totalVolumeKg = avgTotalLoad * repCount
+        // Heaviest lift (max load per cable, baseline-adjusted)
+        val heaviestLiftKgPerCable = metrics.maxOf { maxOf(adjA(it.loadA), adjB(it.loadB)) }
+
+        // Total volume = sum of per-cable peaks × reps
+        // Previous: avgTotalLoad * repCount — wrong because averaging ALL BLE samples
+        // (including rest, handle pickup, cable retraction at ~4kg) massively dilutes the value.
+        // Uses actual per-cable peaks for accuracy with asymmetric loading.
+        val peakCableA = metrics.maxOf { adjA(it.loadA) }
+        val peakCableB = metrics.maxOf { adjB(it.loadB) }
+        val totalVolumeKg = (peakCableA + peakCableB) * repCount
 
         // Separate concentric (velocity > 0) and eccentric (velocity < 0) phases
         val concentricMetrics = metrics.filter { it.velocityA > 10 || it.velocityB > 10 }
         val eccentricMetrics = metrics.filter { it.velocityA < -10 || it.velocityB < -10 }
 
-        // Peak forces per phase
-        val peakConcentricA = concentricMetrics.maxOfOrNull { it.loadA } ?: 0f
-        val peakConcentricB = concentricMetrics.maxOfOrNull { it.loadB } ?: 0f
-        val peakEccentricA = eccentricMetrics.maxOfOrNull { it.loadA } ?: 0f
-        val peakEccentricB = eccentricMetrics.maxOfOrNull { it.loadB } ?: 0f
+        // Peak forces per phase (baseline-adjusted)
+        val peakConcentricA = concentricMetrics.maxOfOrNull { adjA(it.loadA) } ?: 0f
+        val peakConcentricB = concentricMetrics.maxOfOrNull { adjB(it.loadB) } ?: 0f
+        val peakEccentricA = eccentricMetrics.maxOfOrNull { adjA(it.loadA) } ?: 0f
+        val peakEccentricB = eccentricMetrics.maxOfOrNull { adjB(it.loadB) } ?: 0f
 
-        // Average forces per phase
-        val avgConcentricA = if (concentricMetrics.isNotEmpty())
-            concentricMetrics.map { it.loadA }.average().toFloat() else 0f
-        val avgConcentricB = if (concentricMetrics.isNotEmpty())
-            concentricMetrics.map { it.loadB }.average().toFloat() else 0f
-        val avgEccentricA = if (eccentricMetrics.isNotEmpty())
-            eccentricMetrics.map { it.loadA }.average().toFloat() else 0f
-        val avgEccentricB = if (eccentricMetrics.isNotEmpty())
-            eccentricMetrics.map { it.loadB }.average().toFloat() else 0f
+        // Average forces per phase — filter out transition noise.
+        // Only include samples where adjusted load > 10% of peak to exclude
+        // handle pickup, rest between reps, and cable retraction samples.
+        val peakLoadA = metrics.maxOf { adjA(it.loadA) }
+        val peakLoadB = metrics.maxOf { adjB(it.loadB) }
+        val thresholdA = (peakLoadA * 0.1f).coerceAtLeast(1f)  // Min 1kg to exclude noise on unused cable
+        val thresholdB = (peakLoadB * 0.1f).coerceAtLeast(1f)
+
+        val activeConcentricMetrics = concentricMetrics.filter {
+            adjA(it.loadA) > thresholdA || adjB(it.loadB) > thresholdB
+        }
+        val activeEccentricMetrics = eccentricMetrics.filter {
+            adjA(it.loadA) > thresholdA || adjB(it.loadB) > thresholdB
+        }
+
+        val avgConcentricA = if (activeConcentricMetrics.isNotEmpty())
+            activeConcentricMetrics.map { adjA(it.loadA) }.average().toFloat() else 0f
+        val avgConcentricB = if (activeConcentricMetrics.isNotEmpty())
+            activeConcentricMetrics.map { adjB(it.loadB) }.average().toFloat() else 0f
+        val avgEccentricA = if (activeEccentricMetrics.isNotEmpty())
+            activeEccentricMetrics.map { adjA(it.loadA) }.average().toFloat() else 0f
+        val avgEccentricB = if (activeEccentricMetrics.isNotEmpty())
+            activeEccentricMetrics.map { adjB(it.loadB) }.average().toFloat() else 0f
 
         // Estimate calories: Work = Force × Distance, roughly 4.184 J per calorie
-        // Simplified estimate: totalVolume (kg) × reps × 0.5m ROM × 9.81 / 4184
+        // Simplified estimate: totalVolume (kg) × 0.5m ROM × 9.81 / 4184
         val estimatedCalories = (totalVolumeKg * 0.5f * 9.81f / 4184f).coerceAtLeast(1f)
 
-        // Legacy power values (average load per cable)
+        // Legacy power values (baseline-adjusted)
         val peakPower = heaviestLiftKgPerCable
-        val averagePower = metrics.map { it.totalLoad / 2f }.average().toFloat()
+        val averagePower = metrics.map { (adjA(it.loadA) + adjB(it.loadB)) / 2f }.average().toFloat()
 
         // Echo Mode Phase-Aware Metrics
         var warmupAvgWeightKg = 0f
@@ -4000,9 +4035,9 @@ class MainViewModel constructor(
         var burnoutReps = 0
 
         if (isEchoMode && metrics.size > 10) {
-            // Detect phases by analyzing weight progression
+            // Detect phases by analyzing weight progression (baseline-adjusted)
             // Echo mode: weight increases (warmup) -> stabilizes (working) -> decreases (burnout)
-            val weightSamples = metrics.map { maxOf(it.loadA, it.loadB) }
+            val weightSamples = metrics.map { maxOf(adjA(it.loadA), adjB(it.loadB)) }
             peakWeightKg = weightSamples.maxOrNull() ?: 0f
             val peakThreshold = peakWeightKg * 0.9f  // Within 90% of peak is "working" phase
 

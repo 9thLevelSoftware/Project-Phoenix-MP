@@ -144,7 +144,12 @@ class SqlDelightSyncRepository(
                     queries.updateSessionServerId(serverId, clientId)
                 }
                 mappings.records.forEach { (clientId, serverId) ->
-                    queries.updatePRServerId(serverId, clientId.toLongOrNull() ?: return@forEach)
+                    val longId = clientId.toLongOrNull()
+                    if (longId == null) {
+                        Logger.w { "Skipping PR server ID update: invalid clientId '$clientId'" }
+                        return@forEach
+                    }
+                    queries.updatePRServerId(serverId, longId)
                 }
                 mappings.routines.forEach { (clientId, serverId) ->
                     queries.updateRoutineServerId(serverId, clientId)
@@ -153,7 +158,12 @@ class SqlDelightSyncRepository(
                     queries.updateExerciseServerId(serverId, clientId)
                 }
                 mappings.badges.forEach { (clientId, serverId) ->
-                    queries.updateBadgeServerId(serverId, clientId.toLongOrNull() ?: return@forEach)
+                    val longId = clientId.toLongOrNull()
+                    if (longId == null) {
+                        Logger.w { "Skipping badge server ID update: invalid clientId '$clientId'" }
+                        return@forEach
+                    }
+                    queries.updateBadgeServerId(serverId, longId)
                 }
             }
             Logger.d { "Updated server IDs: ${mappings.sessions.size} sessions, ${mappings.records.size} PRs, ${mappings.routines.size} routines" }
@@ -256,13 +266,16 @@ class SqlDelightSyncRepository(
 
                     val localId = existingByServer?.id ?: dto.clientId
 
+                    // Preserve local usage stats that the server doesn't track
+                    val existing = queries.selectRoutineById(localId).executeAsOneOrNull()
+
                     queries.upsertRoutine(
                         id = localId,
                         name = dto.name,
                         description = dto.description,
                         createdAt = dto.createdAt,
-                        lastUsed = null,
-                        useCount = 0L
+                        lastUsed = existing?.lastUsed,
+                        useCount = existing?.useCount ?: 0L
                     )
 
                     // Update sync fields
@@ -330,16 +343,18 @@ class SqlDelightSyncRepository(
 
         withContext(Dispatchers.IO) {
             val now = currentTimeMillis()
+            val existing = queries.selectGamificationStats().executeAsOneOrNull()
+
             queries.upsertGamificationStats(
                 totalWorkouts = stats.totalWorkouts.toLong(),
                 totalReps = stats.totalReps.toLong(),
                 totalVolumeKg = stats.totalVolumeKg.toLong(),
                 longestStreak = stats.longestStreak.toLong(),
                 currentStreak = stats.currentStreak.toLong(),
-                uniqueExercisesUsed = 0L,
-                prsAchieved = 0L,
-                lastWorkoutDate = null,
-                streakStartDate = null,
+                uniqueExercisesUsed = existing?.uniqueExercisesUsed ?: 0L,
+                prsAchieved = existing?.prsAchieved ?: 0L,
+                lastWorkoutDate = existing?.lastWorkoutDate,
+                streakStartDate = existing?.streakStartDate,
                 lastUpdated = now
             )
             Logger.d { "Merged gamification stats from server" }

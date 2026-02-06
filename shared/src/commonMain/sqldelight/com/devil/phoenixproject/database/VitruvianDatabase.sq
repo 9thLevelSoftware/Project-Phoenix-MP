@@ -1015,7 +1015,7 @@ WHERE cycle_id = ?;
 
 advanceCycleDay:
 UPDATE CycleProgress
-SET current_day_number = ?, last_completed_date = ?
+SET current_day_number = ?, last_completed_date = ?, rotation_count = ?
 WHERE cycle_id = ?;
 
 resetCycleProgress:

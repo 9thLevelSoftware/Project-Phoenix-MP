@@ -33,6 +33,7 @@ class SyncTriggerManager(
         private const val MAX_CONSECUTIVE_FAILURES = 3
     }
 
+    private val stateLock = Any()
     private var lastSyncAttemptMillis: Long = 0
     private var consecutiveFailures: Int = 0
 
@@ -62,7 +63,7 @@ class SyncTriggerManager(
      * Called when user acknowledges the error or manually triggers sync.
      */
     fun clearError() {
-        consecutiveFailures = 0
+        synchronized(stateLock) { consecutiveFailures = 0 }
         _hasPersistentError.value = false
     }
 
@@ -81,23 +82,30 @@ class SyncTriggerManager(
 
         // Check throttle (unless bypassed for workout complete)
         val now = Clock.System.now().toEpochMilliseconds()
-        if (!bypassThrottle && (now - lastSyncAttemptMillis) < THROTTLE_MILLIS) {
+        val shouldSkip = synchronized(stateLock) {
+            if (!bypassThrottle && (now - lastSyncAttemptMillis) < THROTTLE_MILLIS) {
+                true
+            } else {
+                lastSyncAttemptMillis = now
+                false
+            }
+        }
+        if (shouldSkip) {
             Logger.d { "SyncTrigger: Skipping sync - throttled" }
             return
         }
 
-        // Attempt sync
-        lastSyncAttemptMillis = now
+        // Attempt sync (outside lock - suspend call)
         val result = syncManager.sync()
 
         if (result.isSuccess) {
             Logger.d { "SyncTrigger: Sync successful" }
-            consecutiveFailures = 0
+            synchronized(stateLock) { consecutiveFailures = 0 }
             _hasPersistentError.value = false
         } else {
-            consecutiveFailures++
-            Logger.w { "SyncTrigger: Sync failed (attempt $consecutiveFailures)" }
-            if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
+            val failures = synchronized(stateLock) { ++consecutiveFailures }
+            Logger.w { "SyncTrigger: Sync failed (attempt $failures)" }
+            if (failures >= MAX_CONSECUTIVE_FAILURES) {
                 _hasPersistentError.value = true
                 Logger.e { "SyncTrigger: Persistent error - $MAX_CONSECUTIVE_FAILURES consecutive failures" }
             }

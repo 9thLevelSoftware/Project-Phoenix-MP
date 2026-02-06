@@ -59,6 +59,7 @@ class ConnectionLogRepository {
         }
     }
 
+    private val nextIdLock = Any()
     private var nextId = 1L
 
     private val _logs = MutableStateFlow<List<ConnectionLogEntity>>(emptyList())
@@ -80,8 +81,9 @@ class ConnectionLogRepository {
     ) {
         if (!_isEnabled.value) return
 
+        val entryId = synchronized(nextIdLock) { nextId++ }
         val entry = ConnectionLogEntity(
-            id = nextId++,
+            id = entryId,
             timestamp = currentTimeMillis(),
             eventType = eventType,
             level = level.name,

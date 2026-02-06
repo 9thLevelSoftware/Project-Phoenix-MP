@@ -420,6 +420,30 @@ class RepCounterFromMachine {
                 )
             }
         }
+        // FALLBACK WARMUP: When machine doesn't report repsRomCount (0xFF/unlimited mode),
+        // count warmup reps from directional up counter (matches processLegacy approach)
+        else if (repsRomCount == 0 && warmupReps < warmupTarget && upDelta > 0) {
+            warmupReps = (warmupReps + upDelta).coerceAtMost(warmupTarget)
+            logDebug("📈 MODERN FALLBACK: Warmup rep $warmupReps (from up counter, repsRomCount=0)")
+
+            onRepEvent?.invoke(
+                RepEvent(
+                    type = RepType.WARMUP_COMPLETED,
+                    warmupCount = warmupReps,
+                    workingCount = workingReps
+                )
+            )
+
+            if (warmupReps >= warmupTarget) {
+                onRepEvent?.invoke(
+                    RepEvent(
+                        type = RepType.WARMUP_COMPLETE,
+                        warmupCount = warmupReps,
+                        workingCount = workingReps
+                    )
+                )
+            }
+        }
 
         // WORKING REP TRACKING: Use repsSetCount directly from machine
         // NOTE: The machine handles warmup/working distinction internally.

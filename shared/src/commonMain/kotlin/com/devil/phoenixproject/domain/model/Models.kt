@@ -383,7 +383,7 @@ data class WorkoutSession(
     val stopAtTop: Boolean = false,
     // Echo mode configuration
     val eccentricLoad: Int = 100,  // Percentage (0, 50, 75, 100, 125, 150)
-    val echoLevel: Int = 2,  // 1=Hard, 2=Harder, 3=Hardest, 4=Epic
+    val echoLevel: Int = 2,  // 0=Hard, 1=Harder, 2=Hardest, 3=Epic
     // Exercise tracking
     val exerciseId: String? = null,  // Exercise library ID for PR tracking
     val exerciseName: String? = null,  // Exercise name for display (avoids DB lookups)

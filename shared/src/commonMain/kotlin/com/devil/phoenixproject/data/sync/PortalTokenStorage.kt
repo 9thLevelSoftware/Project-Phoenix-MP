@@ -20,6 +20,8 @@ class PortalTokenStorage(private val settings: Settings) {
         private const val KEY_DEVICE_ID = "portal_device_id"
     }
 
+    private val deviceIdLock = Any()
+
     private val _isAuthenticated = MutableStateFlow(hasToken())
     val isAuthenticated: StateFlow<Boolean> = _isAuthenticated.asStateFlow()
 
@@ -41,13 +43,13 @@ class PortalTokenStorage(private val settings: Settings) {
 
     fun hasToken(): Boolean = settings.getStringOrNull(KEY_TOKEN) != null
 
-    fun getDeviceId(): String {
+    fun getDeviceId(): String = synchronized(deviceIdLock) {
         val existing: String? = settings[KEY_DEVICE_ID]
-        if (existing != null) return existing
+        if (existing != null) return@synchronized existing
 
         val newId = generateDeviceId()
         settings[KEY_DEVICE_ID] = newId
-        return newId
+        newId
     }
 
     fun getLastSyncTimestamp(): Long = settings[KEY_LAST_SYNC, 0L]
