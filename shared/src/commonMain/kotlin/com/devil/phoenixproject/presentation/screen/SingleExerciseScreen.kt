@@ -1,6 +1,8 @@
 package com.devil.phoenixproject.presentation.screen
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -10,10 +12,13 @@ import com.devil.phoenixproject.data.preferences.SingleExerciseDefaults
 import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.domain.model.*
 import com.devil.phoenixproject.presentation.components.ConnectionErrorDialog
+import com.devil.phoenixproject.presentation.components.CreateExerciseDialog
 import com.devil.phoenixproject.presentation.components.ExercisePickerContent
 import com.devil.phoenixproject.presentation.navigation.NavigationRoutes
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
+import com.devil.phoenixproject.presentation.viewmodel.TopBarAction
 import com.devil.phoenixproject.presentation.manager.DefaultWorkoutSessionManager
+import com.devil.phoenixproject.ui.theme.ThemeMode
 import co.touchlab.kermit.Logger
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
@@ -27,7 +32,8 @@ import kotlinx.coroutines.launch
 fun SingleExerciseScreen(
     navController: NavController,
     viewModel: MainViewModel,
-    exerciseRepository: ExerciseRepository
+    exerciseRepository: ExerciseRepository,
+    themeMode: ThemeMode
 ) {
     val weightUnit by viewModel.weightUnit.collectAsState()
     val enableVideoPlayback by viewModel.enableVideoPlayback.collectAsState()
@@ -48,6 +54,8 @@ fun SingleExerciseScreen(
     var selectedEquipment by remember { mutableStateOf<Set<String>>(emptySet()) }
     var showFavoritesOnly by remember { mutableStateOf(false) }
     var showCustomOnly by remember { mutableStateOf(false) }
+    var showCreateDialog by remember { mutableStateOf(false) }
+    var exerciseToEdit by remember { mutableStateOf<Exercise?>(null) }
 
     // Get exercises from repository
     val allExercises by remember(searchQuery, selectedMuscles, showFavoritesOnly, showCustomOnly) {
@@ -104,6 +112,52 @@ fun SingleExerciseScreen(
     // Set global title
     LaunchedEffect(Unit) {
         viewModel.updateTopBarTitle("Single Exercise")
+        viewModel.setTopBarActions(
+            listOf(
+                TopBarAction(
+                    icon = Icons.Default.Add,
+                    description = "Create Exercise",
+                    onClick = { showCreateDialog = true }
+                )
+            )
+        )
+    }
+
+    DisposableEffect(Unit) {
+        onDispose {
+            viewModel.clearTopBarActions()
+        }
+    }
+
+    if (showCreateDialog || exerciseToEdit != null) {
+        CreateExerciseDialog(
+            existingExercise = exerciseToEdit,
+            onSave = { exercise ->
+                coroutineScope.launch {
+                    if (exerciseToEdit != null) {
+                        exerciseRepository.updateCustomExercise(exercise)
+                    } else {
+                        exerciseRepository.createCustomExercise(exercise)
+                    }
+                }
+                showCreateDialog = false
+                exerciseToEdit = null
+            },
+            onDelete = if (exerciseToEdit != null) {
+                {
+                    coroutineScope.launch {
+                        exerciseToEdit?.id?.let { exerciseRepository.deleteCustomExercise(it) }
+                    }
+                    showCreateDialog = false
+                    exerciseToEdit = null
+                }
+            } else null,
+            onDismiss = {
+                showCreateDialog = false
+                exerciseToEdit = null
+            },
+            themeMode = themeMode
+        )
     }
 
     Scaffold(
@@ -229,8 +283,9 @@ fun SingleExerciseScreen(
                 },
                 exerciseRepository = exerciseRepository,
                 enableVideoPlayback = enableVideoPlayback,
-                enableCustomExercises = false,
-                onCreateExercise = {},
+                enableCustomExercises = true,
+                onCreateExercise = { showCreateDialog = true },
+                onEditExercise = { exercise -> exerciseToEdit = exercise },
                 fullScreen = true
             )
 

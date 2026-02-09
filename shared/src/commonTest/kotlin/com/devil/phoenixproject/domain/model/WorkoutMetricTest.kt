@@ -215,7 +215,7 @@ class PersonalRecordTest {
             weightPerCableKg = 50f,
             reps = 5,
             oneRepMax = 112.5f, // 50 * 2 * (36 / 32) = 112.5
-            timestamp = System.currentTimeMillis(),
+            timestamp = currentTimeMillis(),
             workoutMode = "OldSchool",
             prType = PRType.MAX_WEIGHT,
             volume = 500f // 50 * 2 * 5 = 500

@@ -103,7 +103,8 @@ fun NavGraph(
             SingleExerciseScreen(
                 navController = navController,
                 viewModel = viewModel,
-                exerciseRepository = exerciseRepository
+                exerciseRepository = exerciseRepository,
+                themeMode = themeMode
             )
         }
 

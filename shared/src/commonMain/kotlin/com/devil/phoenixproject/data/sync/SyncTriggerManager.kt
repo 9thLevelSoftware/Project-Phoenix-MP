@@ -2,6 +2,7 @@ package com.devil.phoenixproject.data.sync
 
 import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.util.ConnectivityChecker
+import com.devil.phoenixproject.util.withPlatformLock
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -63,7 +64,7 @@ class SyncTriggerManager(
      * Called when user acknowledges the error or manually triggers sync.
      */
     fun clearError() {
-        synchronized(stateLock) { consecutiveFailures = 0 }
+        withPlatformLock(stateLock) { consecutiveFailures = 0 }
         _hasPersistentError.value = false
     }
 
@@ -82,7 +83,7 @@ class SyncTriggerManager(
 
         // Check throttle (unless bypassed for workout complete)
         val now = Clock.System.now().toEpochMilliseconds()
-        val shouldSkip = synchronized(stateLock) {
+        val shouldSkip = withPlatformLock(stateLock) {
             if (!bypassThrottle && (now - lastSyncAttemptMillis) < THROTTLE_MILLIS) {
                 true
             } else {
@@ -100,10 +101,10 @@ class SyncTriggerManager(
 
         if (result.isSuccess) {
             Logger.d { "SyncTrigger: Sync successful" }
-            synchronized(stateLock) { consecutiveFailures = 0 }
+            withPlatformLock(stateLock) { consecutiveFailures = 0 }
             _hasPersistentError.value = false
         } else {
-            val failures = synchronized(stateLock) { ++consecutiveFailures }
+            val failures = withPlatformLock(stateLock) { ++consecutiveFailures }
             Logger.w { "SyncTrigger: Sync failed (attempt $failures)" }
             if (failures >= MAX_CONSECUTIVE_FAILURES) {
                 _hasPersistentError.value = true

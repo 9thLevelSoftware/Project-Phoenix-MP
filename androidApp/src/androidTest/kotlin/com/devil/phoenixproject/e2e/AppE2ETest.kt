@@ -18,6 +18,7 @@ import com.devil.phoenixproject.data.repository.TrainingCycleRepository
 import com.devil.phoenixproject.data.repository.UserProfileRepository
 import com.devil.phoenixproject.data.repository.WorkoutRepository
 import com.devil.phoenixproject.domain.usecase.RepCounterFromMachine
+import com.devil.phoenixproject.domain.usecase.ResolveRoutineWeightsUseCase
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
 import com.devil.phoenixproject.presentation.viewmodel.ThemeViewModel
 import com.devil.phoenixproject.testutil.FakeBleRepository
@@ -115,6 +116,19 @@ private val testModule = module {
     single<UserProfileRepository> { FakeUserProfileRepository() }
     single<CsvExporter> { FakeCsvExporter() }
     single { RepCounterFromMachine() }
-    factory { MainViewModel(get(), get(), get(), get(), get(), get(), get(), get()) }
+    single { ResolveRoutineWeightsUseCase(get()) }
+    factory {
+        MainViewModel(
+            bleRepository = get(),
+            workoutRepository = get(),
+            exerciseRepository = get(),
+            personalRecordRepository = get(),
+            repCounter = get(),
+            preferencesManager = get(),
+            gamificationRepository = get(),
+            trainingCycleRepository = get(),
+            resolveWeightsUseCase = get()
+        )
+    }
     single { ThemeViewModel(get()) }
 }

@@ -72,6 +72,9 @@ class SqlDelightTrainingCycleRepositoryTest {
 
         val nextDay = repository.advanceToNextDay(cycleId)
         assertEquals(2, nextDay)
+
+        val progress = repository.getCycleProgress(cycleId)
+        assertNotNull(progress?.lastAdvancedAt)
     }
 
     @Test
@@ -94,6 +97,34 @@ class SqlDelightTrainingCycleRepositoryTest {
 
         val updated = repository.checkAndAutoAdvance(cycleId)
         assertEquals(2, updated?.currentDayNumber)
+    }
+
+    @Test
+    fun `checkAndAutoAdvance uses cycle start date when never manually advanced`() = runTest {
+        val cycleId = "cycle-4b"
+        val cycle = TrainingCycle.create(
+            id = cycleId,
+            name = "Cycle",
+            days = listOf(
+                CycleDay.create(cycleId = cycleId, dayNumber = 1, name = "Day 1"),
+                CycleDay.create(cycleId = cycleId, dayNumber = 2, name = "Day 2"),
+                CycleDay.create(cycleId = cycleId, dayNumber = 3, name = "Day 3"),
+                CycleDay.create(cycleId = cycleId, dayNumber = 4, name = "Day 4")
+            )
+        )
+        repository.saveCycle(cycle)
+        val progress = repository.initializeProgress(cycleId)
+
+        repository.updateCycleProgress(
+            progress.copy(
+                cycleStartDate = System.currentTimeMillis() - (2 * 24 * 60 * 60 * 1000L),
+                lastAdvancedAt = null
+            )
+        )
+
+        val updated = repository.checkAndAutoAdvance(cycleId)
+        assertEquals(3, updated?.currentDayNumber)
+        assertNotNull(updated?.lastAdvancedAt)
     }
 
     @Test

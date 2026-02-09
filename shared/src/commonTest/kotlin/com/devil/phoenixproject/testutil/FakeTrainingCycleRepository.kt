@@ -188,7 +188,19 @@ class FakeTrainingCycleRepository : TrainingCycleRepository {
     }
 
     override suspend fun checkAndAutoAdvance(cycleId: String): CycleProgress? {
-        return cycleProgress[cycleId]
+        val progress = cycleProgress[cycleId] ?: return null
+        val totalDays = cycleDays[cycleId]?.size ?: return progress
+        if (totalDays == 0) return progress
+
+        val daysToAdvance = progress.pendingAutoAdvanceDays()
+        if (daysToAdvance <= 0) return progress
+
+        var updated = progress
+        repeat(daysToAdvance) {
+            updated = updated.advanceToNextDay(totalDays, markMissed = true)
+        }
+        cycleProgress[cycleId] = updated
+        return updated
     }
 
     override suspend fun getCycleProgression(cycleId: String): CycleProgression? {

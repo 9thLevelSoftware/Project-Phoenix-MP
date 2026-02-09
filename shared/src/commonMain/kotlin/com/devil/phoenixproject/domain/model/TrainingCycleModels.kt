@@ -1,5 +1,9 @@
 package com.devil.phoenixproject.domain.model
 
+import kotlinx.datetime.TimeZone
+import kotlinx.datetime.toLocalDateTime
+import kotlin.time.Instant
+
 /**
  * Set types for workout tracking.
  * Each type has different rep handling behavior.
@@ -221,14 +225,21 @@ data class CycleProgress(
     }
 
     /**
-     * Check if 24 hours have passed since last advance, triggering auto-advance.
+     * Calculate how many calendar day boundaries have passed since the last advance.
+     * Falls back to cycle start date when the cycle has never been advanced manually.
      */
-    fun shouldAutoAdvance(): Boolean {
-        val advancedAt = lastAdvancedAt ?: return false
-        val now = currentTimeMillis()
-        val hoursSince = (now - advancedAt) / (60 * 60 * 1000L)
-        return hoursSince >= 24
+    fun pendingAutoAdvanceDays(): Int {
+        val referenceMillis = lastAdvancedAt ?: cycleStartDate
+        val zone = TimeZone.currentSystemDefault()
+        val referenceDate = Instant.fromEpochMilliseconds(referenceMillis).toLocalDateTime(zone).date
+        val today = Instant.fromEpochMilliseconds(currentTimeMillis()).toLocalDateTime(zone).date
+        return (today.toEpochDays() - referenceDate.toEpochDays()).coerceAtLeast(0).toInt()
     }
+
+    /**
+     * Check if at least one calendar day has passed since last advance.
+     */
+    fun shouldAutoAdvance(): Boolean = pendingAutoAdvanceDays() > 0
 
     /**
      * Advance to the next day in the cycle.

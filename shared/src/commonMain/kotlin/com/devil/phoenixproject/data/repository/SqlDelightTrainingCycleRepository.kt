@@ -443,26 +443,27 @@ class SqlDelightTrainingCycleRepository(
             val cycle = getCycleById(cycleId)
                 ?: throw IllegalStateException("Cycle not found: $cycleId")
 
-            // Calculate next day number, wrapping to 1 if at the end
-            val totalDays = cycle.days.size
-            val isWraparound = progress.currentDayNumber >= totalDays
-            val nextDayNumber = if (isWraparound) 1 else progress.currentDayNumber + 1
-            val newRotationCount = if (isWraparound) {
-                progress.rotationCount + 1
-            } else {
-                progress.rotationCount
+            if (cycle.days.isEmpty()) {
+                return@withContext progress.currentDayNumber
             }
 
-            val now = currentTimeMillis()
+            val updated = progress.advanceToNextDay(
+                totalDays = cycle.days.size,
+                markMissed = false
+            )
 
-            queries.advanceCycleDay(
-                current_day_number = nextDayNumber.toLong(),
-                last_completed_date = now,
-                rotation_count = newRotationCount.toLong(),
+            queries.updateCycleProgress(
+                current_day_number = updated.currentDayNumber.toLong(),
+                last_completed_date = updated.lastCompletedDate,
+                cycle_start_date = updated.cycleStartDate,
+                last_advanced_at = updated.lastAdvancedAt,
+                completed_days = intSetToJson(updated.completedDays),
+                missed_days = intSetToJson(updated.missedDays),
+                rotation_count = updated.rotationCount.toLong(),
                 cycle_id = cycleId
             )
 
-            nextDayNumber
+            updated.currentDayNumber
         }
     }
 
@@ -536,8 +537,17 @@ class SqlDelightTrainingCycleRepository(
             val progress = getCycleProgress(cycleId) ?: return@withContext null
             val cycle = getCycleById(cycleId) ?: return@withContext null
 
-            if (progress.shouldAutoAdvance()) {
-                val updated = progress.advanceToNextDay(cycle.days.size, markMissed = true)
+            if (cycle.days.isEmpty()) {
+                return@withContext progress
+            }
+
+            val daysToAdvance = progress.pendingAutoAdvanceDays()
+
+            if (daysToAdvance > 0) {
+                var updated = progress
+                repeat(daysToAdvance) {
+                    updated = updated.advanceToNextDay(cycle.days.size, markMissed = true)
+                }
 
                 queries.updateCycleProgress(
                     current_day_number = updated.currentDayNumber.toLong(),

@@ -41,6 +41,7 @@ import com.devil.phoenixproject.presentation.components.EmptyState
 import com.devil.phoenixproject.presentation.components.ResumeRoutineDialog
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
 import com.devil.phoenixproject.ui.theme.ThemeMode
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import com.devil.phoenixproject.presentation.navigation.NavigationRoutes
 import org.koin.compose.koinInject
@@ -105,26 +106,44 @@ fun TrainingCyclesScreen(
     var pendingCycleId by remember { mutableStateOf<String?>(null) }
     var pendingDayNumber by remember { mutableStateOf(0) }
 
-    // When active cycle changes, reset selection to current day
-    LaunchedEffect(activeCycle, cycleProgress) {
-        selectedDayNumber = cycleProgress[activeCycle?.id]?.currentDayNumber
-    }
-
-    // Load progress for all cycles, with auto-advance check for active cycle
-    // Auto-advance marks day as missed after 24+ hours and advances to next day
-    LaunchedEffect(cycles, activeCycle) {
+    suspend fun loadProgressMap(
+        cycleList: List<TrainingCycle>,
+        activeCycleId: String?
+    ): Map<String, CycleProgress> {
         val progressMap = mutableMapOf<String, CycleProgress>()
-        val activeId = activeCycle?.id
-        cycles.forEach { cycle ->
-            val progress = if (cycle.id == activeId) {
-                // Check auto-advance for active cycle
+        cycleList.forEach { cycle ->
+            val progress = if (cycle.id == activeCycleId) {
                 cycleRepository.checkAndAutoAdvance(cycle.id)
             } else {
                 cycleRepository.getCycleProgress(cycle.id)
             }
             progress?.let { progressMap[cycle.id] = it }
         }
-        cycleProgress = progressMap
+        return progressMap
+    }
+
+    // Keep selection stable while previewing, but reset it when cycle/day context changes.
+    val activeCycleSnapshot = activeCycle
+    val activeCurrentDay = cycleProgress[activeCycle?.id]?.currentDayNumber
+    LaunchedEffect(activeCycleSnapshot?.id, activeCurrentDay) {
+        if (activeCycleSnapshot == null || activeCurrentDay == null) {
+            selectedDayNumber = null
+            return@LaunchedEffect
+        }
+
+        val selectionIsValid = activeCycleSnapshot.days.any { it.dayNumber == selectedDayNumber }
+        if (!selectionIsValid || selectedDayNumber == null) {
+            selectedDayNumber = activeCurrentDay
+        }
+    }
+
+    // Load and refresh progress while this screen is open.
+    // This keeps manual actions responsive and allows date rollover to apply automatically.
+    LaunchedEffect(cycles, activeCycle?.id) {
+        while (true) {
+            cycleProgress = loadProgressMap(cycles, activeCycle?.id)
+            delay(60_000L)
+        }
     }
 
     // Repair unassigned workout days (routine deleted/recreated) by matching day name to routine name.
@@ -219,7 +238,14 @@ fun TrainingCyclesScreen(
                             },
                             onAdvanceDay = {
                                 scope.launch {
-                                    cycleRepository.advanceToNextDay(activeCycle!!.id)
+                                    val activeId = activeCycle!!.id
+                                    cycleRepository.advanceToNextDay(activeId)
+                                    cycleRepository.getCycleProgress(activeId)?.let { updated ->
+                                        cycleProgress = cycleProgress.toMutableMap().apply {
+                                            this[activeId] = updated
+                                        }
+                                        selectedDayNumber = updated.currentDayNumber
+                                    }
                                 }
                             },
                             onEditCycle = {
