@@ -162,11 +162,20 @@ private fun RoutineListItem(
             .padding(vertical = 12.dp, horizontal = 4.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Text(
-            text = routine.name,
-            style = MaterialTheme.typography.bodyLarge,
-            modifier = Modifier.weight(1f)
-        )
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = routine.name,
+                style = MaterialTheme.typography.bodyLarge
+            )
+            if (routine.exercises.isNotEmpty()) {
+                Text(
+                    text = "${routine.exercises.size} exercises: ${routine.exercises.joinToString(", ") { it.exercise.name }}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1
+                )
+            }
+        }
         Icon(
             imageVector = Icons.Default.ChevronRight,
             contentDescription = null,

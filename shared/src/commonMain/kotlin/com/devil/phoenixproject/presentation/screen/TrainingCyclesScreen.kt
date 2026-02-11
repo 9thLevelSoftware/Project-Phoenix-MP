@@ -90,12 +90,31 @@ fun TrainingCyclesScreen(
     val routines by viewModel.routines.collectAsState()
 
     // State
+    val creationSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     var showCreationSheet by remember { mutableStateOf(false) }
     var showDeleteConfirmDialog by remember { mutableStateOf<TrainingCycle?>(null) }
     var cycleProgress by remember { mutableStateOf<Map<String, CycleProgress>>(emptyMap()) }
     var creationState by remember { mutableStateOf<CycleCreationState>(CycleCreationState.Idle) }
     var showWarningDialog by remember { mutableStateOf<List<String>?>(null) }
     var showErrorDialog by remember { mutableStateOf<String?>(null) }
+
+    // Snackbar for feedback
+    val snackbarHostState = remember { SnackbarHostState() }
+
+    // Cycle day completion feedback
+    val completionEvent by viewModel.cycleDayCompletionEvent.collectAsState()
+    LaunchedEffect(completionEvent) {
+        completionEvent?.let { event ->
+            val message = if (event.isRotationComplete) {
+                "Cycle complete! Starting rotation ${event.rotationCount + 1}"
+            } else {
+                val dayLabel = event.dayName ?: "Day ${event.dayNumber}"
+                "$dayLabel completed!"
+            }
+            snackbarHostState.showSnackbar(message)
+            viewModel.clearCycleDayCompletionEvent()
+        }
+    }
 
     // Selected day for viewing different days in the active cycle
     var selectedDayNumber by remember { mutableStateOf<Int?>(null) }
@@ -319,21 +338,59 @@ fun TrainingCyclesScreen(
         ) {
             Icon(Icons.Default.Add, contentDescription = "Create Cycle")
         }
+
+        // Snackbar for cycle completion feedback
+        SnackbarHost(
+            hostState = snackbarHostState,
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .navigationBarsPadding()
+        )
     }
 
     // Unified Cycle Creation Sheet
     if (showCreationSheet) {
         UnifiedCycleCreationSheet(
+            sheetState = creationSheetState,
             onSelectTemplate = { template ->
-                showCreationSheet = false
-                // Always show 1RM input screen for ALL templates
-                // This allows users to optionally enter their maxes for better weight suggestions
-                // Users can skip if they don't want to enter 1RM values
-                creationState = CycleCreationState.OneRepMaxInput(template)
+                scope.launch {
+                    creationSheetState.hide()
+                    showCreationSheet = false
+                    if (template.requiresOneRepMax) {
+                        // 5/3/1 needs 1RM input → mode confirmation → create
+                        creationState = CycleCreationState.OneRepMaxInput(template)
+                    } else {
+                        // Simple templates: auto-create with defaults, skip 1RM and mode screens
+                        creationState = CycleCreationState.Creating(template)
+                        try {
+                            val conversionResult = templateConverter.convert(template)
+
+                            conversionResult.routines.forEach { routine ->
+                                workoutRepository.saveRoutine(routine)
+                            }
+                            cycleRepository.saveCycle(conversionResult.cycle)
+
+                            if (conversionResult.warnings.isNotEmpty()) {
+                                Logger.w { "Some exercises not found: ${conversionResult.warnings}" }
+                                showWarningDialog = conversionResult.warnings
+                            }
+
+                            creationState = CycleCreationState.Idle
+                            Logger.d { "Auto-created cycle: ${template.name}" }
+                        } catch (e: Exception) {
+                            Logger.e(e) { "Failed to auto-create cycle from template" }
+                            creationState = CycleCreationState.Idle
+                            showErrorDialog = e.message ?: "Failed to create training cycle"
+                        }
+                    }
+                }
             },
-            onCreateCustom = { dayCount ->
-                showCreationSheet = false
-                navController.navigate(NavigationRoutes.CycleEditor.createRoute("new", dayCount))
+            onCreateCustom = {
+                scope.launch {
+                    creationSheetState.hide()
+                    showCreationSheet = false
+                    navController.navigate(NavigationRoutes.CycleEditor.createRoute("new"))
+                }
             },
             onDismiss = { showCreationSheet = false }
         )

@@ -33,7 +33,6 @@ fun CycleEditorScreen(
     navController: androidx.navigation.NavController,
     viewModel: MainViewModel,
     routines: List<Routine>,
-    initialDayCount: Int? = null,
     cycleEditorViewModel: CycleEditorViewModel = koinInject()
 ) {
     val scope = rememberCoroutineScope()
@@ -48,8 +47,8 @@ fun CycleEditorScreen(
     }
 
     // Initialize ViewModel with cycle data
-    LaunchedEffect(cycleId, initialDayCount) {
-        cycleEditorViewModel.initialize(cycleId, initialDayCount)
+    LaunchedEffect(cycleId) {
+        cycleEditorViewModel.initialize(cycleId)
     }
 
     val lazyListState = rememberLazyListState()
@@ -205,9 +204,8 @@ fun CycleEditorScreen(
                                 },
                                 onDuplicate = { cycleEditorViewModel.duplicateItem(index) },
                                 onTap = {
-                                    if (item is CycleItem.Workout) {
-                                        cycleEditorViewModel.setEditingItemIndex(index)
-                                    }
+                                    // Workout: change routine; Rest: convert to workout
+                                    cycleEditorViewModel.setEditingItemIndex(index)
                                 },
                                 dragModifier = Modifier.draggableHandle()
                             )
@@ -247,19 +245,38 @@ fun CycleEditorScreen(
         }
     }
 
-    // Edit routine sheet (reuse AddDaySheet in edit mode)
+    // Edit sheet - for workout days: change routine; for rest days: convert to workout
     uiState.editingItemIndex?.let { index ->
         val item = uiState.items.getOrNull(index)
-        if (item is CycleItem.Workout) {
-            AddDaySheet(
-                routines = routines,
-                recentRoutineIds = uiState.recentRoutineIds,
-                onSelectRoutine = { routine ->
-                    cycleEditorViewModel.changeRoutine(index, routine)
-                },
-                onAddRestDay = { /* Not applicable in edit mode */ },
-                onDismiss = { cycleEditorViewModel.setEditingItemIndex(null) }
-            )
+        when (item) {
+            is CycleItem.Workout -> {
+                AddDaySheet(
+                    routines = routines,
+                    recentRoutineIds = uiState.recentRoutineIds,
+                    onSelectRoutine = { routine ->
+                        cycleEditorViewModel.changeRoutine(index, routine)
+                    },
+                    onAddRestDay = {
+                        // Convert workout to rest day
+                        cycleEditorViewModel.convertToRest(index)
+                        cycleEditorViewModel.setEditingItemIndex(null)
+                    },
+                    onDismiss = { cycleEditorViewModel.setEditingItemIndex(null) }
+                )
+            }
+            is CycleItem.Rest -> {
+                AddDaySheet(
+                    routines = routines,
+                    recentRoutineIds = uiState.recentRoutineIds,
+                    onSelectRoutine = { routine ->
+                        // Convert rest day to workout
+                        cycleEditorViewModel.convertToWorkout(index, routine)
+                    },
+                    onAddRestDay = { /* Already a rest day */ },
+                    onDismiss = { cycleEditorViewModel.setEditingItemIndex(null) }
+                )
+            }
+            else -> { cycleEditorViewModel.setEditingItemIndex(null) }
         }
     }
 }

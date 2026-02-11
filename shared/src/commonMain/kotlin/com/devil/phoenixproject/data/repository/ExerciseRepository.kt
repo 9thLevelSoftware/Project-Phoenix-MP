@@ -148,4 +148,13 @@ interface ExerciseRepository {
      * @return Exercise or null if not found
      */
     suspend fun findByName(name: String): Exercise?
+
+    /**
+     * Find an exercise using multi-strategy resolution: ID first, then exact name, then fuzzy search.
+     * Used by template conversion to reliably resolve exercises even when names change.
+     * @param id Exercise ID (optional, tried first if non-null)
+     * @param name Exercise name (tried as exact match, then fuzzy search)
+     * @return Exercise or null if all strategies fail
+     */
+    suspend fun findByIdOrName(id: String?, name: String): Exercise?
 }

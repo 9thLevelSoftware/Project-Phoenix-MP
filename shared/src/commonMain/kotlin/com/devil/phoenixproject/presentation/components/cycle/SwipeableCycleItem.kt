@@ -104,6 +104,7 @@ fun SwipeableCycleItem(
                 )
                 is CycleItem.Rest -> RestDayRow(
                     rest = item,
+                    onTap = onTap,
                     dragModifier = dragModifier
                 )
             }

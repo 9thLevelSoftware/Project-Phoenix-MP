@@ -308,4 +308,22 @@ class SqlDelightExerciseRepository(
             queries.findExerciseByName(name, ::mapToExercise).executeAsOneOrNull()
         }
     }
+
+    override suspend fun findByIdOrName(id: String?, name: String): Exercise? {
+        return withContext(Dispatchers.IO) {
+            // Strategy 1: Direct ID lookup (fastest, most reliable)
+            if (id != null) {
+                val byId = queries.selectExerciseById(id, ::mapToExercise).executeAsOneOrNull()
+                if (byId != null) return@withContext byId
+            }
+
+            // Strategy 2: Exact name match (uses TRIM for trailing space tolerance)
+            val byName = queries.findExerciseByName(name, ::mapToExercise).executeAsOneOrNull()
+            if (byName != null) return@withContext byName
+
+            // Strategy 3: Fuzzy search - take first result
+            val searchResults = queries.searchExercises(name, ::mapToExercise).executeAsList()
+            searchResults.firstOrNull()
+        }
+    }
 }

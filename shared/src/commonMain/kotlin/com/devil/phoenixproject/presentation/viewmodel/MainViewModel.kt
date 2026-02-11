@@ -9,6 +9,7 @@ import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.data.repository.GamificationRepository
 import com.devil.phoenixproject.data.repository.PersonalRecordRepository
 import com.devil.phoenixproject.data.repository.ScannedDevice
+import com.devil.phoenixproject.data.repository.CompletedSetRepository
 import com.devil.phoenixproject.data.repository.TrainingCycleRepository
 import com.devil.phoenixproject.data.repository.WorkoutRepository
 import co.touchlab.kermit.Logger
@@ -56,6 +57,7 @@ class MainViewModel constructor(
     private val preferencesManager: PreferencesManager,
     private val gamificationRepository: GamificationRepository,
     private val trainingCycleRepository: TrainingCycleRepository,
+    private val completedSetRepository: CompletedSetRepository,
     private val syncTriggerManager: SyncTriggerManager? = null,
     private val resolveWeightsUseCase: ResolveRoutineWeightsUseCase
 ) : ViewModel() {
@@ -88,6 +90,7 @@ class MainViewModel constructor(
         preferencesManager = preferencesManager,
         gamificationManager = gamificationManager,
         trainingCycleRepository = trainingCycleRepository,
+        completedSetRepository = completedSetRepository,
         syncTriggerManager = syncTriggerManager,
         resolveWeightsUseCase = resolveWeightsUseCase,
         settingsManager = settingsManager,
@@ -129,6 +132,8 @@ class MainViewModel constructor(
     val completedExercises: StateFlow<Set<Int>> get() = workoutSessionManager.completedExercises
     val currentSetRpe: StateFlow<Int?> get() = workoutSessionManager.currentSetRpe
     val isCurrentExerciseBodyweight: StateFlow<Boolean> get() = workoutSessionManager.isCurrentExerciseBodyweight
+    val cycleDayCompletionEvent get() = workoutSessionManager.cycleDayCompletionEvent
+    fun clearCycleDayCompletionEvent() = workoutSessionManager.clearCycleDayCompletionEvent()
 
     // ===== BLE Connection Delegation =====
 

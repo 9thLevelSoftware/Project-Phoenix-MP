@@ -139,7 +139,8 @@ sealed class CycleItem {
         val routineId: String,
         val routineName: String,
         val exerciseCount: Int,
-        val estimatedMinutes: Int? = null
+        val estimatedMinutes: Int? = null,
+        val exerciseNames: List<String> = emptyList()
     ) : CycleItem()
 
     data class Rest(
@@ -156,7 +157,8 @@ sealed class CycleItem {
         fun fromCycleDay(
             day: CycleDay,
             routineName: String?,
-            exerciseCount: Int
+            exerciseCount: Int,
+            exerciseNames: List<String> = emptyList()
         ): CycleItem {
             return if (day.isRestDay || day.routineId == null) {
                 Rest(
@@ -170,7 +172,8 @@ sealed class CycleItem {
                     dayNumber = day.dayNumber,
                     routineId = day.routineId,
                     routineName = routineName ?: "Unknown Routine",
-                    exerciseCount = exerciseCount
+                    exerciseCount = exerciseCount,
+                    exerciseNames = exerciseNames
                 )
             }
         }

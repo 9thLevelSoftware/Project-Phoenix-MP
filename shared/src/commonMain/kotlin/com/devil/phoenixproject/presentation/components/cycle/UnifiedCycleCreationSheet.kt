@@ -1,46 +1,35 @@
 package com.devil.phoenixproject.presentation.components.cycle
 
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.expandVertically
-import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ChevronRight
-import androidx.compose.material.icons.filled.ExpandLess
-import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.data.migration.CycleTemplates
 import com.devil.phoenixproject.domain.model.CycleTemplate
 
 /**
- * Unified bottom sheet for creating training cycles.
- * Consolidates template selection and custom day count entry into a single flow.
+ * Bottom sheet for creating training cycles.
+ * Offers prebuilt templates or a custom cycle starting from scratch.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun UnifiedCycleCreationSheet(
     onSelectTemplate: (CycleTemplate) -> Unit,
-    onCreateCustom: (dayCount: Int) -> Unit,
+    onCreateCustom: () -> Unit,
     onDismiss: () -> Unit,
     sheetState: SheetState = rememberModalBottomSheetState()
 ) {
     val templates = remember { CycleTemplates.all() }
-    val quickPickDays = listOf(3, 4, 5, 6, 7)
-
-    var showCustomInput by remember { mutableStateOf(false) }
-    var customDayCount by remember { mutableStateOf("") }
-    var customDayError by remember { mutableStateOf<String?>(null) }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -93,117 +82,39 @@ fun UnifiedCycleCreationSheet(
                 }
             }
 
+            Spacer(modifier = Modifier.height(20.dp))
+
+            HorizontalDivider(modifier = Modifier.padding(horizontal = 8.dp))
+
             Spacer(modifier = Modifier.height(16.dp))
 
-            HorizontalDivider()
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // BUILD YOUR OWN Section
+            // Custom cycle button
             Text(
-                text = "BUILD YOUR OWN",
-                style = MaterialTheme.typography.labelMedium,
+                text = "Or start from scratch",
+                style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontWeight = FontWeight.SemiBold,
-                modifier = Modifier.padding(bottom = 8.dp)
+                modifier = Modifier.align(Alignment.CenterHorizontally)
             )
 
-            // Quick pick chips
-            Row(
+            Spacer(modifier = Modifier.height(8.dp))
+
+            OutlinedButton(
+                onClick = onCreateCustom,
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                shape = RoundedCornerShape(12.dp),
+                contentPadding = PaddingValues(vertical = 14.dp)
             ) {
-                quickPickDays.forEach { days ->
-                    FilterChip(
-                        selected = false,
-                        onClick = { onCreateCustom(days) },
-                        label = {
-                            Text(
-                                "$days days",
-                                style = MaterialTheme.typography.labelLarge
-                            )
-                        },
-                        modifier = Modifier.weight(1f)
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(12.dp))
-
-            // Expandable custom input
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { showCustomInput = !showCustomInput },
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
-                ),
-                shape = RoundedCornerShape(12.dp)
-            ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp)
-                ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = "Custom number of days",
-                            style = MaterialTheme.typography.bodyLarge,
-                            fontWeight = FontWeight.Medium
-                        )
-                        Icon(
-                            imageVector = if (showCustomInput) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
-                            contentDescription = if (showCustomInput) "Collapse" else "Expand",
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-
-                    AnimatedVisibility(
-                        visible = showCustomInput,
-                        enter = expandVertically(),
-                        exit = shrinkVertically()
-                    ) {
-                        Column(
-                            modifier = Modifier.padding(top = 12.dp)
-                        ) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(12.dp)
-                            ) {
-                                OutlinedTextField(
-                                    value = customDayCount,
-                                    onValueChange = { value ->
-                                        customDayCount = value.filter { it.isDigit() }
-                                        customDayError = validateDayCount(customDayCount)
-                                    },
-                                    label = { Text("Days (1-365)") },
-                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                                    isError = customDayError != null,
-                                    supportingText = customDayError?.let { { Text(it) } },
-                                    singleLine = true,
-                                    modifier = Modifier.weight(1f)
-                                )
-
-                                Button(
-                                    onClick = {
-                                        val days = customDayCount.toIntOrNull()
-                                        if (days != null && days in 1..365) {
-                                            onCreateCustom(days)
-                                        }
-                                    },
-                                    enabled = customDayCount.isNotEmpty() && customDayError == null
-                                ) {
-                                    Text("Create")
-                                }
-                            }
-                        }
-                    }
-                }
+                Icon(
+                    imageVector = Icons.Default.Add,
+                    contentDescription = null,
+                    modifier = Modifier.size(20.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = "Create Custom Cycle",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold
+                )
             }
 
             Spacer(modifier = Modifier.height(16.dp))
@@ -212,18 +123,19 @@ fun UnifiedCycleCreationSheet(
 }
 
 /**
- * Template card displaying template name, description, day count, and 1RM badge if required.
+ * Template card displaying template name, description, day breakdown, and 1RM badge if required.
  */
 @Composable
 private fun TemplateCard(
     template: CycleTemplate,
     onClick: () -> Unit
 ) {
-    // Check if template requires 1RM (either explicitly or via percentage-based exercises)
-    val requiresOneRepMax = template.requiresOneRepMax ||
-        template.days.any { day ->
-            day.routine?.exercises?.any { it.isPercentageBased } == true
-        }
+    val requiresOneRepMax = template.requiresOneRepMax
+
+    // Build day breakdown string (e.g., "Day 1: Push A, Day 2: Pull A, ...")
+    val dayBreakdown = template.days.joinToString(" / ") { day ->
+        if (day.isRestDay) "Rest" else (day.routine?.name ?: day.name)
+    }
 
     Card(
         modifier = Modifier
@@ -264,6 +176,17 @@ private fun TemplateCard(
                             )
                         }
                     }
+                    Surface(
+                        color = MaterialTheme.colorScheme.surfaceVariant,
+                        shape = RoundedCornerShape(4.dp)
+                    ) {
+                        Text(
+                            text = "${template.days.size} days",
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
 
                 Spacer(modifier = Modifier.height(4.dp))
@@ -274,13 +197,14 @@ private fun TemplateCard(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
 
-                Spacer(modifier = Modifier.height(2.dp))
+                Spacer(modifier = Modifier.height(4.dp))
 
+                // Day breakdown preview
                 Text(
-                    text = "${template.days.size} days",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontWeight = FontWeight.Medium
+                    text = dayBreakdown,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                    maxLines = 2
                 )
             }
 
@@ -293,18 +217,3 @@ private fun TemplateCard(
     }
 }
 
-/**
- * Validate the custom day count input.
- * @return Error message if invalid, null if valid
- */
-private fun validateDayCount(input: String): String? {
-    if (input.isEmpty()) return null
-
-    val days = input.toIntOrNull()
-    return when {
-        days == null -> "Please enter a valid number"
-        days < 1 -> "Minimum 1 day"
-        days > 365 -> "Maximum 365 days"
-        else -> null
-    }
-}

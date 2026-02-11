@@ -607,11 +607,16 @@ class SqlDelightTrainingCycleRepository(
             val routineIds = days.mapNotNull { it.routineId }.distinct()
 
             // Fetch routine info for all referenced routines
-            val routineInfo = mutableMapOf<String, Pair<String, Int>>() // id -> (name, exerciseCount)
+            // Triple: name, exerciseCount, exerciseNames
+            val routineInfo = mutableMapOf<String, Triple<String, Int, List<String>>>()
             routineIds.forEach { routineId ->
                 queries.selectRoutineById(routineId).executeAsOneOrNull()?.let { routine ->
-                    val exerciseCount = queries.selectExercisesByRoutine(routineId).executeAsList().size
-                    routineInfo[routineId] = Pair(routine.name, exerciseCount)
+                    val exercises = queries.selectExercisesByRoutine(routineId).executeAsList()
+                    routineInfo[routineId] = Triple(
+                        routine.name,
+                        exercises.size,
+                        exercises.map { it.exerciseName }
+                    )
                 }
             }
 
@@ -620,7 +625,8 @@ class SqlDelightTrainingCycleRepository(
                 CycleItem.fromCycleDay(
                     day = day,
                     routineName = info?.first,
-                    exerciseCount = info?.second ?: 0
+                    exerciseCount = info?.second ?: 0,
+                    exerciseNames = info?.third ?: emptyList()
                 )
             }
         }

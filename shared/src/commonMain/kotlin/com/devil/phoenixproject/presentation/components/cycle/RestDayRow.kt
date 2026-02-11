@@ -1,5 +1,6 @@
 package com.devil.phoenixproject.presentation.components.cycle
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.DragHandle
@@ -14,11 +15,14 @@ import com.devil.phoenixproject.domain.model.CycleItem
 @Composable
 fun RestDayRow(
     rest: CycleItem.Rest,
+    onTap: (() -> Unit)? = null,
     dragModifier: Modifier = Modifier,
     modifier: Modifier = Modifier
 ) {
     Card(
-        modifier = modifier.fillMaxWidth(),
+        modifier = modifier.fillMaxWidth().let { m ->
+            if (onTap != null) m.clickable(onClick = onTap) else m
+        },
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.15f)
         )

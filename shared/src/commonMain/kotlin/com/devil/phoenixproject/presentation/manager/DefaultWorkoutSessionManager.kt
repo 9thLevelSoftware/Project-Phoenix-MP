@@ -8,6 +8,7 @@ import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.data.repository.HandleState
 import com.devil.phoenixproject.data.repository.PersonalRecordRepository
 import com.devil.phoenixproject.data.repository.RepNotification
+import com.devil.phoenixproject.data.repository.CompletedSetRepository
 import com.devil.phoenixproject.data.repository.TrainingCycleRepository
 import com.devil.phoenixproject.data.repository.WorkoutRepository
 import com.devil.phoenixproject.data.sync.SyncTriggerManager
@@ -98,6 +99,17 @@ data class ResumableProgressInfo(
     val totalExercises: Int
 )
 
+/**
+ * Event emitted when a training cycle day is completed after a workout.
+ * Consumed by TrainingCyclesScreen to show completion feedback.
+ */
+data class CycleDayCompletionEvent(
+    val dayNumber: Int,
+    val dayName: String?,
+    val isRotationComplete: Boolean,
+    val rotationCount: Int
+)
+
 // ===== DefaultWorkoutSessionManager =====
 
 /**
@@ -116,6 +128,7 @@ class DefaultWorkoutSessionManager(
     private val preferencesManager: PreferencesManager,
     private val gamificationManager: GamificationManager,
     private val trainingCycleRepository: TrainingCycleRepository,
+    private val completedSetRepository: CompletedSetRepository,
     private val syncTriggerManager: SyncTriggerManager?,
     private val resolveWeightsUseCase: ResolveRoutineWeightsUseCase,
     private val settingsManager: SettingsManager,
@@ -294,6 +307,14 @@ class DefaultWorkoutSessionManager(
     // Training Cycle context for tracking cycle progress when workout completes
     private var activeCycleId: String? = null
     private var activeCycleDayNumber: Int? = null
+
+    // Cycle day completion event for UI feedback
+    private val _cycleDayCompletionEvent = MutableStateFlow<CycleDayCompletionEvent?>(null)
+    val cycleDayCompletionEvent: StateFlow<CycleDayCompletionEvent?> = _cycleDayCompletionEvent.asStateFlow()
+
+    fun clearCycleDayCompletionEvent() {
+        _cycleDayCompletionEvent.value = null
+    }
 
     // ===== Auto-Stop Internal State =====
 
@@ -2204,7 +2225,18 @@ class DefaultWorkoutSessionManager(
                 val updated = progress.markDayCompleted(dayNumber, cycle.days.size)
                 trainingCycleRepository.updateCycleProgress(updated)
 
-                Logger.d { "Cycle progress updated: day $dayNumber completed, now on day ${updated.currentDayNumber}" }
+                // Emit completion event for UI feedback
+                val completedDay = cycle.days.find { it.dayNumber == dayNumber }
+                val isRotationComplete = updated.rotationCount > progress.rotationCount
+                _cycleDayCompletionEvent.value = CycleDayCompletionEvent(
+                    dayNumber = dayNumber,
+                    dayName = completedDay?.name,
+                    isRotationComplete = isRotationComplete,
+                    rotationCount = updated.rotationCount
+                )
+
+                Logger.d { "Cycle progress updated: day $dayNumber completed, now on day ${updated.currentDayNumber}" +
+                    if (isRotationComplete) " (rotation ${updated.rotationCount} complete!)" else "" }
             }
         } catch (e: Exception) {
             Logger.e(e) { "Error updating cycle progress: ${e.message}" }
@@ -2684,8 +2716,30 @@ class DefaultWorkoutSessionManager(
 
         Logger.d("Saved workout session: $sessionId with ${metricsSnapshot.size} metrics")
 
+        // Save CompletedSet record for set-level tracking
+        var completedSetId: String? = null
+        if (params.selectedExerciseId != null && working > 0) {
+            val setIndex = _currentSetIndex.value
+            val setId = generateUUID()
+            completedSetId = setId
+            val completedSet = CompletedSet(
+                id = setId,
+                sessionId = sessionId,
+                plannedSetId = null, // TODO: Wire up when PlannedSet is active
+                setNumber = setIndex,
+                setType = if (params.isAMRAP) SetType.AMRAP else SetType.STANDARD,
+                actualReps = working,
+                actualWeightKg = measuredPerCableKg,
+                loggedRpe = _currentSetRpe.value,
+                isPr = false,
+                completedAt = currentTimeMillis()
+            )
+            completedSetRepository.saveCompletedSet(completedSet)
+            Logger.d("Saved CompletedSet: set #$setIndex, ${working} reps @ ${measuredPerCableKg}kg")
+        }
+
         // PR checking and badge awarding - delegated to GamificationManager
-        gamificationManager.processPostSaveEvents(
+        val hasPR = gamificationManager.processPostSaveEvents(
             exerciseId = params.selectedExerciseId,
             workingReps = working,
             measuredWeightKg = measuredPerCableKg,
@@ -2693,6 +2747,12 @@ class DefaultWorkoutSessionManager(
             isJustLift = params.isJustLift,
             isEchoMode = params.isEchoMode
         )
+
+        // Mark the CompletedSet as a PR if personal record was broken
+        if (hasPR && completedSetId != null) {
+            completedSetRepository.markAsPr(completedSetId)
+            Logger.d("Marked CompletedSet $completedSetId as PR")
+        }
 
         // Save exercise defaults for next time (only for Just Lift and Single Exercise modes)
         // Routines have their own saved configuration and should not interfere with these defaults
@@ -3287,6 +3347,44 @@ class DefaultWorkoutSessionManager(
                  rpe = _currentSetRpe.value
              )
              workoutRepository.saveSession(session)
+
+             // Save CompletedSet record for set-level tracking (manual stop path)
+             var completedSetId: String? = null
+             if (params.selectedExerciseId != null && repCount.workingReps > 0) {
+                 val setIndex = _currentSetIndex.value
+                 val setId = generateUUID()
+                 completedSetId = setId
+                 val completedSet = CompletedSet(
+                     id = setId,
+                     sessionId = session.id,
+                     plannedSetId = null, // TODO: Wire up when PlannedSet is active
+                     setNumber = setIndex,
+                     setType = if (params.isAMRAP) SetType.AMRAP else SetType.STANDARD,
+                     actualReps = repCount.workingReps,
+                     actualWeightKg = params.weightPerCableKg,
+                     loggedRpe = _currentSetRpe.value,
+                     isPr = false,
+                     completedAt = currentTimeMillis()
+                 )
+                 completedSetRepository.saveCompletedSet(completedSet)
+                 Logger.d("Saved CompletedSet (manual stop): set #$setIndex, ${repCount.workingReps} reps")
+             }
+
+             // PR checking and badge awarding (manual stop path)
+             val hasPR = gamificationManager.processPostSaveEvents(
+                 exerciseId = params.selectedExerciseId,
+                 workingReps = repCount.workingReps,
+                 measuredWeightKg = params.weightPerCableKg,
+                 programMode = params.programMode,
+                 isJustLift = isJustLift,
+                 isEchoMode = params.isEchoMode
+             )
+
+             // Mark the CompletedSet as a PR if personal record was broken
+             if (hasPR && completedSetId != null) {
+                 completedSetRepository.markAsPr(completedSetId)
+                 Logger.d("Marked CompletedSet $completedSetId as PR (manual stop)")
+             }
 
              // Trigger sync after workout saved
              scope.launch {

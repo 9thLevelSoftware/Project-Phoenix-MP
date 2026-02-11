@@ -46,7 +46,7 @@ class CycleEditorViewModel(
     /**
      * Initialize editor with existing cycle or template data.
      */
-    fun initialize(cycleId: String, initialDayCount: Int?, templateItems: List<CycleItem>? = null) {
+    fun initialize(cycleId: String, templateItems: List<CycleItem>? = null) {
         if (_uiState.value.cycleId == cycleId && !_uiState.value.isLoading) {
             return // Already initialized
         }
@@ -89,22 +89,15 @@ class CycleEditorViewModel(
                             _uiState.update { it.copy(isLoading = false, saveError = "Cycle not found") }
                         }
                     }
-                    // New blank cycle
+                    // New blank cycle - start empty and show AddDaySheet
                     else -> {
-                        val dayCount = initialDayCount ?: 3
-                        val items = (1..dayCount).map { dayNum ->
-                            CycleItem.Rest(
-                                id = generateUUID(),
-                                dayNumber = dayNum,
-                                note = "Rest"
-                            )
-                        }
                         _uiState.update { state ->
                             state.copy(
                                 cycleName = "New Cycle",
-                                items = items,
+                                items = emptyList(),
                                 progression = CycleProgression.default("temp"),
-                                isLoading = false
+                                isLoading = false,
+                                showAddDaySheet = true
                             )
                         }
                     }
@@ -215,6 +208,43 @@ class CycleEditorViewModel(
             list.add(to, moved)
             val renumbered = renumberItems(list)
             state.copy(items = renumbered)
+        }
+    }
+
+    fun convertToWorkout(index: Int, routine: Routine) {
+        _uiState.update { state ->
+            val item = state.items[index]
+            if (item is CycleItem.Rest) {
+                val workout = CycleItem.Workout(
+                    id = item.id,
+                    dayNumber = item.dayNumber,
+                    routineId = routine.id,
+                    routineName = routine.name,
+                    exerciseCount = routine.exercises.size,
+                    exerciseNames = routine.exercises.map { it.exercise.name }
+                )
+                val newList = state.items.toMutableList().apply { set(index, workout) }
+                state.copy(items = newList, editingItemIndex = null)
+            } else {
+                state
+            }
+        }
+    }
+
+    fun convertToRest(index: Int) {
+        _uiState.update { state ->
+            val item = state.items[index]
+            if (item is CycleItem.Workout) {
+                val rest = CycleItem.Rest(
+                    id = item.id,
+                    dayNumber = item.dayNumber,
+                    note = "Rest"
+                )
+                val newList = state.items.toMutableList().apply { set(index, rest) }
+                state.copy(items = newList)
+            } else {
+                state
+            }
         }
     }
 
