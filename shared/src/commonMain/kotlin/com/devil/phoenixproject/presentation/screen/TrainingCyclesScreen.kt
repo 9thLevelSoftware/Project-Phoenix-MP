@@ -41,6 +41,7 @@ import com.devil.phoenixproject.presentation.components.EmptyState
 import com.devil.phoenixproject.presentation.components.ResumeRoutineDialog
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
 import com.devil.phoenixproject.ui.theme.ThemeMode
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import com.devil.phoenixproject.presentation.navigation.NavigationRoutes
 import org.koin.compose.koinInject
@@ -89,12 +90,31 @@ fun TrainingCyclesScreen(
     val routines by viewModel.routines.collectAsState()
 
     // State
+    val creationSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     var showCreationSheet by remember { mutableStateOf(false) }
     var showDeleteConfirmDialog by remember { mutableStateOf<TrainingCycle?>(null) }
     var cycleProgress by remember { mutableStateOf<Map<String, CycleProgress>>(emptyMap()) }
     var creationState by remember { mutableStateOf<CycleCreationState>(CycleCreationState.Idle) }
     var showWarningDialog by remember { mutableStateOf<List<String>?>(null) }
     var showErrorDialog by remember { mutableStateOf<String?>(null) }
+
+    // Snackbar for feedback
+    val snackbarHostState = remember { SnackbarHostState() }
+
+    // Cycle day completion feedback
+    val completionEvent by viewModel.cycleDayCompletionEvent.collectAsState()
+    LaunchedEffect(completionEvent) {
+        completionEvent?.let { event ->
+            val message = if (event.isRotationComplete) {
+                "Cycle complete! Starting rotation ${event.rotationCount + 1}"
+            } else {
+                val dayLabel = event.dayName ?: "Day ${event.dayNumber}"
+                "$dayLabel completed!"
+            }
+            snackbarHostState.showSnackbar(message)
+            viewModel.clearCycleDayCompletionEvent()
+        }
+    }
 
     // Selected day for viewing different days in the active cycle
     var selectedDayNumber by remember { mutableStateOf<Int?>(null) }
@@ -105,26 +125,44 @@ fun TrainingCyclesScreen(
     var pendingCycleId by remember { mutableStateOf<String?>(null) }
     var pendingDayNumber by remember { mutableStateOf(0) }
 
-    // When active cycle changes, reset selection to current day
-    LaunchedEffect(activeCycle, cycleProgress) {
-        selectedDayNumber = cycleProgress[activeCycle?.id]?.currentDayNumber
-    }
-
-    // Load progress for all cycles, with auto-advance check for active cycle
-    // Auto-advance marks day as missed after 24+ hours and advances to next day
-    LaunchedEffect(cycles, activeCycle) {
+    suspend fun loadProgressMap(
+        cycleList: List<TrainingCycle>,
+        activeCycleId: String?
+    ): Map<String, CycleProgress> {
         val progressMap = mutableMapOf<String, CycleProgress>()
-        val activeId = activeCycle?.id
-        cycles.forEach { cycle ->
-            val progress = if (cycle.id == activeId) {
-                // Check auto-advance for active cycle
+        cycleList.forEach { cycle ->
+            val progress = if (cycle.id == activeCycleId) {
                 cycleRepository.checkAndAutoAdvance(cycle.id)
             } else {
                 cycleRepository.getCycleProgress(cycle.id)
             }
             progress?.let { progressMap[cycle.id] = it }
         }
-        cycleProgress = progressMap
+        return progressMap
+    }
+
+    // Keep selection stable while previewing, but reset it when cycle/day context changes.
+    val activeCycleSnapshot = activeCycle
+    val activeCurrentDay = cycleProgress[activeCycle?.id]?.currentDayNumber
+    LaunchedEffect(activeCycleSnapshot?.id, activeCurrentDay) {
+        if (activeCycleSnapshot == null || activeCurrentDay == null) {
+            selectedDayNumber = null
+            return@LaunchedEffect
+        }
+
+        val selectionIsValid = activeCycleSnapshot.days.any { it.dayNumber == selectedDayNumber }
+        if (!selectionIsValid || selectedDayNumber == null) {
+            selectedDayNumber = activeCurrentDay
+        }
+    }
+
+    // Load and refresh progress while this screen is open.
+    // This keeps manual actions responsive and allows date rollover to apply automatically.
+    LaunchedEffect(cycles, activeCycle?.id) {
+        while (true) {
+            cycleProgress = loadProgressMap(cycles, activeCycle?.id)
+            delay(60_000L)
+        }
     }
 
     // Repair unassigned workout days (routine deleted/recreated) by matching day name to routine name.
@@ -219,7 +257,14 @@ fun TrainingCyclesScreen(
                             },
                             onAdvanceDay = {
                                 scope.launch {
-                                    cycleRepository.advanceToNextDay(activeCycle!!.id)
+                                    val activeId = activeCycle!!.id
+                                    cycleRepository.advanceToNextDay(activeId)
+                                    cycleRepository.getCycleProgress(activeId)?.let { updated ->
+                                        cycleProgress = cycleProgress.toMutableMap().apply {
+                                            this[activeId] = updated
+                                        }
+                                        selectedDayNumber = updated.currentDayNumber
+                                    }
                                 }
                             },
                             onEditCycle = {
@@ -293,21 +338,59 @@ fun TrainingCyclesScreen(
         ) {
             Icon(Icons.Default.Add, contentDescription = "Create Cycle")
         }
+
+        // Snackbar for cycle completion feedback
+        SnackbarHost(
+            hostState = snackbarHostState,
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .navigationBarsPadding()
+        )
     }
 
     // Unified Cycle Creation Sheet
     if (showCreationSheet) {
         UnifiedCycleCreationSheet(
+            sheetState = creationSheetState,
             onSelectTemplate = { template ->
-                showCreationSheet = false
-                // Always show 1RM input screen for ALL templates
-                // This allows users to optionally enter their maxes for better weight suggestions
-                // Users can skip if they don't want to enter 1RM values
-                creationState = CycleCreationState.OneRepMaxInput(template)
+                scope.launch {
+                    creationSheetState.hide()
+                    showCreationSheet = false
+                    if (template.requiresOneRepMax) {
+                        // 5/3/1 needs 1RM input → mode confirmation → create
+                        creationState = CycleCreationState.OneRepMaxInput(template)
+                    } else {
+                        // Simple templates: auto-create with defaults, skip 1RM and mode screens
+                        creationState = CycleCreationState.Creating(template)
+                        try {
+                            val conversionResult = templateConverter.convert(template)
+
+                            conversionResult.routines.forEach { routine ->
+                                workoutRepository.saveRoutine(routine)
+                            }
+                            cycleRepository.saveCycle(conversionResult.cycle)
+
+                            if (conversionResult.warnings.isNotEmpty()) {
+                                Logger.w { "Some exercises not found: ${conversionResult.warnings}" }
+                                showWarningDialog = conversionResult.warnings
+                            }
+
+                            creationState = CycleCreationState.Idle
+                            Logger.d { "Auto-created cycle: ${template.name}" }
+                        } catch (e: Exception) {
+                            Logger.e(e) { "Failed to auto-create cycle from template" }
+                            creationState = CycleCreationState.Idle
+                            showErrorDialog = e.message ?: "Failed to create training cycle"
+                        }
+                    }
+                }
             },
-            onCreateCustom = { dayCount ->
-                showCreationSheet = false
-                navController.navigate(NavigationRoutes.CycleEditor.createRoute("new", dayCount))
+            onCreateCustom = {
+                scope.launch {
+                    creationSheetState.hide()
+                    showCreationSheet = false
+                    navController.navigate(NavigationRoutes.CycleEditor.createRoute("new"))
+                }
             },
             onDismiss = { showCreationSheet = false }
         )

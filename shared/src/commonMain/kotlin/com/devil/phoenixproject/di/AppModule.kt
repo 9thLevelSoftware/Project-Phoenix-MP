@@ -78,7 +78,7 @@ val commonModule = module {
     single { MigrationManager() }
     
     // ViewModels
-    factory { MainViewModel(get(), get(), get(), get(), get(), get(), get(), get(), get(), get()) }
+    factory { MainViewModel(get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get()) }
     factory { ConnectionLogsViewModel() }
     factory { CycleEditorViewModel(get()) }
     factory { GamificationViewModel(get()) }

@@ -56,13 +56,22 @@ fun WorkoutDayRow(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
+                if (workout.exerciseNames.isNotEmpty()) {
+                    Text(
+                        text = workout.exerciseNames.joinToString(", "),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
                 Text(
                     text = buildString {
                         append("${workout.exerciseCount} exercises")
                         workout.estimatedMinutes?.let { append(" • ~${it} min") }
                     },
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
                 )
             }
 

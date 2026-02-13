@@ -128,8 +128,8 @@ interface TrainingCycleRepository {
     suspend fun updateCycleProgress(progress: CycleProgress)
 
     /**
-     * Check if auto-advance is needed (24+ hours since last advance) and perform it.
-     * If auto-advance is triggered, marks the current day as missed and advances to next day.
+     * Check if auto-advance is needed (one or more calendar days elapsed) and perform it.
+     * If auto-advance is triggered, marks skipped days as missed and advances accordingly.
      * @return Current CycleProgress (possibly auto-advanced), or null if no progress exists
      */
     suspend fun checkAndAutoAdvance(cycleId: String): CycleProgress?

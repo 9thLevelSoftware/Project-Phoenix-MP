@@ -10,9 +10,15 @@ import com.devil.phoenixproject.data.preferences.SingleExerciseDefaults
 import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.domain.model.*
 import com.devil.phoenixproject.presentation.components.ConnectionErrorDialog
+import com.devil.phoenixproject.presentation.components.CreateExerciseDialog
+import com.devil.phoenixproject.presentation.components.CustomExerciseSaveAction
 import com.devil.phoenixproject.presentation.components.ExercisePickerContent
+import com.devil.phoenixproject.presentation.components.resolveCustomExerciseDeleteTarget
+import com.devil.phoenixproject.presentation.components.resolveCustomExerciseSaveAction
 import com.devil.phoenixproject.presentation.navigation.NavigationRoutes
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
+import com.devil.phoenixproject.presentation.manager.DefaultWorkoutSessionManager
+import com.devil.phoenixproject.ui.theme.ThemeMode
 import co.touchlab.kermit.Logger
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
@@ -26,7 +32,8 @@ import kotlinx.coroutines.launch
 fun SingleExerciseScreen(
     navController: NavController,
     viewModel: MainViewModel,
-    exerciseRepository: ExerciseRepository
+    exerciseRepository: ExerciseRepository,
+    themeMode: ThemeMode
 ) {
     val weightUnit by viewModel.weightUnit.collectAsState()
     val enableVideoPlayback by viewModel.enableVideoPlayback.collectAsState()
@@ -47,6 +54,8 @@ fun SingleExerciseScreen(
     var selectedEquipment by remember { mutableStateOf<Set<String>>(emptySet()) }
     var showFavoritesOnly by remember { mutableStateOf(false) }
     var showCustomOnly by remember { mutableStateOf(false) }
+    var showCreateDialog by remember { mutableStateOf(false) }
+    var exerciseToEdit by remember { mutableStateOf<Exercise?>(null) }
 
     // Get exercises from repository
     val allExercises by remember(searchQuery, selectedMuscles, showFavoritesOnly, showCustomOnly) {
@@ -103,6 +112,54 @@ fun SingleExerciseScreen(
     // Set global title
     LaunchedEffect(Unit) {
         viewModel.updateTopBarTitle("Single Exercise")
+        viewModel.clearTopBarActions()
+    }
+
+    DisposableEffect(Unit) {
+        onDispose {
+            viewModel.clearTopBarActions()
+        }
+    }
+
+    if (showCreateDialog || exerciseToEdit != null) {
+        CreateExerciseDialog(
+            existingExercise = exerciseToEdit,
+            onSave = { exercise ->
+                val editExerciseId = exerciseToEdit?.id
+                showCreateDialog = false
+                exerciseToEdit = null
+                val action = resolveCustomExerciseSaveAction(
+                    draftExercise = exercise,
+                    editingExerciseId = editExerciseId
+                )
+                coroutineScope.launch {
+                    when (action) {
+                        is CustomExerciseSaveAction.Create -> {
+                            exerciseRepository.createCustomExercise(action.exercise)
+                        }
+                        is CustomExerciseSaveAction.Update -> {
+                            exerciseRepository.updateCustomExercise(action.exercise)
+                        }
+                    }
+                }
+            },
+            onDelete = if (exerciseToEdit != null) {
+                {
+                    val deleteExerciseId = exerciseToEdit?.id
+                    showCreateDialog = false
+                    exerciseToEdit = null
+                    val targetId = resolveCustomExerciseDeleteTarget(deleteExerciseId)
+                    coroutineScope.launch {
+                        targetId?.let { exerciseRepository.deleteCustomExercise(it) }
+                    }
+                }
+            } else null,
+            onDismiss = {
+                showCreateDialog = false
+                exerciseToEdit = null
+            },
+            themeMode = themeMode
+        )
     }
 
     Scaffold(
@@ -170,7 +227,7 @@ fun SingleExerciseScreen(
                         name = selectedExercise.name,
                         muscleGroup = selectedExercise.muscleGroups.split(",").firstOrNull()?.trim() ?: "Full Body",
                         muscleGroups = selectedExercise.muscleGroups,
-                        equipment = selectedExercise.equipment.split(",").firstOrNull()?.trim() ?: "",
+                        equipment = selectedExercise.equipment,
                         id = selectedExercise.id
                     )
 
@@ -228,8 +285,9 @@ fun SingleExerciseScreen(
                 },
                 exerciseRepository = exerciseRepository,
                 enableVideoPlayback = enableVideoPlayback,
-                enableCustomExercises = false,
-                onCreateExercise = {},
+                enableCustomExercises = true,
+                onCreateExercise = { showCreateDialog = true },
+                onEditExercise = { exercise -> exerciseToEdit = exercise },
                 fullScreen = true
             )
 
@@ -259,7 +317,7 @@ fun SingleExerciseScreen(
                         onSave = { configuredExercise ->
                             Logger.d { "SingleExercise: Start button clicked for ${configuredExercise.exercise.name}" }
                             val tempRoutine = Routine(
-                                id = "${MainViewModel.TEMP_SINGLE_EXERCISE_PREFIX}${generateUUID()}",
+                                id = "${DefaultWorkoutSessionManager.TEMP_SINGLE_EXERCISE_PREFIX}${generateUUID()}",
                                 name = "Single Exercise: ${configuredExercise.exercise.name}",
                                 exercises = listOf(configuredExercise)
                             )

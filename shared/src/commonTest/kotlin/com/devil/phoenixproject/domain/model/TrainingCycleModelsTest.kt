@@ -63,7 +63,7 @@ class TrainingCycleModelsTest {
     }
 
     @Test
-    fun `CycleProgress shouldAutoAdvance returns true after 24 hours`() {
+    fun `CycleProgress shouldAutoAdvance returns true after elapsed calendar days`() {
         val now = currentTimeMillis()
         val progress = CycleProgress(
             id = "progress-3",
@@ -75,6 +75,21 @@ class TrainingCycleModelsTest {
         )
 
         assertTrue(progress.shouldAutoAdvance())
+    }
+
+    @Test
+    fun `CycleProgress pendingAutoAdvanceDays falls back to cycle start date`() {
+        val now = currentTimeMillis()
+        val progress = CycleProgress(
+            id = "progress-4",
+            cycleId = "cycle-1",
+            currentDayNumber = 1,
+            lastCompletedDate = null,
+            cycleStartDate = now - (2 * 24 * 60 * 60 * 1000L),
+            lastAdvancedAt = null
+        )
+
+        assertTrue(progress.pendingAutoAdvanceDays() >= 2)
     }
 
     @Test

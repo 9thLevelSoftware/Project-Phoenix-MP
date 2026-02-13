@@ -1,5 +1,6 @@
 package com.devil.phoenixproject.domain.usecase
 
+import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.domain.model.*
 
@@ -113,11 +114,15 @@ class TemplateConverter(
                 // Convert TemplateExercises to RoutineExercises
                 val routineExercises = mutableListOf<RoutineExercise>()
                 for ((index, templateExercise) in routineTemplate.exercises.withIndex()) {
-                    // Look up the exercise in the repository
-                    val exercise = exerciseRepository.findByName(templateExercise.exerciseName)
+                    // Multi-strategy exercise resolution: ID → name → fuzzy search
+                    val exercise = exerciseRepository.findByIdOrName(
+                        templateExercise.exerciseId,
+                        templateExercise.exerciseName
+                    )
 
                     if (exercise == null) {
-                        // Exercise not found - add to warnings and skip
+                        // All resolution strategies failed
+                        Logger.w { "Template exercise not found: '${templateExercise.exerciseName}' (id=${templateExercise.exerciseId})" }
                         warnings.add(templateExercise.exerciseName)
                         continue
                     }
@@ -126,7 +131,9 @@ class TemplateConverter(
                     // 1. User config (from ExerciseConfigModal) takes priority
                     // 2. Fall back to template's suggested mode
                     // 3. Default to OldSchool for bodyweight exercises (null suggested mode)
+                    // Config lookup: try exercise name first (how UI stores configs), then ID
                     val config = exerciseConfigs[templateExercise.exerciseName]
+                        ?: templateExercise.exerciseId?.let { exerciseConfigs[it] }
                     val selectedMode = config?.mode
                         ?: templateExercise.suggestedMode
                         ?: ProgramMode.OldSchool

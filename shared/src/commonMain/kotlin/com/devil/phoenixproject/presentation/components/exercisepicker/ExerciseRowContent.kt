@@ -261,5 +261,5 @@ private fun formatEquipmentCompact(rawEquipment: String): String {
         .filter { it !in listOf("BLACK_CABLES", "RED_CABLES", "GREY_CABLES", "CABLES", "CABLE", "NULL", "", "PUMP_HANDLES", "DUMBBELLS") }
         .mapNotNull { equipmentMap[it] }
         .distinct()
-        .firstOrNull() ?: ""
+        .joinToString(", ")
 }

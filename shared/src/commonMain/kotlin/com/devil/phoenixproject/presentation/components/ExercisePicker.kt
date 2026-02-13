@@ -22,7 +22,9 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
@@ -38,6 +40,8 @@ import com.devil.phoenixproject.domain.model.Exercise
 import com.devil.phoenixproject.presentation.components.exercisepicker.ExerciseFilterShelf
 import com.devil.phoenixproject.presentation.components.exercisepicker.ExerciseListEmptyState
 import com.devil.phoenixproject.presentation.components.exercisepicker.GroupedExerciseList
+import com.devil.phoenixproject.ui.theme.PhoenixOrangeDark
+import com.devil.phoenixproject.ui.theme.PhoenixOrangeLight
 import com.devil.phoenixproject.ui.theme.ThemeMode
 import kotlinx.coroutines.launch
 
@@ -160,22 +164,33 @@ fun ExercisePickerDialog(
         CreateExerciseDialog(
             existingExercise = exerciseToEdit,
             onSave = { exercise ->
-                coroutineScope.launch {
-                    if (exerciseToEdit != null) {
-                        exerciseRepository.updateCustomExercise(exercise)
-                    } else {
-                        exerciseRepository.createCustomExercise(exercise)
-                    }
-                }
+                val editExerciseId = exerciseToEdit?.id
                 showCreateDialog = false
                 exerciseToEdit = null
+                val action = resolveCustomExerciseSaveAction(
+                    draftExercise = exercise,
+                    editingExerciseId = editExerciseId
+                )
+                coroutineScope.launch {
+                    when (action) {
+                        is CustomExerciseSaveAction.Create -> {
+                            exerciseRepository.createCustomExercise(action.exercise)
+                        }
+                        is CustomExerciseSaveAction.Update -> {
+                            exerciseRepository.updateCustomExercise(action.exercise)
+                        }
+                    }
+                }
             },
             onDelete = if (exerciseToEdit != null) {
                 {
-                    coroutineScope.launch {
-                        exerciseToEdit?.id?.let { exerciseRepository.deleteCustomExercise(it) }
-                    }
+                    val deleteExerciseId = exerciseToEdit?.id
+                    showCreateDialog = false
                     exerciseToEdit = null
+                    val targetId = resolveCustomExerciseDeleteTarget(deleteExerciseId)
+                    coroutineScope.launch {
+                        targetId?.let { exerciseRepository.deleteCustomExercise(it) }
+                    }
                 }
             } else null,
             onDismiss = {
@@ -202,13 +217,6 @@ fun ExercisePickerDialog(
                         navigationIcon = {
                             IconButton(onClick = onDismiss) {
                                 Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
-                            }
-                        },
-                        actions = {
-                            if (enableCustomExercises) {
-                                IconButton(onClick = { showCreateDialog = true }) {
-                                    Icon(Icons.Default.Add, contentDescription = "Create Exercise")
-                                }
                             }
                         }
                     )
@@ -396,7 +404,6 @@ fun ExercisePickerContent(
                         .fillMaxWidth()
                         .padding(horizontal = 16.dp)
                         .padding(bottom = 16.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
@@ -404,15 +411,6 @@ fun ExercisePickerContent(
                         style = MaterialTheme.typography.headlineMedium,
                         fontWeight = FontWeight.Bold
                     )
-                    if (enableCustomExercises) {
-                        IconButton(onClick = onCreateExercise) {
-                            Icon(
-                                Icons.Default.Add,
-                                contentDescription = "Create Exercise",
-                                tint = MaterialTheme.colorScheme.primary
-                            )
-                        }
-                    }
                 }
             }
 
@@ -450,6 +448,43 @@ fun ExercisePickerContent(
                 onClearAll = onClearAllFilters,
                 modifier = Modifier.padding(bottom = 8.dp)
             )
+
+            if (enableCustomExercises) {
+                val createButtonLabel = remember(searchQuery) {
+                    val trimmed = searchQuery.trim()
+                    if (trimmed.isNotEmpty()) {
+                        "Create \"$trimmed\""
+                    } else {
+                        "Create Custom Exercise"
+                    }
+                }
+                val phoenixOrange = if (MaterialTheme.colorScheme.background.luminance() < 0.5f) {
+                    PhoenixOrangeDark
+                } else {
+                    PhoenixOrangeLight
+                }
+
+                OutlinedButton(
+                    onClick = onCreateExercise,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp)
+                        .padding(bottom = 8.dp),
+                    shape = RoundedCornerShape(16.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Add,
+                        contentDescription = null,
+                        tint = phoenixOrange
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = createButtonLabel,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
 
             // Grouped exercise list
             GroupedExerciseList(

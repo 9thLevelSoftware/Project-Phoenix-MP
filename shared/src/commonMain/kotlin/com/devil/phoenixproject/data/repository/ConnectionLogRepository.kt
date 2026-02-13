@@ -5,6 +5,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import com.devil.phoenixproject.util.withPlatformLock
 import kotlin.time.Instant
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
@@ -81,7 +82,7 @@ class ConnectionLogRepository {
     ) {
         if (!_isEnabled.value) return
 
-        val entryId = synchronized(nextIdLock) { nextId++ }
+        val entryId = withPlatformLock(nextIdLock) { nextId++ }
         val entry = ConnectionLogEntity(
             id = entryId,
             timestamp = currentTimeMillis(),

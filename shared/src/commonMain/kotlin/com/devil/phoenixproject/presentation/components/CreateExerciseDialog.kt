@@ -14,8 +14,6 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
@@ -64,7 +62,7 @@ fun CreateExerciseDialog(
         Surface(
             modifier = Modifier.fillMaxWidth().wrapContentHeight(),
             shape = RoundedCornerShape(20.dp),
-            color = Color.Transparent
+            color = MaterialTheme.colorScheme.surfaceContainerHighest
         ) {
             Box(modifier = Modifier.fillMaxWidth().background(backgroundGradient)) {
                 Column(

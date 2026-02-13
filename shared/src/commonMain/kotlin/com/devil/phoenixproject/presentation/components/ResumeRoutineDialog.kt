@@ -12,7 +12,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.devil.phoenixproject.presentation.viewmodel.MainViewModel.ResumableProgressInfo
+import com.devil.phoenixproject.presentation.manager.ResumableProgressInfo
 
 /**
  * Dialog shown when user tries to start a routine that has existing progress.

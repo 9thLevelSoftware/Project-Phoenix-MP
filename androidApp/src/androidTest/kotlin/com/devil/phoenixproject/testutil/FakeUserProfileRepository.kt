@@ -1,12 +1,15 @@
 package com.devil.phoenixproject.testutil
 
 import com.devil.phoenixproject.data.repository.UserProfile
+import com.devil.phoenixproject.data.repository.SubscriptionStatus
 import com.devil.phoenixproject.data.repository.UserProfileRepository
 import com.devil.phoenixproject.domain.model.currentTimeMillis
 import com.devil.phoenixproject.domain.model.generateUUID
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.flowOf
 
 /**
  * Fake UserProfileRepository for testing.
@@ -92,5 +95,34 @@ class FakeUserProfileRepository : UserProfileRepository {
             profiles["default"] = defaultProfile
         }
         updateFlows()
+    }
+
+    override suspend fun linkToSupabase(profileId: String, supabaseUserId: String) {
+        profiles[profileId]?.let { profile ->
+            profiles[profileId] = profile.copy(
+                supabaseUserId = supabaseUserId,
+                lastAuthAt = currentTimeMillis()
+            )
+            updateFlows()
+        }
+    }
+
+    override suspend fun updateSubscriptionStatus(profileId: String, status: SubscriptionStatus, expiresAt: Long?) {
+        profiles[profileId]?.let { profile ->
+            profiles[profileId] = profile.copy(
+                subscriptionStatus = status,
+                subscriptionExpiresAt = expiresAt
+            )
+            updateFlows()
+        }
+    }
+
+    override suspend fun getProfileBySupabaseId(supabaseUserId: String): UserProfile? {
+        return profiles.values.firstOrNull { it.supabaseUserId == supabaseUserId }
+    }
+
+    override fun getActiveProfileSubscriptionStatus(): Flow<SubscriptionStatus> {
+        val status = _activeProfile.value?.subscriptionStatus ?: SubscriptionStatus.FREE
+        return flowOf(status)
     }
 }

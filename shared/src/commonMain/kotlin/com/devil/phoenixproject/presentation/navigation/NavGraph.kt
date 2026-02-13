@@ -103,7 +103,8 @@ fun NavGraph(
             SingleExerciseScreen(
                 navController = navController,
                 viewModel = viewModel,
-                exerciseRepository = exerciseRepository
+                exerciseRepository = exerciseRepository,
+                themeMode = themeMode
             )
         }
 
@@ -387,24 +388,17 @@ fun NavGraph(
         composable(
             route = NavigationRoutes.CycleEditor.route,
             arguments = listOf(
-                navArgument("cycleId") { type = NavType.StringType },
-                navArgument("dayCount") {
-                    type = NavType.StringType
-                    nullable = true
-                    defaultValue = null
-                }
+                navArgument("cycleId") { type = NavType.StringType }
             )
         ) { backStackEntry ->
             val cycleId = backStackEntry.arguments?.read { getStringOrNull("cycleId") } ?: "new"
-            val dayCount = backStackEntry.arguments?.read { getStringOrNull("dayCount") }?.toIntOrNull()
             val routines by viewModel.routines.collectAsState()
 
             CycleEditorScreen(
                 cycleId = cycleId,
                 navController = navController,
                 viewModel = viewModel,
-                routines = routines,
-                initialDayCount = dayCount
+                routines = routines
             )
         }
 

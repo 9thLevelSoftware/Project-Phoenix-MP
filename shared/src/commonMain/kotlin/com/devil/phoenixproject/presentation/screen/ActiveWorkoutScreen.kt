@@ -14,6 +14,7 @@ import com.devil.phoenixproject.presentation.components.PRCelebrationDialog
 import org.koin.compose.koinInject
 import com.devil.phoenixproject.data.repository.GamificationRepository
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
+import com.devil.phoenixproject.presentation.manager.DefaultWorkoutSessionManager
 import com.devil.phoenixproject.presentation.navigation.NavigationRoutes
 import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.util.setKeepScreenOn
@@ -181,7 +182,7 @@ fun ActiveWorkoutScreen(
                 hasNavigatedAway = true
                 navController.navigateUp()
             }
-            workoutState is WorkoutState.Idle && (loadedRoutine == null || loadedRoutine?.id?.startsWith(MainViewModel.TEMP_SINGLE_EXERCISE_PREFIX) == true) -> {
+            workoutState is WorkoutState.Idle && (loadedRoutine == null || loadedRoutine?.id?.startsWith(DefaultWorkoutSessionManager.TEMP_SINGLE_EXERCISE_PREFIX) == true) -> {
                 // Single Exercise completed and reset to Idle - navigate back to SingleExerciseScreen
                 Logger.d { "ActiveWorkoutScreen: Single Exercise idle, navigating back" }
                 hasNavigatedAway = true

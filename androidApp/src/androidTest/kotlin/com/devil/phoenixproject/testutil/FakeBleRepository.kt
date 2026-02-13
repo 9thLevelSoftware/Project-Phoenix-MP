@@ -238,10 +238,6 @@ class FakeBleRepository : BleRepository {
         _handleState.value = HandleState.WaitingForRest
     }
 
-    override fun setCableConfiguration(config: com.devil.phoenixproject.domain.model.CableConfiguration) {
-        // No-op in fake - cable configuration doesn't affect test behavior
-    }
-
     override fun enableJustLiftWaitingMode() {
         _handleState.value = HandleState.WaitingForRest
     }
@@ -255,6 +251,14 @@ class FakeBleRepository : BleRepository {
     }
 
     override fun stopPolling() {
+        // No-op in fake
+    }
+
+    override fun stopMonitorPollingOnly() {
+        // No-op in fake
+    }
+
+    override fun restartDiagnosticPolling() {
         // No-op in fake
     }
 

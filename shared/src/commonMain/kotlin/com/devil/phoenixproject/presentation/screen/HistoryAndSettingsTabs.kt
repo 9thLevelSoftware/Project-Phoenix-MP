@@ -34,11 +34,13 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.devil.phoenixproject.data.repository.CompletedSetRepository
 import com.devil.phoenixproject.data.repository.ExerciseRepository
+import com.devil.phoenixproject.domain.model.CompletedSet
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.domain.model.toSetSummary
-import com.devil.phoenixproject.presentation.viewmodel.HistoryItem
+import com.devil.phoenixproject.presentation.manager.HistoryItem
 import com.devil.phoenixproject.util.ColorScheme
 import com.devil.phoenixproject.util.ColorSchemes
 import com.devil.phoenixproject.util.DataBackupManager
@@ -123,12 +125,12 @@ fun HistoryTab(
             ) {
                 items(groupedWorkoutHistory.size, key = { index ->
                     when (val item = groupedWorkoutHistory[index]) {
-                        is com.devil.phoenixproject.presentation.viewmodel.SingleSessionHistoryItem -> item.session.id
-                        is com.devil.phoenixproject.presentation.viewmodel.GroupedRoutineHistoryItem -> item.routineSessionId
+                        is com.devil.phoenixproject.presentation.manager.SingleSessionHistoryItem -> item.session.id
+                        is com.devil.phoenixproject.presentation.manager.GroupedRoutineHistoryItem -> item.routineSessionId
                     }
                 }) { index ->
                     when (val item = groupedWorkoutHistory[index]) {
-                        is com.devil.phoenixproject.presentation.viewmodel.SingleSessionHistoryItem -> {
+                        is com.devil.phoenixproject.presentation.manager.SingleSessionHistoryItem -> {
                             WorkoutHistoryCard(
                                 session = item.session,
                                 weightUnit = weightUnit,
@@ -138,7 +140,7 @@ fun HistoryTab(
                                 onDelete = { onDeleteWorkout(item.session.id) }
                             )
                         }
-                        is com.devil.phoenixproject.presentation.viewmodel.GroupedRoutineHistoryItem -> {
+                        is com.devil.phoenixproject.presentation.manager.GroupedRoutineHistoryItem -> {
                             GroupedRoutineCard(
                                 groupedItem = item,
                                 weightUnit = weightUnit,
@@ -371,6 +373,13 @@ fun WorkoutHistoryCard(
                             }
                         }
                     }
+
+                    // CompletedSet breakdown (set-level tracking)
+                    CompletedSetsSection(
+                        sessionId = session.id,
+                        weightUnit = weightUnit,
+                        formatWeight = formatWeight
+                    )
                 }
             }
 
@@ -469,6 +478,92 @@ fun WorkoutHistoryCard(
 }
 
 /**
+ * Shows completed set breakdown for a workout session.
+ * Only renders if CompletedSet records exist for the session.
+ */
+@Composable
+private fun CompletedSetsSection(
+    sessionId: String,
+    weightUnit: WeightUnit,
+    formatWeight: (Float, WeightUnit) -> String
+) {
+    val completedSetRepository: CompletedSetRepository = koinInject()
+    var completedSets by remember { mutableStateOf<List<CompletedSet>>(emptyList()) }
+
+    LaunchedEffect(sessionId) {
+        completedSets = completedSetRepository.getCompletedSets(sessionId)
+    }
+
+    if (completedSets.isNotEmpty()) {
+        Spacer(modifier = Modifier.height(Spacing.medium))
+
+        Text(
+            "Set Breakdown",
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.primary
+        )
+
+        Spacer(modifier = Modifier.height(Spacing.small))
+
+        completedSets.forEach { set ->
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 2.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // Set number and type
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        "Set ${set.setNumber + 1}",
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Medium,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    if (set.setType.name != "STANDARD") {
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            set.setType.name.lowercase().replaceFirstChar { it.uppercase() },
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.tertiary
+                        )
+                    }
+                    if (set.isPr) {
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            "PR",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    }
+                }
+
+                // Reps x Weight + RPE
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        "${set.actualReps} x ${formatWeight(set.actualWeightKg, weightUnit)}",
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    set.loggedRpe?.let { rpe ->
+                        Spacer(modifier = Modifier.width(Spacing.small))
+                        Text(
+                            "RPE $rpe",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
  * Data class to hold grouped exercise information within a routine
  */
 private data class ExerciseGroup(
@@ -486,7 +581,7 @@ private data class ExerciseGroup(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun GroupedRoutineCard(
-    groupedItem: com.devil.phoenixproject.presentation.viewmodel.GroupedRoutineHistoryItem,
+    groupedItem: com.devil.phoenixproject.presentation.manager.GroupedRoutineHistoryItem,
     weightUnit: WeightUnit,
     formatWeight: (Float, WeightUnit) -> String,
     kgToDisplay: (Float, WeightUnit) -> Float,
@@ -750,6 +845,13 @@ fun GroupedRoutineCard(
                                 }
                             }
                         }
+
+                        // CompletedSet breakdown per session
+                        CompletedSetsSection(
+                            sessionId = session.id,
+                            weightUnit = weightUnit,
+                            formatWeight = formatWeight
+                        )
 
                         if (index < groupedItem.sessions.size - 1) {
                             Spacer(modifier = Modifier.height(Spacing.medium))
@@ -2175,7 +2277,7 @@ fun SettingsTab(
                 )
             }
                 Spacer(modifier = Modifier.height(Spacing.small))
-                Text("Version: 0.3.4", color = MaterialTheme.colorScheme.onSurface)
+                Text("Version: 0.4.0", color = MaterialTheme.colorScheme.onSurface)
                 Spacer(modifier = Modifier.height(Spacing.small))
                 Text(
                     "Open source community project to control Vitruvian Trainer machines locally.",

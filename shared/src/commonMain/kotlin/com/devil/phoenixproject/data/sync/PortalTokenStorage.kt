@@ -4,6 +4,7 @@ import com.devil.phoenixproject.domain.model.generateUUID
 import com.russhwolf.settings.Settings
 import com.russhwolf.settings.get
 import com.russhwolf.settings.set
+import com.devil.phoenixproject.util.withPlatformLock
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -43,9 +44,9 @@ class PortalTokenStorage(private val settings: Settings) {
 
     fun hasToken(): Boolean = settings.getStringOrNull(KEY_TOKEN) != null
 
-    fun getDeviceId(): String = synchronized(deviceIdLock) {
+    fun getDeviceId(): String = withPlatformLock(deviceIdLock) {
         val existing: String? = settings[KEY_DEVICE_ID]
-        if (existing != null) return@synchronized existing
+        if (existing != null) return@withPlatformLock existing
 
         val newId = generateDeviceId()
         settings[KEY_DEVICE_ID] = newId
