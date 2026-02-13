@@ -9,30 +9,30 @@ See: .planning/PROJECT.md (updated 2026-02-12)
 
 ## Current Position
 
-Phase: 2 of 4 (Manager Decomposition)
-Plan: 3 of 4 complete in current phase
-Status: Plan 02-03 complete, ready for Plan 02-04
-Last activity: 2026-02-13 — RoutineFlowManager extracted from DWSM (~1,091 lines)
+Phase: 2 of 4 (Manager Decomposition) -- COMPLETE
+Plan: 4 of 4 complete in current phase
+Status: Phase 2 complete, all 4 plans executed
+Last activity: 2026-02-13 — ActiveSessionEngine extracted from DWSM (~2,174 lines), Phase 2 complete
 
-Progress: [███████░░░] 63%
+Progress: [████████░░] 75%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 5
-- Average duration: ~43min per plan
-- Total execution time: ~3.5 hours
+- Total plans completed: 6
+- Average duration: ~38min per plan
+- Total execution time: ~3.8 hours
 
 **By Phase:**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
 | 01 Characterization Tests | 2/2 | ~3h | ~1.5h |
-| 02 Manager Decomposition | 3/4 | 27min | 9min |
+| 02 Manager Decomposition | 4/4 | 56min | 14min |
 
 **Recent Trend:**
-- Last 5 plans: 01-01 (complete), 01-02 (complete), 02-01 (complete), 02-02 (complete), 02-03 (complete)
-- Trend: Phase 2 plans averaging ~9min each
+- Last 5 plans: 01-02 (complete), 02-01 (complete), 02-02 (complete), 02-03 (complete), 02-04 (complete)
+- Trend: Phase 2 plans averaging ~14min each
 
 *Updated after each plan completion*
 
@@ -58,6 +58,10 @@ Recent decisions affecting current work:
 - [Phase 2]: WorkoutLifecycleDelegate interface bridges RoutineFlowManager BLE/startWorkout calls back to DWSM
 - [Phase 2]: isBodyweightExercise() and isSingleExerciseMode() are top-level package functions (shared by RFM + DWSM)
 - [Phase 2]: RoutineFlowManager navigation helpers (getNextStep, isInSuperset, etc.) are internal for DWSM access
+- [Phase 2]: WorkoutFlowDelegate interface bridges ActiveSessionEngine -> RoutineFlowManager (no direct reference)
+- [Phase 2]: Delegate wired in DWSM init block (not .also) for Kotlin internal visibility resolution
+- [Phase 2]: proceedFromSummary() stays in DWSM as cross-cutting orchestration
+- [Phase 2]: ActiveSessionEngine does NOT implement WorkoutLifecycleDelegate (that stays on DWSM)
 
 ### Pending Todos
 
@@ -66,7 +70,7 @@ None yet.
 ### Blockers/Concerns
 
 - [Phase 2]: handleMonitorMetric() hot path (10-20Hz) performance must not regress — may need profiling
-- [Phase 2]: Init block collector ordering documented: collectors #1-2 in RoutineFlowManager, #3+ in DWSM
+- [Phase 2]: Init block collector ordering documented: collectors #1-2 in RoutineFlowManager, #3-8 in ActiveSessionEngine
 - [Phase 2]: SharedFlow event loss risk — inventory all shared flows before extraction
 - [Phase 2]: DWSM init block creates infinite re-dispatch loops with advanceUntilIdle() — sub-managers will need same pattern
 
@@ -85,5 +89,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-13
-Stopped at: Completed 02-03-PLAN.md (RoutineFlowManager extraction)
+Stopped at: Completed 02-04-PLAN.md (ActiveSessionEngine extraction — Phase 2 complete)
 Resume file: None
