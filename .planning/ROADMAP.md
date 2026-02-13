@@ -78,10 +78,11 @@ Plans:
   1. The single commonModule (30+ bindings) is replaced by feature-scoped modules (dataModule, syncModule, domainModule, presentationModule) composed via includes()
   2. A Koin verify() test exists and passes, confirming all DI bindings resolve correctly
   3. The app starts and runs normally on Android after the Koin reorganization (no missing binding crashes)
-**Plans**: TBD
+**Plans**: 2 plans, 2 waves (sequential -- verify test depends on module split)
 
 Plans:
-- [ ] 04-01: Koin module split and verification test
+- [ ] 04-01-PLAN.md -- Split commonModule into feature-scoped modules (dataModule, syncModule, domainModule, presentationModule) with appModule composition
+- [ ] 04-02-PLAN.md -- Add Koin Module.verify() test and delete dead androidApp AppModule.kt
 
 ## Progress
 
@@ -93,4 +94,4 @@ Phases execute in numeric order: 1 --> 2 --> 3 --> 4
 | 1. Characterization Tests | 2/2 | ✓ Complete | 2026-02-13 |
 | 2. Manager Decomposition | 4/4 | ✓ Complete | 2026-02-13 |
 | 3. UI Composable Decomposition | 2/2 | ✓ Complete | 2026-02-13 |
-| 4. Koin DI Cleanup | 0/1 | Not started | - |
+| 4. Koin DI Cleanup | 0/2 | Not started | - |
