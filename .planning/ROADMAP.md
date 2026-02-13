@@ -64,11 +64,11 @@ Plans:
   2. WorkoutTab.kt (2,840 lines) is decomposed into focused files for cards, dialogs, and core screen logic
   3. Dialog composables (WorkoutSetupDialog, ModeSubSelectorDialog, ExercisePickerDialog) each live in their own file
   4. All composables render identically after extraction -- no visual regression (verified via manual testing or @Preview comparison)
-**Plans**: TBD
+**Plans**: 2 plans, 2 waves (sequential -- both modify WorkoutTab.kt)
 
 Plans:
-- [ ] 03-01: HistoryAndSettingsTabs split
-- [ ] 03-02: WorkoutTab decomposition (dialogs and cards)
+- [ ] 03-01-PLAN.md -- Extract SetSummaryCard, split HistoryAndSettingsTabs into HistoryTab + SettingsTab
+- [ ] 03-02-PLAN.md -- Extract WorkoutSetupDialog and ModeSubSelectorDialog from WorkoutTab
 
 ### Phase 4: Koin DI Cleanup
 **Goal**: Koin dependency injection is organized into feature-scoped modules that are verified by automated tests
