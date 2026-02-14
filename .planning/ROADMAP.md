@@ -3,7 +3,7 @@
 ## Milestones
 
 - v0.4.1 Architectural Cleanup (shipped 2026-02-13) — Phases 1-4
-- v0.4.5 Premium Features Phase 1 (shipped 2026-02-14) — Phases 1-4
+- v0.4.5 Premium Features Phase 1 (in progress) — Phases 1-5
 
 <details>
 <summary>v0.4.1 Architectural Cleanup - SHIPPED 2026-02-13</summary>
@@ -12,7 +12,7 @@ See `.planning/milestones/v0.4.1-*` for archived phase details.
 
 </details>
 
-### v0.4.5 Premium Features Phase 1 (Complete)
+### v0.4.5 Premium Features Phase 1 (In Progress)
 
 **Milestone Goal:** Ship the first premium features (LED biofeedback, rep quality scoring, smart suggestions) with proper data foundation and subscription gating.
 
@@ -22,6 +22,7 @@ See `.planning/milestones/v0.4.1-*` for archived phase details.
 - [x] **Phase 2: LED Biofeedback** - Velocity-zone LED control with mode-specific feedback ✓ 2026-02-14
 - [x] **Phase 3: Rep Quality Scoring** - Per-rep quality scores with HUD and set summaries ✓ 2026-02-14
 - [x] **Phase 4: Smart Suggestions** - Volume tracking, balance analysis, plateau detection ✓ 2026-02-14
+- [ ] **Phase 5: RepMetric Persistence** - Wire repository into ActiveSessionEngine, persist per-rep data
 
 ## Phase Details
 
@@ -91,10 +92,21 @@ Plans:
 - [x] 04-02-PLAN.md -- SQL queries, SmartSuggestionsRepository, SubscriptionManager Elite tier access ✓
 - [x] 04-03-PLAN.md -- SmartInsightsTab UI with Elite gating, MainScreen navigation integration ✓
 
+### Phase 5: RepMetric Persistence (Gap Closure)
+**Goal**: Per-rep metric data persists to database during workouts (closes DATA-01 gap)
+**Depends on**: Phase 1 (RepMetric schema and repository exist)
+**Requirements**: DATA-01
+**Gap Closure**: Closes audit gaps from v0.4.5-MILESTONE-AUDIT.md
+**Success Criteria** (what must be TRUE):
+  1. RepMetricRepository.save() is called during rep completion in ActiveSessionEngine
+  2. Per-rep force curve data (position, velocity, load arrays) is persisted to RepMetric table
+  3. Persisted data can be queried back after workout completion
+**Plans**: TBD (run /gsd:plan-phase 5)
+
 ## Progress
 
-**Execution Order:** 1 -> 2 -> 3 -> 4
-(Phases 2 and 3 both depend on Phase 1 but LED ships first per priority order; Phase 4 last.)
+**Execution Order:** 1 -> 2 -> 3 -> 4 -> 5
+(Phases 2 and 3 both depend on Phase 1 but LED ships first per priority order; Phase 5 is gap closure.)
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
@@ -102,3 +114,4 @@ Plans:
 | 2. LED Biofeedback | v0.4.5 | 2/2 | ✓ Complete | 2026-02-14 |
 | 3. Rep Quality Scoring | v0.4.5 | 3/3 | ✓ Complete | 2026-02-14 |
 | 4. Smart Suggestions | v0.4.5 | 3/3 | ✓ Complete | 2026-02-14 |
+| 5. RepMetric Persistence | v0.4.5 | 0/? | Pending | - |
