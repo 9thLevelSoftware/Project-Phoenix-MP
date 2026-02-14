@@ -41,7 +41,7 @@ Users can connect to their Vitruvian trainer and execute workouts with accurate 
 
 <!-- Current scope. Building toward these. -->
 
-(Next milestone requirements to be defined via `/gsd:new-milestone`)
+**v0.4.6 Biomechanics MVP** — VBT engine, velocity HUD, force curve visualization, asymmetry detection
 
 ### Out of Scope
 
@@ -74,14 +74,25 @@ Users can connect to their Vitruvian trainer and execute workouts with accurate 
 ## Current State
 
 **Version:** v0.4.5 (shipped 2026-02-14)
+**Next:** v0.4.6 Biomechanics MVP (in progress)
 
-Premium features foundation complete. Three subscription tiers operational with proper UI gating. Architecture remains clean with new engines following established patterns (injectable time providers, stateless pure functions, StateFlow exposure).
+Premium features foundation complete. Three subscription tiers operational with proper UI gating. Architecture remains clean with new engines following established patterns (injectable time providers, stateless pure functions, StateFlow exposure). Ready to build biomechanics layer on top of existing MetricSample/RepMetric infrastructure.
 
-## Next Milestone Goals
+## Current Milestone: v0.4.6 Biomechanics MVP
 
-- **v0.5.0** — Biomechanics MVP (Spec 01: VBT engine, velocity HUD, force curve visualization)
-- **v0.5.5** — Mobile Platform Features (Spec 04: strength assessment, exercise auto-detection)
-- **v0.6.0** — Auth Migration (Spec 05a: Supabase auth, user migration)
+**Goal:** Transform raw BLE telemetry into actionable training insights with real-time velocity tracking, force curve analysis, and bilateral asymmetry detection.
+
+**Target features:**
+- VBT engine with mean concentric velocity, velocity zones, velocity loss tracking
+- Real-time velocity display on HUD with zone color coding
+- Force curve visualization (mini on HUD, full on set summary)
+- L/R cable asymmetry detection with balance bar indicator
+- Set summary biomechanics cards (velocity, force curve, asymmetry)
+
+## Future Milestones
+
+- **v0.5.0** — Mobile Platform Features (Spec 04: strength assessment, exercise auto-detection)
+- **v0.5.5** — Auth Migration (Spec 05a: Supabase auth, user migration)
 
 ## Constraints
 
@@ -113,4 +124,4 @@ Premium features foundation complete. Three subscription tiers operational with 
 | SmartInsightsTab as separate file | Avoid breaking existing InsightsTab in AnalyticsScreen | ✓ Good — v0.4.5 |
 
 ---
-*Last updated: 2026-02-14 after v0.4.5 milestone*
+*Last updated: 2026-02-14 after starting v0.4.6 milestone*
