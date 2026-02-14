@@ -27,6 +27,7 @@ import com.devil.phoenixproject.presentation.components.AutoStopOverlay
 import com.devil.phoenixproject.presentation.components.EnhancedCablePositionBar
 import com.devil.phoenixproject.presentation.components.ExerciseNavigator
 import com.devil.phoenixproject.presentation.components.HapticFeedbackEffect
+import com.devil.phoenixproject.presentation.components.RepQualityIndicator
 import com.devil.phoenixproject.presentation.components.VideoPlayer
 import com.devil.phoenixproject.data.repository.ExerciseVideoEntity
 import com.devil.phoenixproject.ui.theme.Spacing
@@ -101,7 +102,8 @@ fun WorkoutTab(
         loadBaselineA = state.loadBaselineA,
         loadBaselineB = state.loadBaselineB,
         timedExerciseRemainingSeconds = state.timedExerciseRemainingSeconds,
-        isCurrentExerciseBodyweight = state.isCurrentExerciseBodyweight
+        isCurrentExerciseBodyweight = state.isCurrentExerciseBodyweight,
+        latestRepQualityScore = state.latestRepQualityScore
     )
 }
 
@@ -158,7 +160,8 @@ fun WorkoutTab(
     loadBaselineA: Float = 0f,
     loadBaselineB: Float = 0f,
     timedExerciseRemainingSeconds: Int? = null,  // Issue #192: Countdown for timed exercises
-    isCurrentExerciseBodyweight: Boolean = false
+    isCurrentExerciseBodyweight: Boolean = false,
+    latestRepQualityScore: Int? = null  // Rep quality score (null = not available or free tier)
 ) {
     // Note: HapticFeedbackEffect is now global in EnhancedMainScreen
     // No need for local haptic effect here
@@ -168,30 +171,35 @@ fun WorkoutTab(
 
     // HUD LAYOUT FOR ACTIVE WORKOUT
     if (workoutState is WorkoutState.Active && connectionState is ConnectionState.Connected) {
-        WorkoutHud(
-            activeState = workoutState,
-            metric = currentMetric,
-            workoutParameters = workoutParameters,
-            repCount = repCount,
-            repRanges = repRanges,
-            weightUnit = weightUnit,
-            connectionState = connectionState,
-            exerciseRepository = exerciseRepository,
-            loadedRoutine = loadedRoutine,
-            currentExerciseIndex = currentExerciseIndex,
-            currentSetIndex = currentSetIndex,
-            enableVideoPlayback = enableVideoPlayback,
-            onStopWorkout = onStopWorkout,
-            formatWeight = formatWeight,
-            onUpdateParameters = onUpdateParameters,
-            onStartNextExercise = onStartNextExercise,
-            currentHeuristicKgMax = currentHeuristicKgMax,
-            loadBaselineA = loadBaselineA,
-            loadBaselineB = loadBaselineB,
-            timedExerciseRemainingSeconds = timedExerciseRemainingSeconds,
-            isCurrentExerciseBodyweight = isCurrentExerciseBodyweight,
-            modifier = modifier
-        )
+        Box(modifier = modifier) {
+            WorkoutHud(
+                activeState = workoutState,
+                metric = currentMetric,
+                workoutParameters = workoutParameters,
+                repCount = repCount,
+                repRanges = repRanges,
+                weightUnit = weightUnit,
+                connectionState = connectionState,
+                exerciseRepository = exerciseRepository,
+                loadedRoutine = loadedRoutine,
+                currentExerciseIndex = currentExerciseIndex,
+                currentSetIndex = currentSetIndex,
+                enableVideoPlayback = enableVideoPlayback,
+                onStopWorkout = onStopWorkout,
+                formatWeight = formatWeight,
+                onUpdateParameters = onUpdateParameters,
+                onStartNextExercise = onStartNextExercise,
+                currentHeuristicKgMax = currentHeuristicKgMax,
+                loadBaselineA = loadBaselineA,
+                loadBaselineB = loadBaselineB,
+                timedExerciseRemainingSeconds = timedExerciseRemainingSeconds,
+                isCurrentExerciseBodyweight = isCurrentExerciseBodyweight,
+                modifier = Modifier.fillMaxSize()
+            )
+
+            // Rep Quality Score overlay (Phoenix+ tier only, passed as null for Free)
+            RepQualityIndicator(latestRepQualityScore = latestRepQualityScore)
+        }
         return
     }
 
