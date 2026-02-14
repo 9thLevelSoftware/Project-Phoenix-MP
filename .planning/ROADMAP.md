@@ -18,7 +18,7 @@ See `.planning/milestones/v0.4.1-*` for archived phase details.
 
 ## Phases
 
-- [ ] **Phase 1: Data Foundation** - RepMetric table, subscription tier, FeatureGate, migration v13
+- [x] **Phase 1: Data Foundation** - RepMetric table, subscription tier, FeatureGate, migration v13 ✓ 2026-02-14
 - [ ] **Phase 2: LED Biofeedback** - Velocity-zone LED control with mode-specific feedback
 - [ ] **Phase 3: Rep Quality Scoring** - Per-rep quality scores with HUD and set summaries
 - [ ] **Phase 4: Smart Suggestions** - Volume tracking, balance analysis, plateau detection
@@ -38,8 +38,8 @@ See `.planning/milestones/v0.4.1-*` for archived phase details.
 **Plans**: 2 plans
 
 Plans:
-- [ ] 01-01-PLAN.md -- Schema, migration, domain models, FeatureGate, iOS DriverFactory sync
-- [ ] 01-02-PLAN.md -- RepMetricRepository wiring, DI registration, FeatureGate + repository tests
+- [x] 01-01-PLAN.md -- Schema, migration, domain models, FeatureGate, iOS DriverFactory sync ✓
+- [x] 01-02-PLAN.md -- RepMetricRepository wiring, DI registration, FeatureGate + repository tests ✓
 
 ### Phase 2: LED Biofeedback
 **Goal**: Users see real-time LED color feedback on the machine during workouts based on their performance
@@ -98,7 +98,7 @@ Plans:
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
-| 1. Data Foundation | v0.4.5 | 0/2 | Planning complete | - |
+| 1. Data Foundation | v0.4.5 | 2/2 | ✓ Complete | 2026-02-14 |
 | 2. LED Biofeedback | v0.4.5 | 0/TBD | Not started | - |
 | 3. Rep Quality Scoring | v0.4.5 | 0/TBD | Not started | - |
 | 4. Smart Suggestions | v0.4.5 | 0/TBD | Not started | - |
