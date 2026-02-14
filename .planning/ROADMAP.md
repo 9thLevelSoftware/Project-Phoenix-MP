@@ -22,7 +22,7 @@ See `.planning/milestones/v0.4.1-*` for archived phase details.
 - [x] **Phase 2: LED Biofeedback** - Velocity-zone LED control with mode-specific feedback ✓ 2026-02-14
 - [x] **Phase 3: Rep Quality Scoring** - Per-rep quality scores with HUD and set summaries ✓ 2026-02-14
 - [x] **Phase 4: Smart Suggestions** - Volume tracking, balance analysis, plateau detection ✓ 2026-02-14
-- [ ] **Phase 5: RepMetric Persistence** - Wire repository into ActiveSessionEngine, persist per-rep data
+- [x] **Phase 5: RepMetric Persistence** - Wire repository into ActiveSessionEngine, persist per-rep data ✓ 2026-02-14
 
 ## Phase Details
 
@@ -104,7 +104,7 @@ Plans:
 **Plans**: 1 plan
 
 Plans:
-- [ ] 05-01-PLAN.md -- Wire RepMetricRepository into ActiveSessionEngine, persist per-rep metrics at set completion
+- [x] 05-01-PLAN.md -- Wire RepMetricRepository into ActiveSessionEngine, persist per-rep metrics at set completion ✓
 
 ## Progress
 
@@ -117,4 +117,4 @@ Plans:
 | 2. LED Biofeedback | v0.4.5 | 2/2 | ✓ Complete | 2026-02-14 |
 | 3. Rep Quality Scoring | v0.4.5 | 3/3 | ✓ Complete | 2026-02-14 |
 | 4. Smart Suggestions | v0.4.5 | 3/3 | ✓ Complete | 2026-02-14 |
-| 5. RepMetric Persistence | v0.4.5 | 0/? | Pending | - |
+| 5. RepMetric Persistence | v0.4.5 | 1/1 | ✓ Complete | 2026-02-14 |
