@@ -1442,3 +1442,31 @@ SELECT * FROM Routine WHERE serverId = ?;
 -- Mark session updatedAt on save
 updateSessionTimestamp:
 UPDATE WorkoutSession SET updatedAt = ? WHERE id = ?;
+
+-- ==================== SMART SUGGESTIONS QUERIES ====================
+
+-- Session summaries with exercise muscle group data (for volume/balance analysis)
+selectSessionSummariesSince:
+SELECT ws.exerciseId, ws.exerciseName, e.muscleGroup, ws.timestamp,
+       ws.weightPerCableKg, ws.totalReps, ws.workingReps
+FROM WorkoutSession ws
+LEFT JOIN Exercise e ON ws.exerciseId = e.id
+WHERE ws.exerciseId IS NOT NULL
+  AND ws.timestamp > ?
+ORDER BY ws.timestamp DESC;
+
+-- Exercise last-performed dates (for neglect detection)
+selectExerciseLastPerformed:
+SELECT e.id AS exerciseId, e.name AS exerciseName, e.muscleGroup,
+       MAX(ws.timestamp) AS lastPerformed
+FROM Exercise e
+INNER JOIN WorkoutSession ws ON ws.exerciseId = e.id
+WHERE e.archived = 0
+GROUP BY e.id;
+
+-- Per-exercise weight history (for plateau detection)
+selectExerciseWeightHistory:
+SELECT ws.exerciseId, ws.exerciseName, ws.weightPerCableKg, ws.timestamp
+FROM WorkoutSession ws
+WHERE ws.exerciseId IS NOT NULL
+ORDER BY ws.exerciseId, ws.timestamp ASC;
