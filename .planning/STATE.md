@@ -10,11 +10,11 @@ See: .planning/PROJECT.md (updated 2026-02-13)
 ## Current Position
 
 Phase: 4 of 4 (Smart Suggestions)
-Plan: 1 of 3 in current phase
+Plan: 2 of 3 in current phase
 Status: Executing Phase 4
-Last activity: 2026-02-14 — Completed 04-01 (SmartSuggestionsEngine TDD)
+Last activity: 2026-02-14 — Completed 04-02 (Smart Suggestions Data Layer)
 
-Progress: [████████░░] 82%
+Progress: [█████████░] 91%
 
 ## Performance Metrics
 
@@ -36,6 +36,7 @@ Progress: [████████░░] 82%
 | 03-02 (v0.4.5) | 1 | 11min | 11min |
 | 03-03 (v0.4.5) | 1 | 14min | 14min |
 | 04-01 (v0.4.5) | 1 | 6min | 6min |
+| 04-02 (v0.4.5) | 1 | 6min | 6min |
 
 *Updated after each plan completion*
 
@@ -78,6 +79,8 @@ Recent decisions affecting current work:
 - [04-01]: Balance thresholds: <25% or >45% triggers imbalance (excluding core)
 - [04-01]: Plateau: 4+ consecutive sessions within 0.5kg, minimum 5 total sessions
 - [04-01]: Time-of-day optimal requires 3+ sessions for statistical relevance
+- [04-02]: Used SubscriptionTier.fromDbString() instead of broken SubscriptionStatus for tier detection
+- [04-02]: Added getActiveProfileTier() to UserProfileRepository for direct DB-to-tier mapping
 
 ### Pending Todos
 
@@ -90,5 +93,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-14
-Stopped at: Completed 04-01-PLAN.md (SmartSuggestionsEngine TDD)
+Stopped at: Completed 04-02-PLAN.md (Smart Suggestions Data Layer)
 Resume file: None
