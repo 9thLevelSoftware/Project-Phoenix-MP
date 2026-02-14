@@ -3,6 +3,7 @@ package com.devil.phoenixproject.data.repository
 import com.devil.phoenixproject.database.VitruvianDatabase
 import com.devil.phoenixproject.domain.model.currentTimeMillis
 import com.devil.phoenixproject.domain.model.generateUUID
+import com.devil.phoenixproject.domain.premium.SubscriptionTier
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -57,6 +58,13 @@ interface UserProfileRepository {
     suspend fun updateSubscriptionStatus(profileId: String, status: SubscriptionStatus, expiresAt: Long?)
     suspend fun getProfileBySupabaseId(supabaseUserId: String): UserProfile?
     fun getActiveProfileSubscriptionStatus(): Flow<SubscriptionStatus>
+
+    /**
+     * Get the active profile's subscription tier directly from the DB string.
+     * The subscription_status column stores tier strings ("free", "phoenix", "elite")
+     * which map to [SubscriptionTier] for feature-level access gating.
+     */
+    fun getActiveProfileTier(): Flow<SubscriptionTier>
 }
 
 class SqlDelightUserProfileRepository(
@@ -177,6 +185,14 @@ class SqlDelightUserProfileRepository(
             val result = queries.getActiveProfileSubscriptionStatus()
                 .executeAsOneOrNull()
             emit(SubscriptionStatus.fromString(result?.subscription_status))
+        }
+    }
+
+    override fun getActiveProfileTier(): Flow<SubscriptionTier> {
+        return kotlinx.coroutines.flow.flow {
+            val result = queries.getActiveProfileSubscriptionStatus()
+                .executeAsOneOrNull()
+            emit(SubscriptionTier.fromDbString(result?.subscription_status))
         }
     }
 }
