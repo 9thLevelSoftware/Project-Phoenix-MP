@@ -5,16 +5,16 @@
 See: .planning/PROJECT.md (updated 2026-02-13)
 
 **Core value:** Users can connect to their Vitruvian trainer and execute workouts reliably on both platforms.
-**Current focus:** Phase 3 - Rep Quality Scoring
+**Current focus:** Phase 4 - Smart Suggestions
 
 ## Current Position
 
-Phase: 3 of 4 (Rep Quality Scoring)
-Plan: 3 of 3 in current phase (COMPLETE)
-Status: Phase 3 Complete
-Last activity: 2026-02-14 — Completed 03-03 (Set Summary Quality UI and Form Master Badges)
+Phase: 4 of 4 (Smart Suggestions)
+Plan: 1 of 3 in current phase
+Status: Executing Phase 4
+Last activity: 2026-02-14 — Completed 04-01 (SmartSuggestionsEngine TDD)
 
-Progress: [████████░░] 75%
+Progress: [████████░░] 82%
 
 ## Performance Metrics
 
@@ -35,6 +35,7 @@ Progress: [████████░░] 75%
 | 03-01 (v0.4.5) | 1 | 5min | 5min |
 | 03-02 (v0.4.5) | 1 | 11min | 11min |
 | 03-03 (v0.4.5) | 1 | 14min | 14min |
+| 04-01 (v0.4.5) | 1 | 6min | 6min |
 
 *Updated after each plan completion*
 
@@ -71,6 +72,12 @@ Recent decisions affecting current work:
 - [03-03]: QualityStreak badges bypass DB stats check (awarded directly by GamificationManager)
 - [03-03]: Radar chart uses Compose Text labels around Canvas for KMP compatibility
 - [03-03]: Tap-to-toggle between sparkline and radar chart (simpler than HorizontalPager)
+- [04-01]: Stateless object SmartSuggestionsEngine (no DI, pure functions only)
+- [04-01]: Injectable nowMs: Long parameter for time-dependent functions (follows 02-01 pattern)
+- [04-01]: Volume formula: weightPerCableKg * 2 * workingReps (dual cable machine)
+- [04-01]: Balance thresholds: <25% or >45% triggers imbalance (excluding core)
+- [04-01]: Plateau: 4+ consecutive sessions within 0.5kg, minimum 5 total sessions
+- [04-01]: Time-of-day optimal requires 3+ sessions for statistical relevance
 
 ### Pending Todos
 
@@ -83,5 +90,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-14
-Stopped at: Completed 03-03-PLAN.md (Set Summary Quality UI and Form Master Badges) - Phase 3 Complete
+Stopped at: Completed 04-01-PLAN.md (SmartSuggestionsEngine TDD)
 Resume file: None
