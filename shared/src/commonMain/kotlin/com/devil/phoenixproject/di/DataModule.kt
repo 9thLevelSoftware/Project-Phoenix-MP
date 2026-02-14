@@ -22,6 +22,9 @@ val dataModule = module {
     single<GamificationRepository> { SqlDelightGamificationRepository(get()) }
     single<UserProfileRepository> { SqlDelightUserProfileRepository(get()) }
 
+    // Rep Metrics Repository
+    single<RepMetricRepository> { SqlDelightRepMetricRepository(get()) }
+
     // Training Cycles Repositories
     single<TrainingCycleRepository> { SqlDelightTrainingCycleRepository(get()) }
     single<CompletedSetRepository> { SqlDelightCompletedSetRepository(get()) }
