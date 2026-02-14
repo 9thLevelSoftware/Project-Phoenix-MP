@@ -35,11 +35,11 @@ See `.planning/milestones/v0.4.1-*` for archived phase details.
   3. FeatureGate correctly returns enabled/disabled for features based on subscription tier
   4. Database migrates cleanly from v12 to v13 on both Android and iOS without data loss
   5. Raw metric data is captured for all users regardless of tier (gating happens at feature UI only)
-**Plans**: TBD
+**Plans**: 2 plans
 
 Plans:
-- [ ] 01-01: TBD
-- [ ] 01-02: TBD
+- [ ] 01-01-PLAN.md -- Schema, migration, domain models, FeatureGate, iOS DriverFactory sync
+- [ ] 01-02-PLAN.md -- RepMetricRepository wiring, DI registration, FeatureGate + repository tests
 
 ### Phase 2: LED Biofeedback
 **Goal**: Users see real-time LED color feedback on the machine during workouts based on their performance
@@ -98,7 +98,7 @@ Plans:
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
-| 1. Data Foundation | v0.4.5 | 0/TBD | Not started | - |
+| 1. Data Foundation | v0.4.5 | 0/2 | Planning complete | - |
 | 2. LED Biofeedback | v0.4.5 | 0/TBD | Not started | - |
 | 3. Rep Quality Scoring | v0.4.5 | 0/TBD | Not started | - |
 | 4. Smart Suggestions | v0.4.5 | 0/TBD | Not started | - |
