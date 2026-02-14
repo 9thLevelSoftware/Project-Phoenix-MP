@@ -551,6 +551,11 @@ class SqlDelightGamificationRepository(
             is BadgeRequirement.RoutinesCreated -> {
                 getCreatedRoutinesCount() >= req.count
             }
+            is BadgeRequirement.QualityStreak -> {
+                // Quality streak badges are awarded directly by GamificationManager.processSetQualityEvent()
+                // which tracks session-scoped consecutive quality sets. Not evaluated via DB stats.
+                false
+            }
         }
     }
 
@@ -582,6 +587,7 @@ class SqlDelightGamificationRepository(
                 is BadgeRequirement.WeekendWorkouts -> getWeekendWorkoutsCount()
                 is BadgeRequirement.RoutinesCompleted -> getCompletedRoutinesCount()
                 is BadgeRequirement.RoutinesCreated -> getCreatedRoutinesCount()
+                is BadgeRequirement.QualityStreak -> 0  // Session-scoped, not tracked in DB
             }
 
             Pair(current, badge.getTargetValue())

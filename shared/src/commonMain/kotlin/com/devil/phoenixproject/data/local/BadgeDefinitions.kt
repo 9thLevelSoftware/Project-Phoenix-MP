@@ -675,6 +675,35 @@ object BadgeDefinitions {
             iconResource = "dumbbell",
             tier = GOLD,
             requirement = TotalWorkouts(150)
+        ),
+
+        // ==================== FORM MASTER BADGES (Quality streak) ====================
+        Badge(
+            id = "form_master_bronze",
+            name = "Form Master",
+            description = "Complete 3 consecutive sets with quality score above 85",
+            category = CONSISTENCY,
+            iconResource = "fire",
+            tier = BRONZE,
+            requirement = QualityStreak(sets = 3, minScore = 85)
+        ),
+        Badge(
+            id = "form_master_silver",
+            name = "Form Master II",
+            description = "Complete 5 consecutive sets with quality score above 85",
+            category = CONSISTENCY,
+            iconResource = "fire",
+            tier = SILVER,
+            requirement = QualityStreak(sets = 5, minScore = 85)
+        ),
+        Badge(
+            id = "form_master_gold",
+            name = "Form Master III",
+            description = "Complete 10 consecutive sets with quality score above 90",
+            category = CONSISTENCY,
+            iconResource = "fire",
+            tier = GOLD,
+            requirement = QualityStreak(sets = 10, minScore = 90)
         )
     )
 

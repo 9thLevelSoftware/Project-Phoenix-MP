@@ -91,6 +91,9 @@ sealed class BadgeRequirement {
 
     /** Number of custom routines created */
     data class RoutinesCreated(val count: Int) : BadgeRequirement()
+
+    /** Consecutive sets with average quality score above threshold (session-scoped) */
+    data class QualityStreak(val sets: Int, val minScore: Int) : BadgeRequirement()
 }
 
 /**
@@ -132,6 +135,7 @@ data class Badge(
             is BadgeRequirement.WeekendWorkouts -> "$currentValue/${req.count} workouts"
             is BadgeRequirement.RoutinesCompleted -> "$currentValue/${req.count} routines"
             is BadgeRequirement.RoutinesCreated -> "$currentValue/${req.count} routines"
+            is BadgeRequirement.QualityStreak -> "$currentValue/${req.sets} sets (>${req.minScore})"
         }
     }
 
@@ -161,6 +165,7 @@ data class Badge(
             is BadgeRequirement.WeekendWorkouts -> req.count
             is BadgeRequirement.RoutinesCompleted -> req.count
             is BadgeRequirement.RoutinesCreated -> req.count
+            is BadgeRequirement.QualityStreak -> req.sets
         }
     }
 }
