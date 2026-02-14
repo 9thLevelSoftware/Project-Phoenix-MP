@@ -2,7 +2,7 @@
 
 ## What This Is
 
-Kotlin Multiplatform app for controlling Vitruvian Trainer workout machines (V-Form, Trainer+) via BLE. Community rescue project keeping machines functional after company bankruptcy. Supports Android (Compose) and iOS (SwiftUI) from a shared KMP codebase.
+Kotlin Multiplatform app for controlling Vitruvian Trainer workout machines (V-Form, Trainer+) via BLE. Community rescue project keeping machines functional after company bankruptcy. Supports Android (Compose) and iOS (SwiftUI) from a shared KMP codebase. Now includes premium features: LED biofeedback, rep quality scoring, and smart training suggestions.
 
 ## Core Value
 
@@ -23,75 +23,73 @@ Users can connect to their Vitruvian trainer and execute workouts with accurate 
 - ✓ Gamification: XP, badges, workout streaks — v0.3
 - ✓ Training cycles with day rotation — v0.3
 - ✓ Cloud sync infrastructure — v0.4
-- ✓ MainViewModel decomposition into 5 managers (History, Settings, BLE, Gamification, WorkoutSession) — v0.4
-- ✓ DefaultWorkoutSessionManager decomposed into WorkoutCoordinator + RoutineFlowManager + ActiveSessionEngine — v0.4.1
-- ✓ Circular dependency eliminated via bleErrorEvents SharedFlow pattern — v0.4.1
+- ✓ MainViewModel decomposition into 5 managers — v0.4
+- ✓ DefaultWorkoutSessionManager decomposed into 3 sub-managers — v0.4.1
+- ✓ Circular dependency eliminated via bleErrorEvents SharedFlow — v0.4.1
 - ✓ Koin DI split into 4 feature-scoped modules with verify() test — v0.4.1
-- ✓ HistoryAndSettingsTabs split into focused files (HistoryTab + SettingsTab) — v0.4.1
 - ✓ 38 characterization tests covering workout lifecycle and routine flow — v0.4.1
-- ✓ Testing foundation with DWSMTestHarness and WorkoutStateFixtures — v0.4.1
+- ✓ Per-rep metrics stored in RepMetric table with force curve data — v0.4.5
+- ✓ Subscription tier (FREE/PHOENIX/ELITE) with FeatureGate utility — v0.4.5
+- ✓ LED biofeedback with velocity zones, PR celebration, rest period colors — v0.4.5
+- ✓ Rep quality scoring (0-100) with 4-component algorithm and HUD indicator — v0.4.5
+- ✓ Set summary with quality sparkline, radar chart, and trend indicator — v0.4.5
+- ✓ Form Master badges (Bronze/Silver/Gold) for quality achievements — v0.4.5
+- ✓ Smart Suggestions: volume tracking, balance analysis, plateau detection — v0.4.5
+- ✓ Elite tier gating for Smart Insights tab — v0.4.5
 
 ### Active
 
 <!-- Current scope. Building toward these. -->
 
-See REQUIREMENTS.md for v0.4.5 milestone requirements.
-
-## Current Milestone: v0.4.5 Premium Features Phase 1
-
-**Goal:** Ship the first premium features (LED biofeedback, rep quality scoring, smart suggestions) with proper data foundation and subscription gating.
-
-**Target features:**
-- Data Foundation (Spec 00 Phase A) — RepMetric table, SubscriptionTier enum, FeatureGate utility, migration v13
-- Real-Time Feedback (Spec 02) — LED biofeedback with velocity zones, rep quality scoring (0-100), HUD indicators
-- Smart Suggestions (Spec 03.2 extract) — Push/pull/legs balance, plateau detection, exercise variety prompts
+(Next milestone requirements to be defined via `/gsd:new-milestone`)
 
 ### Out of Scope
 
 <!-- Explicit boundaries. Includes reasoning to prevent re-adding. -->
 
 - KableBleRepository decomposition — works reliably, refactoring risk outweighs benefit
-- Biomechanics MVP (Spec 01) — depends on velocity pipeline, Phase 2 work
+- Biomechanics MVP (Spec 01) — v0.5.0 scope, depends on velocity pipeline
 - Auto-Regulation (Spec 03.3-4) — depends on Spec 01 velocity pipeline
-- Portal sync backend (Spec 05) — Phase 3 infrastructure work
+- Portal sync backend (Spec 05) — v0.6.0 infrastructure work
 - Portal replay features — no backend exists yet
 - iOS-specific UI work — focus is shared module and Android Compose layer
 - BLE protocol changes — no hardware interaction changes
+- RevenueCat billing integration — blocked on auth migration
 
 ## Context
 
-- App is at v0.4.1, actively used by community
+- App is at v0.4.5, actively used by community
+- Premium features shipped: LED biofeedback, rep quality scoring, smart suggestions
 - MainViewModel is a thin 420-line facade delegating to 5 specialized managers
 - DefaultWorkoutSessionManager (449 lines) orchestrates 3 sub-managers:
   - WorkoutCoordinator (257L) — shared state bus, zero business logic
   - RoutineFlowManager (1,091L) — routine CRUD, navigation, supersets
-  - ActiveSessionEngine (2,174L) — workout lifecycle, BLE commands, auto-stop
-- UI composables decomposed: WorkoutTab (1,495L), HistoryTab (1,060L), SettingsTab (1,704L)
-- 38 characterization tests lock in workout and routine behavior for safe refactoring
+  - ActiveSessionEngine (2,200L) — workout lifecycle, BLE commands, auto-stop, quality scoring
+- New engines: LedFeedbackController, RepQualityScorer, SmartSuggestionsEngine
+- New UI: RepQualityIndicator, SmartInsightsTab, quality stats in SetSummaryCard
 - Koin DI: 4 feature-scoped modules (data, sync, domain, presentation) with verify() test
 - Test infrastructure: DWSMTestHarness, WorkoutStateFixtures, fakes for all repositories
-- OpenSpec specs (00-05) drafted for future premium features
-- ~19,955 lines of Kotlin in shared module
+- ~21,800 lines of Kotlin in shared module (+1,832 from v0.4.5)
+
+## Current State
+
+**Version:** v0.4.5 (shipped 2026-02-14)
+
+Premium features foundation complete. Three subscription tiers operational with proper UI gating. Architecture remains clean with new engines following established patterns (injectable time providers, stateless pure functions, StateFlow exposure).
+
+## Next Milestone Goals
+
+- **v0.5.0** — Biomechanics MVP (Spec 01: VBT engine, velocity HUD, force curve visualization)
+- **v0.5.5** — Mobile Platform Features (Spec 04: strength assessment, exercise auto-detection)
+- **v0.6.0** — Auth Migration (Spec 05a: Supabase auth, user migration)
 
 ## Constraints
 
 - **Platform**: KMP shared module — all business logic must remain in commonMain
 - **Compatibility**: No breaking changes to existing workout behavior — characterization tests first
 - **BLE stability**: Do not touch KableBleRepository or BLE protocol code
-- **Incremental**: Each refactoring phase must leave the app in a buildable, working state
-
-## Current State
-
-**Version:** v0.4.1 (shipped 2026-02-13)
-
-Architecture is clean and well-tested. Ready for feature development or premium features.
-
-## Next Milestone Goals
-
-After v0.4.5:
-- **v0.5.0** — Biomechanics MVP (Spec 01 Phases 1-3: VBT engine, velocity HUD, set summary)
-- **v0.5.5** — Mobile Platform Features (Spec 04: strength assessment, exercise auto-detection)
-- **v0.6.0** — Auth Migration (Spec 05a: Supabase auth, user migration)
+- **Incremental**: Each phase must leave the app in a buildable, working state
+- **Tier gating**: Data capture for all tiers, gating at UI/feature level only (GATE-04)
 
 ## Key Decisions
 
@@ -100,14 +98,19 @@ After v0.4.5:
 | Decision | Rationale | Outcome |
 |----------|-----------|---------|
 | Manager extraction pattern (scope injection, interface-based) | Enables testability, preserves ViewModel lifecycle | ✓ Good |
-| MainViewModel as thin facade during transition | Preserves UI API while extracting logic incrementally | ✓ Good — UI unchanged |
-| Leave KableBleRepository alone | Works reliably, high risk/low reward to refactor | ✓ Good — validated |
-| Characterize before refactoring | Tests lock in behavior, catch regressions during extraction | ✓ Good — 38 tests |
+| MainViewModel as thin facade during transition | Preserves UI API while extracting logic incrementally | ✓ Good |
+| Leave KableBleRepository alone | Works reliably, high risk/low reward to refactor | ✓ Good |
+| Characterize before refactoring | Tests lock in behavior, catch regressions | ✓ Good — 38 tests |
 | WorkoutCoordinator as zero-method state bus | Sub-managers share state without circular refs | ✓ Good — v0.4.1 |
-| Delegate pattern for sub-manager bridging | WorkoutLifecycleDelegate/WorkoutFlowDelegate avoid direct refs | ✓ Good — v0.4.1 |
 | bleErrorEvents SharedFlow for BLE→DWSM | Eliminates lateinit var circular dependency | ✓ Good — v0.4.1 |
-| Same-package visibility for UI extractions | Zero import changes needed when splitting files | ✓ Good — v0.4.1 |
 | Feature-scoped Koin modules with verify() | Catches DI wiring issues at test time | ✓ Good — v0.4.1 |
+| SubscriptionTier separate from SubscriptionStatus | Tier = feature access, Status = payment state | ✓ Good — v0.4.5 |
+| Manual JSON serialization for primitive arrays | Avoid kotlinx.serialization complexity for simple cases | ✓ Good — v0.4.5 |
+| 4-zone LED scheme (OFF/Green/Blue/Red) | Clearer visual feedback than 6-zone spec | ✓ Good — v0.4.5 |
+| Velocity thresholds 5/30/60 mm/s | Hardware calibrated (5x lower than spec) | ✓ Good — v0.4.5 |
+| First rep gets perfect ROM/velocity scores | No baseline to penalize against | ✓ Good — v0.4.5 |
+| Stateless SmartSuggestionsEngine | Pure functions, injectable time, easy testing | ✓ Good — v0.4.5 |
+| SmartInsightsTab as separate file | Avoid breaking existing InsightsTab in AnalyticsScreen | ✓ Good — v0.4.5 |
 
 ---
-*Last updated: 2026-02-13 after v0.4.5 milestone start*
+*Last updated: 2026-02-14 after v0.4.5 milestone*

@@ -33,3 +33,26 @@
 
 ---
 
+
+## v0.4.5 Premium Features Phase 1 (Shipped: 2026-02-14)
+
+**Delivered:** First premium features with subscription tier gating — LED biofeedback, rep quality scoring, smart training suggestions, and persistent per-rep metrics.
+
+**Phases completed:** 5 phases, 11 plans
+
+**Key accomplishments:**
+- Data Foundation: RepMetric table schema, SubscriptionTier enum (FREE/PHOENIX/ELITE), FeatureGate utility, migration v13
+- LED Biofeedback: Real-time velocity-zone LED colors (4-zone scheme), PR celebration flash, rest period blue, settings toggle
+- Rep Quality Scoring: 4-component algorithm (ROM/velocity/eccentric/smoothness), HUD indicator with animation, sparkline + radar charts
+- Form Master Badges: Bronze/Silver/Gold badges with quality streak requirements via GamificationManager
+- Smart Suggestions: 5 Elite-tier insights (volume tracking, balance analysis, neglect alerts, plateau detection, time-of-day)
+- RepMetric Persistence: Per-rep force curve data persisted to database during workouts (gap closure)
+
+**Stats:** 59 commits, 131 files changed, +11,573/-9,741 lines
+
+**Last phase number:** 5
+
+**Archive:** `.planning/milestones/v0.4.5-*`
+
+---
+

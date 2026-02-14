@@ -2,105 +2,59 @@
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-02-13)
+See: .planning/PROJECT.md (updated 2026-02-14)
 
 **Core value:** Users can connect to their Vitruvian trainer and execute workouts reliably on both platforms.
-**Current focus:** Phase 5 - RepMetric Persistence (Gap Closure)
+**Current focus:** Milestone complete — planning next milestone
 
 ## Current Position
 
-Phase: 5 of 5 (RepMetric Persistence) - COMPLETE
-Plan: 1 of 1 in current phase
-Status: Phase 5 complete - all gap closures resolved
-Last activity: 2026-02-14 — Completed 05-01 RepMetric persistence wiring
+Phase: — (between milestones)
+Plan: —
+Status: v0.4.5 shipped, awaiting next milestone
+Last activity: 2026-02-14 — Completed v0.4.5 milestone
 
-Progress: [██████████] 100%
+Progress: [COMPLETE] v0.4.5 shipped
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 11 (from v0.4.1)
-- Average duration: not tracked (pre-metrics)
-- Total execution time: not tracked
+- Total plans completed: 21 (10 from v0.4.1 + 11 from v0.4.5)
+- v0.4.5 execution time: ~3 hours total (11 plans)
+- Average plan duration: ~16 minutes
 
-**By Phase:**
+**By Milestone:**
 
-| Phase | Plans | Total | Avg/Plan |
-|-------|-------|-------|----------|
-| 1-4 (v0.4.1) | 10 | - | - |
-| 01-01 (v0.4.5) | 1 | 12min | 12min |
-| 01-02 (v0.4.5) | 1 | 6min | 6min |
-| 02-01 (v0.4.5) | 1 | 6min | 6min |
-| 02-02 (v0.4.5) | 1 | ~90min | ~90min |
-| 03-01 (v0.4.5) | 1 | 5min | 5min |
-| 03-02 (v0.4.5) | 1 | 11min | 11min |
-| 03-03 (v0.4.5) | 1 | 14min | 14min |
-| 04-01 (v0.4.5) | 1 | 6min | 6min |
-| 04-02 (v0.4.5) | 1 | 6min | 6min |
-| 04-03 (v0.4.5) | 1 | 11min | 11min |
-| 05-01 (v0.4.5) | 1 | 6min | 6min |
-
-*Updated after each plan completion*
+| Milestone | Phases | Plans | Duration | Notes |
+|-----------|--------|-------|----------|-------|
+| v0.4.1 | 4 | 10 | - | Pre-metrics |
+| v0.4.5 | 5 | 11 | ~3h | 59 commits, +1,832 LOC |
 
 ## Accumulated Context
 
 ### Decisions
 
 Decisions are logged in PROJECT.md Key Decisions table.
-Recent decisions affecting current work:
+Key v0.4.5 decisions:
 
-- [v0.4.5 init]: Data Foundation must ship before LED/Quality/Suggestions (dependency)
-- [v0.4.5 init]: Data capture for all tiers, gating at UI/feature level only (GATE-04)
-- [v0.4.1]: 38 characterization tests lock in existing workout behavior
-- [01-01]: SubscriptionTier separate from SubscriptionStatus (tier = feature access, status = payment state)
-- [01-01]: RepMetricData uses FloatArray/LongArray for performance; JSON serialization deferred to Plan 02
-- [01-01]: domain/premium/ package established for subscription and gating utilities
-- [01-02]: Manual JSON serialization (joinToString/split) for primitive arrays instead of kotlinx.serialization
-- [01-02]: Serialization helpers marked internal - repository layer implementation detail
-- [02-01]: Injectable timeProvider lambda for deterministic test control in LedFeedbackController
-- [02-01]: Reused FakeBleRepository with colorSchemeCommands tracking rather than new test double
-- [02-01]: Internal visibility on resolver methods for white-box testing of boundary conditions
-- [02-02]: Simplified from 6 zones to 4 (OFF/Green/Blue/Red) for clearer visual feedback
-- [02-02]: Velocity thresholds recalibrated from spec (~5x lower): 5/30/60 mm/s based on real hardware data
-- [02-02]: Removed BLE throttle (500ms) for faster response; kept hysteresis (3 samples) for stability
-- [03-01]: First rep gets perfect ROM/velocity scores (no baseline to penalize against)
-- [03-01]: Running averages updated after scoring (score against prior reps only)
-- [03-01]: Smoothness uses coefficient of variation with 2x multiplier for sensitivity
-- [03-01]: Trend detection uses half-split +/-5 threshold
-- [03-02]: Score gated by SubscriptionManager.hasProAccess at ActiveWorkoutScreen level
-- [03-02]: Approximate metric data for HUD scoring (full accuracy in persisted RepMetricData)
-- [03-02]: RepQualityIndicator at TopCenter with 80dp offset, 800ms auto-dismiss
-- [03-03]: Quality summary captured before scorer reset in handleSetCompletion
-- [03-03]: Quality streak is session-scoped, resets on new workout start
-- [03-03]: QualityStreak badges bypass DB stats check (awarded directly by GamificationManager)
-- [03-03]: Radar chart uses Compose Text labels around Canvas for KMP compatibility
-- [03-03]: Tap-to-toggle between sparkline and radar chart (simpler than HorizontalPager)
-- [04-01]: Stateless object SmartSuggestionsEngine (no DI, pure functions only)
-- [04-01]: Injectable nowMs: Long parameter for time-dependent functions (follows 02-01 pattern)
-- [04-01]: Volume formula: weightPerCableKg * 2 * workingReps (dual cable machine)
-- [04-01]: Balance thresholds: <25% or >45% triggers imbalance (excluding core)
-- [04-01]: Plateau: 4+ consecutive sessions within 0.5kg, minimum 5 total sessions
-- [04-01]: Time-of-day optimal requires 3+ sessions for statistical relevance
-- [04-02]: Used SubscriptionTier.fromDbString() instead of broken SubscriptionStatus for tier detection
-- [04-02]: Added getActiveProfileTier() to UserProfileRepository for direct DB-to-tier mapping
-- [04-03]: Created SmartInsightsTab.kt (new file) to avoid breaking existing InsightsTab in AnalyticsScreen
-- [04-03]: Self-loading composable pattern for SmartInsightsTab (no ViewModel, internal Koin + data loading)
-- [04-03]: Elite-tier UI gating via hasEliteAccess with LockedFeatureOverlay fallback
-- [05-01]: RepMetricData accumulated in coordinator.setRepMetrics list during scoreCurrentRep
-- [05-01]: Persistence after saveWorkoutSession in handleSetCompletion with try/catch guard
-- [05-01]: No subscription tier gating on rep metric persistence (GATE-04 compliance)
+- SubscriptionTier separate from SubscriptionStatus (tier = feature access, status = payment state)
+- 4-zone LED scheme (OFF/Green/Blue/Red) instead of 6-zone spec for clearer feedback
+- Velocity thresholds 5/30/60 mm/s (hardware calibrated, 5x lower than spec)
+- First rep gets perfect ROM/velocity scores (no baseline penalty)
+- Stateless SmartSuggestionsEngine with pure functions and injectable time
+- Data capture for all tiers, gating at UI/feature level only (GATE-04)
 
 ### Pending Todos
 
-None yet.
+None.
 
 ### Blockers/Concerns
 
-None yet.
+None — clean milestone completion.
 
 ## Session Continuity
 
 Last session: 2026-02-14
-Stopped at: Completed 05-01-PLAN.md (RepMetric persistence wiring)
+Stopped at: v0.4.5 milestone complete
 Resume file: None
-Next action: All v0.4.5 phases complete
+Next action: `/gsd:new-milestone` to define v0.5.0 scope
