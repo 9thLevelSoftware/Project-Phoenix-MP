@@ -35,6 +35,7 @@ class DWSMTestHarness(val testScope: TestScope) {
     val fakeGamificationRepo = FakeGamificationRepository()
     val fakeCompletedSetRepo = FakeCompletedSetRepository()
     val fakeTrainingCycleRepo = FakeTrainingCycleRepository()
+    val fakeRepMetricRepo = FakeRepMetricRepository()
 
     val repCounter = RepCounterFromMachine()
     val resolveWeightsUseCase = ResolveRoutineWeightsUseCase(fakePRRepo)
@@ -61,6 +62,7 @@ class DWSMTestHarness(val testScope: TestScope) {
         trainingCycleRepository = fakeTrainingCycleRepo,
         completedSetRepository = fakeCompletedSetRepo,
         syncTriggerManager = null,
+        repMetricRepository = fakeRepMetricRepo,
         resolveWeightsUseCase = resolveWeightsUseCase,
         settingsManager = settingsManager,
         scope = dwsmScope
