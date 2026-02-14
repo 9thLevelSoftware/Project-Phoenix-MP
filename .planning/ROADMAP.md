@@ -51,12 +51,11 @@ Plans:
   3. TUT/Echo modes show mode-specific feedback (tempo guide and load matching respectively)
   4. User can toggle LED biofeedback on/off in settings, and the toggle is hidden for Free tier users
   5. LEDs show blue during rest periods and fire a celebration flash on PR achievement
-**Plans**: TBD
+**Plans**: 2 plans
 
 Plans:
-- [ ] 02-01: TBD
-- [ ] 02-02: TBD
-- [ ] 02-03: TBD
+- [ ] 02-01-PLAN.md -- VelocityZone enum, LedFeedbackController engine, RunningAverage utility, unit tests
+- [ ] 02-02-PLAN.md -- Preferences, Settings UI with tier gating, ActiveSessionEngine integration, hardware verification
 
 ### Phase 3: Rep Quality Scoring
 **Goal**: Users receive meaningful per-rep quality feedback during workouts and set summaries
@@ -99,6 +98,6 @@ Plans:
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
 | 1. Data Foundation | v0.4.5 | 2/2 | ✓ Complete | 2026-02-14 |
-| 2. LED Biofeedback | v0.4.5 | 0/TBD | Not started | - |
+| 2. LED Biofeedback | v0.4.5 | 0/2 | Planned | - |
 | 3. Rep Quality Scoring | v0.4.5 | 0/TBD | Not started | - |
 | 4. Smart Suggestions | v0.4.5 | 0/TBD | Not started | - |
