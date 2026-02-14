@@ -253,4 +253,12 @@ class WorkoutCoordinator(
     // Prevents duplicate enableHandleDetection() calls from resetting state machine mid-grab
     internal var handleDetectionEnabledTimestamp: Long = 0L
     internal val HANDLE_DETECTION_DEBOUNCE_MS = 500L
+
+    // ===== LED Biofeedback =====
+
+    /**
+     * LED biofeedback controller for real-time LED color changes during workouts.
+     * Set during DI construction (nullable for tests that don't need LED feedback).
+     */
+    var ledFeedbackController: LedFeedbackController? = null
 }

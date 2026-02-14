@@ -543,6 +543,19 @@ class ActiveSessionEngine(
             if (repCounter.shouldStopWorkout()) {
                 handleSetCompletion()
             }
+
+            // LED Biofeedback: update controller with current velocity and phase
+            coordinator.ledFeedbackController?.let { led ->
+                val maxVelocity = maxOf(kotlin.math.abs(metric.velocityA), kotlin.math.abs(metric.velocityB))
+                val repCount = repCounter.getRepCount()
+                val workoutMode = params.programMode.toWorkoutMode(params.echoLevel)
+                led.updateMetrics(
+                    velocity = maxVelocity,
+                    repPhase = repCount.activeRepPhase,
+                    workoutMode = workoutMode,
+                    echoLoadRatio = calculateEchoLoadRatio(metric, params)
+                )
+            }
         } else {
             resetAutoStopTimer()
         }
@@ -706,6 +719,22 @@ class ActiveSessionEngine(
         } else {
             resetAutoStopTimer()
         }
+    }
+
+    // ===== LED Biofeedback Helpers =====
+
+    /**
+     * Calculate echo load ratio (actual/target) for Echo mode LED feedback.
+     * Returns 0f for non-Echo modes.
+     */
+    private fun calculateEchoLoadRatio(metric: WorkoutMetric, params: WorkoutParameters): Float {
+        if (!params.isEchoMode) return 0f
+        val targetWeight = params.weightPerCableKg
+        if (targetWeight <= 0f) return 1.0f
+        val blA = coordinator._loadBaselineA.value.coerceAtLeast(0f)
+        val blB = coordinator._loadBaselineB.value.coerceAtLeast(0f)
+        val actualLoad = maxOf(metric.loadA - blA, metric.loadB - blB).coerceAtLeast(0f)
+        return (actualLoad / targetWeight).coerceIn(0f, 2f)
     }
 
     // ===== Weight Adjustment =====
@@ -1097,6 +1126,12 @@ class ActiveSessionEngine(
                 coordinator.collectedMetrics.clear()
                 coordinator._hapticEvents.emit(HapticEvent.WORKOUT_START)
 
+                // LED Biofeedback: configure controller for bodyweight workout
+                coordinator.ledFeedbackController?.let { led ->
+                    led.setEnabled(settingsManager.ledFeedbackEnabled.value)
+                    led.setUserColorScheme(settingsManager.userPreferences.value.colorScheme)
+                }
+
                 coordinator.bodyweightTimerJob?.cancel()
                 coordinator.bodyweightTimerJob = scope.launch {
                     coordinator._timedExerciseRemainingSeconds.value = effectiveDuration
@@ -1229,6 +1264,12 @@ class ActiveSessionEngine(
             }
             coordinator.collectedMetrics.clear()
             coordinator._hapticEvents.emit(HapticEvent.WORKOUT_START)
+
+            // LED Biofeedback: configure controller for this workout
+            coordinator.ledFeedbackController?.let { led ->
+                led.setEnabled(settingsManager.ledFeedbackEnabled.value)
+                led.setUserColorScheme(settingsManager.userPreferences.value.colorScheme)
+            }
 
             if (isTimedCableExercise && exerciseDuration != null) {
                 coordinator.bodyweightTimerJob?.cancel()
@@ -1391,7 +1432,12 @@ class ActiveSessionEngine(
              if (hasPR && completedSetId != null) {
                  completedSetRepository.markAsPr(completedSetId)
                  Logger.d("Marked CompletedSet $completedSetId as PR (manual stop)")
+                 // LED Biofeedback: celebrate PR with rapid color flash
+                 coordinator.ledFeedbackController?.triggerPRCelebration()
              }
+
+             // LED Biofeedback: restore user's static color on workout end
+             coordinator.ledFeedbackController?.onWorkoutEnd()
 
              scope.launch {
                  syncTriggerManager?.onWorkoutCompleted()
@@ -1606,6 +1652,8 @@ class ActiveSessionEngine(
         if (hasPR && completedSetId != null) {
             completedSetRepository.markAsPr(completedSetId)
             Logger.d("Marked CompletedSet $completedSetId as PR")
+            // LED Biofeedback: celebrate PR with rapid color flash
+            coordinator.ledFeedbackController?.triggerPRCelebration()
         }
 
         if (params.isJustLift) {
@@ -1873,6 +1921,9 @@ class ActiveSessionEngine(
             val displaySetIndex = nextSetIdxFromStep ?: (coordinator._currentSetIndex.value + 1)
             val displayTotalSets = nextExerciseFromStep?.setReps?.size ?: currentExercise?.setReps?.size ?: 0
 
+            // LED Biofeedback: show blue during rest
+            coordinator.ledFeedbackController?.onRestPeriodStart()
+
             val startTime = currentTimeMillis()
             val endTimeMs = startTime + (restDuration * 1000L)
 
@@ -1894,6 +1945,9 @@ class ActiveSessionEngine(
 
                 delay(100)
             }
+
+            // LED Biofeedback: resume normal feedback after rest
+            coordinator.ledFeedbackController?.onRestPeriodEnd()
 
             if (autoplay) {
                 Logger.d("ActiveSessionEngine") { "autoplay rest complete: advancing to next set (no BLE stop - already sent at set end)" }
@@ -1922,6 +1976,7 @@ class ActiveSessionEngine(
     private fun advanceToNextSetInSingleExercise() {
         val routine = coordinator._loadedRoutine.value
         if (routine == null) {
+            coordinator.ledFeedbackController?.onWorkoutEnd()
             coordinator._workoutState.value = WorkoutState.Completed
             coordinator._currentSetIndex.value = 0
             coordinator._currentExerciseIndex.value = 0
@@ -1965,6 +2020,7 @@ class ActiveSessionEngine(
             resetAutoStopState()
             startWorkout(skipCountdown = true)
         } else {
+            coordinator.ledFeedbackController?.onWorkoutEnd()
             coordinator._workoutState.value = WorkoutState.Completed
             coordinator._loadedRoutine.value = null
             coordinator.routineStartTime = 0
@@ -2070,6 +2126,7 @@ class ActiveSessionEngine(
             startWorkoutOrSetReady()
         } else {
             Logger.d { "startNextSetOrExercise: No more steps - showing routine complete" }
+            coordinator.ledFeedbackController?.onWorkoutEnd()
             flowDelegate?.showRoutineComplete()
             coordinator._workoutState.value = WorkoutState.Idle
             coordinator._currentSetIndex.value = 0

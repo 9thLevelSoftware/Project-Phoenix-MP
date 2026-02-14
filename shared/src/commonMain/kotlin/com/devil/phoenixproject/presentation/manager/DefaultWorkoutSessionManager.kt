@@ -157,6 +157,14 @@ class DefaultWorkoutSessionManager(
         scope = scope
     )
 
+    // ===== LED Biofeedback Controller =====
+    init {
+        coordinator.ledFeedbackController = LedFeedbackController(
+            bleRepository = bleRepository,
+            scope = scope
+        )
+    }
+
     companion object {
         /** Prefix for temporary single exercise routines to identify them for cleanup */
         const val TEMP_SINGLE_EXERCISE_PREFIX = "temp_single_"
