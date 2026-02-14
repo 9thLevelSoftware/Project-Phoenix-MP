@@ -5,16 +5,16 @@
 See: .planning/PROJECT.md (updated 2026-02-13)
 
 **Core value:** Users can connect to their Vitruvian trainer and execute workouts reliably on both platforms.
-**Current focus:** Phase 2 - LED Biofeedback
+**Current focus:** Phase 3 - Rep Quality Scoring
 
 ## Current Position
 
-Phase: 2 of 4 (LED Biofeedback)
-Plan: 1 of 2 in current phase
-Status: Plan 02-01 complete, ready for 02-02
-Last activity: 2026-02-14 — Completed 02-01 (LED Biofeedback Core Engine)
+Phase: 3 of 4 (Rep Quality Scoring)
+Plan: 1 of 3 in current phase
+Status: Executing Phase 3
+Last activity: 2026-02-14 — Completed 03-01 (Rep Quality Scorer TDD)
 
-Progress: [███░░░░░░░] 37%
+Progress: [██████░░░░] 58%
 
 ## Performance Metrics
 
@@ -31,6 +31,8 @@ Progress: [███░░░░░░░] 37%
 | 01-01 (v0.4.5) | 1 | 12min | 12min |
 | 01-02 (v0.4.5) | 1 | 6min | 6min |
 | 02-01 (v0.4.5) | 1 | 6min | 6min |
+| 02-02 (v0.4.5) | 1 | ~90min | ~90min |
+| 03-01 (v0.4.5) | 1 | 5min | 5min |
 
 *Updated after each plan completion*
 
@@ -52,6 +54,13 @@ Recent decisions affecting current work:
 - [02-01]: Injectable timeProvider lambda for deterministic test control in LedFeedbackController
 - [02-01]: Reused FakeBleRepository with colorSchemeCommands tracking rather than new test double
 - [02-01]: Internal visibility on resolver methods for white-box testing of boundary conditions
+- [02-02]: Simplified from 6 zones to 4 (OFF/Green/Blue/Red) for clearer visual feedback
+- [02-02]: Velocity thresholds recalibrated from spec (~5x lower): 5/30/60 mm/s based on real hardware data
+- [02-02]: Removed BLE throttle (500ms) for faster response; kept hysteresis (3 samples) for stability
+- [03-01]: First rep gets perfect ROM/velocity scores (no baseline to penalize against)
+- [03-01]: Running averages updated after scoring (score against prior reps only)
+- [03-01]: Smoothness uses coefficient of variation with 2x multiplier for sensitivity
+- [03-01]: Trend detection uses half-split +/-5 threshold
 
 ### Pending Todos
 
@@ -64,5 +73,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-14
-Stopped at: Completed 02-01-PLAN.md (LED Biofeedback Core Engine)
+Stopped at: Completed 03-01-PLAN.md (Rep Quality Scorer TDD)
 Resume file: None
