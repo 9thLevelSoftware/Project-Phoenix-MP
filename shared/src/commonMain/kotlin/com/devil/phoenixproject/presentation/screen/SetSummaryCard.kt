@@ -1,6 +1,9 @@
 package com.devil.phoenixproject.presentation.screen
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -9,14 +12,22 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import com.devil.phoenixproject.domain.model.QualityTrend
+import com.devil.phoenixproject.domain.model.SetQualitySummary
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.domain.model.WorkoutState
 import com.devil.phoenixproject.presentation.components.RpeIndicator
+import kotlin.math.cos
 import kotlin.math.roundToInt
+import kotlin.math.sin
 
 /**
  * Enhanced Set Summary Card - matches official Vitruvian app design
@@ -216,6 +227,11 @@ fun SetSummaryCard(
                     peakWeight = kgToDisplay(summary.peakWeightKg, weightUnit),
                     unitLabel = unitLabel
                 )
+            }
+
+            // Rep Quality section (only shown for Phoenix+ tier when quality data is available)
+            summary.qualitySummary?.let { quality ->
+                QualityStatsSection(quality = quality)
             }
 
             // RPE section - show read-only in history view, interactive in live view
@@ -573,6 +589,416 @@ private fun PhaseStatColumn(
                 "$reps reps",
                 style = MaterialTheme.typography.bodySmall,
                 color = color
+            )
+        }
+    }
+}
+
+// ===== Rep Quality Section =====
+
+/**
+ * Quality color based on score (0-100)
+ */
+private fun qualityColor(score: Int): Color = when {
+    score >= 95 -> Color(0xFF00E676)  // Bright green (excellent)
+    score >= 80 -> Color(0xFF43A047)  // Green (good)
+    score >= 60 -> Color(0xFFFDD835)  // Yellow (fair)
+    score >= 40 -> Color(0xFFFF9800)  // Orange (needs work)
+    else -> Color(0xFFE53935)         // Red (poor)
+}
+
+/**
+ * Rep Quality stats section with sparkline, swipeable radar chart, trend, and improvement tip.
+ * Shown after set completion for Phoenix+ tier users.
+ */
+@Composable
+private fun QualityStatsSection(quality: SetQualitySummary) {
+    var showRadar by remember { mutableStateOf(false) }
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
+        ),
+        shape = RoundedCornerShape(16.dp)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            // Header with trend indicator
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Text(
+                        "Rep Quality",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    val trendIcon = when (quality.trend) {
+                        QualityTrend.IMPROVING -> Icons.Default.TrendingUp
+                        QualityTrend.STABLE -> Icons.Default.TrendingFlat
+                        QualityTrend.DECLINING -> Icons.Default.TrendingDown
+                    }
+                    val trendColor = when (quality.trend) {
+                        QualityTrend.IMPROVING -> Color(0xFF43A047)
+                        QualityTrend.STABLE -> Color.Gray
+                        QualityTrend.DECLINING -> Color(0xFFE53935)
+                    }
+                    Icon(
+                        trendIcon,
+                        contentDescription = quality.trend.name,
+                        modifier = Modifier.size(18.dp),
+                        tint = trendColor
+                    )
+                }
+                // Trend label
+                val trendLabel = when (quality.trend) {
+                    QualityTrend.IMPROVING -> "Improving"
+                    QualityTrend.STABLE -> "Stable"
+                    QualityTrend.DECLINING -> "Declining"
+                }
+                val trendLabelColor = when (quality.trend) {
+                    QualityTrend.IMPROVING -> Color(0xFF43A047)
+                    QualityTrend.STABLE -> Color.Gray
+                    QualityTrend.DECLINING -> Color(0xFFE53935)
+                }
+                Text(
+                    trendLabel,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = trendLabelColor
+                )
+            }
+
+            // Stats row: Average (large), Best, Worst
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceEvenly,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // Average score (large, color-coded)
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(
+                        "Average",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        "${quality.averageScore}",
+                        style = MaterialTheme.typography.headlineMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = qualityColor(quality.averageScore)
+                    )
+                }
+                // Best rep
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(
+                        "Best",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        "#${quality.bestRepNumber}: ${quality.bestScore}",
+                        style = MaterialTheme.typography.bodyLarge,
+                        fontWeight = FontWeight.Medium,
+                        color = qualityColor(quality.bestScore)
+                    )
+                }
+                // Worst rep
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(
+                        "Worst",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        "#${quality.worstRepNumber}: ${quality.worstScore}",
+                        style = MaterialTheme.typography.bodyLarge,
+                        fontWeight = FontWeight.Medium,
+                        color = qualityColor(quality.worstScore)
+                    )
+                }
+            }
+
+            // Swipeable content: sparkline vs radar chart
+            AnimatedContent(
+                targetState = showRadar,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { showRadar = !showRadar }
+            ) { isRadar ->
+                if (isRadar) {
+                    RadarChart(quality = quality)
+                } else {
+                    QualitySparkline(quality = quality)
+                }
+            }
+
+            // Swipe hint
+            Text(
+                text = if (showRadar) "Tap for sparkline" else "Tap for component radar",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                modifier = Modifier.fillMaxWidth(),
+                textAlign = TextAlign.Center
+            )
+
+            // Weakest component improvement tip
+            WeakestComponentTip(quality = quality)
+        }
+    }
+}
+
+/**
+ * Mini sparkline chart showing per-rep quality scores.
+ */
+@Composable
+private fun QualitySparkline(quality: SetQualitySummary) {
+    val scores = quality.repScores.map { it.composite }
+    if (scores.isEmpty()) return
+
+    Canvas(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(60.dp)
+    ) {
+        val canvasWidth = size.width
+        val canvasHeight = size.height
+        val padding = 4.dp.toPx()
+
+        val effectiveWidth = canvasWidth - padding * 2
+        val effectiveHeight = canvasHeight - padding * 2
+
+        val xStep = if (scores.size > 1) effectiveWidth / (scores.size - 1) else effectiveWidth / 2
+        val minScore = 0f
+        val maxScore = 100f
+
+        val points = scores.mapIndexed { index, score ->
+            val x = padding + if (scores.size > 1) index * xStep else effectiveWidth / 2
+            val y = padding + effectiveHeight * (1f - (score - minScore) / (maxScore - minScore))
+            Offset(x, y)
+        }
+
+        // Draw line connecting points
+        for (i in 0 until points.size - 1) {
+            val startColor = qualityColor(scores[i])
+            val endColor = qualityColor(scores[i + 1])
+            // Use average color for the segment
+            val segColor = Color(
+                red = (startColor.red + endColor.red) / 2f,
+                green = (startColor.green + endColor.green) / 2f,
+                blue = (startColor.blue + endColor.blue) / 2f,
+                alpha = 1f
+            )
+            drawLine(
+                color = segColor,
+                start = points[i],
+                end = points[i + 1],
+                strokeWidth = 2.dp.toPx()
+            )
+        }
+
+        // Draw dots at each point
+        points.forEachIndexed { index, point ->
+            drawCircle(
+                color = qualityColor(scores[index]),
+                radius = 3.dp.toPx(),
+                center = point
+            )
+        }
+    }
+}
+
+/**
+ * Radar/spider chart showing average component scores across all reps in the set.
+ * Four axes: ROM (max 30), Velocity (max 25), Eccentric (max 25), Smoothness (max 20).
+ * Uses a Box overlay approach to place Compose Text labels around the Canvas chart.
+ */
+@Composable
+private fun RadarChart(quality: SetQualitySummary) {
+    if (quality.repScores.isEmpty()) return
+
+    // Average component scores across all reps
+    val avgRom = quality.repScores.map { it.romScore }.average().toFloat()
+    val avgVelocity = quality.repScores.map { it.velocityScore }.average().toFloat()
+    val avgEccentric = quality.repScores.map { it.eccentricControlScore }.average().toFloat()
+    val avgSmoothness = quality.repScores.map { it.smoothnessScore }.average().toFloat()
+
+    val gridColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)
+    val fillColor = Color(0xFF43A047).copy(alpha = 0.25f)
+    val strokeColor = Color(0xFF43A047)
+
+    // Axes: ROM (top), Velocity (right), Eccentric (bottom), Smoothness (left)
+    val axisValues = listOf(avgRom / 30f, avgVelocity / 25f, avgEccentric / 25f, avgSmoothness / 20f)
+    val numAxes = 4
+
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
+        // Top label: ROM
+        Text(
+            "ROM: ${formatFloat(avgRom, 1)}/30",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.fillMaxWidth()
+        )
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // Left label: Smoothness
+            Text(
+                "${formatFloat(avgSmoothness, 1)}/20\nSmooth",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.width(56.dp)
+            )
+
+            // Canvas for radar chart (no text)
+            Canvas(
+                modifier = Modifier
+                    .weight(1f)
+                    .height(120.dp)
+            ) {
+                val centerX = size.width / 2f
+                val centerY = size.height / 2f
+                val radius = minOf(centerX, centerY) - 4.dp.toPx()
+
+                val angleStep = (2.0 * kotlin.math.PI / numAxes).toFloat()
+                val startAngle = (-kotlin.math.PI / 2.0).toFloat()
+
+                // Draw grid polygons (25%, 50%, 75%, 100%)
+                for (level in listOf(0.25f, 0.5f, 0.75f, 1.0f)) {
+                    val gridPath = Path()
+                    for (i in 0 until numAxes) {
+                        val angle = startAngle + i * angleStep
+                        val x = centerX + radius * level * cos(angle)
+                        val y = centerY + radius * level * sin(angle)
+                        if (i == 0) gridPath.moveTo(x, y) else gridPath.lineTo(x, y)
+                    }
+                    gridPath.close()
+                    drawPath(gridPath, color = gridColor, style = Stroke(width = 1.dp.toPx()))
+                }
+
+                // Draw axis lines
+                for (i in 0 until numAxes) {
+                    val angle = startAngle + i * angleStep
+                    val endX = centerX + radius * cos(angle)
+                    val endY = centerY + radius * sin(angle)
+                    drawLine(
+                        color = gridColor,
+                        start = Offset(centerX, centerY),
+                        end = Offset(endX, endY),
+                        strokeWidth = 1.dp.toPx()
+                    )
+                }
+
+                // Draw data polygon
+                val dataPath = Path()
+                for (i in 0 until numAxes) {
+                    val angle = startAngle + i * angleStep
+                    val normalizedValue = axisValues[i].coerceIn(0f, 1f)
+                    val x = centerX + radius * normalizedValue * cos(angle)
+                    val y = centerY + radius * normalizedValue * sin(angle)
+                    if (i == 0) dataPath.moveTo(x, y) else dataPath.lineTo(x, y)
+                }
+                dataPath.close()
+                drawPath(dataPath, color = fillColor)
+                drawPath(dataPath, color = strokeColor, style = Stroke(width = 2.dp.toPx()))
+
+                // Draw data points
+                for (i in 0 until numAxes) {
+                    val angle = startAngle + i * angleStep
+                    val normalizedValue = axisValues[i].coerceIn(0f, 1f)
+                    val x = centerX + radius * normalizedValue * cos(angle)
+                    val y = centerY + radius * normalizedValue * sin(angle)
+                    drawCircle(color = strokeColor, radius = 3.dp.toPx(), center = Offset(x, y))
+                }
+            }
+
+            // Right label: Velocity
+            Text(
+                "${formatFloat(avgVelocity, 1)}/25\nVelocity",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.width(56.dp)
+            )
+        }
+
+        // Bottom label: Eccentric
+        Text(
+            "Eccentric: ${formatFloat(avgEccentric, 1)}/25",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.fillMaxWidth()
+        )
+    }
+}
+
+/**
+ * Shows a brief improvement tip for the weakest component.
+ */
+@Composable
+private fun WeakestComponentTip(quality: SetQualitySummary) {
+    if (quality.repScores.isEmpty()) return
+
+    // Calculate average component scores as percentage of max
+    val avgRom = quality.repScores.map { it.romScore }.average().toFloat()
+    val avgVelocity = quality.repScores.map { it.velocityScore }.average().toFloat()
+    val avgEccentric = quality.repScores.map { it.eccentricControlScore }.average().toFloat()
+    val avgSmoothness = quality.repScores.map { it.smoothnessScore }.average().toFloat()
+
+    data class Component(val name: String, val percentage: Float, val tip: String)
+
+    val components = listOf(
+        Component("ROM", avgRom / 30f, "Try to maintain consistent range of motion each rep"),
+        Component("Velocity", avgVelocity / 25f, "Keep a steady tempo throughout the set"),
+        Component("Eccentric", avgEccentric / 25f, "Focus on a controlled 2-second lowering phase"),
+        Component("Smoothness", avgSmoothness / 20f, "Avoid jerky movements -- smooth and steady wins")
+    )
+
+    val weakest = components.minByOrNull { it.percentage } ?: return
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f)
+        ),
+        shape = RoundedCornerShape(12.dp)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Icon(
+                Icons.Default.Lightbulb,
+                contentDescription = "Tip",
+                modifier = Modifier.size(16.dp),
+                tint = MaterialTheme.colorScheme.secondary
+            )
+            Text(
+                "${weakest.name}: ${weakest.tip}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSecondaryContainer
             )
         }
     }
