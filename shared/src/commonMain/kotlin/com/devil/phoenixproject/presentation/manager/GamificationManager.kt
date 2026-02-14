@@ -4,7 +4,9 @@ import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.data.repository.GamificationRepository
 import com.devil.phoenixproject.data.repository.PersonalRecordRepository
+import com.devil.phoenixproject.data.local.BadgeDefinitions
 import com.devil.phoenixproject.domain.model.Badge
+import com.devil.phoenixproject.domain.model.BadgeRequirement
 import com.devil.phoenixproject.domain.model.HapticEvent
 import com.devil.phoenixproject.domain.model.PRCelebrationEvent
 import com.devil.phoenixproject.domain.model.PRType
@@ -32,6 +34,9 @@ class GamificationManager(
 
     private val _badgeEarnedEvents = MutableSharedFlow<List<Badge>>()
     val badgeEarnedEvents: SharedFlow<List<Badge>> = _badgeEarnedEvents.asSharedFlow()
+
+    /** Consecutive sets with quality score above minimum threshold (session-scoped) */
+    private var consecutiveQualitySets: Int = 0
 
     /**
      * Check for PRs and badges after a workout session is saved.
@@ -118,6 +123,56 @@ class GamificationManager(
         }
 
         return hasCelebrationSound
+    }
+
+    /**
+     * Process a set's average quality score for Form Master badge tracking.
+     * Called after each set completion when quality scoring is active.
+     *
+     * Tracks consecutive sets above the minimum threshold (85) and awards
+     * Form Master badges when streak criteria are met.
+     */
+    suspend fun processSetQualityEvent(averageSetQuality: Int) {
+        if (averageSetQuality >= 85) {
+            consecutiveQualitySets++
+            Logger.d("Quality streak: $consecutiveQualitySets consecutive sets (score=$averageSetQuality)")
+        } else {
+            Logger.d("Quality streak reset: score $averageSetQuality < 85 (was $consecutiveQualitySets)")
+            consecutiveQualitySets = 0
+            return // No badge check needed if streak broken
+        }
+
+        // Check Form Master badge criteria against current streak
+        val formMasterBadges = BadgeDefinitions.allBadges.filter {
+            it.requirement is BadgeRequirement.QualityStreak
+        }
+
+        val newlyEarned = mutableListOf<Badge>()
+        for (badge in formMasterBadges) {
+            val req = badge.requirement as BadgeRequirement.QualityStreak
+            if (consecutiveQualitySets >= req.sets && averageSetQuality >= req.minScore) {
+                if (!gamificationRepository.isBadgeEarned(badge.id)) {
+                    val awarded = gamificationRepository.awardBadge(badge.id)
+                    if (awarded) {
+                        newlyEarned.add(badge)
+                        Logger.d("Form Master badge earned: ${badge.name} (streak=$consecutiveQualitySets, score=$averageSetQuality)")
+                    }
+                }
+            }
+        }
+
+        if (newlyEarned.isNotEmpty()) {
+            hapticEvents.emit(HapticEvent.BADGE_EARNED)
+            _badgeEarnedEvents.emit(newlyEarned)
+            Logger.d("Form Master badges earned: ${newlyEarned.map { it.name }}")
+        }
+    }
+
+    /**
+     * Reset quality streak counter. Called when starting a new workout session.
+     */
+    fun resetQualityStreak() {
+        consecutiveQualitySets = 0
     }
 
     fun emitBadgeSound() {

@@ -1142,6 +1142,8 @@ class ActiveSessionEngine(
         // Reset rep quality scorer for fresh set
         coordinator.repQualityScorer.reset()
         coordinator._latestRepQuality.value = null
+        // Reset quality streak for new workout (session-scoped)
+        gamificationManager.resetQualityStreak()
 
         coordinator.workoutJob?.cancel()
 
@@ -1818,6 +1820,11 @@ class ActiveSessionEngine(
 
             // Attach quality summary to the set summary
             val summary = baseSummary.copy(qualitySummary = qualitySummary)
+
+            // Process quality event for Form Master badge tracking
+            qualitySummary?.let { qs ->
+                gamificationManager.processSetQualityEvent(qs.averageScore)
+            }
 
             Logger.d("Set summary: heaviest=${summary.heaviestLiftKgPerCable}kg, reps=$completedReps, duration=${summary.durationMs}ms")
 
