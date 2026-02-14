@@ -19,7 +19,7 @@ See `.planning/milestones/v0.4.1-*` for archived phase details.
 ## Phases
 
 - [x] **Phase 1: Data Foundation** - RepMetric table, subscription tier, FeatureGate, migration v13 ✓ 2026-02-14
-- [ ] **Phase 2: LED Biofeedback** - Velocity-zone LED control with mode-specific feedback
+- [x] **Phase 2: LED Biofeedback** - Velocity-zone LED control with mode-specific feedback ✓ 2026-02-14
 - [ ] **Phase 3: Rep Quality Scoring** - Per-rep quality scores with HUD and set summaries
 - [ ] **Phase 4: Smart Suggestions** - Volume tracking, balance analysis, plateau detection
 
@@ -54,8 +54,8 @@ Plans:
 **Plans**: 2 plans
 
 Plans:
-- [ ] 02-01-PLAN.md -- VelocityZone enum, LedFeedbackController engine, RunningAverage utility, unit tests
-- [ ] 02-02-PLAN.md -- Preferences, Settings UI with tier gating, ActiveSessionEngine integration, hardware verification
+- [x] 02-01-PLAN.md -- VelocityZone enum, LedFeedbackController engine, RunningAverage utility, unit tests ✓
+- [x] 02-02-PLAN.md -- Preferences, Settings UI with tier gating, ActiveSessionEngine integration, hardware verification ✓
 
 ### Phase 3: Rep Quality Scoring
 **Goal**: Users receive meaningful per-rep quality feedback during workouts and set summaries
@@ -67,12 +67,12 @@ Plans:
   3. Quality score reflects four distinct components (ROM, velocity, eccentric control, smoothness)
   4. Form Master badges are awarded for quality achievements, visible only to Phoenix+ tier users
   5. Free tier users do not see quality scores or badges (feature gated to Phoenix+)
-**Plans**: TBD
+**Plans**: 3 plans
 
 Plans:
-- [ ] 03-01: TBD
-- [ ] 03-02: TBD
-- [ ] 03-03: TBD
+- [ ] 03-01-PLAN.md -- RepQualityScorer TDD engine: 4-component scoring algorithm with full test coverage
+- [ ] 03-02-PLAN.md -- HUD integration: wire scorer into ActiveSessionEngine, per-rep quality indicator on WorkoutTab
+- [ ] 03-03-PLAN.md -- Set summary quality section (sparkline, radar chart, trend), Form Master badges
 
 ### Phase 4: Smart Suggestions
 **Goal**: Users receive actionable training insights that help them train more effectively
@@ -98,6 +98,6 @@ Plans:
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
 | 1. Data Foundation | v0.4.5 | 2/2 | ✓ Complete | 2026-02-14 |
-| 2. LED Biofeedback | v0.4.5 | 0/2 | Planned | - |
-| 3. Rep Quality Scoring | v0.4.5 | 0/TBD | Not started | - |
+| 2. LED Biofeedback | v0.4.5 | 2/2 | ✓ Complete | 2026-02-14 |
+| 3. Rep Quality Scoring | v0.4.5 | 0/3 | In Progress | - |
 | 4. Smart Suggestions | v0.4.5 | 0/TBD | Not started | - |
