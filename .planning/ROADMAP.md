@@ -101,7 +101,10 @@ Plans:
   1. RepMetricRepository.save() is called during rep completion in ActiveSessionEngine
   2. Per-rep force curve data (position, velocity, load arrays) is persisted to RepMetric table
   3. Persisted data can be queried back after workout completion
-**Plans**: TBD (run /gsd:plan-phase 5)
+**Plans**: 1 plan
+
+Plans:
+- [ ] 05-01-PLAN.md -- Wire RepMetricRepository into ActiveSessionEngine, persist per-rep metrics at set completion
 
 ## Progress
 
