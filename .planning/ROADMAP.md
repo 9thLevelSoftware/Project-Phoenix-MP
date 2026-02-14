@@ -84,11 +84,12 @@ Plans:
   3. User receives prompts for neglected exercises (>14 days) and stalled exercises (plateau detection)
   4. Time-of-day analysis is available for Elite tier users showing optimal training windows
   5. All smart suggestion features are hidden from non-Elite users
-**Plans**: TBD
+**Plans**: 3 plans
 
 Plans:
-- [ ] 04-01: TBD
-- [ ] 04-02: TBD
+- [ ] 04-01-PLAN.md -- SmartSuggestionsEngine TDD: 5 insight algorithms (volume, balance, neglect, plateau, time-of-day)
+- [ ] 04-02-PLAN.md -- SQL queries, SmartSuggestionsRepository, SubscriptionManager Elite tier access
+- [ ] 04-03-PLAN.md -- InsightsTab UI with Elite gating, MainScreen navigation integration
 
 ## Progress
 
@@ -100,4 +101,4 @@ Plans:
 | 1. Data Foundation | v0.4.5 | 2/2 | ✓ Complete | 2026-02-14 |
 | 2. LED Biofeedback | v0.4.5 | 2/2 | ✓ Complete | 2026-02-14 |
 | 3. Rep Quality Scoring | v0.4.5 | 3/3 | ✓ Complete | 2026-02-14 |
-| 4. Smart Suggestions | v0.4.5 | 0/TBD | Not started | - |
+| 4. Smart Suggestions | v0.4.5 | 0/3 | In Progress | - |
