@@ -38,6 +38,9 @@ sealed class NavigationRoutes(val route: String) {
     object Paywall : NavigationRoutes("paywall")
     object Account : NavigationRoutes("account")
 
+    // Smart Insights route (Elite-gated)
+    object SmartInsights : NavigationRoutes("smart_insights")
+
     // Cloud Sync routes
     object LinkAccount : NavigationRoutes("link_account")
 }

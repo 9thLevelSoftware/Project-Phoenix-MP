@@ -226,6 +226,15 @@ fun NavGraph(
             )
         }
 
+        // Smart Insights screen - Elite-gated training suggestions
+        composable(
+            route = NavigationRoutes.SmartInsights.route,
+            enterTransition = { fadeIn(animationSpec = tween(200)) },
+            exitTransition = { fadeOut(animationSpec = tween(200)) }
+        ) {
+            SmartInsightsTab()
+        }
+
         // Exercise Detail screen - drill-down for individual exercise
         composable(
             route = NavigationRoutes.ExerciseDetail.route,
