@@ -9,6 +9,7 @@ import com.devil.phoenixproject.data.repository.HandleState
 import com.devil.phoenixproject.data.repository.PersonalRecordRepository
 import com.devil.phoenixproject.data.repository.RepNotification
 import com.devil.phoenixproject.data.repository.CompletedSetRepository
+import com.devil.phoenixproject.data.repository.RepMetricRepository
 import com.devil.phoenixproject.data.repository.TrainingCycleRepository
 import com.devil.phoenixproject.data.repository.WorkoutRepository
 import com.devil.phoenixproject.data.sync.SyncTriggerManager
@@ -54,6 +55,7 @@ class ActiveSessionEngine(
     private val trainingCycleRepository: TrainingCycleRepository,
     private val completedSetRepository: CompletedSetRepository,
     private val syncTriggerManager: SyncTriggerManager?,
+    private val repMetricRepository: RepMetricRepository,
     private val settingsManager: SettingsManager,
     private val scope: CoroutineScope
 ) {
@@ -571,6 +573,9 @@ class ActiveSessionEngine(
             peakPowerWatts = 0f,
             avgPowerWatts = 0f
         )
+
+        // Accumulate rep metric data for persistence at set completion
+        coordinator.setRepMetrics.add(repData)
 
         val score = coordinator.repQualityScorer.scoreRep(repData)
         coordinator._latestRepQuality.value = score
@@ -1103,6 +1108,7 @@ class ActiveSessionEngine(
         coordinator._workoutState.value = WorkoutState.Idle
         coordinator._repCount.value = RepCount()
         coordinator._repRanges.value = null
+        coordinator.setRepMetrics.clear()
     }
 
     fun recaptureLoadBaseline() {
@@ -1790,6 +1796,19 @@ class ActiveSessionEngine(
             coordinator._hapticEvents.emit(HapticEvent.WORKOUT_END)
 
             saveWorkoutSession()
+
+            // Persist per-rep metric data (GATE-04: captured for all tiers)
+            val sessionId = coordinator.currentSessionId
+            val repMetricsToSave = coordinator.setRepMetrics.toList()
+            if (sessionId != null && repMetricsToSave.isNotEmpty()) {
+                try {
+                    repMetricRepository.saveRepMetrics(sessionId, repMetricsToSave)
+                    Logger.d { "Persisted ${repMetricsToSave.size} rep metrics for session $sessionId" }
+                } catch (e: Exception) {
+                    Logger.e(e) { "Failed to persist rep metrics for session $sessionId" }
+                }
+            }
+            coordinator.setRepMetrics.clear()
 
             // Capture rep quality summary BEFORE reset (null if no reps were scored)
             val qualitySummary = try {

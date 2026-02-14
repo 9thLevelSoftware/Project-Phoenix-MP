@@ -193,6 +193,7 @@ class WorkoutCoordinator(
     internal var workoutStartTime: Long = 0
     internal var routineStartTime: Long = 0  // Issue #195: Track routine start separately from per-set start
     internal val collectedMetrics = mutableListOf<WorkoutMetric>()
+    internal val setRepMetrics = mutableListOf<RepMetricData>()
 
     internal var currentRoutineSessionId: String? = null
     internal var currentRoutineName: String? = null

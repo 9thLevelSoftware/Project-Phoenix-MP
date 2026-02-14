@@ -6,6 +6,7 @@ import com.devil.phoenixproject.data.repository.BleRepository
 import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.data.repository.PersonalRecordRepository
 import com.devil.phoenixproject.data.repository.CompletedSetRepository
+import com.devil.phoenixproject.data.repository.RepMetricRepository
 import com.devil.phoenixproject.data.repository.TrainingCycleRepository
 import com.devil.phoenixproject.data.repository.WorkoutRepository
 import com.devil.phoenixproject.data.sync.SyncTriggerManager
@@ -109,6 +110,7 @@ class DefaultWorkoutSessionManager(
     private val trainingCycleRepository: TrainingCycleRepository,
     private val completedSetRepository: CompletedSetRepository,
     private val syncTriggerManager: SyncTriggerManager?,
+    private val repMetricRepository: RepMetricRepository,
     private val resolveWeightsUseCase: ResolveRoutineWeightsUseCase,
     private val settingsManager: SettingsManager,
     private val scope: CoroutineScope,
@@ -153,6 +155,7 @@ class DefaultWorkoutSessionManager(
         trainingCycleRepository = trainingCycleRepository,
         completedSetRepository = completedSetRepository,
         syncTriggerManager = syncTriggerManager,
+        repMetricRepository = repMetricRepository,
         settingsManager = settingsManager,
         scope = scope
     )
