@@ -13,6 +13,7 @@ import com.devil.phoenixproject.data.repository.TrainingCycleRepository
 import com.devil.phoenixproject.data.repository.WorkoutRepository
 import com.devil.phoenixproject.data.sync.SyncTriggerManager
 import com.devil.phoenixproject.domain.model.*
+import com.devil.phoenixproject.domain.premium.RepQualityScorer
 import com.devil.phoenixproject.domain.usecase.RepCounterFromMachine
 import com.devil.phoenixproject.util.BlePacketFactory
 import com.devil.phoenixproject.util.Constants
@@ -487,6 +488,8 @@ class ActiveSessionEngine(
         val rawPosA = currentPositions?.positionA ?: 0f
         val rawPosB = currentPositions?.positionB ?: 0f
 
+        val repCountBefore = repCounter.getRepCount().totalReps
+
         repCounter.process(
             repsRomCount = notification.repsRomCount,
             repsRomTotal = notification.repsRomTotal,
@@ -503,6 +506,75 @@ class ActiveSessionEngine(
 
         coordinator._repCount.value = repCounter.getRepCount()
         coordinator._repRanges.value = repCounter.getRepRanges()
+
+        // Score the rep if rep count actually incremented
+        val repCountAfter = repCounter.getRepCount().totalReps
+        if (repCountAfter > repCountBefore) {
+            scoreCurrentRep(repCountAfter)
+        }
+    }
+
+    /**
+     * Score the current rep using approximate metrics from collected WorkoutMetric data.
+     * Since full per-rep phase data may not be segmented at notification time,
+     * we approximate ROM, velocity, and phase durations from the collected metrics window.
+     */
+    private fun scoreCurrentRep(repNumber: Int) {
+        val metrics = coordinator.collectedMetrics
+        if (metrics.isEmpty()) return
+
+        // Approximate ROM from position range across all collected metrics
+        val positions = metrics.flatMap { listOf(it.positionA, it.positionB) }
+        val rom = if (positions.isNotEmpty()) positions.max() - positions.min() else 0f
+
+        // Approximate average concentric velocity from recent metrics
+        val recentMetrics = metrics.takeLast(20) // Recent window for this rep
+        val velocities = recentMetrics.map { maxOf(kotlin.math.abs(it.velocityA.toFloat()), kotlin.math.abs(it.velocityB.toFloat())) }
+        val avgVelocity = if (velocities.isNotEmpty()) velocities.average().toFloat() else 0f
+
+        // Approximate phase durations: assume roughly 1:2 concentric:eccentric for now
+        // Real per-rep metric capture will provide accurate phase data in persisted RepMetric
+        val totalDurationMs = if (recentMetrics.size >= 2) {
+            recentMetrics.last().timestamp - recentMetrics.first().timestamp
+        } else 1000L
+        val concentricMs = totalDurationMs / 3
+        val eccentricMs = totalDurationMs * 2 / 3
+
+        val repData = RepMetricData(
+            repNumber = repNumber,
+            isWarmup = !repCounter.getRepCount().isWarmupComplete,
+            startTimestamp = recentMetrics.firstOrNull()?.timestamp ?: 0L,
+            endTimestamp = recentMetrics.lastOrNull()?.timestamp ?: 0L,
+            durationMs = totalDurationMs,
+            concentricDurationMs = concentricMs,
+            concentricPositions = floatArrayOf(),
+            concentricLoadsA = floatArrayOf(),
+            concentricLoadsB = floatArrayOf(),
+            concentricVelocities = velocities.toFloatArray(),
+            concentricTimestamps = longArrayOf(),
+            eccentricDurationMs = eccentricMs,
+            eccentricPositions = floatArrayOf(),
+            eccentricLoadsA = floatArrayOf(),
+            eccentricLoadsB = floatArrayOf(),
+            eccentricVelocities = floatArrayOf(),
+            eccentricTimestamps = longArrayOf(),
+            peakForceA = 0f,
+            peakForceB = 0f,
+            avgForceConcentricA = 0f,
+            avgForceConcentricB = 0f,
+            avgForceEccentricA = 0f,
+            avgForceEccentricB = 0f,
+            peakVelocity = velocities.maxOrNull() ?: 0f,
+            avgVelocityConcentric = avgVelocity,
+            avgVelocityEccentric = 0f,
+            rangeOfMotionMm = rom,
+            peakPowerWatts = 0f,
+            avgPowerWatts = 0f
+        )
+
+        val score = coordinator.repQualityScorer.scoreRep(repData)
+        coordinator._latestRepQuality.value = score
+        Logger.d { "Rep quality scored: rep=$repNumber, score=${score.composite}" }
     }
 
     // ===== Auto-Stop Detection =====
@@ -1066,6 +1138,10 @@ class ActiveSessionEngine(
         coordinator.setCompletionInProgress = false
         resetAutoStopState()
         coordinator.skipCountdownRequested = skipCountdown
+
+        // Reset rep quality scorer for fresh set
+        coordinator.repQualityScorer.reset()
+        coordinator._latestRepQuality.value = null
 
         coordinator.workoutJob?.cancel()
 
@@ -1713,11 +1789,23 @@ class ActiveSessionEngine(
 
             saveWorkoutSession()
 
+            // Capture rep quality summary BEFORE reset (null if no reps were scored)
+            val qualitySummary = try {
+                coordinator.repQualityScorer.getSetSummary()
+            } catch (_: IllegalStateException) {
+                // No reps scored (e.g., bodyweight exercise, scorer not active)
+                null
+            }
+
+            // Reset rep quality scorer for next set
+            coordinator.repQualityScorer.reset()
+            coordinator._latestRepQuality.value = null
+
             val completedReps = coordinator._repCount.value.workingReps
             val warmupReps = coordinator._repCount.value.warmupReps
             val metricsList = coordinator.collectedMetrics.toList()
 
-            val summary = calculateSetSummaryMetrics(
+            val baseSummary = calculateSetSummaryMetrics(
                 metrics = metricsList,
                 repCount = completedReps,
                 fallbackWeightKg = params.weightPerCableKg,
@@ -1727,6 +1815,9 @@ class ActiveSessionEngine(
                 baselineLoadA = coordinator._loadBaselineA.value,
                 baselineLoadB = coordinator._loadBaselineB.value
             )
+
+            // Attach quality summary to the set summary
+            val summary = baseSummary.copy(qualitySummary = qualitySummary)
 
             Logger.d("Set summary: heaviest=${summary.heaviestLiftKgPerCable}kg, reps=$completedReps, duration=${summary.durationMs}ms")
 

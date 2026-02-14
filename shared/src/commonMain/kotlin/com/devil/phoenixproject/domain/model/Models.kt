@@ -81,7 +81,9 @@ sealed class WorkoutState {
         val warmupAvgWeightKg: Float = 0f,  // Average weight during warmup phase
         val workingAvgWeightKg: Float = 0f,  // Average weight at peak (working phase)
         val burnoutAvgWeightKg: Float = 0f,  // Average weight during burnout/eccentric phase
-        val peakWeightKg: Float = 0f  // Highest weight achieved during set
+        val peakWeightKg: Float = 0f,  // Highest weight achieved during set
+        // Rep Quality Summary (null for Free tier or if scorer wasn't active)
+        val qualitySummary: SetQualitySummary? = null
     ) : WorkoutState()
     object Paused : WorkoutState()
     object Completed : WorkoutState()
