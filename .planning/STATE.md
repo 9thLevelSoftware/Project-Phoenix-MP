@@ -10,11 +10,11 @@ See: .planning/PROJECT.md (updated 2026-02-13)
 ## Current Position
 
 Phase: 3 of 4 (Rep Quality Scoring)
-Plan: 1 of 3 in current phase
+Plan: 2 of 3 in current phase
 Status: Executing Phase 3
-Last activity: 2026-02-14 — Completed 03-01 (Rep Quality Scorer TDD)
+Last activity: 2026-02-14 — Completed 03-02 (Rep Quality HUD Integration)
 
-Progress: [██████░░░░] 58%
+Progress: [███████░░░] 65%
 
 ## Performance Metrics
 
@@ -33,6 +33,7 @@ Progress: [██████░░░░] 58%
 | 02-01 (v0.4.5) | 1 | 6min | 6min |
 | 02-02 (v0.4.5) | 1 | ~90min | ~90min |
 | 03-01 (v0.4.5) | 1 | 5min | 5min |
+| 03-02 (v0.4.5) | 1 | 11min | 11min |
 
 *Updated after each plan completion*
 
@@ -61,6 +62,9 @@ Recent decisions affecting current work:
 - [03-01]: Running averages updated after scoring (score against prior reps only)
 - [03-01]: Smoothness uses coefficient of variation with 2x multiplier for sensitivity
 - [03-01]: Trend detection uses half-split +/-5 threshold
+- [03-02]: Score gated by SubscriptionManager.hasProAccess at ActiveWorkoutScreen level
+- [03-02]: Approximate metric data for HUD scoring (full accuracy in persisted RepMetricData)
+- [03-02]: RepQualityIndicator at TopCenter with 80dp offset, 800ms auto-dismiss
 
 ### Pending Todos
 
@@ -73,5 +77,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-14
-Stopped at: Completed 03-01-PLAN.md (Rep Quality Scorer TDD)
+Stopped at: Completed 03-02-PLAN.md (Rep Quality HUD Integration)
 Resume file: None
