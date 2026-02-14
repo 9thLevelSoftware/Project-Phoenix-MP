@@ -52,6 +52,7 @@ fun ActiveWorkoutScreen(
     // Issue #192: Timed exercise countdown for duration-based exercises
     val timedExerciseRemainingSeconds by viewModel.timedExerciseRemainingSeconds.collectAsState()
     val isCurrentExerciseBodyweight by viewModel.isCurrentExerciseBodyweight.collectAsState()
+    val latestRepQuality by viewModel.latestRepQuality.collectAsState()
     @Suppress("UNUSED_VARIABLE") // Reserved for future connecting overlay
     val isAutoConnecting by viewModel.isAutoConnecting.collectAsState()
     val connectionError by viewModel.connectionError.collectAsState()
@@ -68,6 +69,11 @@ fun ActiveWorkoutScreen(
             prCelebrationEvent = event
         }
     }
+
+    // Rep quality score - gated to Phoenix+ tier users only
+    val subscriptionManager: com.devil.phoenixproject.domain.subscription.SubscriptionManager = koinInject()
+    val hasProAccess by subscriptionManager.hasProAccess.collectAsState()
+    val gatedRepQualityScore = if (hasProAccess) latestRepQuality?.composite else null
 
     // Badge Celebration state
     val gamificationRepository: GamificationRepository = koinInject()
@@ -252,7 +258,7 @@ fun ActiveWorkoutScreen(
         repCount, repRanges, autoStopState, weightUnit, enableVideoPlayback,
         loadedRoutine, currentExerciseIndex, currentSetIndex, autoplayEnabled,
         userPreferences.summaryCountdownSeconds, loadBaselineA, loadBaselineB, canGoBack, canSkipForward,
-        timedExerciseRemainingSeconds, isCurrentExerciseBodyweight
+        timedExerciseRemainingSeconds, isCurrentExerciseBodyweight, gatedRepQualityScore
     ) {
         WorkoutUiState(
             connectionState = connectionState,
@@ -278,7 +284,8 @@ fun ActiveWorkoutScreen(
             canGoBack = canGoBack,
             canSkipForward = canSkipForward,
             timedExerciseRemainingSeconds = timedExerciseRemainingSeconds,
-            isCurrentExerciseBodyweight = isCurrentExerciseBodyweight
+            isCurrentExerciseBodyweight = isCurrentExerciseBodyweight,
+            latestRepQualityScore = gatedRepQualityScore
         )
     }
 

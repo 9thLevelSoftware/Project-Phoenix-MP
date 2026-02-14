@@ -65,7 +65,8 @@ data class WorkoutUiState(
     val loadBaselineA: Float = 0f,
     val loadBaselineB: Float = 0f,
     val timedExerciseRemainingSeconds: Int? = null,
-    val isCurrentExerciseBodyweight: Boolean = false
+    val isCurrentExerciseBodyweight: Boolean = false,
+    val latestRepQualityScore: Int? = null
 )
 
 /**

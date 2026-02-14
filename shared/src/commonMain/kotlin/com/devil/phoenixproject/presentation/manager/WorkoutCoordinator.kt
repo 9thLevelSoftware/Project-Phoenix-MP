@@ -3,6 +3,7 @@ package com.devil.phoenixproject.presentation.manager
 import com.devil.phoenixproject.data.repository.AutoStopUiState
 import com.devil.phoenixproject.data.repository.HandleState
 import com.devil.phoenixproject.domain.model.*
+import com.devil.phoenixproject.domain.premium.RepQualityScorer
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -261,4 +262,19 @@ class WorkoutCoordinator(
      * Set during DI construction (nullable for tests that don't need LED feedback).
      */
     var ledFeedbackController: LedFeedbackController? = null
+
+    // ===== Rep Quality Scoring =====
+
+    /**
+     * Per-rep quality scorer. Stateful - accumulates baselines within a set.
+     * Reset between sets via ActiveSessionEngine.
+     */
+    val repQualityScorer = RepQualityScorer()
+
+    /**
+     * Latest rep quality score for HUD display.
+     * Null when no score available (start of set, free tier, etc.).
+     */
+    internal val _latestRepQuality = MutableStateFlow<RepQualityScore?>(null)
+    val latestRepQuality: StateFlow<RepQualityScore?> = _latestRepQuality.asStateFlow()
 }
