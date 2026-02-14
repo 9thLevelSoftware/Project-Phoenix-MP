@@ -14,9 +14,8 @@ import kotlin.test.assertTrue
 
 /**
  * Tests for LedFeedbackController covering:
- * - VelocityZone boundary values
+ * - VelocityZone boundary values (simplified 4-zone: 5/30/60 mm/s thresholds)
  * - Hysteresis (3-sample stability requirement)
- * - Throttling (500ms minimum interval)
  * - Mode-specific resolvers (tempo, echo)
  * - Enabled/disabled state
  * - Rest period handling
@@ -26,44 +25,34 @@ import kotlin.test.assertTrue
 @OptIn(ExperimentalCoroutinesApi::class)
 class LedFeedbackControllerTest {
 
-    // ===== VelocityZone.fromVelocity boundary tests =====
+    // ===== VelocityZone.fromVelocity boundary tests (simplified 4-zone: 5/30/60) =====
 
     @Test
-    fun `VelocityZone fromVelocity maps REST below 20`() {
+    fun `VelocityZone fromVelocity maps REST below 5`() {
         assertEquals(VelocityZone.REST, VelocityZone.fromVelocity(0.0))
-        assertEquals(VelocityZone.REST, VelocityZone.fromVelocity(19.0))
-        assertEquals(VelocityZone.REST, VelocityZone.fromVelocity(19.999))
+        assertEquals(VelocityZone.REST, VelocityZone.fromVelocity(4.0))
+        assertEquals(VelocityZone.REST, VelocityZone.fromVelocity(4.999))
     }
 
     @Test
-    fun `VelocityZone fromVelocity maps CONTROLLED 20 to 149`() {
+    fun `VelocityZone fromVelocity maps CONTROLLED 5 to 29`() {
+        assertEquals(VelocityZone.CONTROLLED, VelocityZone.fromVelocity(5.0))
         assertEquals(VelocityZone.CONTROLLED, VelocityZone.fromVelocity(20.0))
-        assertEquals(VelocityZone.CONTROLLED, VelocityZone.fromVelocity(149.0))
-        assertEquals(VelocityZone.CONTROLLED, VelocityZone.fromVelocity(149.999))
+        assertEquals(VelocityZone.CONTROLLED, VelocityZone.fromVelocity(29.999))
     }
 
     @Test
-    fun `VelocityZone fromVelocity maps MODERATE 150 to 299`() {
-        assertEquals(VelocityZone.MODERATE, VelocityZone.fromVelocity(150.0))
-        assertEquals(VelocityZone.MODERATE, VelocityZone.fromVelocity(299.0))
+    fun `VelocityZone fromVelocity maps MODERATE 30 to 59`() {
+        assertEquals(VelocityZone.MODERATE, VelocityZone.fromVelocity(30.0))
+        assertEquals(VelocityZone.MODERATE, VelocityZone.fromVelocity(45.0))
+        assertEquals(VelocityZone.MODERATE, VelocityZone.fromVelocity(59.999))
     }
 
     @Test
-    fun `VelocityZone fromVelocity maps FAST 300 to 499`() {
-        assertEquals(VelocityZone.FAST, VelocityZone.fromVelocity(300.0))
-        assertEquals(VelocityZone.FAST, VelocityZone.fromVelocity(499.0))
-    }
-
-    @Test
-    fun `VelocityZone fromVelocity maps VERY_FAST 500 to 699`() {
-        assertEquals(VelocityZone.VERY_FAST, VelocityZone.fromVelocity(500.0))
-        assertEquals(VelocityZone.VERY_FAST, VelocityZone.fromVelocity(699.0))
-    }
-
-    @Test
-    fun `VelocityZone fromVelocity maps EXPLOSIVE at 700 and above`() {
-        assertEquals(VelocityZone.EXPLOSIVE, VelocityZone.fromVelocity(700.0))
-        assertEquals(VelocityZone.EXPLOSIVE, VelocityZone.fromVelocity(1000.0))
+    fun `VelocityZone fromVelocity maps FAST at 60 and above`() {
+        assertEquals(VelocityZone.FAST, VelocityZone.fromVelocity(60.0))
+        assertEquals(VelocityZone.FAST, VelocityZone.fromVelocity(100.0))
+        assertEquals(VelocityZone.FAST, VelocityZone.fromVelocity(500.0))
     }
 
     // ===== Hysteresis tests =====
@@ -71,118 +60,70 @@ class LedFeedbackControllerTest {
     @Test
     fun `hysteresis requires 3 consecutive samples before zone switch`() = runTest {
         val fakeBle = FakeBleRepository()
-        var fakeTime = 0L
-        val controller = LedFeedbackController(fakeBle, this, timeProvider = { fakeTime })
+        val controller = LedFeedbackController(fakeBle, this)
         controller.setEnabled(true)
 
-        // Start in REST zone -- need to establish initial zone first
-        // Send 3 samples to establish CONTROLLED zone
-        fakeTime = 0L
+        // Establish CONTROLLED zone (20.0 mm/s = 5-30 range)
         repeat(3) {
-            controller.updateMetrics(100.0, RepPhase.CONCENTRIC, WorkoutMode.OldSchool)
+            controller.updateMetrics(20.0, RepPhase.CONCENTRIC, WorkoutMode.OldSchool)
         }
         advanceUntilIdle()
         fakeBle.colorSchemeCommands.clear()
 
-        // Now try to switch to FAST -- only 2 samples should NOT trigger
-        fakeTime = 1000L // Well past throttle
-        controller.updateMetrics(400.0, RepPhase.CONCENTRIC, WorkoutMode.OldSchool)
-        controller.updateMetrics(400.0, RepPhase.CONCENTRIC, WorkoutMode.OldSchool)
+        // Now try to switch to FAST (70.0 mm/s = >=60 range) -- only 2 samples should NOT trigger
+        controller.updateMetrics(70.0, RepPhase.CONCENTRIC, WorkoutMode.OldSchool)
+        controller.updateMetrics(70.0, RepPhase.CONCENTRIC, WorkoutMode.OldSchool)
         advanceUntilIdle()
         assertEquals(0, fakeBle.colorSchemeCommands.size,
             "2 samples in new zone should NOT trigger color change")
 
         // Third sample in new zone should trigger
-        controller.updateMetrics(400.0, RepPhase.CONCENTRIC, WorkoutMode.OldSchool)
+        controller.updateMetrics(70.0, RepPhase.CONCENTRIC, WorkoutMode.OldSchool)
         advanceUntilIdle()
         assertTrue(fakeBle.colorSchemeCommands.contains(VelocityZone.FAST.schemeIndex),
-            "3rd sample should trigger zone switch to FAST (yellow)")
+            "3rd sample should trigger zone switch to FAST (red)")
     }
 
     @Test
     fun `hysteresis resets counter when target matches current zone`() = runTest {
         val fakeBle = FakeBleRepository()
-        var fakeTime = 0L
-        val controller = LedFeedbackController(fakeBle, this, timeProvider = { fakeTime })
+        val controller = LedFeedbackController(fakeBle, this)
         controller.setEnabled(true)
 
-        // Establish CONTROLLED zone
+        // Establish CONTROLLED zone (20.0 mm/s)
         repeat(3) {
-            controller.updateMetrics(100.0, RepPhase.CONCENTRIC, WorkoutMode.OldSchool)
+            controller.updateMetrics(20.0, RepPhase.CONCENTRIC, WorkoutMode.OldSchool)
         }
         advanceUntilIdle()
         fakeBle.colorSchemeCommands.clear()
 
-        // 2 samples toward FAST
-        fakeTime = 1000L
-        controller.updateMetrics(400.0, RepPhase.CONCENTRIC, WorkoutMode.OldSchool)
-        controller.updateMetrics(400.0, RepPhase.CONCENTRIC, WorkoutMode.OldSchool)
+        // 2 samples toward FAST (70.0 mm/s)
+        controller.updateMetrics(70.0, RepPhase.CONCENTRIC, WorkoutMode.OldSchool)
+        controller.updateMetrics(70.0, RepPhase.CONCENTRIC, WorkoutMode.OldSchool)
 
         // Back to CONTROLLED -- resets stability counter
-        controller.updateMetrics(100.0, RepPhase.CONCENTRIC, WorkoutMode.OldSchool)
+        controller.updateMetrics(20.0, RepPhase.CONCENTRIC, WorkoutMode.OldSchool)
 
         // 2 more samples toward FAST (counter should have reset)
-        fakeTime = 2000L
-        controller.updateMetrics(400.0, RepPhase.CONCENTRIC, WorkoutMode.OldSchool)
-        controller.updateMetrics(400.0, RepPhase.CONCENTRIC, WorkoutMode.OldSchool)
+        controller.updateMetrics(70.0, RepPhase.CONCENTRIC, WorkoutMode.OldSchool)
+        controller.updateMetrics(70.0, RepPhase.CONCENTRIC, WorkoutMode.OldSchool)
         advanceUntilIdle()
 
         assertEquals(0, fakeBle.colorSchemeCommands.size,
             "Stability counter should have reset; 2 samples not enough")
     }
 
-    // ===== Throttling tests =====
-
-    @Test
-    fun `throttling prevents rapid zone changes within 500ms`() = runTest {
-        val fakeBle = FakeBleRepository()
-        var fakeTime = 0L
-        val controller = LedFeedbackController(fakeBle, this, timeProvider = { fakeTime })
-        controller.setEnabled(true)
-
-        // Establish CONTROLLED zone at t=0
-        fakeTime = 0L
-        repeat(3) {
-            controller.updateMetrics(100.0, RepPhase.CONCENTRIC, WorkoutMode.OldSchool)
-        }
-        advanceUntilIdle()
-        fakeBle.colorSchemeCommands.clear()
-
-        // Try to switch to FAST at t=100 (within 500ms throttle window)
-        // Hysteresis will pass (3 samples) but throttle should block the BLE write
-        fakeTime = 100L
-        repeat(3) {
-            controller.updateMetrics(400.0, RepPhase.CONCENTRIC, WorkoutMode.OldSchool)
-        }
-        advanceUntilIdle()
-
-        assertEquals(0, fakeBle.colorSchemeCommands.size,
-            "Color change within 500ms should be throttled")
-
-        // Now switch to a different zone (EXPLOSIVE) past the throttle window
-        // The controller's currentZone is FAST (hysteresis passed), so we need
-        // a new zone to trigger another hysteresis pass + send
-        fakeTime = 700L
-        repeat(3) {
-            controller.updateMetrics(800.0, RepPhase.CONCENTRIC, WorkoutMode.OldSchool)
-        }
-        advanceUntilIdle()
-
-        assertTrue(fakeBle.colorSchemeCommands.isNotEmpty(),
-            "Color change after 500ms throttle window should succeed")
-    }
-
-    // ===== Tempo guide resolver tests =====
+    // ===== Tempo guide resolver tests (TUT: 50-70 mm/s, TUT Beast: 30-50 mm/s) =====
 
     @Test
     fun `resolveTempoZone TUT returns green when in target range`() = runTest {
         val fakeBle = FakeBleRepository()
         val controller = LedFeedbackController(fakeBle, this)
 
-        // TUT target: 250-350 mm/s
-        assertEquals(VelocityZone.CONTROLLED, controller.resolveTempoZone(300.0, WorkoutMode.TUT))
-        assertEquals(VelocityZone.CONTROLLED, controller.resolveTempoZone(250.0, WorkoutMode.TUT))
-        assertEquals(VelocityZone.CONTROLLED, controller.resolveTempoZone(350.0, WorkoutMode.TUT))
+        // TUT target: 50-70 mm/s (calibrated 2026-02-14)
+        assertEquals(VelocityZone.CONTROLLED, controller.resolveTempoZone(60.0, WorkoutMode.TUT))
+        assertEquals(VelocityZone.CONTROLLED, controller.resolveTempoZone(50.0, WorkoutMode.TUT))
+        assertEquals(VelocityZone.CONTROLLED, controller.resolveTempoZone(70.0, WorkoutMode.TUT))
     }
 
     @Test
@@ -190,9 +131,9 @@ class LedFeedbackControllerTest {
         val fakeBle = FakeBleRepository()
         val controller = LedFeedbackController(fakeBle, this)
 
-        // Slightly above target (350 < vel <= 350*1.5=525)
-        assertEquals(VelocityZone.FAST, controller.resolveTempoZone(400.0, WorkoutMode.TUT))
-        assertEquals(VelocityZone.FAST, controller.resolveTempoZone(525.0, WorkoutMode.TUT))
+        // Slightly above target (70 < vel <= 70*1.5=105)
+        assertEquals(VelocityZone.FAST, controller.resolveTempoZone(80.0, WorkoutMode.TUT))
+        assertEquals(VelocityZone.FAST, controller.resolveTempoZone(105.0, WorkoutMode.TUT))
     }
 
     @Test
@@ -200,8 +141,8 @@ class LedFeedbackControllerTest {
         val fakeBle = FakeBleRepository()
         val controller = LedFeedbackController(fakeBle, this)
 
-        // Well above target (> 525)
-        assertEquals(VelocityZone.EXPLOSIVE, controller.resolveTempoZone(600.0, WorkoutMode.TUT))
+        // Well above target (> 105)
+        assertEquals(VelocityZone.EXPLOSIVE, controller.resolveTempoZone(120.0, WorkoutMode.TUT))
     }
 
     @Test
@@ -209,8 +150,8 @@ class LedFeedbackControllerTest {
         val fakeBle = FakeBleRepository()
         val controller = LedFeedbackController(fakeBle, this)
 
-        // TUT tolerance = (350-250)*0.25 = 25. Below 250-25=225
-        assertEquals(VelocityZone.MODERATE, controller.resolveTempoZone(200.0, WorkoutMode.TUT))
+        // TUT tolerance = (70-50)*0.25 = 5. Below 50-5=45
+        assertEquals(VelocityZone.MODERATE, controller.resolveTempoZone(40.0, WorkoutMode.TUT))
     }
 
     // ===== Echo zone resolver tests =====
@@ -263,7 +204,7 @@ class LedFeedbackControllerTest {
     // ===== Rest period =====
 
     @Test
-    fun `onRestPeriodStart sends blue color`() = runTest {
+    fun `onRestPeriodStart sends REST zone color`() = runTest {
         val fakeBle = FakeBleRepository()
         val controller = LedFeedbackController(fakeBle, this)
         controller.setEnabled(true)
@@ -271,8 +212,8 @@ class LedFeedbackControllerTest {
         controller.onRestPeriodStart()
         advanceUntilIdle()
 
-        assertTrue(fakeBle.colorSchemeCommands.contains(0),
-            "Rest period should send blue (index 0)")
+        assertTrue(fakeBle.colorSchemeCommands.contains(VelocityZone.REST.schemeIndex),
+            "Rest period should send REST zone color (index ${VelocityZone.REST.schemeIndex})")
     }
 
     @Test
@@ -360,21 +301,18 @@ class LedFeedbackControllerTest {
     @Test
     fun `onDisconnect resets lastSentSchemeIndex for fresh send on reconnect`() = runTest {
         val fakeBle = FakeBleRepository()
-        var fakeTime = 0L
-        val controller = LedFeedbackController(fakeBle, this, timeProvider = { fakeTime })
+        val controller = LedFeedbackController(fakeBle, this)
         controller.setEnabled(true)
 
-        // Establish CONTROLLED zone (index 1) at t=0
-        fakeTime = 0L
+        // Establish CONTROLLED zone (20.0 mm/s = 5-30 range)
         repeat(3) {
-            controller.updateMetrics(100.0, RepPhase.CONCENTRIC, WorkoutMode.OldSchool)
+            controller.updateMetrics(20.0, RepPhase.CONCENTRIC, WorkoutMode.OldSchool)
         }
         advanceUntilIdle()
 
-        // Switch to FAST zone (index 3) at t=600
-        fakeTime = 600L
+        // Switch to FAST zone (70.0 mm/s = >=60 range)
         repeat(3) {
-            controller.updateMetrics(400.0, RepPhase.CONCENTRIC, WorkoutMode.OldSchool)
+            controller.updateMetrics(70.0, RepPhase.CONCENTRIC, WorkoutMode.OldSchool)
         }
         advanceUntilIdle()
 
@@ -388,9 +326,8 @@ class LedFeedbackControllerTest {
 
         // After disconnect, switch back to CONTROLLED (which was previously sent).
         // Without disconnect, this would be deduped. With disconnect, it should re-send.
-        fakeTime = 1200L
         repeat(3) {
-            controller.updateMetrics(100.0, RepPhase.CONCENTRIC, WorkoutMode.OldSchool)
+            controller.updateMetrics(20.0, RepPhase.CONCENTRIC, WorkoutMode.OldSchool)
         }
         advanceUntilIdle()
 

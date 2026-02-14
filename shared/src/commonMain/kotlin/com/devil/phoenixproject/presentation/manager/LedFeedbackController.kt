@@ -16,12 +16,17 @@ import kotlin.math.abs
  * LED biofeedback controller for real-time workout feedback via machine LEDs.
  *
  * Maps workout metrics (velocity, tempo compliance, load matching) to LED color
- * changes using the existing 8-scheme color command protocol. Implements three
+ * changes using the existing 8-scheme color command protocol. Implements two
  * layers of flicker prevention:
  *
  * 1. Upstream velocity EMA smoothing (already in KableBleRepository)
  * 2. Zone stability hysteresis (3 consecutive samples required)
- * 3. BLE write throttling (max 2Hz / 500ms minimum interval)
+ *
+ * Simplified 4-zone color mapping (calibrated from real hardware testing):
+ * - OFF = stationary (<5 mm/s)
+ * - GREEN = slow/controlled (5-30 mm/s)
+ * - BLUE = normal tempo (30-60 mm/s)
+ * - RED = fast/explosive (>=60 mm/s)
  *
  * Supports three feedback modes:
  * - VELOCITY_ZONE: Standard velocity-to-color mapping (all workout modes)
@@ -37,14 +42,12 @@ class LedFeedbackController(
     private val scope: CoroutineScope,
     private val timeProvider: () -> Long = { currentTimeMillis() }
 ) {
-    // Throttling: max 2Hz BLE color writes (aligned with DIAGNOSTIC interval)
+    // Hysteresis: require consecutive samples in same zone before switching (prevents flicker)
     internal companion object {
-        const val MIN_COLOR_INTERVAL_MS = 500L
         const val ZONE_STABILITY_THRESHOLD = 3
     }
 
     // Core state
-    private var lastColorCommandTime: Long = 0L
     private var lastSentSchemeIndex: Int = -1
     private var currentZone: VelocityZone = VelocityZone.REST
     private var zoneStabilityCount: Int = 0
@@ -197,15 +200,16 @@ class LedFeedbackController(
      */
     internal fun resolveVelocityZone(velocity: Double, repPhase: RepPhase): VelocityZone {
         val absVel = abs(velocity)
-        if (repPhase == RepPhase.IDLE && absVel < 20) return VelocityZone.REST
+        if (repPhase == RepPhase.IDLE && absVel < 5) return VelocityZone.REST
         return VelocityZone.fromVelocity(absVel)
     }
 
     /**
      * Tempo guide for TUT/TUT Beast modes.
      *
-     * TUT target: 250-350 mm/s concentric
-     * TUT Beast target: 150-250 mm/s concentric
+     * Thresholds calibrated from real workout data (2026-02-14):
+     * - TUT target: 50-70 mm/s (controlled tempo)
+     * - TUT Beast target: 30-50 mm/s (slow/deliberate)
      *
      * Returns:
      * - CONTROLLED (green) if in target range
@@ -216,8 +220,8 @@ class LedFeedbackController(
     internal fun resolveTempoZone(velocity: Double, workoutMode: WorkoutMode): VelocityZone {
         val absVel = abs(velocity)
         val (targetLow, targetHigh) = when (workoutMode) {
-            is WorkoutMode.TUT -> 250.0 to 350.0
-            is WorkoutMode.TUTBeast -> 150.0 to 250.0
+            is WorkoutMode.TUT -> 50.0 to 70.0
+            is WorkoutMode.TUTBeast -> 30.0 to 50.0
             else -> return VelocityZone.fromVelocity(absVel) // Fallback for non-TUT modes
         }
 
@@ -275,19 +279,15 @@ class LedFeedbackController(
 
         currentZone = targetZone
         zoneStabilityCount = 0
-        sendColorIfThrottled(targetZone.schemeIndex)
+        sendColorIfChanged(targetZone.schemeIndex)
     }
 
     /**
-     * Send color command respecting the 500ms minimum interval and dedup.
+     * Send color command if different from last sent (dedup).
      * Uses fire-and-forget coroutine launch so caller is never blocked.
      */
-    private fun sendColorIfThrottled(schemeIndex: Int) {
-        val now = timeProvider()
-        if (now - lastColorCommandTime < MIN_COLOR_INTERVAL_MS) return
+    private fun sendColorIfChanged(schemeIndex: Int) {
         if (schemeIndex == lastSentSchemeIndex) return
-
-        lastColorCommandTime = now
         lastSentSchemeIndex = schemeIndex
         scope.launch {
             bleRepository.setColorScheme(schemeIndex)
@@ -295,10 +295,9 @@ class LedFeedbackController(
     }
 
     /**
-     * Send color command bypassing throttle and dedup (used for rest, workout end, celebration restore).
+     * Send color command bypassing dedup (used for rest, workout end, celebration restore).
      */
     private fun sendColorForced(schemeIndex: Int) {
-        lastColorCommandTime = timeProvider()
         lastSentSchemeIndex = schemeIndex
         scope.launch {
             bleRepository.setColorScheme(schemeIndex)
@@ -306,7 +305,6 @@ class LedFeedbackController(
     }
 
     private fun resetZoneState() {
-        lastColorCommandTime = 0L
         lastSentSchemeIndex = -1
         currentZone = VelocityZone.REST
         zoneStabilityCount = 0
