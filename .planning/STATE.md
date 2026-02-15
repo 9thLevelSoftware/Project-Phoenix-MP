@@ -5,23 +5,23 @@
 See: .planning/PROJECT.md (updated 2026-02-15)
 
 **Core value:** Users can connect to their Vitruvian trainer and execute workouts reliably on both platforms.
-**Current focus:** Phase 6 - ProtocolParser
+**Current focus:** Phase 7 - BleOperationQueue
 
 ## Current Position
 
-Phase: 6 of 12 (ProtocolParser) - COMPLETE
-Plan: 2 of 2 in current phase - COMPLETE
-Status: Phase Complete
-Last activity: 2026-02-15 — Completed 06-02-PLAN.md (Packet Parsers)
+Phase: 7 of 12 (BleOperationQueue) - IN PROGRESS
+Plan: 1 of 1 in current phase - COMPLETE
+Status: Plan Complete
+Last activity: 2026-02-15 — Completed 07-01-PLAN.md (BleOperationQueue Extraction)
 
-Progress: [##                  ] 17% (2/12 phases)
+Progress: [###                 ] 25% (3/12 phases)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 3 (v0.4.2 milestone)
+- Total plans completed: 4 (v0.4.2 milestone)
 - Average duration: 8 min
-- Total execution time: 0.40 hours
+- Total execution time: 0.53 hours
 
 **By Phase:**
 
@@ -29,10 +29,11 @@ Progress: [##                  ] 17% (2/12 phases)
 |-------|-------|-------|----------|
 | 05-ble-protocol-constants | 1 | 10min | 10min |
 | 06-protocol-parser | 2 | 14min | 7min |
+| 07-ble-operation-queue | 1 | 8min | 8min |
 
 **Recent Trend:**
-- Last 5 plans: 05-01 (10min), 06-01 (3min), 06-02 (11min)
-- Trend: Consistent execution, larger refactoring tasks take longer
+- Last 5 plans: 05-01 (10min), 06-01 (3min), 06-02 (11min), 07-01 (8min)
+- Trend: Consistent execution ~8min average
 
 *Updated after each plan completion*
 
@@ -53,6 +54,9 @@ Recent decisions affecting current work:
 - [06-01]: toVitruvianHex extension (avoids shadowing stdlib)
 - [06-02]: Two-tier packet format detection in parseRepPacket (Issue #210 compliance)
 - [06-02]: Null return for invalid/short packet data instead of throwing
+- [07-01]: BleOperationQueue as class not object (supports future multi-device)
+- [07-01]: writeSimple() for internal ops without retry (heartbeat)
+- [07-01]: bleQueue property inline (no DI per v0.4.2 decision)
 
 ### Pending Todos
 
@@ -65,5 +69,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-15
-Stopped at: Completed 06-02-PLAN.md (Packet Parsers) - Phase 6 Complete
+Stopped at: Completed 07-01-PLAN.md (BleOperationQueue Extraction)
 Resume file: None
