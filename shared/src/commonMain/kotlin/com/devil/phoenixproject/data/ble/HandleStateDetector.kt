@@ -32,6 +32,11 @@ class HandleStateDetector(
 ) {
     private val log = Logger.withTag("HandleStateDetector")
 
+    companion object {
+        /** Position threshold (mm) for simple left/right handle detection booleans */
+        private const val SIMPLE_DETECTION_THRESHOLD = 50.0f
+    }
+
     // State flows
     private val _handleState = MutableStateFlow(HandleState.WaitingForRest)
     val handleState: StateFlow<HandleState> = _handleState.asStateFlow()
@@ -69,10 +74,6 @@ class HandleStateDetector(
     // Periodic logging counter
     private var logCounter = 0L
 
-    // Legacy grab/release timers (from parent repo -- reset but unused by current logic)
-    private var forceAboveGrabThresholdStart: Long? = null
-    private var forceBelowReleaseThresholdStart: Long? = null
-
     /**
      * Process a workout metric and update handle state.
      * Called from parseMonitorData and parseRxMetrics in KableBleRepository.
@@ -81,9 +82,8 @@ class HandleStateDetector(
         if (!isEnabled) return
 
         // Simple handle detection (left/right boolean)
-        val activeThreshold = 50.0f
-        val leftDetected = metric.positionA > activeThreshold
-        val rightDetected = metric.positionB > activeThreshold
+        val leftDetected = metric.positionA > SIMPLE_DETECTION_THRESHOLD
+        val rightDetected = metric.positionB > SIMPLE_DETECTION_THRESHOLD
         val currentDetection = _handleDetection.value
         if (currentDetection.leftDetected != leftDetected || currentDetection.rightDetected != rightDetected) {
             _handleDetection.value = HandleDetection(leftDetected, rightDetected)
@@ -154,8 +154,6 @@ class HandleStateDetector(
     private fun resetInternalState() {
         minPositionSeen = Double.MAX_VALUE
         maxPositionSeen = Double.MIN_VALUE
-        forceAboveGrabThresholdStart = null
-        forceBelowReleaseThresholdStart = null
         pendingGrabbedStartTime = null
         pendingReleasedStartTime = null
         activeHandlesMask = 0
@@ -197,16 +195,10 @@ class HandleStateDetector(
 
         // Issue #176: Use relative position change when baseline is set (for overhead pulley setups)
         // When cables can't reach absolute rest position, detect grabs via delta from baseline
-        val handleAGrabbed = if (restBaselinePosA != null) {
-            (posA - restBaselinePosA!!) > BleConstants.Thresholds.GRAB_DELTA_THRESHOLD
-        } else {
-            posA > BleConstants.Thresholds.HANDLE_GRABBED_THRESHOLD
-        }
-        val handleBGrabbed = if (restBaselinePosB != null) {
-            (posB - restBaselinePosB!!) > BleConstants.Thresholds.GRAB_DELTA_THRESHOLD
-        } else {
-            posB > BleConstants.Thresholds.HANDLE_GRABBED_THRESHOLD
-        }
+        val handleAGrabbed = isAboveThreshold(posA, restBaselinePosA,
+            BleConstants.Thresholds.GRAB_DELTA_THRESHOLD, BleConstants.Thresholds.HANDLE_GRABBED_THRESHOLD)
+        val handleBGrabbed = isAboveThreshold(posB, restBaselinePosB,
+            BleConstants.Thresholds.GRAB_DELTA_THRESHOLD, BleConstants.Thresholds.HANDLE_GRABBED_THRESHOLD)
         val handleAMoving = kotlin.math.abs(velocityA) > velocityThreshold
         val handleBMoving = kotlin.math.abs(velocityB) > velocityThreshold
 
@@ -305,16 +297,10 @@ class HandleStateDetector(
             HandleState.Grabbed -> {
                 // Release detection: only check handles that were actually grabbed
                 // Issue #176: Use baseline-relative release detection for overhead pulley setups
-                val aReleased = if (restBaselinePosA != null) {
-                    (posA - restBaselinePosA!!) < BleConstants.Thresholds.RELEASE_DELTA_THRESHOLD
-                } else {
-                    posA < BleConstants.Thresholds.HANDLE_REST_THRESHOLD  // Backwards compatible
-                }
-                val bReleased = if (restBaselinePosB != null) {
-                    (posB - restBaselinePosB!!) < BleConstants.Thresholds.RELEASE_DELTA_THRESHOLD
-                } else {
-                    posB < BleConstants.Thresholds.HANDLE_REST_THRESHOLD  // Backwards compatible
-                }
+                val aReleased = isBelowThreshold(posA, restBaselinePosA,
+                    BleConstants.Thresholds.RELEASE_DELTA_THRESHOLD, BleConstants.Thresholds.HANDLE_REST_THRESHOLD)
+                val bReleased = isBelowThreshold(posB, restBaselinePosB,
+                    BleConstants.Thresholds.RELEASE_DELTA_THRESHOLD, BleConstants.Thresholds.HANDLE_REST_THRESHOLD)
 
                 // Only check release on the handle(s) that were actually grabbed.
                 // This prevents premature release detection when unused cable is at rest.
@@ -346,6 +332,42 @@ class HandleStateDetector(
                 }
             }
         }
+    }
+
+    /**
+     * Check if a handle position exceeds a threshold relative to its baseline.
+     * Falls back to an absolute threshold when no baseline is set.
+     *
+     * @param position Current handle position in mm
+     * @param baseline Rest baseline position (null if not yet captured)
+     * @param deltaThreshold Threshold for baseline-relative detection
+     * @param absoluteThreshold Fallback threshold for absolute detection
+     * @return true if position exceeds threshold
+     */
+    private fun isAboveThreshold(
+        position: Double,
+        baseline: Double?,
+        deltaThreshold: Double,
+        absoluteThreshold: Double
+    ): Boolean = if (baseline != null) {
+        (position - baseline) > deltaThreshold
+    } else {
+        position > absoluteThreshold
+    }
+
+    /**
+     * Check if a handle position is below a threshold relative to its baseline.
+     * Falls back to an absolute threshold when no baseline is set.
+     */
+    private fun isBelowThreshold(
+        position: Double,
+        baseline: Double?,
+        deltaThreshold: Double,
+        absoluteThreshold: Double
+    ): Boolean = if (baseline != null) {
+        (position - baseline) < deltaThreshold
+    } else {
+        position < absoluteThreshold
     }
 
     /**
