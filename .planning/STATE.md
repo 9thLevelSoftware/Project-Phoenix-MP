@@ -10,11 +10,11 @@ See: .planning/PROJECT.md (updated 2026-02-14)
 ## Current Position
 
 Phase: 11 of 12 (Exercise Auto-Detection)
-Plan: 2 of 3 complete
-Status: Plan 02 complete - repository layer and DI wiring
-Last activity: 2026-02-15 — Completed 11-02-PLAN.md
+Plan: 3 of 3 complete
+Status: Phase 11 complete - exercise auto-detection fully integrated
+Last activity: 2026-02-15 — Completed 11-03-PLAN.md
 
-Progress: v0.4.6 complete — 31 plans across 3 milestones shipped. v0.4.7 Phase 9 complete (2 plans). Phase 10 complete (4 plans). Phase 11 in progress (2/3 plans).
+Progress: v0.4.6 complete — 31 plans across 3 milestones shipped. v0.4.7 Phase 9 complete (2 plans). Phase 10 complete (4 plans). Phase 11 complete (3 plans).
 
 ## Performance Metrics
 
@@ -39,6 +39,7 @@ Progress: v0.4.6 complete — 31 plans across 3 milestones shipped. v0.4.7 Phase
 | Phase 10 P04 | 8min | 2 tasks | 3 files |
 | Phase 11 P01 | 12min | 2 TDD tasks (27 tests) | 5 files |
 | Phase 11 P02 | 3min | 2 tasks | 4 files |
+| Phase 11 P03 | 6min | 2 tasks | 9 files |
 
 ## Accumulated Context
 
@@ -59,6 +60,8 @@ v0.4.6 decisions archived — see PROJECT.md for full history.
 - [Phase 11]: EMA alpha=0.3 for signature evolution (per DETECT-06)
 - [Phase 11]: String encoding for VelocityShape/CableUsage enums in DB
 - [Phase 11]: getAllSignaturesAsMap returns highest-confidence signature per exercise
+- [Phase 11]: Detection triggers after MIN_REPS_FOR_DETECTION (3) working reps
+- [Phase 11]: Non-blocking bottom sheet with confidence color coding (green/yellow/orange)
 
 ### Pending Todos
 
@@ -71,6 +74,6 @@ None.
 ## Session Continuity
 
 Last session: 2026-02-15
-Stopped at: Phase 11 Plan 02 complete (repository layer and DI wiring)
+Stopped at: Phase 11 complete (exercise auto-detection fully integrated)
 Resume file: None
-Next action: `/gsd:execute-phase 11` — Continue with 11-03-PLAN.md
+Next action: `/gsd:execute-phase 12` — Continue with Phase 12
