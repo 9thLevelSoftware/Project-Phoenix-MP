@@ -49,7 +49,32 @@ Users can connect to their Vitruvian trainer and execute workouts with accurate 
 
 <!-- Current scope. Building toward these. -->
 
-**v0.5.0 Mobile Platform Features** — Strength assessment, exercise auto-detection (Spec 04)
+**v0.4.7 Mobile Platform Features** — Spec 04: Strength assessment, exercise auto-detection, mobile replay cards
+
+#### Strength Assessment (Phoenix tier)
+- [ ] **ASSESS-01**: User can start guided strength assessment from profile/onboarding
+- [ ] **ASSESS-02**: User sees video instruction for each exercise before testing
+- [ ] **ASSESS-03**: User performs 3-5 reps at progressive weights until velocity threshold
+- [ ] **ASSESS-04**: System estimates 1RM using load-velocity linear regression
+- [ ] **ASSESS-05**: User can accept or manually override estimated 1RM
+- [ ] **ASSESS-06**: Results saved to Exercise.one_rep_max_kg with assessment history
+
+#### Exercise Auto-Detection (Elite tier)
+- [ ] **DETECT-01**: System extracts signature from first 3-5 reps (ROM, duration, symmetry, velocity profile)
+- [ ] **DETECT-02**: Rule-based classifier suggests exercise category and specific exercise
+- [ ] **DETECT-03**: User confirms or selects different exercise via bottom sheet
+- [ ] **DETECT-04**: Confirmed signatures stored for future matching
+- [ ] **DETECT-05**: History matching improves accuracy over time
+
+#### Mobile Replay Cards (Phoenix tier)
+- [ ] **REPLAY-01**: Session detail shows scrollable rep cards
+- [ ] **REPLAY-02**: Each rep card displays mini force curve sparkline
+- [ ] **REPLAY-03**: Rep cards show peak force, concentric/eccentric durations
+- [ ] **REPLAY-04**: Quality indicator shows rep consistency vs set average
+
+#### Infrastructure
+- [ ] **INFRA-01**: Fix power calculation bug (loadA + loadB for dual-cable)
+- [ ] **INFRA-02**: Add MetricSample index on sessionId for query performance
 
 ### Out of Scope
 
@@ -81,18 +106,27 @@ Users can connect to their Vitruvian trainer and execute workouts with accurate 
 - Test infrastructure: DWSMTestHarness, WorkoutStateFixtures, fakes for all repositories
 - ~28,700 lines of Kotlin in shared module (+6,917 from v0.4.6)
 
+## Current Milestone: v0.4.7 Mobile Platform Features
+
+**Goal:** Transform the app into an intelligent training platform with strength assessment, exercise auto-detection, and mobile replay cards.
+
+**Target features:**
+- Strength Assessment: VBT-based 1RM estimation wizard (Phoenix tier)
+- Exercise Auto-Detection: Heuristic classifier for Just Lift mode (Elite tier)
+- Mobile Replay Cards: Session detail with per-rep force curves (Phoenix tier)
+
 ## Current State
 
 **Version:** v0.4.6 (shipped 2026-02-15)
-**Next:** v0.5.0 Mobile Platform Features (planning)
+**Current:** v0.4.7 Mobile Platform Features (in progress)
 
 Biomechanics MVP complete. Real-time velocity-based training analysis with VBT engine (MCV, velocity zones, velocity loss, rep projection), force curve visualization (101-point ROM normalization, sticking point, strength profile), and bilateral asymmetry detection. Three subscription tiers operational with single upstream gate pattern for Phoenix tier features. Architecture remains clean with all engines following established patterns (injectable time providers, stateless pure functions, StateFlow exposure).
 
 ## Future Milestones
 
-- **v0.5.0** — Mobile Platform Features (Spec 04: strength assessment, exercise auto-detection)
-- **v0.5.5** — Biomechanics Persistence (PERSIST-01 through PERSIST-03: database storage, historical views)
-- **v0.6.0** — Auth Migration + Portal Integration (Spec 05: Supabase auth, force curve sync)
+- **v0.5.0** — Biomechanics Persistence (PERSIST-01 through PERSIST-03: database storage, historical views)
+- **v0.5.5** — Auth Migration + Portal Integration (Spec 05: Supabase auth, force curve sync)
+- **v0.6.0** — Portal Replay + Community Features (Spec 04 portal, Spec 05c-d)
 
 ## Constraints
 
@@ -132,4 +166,4 @@ Biomechanics MVP complete. Real-time velocity-based training analysis with VBT e
 | Element-wise averaging of 101-point force curves | Set-level averaged curve for summary display | ✓ Good — v0.4.6 |
 
 ---
-*Last updated: 2026-02-15 after v0.4.6 milestone*
+*Last updated: 2026-02-14 after v0.4.7 milestone start*
