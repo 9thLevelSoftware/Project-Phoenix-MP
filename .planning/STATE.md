@@ -5,14 +5,14 @@
 See: .planning/PROJECT.md (updated 2026-02-14)
 
 **Core value:** Users can connect to their Vitruvian trainer and execute workouts reliably on both platforms.
-**Current focus:** v0.4.7 Mobile Platform Features — Phase 11: Exercise Auto-Detection
+**Current focus:** v0.4.7 Mobile Platform Features — Phase 12: Mobile Replay Cards
 
 ## Current Position
 
-Phase: 11 of 12 (Exercise Auto-Detection)
+Phase: 11 of 12 (Exercise Auto-Detection) — ✓ VERIFIED
 Plan: 4 of 4 complete
-Status: Phase 11 complete - exercise auto-detection fully wired end-to-end (gap closure done)
-Last activity: 2026-02-15 — Completed 11-04-PLAN.md (gap closure)
+Status: Phase 11 verified (4/4 truths passed) — ready for Phase 12
+Last activity: 2026-02-15 — Phase 11 verified, gap closure complete
 
 Progress: v0.4.6 complete — 31 plans across 3 milestones shipped. v0.4.7 Phase 9 complete (2 plans). Phase 10 complete (4 plans). Phase 11 complete (4 plans, including gap closure).
 

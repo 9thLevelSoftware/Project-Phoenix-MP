@@ -77,22 +77,22 @@ Plans:
 - [x] 10-03-PLAN.md — Assessment wizard ViewModel and multi-step UI screen (Wave 2)
 - [x] 10-04-PLAN.md — Navigation wiring, entry points, and human verification (Wave 3)
 
-#### Phase 11: Exercise Auto-Detection (GAP CLOSURE)
+#### Phase 11: Exercise Auto-Detection ✓ COMPLETE (2026-02-15)
 **Goal**: The app identifies what exercise the user is performing based on movement signature and learns from corrections
 **Depends on**: Phase 9 (requires ExerciseSignature table)
 **Requirements**: DETECT-01, DETECT-02, DETECT-03, DETECT-04, DETECT-05, DETECT-06
 **Success Criteria** (what must be TRUE):
-  1. After the first 3-5 reps of a set, the system suggests an exercise name with confidence percentage via a non-blocking bottom sheet
-  2. User can confirm the suggestion or select a different exercise, and the interaction does not interrupt the workout
-  3. Confirmed exercise signatures are stored and used to improve future suggestions for that user
-  4. Repeat performances of the same exercise produce higher confidence scores over time as the signature history grows
-**Plans**: 4 plans in 3 waves
+  1. ✓ After the first 3-5 reps of a set, the system suggests an exercise name with confidence percentage via a non-blocking bottom sheet
+  2. ✓ User can confirm the suggestion or select a different exercise, and the interaction does not interrupt the workout
+  3. ✓ Confirmed exercise signatures are stored and used to improve future suggestions for that user
+  4. ✓ Repeat performances of the same exercise produce higher confidence scores over time as the signature history grows
+**Plans**: 4 plans in 3 waves — **COMPLETE**
 
 Plans:
 - [x] 11-01-PLAN.md — Signature extraction engine and exercise classifier with TDD (Wave 1)
 - [x] 11-02-PLAN.md — ExerciseSignatureRepository and Koin DI wiring (Wave 1)
 - [x] 11-03-PLAN.md — Detection UI, WorkoutHud integration, and confirmation flow (Wave 2)
-- [ ] 11-04-PLAN.md — Gap closure: wire detection state/callbacks in ActiveWorkoutScreen, fix test constructors (Wave 3)
+- [x] 11-04-PLAN.md — Gap closure: wire detection state/callbacks in ActiveWorkoutScreen, fix test constructors (Wave 3)
 
 #### Phase 12: Mobile Replay Cards
 **Goal**: Users can review any past session with per-rep detail including force curves and timing breakdowns
@@ -116,9 +116,9 @@ Plans:
 | v0.4.1 Architectural Cleanup | 1-4 | 10 | ✅ Complete | 2026-02-13 |
 | v0.4.5 Premium Features Phase 1 | 1-5 | 11 | ✅ Complete | 2026-02-14 |
 | v0.4.6 Biomechanics MVP | 6-8 | 10 | ✅ Complete | 2026-02-15 |
-| v0.4.7 Mobile Platform Features | 9-12 | 12/17 | 🚧 In progress | - |
+| v0.4.7 Mobile Platform Features | 9-12 | 13/17 | 🚧 In progress | - |
 
 **Last phase number:** 12
 
 ---
-*Last updated: 2026-02-15 after Phase 11 gap closure plan created*
+*Last updated: 2026-02-15 after Phase 11 complete (exercise auto-detection verified)*
