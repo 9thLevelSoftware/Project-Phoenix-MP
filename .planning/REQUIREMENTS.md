@@ -96,4 +96,4 @@ Deferred to v0.5.0+ (requires backend sync infrastructure).
 
 ---
 *Requirements defined: 2026-02-14*
-*Last updated: 2026-02-14 after initial definition*
+*Last updated: 2026-02-15 after roadmap creation*
