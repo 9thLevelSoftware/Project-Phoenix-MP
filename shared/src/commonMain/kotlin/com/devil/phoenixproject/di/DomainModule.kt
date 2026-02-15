@@ -3,6 +3,7 @@ package com.devil.phoenixproject.di
 import com.devil.phoenixproject.data.migration.MigrationManager
 import com.devil.phoenixproject.data.preferences.PreferencesManager
 import com.devil.phoenixproject.data.preferences.SettingsPreferencesManager
+import com.devil.phoenixproject.domain.assessment.AssessmentEngine
 import com.devil.phoenixproject.domain.usecase.ProgressionUseCase
 import com.devil.phoenixproject.domain.usecase.RepCounterFromMachine
 import com.devil.phoenixproject.domain.usecase.ResolveRoutineWeightsUseCase
@@ -19,6 +20,9 @@ val domainModule = module {
     single { ProgressionUseCase(get(), get()) }
     factory { ResolveRoutineWeightsUseCase(get()) }
     single { TemplateConverter(get()) }
+
+    // Assessment
+    single { AssessmentEngine() }
 
     // Migration
     single { MigrationManager() }

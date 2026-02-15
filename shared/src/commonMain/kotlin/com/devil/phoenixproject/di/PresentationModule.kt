@@ -1,5 +1,6 @@
 package com.devil.phoenixproject.di
 
+import com.devil.phoenixproject.presentation.viewmodel.AssessmentViewModel
 import com.devil.phoenixproject.presentation.viewmodel.ConnectionLogsViewModel
 import com.devil.phoenixproject.presentation.viewmodel.CycleEditorViewModel
 import com.devil.phoenixproject.presentation.viewmodel.EulaViewModel
@@ -15,6 +16,7 @@ val presentationModule = module {
     factory { ConnectionLogsViewModel() }
     factory { CycleEditorViewModel(get()) }
     factory { GamificationViewModel(get()) }
+    factory { AssessmentViewModel(get(), get(), get()) }
     // ThemeViewModel as singleton - app-wide theme state that must persist
     single { ThemeViewModel(get()) }
     // EulaViewModel as singleton - tracks EULA acceptance across app lifecycle
