@@ -17,6 +17,7 @@ import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
 import com.devil.phoenixproject.presentation.manager.DefaultWorkoutSessionManager
 import com.devil.phoenixproject.presentation.navigation.NavigationRoutes
 import co.touchlab.kermit.Logger
+import com.devil.phoenixproject.presentation.manager.DetectionState
 import com.devil.phoenixproject.util.setKeepScreenOn
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -54,6 +55,7 @@ fun ActiveWorkoutScreen(
     val isCurrentExerciseBodyweight by viewModel.isCurrentExerciseBodyweight.collectAsState()
     val latestRepQuality by viewModel.latestRepQuality.collectAsState()
     val latestBiomechanicsResult by viewModel.latestBiomechanicsResult.collectAsState()
+    val detectionState by viewModel.detectionState.collectAsState()
     @Suppress("UNUSED_VARIABLE") // Reserved for future connecting overlay
     val isAutoConnecting by viewModel.isAutoConnecting.collectAsState()
     val connectionError by viewModel.connectionError.collectAsState()
@@ -275,7 +277,7 @@ fun ActiveWorkoutScreen(
         loadedRoutine, currentExerciseIndex, currentSetIndex, autoplayEnabled,
         userPreferences.summaryCountdownSeconds, loadBaselineA, loadBaselineB, canGoBack, canSkipForward,
         timedExerciseRemainingSeconds, isCurrentExerciseBodyweight, gatedRepQualityScore,
-        gatedBiomechanicsResult
+        gatedBiomechanicsResult, detectionState
     ) {
         WorkoutUiState(
             connectionState = connectionState,
@@ -303,7 +305,8 @@ fun ActiveWorkoutScreen(
             timedExerciseRemainingSeconds = timedExerciseRemainingSeconds,
             isCurrentExerciseBodyweight = isCurrentExerciseBodyweight,
             latestRepQualityScore = gatedRepQualityScore,
-            latestBiomechanicsResult = gatedBiomechanicsResult
+            latestBiomechanicsResult = gatedBiomechanicsResult,
+            detectionState = detectionState
         )
     }
 
@@ -331,7 +334,9 @@ fun ActiveWorkoutScreen(
             onHideWorkoutSetupDialog = { /* Not used in ActiveWorkoutScreen */ },
             kgToDisplay = viewModel::kgToDisplay,
             displayToKg = viewModel::displayToKg,
-            formatWeight = viewModel::formatWeight
+            formatWeight = viewModel::formatWeight,
+            onDetectionConfirmed = { exerciseId, exerciseName -> viewModel.onDetectionConfirmed(exerciseId, exerciseName) },
+            onDetectionDismissed = { viewModel.onDetectionDismissed() }
         )
     }
 

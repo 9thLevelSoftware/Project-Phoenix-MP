@@ -145,6 +145,12 @@ class MainViewModel constructor(
     // ===== Exercise Detection Delegation =====
     val detectionState get() = workoutSessionManager.detectionManager.detectionState
 
+    suspend fun onDetectionConfirmed(exerciseId: String, exerciseName: String) =
+        workoutSessionManager.detectionManager.onExerciseConfirmed(exerciseId, exerciseName)
+
+    fun onDetectionDismissed() =
+        workoutSessionManager.detectionManager.onDetectionDismissed()
+
     // ===== BLE Connection Delegation =====
 
     val connectionState: StateFlow<ConnectionState> get() = bleConnectionManager.connectionState
