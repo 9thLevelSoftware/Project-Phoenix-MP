@@ -389,6 +389,36 @@ actual class DriverFactory(private val context: Context) {
                             // Migration 13: MetricSample performance index
                             "CREATE INDEX IF NOT EXISTS idx_metric_sample_session ON MetricSample(sessionId)"
                         )
+                        14 -> listOf(
+                            // Migration 14: ExerciseSignature and AssessmentResult tables
+                            """CREATE TABLE IF NOT EXISTS ExerciseSignature (
+                                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                                exerciseId TEXT NOT NULL,
+                                romMm REAL NOT NULL,
+                                durationMs INTEGER NOT NULL,
+                                symmetryRatio REAL NOT NULL,
+                                velocityProfile TEXT NOT NULL,
+                                cableConfig TEXT NOT NULL,
+                                sampleCount INTEGER NOT NULL DEFAULT 1,
+                                confidence REAL NOT NULL DEFAULT 0.0,
+                                createdAt INTEGER NOT NULL,
+                                updatedAt INTEGER NOT NULL,
+                                FOREIGN KEY (exerciseId) REFERENCES Exercise(id) ON DELETE CASCADE
+                            )""",
+                            "CREATE INDEX IF NOT EXISTS idx_exercise_signature_exercise ON ExerciseSignature(exerciseId)",
+                            """CREATE TABLE IF NOT EXISTS AssessmentResult (
+                                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                                exerciseId TEXT NOT NULL,
+                                estimatedOneRepMaxKg REAL NOT NULL,
+                                loadVelocityData TEXT NOT NULL,
+                                assessmentSessionId TEXT,
+                                userOverrideKg REAL,
+                                createdAt INTEGER NOT NULL,
+                                FOREIGN KEY (exerciseId) REFERENCES Exercise(id) ON DELETE CASCADE,
+                                FOREIGN KEY (assessmentSessionId) REFERENCES WorkoutSession(id) ON DELETE SET NULL
+                            )""",
+                            "CREATE INDEX IF NOT EXISTS idx_assessment_result_exercise ON AssessmentResult(exerciseId)"
+                        )
                         else -> emptyList()
                     }
                 }

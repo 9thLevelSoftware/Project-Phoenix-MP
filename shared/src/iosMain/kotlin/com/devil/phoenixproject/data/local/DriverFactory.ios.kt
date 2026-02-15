@@ -54,7 +54,7 @@ actual class DriverFactory {
 
     companion object {
         /** Current schema version - must match SQLDelight (1 + number of .sqm files) */
-        private const val CURRENT_SCHEMA_VERSION = 14L
+        private const val CURRENT_SCHEMA_VERSION = 15L
     }
 
     /**
@@ -690,6 +690,37 @@ actual class DriverFactory {
                 FOREIGN KEY (sessionId) REFERENCES WorkoutSession(id) ON DELETE CASCADE
             )
             """,
+            // ==================== Exercise Signatures ====================
+            """
+            CREATE TABLE IF NOT EXISTS ExerciseSignature (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                exerciseId TEXT NOT NULL,
+                romMm REAL NOT NULL,
+                durationMs INTEGER NOT NULL,
+                symmetryRatio REAL NOT NULL,
+                velocityProfile TEXT NOT NULL,
+                cableConfig TEXT NOT NULL,
+                sampleCount INTEGER NOT NULL DEFAULT 1,
+                confidence REAL NOT NULL DEFAULT 0.0,
+                createdAt INTEGER NOT NULL,
+                updatedAt INTEGER NOT NULL,
+                FOREIGN KEY (exerciseId) REFERENCES Exercise(id) ON DELETE CASCADE
+            )
+            """,
+            // ==================== Assessment Results ====================
+            """
+            CREATE TABLE IF NOT EXISTS AssessmentResult (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                exerciseId TEXT NOT NULL,
+                estimatedOneRepMaxKg REAL NOT NULL,
+                loadVelocityData TEXT NOT NULL,
+                assessmentSessionId TEXT,
+                userOverrideKg REAL,
+                createdAt INTEGER NOT NULL,
+                FOREIGN KEY (exerciseId) REFERENCES Exercise(id) ON DELETE CASCADE,
+                FOREIGN KEY (assessmentSessionId) REFERENCES WorkoutSession(id) ON DELETE SET NULL
+            )
+            """,
             // ==================== Gamification Tables ====================
             """
             CREATE TABLE IF NOT EXISTS EarnedBadge (
@@ -957,6 +988,10 @@ actual class DriverFactory {
             // RepMetric indexes
             "CREATE INDEX IF NOT EXISTS idx_rep_metric_session ON RepMetric(sessionId)",
             "CREATE INDEX IF NOT EXISTS idx_rep_metric_session_rep ON RepMetric(sessionId, repNumber)",
+            // ExerciseSignature indexes
+            "CREATE INDEX IF NOT EXISTS idx_exercise_signature_exercise ON ExerciseSignature(exerciseId)",
+            // AssessmentResult indexes
+            "CREATE INDEX IF NOT EXISTS idx_assessment_result_exercise ON AssessmentResult(exerciseId)",
             // Training Cycle indexes
             "CREATE INDEX IF NOT EXISTS idx_cycle_day_cycle ON CycleDay(cycle_id)",
             "CREATE INDEX IF NOT EXISTS idx_cycle_progress_cycle ON CycleProgress(cycle_id)",
