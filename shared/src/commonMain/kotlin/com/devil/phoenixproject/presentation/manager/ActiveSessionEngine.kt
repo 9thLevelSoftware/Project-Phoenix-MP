@@ -1879,6 +1879,9 @@ class ActiveSessionEngine(
             coordinator.repQualityScorer.reset()
             coordinator._latestRepQuality.value = null
 
+            // Capture biomechanics set summary BEFORE reset (null if no reps processed)
+            val biomechanicsSummary = coordinator.biomechanicsEngine.getSetSummary()
+
             // Reset biomechanics engine and rep boundary timestamps for next set
             coordinator.biomechanicsEngine.reset()
             coordinator.repBoundaryTimestamps.clear()
@@ -1898,8 +1901,11 @@ class ActiveSessionEngine(
                 baselineLoadB = coordinator._loadBaselineB.value
             )
 
-            // Attach quality summary to the set summary
-            val summary = baseSummary.copy(qualitySummary = qualitySummary)
+            // Attach quality and biomechanics summaries to the set summary
+            val summary = baseSummary.copy(
+                qualitySummary = qualitySummary,
+                biomechanicsSummary = biomechanicsSummary
+            )
 
             // Process quality event for Form Master badge tracking
             qualitySummary?.let { qs ->

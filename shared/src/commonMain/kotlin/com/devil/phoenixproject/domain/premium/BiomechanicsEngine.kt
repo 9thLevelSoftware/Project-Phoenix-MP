@@ -118,6 +118,37 @@ class BiomechanicsEngine(
             .eachCount()
         val strengthProfile = profileCounts.maxByOrNull { it.value }?.key ?: StrengthProfile.FLAT
 
+        // Compute averaged force curve across all reps with valid 101-point curves
+        val validCurves = repResults.map { it.forceCurve }
+            .filter { it.normalizedForceN.size == 101 }
+        val avgForceCurve = if (validCurves.isEmpty()) {
+            null
+        } else {
+            // Element-wise average of normalizedForceN across all valid curves
+            val avgForce = FloatArray(101)
+            for (i in 0 until 101) {
+                var sum = 0f
+                for (curve in validCurves) {
+                    sum += curve.normalizedForceN[i]
+                }
+                avgForce[i] = sum / validCurves.size
+            }
+            // Use standard normalized positions (0..100)
+            val positions = FloatArray(101) { it.toFloat() }
+            // Sticking point on averaged curve
+            val stickingPt = findStickingPoint(avgForce)
+            // Strength profile on averaged curve
+            val profile = classifyStrengthProfile(avgForce)
+
+            ForceCurveResult(
+                normalizedForceN = avgForce,
+                normalizedPositionPct = positions,
+                stickingPointPct = stickingPt,
+                strengthProfile = profile,
+                repNumber = 0  // 0 indicates set-level average
+            )
+        }
+
         return BiomechanicsSetSummary(
             repResults = repResults.toList(),
             avgMcvMmS = avgMcv,
@@ -127,7 +158,7 @@ class BiomechanicsEngine(
             avgAsymmetryPercent = avgAsymmetry,
             dominantSide = dominantSide,
             strengthProfile = strengthProfile,
-            avgForceCurve = null // TODO: Implement averaged force curve in Plan 03
+            avgForceCurve = avgForceCurve
         )
     }
 
