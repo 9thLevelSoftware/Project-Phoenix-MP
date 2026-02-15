@@ -23,8 +23,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import com.devil.phoenixproject.data.repository.ExerciseRepository
+import com.devil.phoenixproject.domain.model.ConnectionState
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.domain.model.WorkoutSession
+import com.devil.phoenixproject.presentation.navigation.NavigationRoutes
 import com.devil.phoenixproject.presentation.components.charts.ProgressionLineChart
 import com.devil.phoenixproject.presentation.components.charts.VolumeTrendChart
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
@@ -47,6 +49,8 @@ fun ExerciseDetailScreen(
 ) {
     val allWorkoutSessions by viewModel.allWorkoutSessions.collectAsState()
     val weightUnit by viewModel.weightUnit.collectAsState()
+    val connectionState by viewModel.connectionState.collectAsState()
+    val isConnected = connectionState is ConnectionState.Connected
 
     // Filter sessions for this exercise
     val exerciseSessions = remember(allWorkoutSessions, exerciseId) {
@@ -99,6 +103,26 @@ fun ExerciseDetailScreen(
                         weightUnit = weightUnit,
                         formatWeight = viewModel::formatWeight
                     )
+                }
+
+                // Assess 1RM button
+                item {
+                    OutlinedButton(
+                        onClick = {
+                            navController.navigate(
+                                NavigationRoutes.StrengthAssessment.createRoute(exerciseId)
+                            )
+                        },
+                        enabled = isConnected,
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Text(
+                            text = if (isConnected) "Assess 1RM" else "Assess 1RM (Connect to trainer first)",
+                            style = MaterialTheme.typography.labelLarge,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
                 }
 
                 // Progression Chart

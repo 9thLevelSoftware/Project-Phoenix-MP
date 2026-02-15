@@ -30,6 +30,7 @@ import com.devil.phoenixproject.data.repository.TrainingCycleRepository
 import com.devil.phoenixproject.domain.model.TrainingCycle
 import com.devil.phoenixproject.domain.subscription.SubscriptionManager
 import com.devil.phoenixproject.presentation.screen.*
+import com.devil.phoenixproject.presentation.viewmodel.AssessmentViewModel
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
 import com.devil.phoenixproject.ui.theme.ThemeMode
 import org.koin.compose.koinInject
@@ -474,6 +475,81 @@ fun NavGraph(
                     )
                 }
             }
+        }
+
+        // Strength Assessment Picker - no exercise pre-selected
+        composable(
+            route = NavigationRoutes.StrengthAssessmentPicker.route,
+            enterTransition = {
+                slideIntoContainer(
+                    towards = AnimatedContentTransitionScope.SlideDirection.Left,
+                    animationSpec = tween(300)
+                )
+            },
+            exitTransition = {
+                slideOutOfContainer(
+                    towards = AnimatedContentTransitionScope.SlideDirection.Left,
+                    animationSpec = tween(300)
+                )
+            },
+            popEnterTransition = {
+                slideIntoContainer(
+                    towards = AnimatedContentTransitionScope.SlideDirection.Right,
+                    animationSpec = tween(300)
+                )
+            },
+            popExitTransition = {
+                slideOutOfContainer(
+                    towards = AnimatedContentTransitionScope.SlideDirection.Right,
+                    animationSpec = tween(300)
+                )
+            }
+        ) {
+            val assessmentViewModel: AssessmentViewModel = koinInject()
+            AssessmentWizardScreen(
+                viewModel = assessmentViewModel,
+                themeMode = themeMode,
+                onNavigateBack = { navController.popBackStack() }
+            )
+        }
+
+        // Strength Assessment with pre-selected exercise
+        composable(
+            route = NavigationRoutes.StrengthAssessment.route,
+            arguments = listOf(navArgument("exerciseId") { type = NavType.StringType }),
+            enterTransition = {
+                slideIntoContainer(
+                    towards = AnimatedContentTransitionScope.SlideDirection.Left,
+                    animationSpec = tween(300)
+                )
+            },
+            exitTransition = {
+                slideOutOfContainer(
+                    towards = AnimatedContentTransitionScope.SlideDirection.Left,
+                    animationSpec = tween(300)
+                )
+            },
+            popEnterTransition = {
+                slideIntoContainer(
+                    towards = AnimatedContentTransitionScope.SlideDirection.Right,
+                    animationSpec = tween(300)
+                )
+            },
+            popExitTransition = {
+                slideOutOfContainer(
+                    towards = AnimatedContentTransitionScope.SlideDirection.Right,
+                    animationSpec = tween(300)
+                )
+            }
+        ) { backStackEntry ->
+            val exerciseId = backStackEntry.arguments?.read { getStringOrNull("exerciseId") } ?: ""
+            val assessmentViewModel: AssessmentViewModel = koinInject()
+            AssessmentWizardScreen(
+                viewModel = assessmentViewModel,
+                exerciseId = exerciseId,
+                themeMode = themeMode,
+                onNavigateBack = { navController.popBackStack() }
+            )
         }
 
         // TODO: Uncomment when online account features are ready for public release
