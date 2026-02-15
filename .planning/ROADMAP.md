@@ -44,20 +44,20 @@ See `.planning/milestones/v0.4.6-*` for archived phase details.
 
 **Milestone Goal:** Transform the app into an intelligent training platform with VBT-based strength assessment, exercise auto-detection, and mobile session replay.
 
-#### Phase 9: Infrastructure
+#### Phase 9: Infrastructure ✓ COMPLETE (2026-02-15)
 **Goal**: Data foundations and bug fixes that unblock all feature phases
 **Depends on**: Nothing (first phase in milestone)
 **Requirements**: INFRA-01, INFRA-02, INFRA-03, INFRA-04
 **Success Criteria** (what must be TRUE):
-  1. Power values displayed during dual-cable exercises reflect combined load (loadA + loadB)
-  2. Session detail queries for sessions with 100+ metric samples return without noticeable delay
-  3. ExerciseSignature table exists in database with columns for ROM, duration, symmetry, velocity profile, and cable usage
-  4. AssessmentResult table exists in database with columns for exercise reference, estimated 1RM, load-velocity data points, and timestamp
-**Plans**: 2 plans in 2 waves
+  1. ✓ Power values displayed during dual-cable exercises reflect combined load (loadA + loadB)
+  2. ✓ Session detail queries for sessions with 100+ metric samples return without noticeable delay
+  3. ✓ ExerciseSignature table exists in database with columns for ROM, duration, symmetry, velocity profile, and cable usage
+  4. ✓ AssessmentResult table exists in database with columns for exercise reference, estimated 1RM, load-velocity data points, and timestamp
+**Plans**: 2 plans in 2 waves — **COMPLETE**
 
 Plans:
-- [ ] 09-01-PLAN.md — Fix dual-cable power calculation and add MetricSample sessionId index (Wave 1)
-- [ ] 09-02-PLAN.md — Add ExerciseSignature and AssessmentResult table schemas (Wave 2)
+- [x] 09-01-PLAN.md — Fix dual-cable power calculation and add MetricSample sessionId index (Wave 1)
+- [x] 09-02-PLAN.md — Add ExerciseSignature and AssessmentResult table schemas (Wave 2)
 
 #### Phase 10: Strength Assessment
 **Goal**: Users can determine their 1RM for any exercise through a guided, velocity-based assessment flow
@@ -114,9 +114,9 @@ Plans:
 | v0.4.1 Architectural Cleanup | 1-4 | 10 | ✅ Complete | 2026-02-13 |
 | v0.4.5 Premium Features Phase 1 | 1-5 | 11 | ✅ Complete | 2026-02-14 |
 | v0.4.6 Biomechanics MVP | 6-8 | 10 | ✅ Complete | 2026-02-15 |
-| v0.4.7 Mobile Platform Features | 9-12 | TBD | 🚧 In progress | - |
+| v0.4.7 Mobile Platform Features | 9-12 | 2/10 | 🚧 In progress | - |
 
 **Last phase number:** 12
 
 ---
-*Last updated: 2026-02-15 after v0.4.7 roadmap creation*
+*Last updated: 2026-02-15 after Phase 9 completion*
