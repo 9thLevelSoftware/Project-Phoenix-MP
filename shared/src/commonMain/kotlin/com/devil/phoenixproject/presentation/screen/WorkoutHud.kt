@@ -24,6 +24,7 @@ import com.devil.phoenixproject.data.repository.ExerciseVideoEntity
 import com.devil.phoenixproject.domain.model.*
 import com.devil.phoenixproject.domain.model.BiomechanicsRepResult
 import com.devil.phoenixproject.domain.model.BiomechanicsVelocityZone
+import com.devil.phoenixproject.presentation.components.BalanceBar
 import com.devil.phoenixproject.presentation.components.VideoPlayer
 import com.devil.phoenixproject.presentation.components.AnimatedRepCounter
 import com.devil.phoenixproject.presentation.components.CircularForceGauge
@@ -74,6 +75,25 @@ fun WorkoutHud(
     val isEchoMode = workoutParameters.isEchoMode
     val pagerState = rememberPagerState(pageCount = { 3 })
     val topBarModeLabel = if (isCurrentExerciseBodyweight) "Bodyweight" else workoutParameters.programMode.displayName
+
+    // Track consecutive high-asymmetry reps for alert (ASYM-05)
+    var consecutiveHighAsymmetryCount by remember { mutableStateOf(0) }
+    var lastProcessedRepNumber by remember { mutableStateOf(0) }
+
+    // Update consecutive count when new rep data arrives
+    LaunchedEffect(latestBiomechanicsResult?.repNumber) {
+        val result = latestBiomechanicsResult ?: return@LaunchedEffect
+        if (result.repNumber > lastProcessedRepNumber) {
+            lastProcessedRepNumber = result.repNumber
+            if (result.asymmetry.asymmetryPercent > 15f) {
+                consecutiveHighAsymmetryCount++
+            } else {
+                consecutiveHighAsymmetryCount = 0
+            }
+        }
+    }
+
+    val showAsymmetryAlert = consecutiveHighAsymmetryCount >= 3
 
     // Determine gradient for background based on phase?
     // For now, keep it simple dark/light surface
@@ -255,6 +275,20 @@ fun WorkoutHud(
                         .width(24.dp) // Thinner for HUD
                         .fillMaxHeight(0.6f)
                         .padding(end = 4.dp)
+                )
+            }
+
+            // L/R Balance Bar (below cable position bars)
+            // Only show when biomechanics data is available and not bodyweight
+            if (latestBiomechanicsResult != null && !isCurrentExerciseBodyweight) {
+                BalanceBar(
+                    asymmetryPercent = latestBiomechanicsResult.asymmetry.asymmetryPercent,
+                    dominantSide = latestBiomechanicsResult.asymmetry.dominantSide,
+                    showAlert = showAsymmetryAlert,
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .fillMaxWidth(0.7f)
+                        .padding(bottom = 24.dp)
                 )
             }
         }
