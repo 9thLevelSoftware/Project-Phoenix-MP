@@ -127,10 +127,10 @@ Deferred to later milestones (per Spec 01 Phases 4-6).
 | DATA-04 | Phase 6 | Pending |
 
 **Coverage:**
-- v0.4.6 requirements: 29 total
-- Mapped to phases: 29
-- Unmapped: 0 ✓
+- v0.4.6 requirements: 32 total
+- Mapped to phases: 32
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-02-14*
-*Last updated: 2026-02-14 after initial definition*
+*Last updated: 2026-02-14 after roadmap creation*
