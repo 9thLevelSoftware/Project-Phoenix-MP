@@ -16,17 +16,21 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.domain.model.BiomechanicsSetSummary
 import com.devil.phoenixproject.domain.model.BiomechanicsVelocityZone
+import com.devil.phoenixproject.domain.model.ForceCurveResult
 import com.devil.phoenixproject.domain.model.QualityTrend
 import com.devil.phoenixproject.domain.model.SetQualitySummary
+import com.devil.phoenixproject.domain.model.StrengthProfile
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.domain.model.WorkoutState
 import com.devil.phoenixproject.presentation.components.RpeIndicator
+import kotlin.math.abs
 import kotlin.math.cos
 import kotlin.math.roundToInt
 import kotlin.math.sin
@@ -239,6 +243,21 @@ fun SetSummaryCard(
             // Velocity Analysis section (shown when biomechanics data is available)
             summary.biomechanicsSummary?.let { biomechanics ->
                 VelocitySummaryCard(biomechanics)
+            }
+
+            // Force Curve Summary section (shown when averaged force curve is available)
+            summary.biomechanicsSummary?.let { biomechanics ->
+                biomechanics.avgForceCurve?.let { curve ->
+                    ForceCurveSummaryCard(
+                        avgForceCurve = curve,
+                        strengthProfile = biomechanics.strengthProfile
+                    )
+                }
+            }
+
+            // Balance Analysis section (shown when biomechanics data is available)
+            summary.biomechanicsSummary?.let { biomechanics ->
+                AsymmetrySummaryCard(biomechanics)
             }
 
             // RPE section - show read-only in history view, interactive in live view
@@ -812,6 +831,443 @@ private fun VelocitySummaryCard(biomechanics: BiomechanicsSetSummary) {
                     }
                 }
             }
+        }
+    }
+}
+
+// ===== Force Curve Summary Section =====
+
+/**
+ * Strength profile display name mapping.
+ */
+private fun strengthProfileDisplayName(profile: StrengthProfile): String = when (profile) {
+    StrengthProfile.ASCENDING -> "Ascending"
+    StrengthProfile.DESCENDING -> "Descending"
+    StrengthProfile.BELL_SHAPED -> "Bell Curve"
+    StrengthProfile.FLAT -> "Flat"
+}
+
+/**
+ * Force curve summary card for post-set review.
+ * Larger than the HUD mini-graph: shows averaged concentric force curve with sticking point
+ * annotation, strength profile badge, and peak/min force stats.
+ */
+@Composable
+private fun ForceCurveSummaryCard(
+    avgForceCurve: ForceCurveResult,
+    strengthProfile: StrengthProfile
+) {
+    val forceData = avgForceCurve.normalizedForceN
+    if (forceData.isEmpty()) return
+
+    val primaryColor = MaterialTheme.colorScheme.primary
+    val stickingPointPct = avgForceCurve.stickingPointPct
+
+    // Compute stats
+    val maxForce = forceData.max()
+    val minForce = forceData.min()
+    // Min force excluding first/last 5% (transition noise) for display
+    val interiorStart = (forceData.size * 0.05f).toInt().coerceAtLeast(1)
+    val interiorEnd = (forceData.size * 0.95f).toInt().coerceAtMost(forceData.size - 1)
+    val interiorMinForce = if (interiorStart < interiorEnd) {
+        forceData.slice(interiorStart..interiorEnd).min()
+    } else {
+        minForce
+    }
+    val forceRange = (maxForce - minForce).coerceAtLeast(1f)
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
+        ),
+        shape = RoundedCornerShape(16.dp)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            // Header row: title + strength profile badge
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    "Force Curve",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary
+                )
+                // Strength profile badge
+                Surface(
+                    color = MaterialTheme.colorScheme.secondaryContainer,
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Text(
+                        text = strengthProfileDisplayName(strengthProfile),
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Medium,
+                        color = MaterialTheme.colorScheme.onSecondaryContainer,
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                    )
+                }
+            }
+
+            // Force curve Canvas
+            Canvas(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(120.dp)
+            ) {
+                val canvasWidth = size.width
+                val canvasHeight = size.height
+
+                // Draw filled area under curve
+                val fillPath = Path()
+                forceData.forEachIndexed { index, force ->
+                    val x = (index.toFloat() / (forceData.size - 1)) * canvasWidth
+                    val y = canvasHeight - ((force - minForce) / forceRange) * canvasHeight
+                    if (index == 0) fillPath.moveTo(x, y) else fillPath.lineTo(x, y)
+                }
+                fillPath.lineTo(canvasWidth, canvasHeight)
+                fillPath.lineTo(0f, canvasHeight)
+                fillPath.close()
+                drawPath(fillPath, color = primaryColor.copy(alpha = 0.15f))
+
+                // Draw curve line
+                val linePath = Path()
+                forceData.forEachIndexed { index, force ->
+                    val x = (index.toFloat() / (forceData.size - 1)) * canvasWidth
+                    val y = canvasHeight - ((force - minForce) / forceRange) * canvasHeight
+                    if (index == 0) linePath.moveTo(x, y) else linePath.lineTo(x, y)
+                }
+                drawPath(linePath, color = primaryColor, style = Stroke(width = 2.dp.toPx()))
+
+                // Sticking point marker
+                stickingPointPct?.let { pct ->
+                    val spX = (pct / 100f) * canvasWidth
+                    val spIndex = pct.toInt().coerceIn(0, forceData.lastIndex)
+                    val spY = canvasHeight - ((forceData[spIndex] - minForce) / forceRange) * canvasHeight
+
+                    // Dashed vertical red line
+                    drawLine(
+                        color = Color.Red.copy(alpha = 0.6f),
+                        start = Offset(spX, 0f),
+                        end = Offset(spX, canvasHeight),
+                        strokeWidth = 1.dp.toPx(),
+                        pathEffect = PathEffect.dashPathEffect(
+                            intervals = floatArrayOf(6.dp.toPx(), 4.dp.toPx()),
+                            phase = 0f
+                        )
+                    )
+
+                    // Red circle at sticking point on curve
+                    drawCircle(
+                        color = Color.Red,
+                        radius = 5.dp.toPx(),
+                        center = Offset(spX, spY)
+                    )
+                }
+            }
+
+            // X-axis labels: 0%, 50%, 100% ROM
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text(
+                    "0%",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Text(
+                    "50%",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Text(
+                    "100%",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+
+            // Stats row: Sticking Point, Peak Force, Min Force
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceEvenly,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // Sticking Point
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(
+                        "Sticking Point",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        "${stickingPointPct?.toInt() ?: "--"}% ROM",
+                        style = MaterialTheme.typography.bodyLarge,
+                        fontWeight = FontWeight.Medium,
+                        color = if (stickingPointPct != null) Color.Red else MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                // Peak Force
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(
+                        "Peak Force",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        "${maxForce.toInt()} N",
+                        style = MaterialTheme.typography.bodyLarge,
+                        fontWeight = FontWeight.Medium,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                }
+                // Min Force (interior, excluding edges)
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(
+                        "Min Force",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        "${interiorMinForce.toInt()} N",
+                        style = MaterialTheme.typography.bodyLarge,
+                        fontWeight = FontWeight.Medium,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                }
+            }
+        }
+    }
+}
+
+// ===== Balance Analysis Section =====
+
+/**
+ * Asymmetry severity color (matches HUD balance bar from 07-02).
+ * Green: < 10%, Yellow: 10-15%, Red: > 15%
+ */
+private fun asymmetrySeverityColor(percent: Float): Color = when {
+    percent > 15f -> Color(0xFFE53935)   // Red - significant imbalance
+    percent >= 10f -> Color(0xFFFDD835)  // Yellow - moderate imbalance
+    else -> Color(0xFF43A047)            // Green - acceptable
+}
+
+/**
+ * Asymmetry trend direction computed from first-half vs second-half rep data.
+ */
+private enum class AsymmetryTrend { IMPROVING, STABLE, WORSENING }
+
+/**
+ * Balance analysis summary card showing avg asymmetry %, dominant side, trend,
+ * and per-rep asymmetry sparkline. Displayed on set summary for Phoenix-tier users (SUM-03, ASYM-06).
+ */
+@Composable
+private fun AsymmetrySummaryCard(biomechanics: BiomechanicsSetSummary) {
+    val repAsymmetries = biomechanics.repResults.map { it.asymmetry.asymmetryPercent }
+
+    // Compute trend from first-half vs second-half average
+    val trend = if (repAsymmetries.size >= 2) {
+        val midpoint = repAsymmetries.size / 2
+        val firstHalfAvg = repAsymmetries.subList(0, midpoint).average().toFloat()
+        val secondHalfAvg = repAsymmetries.subList(midpoint, repAsymmetries.size).average().toFloat()
+        when {
+            secondHalfAvg > firstHalfAvg + 2f -> AsymmetryTrend.WORSENING
+            firstHalfAvg > secondHalfAvg + 2f -> AsymmetryTrend.IMPROVING
+            else -> AsymmetryTrend.STABLE
+        }
+    } else {
+        AsymmetryTrend.STABLE
+    }
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
+        ),
+        shape = RoundedCornerShape(16.dp)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            // Header row
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Icon(
+                    Icons.Default.CompareArrows,
+                    contentDescription = "Balance",
+                    modifier = Modifier.size(18.dp),
+                    tint = MaterialTheme.colorScheme.primary
+                )
+                Text(
+                    "Balance Analysis",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary
+                )
+            }
+
+            // Main stats row: Avg Asymmetry, Dominant Side, Trend
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceEvenly,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // Avg Asymmetry
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(
+                        "Avg Asymmetry",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        "${biomechanics.avgAsymmetryPercent.toInt()}%",
+                        style = MaterialTheme.typography.headlineMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = asymmetrySeverityColor(biomechanics.avgAsymmetryPercent)
+                    )
+                }
+
+                // Dominant Side
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(
+                        "Dominant Side",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    val sideLabel = when (biomechanics.dominantSide) {
+                        "A" -> "Left (A)"
+                        "B" -> "Right (B)"
+                        else -> "Balanced"
+                    }
+                    Text(
+                        sideLabel,
+                        style = MaterialTheme.typography.bodyLarge,
+                        fontWeight = FontWeight.Medium,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                }
+
+                // Trend
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(
+                        "Trend",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    val trendIcon = when (trend) {
+                        AsymmetryTrend.WORSENING -> Icons.Default.TrendingUp
+                        AsymmetryTrend.IMPROVING -> Icons.Default.TrendingDown
+                        AsymmetryTrend.STABLE -> Icons.Default.TrendingFlat
+                    }
+                    val trendColor = when (trend) {
+                        AsymmetryTrend.WORSENING -> Color(0xFFE53935)
+                        AsymmetryTrend.IMPROVING -> Color(0xFF43A047)
+                        AsymmetryTrend.STABLE -> Color.Gray
+                    }
+                    val trendLabel = when (trend) {
+                        AsymmetryTrend.WORSENING -> "Worsening"
+                        AsymmetryTrend.IMPROVING -> "Improving"
+                        AsymmetryTrend.STABLE -> "Stable"
+                    }
+                    Icon(
+                        trendIcon,
+                        contentDescription = trendLabel,
+                        modifier = Modifier.size(20.dp),
+                        tint = trendColor
+                    )
+                    Text(
+                        trendLabel,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = trendColor
+                    )
+                }
+            }
+
+            // Per-rep asymmetry sparkline (shown if >= 3 reps)
+            if (repAsymmetries.size >= 3) {
+                AsymmetrySparkline(repAsymmetries)
+            }
+        }
+    }
+}
+
+/**
+ * Per-rep asymmetry sparkline with severity-colored segments
+ * and a dashed reference line at 10% (yellow threshold).
+ */
+@Composable
+private fun AsymmetrySparkline(asymmetryValues: List<Float>) {
+    val thresholdYellow = 10f
+    val thresholdRed = 15f
+
+    Canvas(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(40.dp)
+    ) {
+        val canvasWidth = size.width
+        val canvasHeight = size.height
+        val padding = 4.dp.toPx()
+
+        val effectiveWidth = canvasWidth - padding * 2
+        val effectiveHeight = canvasHeight - padding * 2
+
+        // Scale: 0% to max(30%, actual max) for readable chart
+        val maxVal = maxOf(30f, asymmetryValues.max())
+        val xStep = if (asymmetryValues.size > 1) effectiveWidth / (asymmetryValues.size - 1) else effectiveWidth / 2
+
+        // Compute points
+        val points = asymmetryValues.mapIndexed { index, value ->
+            val x = padding + if (asymmetryValues.size > 1) index * xStep else effectiveWidth / 2
+            val y = padding + effectiveHeight * (1f - value / maxVal)
+            Offset(x, y)
+        }
+
+        // Draw dashed reference line at 10% (yellow threshold)
+        val refY = padding + effectiveHeight * (1f - thresholdYellow / maxVal)
+        drawLine(
+            color = Color(0xFFFDD835).copy(alpha = 0.5f),
+            start = Offset(padding, refY),
+            end = Offset(padding + effectiveWidth, refY),
+            strokeWidth = 1.dp.toPx(),
+            pathEffect = PathEffect.dashPathEffect(
+                intervals = floatArrayOf(6.dp.toPx(), 4.dp.toPx()),
+                phase = 0f
+            )
+        )
+
+        // Draw line segments with severity colors
+        for (i in 0 until points.size - 1) {
+            val avgValue = (asymmetryValues[i] + asymmetryValues[i + 1]) / 2f
+            val segColor = asymmetrySeverityColor(avgValue)
+            drawLine(
+                color = segColor,
+                start = points[i],
+                end = points[i + 1],
+                strokeWidth = 2.dp.toPx()
+            )
+        }
+
+        // Draw dots at each point
+        points.forEachIndexed { index, point ->
+            drawCircle(
+                color = asymmetrySeverityColor(asymmetryValues[index]),
+                radius = 3.dp.toPx(),
+                center = point
+            )
         }
     }
 }
