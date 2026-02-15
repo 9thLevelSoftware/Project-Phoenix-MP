@@ -9,12 +9,12 @@ See: .planning/PROJECT.md (updated 2026-02-14)
 
 ## Current Position
 
-Phase: 6 of 8 (Core Engine)
-Plan: 2 of 4 in current phase
-Status: Executing
-Last activity: 2026-02-15 — Plan 06-02 (VBT Computation) complete
+Phase: 6 of 8 (Core Engine) - COMPLETE
+Plan: 4 of 4 in current phase
+Status: Phase Complete
+Last activity: 2026-02-15 — Plan 06-04 (Asymmetry Engine) complete
 
-Progress: [██░░░░░░░░] 20% (2/10 plans)
+Progress: [████░░░░░░] 40% (4/10 plans)
 
 ## Performance Metrics
 
@@ -29,7 +29,7 @@ Progress: [██░░░░░░░░] 20% (2/10 plans)
 |-----------|--------|-------|----------|-------|
 | v0.4.1 | 4 | 10 | - | Pre-metrics |
 | v0.4.5 | 5 | 11 | ~3h | 59 commits, +1,832 LOC |
-| v0.4.6 | 3 | 10 | - | In progress (2/10 complete) |
+| v0.4.6 | 3 | 10 | - | In progress (4/10 complete) |
 
 ## Accumulated Context
 
@@ -45,6 +45,8 @@ Key decisions affecting v0.4.6:
 - Concentric phase detection by positive velocity with first-half fallback (06-01)
 - MCV = average(max(abs(velocityA), abs(velocityB))) per sample (06-02)
 - Velocity loss clamped 0-100%, rep projection capped at 99 (06-02)
+- Asymmetry formula: abs(avgLoadA - avgLoadB) / max(avgLoadA, avgLoadB) * 100 (06-04)
+- Asymmetry below 2% classified as BALANCED (measurement noise threshold) (06-04)
 
 ### Pending Todos
 
@@ -57,6 +59,6 @@ None.
 ## Session Continuity
 
 Last session: 2026-02-15
-Stopped at: Completed 06-02-PLAN.md (VBT Computation)
+Stopped at: Completed 06-04-PLAN.md (Asymmetry Engine) - Phase 6 Core Engine COMPLETE
 Resume file: None
-Next action: `/gsd:execute-phase 6` (Plan 03: Force Curve)
+Next action: `/gsd:execute-phase 7` (Phase 07: Biomechanics UI)
