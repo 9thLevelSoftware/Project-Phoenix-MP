@@ -854,6 +854,9 @@ DELETE FROM AssessmentResult WHERE id = ?;
 deleteAssessmentsByExercise:
 DELETE FROM AssessmentResult WHERE exerciseId = ?;
 
+lastInsertRowId:
+SELECT last_insert_rowid();
+
 -- ==================== GAMIFICATION TABLES ====================
 
 -- Earned Badges
