@@ -25,6 +25,11 @@ import com.devil.phoenixproject.testutil.FakeTrainingCycleRepository
 import com.devil.phoenixproject.testutil.FakeWorkoutRepository
 import com.devil.phoenixproject.testutil.FakeRepMetricRepository
 import com.devil.phoenixproject.testutil.TestCoroutineRule
+import com.devil.phoenixproject.domain.detection.ExerciseClassifier
+import com.devil.phoenixproject.domain.detection.ExerciseSignature
+import com.devil.phoenixproject.domain.detection.SignatureExtractor
+import com.devil.phoenixproject.data.repository.ExerciseSignatureRepository
+import com.devil.phoenixproject.presentation.manager.ExerciseDetectionManager
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runCurrent
@@ -72,6 +77,20 @@ class MainViewModelTest {
         repCounter = RepCounterFromMachine()
         resolveWeightsUseCase = ResolveRoutineWeightsUseCase(fakePersonalRecordRepository)
 
+        val fakeSignatureRepo = object : ExerciseSignatureRepository {
+            override suspend fun getSignaturesByExercise(exerciseId: String): List<ExerciseSignature> = emptyList()
+            override suspend fun getAllSignaturesAsMap(): Map<String, ExerciseSignature> = emptyMap()
+            override suspend fun saveSignature(exerciseId: String, signature: ExerciseSignature) {}
+            override suspend fun updateSignature(id: Long, signature: ExerciseSignature) {}
+            override suspend fun deleteSignaturesByExercise(exerciseId: String) {}
+        }
+        val detectionManager = ExerciseDetectionManager(
+            signatureExtractor = SignatureExtractor(),
+            exerciseClassifier = ExerciseClassifier(),
+            signatureRepository = fakeSignatureRepo,
+            exerciseRepository = fakeExerciseRepository
+        )
+
         viewModel = MainViewModel(
             bleRepository = fakeBleRepository,
             workoutRepository = fakeWorkoutRepository,
@@ -83,7 +102,8 @@ class MainViewModelTest {
             trainingCycleRepository = fakeTrainingCycleRepository,
             completedSetRepository = fakeCompletedSetRepository,
             repMetricRepository = fakeRepMetricRepository,
-            resolveWeightsUseCase = resolveWeightsUseCase
+            resolveWeightsUseCase = resolveWeightsUseCase,
+            detectionManager = detectionManager
         )
     }
 
