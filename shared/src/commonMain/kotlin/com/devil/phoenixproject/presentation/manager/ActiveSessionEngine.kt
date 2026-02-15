@@ -58,7 +58,8 @@ class ActiveSessionEngine(
     private val syncTriggerManager: SyncTriggerManager?,
     private val repMetricRepository: RepMetricRepository,
     private val settingsManager: SettingsManager,
-    private val scope: CoroutineScope
+    private val scope: CoroutineScope,
+    private val detectionManager: ExerciseDetectionManager? = null
 ) {
 
     /**
@@ -521,6 +522,23 @@ class ActiveSessionEngine(
 
             // Segment metrics for this rep and process biomechanics (GATE-04: unconditional capture)
             processBiomechanicsForRep(repCountAfter, now)
+
+            // Exercise auto-detection: trigger after MIN_REPS working reps
+            // Only for working reps (warmup complete) when no exercise is assigned
+            val repCount = repCounter.getRepCount()
+            if (repCount.isWarmupComplete) {
+                val params = coordinator._workoutParameters.value
+                // Check if exercise already assigned (routine mode has selectedExerciseId)
+                val hasExerciseAssigned = params.selectedExerciseId != null &&
+                    params.selectedExerciseId!!.isNotBlank()
+
+                detectionManager?.onRepCompleted(
+                    repNumber = repCount.workingReps,
+                    metrics = coordinator.collectedMetrics.toList(),
+                    scope = scope,
+                    hasExerciseAssigned = hasExerciseAssigned
+                )
+            }
         }
     }
 

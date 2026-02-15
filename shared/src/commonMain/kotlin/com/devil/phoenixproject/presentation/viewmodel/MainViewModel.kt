@@ -34,6 +34,7 @@ import com.devil.phoenixproject.presentation.manager.SettingsManager
 import com.devil.phoenixproject.presentation.manager.BleConnectionManager
 import com.devil.phoenixproject.presentation.manager.GamificationManager
 import com.devil.phoenixproject.presentation.manager.DefaultWorkoutSessionManager
+import com.devil.phoenixproject.presentation.manager.ExerciseDetectionManager
 import com.devil.phoenixproject.presentation.manager.JustLiftDefaults
 import com.devil.phoenixproject.presentation.manager.ResumableProgressInfo
 
@@ -61,7 +62,8 @@ class MainViewModel constructor(
     private val completedSetRepository: CompletedSetRepository,
     private val syncTriggerManager: SyncTriggerManager? = null,
     private val repMetricRepository: RepMetricRepository,
-    private val resolveWeightsUseCase: ResolveRoutineWeightsUseCase
+    private val resolveWeightsUseCase: ResolveRoutineWeightsUseCase,
+    private val detectionManager: ExerciseDetectionManager
 ) : ViewModel() {
 
     // Shared haptic events flow - created here, passed to both GamificationManager and WorkoutSessionManager
@@ -97,6 +99,7 @@ class MainViewModel constructor(
         repMetricRepository = repMetricRepository,
         resolveWeightsUseCase = resolveWeightsUseCase,
         settingsManager = settingsManager,
+        detectionManager = detectionManager,
         scope = viewModelScope,
         _hapticEvents = _hapticEvents
     )
@@ -138,6 +141,9 @@ class MainViewModel constructor(
     val latestBiomechanicsResult get() = workoutSessionManager.coordinator.latestBiomechanicsResult
     val cycleDayCompletionEvent get() = workoutSessionManager.coordinator.cycleDayCompletionEvent
     fun clearCycleDayCompletionEvent() = workoutSessionManager.clearCycleDayCompletionEvent()
+
+    // ===== Exercise Detection Delegation =====
+    val detectionState get() = workoutSessionManager.detectionManager.detectionState
 
     // ===== BLE Connection Delegation =====
 

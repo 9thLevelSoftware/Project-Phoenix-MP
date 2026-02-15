@@ -113,6 +113,7 @@ class DefaultWorkoutSessionManager(
     private val repMetricRepository: RepMetricRepository,
     private val resolveWeightsUseCase: ResolveRoutineWeightsUseCase,
     private val settingsManager: SettingsManager,
+    val detectionManager: ExerciseDetectionManager,
     private val scope: CoroutineScope,
     private val _hapticEvents: MutableSharedFlow<HapticEvent> = MutableSharedFlow(
         extraBufferCapacity = 10,
@@ -157,7 +158,8 @@ class DefaultWorkoutSessionManager(
         syncTriggerManager = syncTriggerManager,
         repMetricRepository = repMetricRepository,
         settingsManager = settingsManager,
-        scope = scope
+        scope = scope,
+        detectionManager = detectionManager
     )
 
     // ===== LED Biofeedback Controller =====
@@ -324,6 +326,9 @@ class DefaultWorkoutSessionManager(
      */
     fun proceedFromSummary() {
         scope.launch {
+            // Reset detection state for the new set
+            detectionManager.resetForNewSet()
+
             val routine = coordinator._loadedRoutine.value
             val autoplay = settingsManager.autoplayEnabled.value
 
