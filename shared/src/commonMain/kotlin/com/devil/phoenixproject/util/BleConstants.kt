@@ -1,12 +1,17 @@
 package com.devil.phoenixproject.util
 
+import com.juul.kable.characteristicOf
+import kotlin.uuid.ExperimentalUuidApi
+import kotlin.uuid.Uuid
+
 /**
  * BLE Constants - UUIDs and configuration values for Vitruvian device communication
  * Based on Phoenix Backend (deobfuscated official app)
  */
 @Suppress("unused")  // Protocol reference constants - many are kept for documentation
+@OptIn(ExperimentalUuidApi::class)
 object BleConstants {
-    // Service UUIDs
+    // Service UUIDs (String)
     const val GATT_SERVICE_UUID_STRING = "00001801-0000-1000-8000-00805f9b34fb"
     const val NUS_SERVICE_UUID_STRING = "6e400001-b5a3-f393-e0a9-e50e24dcca9e"
 
@@ -89,4 +94,96 @@ object BleConstants {
 
     // BLE operation delays
     const val BLE_QUEUE_DRAIN_DELAY_MS = 250L
+
+    // -------------------------------------------------------------------------
+    // UUID vals (parsed from string constants for Kable usage)
+    // -------------------------------------------------------------------------
+
+    // Primary Service UUID
+    val NUS_SERVICE_UUID = Uuid.parse(NUS_SERVICE_UUID_STRING)
+
+    // Primary Characteristic UUIDs
+    val NUS_TX_UUID = Uuid.parse(NUS_RX_CHAR_UUID_STRING)  // Write to device (app TX = device RX, hence NUS_RX_CHAR_UUID_STRING for 6e400002)
+    val NUS_RX_UUID = Uuid.parse("6e400003-b5a3-f393-e0a9-e50e24dcca9e")  // Standard NUS RX (not used by Vitruvian)
+    val MONITOR_UUID = Uuid.parse(SAMPLE_CHAR_UUID_STRING)
+    val REPS_UUID = Uuid.parse(REPS_CHAR_UUID_STRING)
+
+    // Additional Characteristic UUIDs (complete protocol coverage)
+    val DIAGNOSTIC_UUID = Uuid.parse(DIAGNOSTIC_CHAR_UUID_STRING)
+    val HEURISTIC_UUID = Uuid.parse(HEURISTIC_CHAR_UUID_STRING)
+    val VERSION_UUID = Uuid.parse(VERSION_CHAR_UUID_STRING)
+    val MODE_UUID = Uuid.parse(MODE_CHAR_UUID_STRING)
+    val UPDATE_STATE_UUID = Uuid.parse(UPDATE_STATE_CHAR_UUID_STRING)
+    val BLE_UPDATE_REQUEST_UUID = Uuid.parse(BLE_UPDATE_REQUEST_CHAR_UUID_STRING)
+    val UNKNOWN_AUTH_UUID = Uuid.parse(UNKNOWN_AUTH_CHAR_UUID_STRING)
+
+    // Device Information Service (DIS) - standard BLE service for firmware version
+    val DIS_SERVICE_UUID = Uuid.parse("0000180a-0000-1000-8000-00805f9b34fb")
+    val FIRMWARE_REVISION_UUID = Uuid.parse("00002a26-0000-1000-8000-00805f9b34fb")
+
+    // -------------------------------------------------------------------------
+    // Timing constants
+    // -------------------------------------------------------------------------
+    object Timing {
+        const val CONNECTION_RETRY_COUNT = 3
+        const val CONNECTION_RETRY_DELAY_MS = 100L
+        const val DESIRED_MTU = 247  // Match parent repo (needs 100+ for 96-byte program frames)
+        const val HEARTBEAT_INTERVAL_MS = 2000L
+        const val HEARTBEAT_READ_TIMEOUT_MS = 1500L
+        const val DELOAD_EVENT_DEBOUNCE_MS = 2000L
+        const val DIAGNOSTIC_POLL_INTERVAL_MS = 500L  // Keep-alive polling (matching parent)
+        const val HEURISTIC_POLL_INTERVAL_MS = 250L   // Force telemetry polling (4Hz - matching parent repo)
+        const val DIAGNOSTIC_LOG_EVERY = 20L          // Log diagnostic poll success every N reads
+        const val STATE_TRANSITION_DWELL_MS = 200L
+        const val WAITING_FOR_REST_TIMEOUT_MS = 3000L
+        const val MAX_CONSECUTIVE_TIMEOUTS = 5
+    }
+
+    // -------------------------------------------------------------------------
+    // Threshold constants
+    // -------------------------------------------------------------------------
+    object Thresholds {
+        // Handle detection thresholds (from parent repo - proven working)
+        // Position values are in mm (raw / 10.0f), so thresholds are in mm
+        const val HANDLE_GRABBED_THRESHOLD = 8.0    // Position > 8.0mm = handles grabbed
+        const val HANDLE_REST_THRESHOLD = 5.0       // Position < 5.0mm = handles at rest
+        // Velocity is in mm/s (calculated from mm positions)
+        const val VELOCITY_THRESHOLD = 50.0         // Velocity > 50 mm/s = significant movement
+        const val AUTO_START_VELOCITY_THRESHOLD = 20.0  // Lower threshold for auto-start grab detection
+
+        // Velocity smoothing (Issue #204, #214)
+        // EMA alpha: 0.3 = balanced smoothing (faster response during direction changes)
+        const val VELOCITY_SMOOTHING_ALPHA = 0.3
+
+        // Sample validation
+        const val POSITION_SPIKE_THRESHOLD = 50000  // BLE error filter
+        const val MIN_POSITION = -1000              // Valid position range
+        const val MAX_POSITION = 1000               // Valid position range
+        const val POSITION_JUMP_THRESHOLD = 20.0f   // Max allowed position change between samples (mm)
+
+        // Load validation
+        const val MAX_WEIGHT_KG = 220.0f  // Trainer+ hardware limit
+
+        // Handle state hysteresis - Issue #176: Dynamic baseline threshold for overhead pulley setups
+        const val GRAB_DELTA_THRESHOLD = 10.0   // Position change (mm) to detect grab
+        const val RELEASE_DELTA_THRESHOLD = 5.0 // Position must return within 5mm of baseline
+    }
+
+    // -------------------------------------------------------------------------
+    // Heartbeat no-op command
+    // -------------------------------------------------------------------------
+    val HEARTBEAT_NO_OP = byteArrayOf(0x00, 0x00, 0x00, 0x00)
+
+    // -------------------------------------------------------------------------
+    // Pre-built Kable characteristic references
+    // -------------------------------------------------------------------------
+    val txCharacteristic = characteristicOf(service = NUS_SERVICE_UUID, characteristic = NUS_TX_UUID)
+    val rxCharacteristic = characteristicOf(service = NUS_SERVICE_UUID, characteristic = NUS_RX_UUID)
+    val monitorCharacteristic = characteristicOf(service = NUS_SERVICE_UUID, characteristic = MONITOR_UUID)
+    val repsCharacteristic = characteristicOf(service = NUS_SERVICE_UUID, characteristic = REPS_UUID)
+    val diagnosticCharacteristic = characteristicOf(service = NUS_SERVICE_UUID, characteristic = DIAGNOSTIC_UUID)
+    val heuristicCharacteristic = characteristicOf(service = NUS_SERVICE_UUID, characteristic = HEURISTIC_UUID)
+    val versionCharacteristic = characteristicOf(service = NUS_SERVICE_UUID, characteristic = VERSION_UUID)
+    val modeCharacteristic = characteristicOf(service = NUS_SERVICE_UUID, characteristic = MODE_UUID)
+    val firmwareRevisionCharacteristic = characteristicOf(service = DIS_SERVICE_UUID, characteristic = FIRMWARE_REVISION_UUID)
 }
