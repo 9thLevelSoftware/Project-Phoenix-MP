@@ -33,7 +33,7 @@ Progress: v0.4.6 complete — 31 plans across 3 milestones shipped. v0.4.7 Phase
 | v0.4.7 | 4 | TBD | - | In progress |
 | Phase 09 P01 | 3min | 2 tasks | 6 files |
 | Phase 09 P02 | 3min | 2 tasks | 5 files |
-| Phase 10 P01 | - | TDD | - |
+| Phase 10 P01 | 6min | 1 TDD task (21 tests) | 3 files |
 | Phase 10 P02 | 4min | 2 tasks | 5 files |
 
 ## Accumulated Context
@@ -44,6 +44,7 @@ Decisions are logged in PROJECT.md Key Decisions table.
 v0.4.6 decisions archived — see PROJECT.md for full history.
 - [Phase 09]: Fixed stale SQLDelight version (11->14) and dual-cable power formula
 - [Phase 09]: ExerciseSignature and AssessmentResult tables added at schema version 15
+- [Phase 10]: Double precision for OLS regression internals, Float for API surface
 - [Phase 10]: __ASSESSMENT__ marker in routineName identifies assessment WorkoutSessions
 - [Phase 10]: SqlDelightAssessmentRepository delegates to WorkoutRepository + ExerciseRepository for cross-concern ops
 
