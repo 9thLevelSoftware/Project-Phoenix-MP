@@ -32,7 +32,7 @@ See `.planning/milestones/v0.4.5-*` for archived phase details.
 
 **Milestone Goal:** Transform raw BLE telemetry into actionable training insights with real-time velocity tracking, force curve analysis, and bilateral asymmetry detection.
 
-- [ ] **Phase 6: Core Engine** — VBT algorithms, force curve construction, asymmetry calculation, data infrastructure
+- [x] **Phase 6: Core Engine** — VBT algorithms, force curve construction, asymmetry calculation, data infrastructure (2026-02-15)
 - [ ] **Phase 7: HUD Integration** — Real-time biomechanics display during workouts
 - [ ] **Phase 8: Set Summary** — Post-set biomechanics visualization cards
 
@@ -51,10 +51,10 @@ See `.planning/milestones/v0.4.5-*` for archived phase details.
 **Plans**: 4 plans in 2 waves
 
 Plans:
-- [ ] 06-01-PLAN.md — BiomechanicsEngine infrastructure, domain models, rep boundary capture, StateFlow exposure (Wave 1)
-- [ ] 06-02-PLAN.md — VBT engine: MCV, velocity zones, velocity loss, rep projection, auto-stop (Wave 2, TDD)
-- [ ] 06-03-PLAN.md — Force curve engine: construction, normalization, sticking point, strength profile (Wave 2, TDD)
-- [ ] 06-04-PLAN.md — Asymmetry engine: per-rep asymmetry percentage, dominant side (Wave 2, TDD)
+- [x] 06-01-PLAN.md — BiomechanicsEngine infrastructure, domain models, rep boundary capture, StateFlow exposure (Wave 1)
+- [x] 06-02-PLAN.md — VBT engine: MCV, velocity zones, velocity loss, rep projection, auto-stop (Wave 2, TDD)
+- [x] 06-03-PLAN.md — Force curve engine: construction, normalization, sticking point, strength profile (Wave 2, TDD)
+- [x] 06-04-PLAN.md — Asymmetry engine: per-rep asymmetry percentage, dominant side (Wave 2, TDD)
 
 ### Phase 7: HUD Integration
 **Goal**: Users see real-time biomechanics feedback on the workout HUD during exercise execution
@@ -97,9 +97,9 @@ Plans:
 |-------|-----------|----------------|--------|-----------|
 | 1-4 | v0.4.1 | 10/10 | Complete | 2026-02-13 |
 | 1-5 | v0.4.5 | 11/11 | Complete | 2026-02-14 |
-| 6. Core Engine | v0.4.6 | 0/4 | Not started | - |
+| 6. Core Engine | v0.4.6 | 4/4 | Complete | 2026-02-15 |
 | 7. HUD Integration | v0.4.6 | 0/3 | Not started | - |
 | 8. Set Summary | v0.4.6 | 0/3 | Not started | - |
 
 ---
-*Last updated: 2026-02-14 after v0.4.6 roadmap creation*
+*Last updated: 2026-02-15 after Phase 6 execution complete*
