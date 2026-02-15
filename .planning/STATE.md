@@ -5,23 +5,23 @@
 See: .planning/PROJECT.md (updated 2026-02-15)
 
 **Core value:** Users can connect to their Vitruvian trainer and execute workouts reliably on both platforms.
-**Current focus:** Phase 8 - DiscoMode + Interface - COMPLETE
+**Current focus:** Phase 9 - Handle State Detector - Plan 01 COMPLETE
 
 ## Current Position
 
-Phase: 8 of 12 (DiscoMode + Interface) - COMPLETE
-Plan: 1 of 1 in current phase - COMPLETE
-Status: Phase Complete
-Last activity: 2026-02-15 — Completed Phase 8 (DiscoMode + Interface)
+Phase: 9 of 12 (Handle State Detector)
+Plan: 1 of 2 in current phase - COMPLETE
+Status: Plan 01 Complete
+Last activity: 2026-02-15 — Completed 09-01-PLAN.md (HandleStateDetector TDD)
 
 Progress: [####                ] 33% (4/12 phases)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 5 (v0.4.2 milestone)
+- Total plans completed: 6 (v0.4.2 milestone)
 - Average duration: 8 min
-- Total execution time: 0.63 hours
+- Total execution time: 0.78 hours
 
 **By Phase:**
 
@@ -31,9 +31,10 @@ Progress: [####                ] 33% (4/12 phases)
 | 06-protocol-parser | 2 | 14min | 7min |
 | 07-ble-operation-queue | 1 | 8min | 8min |
 | 08-disco-mode-interface | 1 | 6min | 6min |
+| 09-handle-state-detector | 1 | 9min | 9min |
 
 **Recent Trend:**
-- Last 5 plans: 05-01 (10min), 06-01 (3min), 06-02 (11min), 07-01 (8min), 08-01 (6min)
+- Last 5 plans: 06-01 (3min), 06-02 (11min), 07-01 (8min), 08-01 (6min), 09-01 (9min)
 - Trend: Consistent execution ~8min average
 
 *Updated after each plan completion*
@@ -61,6 +62,9 @@ Recent decisions affecting current work:
 - [08-01]: Callback-based design for DiscoMode (suspend (ByteArray) -> Unit avoids circular dependency)
 - [08-01]: Interface method with default no-op for setLastColorSchemeIndex()
 - [08-01]: Connection guard stays in KableBleRepository, not DiscoMode
+- [09-01]: currentTimeMillis() expect/actual for default timeProvider (not kotlinx-datetime)
+- [09-01]: Remove legacy dead code (forceAboveGrabThresholdStart/forceBelowReleaseThresholdStart)
+- [09-01]: Extract isAboveThreshold/isBelowThreshold helpers for baseline-relative detection
 
 ### Pending Todos
 
@@ -73,5 +77,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-15
-Stopped at: Completed 08-01-PLAN.md (DiscoMode + Interface)
+Stopped at: Completed 09-01-PLAN.md (HandleStateDetector TDD)
 Resume file: None
