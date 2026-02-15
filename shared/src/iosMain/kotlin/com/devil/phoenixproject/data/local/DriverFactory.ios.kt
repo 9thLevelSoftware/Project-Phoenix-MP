@@ -54,7 +54,7 @@ actual class DriverFactory {
 
     companion object {
         /** Current schema version - must match SQLDelight (1 + number of .sqm files) */
-        private const val CURRENT_SCHEMA_VERSION = 13L
+        private const val CURRENT_SCHEMA_VERSION = 14L
     }
 
     /**

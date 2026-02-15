@@ -385,6 +385,10 @@ actual class DriverFactory(private val context: Context) {
                             // Cleanup orphaned references
                             "UPDATE RoutineExercise SET supersetId = NULL WHERE supersetId IS NOT NULL AND supersetId NOT IN (SELECT id FROM Superset)"
                         )
+                        13 -> listOf(
+                            // Migration 13: MetricSample performance index
+                            "CREATE INDEX IF NOT EXISTS idx_metric_sample_session ON MetricSample(sessionId)"
+                        )
                         else -> emptyList()
                     }
                 }

@@ -1,0 +1,5 @@
+-- Migration 13: MetricSample performance index
+-- Adds index on sessionId to accelerate session detail queries
+-- (selectMetricsBySession: WHERE sessionId = ? ORDER BY timestamp ASC)
+
+CREATE INDEX IF NOT EXISTS idx_metric_sample_session ON MetricSample(sessionId);
