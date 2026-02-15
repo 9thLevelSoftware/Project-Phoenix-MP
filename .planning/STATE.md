@@ -5,16 +5,16 @@
 See: .planning/PROJECT.md (updated 2026-02-14)
 
 **Core value:** Users can connect to their Vitruvian trainer and execute workouts reliably on both platforms.
-**Current focus:** Phase 7 — HUD Integration (v0.4.6 Biomechanics MVP)
+**Current focus:** Phase 8 — Set Summary (v0.4.6 Biomechanics MVP)
 
 ## Current Position
 
-Phase: 7 of 8 (HUD Integration) - COMPLETE
-Plan: 3 of 3 in current phase (all complete)
-Status: Phase Complete
-Last activity: 2026-02-15 — Plan 07-03 (Force Curve HUD and Tier Gating) complete
+Phase: 8 of 8 (Set Summary)
+Plan: 1 of 3 in current phase (1 complete)
+Status: In Progress
+Last activity: 2026-02-15 — Plan 08-01 (Set Summary Data Pipeline) complete
 
-Progress: [███████░░░] 70% (7/10 plans)
+Progress: [████████░░] 80% (8/10 plans)
 
 ## Performance Metrics
 
@@ -29,7 +29,7 @@ Progress: [███████░░░] 70% (7/10 plans)
 |-----------|--------|-------|----------|-------|
 | v0.4.1 | 4 | 10 | - | Pre-metrics |
 | v0.4.5 | 5 | 11 | ~3h | 59 commits, +1,832 LOC |
-| v0.4.6 | 3 | 10 | - | In progress (7/10 complete) |
+| v0.4.6 | 3 | 10 | - | In progress (8/10 complete) |
 
 ## Accumulated Context
 
@@ -57,6 +57,9 @@ Key decisions affecting v0.4.6:
 - Balance bar 70% width, bottom-aligned 24dp above pager dots (07-02)
 - Single upstream gate (gatedBiomechanicsResult) nulls all biomechanics for free tier (07-03)
 - AlertDialog for expanded force curve overlay (consistent Material3 pattern) (07-03)
+- Element-wise averaging of 101-point force curves for set-level avgForceCurve (08-01)
+- repNumber=0 convention for set-level averaged force curve (08-01)
+- Velocity loss color coding: green <10%, orange 10-20%, red >=20% (08-01)
 
 ### Pending Todos
 
@@ -69,6 +72,6 @@ None.
 ## Session Continuity
 
 Last session: 2026-02-15
-Stopped at: Completed 07-03-PLAN.md (Force Curve HUD and Tier Gating) -- Phase 7 complete
+Stopped at: Completed 08-01-PLAN.md (Set Summary Data Pipeline)
 Resume file: None
-Next action: Execute Phase 8 plans (next phase)
+Next action: Execute 08-02-PLAN.md (next plan in Phase 8)
