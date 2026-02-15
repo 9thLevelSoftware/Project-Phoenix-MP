@@ -48,13 +48,13 @@ See `.planning/milestones/v0.4.5-*` for archived phase details.
   3. After completing a rep, the app exposes a normalized force-position curve (0-100% ROM) with detected sticking point and strength profile classification
   4. After completing a rep, the app exposes cable asymmetry percentage and dominant side derived from loadA/loadB data
   5. All biomechanics computation runs on Dispatchers.Default (not main thread) and raw data capture is unconditional regardless of subscription tier
-**Plans**: TBD
+**Plans**: 4 plans in 2 waves
 
 Plans:
-- [ ] 06-01: Data infrastructure and rep segmentation (DATA-01..04)
-- [ ] 06-02: VBT engine — velocity, zones, loss tracking, auto-stop (VBT-01..06)
-- [ ] 06-03: Force curve engine — construction, normalization, sticking point, profile (FORCE-01..04)
-- [ ] 06-04: Asymmetry engine — per-rep asymmetry and dominant side (ASYM-01..02)
+- [ ] 06-01-PLAN.md — BiomechanicsEngine infrastructure, domain models, rep boundary capture, StateFlow exposure (Wave 1)
+- [ ] 06-02-PLAN.md — VBT engine: MCV, velocity zones, velocity loss, rep projection, auto-stop (Wave 2, TDD)
+- [ ] 06-03-PLAN.md — Force curve engine: construction, normalization, sticking point, strength profile (Wave 2, TDD)
+- [ ] 06-04-PLAN.md — Asymmetry engine: per-rep asymmetry percentage, dominant side (Wave 2, TDD)
 
 ### Phase 7: HUD Integration
 **Goal**: Users see real-time biomechanics feedback on the workout HUD during exercise execution
