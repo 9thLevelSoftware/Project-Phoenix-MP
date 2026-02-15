@@ -1,7 +1,6 @@
 package com.devil.phoenixproject.data.repository
 
 import com.devil.phoenixproject.domain.model.ConnectionState
-import com.devil.phoenixproject.domain.model.SampleStatus
 import com.devil.phoenixproject.domain.model.WorkoutMetric
 import com.devil.phoenixproject.util.BleConstants
 import com.devil.phoenixproject.util.BlePacketFactory
@@ -40,6 +39,7 @@ import kotlin.uuid.Uuid
 
 import com.devil.phoenixproject.data.ble.DiscoMode
 import com.devil.phoenixproject.data.ble.HandleStateDetector
+import com.devil.phoenixproject.data.ble.MonitorDataProcessor
 import com.devil.phoenixproject.data.ble.BleOperationQueue
 import com.devil.phoenixproject.data.ble.requestHighPriority
 import com.devil.phoenixproject.data.ble.requestMtuIfSupported
@@ -131,6 +131,21 @@ class KableBleRepository : BleRepository {
     )
     val romViolationEvents: Flow<RomViolationType> = _romViolationEvents.asSharedFlow()
 
+    // Monitor data processing delegated to MonitorDataProcessor (Phase 10 extraction)
+    private val monitorProcessor = MonitorDataProcessor(
+        onDeloadOccurred = { scope.launch { _deloadOccurredEvents.emit(Unit) } },
+        onRomViolation = { type ->
+            scope.launch {
+                when (type) {
+                    MonitorDataProcessor.RomViolationType.OUTSIDE_HIGH ->
+                        _romViolationEvents.emit(RomViolationType.OUTSIDE_HIGH)
+                    MonitorDataProcessor.RomViolationType.OUTSIDE_LOW ->
+                        _romViolationEvents.emit(RomViolationType.OUTSIDE_LOW)
+                }
+            }
+        }
+    )
+
     // Reconnection request flow (for Android BLE bug workaround)
     private val _reconnectionRequested = MutableSharedFlow<ReconnectionRequest>(
         replay = 0,
@@ -170,27 +185,8 @@ class KableBleRepository : BleRepository {
     private var connectedDeviceName: String = ""
     private var connectedDeviceAddress: String = ""
 
-    // Data parsing state (for spike filtering) - Float for mm precision (Issue #197)
-    @Volatile private var lastGoodPosA = 0.0f
-    @Volatile private var lastGoodPosB = 0.0f
-
-    // Velocity calculation state - Float for mm precision (Issue #197)
-    @Volatile private var lastPositionA = 0.0f
-    @Volatile private var lastPositionB = 0.0f
-    @Volatile private var lastTimestamp = 0L
-
-    // Smoothed velocity for stall detection (Issue #204, #214)
-    // Uses EMA to prevent false stall resets from position jitter
-    @Volatile private var smoothedVelocityA = 0.0
-    @Volatile private var smoothedVelocityB = 0.0
-
-    // EMA velocity initialization flag (Task 10)
-    private var isFirstVelocitySample = true
-
-    // Track if previous sample was filtered (velocity edge case fix)
-    // When a sample is filtered due to position jump, the next valid sample should
-    // reset velocity calculation to avoid using the filtered position as reference
-    @Volatile private var lastSampleWasFiltered = false
+    // Monitor data processing state (position, velocity, EMA, status flags)
+    // All 15 state variables moved to MonitorDataProcessor (Phase 10 extraction)
 
 
     // Monitor polling job (for explicit control)
@@ -210,17 +206,8 @@ class KableBleRepository : BleRepository {
     // Heuristic polling job (250ms / 4Hz - force telemetry for Echo mode)
     private var heuristicPollingJob: kotlinx.coroutines.Job? = null
 
-    // Deload event debouncing
-    private var lastDeloadEventTime = 0L
-
-    // Poll rate diagnostics
-    private var pollIntervalSum = 0L
-    private var pollIntervalCount = 0L
-    private var maxPollInterval = 0L
-    private var minPollInterval = Long.MAX_VALUE
-
-    // Monitor notification counter (for diagnostic logging)
-    @Volatile private var monitorNotificationCount = 0L
+    // Deload debouncing, poll rate diagnostics, and notification counter
+    // moved to MonitorDataProcessor (Phase 10 extraction)
 
     // Heartbeat job
     private var heartbeatJob: kotlinx.coroutines.Job? = null
@@ -231,8 +218,7 @@ class KableBleRepository : BleRepository {
     // Negotiated MTU (for diagnostic logging)
     @Volatile private var negotiatedMtu: Int? = null
 
-    // Strict validation flag (filters >20mm position jumps)
-    private var strictValidationEnabled = true
+    // strictValidationEnabled moved to MonitorDataProcessor (Phase 10 extraction)
 
     // Flag to track explicit disconnect (to avoid auto-reconnect)
     private var isExplicitDisconnect = false
@@ -1139,25 +1125,10 @@ class KableBleRepository : BleRepository {
         // Stop disco mode if running (safety - don't interfere with workout polling)
         stopDiscoMode()
 
-        // Issue #222 v16: Reset poll/velocity stats on restart to avoid stale gaps
-        lastTimestamp = 0L
-        pollIntervalSum = 0L
-        pollIntervalCount = 0L
-        minPollInterval = Long.MAX_VALUE
-        maxPollInterval = 0L
-        lastPositionA = 0.0f
-        lastPositionB = 0.0f
-        smoothedVelocityA = 0.0
-        smoothedVelocityB = 0.0
-
-        // Reset notification counter for this session
-        val previousCount = monitorNotificationCount
-        monitorNotificationCount = 0L
-        log.i { "📊 Monitor notifications reset (previous session: $previousCount notifications)" }
-
-        // Reset velocity initialization flag (Task 10)
-        isFirstVelocitySample = true
-        lastSampleWasFiltered = false  // Clear filter tracking for fresh session
+        // Reset monitor processing state for new session (Phase 10 delegation)
+        val previousCount = monitorProcessor.notificationCount
+        monitorProcessor.resetForNewSession()
+        log.i { "Monitor processor reset (previous session: $previousCount notifications)" }
 
         if (forAutoStart) {
             // AUTO-START MODE: Delegate to HandleStateDetector
@@ -1672,11 +1643,11 @@ class KableBleRepository : BleRepository {
     }
 
     /**
-     * Parse monitor characteristic data with full velocity calculation and status flag detection.
-     * This is the CRITICAL function for Just Lift mode handle detection.
+     * Parse monitor characteristic data by delegating to MonitorDataProcessor.
+     * All position validation, velocity EMA, status flags, and jump filtering
+     * are handled by the processor (Phase 10 extraction).
      */
     private fun parseMonitorData(data: ByteArray) {
-        // Use extracted parser for byte-level parsing
         val packet = parseMonitorPacket(data)
         if (packet == null) {
             log.w { "Monitor data too short: ${data.size} bytes" }
@@ -1684,235 +1655,24 @@ class KableBleRepository : BleRepository {
         }
 
         try {
-            // Increment counter for diagnostic logging
-            monitorNotificationCount++
-            if (monitorNotificationCount % 100 == 0L) {
-                log.i { "MONITOR NOTIFICATION #$monitorNotificationCount" }
-            }
+            val metric = monitorProcessor.process(packet) ?: return
 
-            // Extract values from parsed packet
-            var posA = packet.posA
-            var posB = packet.posB
-            val loadA = packet.loadA
-            val loadB = packet.loadB
-            val ticks = packet.ticks
-            val status = packet.status
-
-            // ===== POSITION VALIDATION (matching parent repo) =====
-            // Validate position range and use last good value if invalid
-            // Per official app documentation, valid range is -1000 to +1000 mm
-            if (posA !in BleConstants.Thresholds.MIN_POSITION.toFloat()..BleConstants.Thresholds.MAX_POSITION.toFloat()) {
-                log.w { "Position A out of range: $posA, using last good: $lastGoodPosA" }
-                posA = lastGoodPosA
-            } else {
-                lastGoodPosA = posA
-            }
-            if (posB !in BleConstants.Thresholds.MIN_POSITION.toFloat()..BleConstants.Thresholds.MAX_POSITION.toFloat()) {
-                log.w { "Position B out of range: $posB, using last good: $lastGoodPosB" }
-                posB = lastGoodPosB
-            } else {
-                lastGoodPosB = posB
-            }
-
-            // ===== STATUS FLAG PROCESSING =====
-            if (packet.status != 0) {
-                processStatusFlags(packet.status)
-            }
-
-            // ===== SAMPLE VALIDATION =====
-            // Issue #210 Fix: Store previous positions and update tracking BEFORE validation
-            // This prevents cascading filter failures where every sample after one jump is filtered
-            // because lastPositionA/B were never updated (early return skipped the update)
-            val previousPosA = lastPositionA
-            val previousPosB = lastPositionB
-            lastPositionA = posA
-            lastPositionB = posB
-
-            if (!validateSample(posA, loadA, posB, loadB, previousPosA, previousPosB)) {
-                lastSampleWasFiltered = true  // Mark for velocity reset on next valid sample
-                return  // Skip invalid sample, but position tracking is updated for next sample
-            }
-
-            // ===== VELOCITY CALCULATION =====
-            val currentTime = currentTimeMillis()
-            val pollIntervalMs = if (lastTimestamp > 0L) currentTime - lastTimestamp else 0L
-
-            // ===== POLL RATE DIAGNOSTICS =====
-            // Parent repo achieves ~10-20ms poll intervals with Nordic BLE
-            // If we're seeing >30ms consistently, connection priority may not be set
-            if (pollIntervalMs > 0) {
-                pollIntervalSum += pollIntervalMs
-                pollIntervalCount++
-                if (pollIntervalMs > maxPollInterval) maxPollInterval = pollIntervalMs
-                if (pollIntervalMs < minPollInterval) minPollInterval = pollIntervalMs
-
-                // Log every 100 samples with statistics
-                if (pollIntervalCount % 100 == 0L) {
-                    val avgInterval = pollIntervalSum / pollIntervalCount
-                    log.i { "📊 POLL RATE: avg=${avgInterval}ms, min=${minPollInterval}ms, max=${maxPollInterval}ms, count=$pollIntervalCount" }
-                    if (avgInterval > 30) {
-                        log.w { "⚠️ SLOW POLL RATE: ${avgInterval}ms avg (expected <20ms). Check connection priority!" }
-                    }
-                }
-
-                // Warn on individual slow polls (but not spam)
-                if (pollIntervalMs > 50 && pollIntervalCount % 20 == 0L) {
-                    log.w { "⚠️ Slow poll: ${pollIntervalMs}ms (sample #$pollIntervalCount)" }
-                }
-            }
-
-            // Calculate raw velocity (SIGNED for proper EMA smoothing - Issue #204, #214)
-            // Using signed velocity allows jitter oscillations (+2, -3, +1mm) to average toward 0
-            // Issue #210: Use previousPosA/B since lastPositionA/B was updated before validateSample
-            val rawVelocityA = if (lastTimestamp > 0L) {
-                val deltaTime = (currentTime - lastTimestamp) / 1000.0
-                val deltaPos = posA - previousPosA
-                if (deltaTime > 0) deltaPos / deltaTime else 0.0
-            } else 0.0
-
-            val rawVelocityB = if (lastTimestamp > 0L) {
-                val deltaTime = (currentTime - lastTimestamp) / 1000.0
-                val deltaPos = posB - previousPosB
-                if (deltaTime > 0) deltaPos / deltaTime else 0.0
-            } else 0.0
-
-            // Apply Exponential Moving Average (EMA) smoothing (Issue #204, #214)
-            // This prevents false stall detection during controlled tempo movements
-            // and reduces sensitivity to BLE position jitter
-            // Task 10: Initialize EMA with first raw sample to prevent cold start lag
-            // Velocity edge case fix: If previous sample was filtered due to position jump,
-            // the raw velocity calculation used a bad reference position. Skip this sample's
-            // velocity update to avoid propagating the error through the EMA.
-            if (lastSampleWasFiltered) {
-                // Don't update smoothed velocity - keep previous value
-                // The raw velocity is calculated against the filtered position which is wrong
-                // Next sample will have correct reference since lastPositionA/B were updated
-                lastSampleWasFiltered = false
-                log.d { "Velocity update skipped - previous sample was filtered" }
-            } else if (isFirstVelocitySample) {
-                smoothedVelocityA = rawVelocityA
-                smoothedVelocityB = rawVelocityB
-                isFirstVelocitySample = false
-            } else {
-                smoothedVelocityA = BleConstants.Thresholds.VELOCITY_SMOOTHING_ALPHA * rawVelocityA +
-                        (1 - BleConstants.Thresholds.VELOCITY_SMOOTHING_ALPHA) * smoothedVelocityA
-                smoothedVelocityB = BleConstants.Thresholds.VELOCITY_SMOOTHING_ALPHA * rawVelocityB +
-                        (1 - BleConstants.Thresholds.VELOCITY_SMOOTHING_ALPHA) * smoothedVelocityB
-            }
-
-            // Update timestamp for next velocity calculation
-            // Issue #210: lastPositionA/B are now updated before validateSample (see above)
-            lastTimestamp = currentTime
-
-            // Create metric with SMOOTHED velocity (absolute value for backwards compatibility)
-            // Track both cables independently - matches official app behavior
-            val metric = WorkoutMetric(
-                timestamp = currentTime,
-                loadA = loadA,
-                loadB = loadB,
-                positionA = posA,
-                positionB = posB,
-                ticks = ticks,
-                velocityA = smoothedVelocityA,  // Smoothed, signed velocity
-                velocityB = smoothedVelocityB,  // Smoothed, signed velocity
-                status = status
-            )
-
-            // Use tryEmit for non-blocking emission (matching parent repo)
+            // Emit metric to flow
             val emitted = _metricsFlow.tryEmit(metric)
-            if (!emitted && monitorNotificationCount % 100 == 0L) {
-                log.w { "Failed to emit metric - buffer full? Count: $monitorNotificationCount" }
+            if (!emitted && monitorProcessor.notificationCount % 100 == 0L) {
+                log.w { "Failed to emit metric - buffer full? Count: ${monitorProcessor.notificationCount}" }
             }
 
-            // Handle detection + 4-state machine delegated to HandleStateDetector
+            // Handle detection delegated to HandleStateDetector
             handleDetector.processMetric(metric)
-
         } catch (e: Exception) {
             log.e { "Error parsing monitor data: ${e.message}" }
         }
     }
 
-    /**
-     * Process status flags from bytes 16-17 of monitor data.
-     * Handles deload detection and safety events.
-     */
-    private fun processStatusFlags(status: Int) {
-        if (status == 0) return
+    // processStatusFlags() moved to MonitorDataProcessor (Phase 10 extraction)
 
-        val sampleStatus = SampleStatus(status)
-
-        // Task 5: ROM violation safety handling
-        if (sampleStatus.isRomOutsideHigh()) {
-            log.w { "SAFETY: ROM_OUTSIDE_HIGH detected - Status: 0x${status.toString(16)}" }
-            scope.launch { _romViolationEvents.emit(RomViolationType.OUTSIDE_HIGH) }
-        }
-        if (sampleStatus.isRomOutsideLow()) {
-            log.w { "SAFETY: ROM_OUTSIDE_LOW detected - Status: 0x${status.toString(16)}" }
-            scope.launch { _romViolationEvents.emit(RomViolationType.OUTSIDE_LOW) }
-        }
-
-        if (sampleStatus.isDeloadOccurred()) {
-            log.w { "MACHINE STATUS: DELOAD_OCCURRED flag set - Status: 0x${status.toString(16)}" }
-
-            // Emit deload event (debounced) for repository/ViewModel to handle
-            val now = currentTimeMillis()
-            if (now - lastDeloadEventTime > BleConstants.Timing.DELOAD_EVENT_DEBOUNCE_MS) {
-                lastDeloadEventTime = now
-                scope.launch {
-                    log.d { "DELOAD_OCCURRED: Emitting event" }
-                    _deloadOccurredEvents.emit(Unit)
-                }
-            }
-        }
-
-        if (sampleStatus.isDeloadWarn()) {
-            log.w { "MACHINE STATUS: DELOAD_WARN - Status: 0x${status.toString(16)}" }
-        }
-
-        if (sampleStatus.isSpotterActive()) {
-            log.d { "MACHINE STATUS: SPOTTER_ACTIVE - Status: 0x${status.toString(16)}" }
-        }
-    }
-
-    /**
-     * Validate sample data is within acceptable ranges.
-     * Position values are in millimeters (Issue #197).
-     *
-     * Issue #210: previousPosA/B are passed in explicitly for jump detection since
-     * lastPositionA/B are now updated BEFORE calling this function to prevent
-     * cascading filter failures.
-     */
-    private fun validateSample(
-        posA: Float, loadA: Float, posB: Float, loadB: Float,
-        previousPosA: Float, previousPosB: Float
-    ): Boolean {
-        // Official app range: -1000 to +1000 mm (Float for mm precision - Issue #197)
-        if (posA !in BleConstants.Thresholds.MIN_POSITION.toFloat()..BleConstants.Thresholds.MAX_POSITION.toFloat() ||
-            posB !in BleConstants.Thresholds.MIN_POSITION.toFloat()..BleConstants.Thresholds.MAX_POSITION.toFloat()) {
-            log.w { "Position out of range: posA=$posA, posB=$posB (valid: ${BleConstants.Thresholds.MIN_POSITION} to ${BleConstants.Thresholds.MAX_POSITION} mm)" }
-            return false
-        }
-
-        // Task 8: Load validation - check against hardware max weight
-        if (loadA < 0f || loadA > BleConstants.Thresholds.MAX_WEIGHT_KG || loadB < 0f || loadB > BleConstants.Thresholds.MAX_WEIGHT_KG) {
-            log.w { "Load out of range: loadA=$loadA, loadB=$loadB (max=${BleConstants.Thresholds.MAX_WEIGHT_KG})" }
-            return false
-        }
-
-        // STRICT VALIDATION: Filter >20mm jumps between samples (matching parent repo)
-        // This catches BLE glitches that produce sudden position changes
-        // Issue #210: Use passed-in previous positions, not class fields
-        if (strictValidationEnabled && lastTimestamp > 0L) {
-            val jumpA = kotlin.math.abs(posA - previousPosA)
-            val jumpB = kotlin.math.abs(posB - previousPosB)
-            if (jumpA > BleConstants.Thresholds.POSITION_JUMP_THRESHOLD || jumpB > BleConstants.Thresholds.POSITION_JUMP_THRESHOLD) {
-                log.w { "⚠️ Position jump filtered: jumpA=${jumpA}mm, jumpB=${jumpB}mm (threshold: ${BleConstants.Thresholds.POSITION_JUMP_THRESHOLD}mm)" }
-                return false
-            }
-        }
-
-        return true
-    }
+    // validateSample() moved to MonitorDataProcessor (Phase 10 extraction)
 
     /**
      * Parse metrics packet from RX notifications (0x01 command).
