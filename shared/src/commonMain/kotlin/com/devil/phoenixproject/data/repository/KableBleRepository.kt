@@ -39,6 +39,7 @@ import kotlin.uuid.ExperimentalUuidApi
 import kotlin.uuid.Uuid
 
 import com.devil.phoenixproject.data.ble.DiscoMode
+import com.devil.phoenixproject.data.ble.HandleStateDetector
 import com.devil.phoenixproject.data.ble.BleOperationQueue
 import com.devil.phoenixproject.data.ble.requestHighPriority
 import com.devil.phoenixproject.data.ble.requestMtuIfSupported
@@ -89,8 +90,9 @@ class KableBleRepository : BleRepository {
     private val _scannedDevices = MutableStateFlow<List<ScannedDevice>>(emptyList())
     override val scannedDevices: StateFlow<List<ScannedDevice>> = _scannedDevices.asStateFlow()
 
-    private val _handleDetection = MutableStateFlow(HandleDetection())
-    override val handleDetection: StateFlow<HandleDetection> = _handleDetection.asStateFlow()
+    // Handle detection delegated to HandleStateDetector (Phase 9 extraction)
+    private val handleDetector = HandleStateDetector()
+    override val handleDetection: StateFlow<HandleDetection> = handleDetector.handleDetection
 
     // Monitor data flow - CRITICAL: Need buffer for high-frequency emissions!
     // Matching parent repo: extraBufferCapacity=64 for ~640ms of data at 10ms/sample
@@ -109,9 +111,8 @@ class KableBleRepository : BleRepository {
     )
     override val repEvents: Flow<RepNotification> = _repEvents.asSharedFlow()
 
-    // Handle state (4-state machine for Just Lift mode)
-    private val _handleState = MutableStateFlow(HandleState.WaitingForRest)
-    override val handleState: StateFlow<HandleState> = _handleState.asStateFlow()
+    // Handle state (4-state machine for Just Lift mode) - delegated to HandleStateDetector
+    override val handleState: StateFlow<HandleState> = handleDetector.handleState
 
     // Deload event flow (for Just Lift safety recovery)
     private val _deloadOccurredEvents = MutableSharedFlow<Unit>(
@@ -163,9 +164,7 @@ class KableBleRepository : BleRepository {
     private val discoveredAdvertisements = mutableMapOf<String, Advertisement>()
     private var scanJob: kotlinx.coroutines.Job? = null
 
-    // Handle detection
-    private var handleDetectionEnabled = false
-    private var isAutoStartMode = false  // Uses lower velocity threshold for grab detection (Issue #96)
+    // Handle detection delegated to HandleStateDetector (all 15 state variables removed)
 
     // Connected device info (for logging)
     private var connectedDeviceName: String = ""
@@ -193,32 +192,6 @@ class KableBleRepository : BleRepository {
     // reset velocity calculation to avoid using the filtered position as reference
     @Volatile private var lastSampleWasFiltered = false
 
-    // Handle detection state tracking
-    private var minPositionSeen = Double.MAX_VALUE
-    private var maxPositionSeen = Double.MIN_VALUE
-
-    // Grab/release threshold timers for hysteresis (matching parent repo)
-    // These prevent false triggers from momentary position spikes
-    private var forceAboveGrabThresholdStart: Long? = null
-    private var forceBelowReleaseThresholdStart: Long? = null
-
-    // Handle state hysteresis timers (Task 14)
-    private var pendingGrabbedStartTime: Long? = null
-    private var pendingReleasedStartTime: Long? = null
-
-    // Track which handle(s) were active when entering Grabbed state
-    // Used for SINGLE/EITHER cable release detection (only check the active handle)
-    // 0 = none, 1 = A only, 2 = B only, 3 = both
-    private var activeHandlesMask: Int = 0
-
-    // WaitingForRest timeout tracking (iOS autostart fix)
-    private var waitingForRestStartTime: Long? = null
-
-    // Issue #176: Baseline position tracking for overhead pulley setups
-    // When cables can't reach absolute rest position (< 5mm), track the "rest baseline"
-    // and detect grabs via position CHANGE from baseline instead of absolute thresholds
-    private var restBaselinePosA: Double? = null
-    private var restBaselinePosB: Double? = null
 
     // Monitor polling job (for explicit control)
     private var monitorPollingJob: kotlinx.coroutines.Job? = null
@@ -1166,10 +1139,6 @@ class KableBleRepository : BleRepository {
         // Stop disco mode if running (safety - don't interfere with workout polling)
         stopDiscoMode()
 
-        // Reset position tracking for new workout/session
-        minPositionSeen = Double.MAX_VALUE
-        maxPositionSeen = Double.MIN_VALUE
-
         // Issue #222 v16: Reset poll/velocity stats on restart to avoid stale gaps
         lastTimestamp = 0L
         pollIntervalSum = 0L
@@ -1191,22 +1160,9 @@ class KableBleRepository : BleRepository {
         lastSampleWasFiltered = false  // Clear filter tracking for fresh session
 
         if (forAutoStart) {
-            // AUTO-START MODE: Initialize handle state machine
-            // Start in WaitingForRest state - must see handles at rest (low position) before arming grab detection
-            // This prevents immediate auto-start if cables already have tension
-            _handleState.value = HandleState.WaitingForRest
-            forceAboveGrabThresholdStart = null
-            forceBelowReleaseThresholdStart = null
-            handleDetectionEnabled = true
-            isAutoStartMode = true  // Issue #96: Use lower velocity threshold for grab detection
-            // iOS autostart fix: Reset WaitingForRest timeout tracker
-            waitingForRestStartTime = null
-            // Issue #176: Reset baseline tracking for fresh grab detection
-            restBaselinePosA = null
-            restBaselinePosB = null
-            log.i { "🎯 Monitor polling for AUTO-START - waiting for handles at rest (pos < ${BleConstants.Thresholds.HANDLE_REST_THRESHOLD}mm), vel threshold=${BleConstants.Thresholds.AUTO_START_VELOCITY_THRESHOLD}mm/s" }
-        } else {
-            isAutoStartMode = false  // Normal mode uses standard velocity threshold
+            // AUTO-START MODE: Delegate to HandleStateDetector
+            handleDetector.enable(autoStart = true)
+            log.i { "Monitor polling for AUTO-START - waiting for handles at rest (pos < ${BleConstants.Thresholds.HANDLE_REST_THRESHOLD}mm), vel threshold=${BleConstants.Thresholds.AUTO_START_VELOCITY_THRESHOLD}mm/s" }
         }
 
         // Cancel any existing polling job before starting new one
@@ -1485,87 +1441,21 @@ class KableBleRepository : BleRepository {
     }
 
     override fun enableHandleDetection(enabled: Boolean) {
-        log.i { "🎮 Handle detection ${if (enabled) "ENABLED" else "DISABLED"}" }
+        log.i { "Handle detection ${if (enabled) "ENABLED" else "DISABLED"}" }
         if (enabled) {
-            // Start/restart monitor polling with forAutoStart=true to arm the state machine
+            handleDetector.enable(autoStart = true)
             val p = peripheral
             if (p != null) {
                 startMonitorPolling(p, forAutoStart = true)
-            } else {
-                // No peripheral connected, just set the state for when it connects
-                handleDetectionEnabled = true
-                _handleState.value = HandleState.WaitingForRest
-                handleStateLogCounter = 0L
-                minPositionSeen = Double.MAX_VALUE
-                maxPositionSeen = Double.MIN_VALUE
-                forceAboveGrabThresholdStart = null
-                forceBelowReleaseThresholdStart = null
-                // Task 14: Reset hysteresis timers
-                pendingGrabbedStartTime = null
-                pendingReleasedStartTime = null
-                // iOS autostart fix: Reset WaitingForRest timeout
-                waitingForRestStartTime = null
-                // Issue #176: Reset baseline tracking for fresh grab detection
-                restBaselinePosA = null
-                restBaselinePosB = null
-                log.i { "🎮 Handle state machine reset (no peripheral - will arm when connected)" }
             }
         } else {
-            // Disable handle detection but keep polling for metrics
-            handleDetectionEnabled = false
-            isAutoStartMode = false  // Issue #96: Reset auto-start mode flag
-            // Issue #176: Clear baseline when detection disabled
-            restBaselinePosA = null
-            restBaselinePosB = null
-            log.i { "🎮 Handle detection disabled (polling continues for metrics)" }
+            handleDetector.disable()
         }
     }
 
-    override fun resetHandleState() {
-        log.d { "Resetting handle activity state to WaitingForRest" }
-        _handleState.value = HandleState.WaitingForRest
-        minPositionSeen = Double.MAX_VALUE
-        maxPositionSeen = Double.MIN_VALUE
-        forceAboveGrabThresholdStart = null
-        forceBelowReleaseThresholdStart = null
-        // Task 14: Reset hysteresis timers
-        pendingGrabbedStartTime = null
-        pendingReleasedStartTime = null
-        // Issue #176: Reset baseline tracking for fresh grab detection
-        restBaselinePosA = null
-        restBaselinePosB = null
-    }
+    override fun resetHandleState() = handleDetector.reset()
 
-    override fun enableJustLiftWaitingMode() {
-        log.i { "🎯 Enabling Just Lift waiting mode - ready for next set" }
-        log.i { "   Detection thresholds: grab pos>${BleConstants.Thresholds.HANDLE_GRABBED_THRESHOLD}mm + vel>${BleConstants.Thresholds.AUTO_START_VELOCITY_THRESHOLD}mm/s, release pos<${BleConstants.Thresholds.HANDLE_REST_THRESHOLD}mm" }
-
-        // Reset position tracking for diagnostics
-        minPositionSeen = Double.MAX_VALUE
-        maxPositionSeen = Double.MIN_VALUE
-
-        // Reset grab/release timers for hysteresis
-        forceAboveGrabThresholdStart = null
-        forceBelowReleaseThresholdStart = null
-
-        // Task 14: Reset hysteresis timers
-        pendingGrabbedStartTime = null
-        pendingReleasedStartTime = null
-
-        // Issue #176: Reset baseline tracking for fresh grab detection
-        restBaselinePosA = null
-        restBaselinePosB = null
-
-        // Reset handle state log counter
-        handleStateLogCounter = 0L
-
-        // Start in WaitingForRest state - must see handles at rest before arming grab detection
-        _handleState.value = HandleState.WaitingForRest
-
-        // Enable handle detection for the state machine
-        handleDetectionEnabled = true
-        isAutoStartMode = true  // Issue #96: Use lower velocity threshold for grab detection
-    }
+    override fun enableJustLiftWaitingMode() = handleDetector.enableJustLiftWaiting()
 
     override fun restartMonitorPolling() {
         log.i { "🔄 Restarting monitor polling to clear machine fault state" }
@@ -1622,13 +1512,12 @@ class KableBleRepository : BleRepository {
                 "heartbeat=${heartbeatJob?.isActive}"
         }
 
-        // Log analysis from workout (position range for diagnostics)
-        // Matches logic from old VitruvianBleManager.kt
-        if (minPositionSeen != Double.MAX_VALUE && maxPositionSeen != Double.MIN_VALUE) {
+        // Log analysis from workout (position range from HandleStateDetector for diagnostics)
+        if (handleDetector.minPositionSeen != Double.MAX_VALUE && handleDetector.maxPositionSeen != Double.MIN_VALUE) {
             log.i { "========== WORKOUT ANALYSIS ==========" }
-            log.i { "Position range: min=$minPositionSeen, max=$maxPositionSeen" }
+            log.i { "Position range: min=${handleDetector.minPositionSeen}, max=${handleDetector.maxPositionSeen}" }
             log.i { "Detection thresholds (auto-start mode uses lower velocity):" }
-            log.i { "  Handle grab: pos > ${BleConstants.Thresholds.HANDLE_GRABBED_THRESHOLD} + velocity > ${if (isAutoStartMode) BleConstants.Thresholds.AUTO_START_VELOCITY_THRESHOLD else BleConstants.Thresholds.VELOCITY_THRESHOLD}${if (isAutoStartMode) " (auto-start)" else ""}" }
+            log.i { "  Handle grab: pos > ${BleConstants.Thresholds.HANDLE_GRABBED_THRESHOLD} + velocity > ${if (handleDetector.isAutoStartMode) BleConstants.Thresholds.AUTO_START_VELOCITY_THRESHOLD else BleConstants.Thresholds.VELOCITY_THRESHOLD}${if (handleDetector.isAutoStartMode) " (auto-start)" else ""}" }
             log.i { "  Handle release: pos < ${BleConstants.Thresholds.HANDLE_REST_THRESHOLD}" }
             log.i { "======================================" }
         }
@@ -1935,23 +1824,8 @@ class KableBleRepository : BleRepository {
                 log.w { "Failed to emit metric - buffer full? Count: $monitorNotificationCount" }
             }
 
-            // ===== SIMPLE HANDLE STATE (for backward compatibility) =====
-            if (handleDetectionEnabled) {
-                val activeThreshold = 50.0f  // 50mm threshold (was 500 raw units / 10 = 50mm)
-                val leftDetected = posA > activeThreshold
-                val rightDetected = posB > activeThreshold
-                val currentDetection = _handleDetection.value
-                if (currentDetection.leftDetected != leftDetected || currentDetection.rightDetected != rightDetected) {
-                    _handleDetection.value = HandleDetection(leftDetected, rightDetected)
-                }
-
-                // ===== 4-STATE HANDLE STATE MACHINE (for Just Lift mode) =====
-                val newActivityState = analyzeHandleState(metric)
-                if (newActivityState != _handleState.value) {
-                    log.d { "Handle activity state changed: ${_handleState.value} -> $newActivityState" }
-                    _handleState.value = newActivityState
-                }
-            }
+            // Handle detection + 4-state machine delegated to HandleStateDetector
+            handleDetector.processMetric(metric)
 
         } catch (e: Exception) {
             log.e { "Error parsing monitor data: ${e.message}" }
@@ -2041,204 +1915,6 @@ class KableBleRepository : BleRepository {
     }
 
     /**
-     * Analyze handle state for Just Lift mode auto-start.
-     * Implements 4-state machine: WaitingForRest -> Released -> Grabbed -> Active
-     *
-     * State transitions:
-     * - WaitingForRest: Initial state, waiting for handles to be at rest
-     * - Released (SetComplete): Handles at rest, armed for grab detection
-     * - Active: Handles grabbed and moving (workout started)
-     */
-    // Counter for periodic diagnostic logging
-    private var handleStateLogCounter = 0L
-
-    /**
-     * 4-state handle activity machine matching parent repo v0.5.1-beta:
-     *
-     * State transitions:
-     * - WaitingForRest → SetComplete: When both handles < 5mm (armed)
-     * - SetComplete/Moving → Active: When position > 8mm AND velocity > 100mm/s (GRAB DETECTED)
-     * - SetComplete/Moving → Moving: When position > 8mm but no velocity (intermediate)
-     * - SetComplete/Moving → SetComplete: When position <= 8mm (back to rest)
-     * - Active → SetComplete: When both handles < 5mm (RELEASE DETECTED)
-     */
-    private fun analyzeHandleState(metric: WorkoutMetric): HandleState {
-        val posA = metric.positionA.toDouble()
-        val posB = metric.positionB.toDouble()
-        val velocityA = metric.velocityA
-        val velocityB = metric.velocityB
-
-        // Track position range for post-workout tuning diagnostics
-        minPositionSeen = minOf(minPositionSeen, minOf(posA, posB))
-        maxPositionSeen = maxOf(maxPositionSeen, maxOf(posA, posB))
-
-        val currentState = _handleState.value
-
-        // Check handles - support single-handle exercises
-        // NOTE: Use abs(velocity) since velocity is now signed (Issue #204 fix)
-        // Issue #96: Use lower velocity threshold for auto-start grab detection
-        val velocityThreshold = if (isAutoStartMode) BleConstants.Thresholds.AUTO_START_VELOCITY_THRESHOLD else BleConstants.Thresholds.VELOCITY_THRESHOLD
-
-        // Issue #176: Use relative position change when baseline is set (for overhead pulley setups)
-        // When cables can't reach absolute rest position, detect grabs via delta from baseline
-        val handleAGrabbed = if (restBaselinePosA != null) {
-            (posA - restBaselinePosA!!) > BleConstants.Thresholds.GRAB_DELTA_THRESHOLD
-        } else {
-            posA > BleConstants.Thresholds.HANDLE_GRABBED_THRESHOLD
-        }
-        val handleBGrabbed = if (restBaselinePosB != null) {
-            (posB - restBaselinePosB!!) > BleConstants.Thresholds.GRAB_DELTA_THRESHOLD
-        } else {
-            posB > BleConstants.Thresholds.HANDLE_GRABBED_THRESHOLD
-        }
-        val handleAMoving = kotlin.math.abs(velocityA) > velocityThreshold
-        val handleBMoving = kotlin.math.abs(velocityB) > velocityThreshold
-
-        // Periodic diagnostic logging (every 200 samples at high poll rate)
-        handleStateLogCounter++
-        if (handleStateLogCounter % 200 == 0L) {
-            log.i { "🎯 HANDLE STATE: $currentState | posA=${posA.format(1)}mm posB=${posB.format(1)}mm | velA=${velocityA.format(0)} velB=${velocityB.format(0)} | thresholds: rest<${BleConstants.Thresholds.HANDLE_REST_THRESHOLD} grab>${BleConstants.Thresholds.HANDLE_GRABBED_THRESHOLD} vel>$velocityThreshold${if (isAutoStartMode) " (auto-start)" else ""}" }
-        }
-
-        return when (currentState) {
-            HandleState.WaitingForRest -> {
-                // MUST see handles at rest before arming grab detection
-                // This prevents immediate auto-start if cables already have tension
-                if (posA < BleConstants.Thresholds.HANDLE_REST_THRESHOLD && posB < BleConstants.Thresholds.HANDLE_REST_THRESHOLD) {
-                    log.i { "✅ Handles at REST (posA=$posA, posB=$posB < ${BleConstants.Thresholds.HANDLE_REST_THRESHOLD}) - auto-start now ARMED" }
-                    waitingForRestStartTime = null
-                    // Issue #176: Capture baseline position (will be ~0 for normal setups)
-                    restBaselinePosA = posA
-                    restBaselinePosB = posB
-                    HandleState.Released  // SetComplete = "Released/Armed" state
-                } else {
-                    // iOS autostart fix: Add timeout to escape WaitingForRest trap
-                    // If user holds handles before screen loads (pre-tensioned cables),
-                    // the state machine would be stuck forever. After timeout, arm anyway.
-                    val currentTime = currentTimeMillis()
-                    if (waitingForRestStartTime == null) {
-                        // Start timeout timer
-                        waitingForRestStartTime = currentTime
-                        HandleState.WaitingForRest
-                    } else if (currentTime - waitingForRestStartTime!! > BleConstants.Timing.WAITING_FOR_REST_TIMEOUT_MS) {
-                        // Issue #176: When timeout fires, check if handles are already grabbed
-                        // If user is already holding handles (position > threshold), use virtual
-                        // baseline of 0 so grab detection triggers immediately when they move.
-                        // Otherwise, use current position as baseline for elevated rest setups.
-                        val alreadyGrabbed = posA > BleConstants.Thresholds.HANDLE_GRABBED_THRESHOLD || posB > BleConstants.Thresholds.HANDLE_GRABBED_THRESHOLD
-                        if (alreadyGrabbed) {
-                            log.w { "⚠️ WaitingForRest TIMEOUT - handles already grabbed (posA=$posA, posB=$posB > ${BleConstants.Thresholds.HANDLE_GRABBED_THRESHOLD}) - using virtual baseline=0 for immediate grab detection" }
-                            restBaselinePosA = 0.0
-                            restBaselinePosB = 0.0
-                        } else {
-                            log.w { "⚠️ WaitingForRest TIMEOUT (${BleConstants.Timing.WAITING_FOR_REST_TIMEOUT_MS}ms) - capturing baseline posA=$posA, posB=$posB for relative grab detection" }
-                            restBaselinePosA = posA
-                            restBaselinePosB = posB
-                        }
-                        waitingForRestStartTime = null
-                        HandleState.Released  // Force arm after timeout - NOW ACTUALLY RETURNED!
-                    } else {
-                        // Still waiting for timeout
-                        HandleState.WaitingForRest
-                    }
-                }
-            }
-
-            HandleState.Released, HandleState.Moving -> {
-                // Check if EITHER handle is grabbed AND moving (for single-handle exercises)
-                val aActive = handleAGrabbed && handleAMoving
-                val bActive = handleBGrabbed && handleBMoving
-
-                when {
-                    aActive || bActive -> {
-                        // Task 14: Handle state hysteresis - require 200ms sustained before transition
-                        val currentTime = currentTimeMillis()
-                        if (pendingGrabbedStartTime == null) {
-                            // Start dwell timer
-                            pendingGrabbedStartTime = currentTime
-                            currentState  // Stay in current state
-                        } else if (currentTime - pendingGrabbedStartTime!! >= BleConstants.Timing.STATE_TRANSITION_DWELL_MS) {
-                            // GRAB CONFIRMED - position AND velocity thresholds met for 200ms
-                            val activeHandle = when {
-                                aActive && bActive -> "both"
-                                aActive -> "A"
-                                else -> "B"
-                            }
-                            // Store which handle(s) are active for release detection
-                            activeHandlesMask = (if (aActive) 1 else 0) or (if (bActive) 2 else 0)
-                            log.i { "🔥 GRAB CONFIRMED: handle=$activeHandle mask=$activeHandlesMask (posA=${posA.format(1)}, posB=${posB.format(1)}, velA=${velocityA.format(0)}, velB=${velocityB.format(0)}) after ${BleConstants.Timing.STATE_TRANSITION_DWELL_MS}ms dwell" }
-                            pendingGrabbedStartTime = null
-                            HandleState.Grabbed
-                        } else {
-                            currentState  // Still dwelling
-                        }
-                    }
-                    handleAGrabbed || handleBGrabbed -> {
-                        // Position extended but no significant movement yet
-                        pendingGrabbedStartTime = null  // Reset grab timer
-                        HandleState.Moving
-                    }
-                    else -> {
-                        // Back to rest position
-                        pendingGrabbedStartTime = null  // Reset grab timer
-                        HandleState.Released
-                    }
-                }
-            }
-
-            HandleState.Grabbed -> {
-                // Release detection: only check handles that were actually grabbed
-                // Issue #176: Use baseline-relative release detection for overhead pulley setups
-                val aReleased = if (restBaselinePosA != null) {
-                    (posA - restBaselinePosA!!) < BleConstants.Thresholds.RELEASE_DELTA_THRESHOLD
-                } else {
-                    posA < BleConstants.Thresholds.HANDLE_REST_THRESHOLD  // Backwards compatible
-                }
-                val bReleased = if (restBaselinePosB != null) {
-                    (posB - restBaselinePosB!!) < BleConstants.Thresholds.RELEASE_DELTA_THRESHOLD
-                } else {
-                    posB < BleConstants.Thresholds.HANDLE_REST_THRESHOLD  // Backwards compatible
-                }
-
-                // Only check release on the handle(s) that were actually grabbed.
-                // This prevents premature release detection when unused cable is at rest.
-                val isReleased = when (activeHandlesMask) {
-                    1 -> aReleased           // Only A was active - check A only
-                    2 -> bReleased           // Only B was active - check B only
-                    3 -> aReleased && bReleased  // Both active - both must release
-                    else -> aReleased || bReleased  // Fallback (shouldn't happen)
-                }
-
-                if (isReleased) {
-                    // Task 14: Handle state hysteresis - require 200ms sustained before release
-                    val currentTime = currentTimeMillis()
-                    if (pendingReleasedStartTime == null) {
-                        // Start dwell timer
-                        pendingReleasedStartTime = currentTime
-                        HandleState.Grabbed  // Stay grabbed
-                    } else if (currentTime - pendingReleasedStartTime!! >= BleConstants.Timing.STATE_TRANSITION_DWELL_MS) {
-                        log.d { "RELEASE DETECTED (mask=$activeHandlesMask): posA=$posA (baseline=${restBaselinePosA ?: "none"}), posB=$posB (baseline=${restBaselinePosB ?: "none"}) after ${BleConstants.Timing.STATE_TRANSITION_DWELL_MS}ms dwell" }
-                        pendingReleasedStartTime = null
-                        activeHandlesMask = 0  // Reset for next grab
-                        HandleState.Released
-                    } else {
-                        HandleState.Grabbed  // Still dwelling
-                    }
-                } else {
-                    pendingReleasedStartTime = null  // Reset release timer if handles move away from rest
-                    HandleState.Grabbed
-                }
-            }
-        }
-    }
-
-    private fun Double.format(decimals: Int): String {
-        var factor = 1.0
-        repeat(decimals) { factor *= 10.0 }
-        return ((this * factor).toLong() / factor).toString()
-    }
-
-    /**
      * Parse metrics packet from RX notifications (0x01 command).
      * Uses big-endian byte order for this packet type.
      * Position values scaled to mm (Issue #197).
@@ -2273,22 +1949,8 @@ class KableBleRepository : BleRepository {
             // Use tryEmit for non-blocking emission (matching parent repo)
             _metricsFlow.tryEmit(metric)
 
-            if (handleDetectionEnabled) {
-                val activeThreshold = 50.0f  // 50mm threshold (was 500 raw / 10)
-                val leftDetected = positionA > activeThreshold
-                val rightDetected = positionB > activeThreshold
-                val currentDetection = _handleDetection.value
-                if (currentDetection.leftDetected != leftDetected || currentDetection.rightDetected != rightDetected) {
-                    _handleDetection.value = HandleDetection(leftDetected, rightDetected)
-                }
-
-                // Also analyze handle state for Just Lift mode
-                val newActivityState = analyzeHandleState(metric)
-                if (newActivityState != _handleState.value) {
-                    log.d { "Handle activity state changed (RX): ${_handleState.value} -> $newActivityState" }
-                    _handleState.value = newActivityState
-                }
-            }
+            // Handle detection + 4-state machine delegated to HandleStateDetector
+            handleDetector.processMetric(metric)
         } catch (e: Exception) {
             log.e { "Error parsing metrics: ${e.message}" }
         }
