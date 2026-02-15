@@ -37,7 +37,8 @@ Decompose the 2,886-line KableBleRepository monolith into 8 focused, testable mo
   2. All timing constants (timeouts, intervals, thresholds) centralized in one file
   3. Build compiles on both Android and iOS targets
   4. No functional changes to BLE behavior
-**Plans**: TBD
+**Plans**: 1 plan
+  - [ ] 05-01-PLAN.md - Extract constants to BleConstants.kt, update KableBleRepository imports
 
 ### Phase 6: ProtocolParser
 **Goal**: Byte parsing functions extracted as stateless pure functions
@@ -126,7 +127,7 @@ Phases 5 -> 6 -> 7 -> 8 -> 9 -> 10 -> 11 -> 12
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
-| 5. BleProtocolConstants | v0.4.2 | 0/? | Not started | - |
+| 5. BleProtocolConstants | v0.4.2 | 0/1 | Planned | - |
 | 6. ProtocolParser | v0.4.2 | 0/? | Not started | - |
 | 7. BleOperationQueue | v0.4.2 | 0/? | Not started | - |
 | 8. DiscoMode + Interface | v0.4.2 | 0/? | Not started | - |
