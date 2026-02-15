@@ -1,7 +1,7 @@
 # Project Phoenix - Vitruvian Trainer Control App
 
 [![Latest Release](https://img.shields.io/github/v/release/DasBluEyedDevil/Project-Phoenix-MP?include_prereleases)](https://github.com/DasBluEyedDevil/Project-Phoenix-MP/releases)
-[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![License](https://img.shields.io/badge/license-Proprietary-red.svg)](LICENSE)
 [![Kotlin](https://img.shields.io/badge/Kotlin-2.0+-blue.svg)](https://kotlinlang.org)
 [![Platform](https://img.shields.io/badge/platform-Android%20%7C%20iOS-green.svg)](https://github.com/DasBluEyedDevil/Project-Phoenix-MP/releases)
 
@@ -76,7 +76,6 @@ Your support helps cover development costs and keeps this community rescue proje
 - No account required
 - Works completely offline
 - Backup & restore your data anytime
-- Open source - verify the code yourself
 
 ---
 
@@ -161,13 +160,9 @@ Project-Phoenix-MP/
 
 ## Contributing
 
-This is an open-source community project. Contributions welcome!
+This is a proprietary project. Contributions are not currently accepted.
 
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Make your changes
-4. Test with real hardware if possible
-5. Submit a pull request
+Please contact the project maintainers if you have suggestions or would like to collaborate.
 
 ---
 
@@ -181,7 +176,7 @@ This is an open-source community project. Contributions welcome!
 
 ## License
 
-MIT License - See [LICENSE](LICENSE) file for details.
+Proprietary License - All Rights Reserved. See [LICENSE](LICENSE) file for details.
 
 ---
 
