@@ -9,12 +9,12 @@ See: .planning/PROJECT.md (updated 2026-02-14)
 
 ## Current Position
 
-Phase: 10 of 12 (Strength Assessment)
-Plan: 4 of 4 complete
-Status: Phase 10 complete - assessment feature fully integrated
-Last activity: 2026-02-14 — Completed 10-04-PLAN.md
+Phase: 11 of 12 (Exercise Auto-Detection)
+Plan: 1 of 3 complete
+Status: Plan 01 complete - signature extraction engine with TDD
+Last activity: 2026-02-15 — Completed 11-01-PLAN.md
 
-Progress: v0.4.6 complete — 31 plans across 3 milestones shipped. v0.4.7 Phase 9 complete (2 plans, 4 tasks). Phase 10 complete (4 plans, 7 tasks).
+Progress: v0.4.6 complete — 31 plans across 3 milestones shipped. v0.4.7 Phase 9 complete (2 plans). Phase 10 complete (4 plans). Phase 11 in progress (1/3 plans, 2 TDD tasks, 27 tests).
 
 ## Performance Metrics
 
@@ -37,6 +37,7 @@ Progress: v0.4.6 complete — 31 plans across 3 milestones shipped. v0.4.7 Phase
 | Phase 10 P02 | 4min | 2 tasks | 5 files |
 | Phase 10 P03 | 5min | 2 tasks | 4 files |
 | Phase 10 P04 | 8min | 2 tasks | 3 files |
+| Phase 11 P01 | 12min | 2 TDD tasks (27 tests) | 5 files |
 
 ## Accumulated Context
 
@@ -52,6 +53,9 @@ v0.4.6 decisions archived — see PROJECT.md for full history.
 - [Phase 10]: AssessmentStep sealed class with data for type-safe wizard state transitions
 - [Phase 10]: Skip Instruction step when no exercise videos available
 - [Phase 10]: Dual navigation entry points - StrengthAssessmentPicker from home (no exercise), StrengthAssessment from detail (pre-selected)
+- [Phase 11]: Valley-based rep detection with 5-sample moving average and local minima
+- [Phase 11]: History matching threshold 0.85 before rule-based fallback
+- [Phase 11]: EMA alpha=0.3 for signature evolution (per DETECT-06)
 
 ### Pending Todos
 
@@ -64,6 +68,6 @@ None.
 ## Session Continuity
 
 Last session: 2026-02-15
-Stopped at: Phase 10 complete, verified (5/5 must-haves)
+Stopped at: Phase 11 Plan 01 complete (signature extraction engine)
 Resume file: None
-Next action: `/gsd:plan-phase 11` — Exercise Auto-Detection
+Next action: `/gsd:execute-phase 11` — Continue with 11-02-PLAN.md
