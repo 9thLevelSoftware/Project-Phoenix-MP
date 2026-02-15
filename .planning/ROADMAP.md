@@ -18,8 +18,8 @@ Decompose the 2,886-line KableBleRepository monolith into 8 focused, testable mo
 - Decimal phases (e.g., 5.1): Urgent insertions if needed
 
 - [x] **Phase 5: BleProtocolConstants** - Extract UUIDs and timing constants (zero risk) ✓ 2026-02-15
-- [ ] **Phase 6: ProtocolParser** - Extract stateless byte parsing functions (zero risk)
-- [ ] **Phase 7: BleOperationQueue** - Extract Mutex-based BLE serialization (low risk)
+- [x] **Phase 6: ProtocolParser** - Extract stateless byte parsing functions (zero risk) ✓ 2026-02-15
+- [x] **Phase 7: BleOperationQueue** - Extract Mutex-based BLE serialization (low risk) ✓ 2026-02-15
 - [ ] **Phase 8: DiscoMode + Interface** - Extract easter egg and fix concrete cast (zero risk)
 - [ ] **Phase 9: HandleStateDetector** - Extract 4-state handle detection machine (low risk)
 - [ ] **Phase 10: MonitorDataProcessor** - Extract position validation and velocity EMA (medium risk)
@@ -131,8 +131,8 @@ Phases 5 -> 6 -> 7 -> 8 -> 9 -> 10 -> 11 -> 12
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
 | 5. BleProtocolConstants | v0.4.2 | 1/1 | Complete | 2026-02-15 |
-| 6. ProtocolParser | v0.4.2 | 0/2 | Planning complete | - |
-| 7. BleOperationQueue | v0.4.2 | 0/1 | Planning complete | - |
+| 6. ProtocolParser | v0.4.2 | 2/2 | Complete | 2026-02-15 |
+| 7. BleOperationQueue | v0.4.2 | 1/1 | Complete | 2026-02-15 |
 | 8. DiscoMode + Interface | v0.4.2 | 0/? | Not started | - |
 | 9. HandleStateDetector | v0.4.2 | 0/? | Not started | - |
 | 10. MonitorDataProcessor | v0.4.2 | 0/? | Not started | - |
