@@ -10,11 +10,11 @@ See: .planning/PROJECT.md (updated 2026-02-14)
 ## Current Position
 
 Phase: 6 of 8 (Core Engine)
-Plan: 1 of 4 in current phase
+Plan: 2 of 4 in current phase
 Status: Executing
-Last activity: 2026-02-15 — Plan 06-01 (Biomechanics Infrastructure) complete
+Last activity: 2026-02-15 — Plan 06-02 (VBT Computation) complete
 
-Progress: [█░░░░░░░░░] 10% (1/10 plans)
+Progress: [██░░░░░░░░] 20% (2/10 plans)
 
 ## Performance Metrics
 
@@ -29,7 +29,7 @@ Progress: [█░░░░░░░░░] 10% (1/10 plans)
 |-----------|--------|-------|----------|-------|
 | v0.4.1 | 4 | 10 | - | Pre-metrics |
 | v0.4.5 | 5 | 11 | ~3h | 59 commits, +1,832 LOC |
-| v0.4.6 | 3 | 10 | - | In progress (1/10 complete) |
+| v0.4.6 | 3 | 10 | - | In progress (2/10 complete) |
 
 ## Accumulated Context
 
@@ -43,6 +43,8 @@ Key decisions affecting v0.4.6:
 - Stateless engine pattern (pure functions, injectable time, StateFlow exposure)
 - BiomechanicsVelocityZone thresholds 250/500/750/1000 mm/s for MCV classification (06-01)
 - Concentric phase detection by positive velocity with first-half fallback (06-01)
+- MCV = average(max(abs(velocityA), abs(velocityB))) per sample (06-02)
+- Velocity loss clamped 0-100%, rep projection capped at 99 (06-02)
 
 ### Pending Todos
 
@@ -55,6 +57,6 @@ None.
 ## Session Continuity
 
 Last session: 2026-02-15
-Stopped at: Completed 06-01-PLAN.md (Biomechanics Infrastructure)
+Stopped at: Completed 06-02-PLAN.md (VBT Computation)
 Resume file: None
-Next action: `/gsd:execute-phase 6` (Plan 02: VBT Computation)
+Next action: `/gsd:execute-phase 6` (Plan 03: Force Curve)
