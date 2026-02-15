@@ -2,6 +2,7 @@ package com.devil.phoenixproject.presentation.screen
 
 import com.devil.phoenixproject.data.repository.AutoStopUiState
 import com.devil.phoenixproject.domain.model.*
+import com.devil.phoenixproject.domain.model.BiomechanicsRepResult
 import com.devil.phoenixproject.domain.usecase.RepRanges
 
 /**
@@ -66,7 +67,8 @@ data class WorkoutUiState(
     val loadBaselineB: Float = 0f,
     val timedExerciseRemainingSeconds: Int? = null,
     val isCurrentExerciseBodyweight: Boolean = false,
-    val latestRepQualityScore: Int? = null
+    val latestRepQualityScore: Int? = null,
+    val latestBiomechanicsResult: BiomechanicsRepResult? = null
 )
 
 /**

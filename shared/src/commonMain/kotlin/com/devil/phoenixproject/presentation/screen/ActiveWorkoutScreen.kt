@@ -53,6 +53,7 @@ fun ActiveWorkoutScreen(
     val timedExerciseRemainingSeconds by viewModel.timedExerciseRemainingSeconds.collectAsState()
     val isCurrentExerciseBodyweight by viewModel.isCurrentExerciseBodyweight.collectAsState()
     val latestRepQuality by viewModel.latestRepQuality.collectAsState()
+    val latestBiomechanicsResult by viewModel.latestBiomechanicsResult.collectAsState()
     @Suppress("UNUSED_VARIABLE") // Reserved for future connecting overlay
     val isAutoConnecting by viewModel.isAutoConnecting.collectAsState()
     val connectionError by viewModel.connectionError.collectAsState()
@@ -258,7 +259,8 @@ fun ActiveWorkoutScreen(
         repCount, repRanges, autoStopState, weightUnit, enableVideoPlayback,
         loadedRoutine, currentExerciseIndex, currentSetIndex, autoplayEnabled,
         userPreferences.summaryCountdownSeconds, loadBaselineA, loadBaselineB, canGoBack, canSkipForward,
-        timedExerciseRemainingSeconds, isCurrentExerciseBodyweight, gatedRepQualityScore
+        timedExerciseRemainingSeconds, isCurrentExerciseBodyweight, gatedRepQualityScore,
+        latestBiomechanicsResult
     ) {
         WorkoutUiState(
             connectionState = connectionState,
@@ -285,7 +287,8 @@ fun ActiveWorkoutScreen(
             canSkipForward = canSkipForward,
             timedExerciseRemainingSeconds = timedExerciseRemainingSeconds,
             isCurrentExerciseBodyweight = isCurrentExerciseBodyweight,
-            latestRepQualityScore = gatedRepQualityScore
+            latestRepQualityScore = gatedRepQualityScore,
+            latestBiomechanicsResult = latestBiomechanicsResult
         )
     }
 

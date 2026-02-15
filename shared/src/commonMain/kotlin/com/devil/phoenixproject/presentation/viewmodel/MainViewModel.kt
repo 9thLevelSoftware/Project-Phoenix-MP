@@ -135,6 +135,7 @@ class MainViewModel constructor(
     val currentSetRpe: StateFlow<Int?> get() = workoutSessionManager.coordinator.currentSetRpe
     val isCurrentExerciseBodyweight: StateFlow<Boolean> get() = workoutSessionManager.coordinator.isCurrentExerciseBodyweight
     val latestRepQuality get() = workoutSessionManager.coordinator.latestRepQuality
+    val latestBiomechanicsResult get() = workoutSessionManager.coordinator.latestBiomechanicsResult
     val cycleDayCompletionEvent get() = workoutSessionManager.coordinator.cycleDayCompletionEvent
     fun clearCycleDayCompletionEvent() = workoutSessionManager.clearCycleDayCompletionEvent()
 
