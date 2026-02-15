@@ -53,11 +53,11 @@ See `.planning/milestones/v0.4.6-*` for archived phase details.
   2. Session detail queries for sessions with 100+ metric samples return without noticeable delay
   3. ExerciseSignature table exists in database with columns for ROM, duration, symmetry, velocity profile, and cable usage
   4. AssessmentResult table exists in database with columns for exercise reference, estimated 1RM, load-velocity data points, and timestamp
-**Plans**: TBD
+**Plans**: 2 plans in 2 waves
 
 Plans:
-- [ ] 09-01: Power calculation fix and MetricSample index
-- [ ] 09-02: ExerciseSignature and AssessmentResult table schemas (SQLDelight migration)
+- [ ] 09-01-PLAN.md — Fix dual-cable power calculation and add MetricSample sessionId index (Wave 1)
+- [ ] 09-02-PLAN.md — Add ExerciseSignature and AssessmentResult table schemas (Wave 2)
 
 #### Phase 10: Strength Assessment
 **Goal**: Users can determine their 1RM for any exercise through a guided, velocity-based assessment flow
