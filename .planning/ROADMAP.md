@@ -103,11 +103,11 @@ Plans:
   2. Each rep card renders a mini force curve sparkline drawn with Canvas
   3. Rep cards display peak force in kg plus concentric and eccentric durations in seconds
   4. Rep boundaries are detected from position data using valley detection with smoothing, producing accurate rep isolation
-**Plans**: TBD
+**Plans**: 2 plans in 2 waves
 
 Plans:
-- [ ] 12-01: Rep boundary detection from position valleys with smoothing
-- [ ] 12-02: Replay card UI (scrollable rep list, force curve sparkline, metric display)
+- [ ] 12-01-PLAN.md — Rep boundary detection algorithm with TDD (Wave 1)
+- [ ] 12-02-PLAN.md — Replay card UI: ForceSparkline, RepReplayCard, HistoryTab integration (Wave 2)
 
 ## Progress
 
@@ -116,7 +116,7 @@ Plans:
 | v0.4.1 Architectural Cleanup | 1-4 | 10 | ✅ Complete | 2026-02-13 |
 | v0.4.5 Premium Features Phase 1 | 1-5 | 11 | ✅ Complete | 2026-02-14 |
 | v0.4.6 Biomechanics MVP | 6-8 | 10 | ✅ Complete | 2026-02-15 |
-| v0.4.7 Mobile Platform Features | 9-12 | 13/17 | 🚧 In progress | - |
+| v0.4.7 Mobile Platform Features | 9-12 | 12/12 | 🚧 In progress | - |
 
 **Last phase number:** 12
 
