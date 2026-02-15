@@ -45,6 +45,9 @@ Key decisions affecting v0.4.6:
 - Concentric phase detection by positive velocity with first-half fallback (06-01)
 - MCV = average(max(abs(velocityA), abs(velocityB))) per sample (06-02)
 - Velocity loss clamped 0-100%, rep projection capped at 99 (06-02)
+- 101-point ROM normalization for force curves (06-03)
+- Sticking point excludes first/last 5% ROM (transition noise) (06-03)
+- 15% threshold for strength profile classification (06-03)
 - Asymmetry formula: abs(avgLoadA - avgLoadB) / max(avgLoadA, avgLoadB) * 100 (06-04)
 - Asymmetry below 2% classified as BALANCED (measurement noise threshold) (06-04)
 
