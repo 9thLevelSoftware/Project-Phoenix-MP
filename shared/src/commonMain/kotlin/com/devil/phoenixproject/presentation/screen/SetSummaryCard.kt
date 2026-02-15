@@ -20,6 +20,8 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import com.devil.phoenixproject.domain.model.BiomechanicsSetSummary
+import com.devil.phoenixproject.domain.model.BiomechanicsVelocityZone
 import com.devil.phoenixproject.domain.model.QualityTrend
 import com.devil.phoenixproject.domain.model.SetQualitySummary
 import com.devil.phoenixproject.domain.model.WeightUnit
@@ -232,6 +234,11 @@ fun SetSummaryCard(
             // Rep Quality section (only shown for Phoenix+ tier when quality data is available)
             summary.qualitySummary?.let { quality ->
                 QualityStatsSection(quality = quality)
+            }
+
+            // Velocity Analysis section (shown when biomechanics data is available)
+            summary.biomechanicsSummary?.let { biomechanics ->
+                VelocitySummaryCard(biomechanics)
             }
 
             // RPE section - show read-only in history view, interactive in live view
@@ -590,6 +597,221 @@ private fun PhaseStatColumn(
                 style = MaterialTheme.typography.bodySmall,
                 color = color
             )
+        }
+    }
+}
+
+// ===== Velocity Analysis Section =====
+
+/**
+ * Zone color for BiomechanicsVelocityZone (matches WorkoutHud.kt zoneColor()).
+ */
+private fun zoneColor(zone: BiomechanicsVelocityZone): Color = when (zone) {
+    BiomechanicsVelocityZone.EXPLOSIVE -> Color(0xFFE53935)
+    BiomechanicsVelocityZone.FAST -> Color(0xFFFF9800)
+    BiomechanicsVelocityZone.MODERATE -> Color(0xFFFDD835)
+    BiomechanicsVelocityZone.SLOW -> Color(0xFF42A5F5)
+    BiomechanicsVelocityZone.GRIND -> Color.Gray
+}
+
+/**
+ * Format MCV from mm/s to m/s display string using integer arithmetic (KMP-safe).
+ * Same approach as WorkoutHud.kt formatMcv().
+ */
+private fun formatMcvDisplay(mcvMmS: Float): String {
+    val mcv = mcvMmS.toInt().coerceAtLeast(0)
+    val whole = mcv / 1000
+    val decimal = ((mcv % 1000) / 10).toString().padStart(2, '0')
+    return "$whole.$decimal"
+}
+
+/**
+ * Velocity summary card showing avg MCV, peak velocity, velocity loss, and zone distribution.
+ * Displayed on set summary screen when biomechanics data is available.
+ */
+@Composable
+private fun VelocitySummaryCard(biomechanics: BiomechanicsSetSummary) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
+        ),
+        shape = RoundedCornerShape(16.dp)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            // Header row
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Icon(
+                        Icons.Default.Speed,
+                        contentDescription = "Velocity",
+                        modifier = Modifier.size(18.dp),
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                    Text(
+                        "Velocity Analysis",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
+            }
+
+            // Stats row: Avg MCV, Peak, Velocity Loss
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceEvenly,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // Avg MCV
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(
+                        "Avg MCV",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        formatMcvDisplay(biomechanics.avgMcvMmS),
+                        style = MaterialTheme.typography.headlineMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = zoneColor(BiomechanicsVelocityZone.fromMcv(biomechanics.avgMcvMmS))
+                    )
+                    Text(
+                        "m/s",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+
+                // Peak Velocity
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(
+                        "Peak",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        formatMcvDisplay(biomechanics.peakVelocityMmS),
+                        style = MaterialTheme.typography.bodyLarge,
+                        fontWeight = FontWeight.Medium,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(
+                        "m/s",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+
+                // Velocity Loss
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(
+                        "Velocity Loss",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    val lossText = biomechanics.totalVelocityLossPercent?.let { loss ->
+                        "${loss.toInt()}%"
+                    } ?: "--"
+                    val lossColor = biomechanics.totalVelocityLossPercent?.let { loss ->
+                        when {
+                            loss >= 20f -> Color(0xFFE53935)  // Red - high fatigue
+                            loss >= 10f -> Color(0xFFFF9800)  // Orange - moderate
+                            else -> Color(0xFF43A047)          // Green - minimal
+                        }
+                    } ?: MaterialTheme.colorScheme.onSurfaceVariant
+                    Text(
+                        lossText,
+                        style = MaterialTheme.typography.bodyLarge,
+                        fontWeight = FontWeight.Medium,
+                        color = lossColor
+                    )
+                }
+            }
+
+            // Zone distribution bar
+            if (biomechanics.zoneDistribution.isNotEmpty()) {
+                val totalReps = biomechanics.zoneDistribution.values.sum()
+                if (totalReps > 0) {
+                    // Stacked horizontal bar
+                    val zoneOrder = listOf(
+                        BiomechanicsVelocityZone.EXPLOSIVE,
+                        BiomechanicsVelocityZone.FAST,
+                        BiomechanicsVelocityZone.MODERATE,
+                        BiomechanicsVelocityZone.SLOW,
+                        BiomechanicsVelocityZone.GRIND
+                    )
+                    val activeZones = zoneOrder.filter { (biomechanics.zoneDistribution[it] ?: 0) > 0 }
+
+                    // Bar
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(12.dp)
+                    ) {
+                        for (zone in activeZones) {
+                            val count = biomechanics.zoneDistribution[zone] ?: 0
+                            val weight = count.toFloat() / totalReps
+                            Box(
+                                modifier = Modifier
+                                    .weight(weight)
+                                    .fillMaxHeight()
+                                    .background(
+                                        zoneColor(zone),
+                                        shape = when (zone) {
+                                            activeZones.first() -> RoundedCornerShape(
+                                                topStart = 6.dp, bottomStart = 6.dp,
+                                                topEnd = if (activeZones.size == 1) 6.dp else 0.dp,
+                                                bottomEnd = if (activeZones.size == 1) 6.dp else 0.dp
+                                            )
+                                            activeZones.last() -> RoundedCornerShape(
+                                                topEnd = 6.dp, bottomEnd = 6.dp
+                                            )
+                                            else -> RoundedCornerShape(0.dp)
+                                        }
+                                    )
+                            )
+                        }
+                    }
+
+                    // Zone labels with counts
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceEvenly
+                    ) {
+                        for (zone in activeZones) {
+                            val count = biomechanics.zoneDistribution[zone] ?: 0
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(3.dp)
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(8.dp)
+                                        .background(zoneColor(zone), RoundedCornerShape(2.dp))
+                                )
+                                Text(
+                                    "${zone.name.lowercase().replaceFirstChar { it.uppercase() }}: $count",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 }
