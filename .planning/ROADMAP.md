@@ -86,12 +86,12 @@ Plans:
   2. User can confirm the suggestion or select a different exercise, and the interaction does not interrupt the workout
   3. Confirmed exercise signatures are stored and used to improve future suggestions for that user
   4. Repeat performances of the same exercise produce higher confidence scores over time as the signature history grows
-**Plans**: TBD
+**Plans**: 3 plans in 2 waves
 
 Plans:
-- [ ] 11-01: Signature extraction engine (ROM, duration, symmetry, velocity profile features)
-- [ ] 11-02: Rule-based classifier and history matching with weighted similarity
-- [ ] 11-03: Detection UI (bottom sheet, confirmation flow, signature evolution)
+- [ ] 11-01-PLAN.md — Signature extraction engine and exercise classifier with TDD (Wave 1)
+- [ ] 11-02-PLAN.md — ExerciseSignatureRepository and Koin DI wiring (Wave 1)
+- [ ] 11-03-PLAN.md — Detection UI, WorkoutHud integration, and confirmation flow (Wave 2)
 
 #### Phase 12: Mobile Replay Cards
 **Goal**: Users can review any past session with per-rep detail including force curves and timing breakdowns
@@ -115,9 +115,9 @@ Plans:
 | v0.4.1 Architectural Cleanup | 1-4 | 10 | ✅ Complete | 2026-02-13 |
 | v0.4.5 Premium Features Phase 1 | 1-5 | 11 | ✅ Complete | 2026-02-14 |
 | v0.4.6 Biomechanics MVP | 6-8 | 10 | ✅ Complete | 2026-02-15 |
-| v0.4.7 Mobile Platform Features | 9-12 | 10/14 | 🚧 In progress | - |
+| v0.4.7 Mobile Platform Features | 9-12 | 12/16 | 🚧 In progress | - |
 
 **Last phase number:** 12
 
 ---
-*Last updated: 2026-02-15 after Phase 10 execution complete*
+*Last updated: 2026-02-15 after Phase 11 planning complete*
