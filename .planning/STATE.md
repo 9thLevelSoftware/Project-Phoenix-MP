@@ -5,16 +5,16 @@
 See: .planning/PROJECT.md (updated 2026-02-14)
 
 **Core value:** Users can connect to their Vitruvian trainer and execute workouts reliably on both platforms.
-**Current focus:** Phase 6 — Core Engine (v0.4.6 Biomechanics MVP)
+**Current focus:** Phase 7 — HUD Integration (v0.4.6 Biomechanics MVP)
 
 ## Current Position
 
-Phase: 6 of 8 (Core Engine) - COMPLETE
-Plan: 4 of 4 in current phase
-Status: Phase Complete
-Last activity: 2026-02-15 — Plan 06-04 (Asymmetry Engine) complete
+Phase: 7 of 8 (HUD Integration) - IN PROGRESS
+Plan: 1 of 3 in current phase
+Status: Executing
+Last activity: 2026-02-15 — Plan 07-01 (Velocity HUD Integration) complete
 
-Progress: [████░░░░░░] 40% (4/10 plans)
+Progress: [█████░░░░░] 50% (5/10 plans)
 
 ## Performance Metrics
 
@@ -29,7 +29,7 @@ Progress: [████░░░░░░] 40% (4/10 plans)
 |-----------|--------|-------|----------|-------|
 | v0.4.1 | 4 | 10 | - | Pre-metrics |
 | v0.4.5 | 5 | 11 | ~3h | 59 commits, +1,832 LOC |
-| v0.4.6 | 3 | 10 | - | In progress (4/10 complete) |
+| v0.4.6 | 3 | 10 | - | In progress (5/10 complete) |
 
 ## Accumulated Context
 
@@ -50,6 +50,9 @@ Key decisions affecting v0.4.6:
 - 15% threshold for strength profile classification (06-03)
 - Asymmetry formula: abs(avgLoadA - avgLoadB) / max(avgLoadA, avgLoadB) * 100 (06-04)
 - Asymmetry below 2% classified as BALANCED (measurement noise threshold) (06-04)
+- Velocity card above LOAD card on StatsPage for prominence (07-01)
+- Integer arithmetic for formatMcv() in KMP commonMain (no String.format) (07-01)
+- No tier gating on biomechanics data in plumbing layer (Plan 03 handles gating) (07-01)
 
 ### Pending Todos
 
@@ -62,6 +65,6 @@ None.
 ## Session Continuity
 
 Last session: 2026-02-15
-Stopped at: Completed 06-04-PLAN.md (Asymmetry Engine) - Phase 6 Core Engine COMPLETE
+Stopped at: Completed 07-01-PLAN.md (Velocity HUD Integration)
 Resume file: None
-Next action: `/gsd:execute-phase 7` (Phase 07: Biomechanics UI)
+Next action: Execute 07-02-PLAN.md (next plan in Phase 7)
