@@ -82,12 +82,12 @@ Plans:
   2. After completing a set, user sees force curve card with averaged concentric curve, sticking point annotation, and strength profile badge (Ascending/Descending/Bell/Flat)
   3. After completing a set, user sees asymmetry card showing avg asymmetry %, dominant side, and trend direction
   4. All biomechanics summary cards are hidden for users below Phoenix subscription tier
-**Plans**: TBD
+**Plans**: 3 plans in 2 waves
 
 Plans:
-- [ ] 08-01: Velocity summary card (SUM-01)
-- [ ] 08-02: Force curve card with sticking point and strength profile (SUM-02, SUM-04, FORCE-06)
-- [ ] 08-03: Asymmetry summary card and tier gating (SUM-03, SUM-05, ASYM-06)
+- [ ] 08-01-PLAN.md — Data plumbing + velocity summary card: BiomechanicsSetSummary wiring, averaged force curve, velocity card (Wave 1)
+- [ ] 08-02-PLAN.md — Force curve summary card: averaged curve with sticking point, strength profile badge (Wave 2)
+- [ ] 08-03-PLAN.md — Asymmetry summary card and Phoenix tier gating for all biomechanics cards (Wave 2)
 
 ## Progress
 
@@ -102,4 +102,4 @@ Plans:
 | 8. Set Summary | v0.4.6 | 0/3 | Not started | - |
 
 ---
-*Last updated: 2026-02-15 after Phase 7 execution complete*
+*Last updated: 2026-02-15 after Phase 8 planning complete*
