@@ -43,6 +43,12 @@ sealed class NavigationRoutes(val route: String) {
 
     // Cloud Sync routes
     object LinkAccount : NavigationRoutes("link_account")
+
+    // Strength Assessment routes
+    object StrengthAssessment : NavigationRoutes("strength_assessment/{exerciseId}") {
+        fun createRoute(exerciseId: String) = "strength_assessment/$exerciseId"
+    }
+    object StrengthAssessmentPicker : NavigationRoutes("strength_assessment_picker")
 }
 
 /**

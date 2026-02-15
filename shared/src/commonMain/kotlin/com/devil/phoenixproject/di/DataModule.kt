@@ -32,4 +32,7 @@ val dataModule = module {
 
     // Smart Suggestions Repository
     single<SmartSuggestionsRepository> { SqlDelightSmartSuggestionsRepository(get()) }
+
+    // Assessment Repository
+    single<AssessmentRepository> { SqlDelightAssessmentRepository(get(), get(), get()) }
 }
