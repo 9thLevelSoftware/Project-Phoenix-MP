@@ -23,6 +23,7 @@ import com.devil.phoenixproject.testutil.FakePersonalRecordRepository
 import com.devil.phoenixproject.testutil.FakePreferencesManager
 import com.devil.phoenixproject.testutil.FakeTrainingCycleRepository
 import com.devil.phoenixproject.testutil.FakeWorkoutRepository
+import com.devil.phoenixproject.testutil.FakeRepMetricRepository
 import com.devil.phoenixproject.testutil.TestCoroutineRule
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.advanceUntilIdle
@@ -53,6 +54,7 @@ class MainViewModelTest {
     private lateinit var fakeGamificationRepository: FakeGamificationRepository
     private lateinit var fakeTrainingCycleRepository: FakeTrainingCycleRepository
     private lateinit var fakeCompletedSetRepository: FakeCompletedSetRepository
+    private lateinit var fakeRepMetricRepository: FakeRepMetricRepository
     private lateinit var repCounter: RepCounterFromMachine
     private lateinit var resolveWeightsUseCase: ResolveRoutineWeightsUseCase
 
@@ -66,6 +68,7 @@ class MainViewModelTest {
         fakeGamificationRepository = FakeGamificationRepository()
         fakeTrainingCycleRepository = FakeTrainingCycleRepository()
         fakeCompletedSetRepository = FakeCompletedSetRepository()
+        fakeRepMetricRepository = FakeRepMetricRepository()
         repCounter = RepCounterFromMachine()
         resolveWeightsUseCase = ResolveRoutineWeightsUseCase(fakePersonalRecordRepository)
 
@@ -79,6 +82,7 @@ class MainViewModelTest {
             gamificationRepository = fakeGamificationRepository,
             trainingCycleRepository = fakeTrainingCycleRepository,
             completedSetRepository = fakeCompletedSetRepository,
+            repMetricRepository = fakeRepMetricRepository,
             resolveWeightsUseCase = resolveWeightsUseCase
         )
     }
