@@ -69,12 +69,13 @@ Plans:
   3. User performs progressive-weight sets while seeing real-time velocity feedback, and the system identifies when velocity drops below threshold
   4. User is presented with an estimated 1RM derived from load-velocity regression and can accept it or enter a manual override
   5. Completed assessment is saved as a session (with `__ASSESSMENT__` marker) and the exercise's 1RM value is updated in the exercise record
-**Plans**: TBD
+**Plans**: 4 plans in 3 waves
 
 Plans:
-- [ ] 10-01: Assessment domain engine (load-velocity regression, threshold detection)
-- [ ] 10-02: Assessment wizard UI (exercise selection, video instruction, progressive loading flow)
-- [ ] 10-03: Assessment persistence and 1RM integration
+- [ ] 10-01-PLAN.md — Assessment domain engine: load-velocity regression, threshold detection, TDD (Wave 1)
+- [ ] 10-02-PLAN.md — Assessment repository layer and navigation route setup (Wave 1)
+- [ ] 10-03-PLAN.md — Assessment wizard ViewModel and multi-step UI screen (Wave 2)
+- [ ] 10-04-PLAN.md — Navigation wiring, entry points, and human verification (Wave 3)
 
 #### Phase 11: Exercise Auto-Detection
 **Goal**: The app identifies what exercise the user is performing based on movement signature and learns from corrections
@@ -114,9 +115,9 @@ Plans:
 | v0.4.1 Architectural Cleanup | 1-4 | 10 | ✅ Complete | 2026-02-13 |
 | v0.4.5 Premium Features Phase 1 | 1-5 | 11 | ✅ Complete | 2026-02-14 |
 | v0.4.6 Biomechanics MVP | 6-8 | 10 | ✅ Complete | 2026-02-15 |
-| v0.4.7 Mobile Platform Features | 9-12 | 2/10 | 🚧 In progress | - |
+| v0.4.7 Mobile Platform Features | 9-12 | 6/14 | 🚧 In progress | - |
 
 **Last phase number:** 12
 
 ---
-*Last updated: 2026-02-15 after Phase 9 completion*
+*Last updated: 2026-02-15 after Phase 10 planning*
