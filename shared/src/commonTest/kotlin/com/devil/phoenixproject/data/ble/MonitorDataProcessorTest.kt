@@ -363,13 +363,13 @@ class MonitorDataProcessorTest {
         processor.process(packet(posA = 100.0f, posB = 100.0f))
 
         fakeTime = 1500L  // 500ms later
-        // Position moved 50mm in 500ms = 100 mm/s
-        val result = processor.process(packet(posA = 150.0f, posB = 100.0f))
+        // Position moved 10mm in 500ms = 20 mm/s (within 20mm jump threshold)
+        val result = processor.process(packet(posA = 110.0f, posB = 100.0f))
         assertNotNull(result)
 
-        // First velocity sample should seed directly: 50mm / 0.5s = 100 mm/s
-        assertEquals(100.0, result.velocityA, 0.01,
-            "Velocity should use correct time delta: 50mm / 0.5s = 100 mm/s")
+        // First velocity sample should seed directly: 10mm / 0.5s = 20 mm/s
+        assertEquals(20.0, result.velocityA, 0.01,
+            "Velocity should use correct time delta: 10mm / 0.5s = 20 mm/s")
     }
 
     @Test
@@ -380,8 +380,8 @@ class MonitorDataProcessorTest {
         // First sample
         processor.process(packet(posA = 100.0f, posB = 100.0f))
 
-        // Same timestamp -> zero time delta
-        val result = processor.process(packet(posA = 200.0f, posB = 100.0f))
+        // Same timestamp, small position change (within jump threshold)
+        val result = processor.process(packet(posA = 110.0f, posB = 100.0f))
         assertNotNull(result)
 
         assertEquals(0.0, result.velocityA, 0.01,
@@ -405,7 +405,8 @@ class MonitorDataProcessorTest {
     @Test
     fun `DELOAD_OCCURRED triggers onDeloadOccurred callback`() {
         val processor = createProcessor()
-        fakeTime = 1000L
+        // fakeTime must be > DELOAD_EVENT_DEBOUNCE_MS (2000) from initial lastDeloadEventTime (0)
+        fakeTime = 5000L
 
         processor.process(packet(status = SampleStatus.DELOAD_OCCURRED))
         assertEquals(1, deloadCallCount, "DELOAD_OCCURRED should trigger callback")
@@ -414,14 +415,14 @@ class MonitorDataProcessorTest {
     @Test
     fun `deload event debounced within 2 seconds`() {
         val processor = createProcessor()
-        fakeTime = 1000L
+        fakeTime = 5000L
 
         // First deload
         processor.process(packet(status = SampleStatus.DELOAD_OCCURRED))
         assertEquals(1, deloadCallCount)
 
         // Second deload within 2 seconds
-        fakeTime = 2500L  // 1500ms later (< 2000ms debounce)
+        fakeTime = 6500L  // 1500ms later (< 2000ms debounce)
         processor.process(packet(status = SampleStatus.DELOAD_OCCURRED))
         assertEquals(1, deloadCallCount, "Second deload within 2s should be debounced")
     }
@@ -429,14 +430,14 @@ class MonitorDataProcessorTest {
     @Test
     fun `deload event fires again after 2 second cooldown`() {
         val processor = createProcessor()
-        fakeTime = 1000L
+        fakeTime = 5000L
 
         // First deload
         processor.process(packet(status = SampleStatus.DELOAD_OCCURRED))
         assertEquals(1, deloadCallCount)
 
         // After 2-second cooldown
-        fakeTime = 3001L  // 2001ms later (> 2000ms debounce)
+        fakeTime = 7001L  // 2001ms later (> 2000ms debounce)
         processor.process(packet(status = SampleStatus.DELOAD_OCCURRED))
         assertEquals(2, deloadCallCount, "Deload should fire again after 2s cooldown")
     }
