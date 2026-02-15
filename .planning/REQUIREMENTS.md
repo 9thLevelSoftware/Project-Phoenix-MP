@@ -89,21 +89,21 @@ Which phases cover which requirements. Updated during roadmap creation.
 | PARSE-02 | Phase 6 | Pending |
 | QUEUE-01 | Phase 7 | Pending |
 | QUEUE-02 | Phase 7 | Pending |
-| CONN-01 | Phase 12 | Pending |
-| CONN-02 | Phase 12 | Pending |
-| CONN-03 | Phase 12 | Pending |
-| POLL-01 | Phase 11 | Pending |
-| POLL-02 | Phase 11 | Pending |
-| POLL-03 | Phase 11 | Pending |
-| PROC-01 | Phase 10 | Pending |
-| PROC-02 | Phase 10 | Pending |
-| PROC-03 | Phase 10 | Pending |
-| HAND-01 | Phase 9 | Pending |
-| HAND-02 | Phase 9 | Pending |
-| HAND-03 | Phase 9 | Pending |
 | DISCO-01 | Phase 8 | Pending |
 | IFACE-01 | Phase 8 | Pending |
 | IFACE-02 | Phase 8 | Pending |
+| HAND-01 | Phase 9 | Pending |
+| HAND-02 | Phase 9 | Pending |
+| HAND-03 | Phase 9 | Pending |
+| PROC-01 | Phase 10 | Pending |
+| PROC-02 | Phase 10 | Pending |
+| PROC-03 | Phase 10 | Pending |
+| POLL-01 | Phase 11 | Pending |
+| POLL-02 | Phase 11 | Pending |
+| POLL-03 | Phase 11 | Pending |
+| CONN-01 | Phase 12 | Pending |
+| CONN-02 | Phase 12 | Pending |
+| CONN-03 | Phase 12 | Pending |
 | FACADE-01 | Phase 12 | Pending |
 | FACADE-02 | Phase 12 | Pending |
 | FACADE-03 | Phase 12 | Pending |
@@ -111,8 +111,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 **Coverage:**
 - v1 requirements: 23 total
 - Mapped to phases: 23
-- Unmapped: 0 ✓
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-02-15*
-*Last updated: 2026-02-15 after initial definition*
+*Last updated: 2026-02-15 after roadmap creation*
