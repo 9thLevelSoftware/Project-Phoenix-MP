@@ -22,12 +22,15 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.data.repository.CompletedSetRepository
 import com.devil.phoenixproject.data.repository.ExerciseRepository
+import com.devil.phoenixproject.data.repository.RepMetricRepository
 import com.devil.phoenixproject.domain.model.CompletedSet
+import com.devil.phoenixproject.domain.model.RepMetricData
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.domain.model.toSetSummary
 import com.devil.phoenixproject.presentation.manager.HistoryItem
 import com.devil.phoenixproject.presentation.components.EmptyState
+import com.devil.phoenixproject.presentation.components.RepReplayCard
 import com.devil.phoenixproject.ui.theme.*
 import com.devil.phoenixproject.util.KmpUtils
 import org.koin.compose.koinInject
@@ -359,6 +362,13 @@ fun WorkoutHistoryCard(
                         weightUnit = weightUnit,
                         formatWeight = formatWeight
                     )
+
+                    // Rep Details Section
+                    RepDetailsSection(
+                        sessionId = session.id,
+                        weightUnit = weightUnit,
+                        formatWeight = formatWeight
+                    )
                 }
             }
 
@@ -537,6 +547,47 @@ private fun CompletedSetsSection(
                         )
                     }
                 }
+            }
+        }
+    }
+}
+
+/**
+ * Shows per-rep replay cards with force sparklines for a workout session.
+ * Only renders if RepMetricData records exist for the session.
+ */
+@Composable
+private fun RepDetailsSection(
+    sessionId: String,
+    weightUnit: WeightUnit,
+    formatWeight: (Float, WeightUnit) -> String
+) {
+    val repMetricRepository: RepMetricRepository = koinInject()
+    var repMetrics by remember { mutableStateOf<List<RepMetricData>>(emptyList()) }
+
+    LaunchedEffect(sessionId) {
+        repMetrics = repMetricRepository.getRepMetrics(sessionId)
+    }
+
+    if (repMetrics.isNotEmpty()) {
+        Spacer(modifier = Modifier.height(Spacing.medium))
+
+        Text(
+            "Rep Details",
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.primary
+        )
+
+        Spacer(modifier = Modifier.height(Spacing.small))
+
+        Column(verticalArrangement = Arrangement.spacedBy(Spacing.small)) {
+            repMetrics.forEach { rep ->
+                RepReplayCard(
+                    repData = rep,
+                    weightUnit = weightUnit,
+                    formatWeight = formatWeight
+                )
             }
         }
     }
@@ -827,6 +878,13 @@ fun GroupedRoutineCard(
 
                         // CompletedSet breakdown per session
                         CompletedSetsSection(
+                            sessionId = session.id,
+                            weightUnit = weightUnit,
+                            formatWeight = formatWeight
+                        )
+
+                        // Rep Details Section per session
+                        RepDetailsSection(
                             sessionId = session.id,
                             weightUnit = weightUnit,
                             formatWeight = formatWeight
