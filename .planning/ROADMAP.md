@@ -4,7 +4,7 @@
 
 - ✅ **v0.4.1 Architectural Cleanup** — Phases 1-4 (shipped 2026-02-13)
 - ✅ **v0.4.5 Premium Features Phase 1** — Phases 1-5 (shipped 2026-02-14)
-- 🚧 **v0.4.6 Biomechanics MVP** — Phases 6-8 (in progress)
+- ✅ **v0.4.6 Biomechanics MVP** — Phases 6-8 (shipped 2026-02-15)
 
 ## Phases
 
@@ -28,13 +28,13 @@ See `.planning/milestones/v0.4.5-*` for archived phase details.
 
 </details>
 
-### 🚧 v0.4.6 Biomechanics MVP (In Progress)
+### ✅ v0.4.6 Biomechanics MVP — SHIPPED 2026-02-15
 
 **Milestone Goal:** Transform raw BLE telemetry into actionable training insights with real-time velocity tracking, force curve analysis, and bilateral asymmetry detection.
 
 - [x] **Phase 6: Core Engine** — VBT algorithms, force curve construction, asymmetry calculation, data infrastructure (2026-02-15)
 - [x] **Phase 7: HUD Integration** — Real-time biomechanics display during workouts (2026-02-15)
-- [ ] **Phase 8: Set Summary** — Post-set biomechanics visualization cards
+- [x] **Phase 8: Set Summary** — Post-set biomechanics visualization cards (2026-02-15)
 
 ## Phase Details
 
@@ -85,9 +85,9 @@ Plans:
 **Plans**: 3 plans in 2 waves
 
 Plans:
-- [ ] 08-01-PLAN.md — Data plumbing + velocity summary card: BiomechanicsSetSummary wiring, averaged force curve, velocity card (Wave 1)
-- [ ] 08-02-PLAN.md — Force curve summary card: averaged curve with sticking point, strength profile badge (Wave 2)
-- [ ] 08-03-PLAN.md — Asymmetry summary card and Phoenix tier gating for all biomechanics cards (Wave 2)
+- [x] 08-01-PLAN.md — Data plumbing + velocity summary card: BiomechanicsSetSummary wiring, averaged force curve, velocity card (Wave 1)
+- [x] 08-02-PLAN.md — Force curve summary card: averaged curve with sticking point, strength profile badge (Wave 2)
+- [x] 08-03-PLAN.md — Asymmetry summary card and Phoenix tier gating for all biomechanics cards (Wave 2)
 
 ## Progress
 
@@ -99,7 +99,7 @@ Plans:
 | 1-5 | v0.4.5 | 11/11 | Complete | 2026-02-14 |
 | 6. Core Engine | v0.4.6 | 4/4 | Complete | 2026-02-15 |
 | 7. HUD Integration | v0.4.6 | 3/3 | Complete | 2026-02-15 |
-| 8. Set Summary | v0.4.6 | 0/3 | Not started | - |
+| 8. Set Summary | v0.4.6 | 3/3 | Complete | 2026-02-15 |
 
 ---
-*Last updated: 2026-02-15 after Phase 8 planning complete*
+*Last updated: 2026-02-15 after Phase 8 execution complete — v0.4.6 SHIPPED*
