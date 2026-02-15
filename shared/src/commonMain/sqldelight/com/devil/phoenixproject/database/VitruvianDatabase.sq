@@ -306,6 +306,43 @@ CREATE TABLE RepMetric (
 CREATE INDEX idx_rep_metric_session ON RepMetric(sessionId);
 CREATE INDEX idx_rep_metric_session_rep ON RepMetric(sessionId, repNumber);
 
+-- ==================== EXERCISE SIGNATURES ====================
+-- Movement signatures for exercise auto-detection
+
+CREATE TABLE ExerciseSignature (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    exerciseId TEXT NOT NULL,
+    romMm REAL NOT NULL,
+    durationMs INTEGER NOT NULL,
+    symmetryRatio REAL NOT NULL,
+    velocityProfile TEXT NOT NULL,
+    cableConfig TEXT NOT NULL,
+    sampleCount INTEGER NOT NULL DEFAULT 1,
+    confidence REAL NOT NULL DEFAULT 0.0,
+    createdAt INTEGER NOT NULL,
+    updatedAt INTEGER NOT NULL,
+    FOREIGN KEY (exerciseId) REFERENCES Exercise(id) ON DELETE CASCADE
+);
+
+CREATE INDEX idx_exercise_signature_exercise ON ExerciseSignature(exerciseId);
+
+-- ==================== ASSESSMENT RESULTS ====================
+-- VBT strength assessment results
+
+CREATE TABLE AssessmentResult (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    exerciseId TEXT NOT NULL,
+    estimatedOneRepMaxKg REAL NOT NULL,
+    loadVelocityData TEXT NOT NULL,
+    assessmentSessionId TEXT,
+    userOverrideKg REAL,
+    createdAt INTEGER NOT NULL,
+    FOREIGN KEY (exerciseId) REFERENCES Exercise(id) ON DELETE CASCADE,
+    FOREIGN KEY (assessmentSessionId) REFERENCES WorkoutSession(id) ON DELETE SET NULL
+);
+
+CREATE INDEX idx_assessment_result_exercise ON AssessmentResult(exerciseId);
+
 -- Queries
 
 -- Exercise Queries
@@ -771,6 +808,51 @@ SELECT * FROM RepMetric;
 
 countRepMetricsBySession:
 SELECT COUNT(*) FROM RepMetric WHERE sessionId = ?;
+
+-- ==================== EXERCISE SIGNATURE QUERIES ====================
+
+insertExerciseSignature:
+INSERT INTO ExerciseSignature (exerciseId, romMm, durationMs, symmetryRatio, velocityProfile, cableConfig, sampleCount, confidence, createdAt, updatedAt)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+selectSignaturesByExercise:
+SELECT * FROM ExerciseSignature WHERE exerciseId = ? ORDER BY confidence DESC;
+
+selectAllSignatures:
+SELECT * FROM ExerciseSignature ORDER BY updatedAt DESC;
+
+updateExerciseSignature:
+UPDATE ExerciseSignature
+SET romMm = ?, durationMs = ?, symmetryRatio = ?, velocityProfile = ?, cableConfig = ?,
+    sampleCount = ?, confidence = ?, updatedAt = ?
+WHERE id = ?;
+
+deleteExerciseSignature:
+DELETE FROM ExerciseSignature WHERE id = ?;
+
+deleteSignaturesByExercise:
+DELETE FROM ExerciseSignature WHERE exerciseId = ?;
+
+-- ==================== ASSESSMENT RESULT QUERIES ====================
+
+insertAssessmentResult:
+INSERT INTO AssessmentResult (exerciseId, estimatedOneRepMaxKg, loadVelocityData, assessmentSessionId, userOverrideKg, createdAt)
+VALUES (?, ?, ?, ?, ?, ?);
+
+selectAssessmentsByExercise:
+SELECT * FROM AssessmentResult WHERE exerciseId = ? ORDER BY createdAt DESC;
+
+selectLatestAssessment:
+SELECT * FROM AssessmentResult WHERE exerciseId = ? ORDER BY createdAt DESC LIMIT 1;
+
+selectAllAssessments:
+SELECT * FROM AssessmentResult ORDER BY createdAt DESC;
+
+deleteAssessmentResult:
+DELETE FROM AssessmentResult WHERE id = ?;
+
+deleteAssessmentsByExercise:
+DELETE FROM AssessmentResult WHERE exerciseId = ?;
 
 -- ==================== GAMIFICATION TABLES ====================
 
