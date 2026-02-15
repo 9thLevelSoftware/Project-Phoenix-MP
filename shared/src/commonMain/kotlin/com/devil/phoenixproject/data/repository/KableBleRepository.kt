@@ -40,6 +40,14 @@ import kotlin.uuid.Uuid
 
 import com.devil.phoenixproject.data.ble.requestHighPriority
 import com.devil.phoenixproject.data.ble.requestMtuIfSupported
+import com.devil.phoenixproject.data.ble.parseRepPacket
+import com.devil.phoenixproject.data.ble.parseMonitorPacket
+import com.devil.phoenixproject.data.ble.parseDiagnosticPacket
+import com.devil.phoenixproject.data.ble.parseHeuristicPacket
+import com.devil.phoenixproject.data.ble.MonitorPacket
+import com.devil.phoenixproject.data.ble.getUInt16LE
+import com.devil.phoenixproject.data.ble.getUInt16BE
+import com.devil.phoenixproject.data.ble.toVitruvianHex
 
 import com.devil.phoenixproject.util.HardwareDetection
 import com.devil.phoenixproject.domain.model.HeuristicStatistics
@@ -1150,37 +1158,17 @@ class KableBleRepository : BleRepository {
      */
     private fun parseDiagnosticData(bytes: ByteArray) {
         try {
-            if (bytes.size < 20) return
+            val packet = parseDiagnosticPacket(bytes) ?: return
 
-            // Little-endian parsing (matching parent repo)
-            // Bytes 0-3 contain uptime seconds (reserved for future use)
-            // val seconds = getInt32LE(bytes, 0)
-
-            // Parse 4 fault codes (shorts)
-            val faults = mutableListOf<Short>()
-            for (i in 0 until 4) {
-                val offset = 4 + (i * 2)
-                val fault = ((bytes[offset].toInt() and 0xFF) or
-                        ((bytes[offset + 1].toInt() and 0xFF) shl 8)).toShort()
-                faults.add(fault)
-            }
-
-            // Parse 8 temperature readings (bytes)
-            val temps = mutableListOf<Byte>()
-            for (i in 0 until 8) {
-                temps.add(bytes[12 + i])
-            }
-
-            val containsFaults = faults.any { it != 0.toShort() }
-            val faultSnapshot = faults.toList()
+            val faultSnapshot = packet.faults
             val faultsChanged = lastDiagnosticFaults == null || lastDiagnosticFaults != faultSnapshot
             if (faultsChanged) {
-                log.i { "DIAGNOSTIC update: faults=$faultSnapshot temps=${temps.map { it.toInt() }}" }
+                log.i { "DIAGNOSTIC update: faults=$faultSnapshot temps=${packet.temps.map { it.toInt() }}" }
                 lastDiagnosticFaults = faultSnapshot
             }
 
-            if (containsFaults) {
-                log.w { "⚠️ DIAGNOSTIC FAULTS DETECTED: $faults" }
+            if (packet.hasFaults) {
+                log.w { "DIAGNOSTIC FAULTS DETECTED: ${packet.faults}" }
             }
         } catch (e: Exception) {
             log.e { "Failed to parse diagnostic data: ${e.message}" }
@@ -1194,35 +1182,7 @@ class KableBleRepository : BleRepository {
      */
     private fun parseHeuristicData(bytes: ByteArray) {
         try {
-            if (bytes.size < 48) return
-
-            // Parse 6 floats for concentric stats (24 bytes)
-            // Format: kgAvg, kgMax, velAvg, velMax, wattAvg, wattMax
-            val concentric = HeuristicPhaseStatistics(
-                kgAvg = getFloatLE(bytes, 0),
-                kgMax = getFloatLE(bytes, 4),
-                velAvg = getFloatLE(bytes, 8),
-                velMax = getFloatLE(bytes, 12),
-                wattAvg = getFloatLE(bytes, 16),
-                wattMax = getFloatLE(bytes, 20)
-            )
-
-            // Parse 6 floats for eccentric stats (24 bytes)
-            val eccentric = HeuristicPhaseStatistics(
-                kgAvg = getFloatLE(bytes, 24),
-                kgMax = getFloatLE(bytes, 28),
-                velAvg = getFloatLE(bytes, 32),
-                velMax = getFloatLE(bytes, 36),
-                wattAvg = getFloatLE(bytes, 40),
-                wattMax = getFloatLE(bytes, 44)
-            )
-
-            val stats = HeuristicStatistics(
-                concentric = concentric,
-                eccentric = eccentric,
-                timestamp = currentTimeMillis()
-            )
-
+            val stats = parseHeuristicPacket(bytes, timestamp = currentTimeMillis()) ?: return
             _heuristicData.value = stats
         } catch (e: Exception) {
             log.v { "Failed to parse heuristic data: ${e.message}" }
@@ -1908,7 +1868,9 @@ class KableBleRepository : BleRepository {
      * This is the CRITICAL function for Just Lift mode handle detection.
      */
     private fun parseMonitorData(data: ByteArray) {
-        if (data.size < 16) {
+        // Use extracted parser for byte-level parsing
+        val packet = parseMonitorPacket(data)
+        if (packet == null) {
             log.w { "Monitor data too short: ${data.size} bytes" }
             return
         }
@@ -1917,31 +1879,16 @@ class KableBleRepository : BleRepository {
             // Increment counter for diagnostic logging
             monitorNotificationCount++
             if (monitorNotificationCount % 100 == 0L) {
-                log.i { "📊 MONITOR NOTIFICATION #$monitorNotificationCount" }
+                log.i { "MONITOR NOTIFICATION #$monitorNotificationCount" }
             }
 
-            // Monitor characteristic data parsing (LITTLE-ENDIAN format)
-            // f0 (0-1) = ticks low
-            // f1 (2-3) = ticks high
-            // f2 (4-5) = PosA
-            // f4 (8-9) = LoadA * 100
-            // f5 (10-11) = PosB
-            // f7 (14-15) = LoadB * 100
-
-            val f0 = getUInt16LE(data, 0)  // ticks low
-            val f1 = getUInt16LE(data, 2)  // ticks high
-            val posARaw = getInt16LE(data, 4)  // Signed 16-bit for position (Issue #197)
-            val loadARaw = getUInt16LE(data, 8)
-            val posBRaw = getInt16LE(data, 10)  // Signed 16-bit for position (Issue #197)
-            val loadBRaw = getUInt16LE(data, 14)
-
-            // Reconstruct 32-bit tick counter
-            val ticks = f0 + (f1 shl 16)
-
-            // Position values scaled to millimeters (Issue #197)
-            // Raw values divided by 10.0f to get mm precision
-            var posA = posARaw / 10.0f
-            var posB = posBRaw / 10.0f
+            // Extract values from parsed packet
+            var posA = packet.posA
+            var posB = packet.posB
+            val loadA = packet.loadA
+            val loadB = packet.loadB
+            val ticks = packet.ticks
+            val status = packet.status
 
             // ===== POSITION VALIDATION (matching parent repo) =====
             // Validate position range and use last good value if invalid
@@ -1959,15 +1906,9 @@ class KableBleRepository : BleRepository {
                 lastGoodPosB = posB
             }
 
-            // Load in kg (device sends kg * 100)
-            val loadA = loadARaw / 100f
-            val loadB = loadBRaw / 100f
-
             // ===== STATUS FLAG PROCESSING =====
-            var status = 0
-            if (data.size >= 18) {
-                status = getUInt16LE(data, 16)
-                processStatusFlags(status)
+            if (packet.status != 0) {
+                processStatusFlags(packet.status)
             }
 
             // ===== SAMPLE VALIDATION =====
@@ -2440,75 +2381,30 @@ class KableBleRepository : BleRepository {
      * See parseRepsCharacteristicData() for direct REPS characteristic parsing.
      */
     private fun parseRepNotification(data: ByteArray) {
-        // Minimum 7 bytes: 1 opcode + 6 rep data (legacy format)
-        if (data.size < 7) {
-            log.w { "Rep notification too short: ${data.size} bytes (minimum 7)" }
-            return
-        }
-
         try {
             val currentTime = currentTimeMillis()
-            val notification: RepNotification
+            val notification = parseRepPacket(data, hasOpcodePrefix = true, timestamp = currentTime)
 
-            // Check if we have full 24-byte rep data (+ 1 byte opcode = 25 total)
-            if (data.size >= 25) {
-                // FULL 24-byte packet - parse all fields (skip opcode at index 0)
-                // Issue #210: Parse ALL 8 fields to match official app (Reps.java)
-                val upCounter = getInt32LE(data, 1)
-                val downCounter = getInt32LE(data, 5)
-                val rangeTop = getFloatLE(data, 9)
-                val rangeBottom = getFloatLE(data, 13)
-                val repsRomCount = getUInt16LE(data, 17)
-                val repsRomTotal = getUInt16LE(data, 19)  // Issue #210: Machine's warmup target
-                val repsSetCount = getUInt16LE(data, 21)
-                val repsSetTotal = getUInt16LE(data, 23)  // Issue #210: Machine's working target
+            if (notification == null) {
+                log.w { "Rep notification too short: ${data.size} bytes (minimum 7)" }
+                return
+            }
 
-                log.d { "Rep notification (24-byte format, RX):" }
-                log.d { "  up=$upCounter, down=$downCounter" }
-                log.d { "  repsRomCount=$repsRomCount (warmup done), repsRomTotal=$repsRomTotal (warmup target)" }
-                log.d { "  repsSetCount=$repsSetCount (working done), repsSetTotal=$repsSetTotal (working target)" }
-                log.d { "  hex=${data.joinToString(" ") { (it.toInt() and 0xFF).toString(16).padStart(2, '0').uppercase() }}" }
-
-                notification = RepNotification(
-                    topCounter = upCounter,
-                    completeCounter = downCounter,
-                    repsRomCount = repsRomCount,
-                    repsRomTotal = repsRomTotal,
-                    repsSetCount = repsSetCount,
-                    repsSetTotal = repsSetTotal,
-                    rangeTop = rangeTop,
-                    rangeBottom = rangeBottom,
-                    rawData = data,
-                    timestamp = currentTime,
-                    isLegacyFormat = false
-                )
-            } else {
-                // LEGACY 6-byte packet (Beta 4 format, Samsung devices) - parse u16 counters
-                // Skip opcode at index 0
-                val topCounter = getUInt16LE(data, 1)
-                val completeCounter = getUInt16LE(data, 5)
-
+            // Log the parsed notification
+            if (notification.isLegacyFormat) {
                 log.w { "Rep notification (LEGACY 6-byte format - Issue #187 fallback):" }
-                log.w { "  top=$topCounter, complete=$completeCounter" }
-                log.w { "  hex=${data.joinToString(" ") { (it.toInt() and 0xFF).toString(16).padStart(2, '0').uppercase() }}" }
-
-                notification = RepNotification(
-                    topCounter = topCounter,
-                    completeCounter = completeCounter,
-                    repsRomCount = 0,  // Not available in legacy format
-                    repsRomTotal = 0,
-                    repsSetCount = 0,  // Not available in legacy format
-                    repsSetTotal = 0,
-                    rangeTop = 0f,
-                    rangeBottom = 0f,
-                    rawData = data,
-                    timestamp = currentTime,
-                    isLegacyFormat = true
-                )
+                log.w { "  top=${notification.topCounter}, complete=${notification.completeCounter}" }
+                log.w { "  hex=${data.joinToString(" ") { it.toVitruvianHex() }}" }
+            } else {
+                log.d { "Rep notification (24-byte format, RX):" }
+                log.d { "  up=${notification.topCounter}, down=${notification.completeCounter}" }
+                log.d { "  repsRomCount=${notification.repsRomCount} (warmup done), repsRomTotal=${notification.repsRomTotal} (warmup target)" }
+                log.d { "  repsSetCount=${notification.repsSetCount} (working done), repsSetTotal=${notification.repsSetTotal} (working target)" }
+                log.d { "  hex=${data.joinToString(" ") { it.toVitruvianHex() }}" }
             }
 
             val emitted = _repEvents.tryEmit(notification)
-            log.d { "🔥 Emitted rep event (RX): success=$emitted, legacy=${notification.isLegacyFormat}" }
+            log.d { "Emitted rep event (RX): success=$emitted, legacy=${notification.isLegacyFormat}" }
 
             // Log to user-visible connection logs for Issue #123 diagnosis
             logRepo.debug(
@@ -2526,93 +2422,35 @@ class KableBleRepository : BleRepository {
     /**
      * Parse rep data from REPS characteristic notifications (NO opcode prefix).
      * Called when the dedicated REPS_UUID characteristic sends notifications.
-     *
-     * OFFICIAL APP FORMAT (24 bytes, Little Endian, NO opcode):
-     * - Bytes 0-3:   up (Int/u32) - up counter (concentric completions)
-     * - Bytes 4-7:   down (Int/u32) - down counter (eccentric completions)
-     * - Bytes 8-11:  rangeTop (Float) - maximum ROM boundary
-     * - Bytes 12-15: rangeBottom (Float) - minimum ROM boundary
-     * - Bytes 16-17: repsRomCount (Short/u16) - Warmup reps with proper ROM
-     * - Bytes 18-19: repsRomTotal (Short/u16) - Total reps regardless of ROM
-     * - Bytes 20-21: repsSetCount (Short/u16) - WORKING SET REP COUNT
-     * - Bytes 22-23: repsSetTotal (Short/u16) - Total reps in set
-     *
-     * LEGACY FORMAT (6 bytes):
-     * - Bytes 0-1: topCounter (u16) - concentric completions
-     * - Bytes 2-3: (unused)
-     * - Bytes 4-5: completeCounter (u16) - eccentric completions
      */
     private fun parseRepsCharacteristicData(data: ByteArray) {
-        if (data.size < 6) {
-            log.w { "REPS characteristic data too short: ${data.size} bytes (minimum 6)" }
-            return
-        }
-
         try {
             val currentTime = currentTimeMillis()
-            val notification: RepNotification
+            val notification = parseRepPacket(data, hasOpcodePrefix = false, timestamp = currentTime)
+
+            if (notification == null) {
+                log.w { "REPS characteristic data too short: ${data.size} bytes (minimum 6)" }
+                return
+            }
 
             // Log raw data for debugging
-            log.i { "🔥 REPS CHAR notification: ${data.size} bytes" }
-            log.d { "  hex=${data.joinToString(" ") { (it.toInt() and 0xFF).toString(16).padStart(2, '0').uppercase() }}" }
+            log.i { "REPS CHAR notification: ${data.size} bytes" }
+            log.d { "  hex=${data.joinToString(" ") { it.toVitruvianHex() }}" }
 
-            // Check if we have full 24-byte rep data (NO opcode prefix from REPS characteristic)
-            if (data.size >= 24) {
-                // FULL 24-byte packet - parse all fields (data starts at offset 0)
-                // Issue #210: Parse ALL 8 fields to match official app (Reps.java)
-                val upCounter = getInt32LE(data, 0)
-                val downCounter = getInt32LE(data, 4)
-                val rangeTop = getFloatLE(data, 8)
-                val rangeBottom = getFloatLE(data, 12)
-                val repsRomCount = getUInt16LE(data, 16)
-                val repsRomTotal = getUInt16LE(data, 18)  // Issue #210: Machine's warmup target
-                val repsSetCount = getUInt16LE(data, 20)
-                val repsSetTotal = getUInt16LE(data, 22)  // Issue #210: Machine's working target
-
-                log.i { "🔥 REPS (24-byte official format):" }
-                log.i { "  up=$upCounter, down=$downCounter" }
-                log.i { "  repsRomCount=$repsRomCount (warmup done), repsRomTotal=$repsRomTotal (warmup target)" }
-                log.i { "  repsSetCount=$repsSetCount (working done), repsSetTotal=$repsSetTotal (working target)" }
-                log.i { "  rangeTop=$rangeTop, rangeBottom=$rangeBottom" }
-
-                notification = RepNotification(
-                    topCounter = upCounter,
-                    completeCounter = downCounter,
-                    repsRomCount = repsRomCount,
-                    repsRomTotal = repsRomTotal,
-                    repsSetCount = repsSetCount,
-                    repsSetTotal = repsSetTotal,
-                    rangeTop = rangeTop,
-                    rangeBottom = rangeBottom,
-                    rawData = data,
-                    timestamp = currentTime,
-                    isLegacyFormat = false
-                )
+            // Log the parsed notification
+            if (notification.isLegacyFormat) {
+                log.w { "REPS (LEGACY 6-byte format):" }
+                log.w { "  top=${notification.topCounter}, complete=${notification.completeCounter}" }
             } else {
-                // LEGACY 6-byte packet (data starts at offset 0)
-                val topCounter = getUInt16LE(data, 0)
-                val completeCounter = getUInt16LE(data, 4)
-
-                log.w { "🔥 REPS (LEGACY 6-byte format):" }
-                log.w { "  top=$topCounter, complete=$completeCounter" }
-
-                notification = RepNotification(
-                    topCounter = topCounter,
-                    completeCounter = completeCounter,
-                    repsRomCount = 0,
-                    repsRomTotal = 0,
-                    repsSetCount = 0,
-                    repsSetTotal = 0,
-                    rangeTop = 0f,
-                    rangeBottom = 0f,
-                    rawData = data,
-                    timestamp = currentTime,
-                    isLegacyFormat = true
-                )
+                log.i { "REPS (24-byte official format):" }
+                log.i { "  up=${notification.topCounter}, down=${notification.completeCounter}" }
+                log.i { "  repsRomCount=${notification.repsRomCount} (warmup done), repsRomTotal=${notification.repsRomTotal} (warmup target)" }
+                log.i { "  repsSetCount=${notification.repsSetCount} (working done), repsSetTotal=${notification.repsSetTotal} (working target)" }
+                log.i { "  rangeTop=${notification.rangeTop}, rangeBottom=${notification.rangeBottom}" }
             }
 
             val emitted = _repEvents.tryEmit(notification)
-            log.i { "🔥 Emitted rep event (REPS char): success=$emitted, legacy=${notification.isLegacyFormat}, repsSetCount=${notification.repsSetCount}" }
+            log.i { "Emitted rep event (REPS char): success=$emitted, legacy=${notification.isLegacyFormat}, repsSetCount=${notification.repsSetCount}" }
 
             // Log to user-visible connection logs for Issue #123 diagnosis
             logRepo.debug(
@@ -2625,61 +2463,6 @@ class KableBleRepository : BleRepository {
         } catch (e: Exception) {
             log.e { "Error parsing REPS characteristic data: ${e.message}" }
         }
-    }
-
-    /**
-     * Read unsigned 16-bit integer in LITTLE-ENDIAN format (LSB first).
-     * This is the correct format for Vitruvian BLE protocol.
-     */
-    private fun getUInt16LE(data: ByteArray, offset: Int): Int {
-        return (data[offset].toInt() and 0xFF) or ((data[offset + 1].toInt() and 0xFF) shl 8)
-    }
-
-    /**
-     * Read signed 16-bit integer in LITTLE-ENDIAN format (LSB first).
-     * Used for position values which can be negative (Issue #197).
-     */
-    private fun getInt16LE(data: ByteArray, offset: Int): Int {
-        val unsigned = (data[offset].toInt() and 0xFF) or ((data[offset + 1].toInt() and 0xFF) shl 8)
-        // Sign-extend from 16-bit to 32-bit
-        return if (unsigned >= 0x8000) unsigned - 0x10000 else unsigned
-    }
-
-    /**
-     * Read unsigned 16-bit integer in BIG-ENDIAN format (MSB first).
-     * Used for some packet types.
-     */
-    private fun getUInt16BE(data: ByteArray, offset: Int): Int {
-        return ((data[offset].toInt() and 0xFF) shl 8) or (data[offset + 1].toInt() and 0xFF)
-    }
-
-    /**
-     * Read signed 32-bit integer in LITTLE-ENDIAN format.
-     * Used for rep counters in 24-byte packets.
-     */
-    private fun getInt32LE(data: ByteArray, offset: Int): Int {
-        return (data[offset].toInt() and 0xFF) or
-               ((data[offset + 1].toInt() and 0xFF) shl 8) or
-               ((data[offset + 2].toInt() and 0xFF) shl 16) or
-               ((data[offset + 3].toInt() and 0xFF) shl 24)
-    }
-
-    /**
-     * Read 32-bit float in LITTLE-ENDIAN format.
-     * Used for ROM boundaries in 24-byte rep packets.
-     */
-    private fun getFloatLE(data: ByteArray, offset: Int): Float {
-        val bits = getInt32LE(data, offset)
-        return Float.fromBits(bits)
-    }
-
-    /**
-     * Convert a Byte to a two-character uppercase hex string (KMP-compatible).
-     */
-    private fun Byte.toHexString(): String {
-        val hex = "0123456789ABCDEF"
-        val value = this.toInt() and 0xFF
-        return "${hex[value shr 4]}${hex[value and 0x0F]}"
     }
 
     /**
