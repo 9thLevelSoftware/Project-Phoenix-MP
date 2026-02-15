@@ -22,6 +22,8 @@ import androidx.compose.ui.unit.sp
 import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.data.repository.ExerciseVideoEntity
 import com.devil.phoenixproject.domain.model.*
+import com.devil.phoenixproject.domain.model.BiomechanicsRepResult
+import com.devil.phoenixproject.domain.model.BiomechanicsVelocityZone
 import com.devil.phoenixproject.presentation.components.VideoPlayer
 import com.devil.phoenixproject.presentation.components.AnimatedRepCounter
 import com.devil.phoenixproject.presentation.components.CircularForceGauge
@@ -65,6 +67,7 @@ fun WorkoutHud(
     loadBaselineB: Float = 0f, // Load baseline for cable B (base tension to subtract)
     timedExerciseRemainingSeconds: Int? = null, // Issue #192: Countdown for timed exercises
     isCurrentExerciseBodyweight: Boolean = false,
+    latestBiomechanicsResult: BiomechanicsRepResult? = null,
     modifier: Modifier = Modifier
 ) {
     // Determine if we're in Echo mode
@@ -142,7 +145,8 @@ fun WorkoutHud(
                         metric = metric,
                         weightUnit = weightUnit,
                         formatWeight = formatWeight,
-                        isCurrentExerciseBodyweight = isCurrentExerciseBodyweight
+                        isCurrentExerciseBodyweight = isCurrentExerciseBodyweight,
+                        latestBiomechanicsResult = latestBiomechanicsResult
                     )
                 }
             }
@@ -713,7 +717,8 @@ private fun StatsPage(
     metric: WorkoutMetric?,
     weightUnit: WeightUnit,
     formatWeight: (Float, WeightUnit) -> String,
-    isCurrentExerciseBodyweight: Boolean = false
+    isCurrentExerciseBodyweight: Boolean = false,
+    latestBiomechanicsResult: BiomechanicsRepResult? = null
 ) {
     if (isCurrentExerciseBodyweight) {
         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -772,6 +777,76 @@ private fun StatsPage(
             fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.onSurface
         )
+
+        // Biomechanics Velocity Card (after rep completion)
+        if (latestBiomechanicsResult != null) {
+            val mcv = latestBiomechanicsResult.velocity.meanConcentricVelocityMmS
+            val zone = latestBiomechanicsResult.velocity.zone
+            val zColor = zoneColor(zone)
+
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
+                ),
+                shape = RoundedCornerShape(16.dp)
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Text(
+                        "MEAN CONCENTRIC VELOCITY",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = zColor,
+                        letterSpacing = 1.sp
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceEvenly
+                    ) {
+                        StatColumn(
+                            label = "MCV",
+                            value = "${formatMcv(mcv)} m/s",
+                            color = zColor
+                        )
+                        StatColumn(
+                            label = "Zone",
+                            value = zone.name,
+                            color = zColor
+                        )
+                        StatColumn(
+                            label = "Peak",
+                            value = "${formatMcv(latestBiomechanicsResult.velocity.peakVelocityMmS)} m/s",
+                            color = zColor
+                        )
+                    }
+
+                    // Velocity loss (only shown after rep 2)
+                    val vloss = latestBiomechanicsResult.velocity.velocityLossPercent
+                    if (vloss != null) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceEvenly
+                        ) {
+                            StatColumn(
+                                label = "Vel. Loss",
+                                value = "${vloss.toInt()}%",
+                                color = if (vloss > 20f) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            val repsRemaining = latestBiomechanicsResult.velocity.estimatedRepsRemaining
+                            if (repsRemaining != null) {
+                                StatColumn(
+                                    label = "Est. Reps Left",
+                                    value = "$repsRemaining",
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
 
         // Load Section
         Card(
@@ -887,6 +962,30 @@ private fun StatsPage(
         }
 
     }
+}
+
+/**
+ * Maps a BiomechanicsVelocityZone to a display color for zone-coded UI elements.
+ */
+@Composable
+private fun zoneColor(zone: BiomechanicsVelocityZone): Color = when (zone) {
+    BiomechanicsVelocityZone.EXPLOSIVE -> Color(0xFFE53935)  // Red
+    BiomechanicsVelocityZone.FAST -> Color(0xFFFF9800)       // Orange
+    BiomechanicsVelocityZone.MODERATE -> Color(0xFFFDD835)   // Yellow
+    BiomechanicsVelocityZone.SLOW -> Color(0xFF42A5F5)       // Blue
+    BiomechanicsVelocityZone.GRIND -> Color(0xFF9E9E9E)      // Gray
+}
+
+/**
+ * Formats velocity from mm/s to m/s with 2 decimal places.
+ * Uses integer arithmetic for KMP cross-platform safety (no String.format in commonMain).
+ */
+private fun formatMcv(mmPerSec: Float): String {
+    val mPerSec = mmPerSec / 1000f
+    val rounded = kotlin.math.round(mPerSec * 100f).toInt()
+    val whole = rounded / 100
+    val frac = rounded % 100
+    return "$whole.${frac.toString().padStart(2, '0')}"
 }
 
 @Composable

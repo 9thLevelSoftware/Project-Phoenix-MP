@@ -21,6 +21,7 @@ import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.data.repository.AutoStopUiState
 import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.domain.model.*
+import com.devil.phoenixproject.domain.model.BiomechanicsRepResult
 import com.devil.phoenixproject.domain.usecase.RepRanges
 import com.devil.phoenixproject.presentation.components.AutoStartOverlay
 import com.devil.phoenixproject.presentation.components.AutoStopOverlay
@@ -103,7 +104,8 @@ fun WorkoutTab(
         loadBaselineB = state.loadBaselineB,
         timedExerciseRemainingSeconds = state.timedExerciseRemainingSeconds,
         isCurrentExerciseBodyweight = state.isCurrentExerciseBodyweight,
-        latestRepQualityScore = state.latestRepQualityScore
+        latestRepQualityScore = state.latestRepQualityScore,
+        latestBiomechanicsResult = state.latestBiomechanicsResult
     )
 }
 
@@ -161,7 +163,8 @@ fun WorkoutTab(
     loadBaselineB: Float = 0f,
     timedExerciseRemainingSeconds: Int? = null,  // Issue #192: Countdown for timed exercises
     isCurrentExerciseBodyweight: Boolean = false,
-    latestRepQualityScore: Int? = null  // Rep quality score (null = not available or free tier)
+    latestRepQualityScore: Int? = null,  // Rep quality score (null = not available or free tier)
+    latestBiomechanicsResult: BiomechanicsRepResult? = null  // Latest biomechanics analysis result
 ) {
     // Note: HapticFeedbackEffect is now global in EnhancedMainScreen
     // No need for local haptic effect here
@@ -194,6 +197,7 @@ fun WorkoutTab(
                 loadBaselineB = loadBaselineB,
                 timedExerciseRemainingSeconds = timedExerciseRemainingSeconds,
                 isCurrentExerciseBodyweight = isCurrentExerciseBodyweight,
+                latestBiomechanicsResult = latestBiomechanicsResult,
                 modifier = Modifier.fillMaxSize()
             )
 
