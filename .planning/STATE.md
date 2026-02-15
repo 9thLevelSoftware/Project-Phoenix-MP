@@ -10,16 +10,16 @@ See: .planning/PROJECT.md (updated 2026-02-14)
 ## Current Position
 
 Phase: 12 of 12 (Mobile Replay Cards) — IN PROGRESS
-Plan: 1 of 4 complete
-Status: Plan 12-01 complete — rep boundary detection implemented
-Last activity: 2026-02-15 — Plan 12-01 executed (TDD)
+Plan: 2 of 4 complete
+Status: Plan 12-02 complete — rep replay card UI implemented
+Last activity: 2026-02-15 — Plan 12-02 executed
 
-Progress: v0.4.6 complete — 31 plans across 3 milestones shipped. v0.4.7 Phase 9 complete (2 plans). Phase 10 complete (4 plans). Phase 11 complete (4 plans). Phase 12 in progress (1/4 plans).
+Progress: v0.4.6 complete — 31 plans across 3 milestones shipped. v0.4.7 Phase 9 complete (2 plans). Phase 10 complete (4 plans). Phase 11 complete (4 plans). Phase 12 in progress (2/4 plans).
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 38 (10 from v0.4.1 + 11 from v0.4.5 + 10 from v0.4.6 + 7 from v0.4.7)
+- Total plans completed: 39 (10 from v0.4.1 + 11 from v0.4.5 + 10 from v0.4.6 + 8 from v0.4.7)
 - v0.4.6 execution time: ~1 day (10 plans)
 - Average plan duration: ~16 minutes
 
@@ -42,6 +42,7 @@ Progress: v0.4.6 complete — 31 plans across 3 milestones shipped. v0.4.7 Phase
 | Phase 11 P03 | 6min | 2 tasks | 9 files |
 | Phase 11 P04 | 6min | 2 tasks | 5 files |
 | Phase 12 P01 | 3min | 1 TDD task (13 tests) | 2 files |
+| Phase 12 P02 | 5min | 3 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -67,6 +68,8 @@ v0.4.6 decisions archived — see PROJECT.md for full history.
 - [Phase 11]: Inline anonymous ExerciseSignatureRepository in tests (small interface, minimal duplication)
 - [Phase 12]: RepBoundaryDetector reuses Phase 11 valley detection constants (10mm threshold, 5-sample window, 8-sample separation)
 - [Phase 12]: Peak finding uses raw positions for accuracy, not smoothed
+- [Phase 12]: ForceSparkline height 40dp with 4dp padding for compact card embedding
+- [Phase 12]: Peak marker at concentric/eccentric transition point (end of concentric phase)
 
 ### Pending Todos
 
@@ -79,6 +82,6 @@ None.
 ## Session Continuity
 
 Last session: 2026-02-15
-Stopped at: Completed 12-01-PLAN.md (rep boundary detection)
+Stopped at: Completed 12-02-PLAN.md (rep replay card UI)
 Resume file: None
-Next action: `/gsd:execute-phase 12` — Continue with Plan 12-02
+Next action: `/gsd:execute-phase 12` — Continue with Plan 12-03
