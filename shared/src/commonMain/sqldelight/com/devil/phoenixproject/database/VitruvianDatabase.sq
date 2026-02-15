@@ -109,6 +109,8 @@ CREATE TABLE MetricSample (
     FOREIGN KEY (sessionId) REFERENCES WorkoutSession(id) ON DELETE CASCADE
 );
 
+CREATE INDEX idx_metric_sample_session ON MetricSample(sessionId);
+
 -- Personal records
 -- Supports two PR types: MAX_WEIGHT (heaviest lift) and MAX_VOLUME (weight × reps)
 CREATE TABLE PersonalRecord (

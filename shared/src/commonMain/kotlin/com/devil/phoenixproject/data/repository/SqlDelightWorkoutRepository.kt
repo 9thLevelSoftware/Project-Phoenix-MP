@@ -654,8 +654,8 @@ class SqlDelightWorkoutRepository(
     ) {
         withContext(Dispatchers.IO) {
             metrics.forEach { metric ->
-                // Calculate power: P = F × v (force × velocity)
-                val power = metric.loadA * metric.velocityA.toFloat()
+                // Calculate power: P = (loadA + loadB) × v (combined force × velocity for dual-cable)
+                val power = (metric.loadA + metric.loadB) * metric.velocityA.toFloat()
                 queries.insertMetric(
                     sessionId = sessionId,
                     timestamp = metric.timestamp,
