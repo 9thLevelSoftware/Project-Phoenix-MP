@@ -4,6 +4,8 @@ import com.devil.phoenixproject.data.migration.MigrationManager
 import com.devil.phoenixproject.data.preferences.PreferencesManager
 import com.devil.phoenixproject.data.preferences.SettingsPreferencesManager
 import com.devil.phoenixproject.domain.assessment.AssessmentEngine
+import com.devil.phoenixproject.domain.detection.ExerciseClassifier
+import com.devil.phoenixproject.domain.detection.SignatureExtractor
 import com.devil.phoenixproject.domain.usecase.ProgressionUseCase
 import com.devil.phoenixproject.domain.usecase.RepCounterFromMachine
 import com.devil.phoenixproject.domain.usecase.ResolveRoutineWeightsUseCase
@@ -23,6 +25,10 @@ val domainModule = module {
 
     // Assessment
     single { AssessmentEngine() }
+
+    // Exercise Detection
+    single { SignatureExtractor() }
+    single { ExerciseClassifier() }
 
     // Migration
     single { MigrationManager() }

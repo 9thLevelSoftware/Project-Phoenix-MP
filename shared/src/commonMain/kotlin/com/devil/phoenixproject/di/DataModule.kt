@@ -35,4 +35,7 @@ val dataModule = module {
 
     // Assessment Repository
     single<AssessmentRepository> { SqlDelightAssessmentRepository(get(), get(), get()) }
+
+    // Exercise Detection Repository
+    single<ExerciseSignatureRepository> { SqlDelightExerciseSignatureRepository(get()) }
 }
