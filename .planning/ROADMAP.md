@@ -87,7 +87,9 @@ Decompose the 2,886-line KableBleRepository monolith into 8 focused, testable mo
   3. Just Lift autostart mode detects handle grab correctly
   4. First rep always registers after workout start (baseline initialized correctly)
   5. Unit tests cover all state transitions with synthetic metrics
-**Plans**: TBD
+**Plans**: 2 plans
+  - [ ] 09-01-PLAN.md (TDD) — Create HandleStateDetector with 25+ unit tests for all state transitions
+  - [ ] 09-02-PLAN.md — Wire KableBleRepository delegation, remove inline handle state logic
 
 ### Phase 10: MonitorDataProcessor
 **Goal**: Position validation and velocity EMA extracted to focused module
