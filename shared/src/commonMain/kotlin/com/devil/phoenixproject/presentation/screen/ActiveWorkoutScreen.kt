@@ -76,6 +76,11 @@ fun ActiveWorkoutScreen(
     val hasProAccess by subscriptionManager.hasProAccess.collectAsState()
     val gatedRepQualityScore = if (hasProAccess) latestRepQuality?.composite else null
 
+    // Biomechanics data - gated to Phoenix+ tier users only (HUD-05)
+    // Free tier: all biomechanics elements (velocity card, balance bar, force curve) are hidden
+    // Data capture still happens regardless (GATE-04 from Phase 6)
+    val gatedBiomechanicsResult = if (hasProAccess) latestBiomechanicsResult else null
+
     // Badge Celebration state
     val gamificationRepository: GamificationRepository = koinInject()
     var earnedBadges by remember { mutableStateOf<List<Badge>>(emptyList()) }
@@ -260,7 +265,7 @@ fun ActiveWorkoutScreen(
         loadedRoutine, currentExerciseIndex, currentSetIndex, autoplayEnabled,
         userPreferences.summaryCountdownSeconds, loadBaselineA, loadBaselineB, canGoBack, canSkipForward,
         timedExerciseRemainingSeconds, isCurrentExerciseBodyweight, gatedRepQualityScore,
-        latestBiomechanicsResult
+        gatedBiomechanicsResult
     ) {
         WorkoutUiState(
             connectionState = connectionState,
@@ -288,7 +293,7 @@ fun ActiveWorkoutScreen(
             timedExerciseRemainingSeconds = timedExerciseRemainingSeconds,
             isCurrentExerciseBodyweight = isCurrentExerciseBodyweight,
             latestRepQualityScore = gatedRepQualityScore,
-            latestBiomechanicsResult = latestBiomechanicsResult
+            latestBiomechanicsResult = gatedBiomechanicsResult
         )
     }
 

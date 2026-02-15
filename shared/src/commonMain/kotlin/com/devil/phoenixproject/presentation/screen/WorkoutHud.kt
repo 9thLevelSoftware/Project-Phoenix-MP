@@ -25,6 +25,8 @@ import com.devil.phoenixproject.domain.model.*
 import com.devil.phoenixproject.domain.model.BiomechanicsRepResult
 import com.devil.phoenixproject.domain.model.BiomechanicsVelocityZone
 import com.devil.phoenixproject.presentation.components.BalanceBar
+import com.devil.phoenixproject.presentation.components.ExpandedForceCurve
+import com.devil.phoenixproject.presentation.components.ForceCurveMiniGraph
 import com.devil.phoenixproject.presentation.components.VideoPlayer
 import com.devil.phoenixproject.presentation.components.AnimatedRepCounter
 import com.devil.phoenixproject.presentation.components.CircularForceGauge
@@ -992,6 +994,26 @@ private fun StatsPage(
                         color = MaterialTheme.colorScheme.tertiary
                     )
                 }
+            }
+        }
+
+        // Force Curve Mini-Graph (tap to expand)
+        if (latestBiomechanicsResult != null &&
+            latestBiomechanicsResult.forceCurve.normalizedForceN.isNotEmpty()) {
+
+            var showExpandedCurve by remember { mutableStateOf(false) }
+
+            ForceCurveMiniGraph(
+                forceCurveResult = latestBiomechanicsResult.forceCurve,
+                onTapToExpand = { showExpandedCurve = true },
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            if (showExpandedCurve) {
+                ExpandedForceCurve(
+                    forceCurveResult = latestBiomechanicsResult.forceCurve,
+                    onDismiss = { showExpandedCurve = false }
+                )
             }
         }
 
