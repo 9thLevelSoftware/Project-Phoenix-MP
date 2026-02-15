@@ -33,7 +33,7 @@ See `.planning/milestones/v0.4.5-*` for archived phase details.
 **Milestone Goal:** Transform raw BLE telemetry into actionable training insights with real-time velocity tracking, force curve analysis, and bilateral asymmetry detection.
 
 - [x] **Phase 6: Core Engine** — VBT algorithms, force curve construction, asymmetry calculation, data infrastructure (2026-02-15)
-- [ ] **Phase 7: HUD Integration** — Real-time biomechanics display during workouts
+- [x] **Phase 7: HUD Integration** — Real-time biomechanics display during workouts (2026-02-15)
 - [ ] **Phase 8: Set Summary** — Post-set biomechanics visualization cards
 
 ## Phase Details
@@ -69,9 +69,9 @@ Plans:
 **Plans**: 3 plans in 3 waves
 
 Plans:
-- [ ] 07-01-PLAN.md — Data plumbing + velocity HUD on StatsPage: MCV display, zone color, velocity loss (Wave 1)
-- [ ] 07-02-PLAN.md — Balance bar and asymmetry alerts: L/R bar, severity colors, consecutive rep alert (Wave 2)
-- [ ] 07-03-PLAN.md — Force curve mini-graph with tap-to-expand and Phoenix tier gating for all biomechanics (Wave 3)
+- [x] 07-01-PLAN.md — Data plumbing + velocity HUD on StatsPage: MCV display, zone color, velocity loss (Wave 1)
+- [x] 07-02-PLAN.md — Balance bar and asymmetry alerts: L/R bar, severity colors, consecutive rep alert (Wave 2)
+- [x] 07-03-PLAN.md — Force curve mini-graph with tap-to-expand and Phoenix tier gating for all biomechanics (Wave 3)
 
 ### Phase 8: Set Summary
 **Goal**: Users see comprehensive biomechanics analysis cards after completing a set
@@ -98,8 +98,8 @@ Plans:
 | 1-4 | v0.4.1 | 10/10 | Complete | 2026-02-13 |
 | 1-5 | v0.4.5 | 11/11 | Complete | 2026-02-14 |
 | 6. Core Engine | v0.4.6 | 4/4 | Complete | 2026-02-15 |
-| 7. HUD Integration | v0.4.6 | 0/3 | Not started | - |
+| 7. HUD Integration | v0.4.6 | 3/3 | Complete | 2026-02-15 |
 | 8. Set Summary | v0.4.6 | 0/3 | Not started | - |
 
 ---
-*Last updated: 2026-02-15 after Phase 6 execution complete*
+*Last updated: 2026-02-15 after Phase 7 execution complete*
