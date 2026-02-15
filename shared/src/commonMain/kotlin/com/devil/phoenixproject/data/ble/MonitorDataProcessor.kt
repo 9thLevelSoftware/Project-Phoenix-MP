@@ -45,7 +45,14 @@ class MonitorDataProcessor(
 ) {
     private val log = Logger.withTag("MonitorDataProcessor")
 
+    /** Types of Range-of-Motion violations detected from machine status flags. */
     enum class RomViolationType { OUTSIDE_HIGH, OUTSIDE_LOW }
+
+    companion object {
+        /** Valid position range boundaries (mm), pre-computed as Float for hot-path comparison. */
+        private val MIN_POS = BleConstants.Thresholds.MIN_POSITION.toFloat()
+        private val MAX_POS = BleConstants.Thresholds.MAX_POSITION.toFloat()
+    }
 
     // -------------------------------------------------------------------------
     // Position tracking - clamping (last-good fallback)
@@ -117,18 +124,15 @@ class MonitorDataProcessor(
         val ticks = packet.ticks
 
         // ===== STAGE 1: POSITION CLAMPING (last-good fallback) =====
-        // Validate position range and use last good value if invalid.
-        // Per official app documentation, valid range is -1000 to +1000 mm.
-        val minPos = BleConstants.Thresholds.MIN_POSITION.toFloat()
-        val maxPos = BleConstants.Thresholds.MAX_POSITION.toFloat()
-
-        if (posA !in minPos..maxPos) {
+        // Replace out-of-range positions with last known good values (BLE noise recovery).
+        // Valid range: -1000 to +1000 mm per official app documentation.
+        if (posA !in MIN_POS..MAX_POS) {
             log.w { "Position A out of range: $posA, using last good: $lastGoodPosA" }
             posA = lastGoodPosA
         } else {
             lastGoodPosA = posA
         }
-        if (posB !in minPos..maxPos) {
+        if (posB !in MIN_POS..MAX_POS) {
             log.w { "Position B out of range: $posB, using last good: $lastGoodPosB" }
             posB = lastGoodPosB
         } else {
@@ -180,17 +184,8 @@ class MonitorDataProcessor(
         // Calculate raw velocity (SIGNED for proper EMA smoothing - Issue #204, #214)
         // Using signed velocity allows jitter oscillations (+2, -3, +1mm) to average toward 0
         // Issue #210: Use previousPosA/B since lastPositionA/B was updated before validateSample
-        val rawVelocityA = if (lastTimestamp > 0L) {
-            val deltaTime = (currentTime - lastTimestamp) / 1000.0
-            val deltaPos = posA - previousPosA
-            if (deltaTime > 0) deltaPos / deltaTime else 0.0
-        } else 0.0
-
-        val rawVelocityB = if (lastTimestamp > 0L) {
-            val deltaTime = (currentTime - lastTimestamp) / 1000.0
-            val deltaPos = posB - previousPosB
-            if (deltaTime > 0) deltaPos / deltaTime else 0.0
-        } else 0.0
+        val rawVelocityA = calculateRawVelocity(posA, previousPosA, currentTime)
+        val rawVelocityB = calculateRawVelocity(posB, previousPosB, currentTime)
 
         // ===== STAGE 6: EMA SMOOTHING =====
         // Apply Exponential Moving Average smoothing (Issue #204, #214)
@@ -238,6 +233,22 @@ class MonitorDataProcessor(
             velocityB = smoothedVelocityB,
             status = packet.status
         )
+    }
+
+    /**
+     * Calculate raw velocity from position delta and time delta.
+     * Returns 0 if this is the first-ever sample (no previous timestamp) or time delta is zero.
+     *
+     * @param currentPos Current position (mm)
+     * @param previousPos Previous position (mm)
+     * @param currentTime Current timestamp (ms)
+     * @return Raw velocity in mm/s (signed: positive = extending, negative = retracting)
+     */
+    private fun calculateRawVelocity(currentPos: Float, previousPos: Float, currentTime: Long): Double {
+        if (lastTimestamp <= 0L) return 0.0
+        val deltaTimeSeconds = (currentTime - lastTimestamp) / 1000.0
+        if (deltaTimeSeconds <= 0.0) return 0.0
+        return (currentPos - previousPos) / deltaTimeSeconds
     }
 
     /**
@@ -292,11 +303,8 @@ class MonitorDataProcessor(
         posA: Float, loadA: Float, posB: Float, loadB: Float,
         previousPosA: Float, previousPosB: Float
     ): Boolean {
-        val minPos = BleConstants.Thresholds.MIN_POSITION.toFloat()
-        val maxPos = BleConstants.Thresholds.MAX_POSITION.toFloat()
-
-        // Position range check (should be redundant after clamping, but defensive)
-        if (posA !in minPos..maxPos || posB !in minPos..maxPos) {
+        // Position range check (redundant after clamping in process(), but defensive)
+        if (posA !in MIN_POS..MAX_POS || posB !in MIN_POS..MAX_POS) {
             log.w { "Position out of range: posA=$posA, posB=$posB (valid: ${BleConstants.Thresholds.MIN_POSITION} to ${BleConstants.Thresholds.MAX_POSITION} mm)" }
             return false
         }
