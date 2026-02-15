@@ -10,11 +10,11 @@ See: .planning/PROJECT.md (updated 2026-02-14)
 ## Current Position
 
 Phase: 11 of 12 (Exercise Auto-Detection)
-Plan: 1 of 3 complete
-Status: Plan 01 complete - signature extraction engine with TDD
-Last activity: 2026-02-15 — Completed 11-01-PLAN.md
+Plan: 2 of 3 complete
+Status: Plan 02 complete - repository layer and DI wiring
+Last activity: 2026-02-15 — Completed 11-02-PLAN.md
 
-Progress: v0.4.6 complete — 31 plans across 3 milestones shipped. v0.4.7 Phase 9 complete (2 plans). Phase 10 complete (4 plans). Phase 11 in progress (1/3 plans, 2 TDD tasks, 27 tests).
+Progress: v0.4.6 complete — 31 plans across 3 milestones shipped. v0.4.7 Phase 9 complete (2 plans). Phase 10 complete (4 plans). Phase 11 in progress (2/3 plans).
 
 ## Performance Metrics
 
@@ -38,6 +38,7 @@ Progress: v0.4.6 complete — 31 plans across 3 milestones shipped. v0.4.7 Phase
 | Phase 10 P03 | 5min | 2 tasks | 4 files |
 | Phase 10 P04 | 8min | 2 tasks | 3 files |
 | Phase 11 P01 | 12min | 2 TDD tasks (27 tests) | 5 files |
+| Phase 11 P02 | 3min | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -56,6 +57,8 @@ v0.4.6 decisions archived — see PROJECT.md for full history.
 - [Phase 11]: Valley-based rep detection with 5-sample moving average and local minima
 - [Phase 11]: History matching threshold 0.85 before rule-based fallback
 - [Phase 11]: EMA alpha=0.3 for signature evolution (per DETECT-06)
+- [Phase 11]: String encoding for VelocityShape/CableUsage enums in DB
+- [Phase 11]: getAllSignaturesAsMap returns highest-confidence signature per exercise
 
 ### Pending Todos
 
@@ -68,6 +71,6 @@ None.
 ## Session Continuity
 
 Last session: 2026-02-15
-Stopped at: Phase 11 Plan 01 complete (signature extraction engine)
+Stopped at: Phase 11 Plan 02 complete (repository layer and DI wiring)
 Resume file: None
-Next action: `/gsd:execute-phase 11` — Continue with 11-02-PLAN.md
+Next action: `/gsd:execute-phase 11` — Continue with 11-03-PLAN.md
