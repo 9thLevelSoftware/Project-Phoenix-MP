@@ -1,522 +1,292 @@
-# Architecture Patterns: DefaultWorkoutSessionManager Decomposition
+# Architecture Patterns: KMP BLE Module Decomposition
 
-**Domain:** KMP fitness app - architectural cleanup of 4,024-line manager class
-**Researched:** 2026-02-12
-**Overall confidence:** HIGH (based on direct codebase analysis, existing design docs, established patterns)
+**Project:** Project Phoenix MP - Vitruvian Trainer Control App
+**Domain:** Kotlin Multiplatform (KMP) cross-platform BLE module architecture
+**Researched:** 2026-02-15
+**Overall Confidence:** HIGH
 
----
+## Executive Summary
 
-## Current State Analysis
+This project is decomposing a 2,886-line `KableBleRepository` monolith into 8 focused, testable modules in `commonMain`. The architecture pattern is **interface-based domain services with constructor injection**, mirroring the successful v0.4.1 management layer (MainViewModel → 5 managers).
 
-### What Exists Today
-
-```
-MainViewModel (420L, facade)
-  |-- SettingsManager (concrete class, ~100L) -- DONE
-  |-- HistoryManager (concrete class, ~120L) -- DONE
-  |-- GamificationManager (concrete class, ~130L) -- DONE
-  |-- BleConnectionManager (concrete class, ~200L) -- DONE
-  |-- DefaultWorkoutSessionManager (4,024L) -- TARGET
-        implements WorkoutStateProvider (narrow interface for BLE circular dep)
-        lateinit var bleConnectionManager -- POST-INIT SETTER (the smell)
-```
-
-**Key observation:** Phases 1-2 of the architect's plan are COMPLETE. The 5 managers exist as concrete classes (not interfaces). MainViewModel is already a thin facade. The remaining work is decomposing DefaultWorkoutSessionManager and resolving the circular dependency properly.
-
-### DefaultWorkoutSessionManager Responsibility Map
-
-From the section headers and function analysis (4,024 lines):
-
-| Section | Lines | Responsibility | Coupling |
-|---------|-------|---------------|----------|
-| State declarations | 1-349 | 30+ MutableStateFlows, 10+ private vars | Shared across all sections |
-| Init block collectors | 377-562 | 8 coroutine collectors (routines, exercises, rep events, handle state, deload, metrics) | Reads/writes nearly all state |
-| Round 1: Pure helpers | 563-898 | Bodyweight detection, single-exercise mode, set summary metrics, auto-stop logic | Reads workout state + params |
-| Round 2: Superset navigation | 899-1168 | Superset flow, next/prev step calculation | Reads routine + exercise index state |
-| Round 3: Routine CRUD + nav | 1169-1772 | saveRoutine, loadRoutine, enterSetReady, exercise navigation, RPE | Writes routine flow state + workout params |
-| Round 4: Superset CRUD | 1773-1876 | Create/update/delete supersets | Writes routine state |
-| Round 5: Weight adjustment | 1877-1984 | adjustWeight, increment/decrement, BLE packet sending | Writes workout params + BLE commands |
-| Round 6: Just Lift | 1985-2187 | Handle detection, Just Lift defaults, single exercise defaults | Writes workout state + BLE commands |
-| Round 7: Training cycles | 2188-2255 | Cycle context, progress tracking | Reads routine state, writes cycle state |
-| Round 8: Core lifecycle | 2256-4024 | startWorkout, stopWorkout, handleRepNotification, handleMonitorMetric, checkAutoStop, saveWorkoutSession, restTimer, proceedFromSummary | Reads/writes EVERYTHING |
-
-**The critical insight:** Round 8 (core lifecycle) at ~1,770 lines is the hardest to decompose because it touches ALL state. Rounds 2-4 (superset/routine navigation) at ~970 lines are the cleanest extraction candidates because they mostly read shared state and write to routine flow state.
-
----
+**Key decision:** All modules stay in `commonMain` because BLE communication logic (parsing, queueing, state machines) is platform-agnostic. Only `Kable.Peripheral` (not business logic wrapping it) is platform-dependent. This allows JVM tests without iOS/Android hardware.
 
 ## Recommended Architecture
 
-### Target Structure
+### Module Structure (8 Services)
 
 ```
-DefaultWorkoutSessionManager (~800L, coordinator + delegation)
-  |
-  |-- WorkoutCoordinator (shared state bus, ~200L)
-  |       All MutableStateFlows live here
-  |       Both sub-managers get a reference to this
-  |
-  |-- RoutineFlowManager (~1,200L)
-  |       Rounds 2, 3, 4: superset nav, routine CRUD, exercise navigation
-  |       Reads coordinator state, writes routine flow state
-  |
-  |-- ActiveSessionEngine (~1,800L)
-  |       Rounds 1, 5, 6, 7, 8: helpers, weight, just lift, cycles, core lifecycle
-  |       Reads/writes coordinator state, BLE commands
-  |
-  +-- BleConnectionManager (unchanged, external)
-        Still receives WorkoutStateProvider interface
+shared/src/commonMain/kotlin/com/devil/phoenixproject/data/ble/
+├── queue/BleOperationQueue.kt              [NEW] Mutex serialization
+├── protocol/ProtocolParser.kt              [NEW] Byte parsing
+├── handle/HandleStateDetector.kt           [NEW] 4-state machine
+├── monitor/MonitorDataProcessor.kt         [NEW] Cable validation, EMA
+├── polling/MetricPollingEngine.kt          [NEW] Polling + heartbeat
+├── connection/KableBleConnectionManager.kt [NEW] Scanning + lifecycle
+├── easter/DiscoMode.kt                     [NEW] LED cycling
+└── KableBleRepository.kt                   [REFACTORED] Thin facade
 ```
-
-### Why This Structure (Not Deeper Decomposition)
-
-The architect's original design doc proposed exactly this split. Having analyzed the actual code, I confirm it is the right cut because:
-
-1. **RoutineFlowManager is the natural seam.** Routine navigation (which exercise, which set, superset cycling) is conceptually separate from workout execution (start, stop, rep counting, auto-stop). They share state (current exercise index, workout parameters) but have distinct write domains.
-
-2. **Deeper decomposition (e.g., separate AutoStopManager, WeightManager) would create more coupling, not less.** Weight adjustment needs BLE commands + workout parameters + auto-stop state. Auto-stop needs metrics + rep counter + workout state. Splitting these creates more cross-references than the current structure.
-
-3. **800L coordinator class is manageable.** The coordinator mostly delegates to RoutineFlowManager or ActiveSessionEngine, wires init block collectors, and implements the public interface.
 
 ### Component Boundaries
 
-| Component | Responsibility | Reads From | Writes To |
-|-----------|---------------|------------|-----------|
-| WorkoutCoordinator | Holds ALL MutableStateFlows, exposes read-only StateFlows | N/A (data store) | N/A (data store) |
-| DefaultWorkoutSessionManager | Public API, init block wiring, delegates to sub-managers | Coordinator | Coordinator (via sub-managers) |
-| RoutineFlowManager | Routine CRUD, exercise/set/superset navigation, set-ready flow | Coordinator (routineFlowState, loadedRoutine, exerciseIndex, setIndex, workoutParameters) | Coordinator (routineFlowState, exerciseIndex, setIndex, skippedExercises, completedExercises, workoutParameters) |
-| ActiveSessionEngine | Workout start/stop, rep processing, auto-stop, weight adjustment, Just Lift, training cycles, save session | Coordinator (workoutState, workoutParameters, repCount, metrics, etc.) | Coordinator (workoutState, repCount, currentMetric, autoStopState, etc.) |
-| BleConnectionManager | Connection lifecycle, connection-loss detection | WorkoutStateProvider (narrow interface) | Own state only |
+| Component | Responsibility | Testable? |
+|-----------|-----------------|-----------|
+| **BleOperationQueue** | Serialize BLE write/read (Issue #222) | YES |
+| **ProtocolParser** | Byte→domain parsing | YES |
+| **HandleStateDetector** | 4-state machine (Issue #176) | YES |
+| **MonitorDataProcessor** | Cable validation + EMA (Issue #210) | YES |
+| **MetricPollingEngine** | Polling loops + heartbeat | YES |
+| **KableBleConnectionManager** | Scanning + lifecycle | PARTIAL |
+| **DiscoMode** | LED cycling easter egg | YES |
+| **KableBleRepository** | Orchestrator facade | YES |
 
-### Data Flow
+## Key Architecture Patterns
 
-```
-UI Screen
-  |
-  v
-MainViewModel (facade)
-  |
-  v
-DefaultWorkoutSessionManager (public API)
-  |
-  +---> RoutineFlowManager.loadRoutine(routine)
-  |       |-- Resolves weights
-  |       |-- Sets coordinator._loadedRoutine
-  |       |-- Sets coordinator._routineFlowState = Overview
-  |
-  +---> ActiveSessionEngine.startWorkout()
-  |       |-- Reads coordinator._workoutParameters
-  |       |-- Sends BLE start packet
-  |       |-- Sets coordinator._workoutState = Countdown/Active
-  |       |-- Starts monitorDataCollectionJob
-  |
-  +---> ActiveSessionEngine.handleSetCompletion() [internal]
-  |       |-- Calls saveWorkoutSession()
-  |       |-- Calls gamificationManager.processPostSaveEvents()
-  |       |-- Sets coordinator._workoutState = SetSummary
-  |
-  +---> DefaultWorkoutSessionManager.proceedFromSummary()
-          |-- If routine has next step:
-          |     ActiveSessionEngine checks autoplay
-          |     RoutineFlowManager.enterSetReady(nextEx, nextSet)
-          |-- If routine complete:
-          |     RoutineFlowManager.showRoutineComplete()
-```
+### Pattern 1: Interface + Constructor Injection
 
-**Critical coupling point:** `proceedFromSummary()` is where ActiveSession and RoutineFlow meet. This function stays in DefaultWorkoutSessionManager (the coordinator layer) because it reads from both domains and decides the flow.
-
----
-
-## Resolving the Circular Dependency
-
-### Current State (The Smell)
+Constructor injection enables testability through dependency substitution. Inject interfaces, not concrete implementations.
 
 ```kotlin
-// In MainViewModel:
-val workoutSessionManager = DefaultWorkoutSessionManager(...)
-val bleConnectionManager = BleConnectionManager(..., workoutSessionManager, ...)
-init {
-    workoutSessionManager.bleConnectionManager = bleConnectionManager  // POST-INIT SETTER
+interface BleOperationQueue {
+    suspend fun <T> execute(operation: suspend () -> T): T
+}
+
+class TestQueue : BleOperationQueue {
+    override suspend fun <T> execute(op: suspend () -> T) = op()
 }
 ```
 
-`DefaultWorkoutSessionManager` uses `bleConnectionManager` for:
-1. `setConnectionError(message)` -- when BLE send fails during workout
-2. That's it. One method call.
+**When to use:** Services needing behavior substitution (queuing, I/O, Kable wrapping)
 
-`BleConnectionManager` uses `WorkoutStateProvider` for:
-1. `isWorkoutActiveForConnectionAlert` -- to decide if connection loss should show alert
+### Pattern 2: Pure Functions for Data Transformation
 
-### Recommended Resolution: Event-Based Decoupling
-
-**Do NOT use the WorkoutCoordinator proposed in the architect doc for this.** The coordinator is for internal DWSM decomposition. The BLE circular dep is a separate concern.
-
-**Option chosen: Eliminate the lateinit entirely.**
+Pure functions have no side effects. Input → Output. Easy to test without mocks.
 
 ```kotlin
-// Step 1: DWSM no longer references BleConnectionManager directly
-// Instead, it emits connection errors through an event flow
-
-class DefaultWorkoutSessionManager(...) : WorkoutStateProvider {
-    // Replace: lateinit var bleConnectionManager
-    // With: event-driven error reporting
-    private val _connectionErrors = MutableSharedFlow<String>(extraBufferCapacity = 5)
-    val connectionErrors: SharedFlow<String> = _connectionErrors.asSharedFlow()
-
-    // In BLE send failure handlers, instead of:
-    //   bleConnectionManager.setConnectionError(message)
-    // Do:
-    //   _connectionErrors.emit(message)
+object ProtocolParser {
+    fun parseRepNotification(bytes: ByteArray): RepNotification { ... }
 }
 
-// Step 2: MainViewModel wires the event to BleConnectionManager
-init {
-    viewModelScope.launch {
-        workoutSessionManager.connectionErrors.collect { error ->
-            bleConnectionManager.setConnectionError(error)
+@Test
+fun parseRepNotificationEdgeCases() {
+    val legacy6Bytes = byteArrayOf(0x01, 0x00, 0x00, 0x00, 0x02, 0x00)
+    val rep = ProtocolParser.parseRepNotification(legacy6Bytes)
+    assertEquals(1, rep.topCounter)
+}
+```
+
+**When to use:** All parsing, validation, transformation logic
+
+### Pattern 3: Callback-Based Polling
+
+Callbacks decouple polling engine from data processing. Inject test handlers to verify behavior.
+
+```kotlin
+interface PollingCallback {
+    suspend fun onMetricSampled(data: CableData)
+    suspend fun onRepDetected(rep: RepNotification)
+}
+
+class MetricPollingEngine(
+    private val callback: PollingCallback,
+    private val queue: BleOperationQueue
+) {
+    suspend fun startMonitorPolling(peripheral: Peripheral) {
+        while (isPollingActive) {
+            val data = queue.execute { peripheral.read(MONITOR_CHAR_UUID) }
+            callback.onMetricSampled(processMonitorData(data))
         }
     }
 }
 ```
 
-**Why this is better:**
-- No `lateinit var` (eliminates potential UninitializedPropertyAccessException)
-- No circular reference (DWSM does not know BleConnectionManager exists)
-- WorkoutStateProvider interface stays (it's already clean -- read-only, one property)
-- MainViewModel already does coordination wiring; one more collector is natural
+**When to use:** Long-running operations (polling, heartbeat)
 
-**Confidence:** HIGH. This is a well-established pattern. The existing code only calls one method on bleConnectionManager from DWSM, making this trivial.
+### Pattern 4: State Machines with Explicit Transitions
 
----
-
-## Koin Module Structure for 8+ Managers
-
-### Current Problem
-
-All DI is in a single `commonModule` (92 lines). Managers are NOT in Koin -- they're created inline in MainViewModel's constructor body, receiving `viewModelScope`.
-
-### Recommended: Keep Managers Out of Koin (For Now)
-
-**Do not put managers into Koin.** Here is why:
-
-1. **Scope lifecycle.** Managers need `viewModelScope` from MainViewModel. Koin `single` beans outlive viewModelScope. Koin `factory` beans create new instances each time. Neither matches "same lifecycle as the ViewModel that owns them."
-
-2. **Koin `viewModel` scoped providers** exist but add complexity for no gain. The managers are implementation details of MainViewModel's decomposition, not independently injectable services.
-
-3. **No screen needs to inject a manager directly.** All 20+ screens take `viewModel: MainViewModel` as a parameter (verified by grepping screen signatures). Screens access managers through the facade.
-
-### When to Move to Koin (Future Phase)
-
-Move managers to Koin ONLY when:
-- Screens start accessing managers directly (UI decoupling phase)
-- Multiple ViewModels need the same manager instance
-- Test setup becomes painful without DI
-
-### Recommended Koin Structure for When That Day Comes
-
-Split the single `commonModule` into feature modules:
+State machines have clear contracts and edge case handling.
 
 ```kotlin
-// di/DataModule.kt
-val dataModule = module {
-    single { DatabaseFactory(get()).createDatabase() }
-    single { ExerciseImporter(get()) }
-    single<ExerciseRepository> { SqlDelightExerciseRepository(get(), get()) }
-    single<WorkoutRepository> { SqlDelightWorkoutRepository(get(), get()) }
-    single<PersonalRecordRepository> { SqlDelightPersonalRecordRepository(get()) }
-    single<GamificationRepository> { SqlDelightGamificationRepository(get()) }
-    single<TrainingCycleRepository> { SqlDelightTrainingCycleRepository(get()) }
-    single<CompletedSetRepository> { SqlDelightCompletedSetRepository(get()) }
-    single<ProgressionRepository> { SqlDelightProgressionRepository(get()) }
-    single<UserProfileRepository> { SqlDelightUserProfileRepository(get()) }
+enum class HandleState {
+    WaitingForRest, Released, Grabbed, Moving
 }
 
-// di/SyncModule.kt
-val syncModule = module {
-    single { PortalTokenStorage(get()) }
-    single { PortalApiClient(tokenProvider = { get<PortalTokenStorage>().getToken() }) }
-    single<SyncRepository> { SqlDelightSyncRepository(get()) }
-    single { SyncManager(get(), get(), get()) }
-    single { SyncTriggerManager(get(), get()) }
-    single<AuthRepository> { PortalAuthRepository(get(), get()) }
-    single { SubscriptionManager(get()) }
-}
+class HandleStateDetector(private val grabForceThresholdN: Float = 30f) {
+    private var currentState = HandleState.WaitingForRest
 
-// di/DomainModule.kt
-val domainModule = module {
-    single { RepCounterFromMachine() }
-    single { ProgressionUseCase(get(), get()) }
-    factory { ResolveRoutineWeightsUseCase(get()) }
-    single { TemplateConverter(get()) }
-}
-
-// di/PresentationModule.kt
-val presentationModule = module {
-    single<PreferencesManager> { SettingsPreferencesManager(get()) }
-    single { MigrationManager() }
-
-    factory { MainViewModel(get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get()) }
-    factory { ConnectionLogsViewModel() }
-    factory { CycleEditorViewModel(get()) }
-    factory { GamificationViewModel(get()) }
-    single { ThemeViewModel(get()) }
-    single { EulaViewModel(get()) }
-    factory { LinkAccountViewModel(get()) }
-}
-
-// di/KoinInit.kt
-fun initKoin() {
-    startKoin {
-        modules(platformModule, dataModule, syncModule, domainModule, presentationModule)
+    fun processMetric(forceN: Float): HandleState {
+        currentState = when (currentState) {
+            WaitingForRest -> if (forceN < 5f) Released else WaitingForRest
+            Released -> if (forceN > grabForceThresholdN) Grabbed else Released
+            Grabbed -> if (forceN < 5f) Released else Grabbed
+            Moving -> Moving
+        }
+        return currentState
     }
 }
 ```
 
-**Confidence:** HIGH. This is standard Koin structuring for apps of this size.
+**When to use:** Handle state, connection states
 
----
+## commonMain vs Platform-Specific Split
 
-## UI Screen Access Pattern
+### All BLE Modules in commonMain
 
-### Current Pattern (Keep It)
+All 8 modules live in `commonMain` because their logic is platform-agnostic.
 
-All screens receive `viewModel: MainViewModel` as a Compose function parameter. This is passed down from the navigation graph. Screens observe `viewModel.workoutState`, `viewModel.routines`, etc.
+**Why:**
+1. **Business logic is platform-agnostic** — parsing bytes, validating state doesn't care about OS
+2. **Code reuse** — iOS and Android use identical state machines and parsing
+3. **Testing** — JVM tests run fast, no emulator needed
+4. **Kable abstracts the hard part** — we just use Kable's API, not OS-level BLE
+
+### Only Wrap Kable APIs
+
+The ONLY platform-specific part is `Kable.Scanner` and `Kable.Peripheral`. Wrap these in interfaces:
 
 ```kotlin
-// Example: ActiveWorkoutScreen
-fun ActiveWorkoutScreen(
-    navController: NavController,
-    viewModel: MainViewModel,
-    exerciseRepository: ExerciseRepository
-) {
-    val workoutState by viewModel.workoutState.collectAsState()
-    val repCount by viewModel.repCount.collectAsState()
-    // ...
+// commonMain - abstraction over Kable
+interface BlePeripheralAdapter {
+    suspend fun connect()
+    suspend fun disconnect()
+    suspend fun read(serviceUuid: String, charUuid: String): ByteArray
+}
+
+// androidMain/iosMain - platform implementations
+actual class KableBlePeripheralAdapter(val kablePeripheral: Peripheral) : BlePeripheralAdapter {
+    actual override suspend fun connect() {
+        kablePeripheral.connect()
+    }
 }
 ```
 
-### Why NOT to Change This Now
+**Result:** Tests inject mock `BlePeripheralAdapter`, never touch Kable directly.
 
-1. **20+ screens** take MainViewModel. Changing signatures is a massive diff with no behavioral change.
-2. The facade pattern works. Screens don't care that workoutState comes from DWSM internally.
-3. The UI decoupler analysis (`.planning/refactoring/ui-decoupler-analysis.md`) already documents the future plan for screens to take narrower interfaces.
+## Testing Strategy by Module Type
 
-### Future Pattern (When UI Decoupling Happens)
+### Pure Functions (ProtocolParser)
 
-```kotlin
-// Future: screens take narrow interfaces, not the god-ViewModel
-fun ActiveWorkoutScreen(
-    workoutState: StateFlow<WorkoutState>,
-    repCount: StateFlow<RepCount>,
-    onStopWorkout: () -> Unit,
-    onAdjustWeight: (Float) -> Unit,
-    // ...
-)
-```
-
-This is a separate milestone. Do NOT mix it with the DWSM decomposition.
-
----
-
-## Patterns to Follow
-
-### Pattern 1: Coordinator as Shared State Bus
-
-**What:** A concrete class holding all MutableStateFlows, referenced by both RoutineFlowManager and ActiveSessionEngine.
-
-**When:** When two components need read/write access to the same state and splitting ownership would create excessive eventing.
-
-**Implementation:**
+- **Setup:** None
+- **Approach:** Data-driven edge cases
+- **Coverage:** 95%+
 
 ```kotlin
-class WorkoutCoordinator {
-    // Workout execution state
-    val _workoutState = MutableStateFlow<WorkoutState>(WorkoutState.Idle)
-    val workoutState: StateFlow<WorkoutState> = _workoutState.asStateFlow()
-
-    val _workoutParameters = MutableStateFlow(WorkoutParameters.DEFAULT)
-    val workoutParameters: StateFlow<WorkoutParameters> = _workoutParameters.asStateFlow()
-
-    // Routine navigation state
-    val _routineFlowState = MutableStateFlow<RoutineFlowState>(RoutineFlowState.NotInRoutine)
-    val _currentExerciseIndex = MutableStateFlow(0)
-    val _currentSetIndex = MutableStateFlow(0)
-    val _loadedRoutine = MutableStateFlow<Routine?>(null)
-
-    // Non-flow mutable state
-    var currentSessionId: String? = null
-    var workoutStartTime: Long = 0
-    var stopWorkoutInProgress = false
-    var setCompletionInProgress = false
-    // ... etc
+@Test
+fun parseRepNotificationAllFormats() {
+    val officialFormat = byteArrayOf(...24 bytes...)
+    val rep = ProtocolParser.parseRepNotification(officialFormat)
+    assertNotNull(rep)
 }
 ```
 
-**Convention:** `_` prefix properties are mutable, used by sub-managers. Non-prefixed are read-only, exposed to UI.
+### Stateful (HandleStateDetector, MonitorDataProcessor)
 
-### Pattern 2: Narrow Interface for Cross-Component Communication
+- **Setup:** Constructor parameters
+- **Approach:** State assertions
+- **Coverage:** 90%+
 
-**What:** Instead of passing full manager references, pass a minimal interface with only the needed property/method.
+### Async (BleOperationQueue, MetricPollingEngine)
 
-**Already in use:** `WorkoutStateProvider` with single property `isWorkoutActiveForConnectionAlert`.
+- **Setup:** Mock dependencies
+- **Approach:** runTest { }, Flow testing with turbine
+- **Coverage:** 85%+
 
-**Apply to:** The event-based connection error pattern replaces the need for DWSM to reference BleConnectionManager at all.
+```kotlin
+@Test
+fun queueSerializesOperations() = runTest {
+    val queue = BleOperationQueue()
+    val order = mutableListOf<Int>()
 
-### Pattern 3: Init Block Collector Ownership
+    launch { queue.execute { order.add(1); delay(10) } }
+    launch { queue.execute { order.add(2) } }
+    advanceUntilIdle()
+    assertEquals(listOf(1, 2), order)
+}
+```
 
-**What:** Each coroutine collector in the init block should live in the component that acts on its data.
+### Integration (KableBleRepository)
 
-**Current:** All 8 collectors are in DWSM's init block.
-
-**After decomposition:**
-
-| Collector | Owner | Why |
-|-----------|-------|-----|
-| Routines list (workoutRepository.getAllRoutines()) | DefaultWorkoutSessionManager | Initializes coordinator._routines |
-| Exercise import | DefaultWorkoutSessionManager | One-time initialization |
-| RepCounter onRepEvent | ActiveSessionEngine | Processes rep events, updates state |
-| HandleState collector | ActiveSessionEngine | Auto-start/stop logic |
-| Deload event collector | ActiveSessionEngine | Firmware auto-stop |
-| Monitor metrics collector | ActiveSessionEngine | Real-time BLE data processing |
-| Rep events collection | ActiveSessionEngine | Connects to BLE repo |
-| Workout data collection | ActiveSessionEngine | Metric history collection |
-
----
+- **Setup:** Fake all sub-modules
+- **Approach:** End-to-end scenarios
+- **Coverage:** 70%+
 
 ## Anti-Patterns to Avoid
 
-### Anti-Pattern 1: Over-Decomposition
+### 1. Hiding Kable Behind Concrete Class
 
-**What:** Splitting DWSM into 6+ tiny managers (AutoStopManager, WeightManager, RestTimerManager, etc.)
+**Bad:** Can't mock, tests need hardware
+**Good:** Abstracted via interface, tests inject fake
 
-**Why bad:** Auto-stop reads metrics, workout state, rep counter, and workout parameters. Weight adjustment reads workout parameters and sends BLE commands. Rest timer reads workout state and transitions to next set via routine navigation. Each "small manager" would need references to 3-4 others, creating a web of dependencies worse than the current monolith.
+### 2. Circular Mutable State Dependencies
 
-**Instead:** Two sub-managers (RoutineFlow + ActiveSession) with a shared coordinator. This is the minimum viable decomposition.
+**Bad:** Classes referencing each other mutably
+**Good:** Use callbacks or shared state bus
 
-### Anti-Pattern 2: Making Managers Koin Singletons
+### 3. Testing Platform-Specific Code
 
-**What:** Registering SettingsManager, HistoryManager, etc. as `single` in Koin and injecting them into screens.
+**Bad:** Trying to unit test Kable directly
+**Good:** Test abstraction in commonTest
 
-**Why bad:** Managers share `viewModelScope`. If a screen gets a Koin-scoped SettingsManager, it outlives the ViewModel, leading to scope cancellation bugs. Additionally, screens would need to import 3-4 managers instead of one ViewModel, increasing coupling.
+### 4. Mixing Polling with Domain Logic
 
-**Instead:** Keep managers as ViewModel-owned. Screens access through MainViewModel facade.
-
-### Anti-Pattern 3: Using Coordinator as a God Object
-
-**What:** Putting business logic IN the WorkoutCoordinator (e.g., validation, state transition rules).
-
-**Why bad:** Coordinator becomes the new monolith. It should be a dumb data container.
-
-**Instead:** Coordinator holds state. Sub-managers hold logic. Coordinator has zero methods (only properties).
-
-### Anti-Pattern 4: Premature Interface Extraction
-
-**What:** Creating interfaces for RoutineFlowManager and ActiveSessionEngine.
-
-**Why bad:** These are internal implementation details of DWSM. No external consumer needs to swap implementations. Interfaces add indirection with no testability benefit (test the integration, not mocked internals).
-
-**Instead:** Concrete classes. If testing is needed, test through DWSM's public API with fake repositories.
-
----
-
-## Build Order (Dependency-Aware)
-
-### Phase 1: WorkoutCoordinator (No Behavioral Change)
-
-**New file:** `WorkoutCoordinator.kt` (~200L)
-**Modifies:** `DefaultWorkoutSessionManager.kt`
-
-Extract all MutableStateFlow declarations and shared mutable vars into WorkoutCoordinator. DWSM creates it internally and delegates all StateFlow properties to it. Zero behavioral change, zero API change.
-
-**Verification:** All existing tests pass. App behavior identical.
-
-### Phase 2: Resolve Circular Dependency (Small Behavioral Change)
-
-**Modifies:** `DefaultWorkoutSessionManager.kt`, `MainViewModel.kt`
-
-Replace `lateinit var bleConnectionManager` with `connectionErrors: SharedFlow<String>`. Wire in MainViewModel's init block.
-
-**Verification:** Test that BLE send failures still surface as connection errors in the UI.
-
-### Phase 3: Extract RoutineFlowManager
-
-**New file:** `RoutineFlowManager.kt` (~1,200L)
-**Modifies:** `DefaultWorkoutSessionManager.kt` (removes ~1,200L)
-
-Move Rounds 2, 3, 4 (superset navigation, routine CRUD + navigation, superset CRUD). RoutineFlowManager takes WorkoutCoordinator + repositories as constructor params.
-
-DWSM creates RoutineFlowManager in constructor and delegates routine operations to it.
-
-**Critical integration point:** `proceedFromSummary()` stays in DWSM because it orchestrates between ActiveSession and RoutineFlow.
-
-**Verification:** Full routine flow E2E test: load routine -> navigate exercises -> complete sets -> rest timer -> routine complete.
-
-### Phase 4: Extract ActiveSessionEngine
-
-**New file:** `ActiveSessionEngine.kt` (~1,800L)
-**Modifies:** `DefaultWorkoutSessionManager.kt` (reduces to ~800L)
-
-Move Rounds 1, 5, 6, 7, 8 (helpers, weight, just lift, cycles, core lifecycle). ActiveSessionEngine takes WorkoutCoordinator + repositories + BLE + rep counter as constructor params.
-
-**Critical functions that stay in DWSM** (orchestration between both sub-managers):
-- `proceedFromSummary()` -- decides rest timer vs next set vs routine complete
-- `startSetFromReady()` -- transitions from routine flow (SetReady) to active workout
-- Init block collectors that reference both sub-managers
-
-**Verification:** Full workout lifecycle E2E test: start -> active -> auto-stop -> summary -> rest -> next set -> complete.
-
-### Phase 5: Characterization Tests (Parallel With Phases 3-4)
-
-Write tests BEFORE extraction where possible:
-- Routine loading with weight resolution
-- Superset navigation sequencing
-- Auto-stop stall detection state machine
-- Just Lift handle detection -> auto-start -> auto-stop flow
-- `proceedFromSummary()` branching logic (autoplay on/off, routine vs single exercise)
-
-Use the existing `WorkoutRobot` and fake repositories. The robot currently targets MainViewModel -- after extraction, it should still work identically (DWSM's API hasn't changed, just its internals).
-
----
+**Bad:** Polling engine doing data conversion
+**Good:** Separate concerns
 
 ## Scalability Considerations
 
-| Concern | Current (4,024L monolith) | After decomposition (4 files) | Future (UI decoupling) |
-|---------|---------------------------|-------------------------------|------------------------|
-| Developer comprehension | Must understand entire file to change anything | Can focus on RoutineFlow or ActiveSession independently | Screens only know their narrow interface |
-| Test isolation | Must construct full DWSM with 13 deps to test anything | Can test RoutineFlowManager with coordinator + exercise repo only | Screen tests with mocked flows |
-| Merge conflicts | Any workout change touches same file | Routine changes in RoutineFlow, workout changes in ActiveSession | Minimal |
-| New workout mode | Understand all 4,024 lines | Add to ActiveSessionEngine (~1,800L relevant) | Same |
-| New exercise type | Understand routine nav + workout logic | Routine type in RoutineFlowManager, execution in ActiveSessionEngine | Same |
+| Concern | Approach |
+|---------|----------|
+| **Polling throughput (100+ metrics/sec)** | Check queue depth, monitor backlog |
+| **Memory: parsing buffers** | Re-use buffers |
+| **Memory: state machines** | < 1KB each |
+| **BLE queue depth** | Should be 1-2, log if > 5 |
+| **Coroutine leaks** | Cancel on disconnect |
 
----
+## Decision: All Modules in commonMain (Not expect/actual)
 
-## Integration Points Summary
+### Why NOT expect/actual?
 
-### New Components
+1. No platform difference in logic
+2. expect/actual adds complexity with no benefit
+3. Existing patterns use commonMain (v0.4.1 managers)
 
-| Component | Type | Location | Depends On |
-|-----------|------|----------|------------|
-| `WorkoutCoordinator` | Concrete class | `presentation/manager/WorkoutCoordinator.kt` | Domain models only |
-| `RoutineFlowManager` | Concrete class | `presentation/manager/RoutineFlowManager.kt` | WorkoutCoordinator, ExerciseRepository, WorkoutRepository, PreferencesManager, ResolveRoutineWeightsUseCase |
-| `ActiveSessionEngine` | Concrete class | `presentation/manager/ActiveSessionEngine.kt` | WorkoutCoordinator, BleRepository, WorkoutRepository, ExerciseRepository, PersonalRecordRepository, RepCounterFromMachine, PreferencesManager, GamificationManager, TrainingCycleRepository, CompletedSetRepository, SyncTriggerManager, SettingsManager |
+### When to use expect/actual:
 
-### Modified Components
+- Platform-specific schedulers (use Dispatchers.IO instead)
+- File I/O (use SQLDelight instead)
+- Platform logging (use Kermit instead)
 
-| Component | Change | Risk |
-|-----------|--------|------|
-| `DefaultWorkoutSessionManager` | Reduced from 4,024L to ~800L coordinator | HIGH - must preserve all behavior |
-| `MainViewModel` | Add connectionErrors collector, remove lateinit wiring | LOW - small addition |
-| `BleConnectionManager` | None (WorkoutStateProvider interface unchanged) | NONE |
+**Conclusion:** All 8 modules in `shared/src/commonMain`.
 
-### Unchanged Components
+## Alignment with Existing Project Patterns
 
-All UI screens, all repositories, all other ViewModels, all domain models, Koin module structure.
+| Pattern | Applied? |
+|---------|----------|
+| `data/repository/BleRepository` interface + constructor injection | YES |
+| FakeBleRepository in commonTest | YES |
+| commonTest + androidUnitTest split | YES |
+| Koin DI with feature modules | YES |
+| No expect/actual for business logic | YES |
+| 5 managers in commonMain (v0.4.1) | YES |
 
----
+## Source References
 
-## Sources
+**Authoritative sources verified:**
 
-- Direct codebase analysis (PRIMARY): `DefaultWorkoutSessionManager.kt` (4,024L), `MainViewModel.kt` (420L), `BleConnectionManager.kt` (~200L), `AppModule.kt` (92L)
-- Existing design docs: `.planning/refactoring/architect-interface-design.md`, `.planning/refactoring/surgeon-extraction-plan.md`
-- Existing state: `.planning/STATE.md` (confirms Phases 1-2 complete)
-- UI screen signature analysis: 20+ screens all take `viewModel: MainViewModel`
-- Test infrastructure: `WorkoutRobot.kt`, 10+ fake repositories in `testutil/`
+- [Kotlin Official Testing Docs](https://kotlinlang.org/docs/multiplatform/multiplatform-run-tests.html) — Confirms commonTest best practice
+- [KMP Testing Guide 2025](https://www.kmpship.app/blog/kotlin-multiplatform-testing-guide-2025) — Validates constructor injection, fake-first approach
+- [Kable GitHub](https://github.com/JuulLabs/kable) — Coroutine-based API, requires wrapper
+- **Existing Codebase:** FakeBleRepository (commonTest), 5 managers (v0.4.1)
+
+## Recommended Phases
+
+1. Extract BleOperationQueue + commonTest
+2. Extract ProtocolParser + edge-case tests
+3. Extract HandleStateDetector + state machine tests (Issue #176)
+4. Extract MonitorDataProcessor + validation tests (Issue #210)
+5. Extract MetricPollingEngine + polling tests
+6. Extract KableBleConnectionManager + scanning tests
+7. Extract DiscoMode (self-contained)
+8. Refactor KableBleRepository as facade
+
+**Success:** Each phase compiles, passes characterization tests, verified on device.

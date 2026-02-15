@@ -1,273 +1,168 @@
-# Technology Stack: Refactoring Additions
+# Technology Stack: KMP BLE Testing & Mocking
 
-**Project:** Project Phoenix MP - Architectural Decomposition
-**Researched:** 2026-02-12
-**Scope:** Stack additions for large-scale KMP refactoring (testing, DI patterns, Compose tooling)
+**Project:** Project Phoenix MP (KMP BLE Decomposition Milestone)
+**Focus:** Testing infrastructure for decomposed BLE modules
+**Researched:** 2026-02-15
+**Confidence:** HIGH
 
-## Current Stack (Already Validated - DO NOT Change)
+## Recommended Testing Stack
 
-| Technology | Version | Notes |
-|------------|---------|-------|
-| Kotlin | 2.3.0 | Upgraded from 2.0.21 documented in CLAUDE.md |
-| Compose Multiplatform | 1.10.0 | Upgraded from 1.7.1 - includes unified @Preview |
-| AGP | 9.0.0 | Upgraded from 8.5.2 |
-| Koin | 4.1.1 | Upgraded from 4.0.0 |
-| SQLDelight | 2.2.1 | Upgraded from 2.0.2 |
-| Coroutines | 1.10.2 | Upgraded from 1.9.0 |
+### Core Testing Framework
+| Technology | Version | Purpose | Why |
+|------------|---------|---------|-----|
+| kotlinx-coroutines-test | 1.9.0 | Virtual time control + suspend testing | Already in shared module; provides runTest builder, virtual time advancement (critical for BLE timing), and TestDispatcher for coroutine isolation. Industry standard for Kotlin async testing. |
+| kotlin-test | 2.0.21 | Cross-platform assertion library | Part of stdlib; works on all KMP targets; provides assertEquals, assertTrue, etc. without external dependencies. |
+| app.cash.turbine:turbine | 1.2.1 | Flow/SharedFlow testing | Already in shared module; cleanly tests reactive streams without manual collection. Essential for testing BLE notification flows and state emissions. Prevents flaky tests. |
+| junit | 4.13.2 | Test runner (Android) | Already in androidUnitTest; required for running tests in Gradle. Not needed for commonTest (Kotlin/Native uses native test runner). |
 
-**Important:** The version catalog (`libs.versions.toml`) reflects significant upgrades beyond what CLAUDE.md documents. All research below targets the actual current versions.
+### Dependency Injection & Module Testing
+| Technology | Version | Purpose | Why |
+|------------|---------|---------|-----|
+| io.insert-koin:koin-test | 4.1.1 | DI module verification + scope testing | Already in shared module; allows testing Koin module setup, injecting fakes into real modules (critical for testing BLE layers in isolation). No mocking framework needed—just swap real implementations for fakes. |
 
-## Recommended Stack Additions for Refactoring
+### Mocking Strategy (Fake Implementations, NOT Mocking Frameworks)
 
-### Testing (commonTest) - Already Configured, No Changes Needed
+**Recommendation:** Do NOT add MockK, Mokkery, Mockative, or other mocking frameworks. **Use hand-crafted fake implementations instead.**
 
-The project already has the right test stack configured in `shared/build.gradle.kts`:
+| Pattern | Technology | Purpose | Why |
+|---------|-----------|---------|-----|
+| Fake repositories | FakeBleRepository (existing) | Test BLE behavior without hardware | Already established in codebase. Provides controllable state, event simulation, and command tracking. Hand-written fakes are easier to debug, work on all KMP targets (no JVM-only reflection), and make tests more readable than mocked code. |
+| Fake database | createTestDatabase() (existing) | In-memory SQLite for data layer tests | Already in place; SQLDelight provides native test support without mocking. |
+| Test utilities | DWSMTestHarness, TestCoroutineRule | Reusable test infrastructure | Already in shared/src/commonTest/kotlin/testutil/. Provides coroutine scope management, database setup, and flow collection. |
 
-| Library | Version | Artifact | Status |
-|---------|---------|----------|--------|
-| kotlin-test | 2.3.0 | `org.jetbrains.kotlin:kotlin-test` | Already in commonTest |
-| kotlinx-coroutines-test | 1.10.2 | `org.jetbrains.kotlinx:kotlinx-coroutines-test` | Already in commonTest |
-| Turbine | 1.2.1 | `app.cash.turbine:turbine` | Already in commonTest |
-| Koin Test | 4.1.1 | `io.insert-koin:koin-test` | Already in commonTest |
-| Multiplatform Settings Test | 1.3.0 | `com.russhwolf:multiplatform-settings-test` | Already in commonTest |
+**Why fakes over mocks for KMP:**
+- MockK only supports JVM (blocks Kotlin/Native)
+- Mockative/Mokkery/KMock use KSP code generation (breaks with Kotlin 2.0's source separation; generates NullPointerExceptions)
+- Hand-written fakes work on all platforms without reflection
+- FakeBleRepository pattern (already in codebase) is easier to debug and modify
+- More readable test code (explicit state management vs. mock spy chains)
 
-**Verdict: Add nothing.** The existing test dependencies are current and sufficient for characterization testing of extracted managers.
+### Platform-Specific Testing
+| Technology | Version | Purpose | Why |
+|------------|---------|---------|-----|
+| sqldelight.sqlite.driver | 2.0.2 | In-memory SQLite (Android unit tests) | Already in androidUnitTest; allows testing database layer without mocking |
+| sqldelight.native.driver | 2.0.2 | Native SQLite (iOS tests) | Already in iosTest; Kable operations don't need mocking—fake Peripheral impl is better |
 
-### What Each Library Covers for Refactoring
+## Testing Coroutines + Flow (Patterns)
 
-| Library | Use in Refactoring | Confidence |
-|---------|-------------------|------------|
-| **kotlin-test** | `@Test`, `assertEquals`, `assertTrue` for characterization tests proving manager behavior matches monolith | HIGH |
-| **kotlinx-coroutines-test** | `runTest`, `TestScope`, `advanceUntilIdle()` for testing coroutine-heavy managers. `UnconfinedTestDispatcher` for StateFlow emission testing | HIGH |
-| **Turbine** | `test { }` blocks on Flow/StateFlow for asserting emission sequences from managers. Use `awaitItem()`, `expectNoEvents()`, `cancelAndIgnoreRemainingEvents()` | HIGH |
-| **Koin Test** | `verify()` on modules after splitting `commonModule` into sub-modules. Catches missing bindings at test time | HIGH |
-
-### NOT Recommended - Libraries to Skip
-
-| Library | Why Skip |
-|---------|----------|
-| **Kotest** | Adds an entirely separate testing framework. kotlin-test assertions are sufficient for characterization tests. The project already has 26+ test files using kotlin-test patterns. Switching frameworks mid-refactor adds unnecessary risk. |
-| **MockK** | Already in version catalog (`mockk = "1.14.7"`) but NOT in commonTest dependencies. This is correct -- MockK does not support KMP commonTest (JVM/Android only). The project already uses hand-written fakes (FakeBleRepository, FakeWorkoutRepository, etc.), which is the right pattern for KMP. |
-| **Compose UI Test** (`compose.uiTest`) | The refactoring is decomposing logic OUT of UI. Testing managers (pure Kotlin + coroutines) does not require Compose test infrastructure. Add Compose UI tests later when UI components are stabilized, not during decomposition. |
-| **Koin Annotations / Compiler Plugin** | Over-engineering for this codebase size. Manual module definitions in AppModule.kt are readable and the team knows them. The compile-time verification is nice but `verify()` in tests achieves the same safety. |
-
-## Koin Module Organization for Extracted Managers
-
-### Current State (Single Module Problem)
-
-`AppModule.kt` is a single `commonModule` with ~30 declarations. As managers are extracted, this needs decomposition.
-
-### Recommended Pattern: Feature-Scoped Modules
-
-Split `commonModule` into focused modules. Use Koin 4.1's `includes()` to compose them:
-
+### Pattern 1: Testing Suspend Functions
 ```kotlin
-// di/modules/DataModule.kt
-val dataModule = module {
-    single { DatabaseFactory(get()).createDatabase() }
-    single { ExerciseImporter(get()) }
-    single<ExerciseRepository> { SqlDelightExerciseRepository(get(), get()) }
-    single<WorkoutRepository> { SqlDelightWorkoutRepository(get(), get()) }
-    single<PersonalRecordRepository> { SqlDelightPersonalRecordRepository(get()) }
-    single<GamificationRepository> { SqlDelightGamificationRepository(get()) }
-    single<UserProfileRepository> { SqlDelightUserProfileRepository(get()) }
-    single<TrainingCycleRepository> { SqlDelightTrainingCycleRepository(get()) }
-    single<CompletedSetRepository> { SqlDelightCompletedSetRepository(get()) }
-    single<ProgressionRepository> { SqlDelightProgressionRepository(get()) }
-}
-
-// di/modules/ManagerModule.kt
-val managerModule = module {
-    single { BleConnectionManager(get()) }
-    single { HistoryManager(get(), get()) }
-    single { SettingsManager(get()) }
-    single { GamificationManager(get()) }
-    // WorkoutSessionManager gets its own sub-managers when decomposed
-    single { DefaultWorkoutSessionManager(get(), get(), get(), get()) }
-}
-
-// di/modules/UseCaseModule.kt
-val useCaseModule = module {
-    single { RepCounterFromMachine() }
-    single { ProgressionUseCase(get(), get()) }
-    factory { ResolveRoutineWeightsUseCase(get()) }
-    single { TemplateConverter(get()) }
-}
-
-// di/modules/ViewModelModule.kt
-val viewModelModule = module {
-    factory { MainViewModel(get(), get(), get(), get()) }  // fewer deps after manager extraction
-    factory { ConnectionLogsViewModel() }
-    factory { CycleEditorViewModel(get()) }
-    factory { GamificationViewModel(get()) }
-    single { ThemeViewModel(get()) }
-    single { EulaViewModel(get()) }
-    factory { LinkAccountViewModel(get()) }
-}
-
-// di/AppModule.kt (composition root)
-val commonModule = module {
-    includes(dataModule, managerModule, useCaseModule, viewModelModule, syncModule)
+@Test
+fun `connect with timeout succeeds`() = runTest {
+    val result = bleRepository.connect(device)
+    assertTrue(result.isSuccess)
+    // Virtual time—no real delays
 }
 ```
 
-**Why this pattern:**
-- Each module can be independently `verify()`-tested
-- Managers can be tested with only `dataModule` loaded, not the whole graph
-- MainViewModel's constructor shrinks as it delegates to managers
-- `includes()` is a Koin 4.x feature that keeps composition clean
-
-### Koin Module Verification Test
-
+### Pattern 2: Testing Flows (Turbine)
 ```kotlin
-// commonTest/kotlin/.../di/ModuleVerificationTest.kt
-class ModuleVerificationTest {
-    @Test
-    fun `verify all modules resolve correctly`() {
-        dataModule.verify()
-        managerModule.verify()
-        useCaseModule.verify()
-        viewModelModule.verify()
+@Test
+fun `metricsFlow emits WorkoutMetric`() = runTest {
+    bleRepository.metricsFlow.test {
+        fakePeripheral.emitMetric(testMetric)
+
+        assertEquals(testMetric, awaitItem())
+        cancelAndIgnoreRemainingEvents()
     }
 }
 ```
 
-**Note:** `verify()` replaces the deprecated `checkModules()` in Koin 4.x. It checks constructor parameter resolution without starting the full Koin container.
-
-## Compose Decomposition Support
-
-### Compose Multiplatform 1.10.0 Benefits (Already Available)
-
-The project's upgrade to CMP 1.10.0 provides significant refactoring support:
-
-| Feature | How It Helps | Confidence |
-|---------|-------------|------------|
-| **Unified @Preview** | Common `@Preview` annotation works across platforms. Extracted composables can be previewed individually in Android Studio without running the app. | HIGH |
-| **Compose Hot Reload** | Stable in 1.10.0. Iterate on extracted UI components without full rebuild. | HIGH |
-| **compose.uiTooling** | Already in `androidMain` dependencies. Provides `@Preview` rendering. | HIGH |
-
-### Compose Decomposition Strategy (No New Libraries)
-
-For decomposing WorkoutTab (2,840L) and HistoryAndSettingsTabs (2,750L):
-
-**Pattern: Extract-and-Preview**
-1. Extract a composable function to its own file
-2. Add `@Preview` with hardcoded sample data
-3. Verify visual correctness via preview
-4. Wire to manager StateFlow via `collectAsState()`
-
+### Pattern 3: Testing StateFlow
 ```kotlin
-// Before: 2,840 lines in WorkoutTab.kt
-// After: Small composables in ui/workout/ package
+@Test
+fun `connectionState reflects device lifecycle`() = runTest {
+    bleRepository.connectionState.test {
+        assertEquals(ConnectionState.Disconnected, awaitItem())
 
-@Composable
-fun WorkoutControlPanel(
-    weight: Float,
-    mode: WorkoutMode,
-    isConnected: Boolean,
-    onWeightChange: (Float) -> Unit,
-    onModeChange: (WorkoutMode) -> Unit,
-)
+        bleRepository.connect(device)
+        assertEquals(ConnectionState.Connecting, awaitItem())
+        assertEquals(ConnectionState.Connected("Vee_1"), awaitItem())
 
-@Preview
-@Composable
-private fun WorkoutControlPanelPreview() {
-    WorkoutControlPanel(
-        weight = 50f,
-        mode = WorkoutMode.STANDARD,
-        isConnected = true,
-        onWeightChange = {},
-        onModeChange = {},
-    )
-}
-```
-
-**No additional libraries needed.** The existing Compose Multiplatform 1.10.0 + compose.uiTooling setup handles previews. Extracted composables should be stateless (receive data, emit events) which makes them naturally previewable.
-
-## Characterization Test Patterns for Manager Extraction
-
-### Pattern: Snapshot Current Behavior, Then Extract
-
-```kotlin
-class WorkoutSessionManagerCharacterizationTest {
-    private val bleRepo = FakeBleRepository()
-    private val workoutRepo = FakeWorkoutRepository()
-    private val exerciseRepo = FakeExerciseRepository()
-
-    // Test captures CURRENT behavior before extraction
-    @Test
-    fun `starting workout creates session and sends BLE command`() = runTest {
-        val manager = DefaultWorkoutSessionManager(bleRepo, workoutRepo, exerciseRepo)
-
-        manager.startWorkout(exerciseId = "bench-press", weight = 80f)
-
-        // Assert the observable side effects
-        manager.currentSession.test {
-            val session = awaitItem()
-            assertNotNull(session)
-            assertEquals("bench-press", session.exerciseId)
-            assertEquals(80f, session.weight)
-        }
-
-        // Assert BLE command was sent
-        assertTrue(bleRepo.lastSentCommand.isNotEmpty())
+        cancelAndIgnoreRemainingEvents()
     }
 }
 ```
 
-### Pattern: Test Fake Base Class
-
-The project already has excellent fakes. For new managers extracted from DefaultWorkoutSessionManager, follow the same pattern:
-
+### Pattern 4: Virtual Time Advancement
 ```kotlin
-// Extend existing fakes, don't create mocking infrastructure
-class FakeWorkoutSessionManager : WorkoutSessionManager {
-    private val _currentSession = MutableStateFlow<WorkoutSession?>(null)
-    override val currentSession: StateFlow<WorkoutSession?> = _currentSession
+@Test
+fun `metric polling respects 100ms interval`() = runTest {
+    metricPollingEngine.startPolling(interval = 100.milliseconds).launchIn(this)
 
-    // Test control methods
-    fun emitSession(session: WorkoutSession) { _currentSession.value = session }
+    advanceTimeBy(350.milliseconds)
+    runCurrent()
+
+    assertEquals(3, polledValues.size)
 }
 ```
 
-## Installation
+### Pattern 5: Testing Koin DI Module
+```kotlin
+@Test
+fun `BLE module correctly wires dependencies`() = runTest {
+    val testModule = module {
+        single<BleRepository> { FakeBleRepository() }
+        single { ProtocolParser() }
+        single { MetricPollingEngine(get()) }
+    }
 
-**No new dependencies to install.** The existing `libs.versions.toml` and `shared/build.gradle.kts` already contain everything needed.
+    loadModules(testModule)
+    val engine = get<MetricPollingEngine>()
 
-If Koin module splitting reveals the need for module-scoped testing:
-
-```toml
-# Already present in libs.versions.toml - no changes needed:
-# koin-test = "4.1.1"  -> io.insert-koin:koin-test
-# turbine = "1.2.1"    -> app.cash.turbine:turbine
-# kotlinx-coroutines-test via kotlinx-coroutines = "1.10.2"
+    assertTrue(engine.bleRepository is FakeBleRepository)
+}
 ```
 
-## Alternatives Considered
+## Kable-Specific Considerations
 
-| Category | Recommended | Alternative | Why Not |
-|----------|-------------|-------------|---------|
-| Testing framework | kotlin-test (existing) | Kotest | Already 26+ files using kotlin-test. Migration cost with zero benefit for characterization tests. |
-| Mocking | Hand-written fakes (existing) | MockK in commonTest | MockK does not support KMP commonTest. Fakes are already written for all major dependencies. |
-| UI testing | @Preview visual verification | compose.uiTest | Premature -- decompose logic first, test UI later. compose.uiTest is still Experimental. |
-| DI verification | `Module.verify()` | Koin Annotations compiler plugin | Over-engineering. Manual modules are readable at this scale. |
-| Flow testing | Turbine (existing) | Manual Flow collection | Turbine handles timing, cancellation, and timeout correctly. Manual collection is error-prone. |
+### What You CAN Test Without Hardware
+| Feature | Testing Approach |
+|---------|-----------------|
+| Protocol parsing | Parse static byte arrays |
+| State management | Fake state transitions |
+| Flow handling | Turbine + FakeBleRepository |
+| Timeout logic | advanceTimeBy() virtual time |
+| Coroutine cancellation | runTest scope cancellation |
 
-## Summary
+### What You CANNOT Test Without Hardware
+| Feature | Notes |
+|---------|-------|
+| Actual BLE scanning | Cannot mock Kable Scanner without reimplementing Kable |
+| Physical connection | Cannot fake AndroidPeripheral/NativePeripheral casts |
+| MTU negotiation | Platform-specific BLE negotiation |
+| Hardware notifications | Actual device notify characteristics |
 
-**The stack is already correctly configured for refactoring.** The key insight: this project needs architectural work, not tooling work. The testing infrastructure (kotlin-test + coroutines-test + Turbine + Koin Test + hand-written fakes) is exactly right for characterization testing during manager extraction. The Compose Multiplatform 1.10.0 upgrade provides unified @Preview for UI decomposition.
+**Recommendation:** Keep unit tests (fake-based) fast; keep integration tests (hardware-based) separate.
 
-The only "stack work" needed is organizational: splitting `AppModule.kt` into feature-scoped Koin modules as managers are extracted.
+## Confidence Assessment
+
+| Area | Confidence | Rationale |
+|------|------------|-----------|
+| Coroutine testing | HIGH | kotlinx-coroutines-test is official Kotlin stdlib; all patterns verified |
+| Flow/Turbine testing | HIGH | Turbine 1.2.1 widely used; already in project |
+| Fake vs. Mock decision | HIGH | Explicit KMP limitations with mocking; fake pattern proven in existing codebase |
+| Kable-specific patterns | MEDIUM | Kable does not document testing patterns; inferred from SDK design |
+| Virtual time patterns | HIGH | Official documentation; core to coroutines test lib |
+
+## Integration with Existing Test Infrastructure
+
+The project already has:
+- FakeBleRepository (pattern to extend)
+- createTestDatabase() (pattern to follow)
+- Turbine + kotlinx-coroutines-test (no additions needed)
+- Koin test module (already wired)
+
+**Recommendation:** Do not add new dependencies. Extend existing fake patterns to the 8 new BLE modules.
 
 ## Sources
 
-- [Kotlin Multiplatform Testing Guide](https://www.kmpship.app/blog/kotlin-multiplatform-testing-guide-2025) - Testing patterns overview
-- [Kotlin Multiplatform Run Tests](https://kotlinlang.org/docs/multiplatform/multiplatform-run-tests.html) - Official test documentation
-- [Turbine GitHub](https://github.com/cashapp/turbine) - Flow testing library (v1.2.1)
-- [Koin Verify API](https://insert-koin.io/docs/reference/koin-test/verify/) - Module verification (replaces deprecated checkModules)
-- [Koin 4.1 Release](https://blog.kotzilla.io/koin-4.1-is-here) - Safer configs, smarter scopes
-- [Koin KMP Advanced Patterns](https://insert-koin.io/docs/reference/koin-mp/kmp/) - Module organization
-- [Koin CheckModules Deprecation](https://insert-koin.io/docs/4.0/reference/koin-test/checkmodules/) - Deprecated in favor of verify()
-- [Compose Multiplatform 1.10.0 Release](https://blog.jetbrains.com/kotlin/2026/01/compose-multiplatform-1-10-0/) - Unified @Preview, Hot Reload, Navigation 3
-- [Testing Compose Multiplatform UI](https://kotlinlang.org/docs/multiplatform/compose-test.html) - compose.uiTest (Experimental)
-- [Koin KMP Professional Guide](https://medium.com/@SrimanthChowdary/koin-for-kotlin-multiplatform-kmp-a-professional-end-to-end-guide-a901fddc0d9b) - Module patterns
+- [kotlinx-coroutines-test Official API](https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-test/)
+- [Testing Kotlin Coroutines (Android Developers)](https://developer.android.com/kotlin/coroutines/test)
+- [Turbine GitHub Repository](https://github.com/cashapp/turbine)
+- [Kotlin Multiplatform Testing in 2025 (KMPship)](https://www.kmpship.app/blog/kotlin-multiplatform-testing-guide-2025)
+- [Mokkery Documentation](https://mokkery.dev/)
+- [Mockative GitHub](https://github.com/mockative/mockative)
+- [Testing Best Practices (akjaw.com)](https://akjaw.com/testing-on-kotlin-multiplatform-and-strategy-to-speed-up-development/)
+- [Kable GitHub Repository](https://github.com/JuulLabs/kable)
+- [Kable SensorTag Sample](https://github.com/JuulLabs/sensortag)
