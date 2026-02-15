@@ -66,12 +66,12 @@ Plans:
   3. User sees L/R balance bar below cable position bars, color-coded by severity (green <10%, yellow 10-15%, red >15%), with visual alert on consecutive high-asymmetry reps
   4. User sees mini force curve graph at bottom of Metrics page with tap-to-expand interaction
   5. All biomechanics HUD elements are hidden for users below Phoenix subscription tier
-**Plans**: TBD
+**Plans**: 3 plans in 3 waves
 
 Plans:
-- [ ] 07-01: Velocity HUD elements — MCV display, zone color, velocity loss (HUD-01, HUD-02)
-- [ ] 07-02: Balance bar and asymmetry alerts (HUD-03, ASYM-03, ASYM-04, ASYM-05)
-- [ ] 07-03: Force curve mini-graph and tier gating (HUD-04, HUD-05, FORCE-05)
+- [ ] 07-01-PLAN.md — Data plumbing + velocity HUD on StatsPage: MCV display, zone color, velocity loss (Wave 1)
+- [ ] 07-02-PLAN.md — Balance bar and asymmetry alerts: L/R bar, severity colors, consecutive rep alert (Wave 2)
+- [ ] 07-03-PLAN.md — Force curve mini-graph with tap-to-expand and Phoenix tier gating for all biomechanics (Wave 3)
 
 ### Phase 8: Set Summary
 **Goal**: Users see comprehensive biomechanics analysis cards after completing a set
