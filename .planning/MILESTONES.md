@@ -79,3 +79,24 @@
 
 ---
 
+
+## v0.4.7 Mobile Platform Features (Shipped: 2026-02-15)
+
+**Delivered:** Intelligent training platform with VBT-based strength assessment, exercise auto-detection via movement signatures, and mobile session replay with per-rep force curves.
+
+**Phases completed:** 4 phases (9-12), 13 plans
+
+**Key accomplishments:**
+- Infrastructure: Fixed dual-cable power calculation (loadA + loadB), added MetricSample sessionId index, added ExerciseSignature + AssessmentResult tables (schema v15)
+- Strength Assessment: OLS load-velocity regression for 1RM estimation, 6-step wizard UI with video instructions, progressive weights with velocity feedback, manual override support, 21 unit tests
+- Exercise Auto-Detection: Signature extraction from 3-5 reps (ROM, duration, symmetry, velocity profile), weighted similarity matching (ROM 40%, duration 20%, symmetry 25%, shape 15%), EMA evolution (alpha=0.3), non-blocking bottom sheet UI, 27 tests
+- Mobile Replay Cards: Valley-based rep boundary detection with 5-sample smoothing, ForceSparkline Canvas component, RepReplayCard with peak force + durations, HistoryTab integration, 13 tests
+
+**Stats:** 25 feature commits, 61 new tests, 21 requirements satisfied
+
+**Last phase number:** 12
+
+**Archive:** `.planning/milestones/v0.4.7-*`
+
+---
+

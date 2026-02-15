@@ -2,26 +2,26 @@
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-02-14)
+See: .planning/PROJECT.md (updated 2026-02-15)
 
 **Core value:** Users can connect to their Vitruvian trainer and execute workouts reliably on both platforms.
-**Current focus:** v0.4.7 Mobile Platform Features — Phase 12: Mobile Replay Cards
+**Current focus:** No active milestone — use `/gsd:new-milestone` to start v0.5.0
 
 ## Current Position
 
-Phase: 12 of 12 (Mobile Replay Cards) — IN PROGRESS
-Plan: 3 of 3 complete
-Status: Plan 12-03 complete — force array population wired
-Last activity: 2026-02-15 — Plan 12-03 executed
+Phase: N/A (between milestones)
+Plan: N/A
+Status: v0.4.7 milestone complete
+Last activity: 2026-02-15 — v0.4.7 shipped
 
-Progress: v0.4.6 complete — 31 plans across 3 milestones shipped. v0.4.7 Phase 9 complete (2 plans). Phase 10 complete (4 plans). Phase 11 complete (4 plans). Phase 12 complete (3/3 plans).
+Progress: 44 plans shipped across 4 milestones (v0.4.1: 10, v0.4.5: 11, v0.4.6: 10, v0.4.7: 13)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 39 (10 from v0.4.1 + 11 from v0.4.5 + 10 from v0.4.6 + 8 from v0.4.7)
-- v0.4.6 execution time: ~1 day (10 plans)
-- Average plan duration: ~16 minutes
+- Total plans completed: 44
+- v0.4.7 execution time: ~1 day (13 plans)
+- Average plan duration: ~5 minutes
 
 **By Milestone:**
 
@@ -30,53 +30,17 @@ Progress: v0.4.6 complete — 31 plans across 3 milestones shipped. v0.4.7 Phase
 | v0.4.1 | 4 | 10 | - | Pre-metrics |
 | v0.4.5 | 5 | 11 | ~3h | 59 commits, +1,832 LOC |
 | v0.4.6 | 3 | 10 | ~1d | 45 files, +6,917 LOC, 69 tests |
-| v0.4.7 | 4 | TBD | - | In progress |
-| Phase 09 P01 | 3min | 2 tasks | 6 files |
-| Phase 09 P02 | 3min | 2 tasks | 5 files |
-| Phase 10 P01 | 6min | 1 TDD task (21 tests) | 3 files |
-| Phase 10 P02 | 4min | 2 tasks | 5 files |
-| Phase 10 P03 | 5min | 2 tasks | 4 files |
-| Phase 10 P04 | 8min | 2 tasks | 3 files |
-| Phase 11 P01 | 12min | 2 TDD tasks (27 tests) | 5 files |
-| Phase 11 P02 | 3min | 2 tasks | 4 files |
-| Phase 11 P03 | 6min | 2 tasks | 9 files |
-| Phase 11 P04 | 6min | 2 tasks | 5 files |
-| Phase 12 P01 | 3min | 1 TDD task (13 tests) | 2 files |
-| Phase 12 P02 | 5min | 3 tasks | 3 files |
-| Phase 12 P03 | 4min | 1 task | 1 file |
+| v0.4.7 | 4 | 13 | ~1d | 25 commits, 61 tests, 21 requirements |
 
 ## Accumulated Context
 
 ### Decisions
 
-Decisions are logged in PROJECT.md Key Decisions table.
-v0.4.6 decisions archived — see PROJECT.md for full history.
-- [Phase 09]: Fixed stale SQLDelight version (11->14) and dual-cable power formula
-- [Phase 09]: ExerciseSignature and AssessmentResult tables added at schema version 15
-- [Phase 10]: Double precision for OLS regression internals, Float for API surface
-- [Phase 10]: __ASSESSMENT__ marker in routineName identifies assessment WorkoutSessions
-- [Phase 10]: SqlDelightAssessmentRepository delegates to WorkoutRepository + ExerciseRepository for cross-concern ops
-- [Phase 10]: AssessmentStep sealed class with data for type-safe wizard state transitions
-- [Phase 10]: Skip Instruction step when no exercise videos available
-- [Phase 10]: Dual navigation entry points - StrengthAssessmentPicker from home (no exercise), StrengthAssessment from detail (pre-selected)
-- [Phase 11]: Valley-based rep detection with 5-sample moving average and local minima
-- [Phase 11]: History matching threshold 0.85 before rule-based fallback
-- [Phase 11]: EMA alpha=0.3 for signature evolution (per DETECT-06)
-- [Phase 11]: String encoding for VelocityShape/CableUsage enums in DB
-- [Phase 11]: getAllSignaturesAsMap returns highest-confidence signature per exercise
-- [Phase 11]: Detection triggers after MIN_REPS_FOR_DETECTION (3) working reps
-- [Phase 11]: Non-blocking bottom sheet with confidence color coding (green/yellow/orange)
-- [Phase 11]: Inline anonymous ExerciseSignatureRepository in tests (small interface, minimal duplication)
-- [Phase 12]: RepBoundaryDetector reuses Phase 11 valley detection constants (10mm threshold, 5-sample window, 8-sample separation)
-- [Phase 12]: Peak finding uses raw positions for accuracy, not smoothed
-- [Phase 12]: ForceSparkline height 40dp with 4dp padding for compact card embedding
-- [Phase 12]: Peak marker at concentric/eccentric transition point (end of concentric phase)
-- [Phase 12]: Rep boundary timestamps for accurate per-rep metric window (not takeLast(20))
-- [Phase 12]: Velocity-based fallback when detectBoundaries() returns empty
+v0.4.7 decisions archived — see PROJECT.md Key Decisions table.
 
 ### Pending Todos
 
-- 7 human verification tests for biomechanics UI (visual appearance, interactions, tier gating)
+None.
 
 ### Blockers/Concerns
 
@@ -85,6 +49,6 @@ None.
 ## Session Continuity
 
 Last session: 2026-02-15
-Stopped at: Completed 12-03-PLAN.md (force array population)
+Stopped at: v0.4.7 milestone complete
 Resume file: None
-Next action: Phase 12 complete — ready for v0.4.7 milestone wrap-up
+Next action: `/gsd:new-milestone` to define v0.5.0 scope

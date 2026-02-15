@@ -2,7 +2,7 @@
 
 ## What This Is
 
-Kotlin Multiplatform app for controlling Vitruvian Trainer workout machines (V-Form, Trainer+) via BLE. Community rescue project keeping machines functional after company bankruptcy. Supports Android (Compose) and iOS (SwiftUI) from a shared KMP codebase. Features premium biomechanics analysis: real-time velocity tracking, force curve visualization, bilateral asymmetry detection, LED biofeedback, rep quality scoring, and smart training suggestions.
+Kotlin Multiplatform app for controlling Vitruvian Trainer workout machines (V-Form, Trainer+) via BLE. Community rescue project keeping machines functional after company bankruptcy. Supports Android (Compose) and iOS (SwiftUI) from a shared KMP codebase. Features premium biomechanics analysis: real-time velocity tracking, force curve visualization, bilateral asymmetry detection, LED biofeedback, rep quality scoring, smart training suggestions, VBT-based strength assessment, exercise auto-detection, and mobile session replay with per-rep force curves.
 
 ## Core Value
 
@@ -44,37 +44,24 @@ Users can connect to their Vitruvian trainer and execute workouts with accurate 
 - ✓ Force curve mini-graph on HUD with tap-to-expand overlay — v0.4.6
 - ✓ Set summary biomechanics cards (velocity, force curve, asymmetry) — v0.4.6
 - ✓ Phoenix tier gating for all biomechanics features via single upstream gate — v0.4.6
+- ✓ Dual-cable power calculation fix (loadA + loadB) — v0.4.7
+- ✓ MetricSample sessionId index for query performance — v0.4.7
+- ✓ ExerciseSignature table for movement pattern storage — v0.4.7
+- ✓ AssessmentResult table for 1RM history — v0.4.7
+- ✓ VBT-based strength assessment with OLS load-velocity regression — v0.4.7
+- ✓ 6-step assessment wizard with video instructions and progressive weights — v0.4.7
+- ✓ Exercise auto-detection via signature extraction from first 3-5 reps — v0.4.7
+- ✓ Weighted similarity matching for exercise classification (ROM 40%, duration 20%, symmetry 25%, shape 15%) — v0.4.7
+- ✓ EMA signature evolution (alpha=0.3) for learning user patterns — v0.4.7
+- ✓ Non-blocking bottom sheet for exercise confirmation — v0.4.7
+- ✓ Mobile replay cards with per-rep force sparklines — v0.4.7
+- ✓ Valley-based rep boundary detection for accurate rep isolation — v0.4.7
 
 ### Active
 
 <!-- Current scope. Building toward these. -->
 
-**v0.4.7 Mobile Platform Features** — Spec 04: Strength assessment, exercise auto-detection, mobile replay cards
-
-#### Strength Assessment (Phoenix tier)
-- [ ] **ASSESS-01**: User can start guided strength assessment from profile/onboarding
-- [ ] **ASSESS-02**: User sees video instruction for each exercise before testing
-- [ ] **ASSESS-03**: User performs 3-5 reps at progressive weights until velocity threshold
-- [ ] **ASSESS-04**: System estimates 1RM using load-velocity linear regression
-- [ ] **ASSESS-05**: User can accept or manually override estimated 1RM
-- [ ] **ASSESS-06**: Results saved to Exercise.one_rep_max_kg with assessment history
-
-#### Exercise Auto-Detection (Elite tier)
-- [ ] **DETECT-01**: System extracts signature from first 3-5 reps (ROM, duration, symmetry, velocity profile)
-- [ ] **DETECT-02**: Rule-based classifier suggests exercise category and specific exercise
-- [ ] **DETECT-03**: User confirms or selects different exercise via bottom sheet
-- [ ] **DETECT-04**: Confirmed signatures stored for future matching
-- [ ] **DETECT-05**: History matching improves accuracy over time
-
-#### Mobile Replay Cards (Phoenix tier)
-- [ ] **REPLAY-01**: Session detail shows scrollable rep cards
-- [ ] **REPLAY-02**: Each rep card displays mini force curve sparkline
-- [ ] **REPLAY-03**: Rep cards show peak force, concentric/eccentric durations
-- [ ] **REPLAY-04**: Quality indicator shows rep consistency vs set average
-
-#### Infrastructure
-- [ ] **INFRA-01**: Fix power calculation bug (loadA + loadB for dual-cable)
-- [ ] **INFRA-02**: Add MetricSample index on sessionId for query performance
+(Next milestone scope will be defined via `/gsd:new-milestone`)
 
 ### Out of Scope
 
@@ -93,34 +80,26 @@ Users can connect to their Vitruvian trainer and execute workouts with accurate 
 
 ## Context
 
-- App is at v0.4.6, actively used by community
-- Premium features shipped: biomechanics analysis, LED biofeedback, rep quality scoring, smart suggestions
+- App is at v0.4.7, actively used by community
+- Premium features shipped: biomechanics analysis, LED biofeedback, rep quality scoring, smart suggestions, strength assessment, exercise auto-detection, mobile replay
 - MainViewModel is a thin 420-line facade delegating to 5 specialized managers
 - DefaultWorkoutSessionManager (449 lines) orchestrates 3 sub-managers:
   - WorkoutCoordinator (257L) — shared state bus, zero business logic
   - RoutineFlowManager (1,091L) — routine CRUD, navigation, supersets
-  - ActiveSessionEngine (~2,400L) — workout lifecycle, BLE commands, auto-stop, quality scoring, biomechanics
-- Domain engines: BiomechanicsEngine, LedFeedbackController, RepQualityScorer, SmartSuggestionsEngine
-- New UI: BalanceBar, ForceCurveMiniGraph, VelocitySummaryCard, ForceCurveSummaryCard, AsymmetrySummaryCard
+  - ActiveSessionEngine (~2,600L) — workout lifecycle, BLE commands, auto-stop, quality scoring, biomechanics, detection
+- Domain engines: BiomechanicsEngine, LedFeedbackController, RepQualityScorer, SmartSuggestionsEngine, AssessmentEngine, SignatureExtractor, ExerciseClassifier, RepBoundaryDetector
+- New UI: BalanceBar, ForceCurveMiniGraph, VelocitySummaryCard, ForceCurveSummaryCard, AsymmetrySummaryCard, AssessmentWizardScreen, AutoDetectionSheet, RepReplayCard, ForceSparkline
 - Koin DI: 4 feature-scoped modules (data, sync, domain, presentation) with verify() test
 - Test infrastructure: DWSMTestHarness, WorkoutStateFixtures, fakes for all repositories
-- ~28,700 lines of Kotlin in shared module (+6,917 from v0.4.6)
-
-## Current Milestone: v0.4.7 Mobile Platform Features
-
-**Goal:** Transform the app into an intelligent training platform with strength assessment, exercise auto-detection, and mobile replay cards.
-
-**Target features:**
-- Strength Assessment: VBT-based 1RM estimation wizard (Phoenix tier)
-- Exercise Auto-Detection: Heuristic classifier for Just Lift mode (Elite tier)
-- Mobile Replay Cards: Session detail with per-rep force curves (Phoenix tier)
+- ~30,500 lines of Kotlin in shared module
+- Database schema version: 15 (ExerciseSignature, AssessmentResult tables)
 
 ## Current State
 
-**Version:** v0.4.6 (shipped 2026-02-15)
-**Current:** v0.4.7 Mobile Platform Features (in progress)
+**Version:** v0.4.7 (shipped 2026-02-15)
+**Status:** Mobile Platform Features milestone complete
 
-Biomechanics MVP complete. Real-time velocity-based training analysis with VBT engine (MCV, velocity zones, velocity loss, rep projection), force curve visualization (101-point ROM normalization, sticking point, strength profile), and bilateral asymmetry detection. Three subscription tiers operational with single upstream gate pattern for Phoenix tier features. Architecture remains clean with all engines following established patterns (injectable time providers, stateless pure functions, StateFlow exposure).
+Intelligent training platform established. VBT-based strength assessment with OLS regression accurately estimates 1RM from progressive sets. Exercise auto-detection identifies movements from 3-5 reps using weighted similarity matching with EMA-based learning. Mobile replay provides per-rep force curves with valley-based boundary detection. All features follow established patterns: injectable time providers, stateless pure functions, StateFlow exposure.
 
 ## Future Milestones
 
@@ -164,6 +143,12 @@ Biomechanics MVP complete. Real-time velocity-based training analysis with VBT e
 | Single upstream gate pattern for tier gating | Gate at data collection, downstream UI checks null naturally | ✓ Good — v0.4.6 |
 | InfiniteTransition created unconditionally | Satisfies Compose call-site stability requirements | ✓ Good — v0.4.6 |
 | Element-wise averaging of 101-point force curves | Set-level averaged curve for summary display | ✓ Good — v0.4.6 |
+| Double precision for OLS regression internals | Avoid Float accumulation errors in regression | ✓ Good — v0.4.7 |
+| __ASSESSMENT__ marker in routineName | Identifies assessment WorkoutSessions | ✓ Good — v0.4.7 |
+| Valley-based rep detection (5-sample smoothing, 10mm threshold) | Consistent algorithm across Phase 11 and 12 | ✓ Good — v0.4.7 |
+| History matching threshold 0.85 before rule-based fallback | Balance between learning and accuracy | ✓ Good — v0.4.7 |
+| EMA alpha=0.3 for signature evolution | Gradual learning, resistant to outliers | ✓ Good — v0.4.7 |
+| ForceSparkline 40dp height with peak marker | Compact card embedding with visual clarity | ✓ Good — v0.4.7 |
 
 ---
-*Last updated: 2026-02-14 after v0.4.7 milestone start*
+*Last updated: 2026-02-15 after v0.4.7 milestone complete*
