@@ -15,6 +15,7 @@ import com.devil.phoenixproject.data.repository.WorkoutRepository
 import com.devil.phoenixproject.data.sync.SyncTriggerManager
 import com.devil.phoenixproject.domain.model.*
 import com.devil.phoenixproject.domain.premium.RepQualityScorer
+import com.devil.phoenixproject.domain.replay.RepBoundaryDetector
 import com.devil.phoenixproject.domain.usecase.RepCounterFromMachine
 import com.devil.phoenixproject.util.BlePacketFactory
 import com.devil.phoenixproject.util.Constants
@@ -96,6 +97,9 @@ class ActiveSessionEngine(
      * Set by DWSM after construction.
      */
     var flowDelegate: WorkoutFlowDelegate? = null
+
+    /** Detector for identifying rep phase boundaries from position data */
+    private val repBoundaryDetector = RepBoundaryDetector()
 
     // ===== Init Block: Workout-Related Collectors (moved from DWSM) =====
 
@@ -543,61 +547,125 @@ class ActiveSessionEngine(
     }
 
     /**
-     * Score the current rep using approximate metrics from collected WorkoutMetric data.
-     * Since full per-rep phase data may not be segmented at notification time,
-     * we approximate ROM, velocity, and phase durations from the collected metrics window.
+     * Score the current rep using real metrics from collected WorkoutMetric data.
+     * Uses RepBoundaryDetector to segment position data into concentric/eccentric phases,
+     * then extracts force, velocity, and position arrays for each phase.
      */
     private fun scoreCurrentRep(repNumber: Int) {
         val metrics = coordinator.collectedMetrics
         if (metrics.isEmpty()) return
 
-        // Approximate ROM from position range across all collected metrics
-        val positions = metrics.flatMap { listOf(it.positionA, it.positionB) }
-        val rom = if (positions.isNotEmpty()) positions.max() - positions.min() else 0f
+        // Get all metrics for this rep (use rep boundary timestamps if available)
+        val boundaries = coordinator.repBoundaryTimestamps.toList()
+        val prevBoundary = if (boundaries.size >= 2) boundaries[boundaries.size - 2] else 0L
+        val currentBoundary = if (boundaries.isNotEmpty()) boundaries.last() else KmpUtils.currentTimeMillis()
 
-        // Approximate average concentric velocity from recent metrics
-        val recentMetrics = metrics.takeLast(20) // Recent window for this rep
-        val velocities = recentMetrics.map { maxOf(kotlin.math.abs(it.velocityA.toFloat()), kotlin.math.abs(it.velocityB.toFloat())) }
-        val avgVelocity = if (velocities.isNotEmpty()) velocities.average().toFloat() else 0f
+        val repMetrics = if (boundaries.size >= 2) {
+            metrics.filter { it.timestamp in (prevBoundary + 1)..currentBoundary }
+        } else {
+            metrics.takeLast(50) // Fallback for first rep
+        }
 
-        // Approximate phase durations: assume roughly 1:2 concentric:eccentric for now
-        // Real per-rep metric capture will provide accurate phase data in persisted RepMetric
-        val totalDurationMs = if (recentMetrics.size >= 2) {
-            recentMetrics.last().timestamp - recentMetrics.first().timestamp
+        if (repMetrics.isEmpty()) return
+
+        // Extract position array for phase detection (use max position of A/B)
+        val positions = repMetrics.map { maxOf(it.positionA, it.positionB) }.toFloatArray()
+
+        // Detect rep phases using valley detection
+        val phaseBoundaries = repBoundaryDetector.detectBoundaries(positions)
+
+        // If boundary detection found a rep, use its phase indices; otherwise use velocity-based split
+        val (concentricIndices, eccentricIndices) = if (phaseBoundaries.isNotEmpty()) {
+            // Use detected boundary (usually only 1 rep worth of data at capture time)
+            val boundary = phaseBoundaries.first()
+            Pair(boundary.concentricIndices, boundary.eccentricIndices)
+        } else {
+            // Fallback: split by velocity direction
+            val velocitySplitIndex = repMetrics.indexOfFirst { it.velocityA < 0 || it.velocityB < 0 }
+                .takeIf { it > 0 } ?: (repMetrics.size / 2)
+            Pair(0 until velocitySplitIndex, velocitySplitIndex until repMetrics.size)
+        }
+
+        // Extract concentric phase data
+        val concentricMetrics = concentricIndices.mapNotNull { repMetrics.getOrNull(it) }
+        val concentricLoadsA = concentricMetrics.map { it.loadA }.toFloatArray()
+        val concentricLoadsB = concentricMetrics.map { it.loadB }.toFloatArray()
+        val concentricPositions = concentricMetrics.map { maxOf(it.positionA, it.positionB) }.toFloatArray()
+        val concentricVelocities = concentricMetrics.map { maxOf(kotlin.math.abs(it.velocityA.toFloat()), kotlin.math.abs(it.velocityB.toFloat())) }.toFloatArray()
+        val concentricTimestamps = concentricMetrics.map { it.timestamp - repMetrics.first().timestamp }.toLongArray()
+        val concentricDurationMs = if (concentricMetrics.size >= 2) {
+            concentricMetrics.last().timestamp - concentricMetrics.first().timestamp
+        } else 0L
+
+        // Extract eccentric phase data
+        val eccentricMetrics = eccentricIndices.mapNotNull { repMetrics.getOrNull(it) }
+        val eccentricLoadsA = eccentricMetrics.map { it.loadA }.toFloatArray()
+        val eccentricLoadsB = eccentricMetrics.map { it.loadB }.toFloatArray()
+        val eccentricPositions = eccentricMetrics.map { maxOf(it.positionA, it.positionB) }.toFloatArray()
+        val eccentricVelocities = eccentricMetrics.map { maxOf(kotlin.math.abs(it.velocityA.toFloat()), kotlin.math.abs(it.velocityB.toFloat())) }.toFloatArray()
+        val eccentricTimestamps = eccentricMetrics.map { it.timestamp - repMetrics.first().timestamp }.toLongArray()
+        val eccentricDurationMs = if (eccentricMetrics.size >= 2) {
+            eccentricMetrics.last().timestamp - eccentricMetrics.first().timestamp
+        } else 0L
+
+        // Calculate summary metrics
+        val peakForceA = maxOf(concentricLoadsA.maxOrNull() ?: 0f, eccentricLoadsA.maxOrNull() ?: 0f)
+        val peakForceB = maxOf(concentricLoadsB.maxOrNull() ?: 0f, eccentricLoadsB.maxOrNull() ?: 0f)
+        val avgForceConcentricA = concentricLoadsA.takeIf { it.isNotEmpty() }?.average()?.toFloat() ?: 0f
+        val avgForceConcentricB = concentricLoadsB.takeIf { it.isNotEmpty() }?.average()?.toFloat() ?: 0f
+        val avgForceEccentricA = eccentricLoadsA.takeIf { it.isNotEmpty() }?.average()?.toFloat() ?: 0f
+        val avgForceEccentricB = eccentricLoadsB.takeIf { it.isNotEmpty() }?.average()?.toFloat() ?: 0f
+
+        // ROM and velocity
+        val rom = positions.max() - positions.min()
+        val peakVelocity = concentricVelocities.maxOrNull() ?: 0f
+        val avgVelocityConcentric = concentricVelocities.takeIf { it.isNotEmpty() }?.average()?.toFloat() ?: 0f
+        val avgVelocityEccentric = eccentricVelocities.takeIf { it.isNotEmpty() }?.average()?.toFloat() ?: 0f
+
+        // Power calculations (power = force * velocity, converting units)
+        // Force in kg, velocity in mm/s -> W = kg * m/s^2 * m/s = kg * mm/s / 1000 * 9.81
+        val concentricPowers = concentricMetrics.map { m ->
+            val force = m.loadA + m.loadB // total load in kg
+            val velocity = maxOf(kotlin.math.abs(m.velocityA), kotlin.math.abs(m.velocityB)) / 1000.0 // m/s
+            (force * velocity * 9.81).toFloat() // watts
+        }
+        val peakPowerWatts = concentricPowers.maxOrNull() ?: 0f
+        val avgPowerWatts = concentricPowers.takeIf { it.isNotEmpty() }?.average()?.toFloat() ?: 0f
+
+        val totalDurationMs = if (repMetrics.size >= 2) {
+            repMetrics.last().timestamp - repMetrics.first().timestamp
         } else 1000L
-        val concentricMs = totalDurationMs / 3
-        val eccentricMs = totalDurationMs * 2 / 3
 
         val repData = RepMetricData(
             repNumber = repNumber,
             isWarmup = !repCounter.getRepCount().isWarmupComplete,
-            startTimestamp = recentMetrics.firstOrNull()?.timestamp ?: 0L,
-            endTimestamp = recentMetrics.lastOrNull()?.timestamp ?: 0L,
+            startTimestamp = repMetrics.firstOrNull()?.timestamp ?: 0L,
+            endTimestamp = repMetrics.lastOrNull()?.timestamp ?: 0L,
             durationMs = totalDurationMs,
-            concentricDurationMs = concentricMs,
-            concentricPositions = floatArrayOf(),
-            concentricLoadsA = floatArrayOf(),
-            concentricLoadsB = floatArrayOf(),
-            concentricVelocities = velocities.toFloatArray(),
-            concentricTimestamps = longArrayOf(),
-            eccentricDurationMs = eccentricMs,
-            eccentricPositions = floatArrayOf(),
-            eccentricLoadsA = floatArrayOf(),
-            eccentricLoadsB = floatArrayOf(),
-            eccentricVelocities = floatArrayOf(),
-            eccentricTimestamps = longArrayOf(),
-            peakForceA = 0f,
-            peakForceB = 0f,
-            avgForceConcentricA = 0f,
-            avgForceConcentricB = 0f,
-            avgForceEccentricA = 0f,
-            avgForceEccentricB = 0f,
-            peakVelocity = velocities.maxOrNull() ?: 0f,
-            avgVelocityConcentric = avgVelocity,
-            avgVelocityEccentric = 0f,
+            concentricDurationMs = concentricDurationMs,
+            concentricPositions = concentricPositions,
+            concentricLoadsA = concentricLoadsA,
+            concentricLoadsB = concentricLoadsB,
+            concentricVelocities = concentricVelocities,
+            concentricTimestamps = concentricTimestamps,
+            eccentricDurationMs = eccentricDurationMs,
+            eccentricPositions = eccentricPositions,
+            eccentricLoadsA = eccentricLoadsA,
+            eccentricLoadsB = eccentricLoadsB,
+            eccentricVelocities = eccentricVelocities,
+            eccentricTimestamps = eccentricTimestamps,
+            peakForceA = peakForceA,
+            peakForceB = peakForceB,
+            avgForceConcentricA = avgForceConcentricA,
+            avgForceConcentricB = avgForceConcentricB,
+            avgForceEccentricA = avgForceEccentricA,
+            avgForceEccentricB = avgForceEccentricB,
+            peakVelocity = peakVelocity,
+            avgVelocityConcentric = avgVelocityConcentric,
+            avgVelocityEccentric = avgVelocityEccentric,
             rangeOfMotionMm = rom,
-            peakPowerWatts = 0f,
-            avgPowerWatts = 0f
+            peakPowerWatts = peakPowerWatts,
+            avgPowerWatts = avgPowerWatts
         )
 
         // Accumulate rep metric data for persistence at set completion
@@ -605,7 +673,7 @@ class ActiveSessionEngine(
 
         val score = coordinator.repQualityScorer.scoreRep(repData)
         coordinator._latestRepQuality.value = score
-        Logger.d { "Rep quality scored: rep=$repNumber, score=${score.composite}" }
+        Logger.d { "Rep quality scored: rep=$repNumber, score=${score.composite}, concentricSamples=${concentricLoadsA.size}, eccentricSamples=${eccentricLoadsA.size}" }
     }
 
     /**
