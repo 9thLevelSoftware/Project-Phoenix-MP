@@ -4,6 +4,7 @@ import com.devil.phoenixproject.data.repository.AutoStopUiState
 import com.devil.phoenixproject.domain.model.*
 import com.devil.phoenixproject.domain.model.BiomechanicsRepResult
 import com.devil.phoenixproject.domain.usecase.RepRanges
+import com.devil.phoenixproject.presentation.manager.DetectionState
 
 /**
  * UI State holder for WorkoutTab.
@@ -68,7 +69,8 @@ data class WorkoutUiState(
     val timedExerciseRemainingSeconds: Int? = null,
     val isCurrentExerciseBodyweight: Boolean = false,
     val latestRepQualityScore: Int? = null,
-    val latestBiomechanicsResult: BiomechanicsRepResult? = null
+    val latestBiomechanicsResult: BiomechanicsRepResult? = null,
+    val detectionState: DetectionState = DetectionState()
 )
 
 /**
@@ -130,6 +132,12 @@ interface WorkoutActions {
 
     /** Format weight with unit */
     fun formatWeight(weight: Float, unit: WeightUnit): String
+
+    /** Confirm detected exercise selection */
+    suspend fun onDetectionConfirmed(exerciseId: String, exerciseName: String)
+
+    /** Dismiss detection sheet without confirming */
+    fun onDetectionDismissed()
 }
 
 /**
@@ -154,6 +162,8 @@ object PreviewWorkoutActions : WorkoutActions {
     override fun kgToDisplay(kg: Float, unit: WeightUnit): Float = kg
     override fun displayToKg(display: Float, unit: WeightUnit): Float = display
     override fun formatWeight(weight: Float, unit: WeightUnit): String = "${weight.toInt()} kg"
+    override suspend fun onDetectionConfirmed(exerciseId: String, exerciseName: String) {}
+    override fun onDetectionDismissed() {}
 }
 
 /**
@@ -178,7 +188,9 @@ fun workoutActions(
     onHideWorkoutSetupDialog: () -> Unit,
     kgToDisplay: (Float, WeightUnit) -> Float,
     displayToKg: (Float, WeightUnit) -> Float,
-    formatWeight: (Float, WeightUnit) -> String
+    formatWeight: (Float, WeightUnit) -> String,
+    onDetectionConfirmed: suspend (String, String) -> Unit = { _, _ -> },
+    onDetectionDismissed: () -> Unit = {}
 ): WorkoutActions = object : WorkoutActions {
     override fun onScan() = onScan()
     override fun onCancelScan() = onCancelScan()
@@ -198,4 +210,6 @@ fun workoutActions(
     override fun kgToDisplay(kg: Float, unit: WeightUnit) = kgToDisplay(kg, unit)
     override fun displayToKg(display: Float, unit: WeightUnit) = displayToKg(display, unit)
     override fun formatWeight(weight: Float, unit: WeightUnit) = formatWeight(weight, unit)
+    override suspend fun onDetectionConfirmed(exerciseId: String, exerciseName: String) = onDetectionConfirmed(exerciseId, exerciseName)
+    override fun onDetectionDismissed() = onDetectionDismissed()
 }

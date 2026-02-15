@@ -32,6 +32,7 @@ import com.devil.phoenixproject.presentation.components.RepQualityIndicator
 import com.devil.phoenixproject.presentation.components.VideoPlayer
 import com.devil.phoenixproject.data.repository.ExerciseVideoEntity
 import com.devil.phoenixproject.ui.theme.Spacing
+import com.devil.phoenixproject.presentation.manager.DetectionState
 import com.devil.phoenixproject.presentation.util.LocalWindowSizeClass
 import com.devil.phoenixproject.presentation.util.WindowWidthSizeClass
 import kotlinx.coroutines.flow.SharedFlow
@@ -105,7 +106,10 @@ fun WorkoutTab(
         timedExerciseRemainingSeconds = state.timedExerciseRemainingSeconds,
         isCurrentExerciseBodyweight = state.isCurrentExerciseBodyweight,
         latestRepQualityScore = state.latestRepQualityScore,
-        latestBiomechanicsResult = state.latestBiomechanicsResult
+        latestBiomechanicsResult = state.latestBiomechanicsResult,
+        detectionState = state.detectionState,
+        onDetectionConfirmed = actions::onDetectionConfirmed,
+        onDetectionDismissed = actions::onDetectionDismissed
     )
 }
 
@@ -164,7 +168,10 @@ fun WorkoutTab(
     timedExerciseRemainingSeconds: Int? = null,  // Issue #192: Countdown for timed exercises
     isCurrentExerciseBodyweight: Boolean = false,
     latestRepQualityScore: Int? = null,  // Rep quality score (null = not available or free tier)
-    latestBiomechanicsResult: BiomechanicsRepResult? = null  // Latest biomechanics analysis result
+    latestBiomechanicsResult: BiomechanicsRepResult? = null,  // Latest biomechanics analysis result
+    detectionState: DetectionState = DetectionState(),  // Exercise auto-detection state
+    onDetectionConfirmed: suspend (String, String) -> Unit = { _, _ -> },  // Detection confirm callback
+    onDetectionDismissed: () -> Unit = {}  // Detection dismiss callback
 ) {
     // Note: HapticFeedbackEffect is now global in EnhancedMainScreen
     // No need for local haptic effect here
@@ -198,6 +205,9 @@ fun WorkoutTab(
                 timedExerciseRemainingSeconds = timedExerciseRemainingSeconds,
                 isCurrentExerciseBodyweight = isCurrentExerciseBodyweight,
                 latestBiomechanicsResult = latestBiomechanicsResult,
+                detectionState = detectionState,
+                onDetectionConfirmed = onDetectionConfirmed,
+                onDetectionDismissed = onDetectionDismissed,
                 modifier = Modifier.fillMaxSize()
             )
 

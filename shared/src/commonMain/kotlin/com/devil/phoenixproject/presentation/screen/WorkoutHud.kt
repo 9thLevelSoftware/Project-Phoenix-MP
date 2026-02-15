@@ -24,6 +24,7 @@ import com.devil.phoenixproject.data.repository.ExerciseVideoEntity
 import com.devil.phoenixproject.domain.model.*
 import com.devil.phoenixproject.domain.model.BiomechanicsRepResult
 import com.devil.phoenixproject.domain.model.BiomechanicsVelocityZone
+import com.devil.phoenixproject.presentation.components.AutoDetectionSheet
 import com.devil.phoenixproject.presentation.components.BalanceBar
 import com.devil.phoenixproject.presentation.components.ExpandedForceCurve
 import com.devil.phoenixproject.presentation.components.ForceCurveMiniGraph
@@ -32,6 +33,8 @@ import com.devil.phoenixproject.presentation.components.AnimatedRepCounter
 import com.devil.phoenixproject.presentation.components.CircularForceGauge
 import com.devil.phoenixproject.presentation.components.EnhancedCablePositionBar
 import com.devil.phoenixproject.presentation.components.StableRepProgress
+import com.devil.phoenixproject.presentation.manager.DetectionState
+import kotlinx.coroutines.launch
 import com.devil.phoenixproject.presentation.util.ResponsiveDimensions
 import com.devil.phoenixproject.presentation.util.LocalWindowSizeClass
 import com.devil.phoenixproject.presentation.util.WindowWidthSizeClass
@@ -71,8 +74,12 @@ fun WorkoutHud(
     timedExerciseRemainingSeconds: Int? = null, // Issue #192: Countdown for timed exercises
     isCurrentExerciseBodyweight: Boolean = false,
     latestBiomechanicsResult: BiomechanicsRepResult? = null,
+    detectionState: DetectionState = DetectionState(),
+    onDetectionConfirmed: suspend (exerciseId: String, exerciseName: String) -> Unit = { _, _ -> },
+    onDetectionDismissed: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
+    val scope = rememberCoroutineScope()
     // Determine if we're in Echo mode
     val isEchoMode = workoutParameters.isEchoMode
     val pagerState = rememberPagerState(pageCount = { 3 })
@@ -291,6 +298,21 @@ fun WorkoutHud(
                         .align(Alignment.BottomCenter)
                         .fillMaxWidth(0.7f)
                         .padding(bottom = 24.dp)
+                )
+            }
+
+            // Exercise Auto-Detection Sheet (non-blocking overlay)
+            // Shows when detection state is active, has a classification, and not dismissed
+            if (detectionState.isActive && detectionState.classification != null && !detectionState.isDismissed) {
+                AutoDetectionSheet(
+                    classification = detectionState.classification,
+                    exerciseRepository = exerciseRepository,
+                    onConfirm = { exerciseId, name ->
+                        scope.launch {
+                            onDetectionConfirmed(exerciseId, name)
+                        }
+                    },
+                    onDismiss = onDetectionDismissed
                 )
             }
         }
