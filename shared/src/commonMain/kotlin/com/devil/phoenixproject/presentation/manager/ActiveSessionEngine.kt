@@ -26,6 +26,7 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlin.math.ceil
 
@@ -513,6 +514,13 @@ class ActiveSessionEngine(
         val repCountAfter = repCounter.getRepCount().totalReps
         if (repCountAfter > repCountBefore) {
             scoreCurrentRep(repCountAfter)
+
+            // Capture rep boundary timestamp for MetricSample segmentation
+            val now = KmpUtils.currentTimeMillis()
+            coordinator.repBoundaryTimestamps.add(now)
+
+            // Segment metrics for this rep and process biomechanics (GATE-04: unconditional capture)
+            processBiomechanicsForRep(repCountAfter, now)
         }
     }
 
@@ -580,6 +588,52 @@ class ActiveSessionEngine(
         val score = coordinator.repQualityScorer.scoreRep(repData)
         coordinator._latestRepQuality.value = score
         Logger.d { "Rep quality scored: rep=$repNumber, score=${score.composite}" }
+    }
+
+    /**
+     * Process biomechanics analysis for a completed rep.
+     *
+     * Segments collectedMetrics using rep boundary timestamps, then processes
+     * through BiomechanicsEngine on Dispatchers.Default (DATA-03 compliance).
+     *
+     * @param repNumber 1-indexed rep number
+     * @param timestamp Rep completion timestamp
+     */
+    private fun processBiomechanicsForRep(repNumber: Int, timestamp: Long) {
+        scope.launch(Dispatchers.Default) {
+            val allMetrics = coordinator.collectedMetrics.toList()
+            val boundaries = coordinator.repBoundaryTimestamps.toList()
+
+            // Segment: metrics between previous boundary and current boundary
+            val prevBoundary = if (boundaries.size >= 2) boundaries[boundaries.size - 2] else 0L
+            val currentBoundary = boundaries.last()
+
+            val repMetrics = allMetrics.filter { it.timestamp in (prevBoundary + 1)..currentBoundary }
+            if (repMetrics.isEmpty()) {
+                Logger.d { "Biomechanics: no metrics for rep $repNumber (boundary $prevBoundary..$currentBoundary)" }
+                return@launch
+            }
+
+            // Split into concentric/eccentric using velocity direction
+            // Concentric = lifting (positive velocity), Eccentric = lowering (negative velocity)
+            // Approximate: use first half as concentric if we can't determine from velocity
+            val concentricMetrics = repMetrics.filter {
+                it.velocityA > 0 || it.velocityB > 0
+            }.takeIf { it.isNotEmpty() } ?: run {
+                // Fallback: first half is concentric
+                val midpoint = repMetrics.size / 2
+                if (midpoint > 0) repMetrics.take(midpoint) else repMetrics
+            }
+
+            coordinator.biomechanicsEngine.processRep(
+                repNumber = repNumber,
+                concentricMetrics = concentricMetrics,
+                allRepMetrics = repMetrics,
+                timestamp = timestamp
+            )
+
+            Logger.d { "Biomechanics processed: rep=$repNumber, metrics=${repMetrics.size}, concentric=${concentricMetrics.size}" }
+        }
     }
 
     // ===== Auto-Stop Detection =====
@@ -1109,6 +1163,9 @@ class ActiveSessionEngine(
         coordinator._repCount.value = RepCount()
         coordinator._repRanges.value = null
         coordinator.setRepMetrics.clear()
+        // Reset biomechanics engine and rep boundary timestamps
+        coordinator.biomechanicsEngine.reset()
+        coordinator.repBoundaryTimestamps.clear()
     }
 
     fun recaptureLoadBaseline() {
@@ -1821,6 +1878,10 @@ class ActiveSessionEngine(
             // Reset rep quality scorer for next set
             coordinator.repQualityScorer.reset()
             coordinator._latestRepQuality.value = null
+
+            // Reset biomechanics engine and rep boundary timestamps for next set
+            coordinator.biomechanicsEngine.reset()
+            coordinator.repBoundaryTimestamps.clear()
 
             val completedReps = coordinator._repCount.value.workingReps
             val warmupReps = coordinator._repCount.value.warmupReps

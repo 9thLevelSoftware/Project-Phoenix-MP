@@ -3,6 +3,8 @@ package com.devil.phoenixproject.presentation.manager
 import com.devil.phoenixproject.data.repository.AutoStopUiState
 import com.devil.phoenixproject.data.repository.HandleState
 import com.devil.phoenixproject.domain.model.*
+import com.devil.phoenixproject.domain.model.BiomechanicsRepResult
+import com.devil.phoenixproject.domain.premium.BiomechanicsEngine
 import com.devil.phoenixproject.domain.premium.RepQualityScorer
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.BufferOverflow
@@ -278,4 +280,27 @@ class WorkoutCoordinator(
      */
     internal val _latestRepQuality = MutableStateFlow<RepQualityScore?>(null)
     val latestRepQuality: StateFlow<RepQualityScore?> = _latestRepQuality.asStateFlow()
+
+    // ===== Biomechanics Engine =====
+
+    /**
+     * Biomechanics analysis engine for VBT, force curve, and asymmetry analysis.
+     * Processes each rep's MetricSamples and exposes results via StateFlow.
+     * Reset between sets via ActiveSessionEngine.
+     */
+    val biomechanicsEngine = BiomechanicsEngine()
+
+    /**
+     * Rep boundary timestamps for MetricSample segmentation.
+     * Each entry marks the completion timestamp of a rep, enabling per-rep metric extraction.
+     * Cleared at set completion and workout reset.
+     */
+    internal val repBoundaryTimestamps = mutableListOf<Long>()
+
+    /**
+     * Latest biomechanics result for HUD display.
+     * Delegates to biomechanicsEngine.latestRepResult.
+     */
+    val latestBiomechanicsResult: StateFlow<BiomechanicsRepResult?>
+        get() = biomechanicsEngine.latestRepResult
 }
