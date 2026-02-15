@@ -100,7 +100,9 @@ Decompose the 2,886-line KableBleRepository monolith into 8 focused, testable mo
   2. Position jump filter does not cascade to next sample (Issue #210 fix preserved)
   3. Latency budget <5ms maintained for handleMonitorMetric hot path
   4. Status flag processing (deload, ROM violation) works correctly
-**Plans**: TBD
+**Plans**: 2 plans
+  - [ ] 10-01-PLAN.md (TDD) -- Create MonitorDataProcessor with ~30 unit tests for processing pipeline
+  - [ ] 10-02-PLAN.md -- Wire KableBleRepository delegation, remove inline processing logic
 
 ### Phase 11: MetricPollingEngine
 **Goal**: All 4 polling loops managed by single component
