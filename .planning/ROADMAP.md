@@ -49,7 +49,9 @@ Decompose the 2,886-line KableBleRepository monolith into 8 focused, testable mo
   2. Unit tests verify byte parsing matches monolith behavior for all packet formats
   3. Legacy 6-byte and modern 24-byte rep notification formats both parse correctly
   4. Byte utilities (getUInt16LE, getInt16LE, etc.) are pure functions
-**Plans**: TBD
+**Plans**: 2 plans
+  - [ ] 06-01-PLAN.md (TDD) - Create ProtocolParser.kt with byte utilities and tests
+  - [ ] 06-02-PLAN.md - Add packet parsers, update KableBleRepository to use extracted functions
 
 ### Phase 7: BleOperationQueue
 **Goal**: BLE read/write serialization extracted with Mutex pattern
@@ -128,7 +130,7 @@ Phases 5 -> 6 -> 7 -> 8 -> 9 -> 10 -> 11 -> 12
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
 | 5. BleProtocolConstants | v0.4.2 | 1/1 | Complete | 2026-02-15 |
-| 6. ProtocolParser | v0.4.2 | 0/? | Not started | - |
+| 6. ProtocolParser | v0.4.2 | 0/2 | Planning complete | - |
 | 7. BleOperationQueue | v0.4.2 | 0/? | Not started | - |
 | 8. DiscoMode + Interface | v0.4.2 | 0/? | Not started | - |
 | 9. HandleStateDetector | v0.4.2 | 0/? | Not started | - |
