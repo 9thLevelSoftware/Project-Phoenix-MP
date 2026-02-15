@@ -259,8 +259,18 @@ fun ActiveWorkoutScreen(
     // 0 (Unlimited) = autoplay OFF, != 0 (-1 or 5-30) = autoplay ON
     val autoplayEnabled = userPreferences.summaryCountdownSeconds != 0
 
+    // Gate biomechanics summary cards for free tier (SUM-05)
+    // Nulls biomechanicsSummary on SetSummary state so all three cards
+    // (velocity, force curve, asymmetry) are hidden for free-tier users
+    val currentWorkoutState = workoutState
+    val gatedWorkoutState = if (!hasProAccess && currentWorkoutState is WorkoutState.SetSummary) {
+        currentWorkoutState.copy(biomechanicsSummary = null)
+    } else {
+        currentWorkoutState
+    }
+
     val workoutUiState = remember(
-        connectionState, workoutState, currentMetric, currentHeuristicKgMax, workoutParameters,
+        connectionState, gatedWorkoutState, currentMetric, currentHeuristicKgMax, workoutParameters,
         repCount, repRanges, autoStopState, weightUnit, enableVideoPlayback,
         loadedRoutine, currentExerciseIndex, currentSetIndex, autoplayEnabled,
         userPreferences.summaryCountdownSeconds, loadBaselineA, loadBaselineB, canGoBack, canSkipForward,
@@ -269,7 +279,7 @@ fun ActiveWorkoutScreen(
     ) {
         WorkoutUiState(
             connectionState = connectionState,
-            workoutState = workoutState,
+            workoutState = gatedWorkoutState,
             currentMetric = currentMetric,
             currentHeuristicKgMax = currentHeuristicKgMax,
             workoutParameters = workoutParameters,
