@@ -56,3 +56,26 @@
 
 ---
 
+
+## v0.4.6 Biomechanics MVP (Shipped: 2026-02-15)
+
+**Delivered:** Real-time velocity-based training analysis with force curve visualization and bilateral asymmetry detection — transforming raw BLE telemetry into actionable training insights.
+
+**Phases completed:** 3 phases (6-8), 10 plans
+
+**Key accomplishments:**
+- BiomechanicsEngine with VBT analysis (MCV, velocity zones, velocity loss, rep projection), force curve construction (101-point ROM normalization, sticking point, strength profile), and asymmetry detection
+- Real-time HUD velocity display with zone color-coding (Explosive→Grind), velocity loss % after rep 2, and estimated reps remaining
+- L/R balance bar with green/yellow/red severity thresholds and pulsing alert after 3 consecutive high-asymmetry reps
+- Force curve visualization: mini-graph on HUD with tap-to-expand AlertDialog, sticking point annotation, strength profile badge
+- Set summary biomechanics cards: velocity (avg MCV, peak, loss %, zone distribution), force curve (averaged curve, sticking point), asymmetry (avg %, dominant side, trend sparkline)
+- Phoenix tier gating via single upstream gate pattern — data capture for all tiers, UI gating at collection point
+
+**Stats:** 45 files changed, +6,917 lines, 69 new tests (VBT: 34, Force: 19, Asymmetry: 16)
+
+**Last phase number:** 8
+
+**Archive:** `.planning/milestones/v0.4.6-*`
+
+---
+

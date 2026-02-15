@@ -2,7 +2,7 @@
 
 ## What This Is
 
-Kotlin Multiplatform app for controlling Vitruvian Trainer workout machines (V-Form, Trainer+) via BLE. Community rescue project keeping machines functional after company bankruptcy. Supports Android (Compose) and iOS (SwiftUI) from a shared KMP codebase. Now includes premium features: LED biofeedback, rep quality scoring, and smart training suggestions.
+Kotlin Multiplatform app for controlling Vitruvian Trainer workout machines (V-Form, Trainer+) via BLE. Community rescue project keeping machines functional after company bankruptcy. Supports Android (Compose) and iOS (SwiftUI) from a shared KMP codebase. Features premium biomechanics analysis: real-time velocity tracking, force curve visualization, bilateral asymmetry detection, LED biofeedback, rep quality scoring, and smart training suggestions.
 
 ## Core Value
 
@@ -36,63 +36,63 @@ Users can connect to their Vitruvian trainer and execute workouts with accurate 
 - ✓ Form Master badges (Bronze/Silver/Gold) for quality achievements — v0.4.5
 - ✓ Smart Suggestions: volume tracking, balance analysis, plateau detection — v0.4.5
 - ✓ Elite tier gating for Smart Insights tab — v0.4.5
+- ✓ BiomechanicsEngine with VBT analysis (MCV, velocity zones, velocity loss, rep projection) — v0.4.6
+- ✓ Force curve construction with 101-point ROM normalization, sticking point detection, strength profile — v0.4.6
+- ✓ Per-rep cable asymmetry detection with dominant side identification — v0.4.6
+- ✓ Real-time velocity HUD with zone color-coding and velocity loss display — v0.4.6
+- ✓ L/R balance bar with severity colors and consecutive rep alert — v0.4.6
+- ✓ Force curve mini-graph on HUD with tap-to-expand overlay — v0.4.6
+- ✓ Set summary biomechanics cards (velocity, force curve, asymmetry) — v0.4.6
+- ✓ Phoenix tier gating for all biomechanics features via single upstream gate — v0.4.6
 
 ### Active
 
 <!-- Current scope. Building toward these. -->
 
-**v0.4.6 Biomechanics MVP** — VBT engine, velocity HUD, force curve visualization, asymmetry detection
+**v0.5.0 Mobile Platform Features** — Strength assessment, exercise auto-detection (Spec 04)
 
 ### Out of Scope
 
 <!-- Explicit boundaries. Includes reasoning to prevent re-adding. -->
 
 - KableBleRepository decomposition — works reliably, refactoring risk outweighs benefit
-- Biomechanics MVP (Spec 01) — v0.5.0 scope, depends on velocity pipeline
-- Auto-Regulation (Spec 03.3-4) — depends on Spec 01 velocity pipeline
+- Biomechanics persistence to database — v0.5.0+ scope (PERSIST-01 through PERSIST-03)
+- Load-Velocity Profile — requires cross-session persistence
+- Auto-Regulation (Spec 03.3-4) — depends on historical velocity data
 - Portal sync backend (Spec 05) — v0.6.0 infrastructure work
-- Portal replay features — no backend exists yet
+- Portal force curve integration — no backend sync infrastructure yet
 - iOS-specific UI work — focus is shared module and Android Compose layer
 - BLE protocol changes — no hardware interaction changes
 - RevenueCat billing integration — blocked on auth migration
+- Elite coaching suggestions — requires historical analysis infrastructure
 
 ## Context
 
-- App is at v0.4.5, actively used by community
-- Premium features shipped: LED biofeedback, rep quality scoring, smart suggestions
+- App is at v0.4.6, actively used by community
+- Premium features shipped: biomechanics analysis, LED biofeedback, rep quality scoring, smart suggestions
 - MainViewModel is a thin 420-line facade delegating to 5 specialized managers
 - DefaultWorkoutSessionManager (449 lines) orchestrates 3 sub-managers:
   - WorkoutCoordinator (257L) — shared state bus, zero business logic
   - RoutineFlowManager (1,091L) — routine CRUD, navigation, supersets
-  - ActiveSessionEngine (2,200L) — workout lifecycle, BLE commands, auto-stop, quality scoring
-- New engines: LedFeedbackController, RepQualityScorer, SmartSuggestionsEngine
-- New UI: RepQualityIndicator, SmartInsightsTab, quality stats in SetSummaryCard
+  - ActiveSessionEngine (~2,400L) — workout lifecycle, BLE commands, auto-stop, quality scoring, biomechanics
+- Domain engines: BiomechanicsEngine, LedFeedbackController, RepQualityScorer, SmartSuggestionsEngine
+- New UI: BalanceBar, ForceCurveMiniGraph, VelocitySummaryCard, ForceCurveSummaryCard, AsymmetrySummaryCard
 - Koin DI: 4 feature-scoped modules (data, sync, domain, presentation) with verify() test
 - Test infrastructure: DWSMTestHarness, WorkoutStateFixtures, fakes for all repositories
-- ~21,800 lines of Kotlin in shared module (+1,832 from v0.4.5)
+- ~28,700 lines of Kotlin in shared module (+6,917 from v0.4.6)
 
 ## Current State
 
-**Version:** v0.4.5 (shipped 2026-02-14)
-**Next:** v0.4.6 Biomechanics MVP (in progress)
+**Version:** v0.4.6 (shipped 2026-02-15)
+**Next:** v0.5.0 Mobile Platform Features (planning)
 
-Premium features foundation complete. Three subscription tiers operational with proper UI gating. Architecture remains clean with new engines following established patterns (injectable time providers, stateless pure functions, StateFlow exposure). Ready to build biomechanics layer on top of existing MetricSample/RepMetric infrastructure.
-
-## Current Milestone: v0.4.6 Biomechanics MVP
-
-**Goal:** Transform raw BLE telemetry into actionable training insights with real-time velocity tracking, force curve analysis, and bilateral asymmetry detection.
-
-**Target features:**
-- VBT engine with mean concentric velocity, velocity zones, velocity loss tracking
-- Real-time velocity display on HUD with zone color coding
-- Force curve visualization (mini on HUD, full on set summary)
-- L/R cable asymmetry detection with balance bar indicator
-- Set summary biomechanics cards (velocity, force curve, asymmetry)
+Biomechanics MVP complete. Real-time velocity-based training analysis with VBT engine (MCV, velocity zones, velocity loss, rep projection), force curve visualization (101-point ROM normalization, sticking point, strength profile), and bilateral asymmetry detection. Three subscription tiers operational with single upstream gate pattern for Phoenix tier features. Architecture remains clean with all engines following established patterns (injectable time providers, stateless pure functions, StateFlow exposure).
 
 ## Future Milestones
 
 - **v0.5.0** — Mobile Platform Features (Spec 04: strength assessment, exercise auto-detection)
-- **v0.5.5** — Auth Migration (Spec 05a: Supabase auth, user migration)
+- **v0.5.5** — Biomechanics Persistence (PERSIST-01 through PERSIST-03: database storage, historical views)
+- **v0.6.0** — Auth Migration + Portal Integration (Spec 05: Supabase auth, force curve sync)
 
 ## Constraints
 
@@ -122,6 +122,14 @@ Premium features foundation complete. Three subscription tiers operational with 
 | First rep gets perfect ROM/velocity scores | No baseline to penalize against | ✓ Good — v0.4.5 |
 | Stateless SmartSuggestionsEngine | Pure functions, injectable time, easy testing | ✓ Good — v0.4.5 |
 | SmartInsightsTab as separate file | Avoid breaking existing InsightsTab in AnalyticsScreen | ✓ Good — v0.4.5 |
+| BiomechanicsVelocityZone thresholds 250/500/750/1000 mm/s | Standard VBT thresholds for MCV classification | ✓ Good — v0.4.6 |
+| MCV = avg(max(abs(velocityA), abs(velocityB))) | Handles dual-cable Vitruvian machines | ✓ Good — v0.4.6 |
+| 101-point ROM normalization for force curves | Standard VBT approach, enables rep-to-rep comparison | ✓ Good — v0.4.6 |
+| Sticking point excludes first/last 5% ROM | Filters transition noise at ROM boundaries | ✓ Good — v0.4.6 |
+| 2% threshold for BALANCED asymmetry | Measurement noise tolerance | ✓ Good — v0.4.6 |
+| Single upstream gate pattern for tier gating | Gate at data collection, downstream UI checks null naturally | ✓ Good — v0.4.6 |
+| InfiniteTransition created unconditionally | Satisfies Compose call-site stability requirements | ✓ Good — v0.4.6 |
+| Element-wise averaging of 101-point force curves | Set-level averaged curve for summary display | ✓ Good — v0.4.6 |
 
 ---
-*Last updated: 2026-02-14 after starting v0.4.6 milestone*
+*Last updated: 2026-02-15 after v0.4.6 milestone*
