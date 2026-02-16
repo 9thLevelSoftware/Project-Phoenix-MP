@@ -113,7 +113,9 @@ Decompose the 2,886-line KableBleRepository monolith into 8 focused, testable mo
   2. stopMonitorOnly preserves diagnostic and heartbeat polling (Issue #222)
   3. Timeout disconnect after MAX_CONSECUTIVE_TIMEOUTS works correctly
   4. Job lifecycle (start/stop/restart) managed atomically
-**Plans**: TBD
+**Plans**: 2 plans
+  - [ ] 11-01-PLAN.md (TDD) -- Create MetricPollingEngine with polling loops, lifecycle tests
+  - [ ] 11-02-PLAN.md -- Wire KableBleRepository delegation, remove ~300 lines of polling code
 
 ### Phase 12: KableBleConnectionManager + Facade
 **Goal**: Connection lifecycle extracted, KableBleRepository reduced to thin facade
