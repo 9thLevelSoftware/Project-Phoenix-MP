@@ -33,6 +33,8 @@ import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.domain.model.PersonalRecord
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.domain.model.WorkoutSession
+import com.devil.phoenixproject.domain.model.effectiveHeaviestKgPerCable
+import com.devil.phoenixproject.domain.model.effectiveTotalVolumeKg
 import com.devil.phoenixproject.presentation.components.charts.*
 import com.devil.phoenixproject.util.KmpLocalDate
 import com.devil.phoenixproject.util.KmpUtils
@@ -97,7 +99,7 @@ fun ThisWeekSummaryCard(
         val thisWeekSummary = WeekSummary(
             workouts = thisWeekSessions.size,
             totalVolume = thisWeekSessions.sumOf {
-                (it.weightPerCableKg * 2 * it.totalReps).toDouble()
+                it.effectiveTotalVolumeKg().toDouble()
             }.toFloat(),
             totalReps = thisWeekSessions.sumOf { it.totalReps },
             prsHit = thisWeekPRs.size
@@ -106,7 +108,7 @@ fun ThisWeekSummaryCard(
         val lastWeekSummary = WeekSummary(
             workouts = lastWeekSessions.size,
             totalVolume = lastWeekSessions.sumOf {
-                (it.weightPerCableKg * 2 * it.totalReps).toDouble()
+                it.effectiveTotalVolumeKg().toDouble()
             }.toFloat(),
             totalReps = lastWeekSessions.sumOf { it.totalReps },
             prsHit = lastWeekPRs.size
@@ -451,8 +453,7 @@ fun VolumeVsIntensityCard(
         } else {
             val columns = sortedSessions.mapIndexed { index, session ->
                 val label = "S${index + 1}"
-                // Volume = weight * reps (approximate)
-                val volume = (session.weightPerCableKg * 2 * session.totalReps).toFloat()
+                val volume = session.effectiveTotalVolumeKg()
                 // Convert to lbs if needed
                 val adjustedVolume = if (weightUnit == WeightUnit.LB) volume * 2.20462f else volume
                 label to adjustedVolume
@@ -460,7 +461,7 @@ fun VolumeVsIntensityCard(
 
             val lines = sortedSessions.mapIndexed { index, session ->
                 val label = "S${index + 1}"
-                val maxWeight = session.weightPerCableKg * 2 // Total weight
+                val maxWeight = session.effectiveHeaviestKgPerCable() * 2f // Total across both cables
                 // Convert to lbs if needed
                 val adjustedWeight = if (weightUnit == WeightUnit.LB) maxWeight * 2.20462f else maxWeight
                 label to adjustedWeight
@@ -700,9 +701,8 @@ private fun calculateLifetimeStats(
 
     val totalWorkouts = workoutSessions.size
 
-    // Calculate total volume: weight per cable * 2 (total weight) * reps
     val totalVolumeKg = workoutSessions.sumOf {
-        (it.weightPerCableKg * 2 * it.totalReps).toDouble()
+        it.effectiveTotalVolumeKg().toDouble()
     }.toFloat()
 
     val totalReps = workoutSessions.sumOf { it.totalReps }
@@ -1124,16 +1124,16 @@ fun CalendarHeatmapCard(
         val activityMap = mutableMapOf<String, DayActivity>()
 
         workoutSessions.forEach { session ->
-            val sessionDate = KmpLocalDate.fromTimestamp(session.timestamp)
-            // Only include sessions within our date range
-            if (!sessionDate.isBefore(startDate) && !sessionDate.isAfter(today)) {
-                val key = sessionDate.toKey()
-                val volume = (session.weightPerCableKg * 2 * session.totalReps)
-                val existing = activityMap[key]
-                if (existing != null) {
-                    activityMap[key] = existing.copy(
-                        volume = existing.volume + volume,
-                        workoutCount = existing.workoutCount + 1
+                val sessionDate = KmpLocalDate.fromTimestamp(session.timestamp)
+                // Only include sessions within our date range
+                if (!sessionDate.isBefore(startDate) && !sessionDate.isAfter(today)) {
+                    val key = sessionDate.toKey()
+                    val volume = session.effectiveTotalVolumeKg()
+                    val existing = activityMap[key]
+                    if (existing != null) {
+                        activityMap[key] = existing.copy(
+                            volume = existing.volume + volume,
+                            workoutCount = existing.workoutCount + 1
                     )
                 } else {
                     activityMap[key] = DayActivity(

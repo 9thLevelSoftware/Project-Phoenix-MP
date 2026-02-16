@@ -25,6 +25,7 @@ import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.domain.model.CompletedSet
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.domain.model.WorkoutSession
+import com.devil.phoenixproject.domain.model.effectiveHeaviestKgPerCable
 import com.devil.phoenixproject.domain.model.toSetSummary
 import com.devil.phoenixproject.presentation.manager.HistoryItem
 import com.devil.phoenixproject.presentation.components.EmptyState
@@ -259,18 +260,18 @@ fun WorkoutHistoryCard(
 
             Spacer(modifier = Modifier.height(Spacing.small))
 
-            // Highest Weight Per Cable | Workout Mode
+            // Measured Peak Per Cable | Workout Mode
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 Text(
-                    "Highest Weight Per Cable",
+                    "Measured Peak Per Cable",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Text(
-                    if (session.mode.contains("Echo", ignoreCase = true)) "Adaptive" else formatWeight(session.weightPerCableKg, weightUnit),
+                    if (session.mode.contains("Echo", ignoreCase = true)) "Adaptive" else formatWeight(session.effectiveHeaviestKgPerCable(), weightUnit),
                     style = MaterialTheme.typography.bodyLarge,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurface
@@ -550,7 +551,7 @@ private data class ExerciseGroup(
     val exerciseName: String,
     val totalReps: Int,
     val totalSets: Int,
-    val weightPerCableKg: Float,
+    val highestWeightPerCableKg: Float,
     val mode: String
 )
 
@@ -583,7 +584,7 @@ fun GroupedRoutineCard(
             .map { (exerciseId, sessions) ->
                 val totalReps = sessions.sumOf { it.totalReps }
                 val totalSets = sessions.size
-                val weightPerCableKg = sessions.firstOrNull()?.weightPerCableKg ?: 0f
+                val highestWeightPerCableKg = sessions.maxOfOrNull { it.effectiveHeaviestKgPerCable() } ?: 0f
                 val mode = sessions.firstOrNull()?.mode ?: "Unknown"
                 // Use exerciseName from the session (stored when workout was saved)
                 val exerciseName = sessions.firstOrNull()?.exerciseName ?: "Unknown Exercise"
@@ -593,7 +594,7 @@ fun GroupedRoutineCard(
                     exerciseName = exerciseName,
                     totalReps = totalReps,
                     totalSets = totalSets,
-                    weightPerCableKg = weightPerCableKg,
+                    highestWeightPerCableKg = highestWeightPerCableKg,
                     mode = mode
                 )
             }
@@ -716,18 +717,18 @@ fun GroupedRoutineCard(
 
                 Spacer(modifier = Modifier.height(Spacing.small))
 
-                // Highest Weight Per Cable | Workout Mode
+                // Measured Peak Per Cable | Workout Mode
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     Text(
-                        "Highest Weight Per Cable",
+                        "Measured Peak Per Cable",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Text(
-                        if (exerciseGroup.mode.contains("Echo", ignoreCase = true)) "Adaptive" else formatWeight(exerciseGroup.weightPerCableKg, weightUnit),
+                        if (exerciseGroup.mode.contains("Echo", ignoreCase = true)) "Adaptive" else formatWeight(exerciseGroup.highestWeightPerCableKg, weightUnit),
                         style = MaterialTheme.typography.bodyLarge,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurface

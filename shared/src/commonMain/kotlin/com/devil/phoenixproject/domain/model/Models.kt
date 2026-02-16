@@ -420,6 +420,24 @@ data class WorkoutSession(
 }
 
 /**
+ * Effective heaviest weight per cable for analytics/display.
+ *
+ * Uses measured summary data when available (v0.2.1+), otherwise falls back to
+ * configured set weight for legacy sessions.
+ */
+fun WorkoutSession.effectiveHeaviestKgPerCable(): Float =
+    heaviestLiftKg ?: weightPerCableKg
+
+/**
+ * Effective total volume (kg) for analytics/display.
+ *
+ * Uses measured summary volume when available (v0.2.1+), otherwise falls back to
+ * legacy approximation: configuredWeightPerCable * 2 cables * reps.
+ */
+fun WorkoutSession.effectiveTotalVolumeKg(): Float =
+    totalVolumeKg ?: (weightPerCableKg * 2f * totalReps)
+
+/**
  * Convert WorkoutSession to SetSummary for display in history.
  * Returns null if session doesn't have summary metrics (pre-v0.2.1).
  */
@@ -432,8 +450,8 @@ fun WorkoutSession.toSetSummary(): WorkoutState.SetSummary? {
         averagePower = 0f,
         repCount = totalReps,
         durationMs = duration,
-        totalVolumeKg = totalVolumeKg ?: 0f,
-        heaviestLiftKgPerCable = heaviestLiftKg ?: 0f,
+        totalVolumeKg = effectiveTotalVolumeKg(),
+        heaviestLiftKgPerCable = effectiveHeaviestKgPerCable(),
         configuredWeightKgPerCable = weightPerCableKg,
         peakForceConcentricA = peakForceConcentricA ?: 0f,
         peakForceConcentricB = peakForceConcentricB ?: 0f,

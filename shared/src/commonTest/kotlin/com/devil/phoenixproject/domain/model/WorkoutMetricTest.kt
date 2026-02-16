@@ -121,11 +121,28 @@ class WorkoutSessionTest {
         assertEquals(50f, summary?.heaviestLiftKgPerCable)
         assertEquals(1500f, summary?.totalVolumeKg)
         assertEquals(25f, summary?.estimatedCalories)
+        assertEquals(10f, summary?.configuredWeightKgPerCable)
         assertTrue(summary?.isEchoMode == true)
         assertEquals(3, summary?.warmupReps)
         assertEquals(10, summary?.workingReps)
         // burnoutReps = 15 - 3 - 10 = 2
         assertEquals(2, summary?.burnoutReps)
+    }
+
+    @Test
+    fun `toSetSummary falls back to configured values when summary weight fields are missing`() {
+        val session = WorkoutSession(
+            weightPerCableKg = 25f,
+            totalReps = 8,
+            peakForceConcentricA = 50f, // Enables hasSummaryMetrics
+            heaviestLiftKg = null,
+            totalVolumeKg = null
+        )
+
+        val summary = session.toSetSummary()
+
+        assertEquals(25f, summary?.heaviestLiftKgPerCable)
+        assertEquals(400f, summary?.totalVolumeKg)
     }
 
     @Test
@@ -176,6 +193,45 @@ class WorkoutSessionTest {
         assertEquals(0, session.deloadWarningCount)
         assertEquals(0, session.romViolationCount)
         assertEquals(0, session.spotterActivations)
+    }
+
+    @Test
+    fun `effectiveHeaviestKgPerCable uses measured summary value when present`() {
+        val session = WorkoutSession(
+            weightPerCableKg = 30f,
+            heaviestLiftKg = 42f
+        )
+
+        assertEquals(42f, session.effectiveHeaviestKgPerCable())
+    }
+
+    @Test
+    fun `effectiveHeaviestKgPerCable falls back to configured weight when measured is missing`() {
+        val session = WorkoutSession(weightPerCableKg = 30f, heaviestLiftKg = null)
+
+        assertEquals(30f, session.effectiveHeaviestKgPerCable())
+    }
+
+    @Test
+    fun `effectiveTotalVolumeKg uses measured summary value when present`() {
+        val session = WorkoutSession(
+            weightPerCableKg = 40f,
+            totalReps = 10,
+            totalVolumeKg = 777f
+        )
+
+        assertEquals(777f, session.effectiveTotalVolumeKg())
+    }
+
+    @Test
+    fun `effectiveTotalVolumeKg falls back to legacy volume formula when measured is missing`() {
+        val session = WorkoutSession(
+            weightPerCableKg = 40f,
+            totalReps = 10,
+            totalVolumeKg = null
+        )
+
+        assertEquals(800f, session.effectiveTotalVolumeKg())
     }
 }
 

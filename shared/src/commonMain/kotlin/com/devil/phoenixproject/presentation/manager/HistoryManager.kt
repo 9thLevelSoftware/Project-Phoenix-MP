@@ -5,6 +5,7 @@ import com.devil.phoenixproject.data.repository.PersonalRecordEntity
 import com.devil.phoenixproject.data.repository.WorkoutRepository
 import com.devil.phoenixproject.domain.model.PersonalRecord
 import com.devil.phoenixproject.domain.model.WorkoutSession
+import com.devil.phoenixproject.domain.model.effectiveTotalVolumeKg
 import com.devil.phoenixproject.util.KmpLocalDate
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -138,8 +139,8 @@ class HistoryManager(
         if (sessions.size < 2) return@map null
         val latest = sessions[0]
         val previous = sessions[1]
-        val latestVol = (latest.weightPerCableKg * 2) * latest.totalReps
-        val prevVol = (previous.weightPerCableKg * 2) * previous.totalReps
+        val latestVol = latest.effectiveTotalVolumeKg()
+        val prevVol = previous.effectiveTotalVolumeKg()
         if (prevVol <= 0f) return@map null
         ((latestVol - prevVol) / prevVol * 100).toInt()
     }.stateIn(scope, SharingStarted.WhileSubscribed(5000), null)
