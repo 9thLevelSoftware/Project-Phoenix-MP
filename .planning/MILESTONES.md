@@ -33,3 +33,30 @@
 
 ---
 
+
+## v0.4.2 — BLE Layer Decomposition (Shipped: 2026-02-16)
+
+**Delivered:** Complete decomposition of 2,886-line KableBleRepository monolith into 6 focused, testable modules behind a 394-line thin facade.
+
+**Phases completed:** 9 phases (5-13), 14 plans
+**Timeline:** 1 day (2.19 hours execution), 69 commits, +14,796/-2,655 lines across 62 files
+
+**Key accomplishments:**
+- Decomposed KableBleRepository from 2,886 lines to 394-line thin facade delegating to 6 modules
+- Created ProtocolParser with stateless byte parsing functions and 516 lines of unit tests
+- Extracted HandleStateDetector 4-state machine with 37 unit tests (Issues #176, #210 preserved)
+- Extracted MonitorDataProcessor for position validation and velocity EMA with 555 lines of tests
+- Created MetricPollingEngine managing 4 polling loops (monitor, diagnostic, heuristic, heartbeat)
+- Extracted KableBleConnectionManager with full connection lifecycle and auto-reconnect
+
+**Tech debt (hardware-only):**
+- BleOperationQueue: fault 16384 stress test deferred to physical device QA
+- MonitorDataProcessor: deload/ROM violation events require hardware trigger
+- ConnectionManager: auto-reconnect timing requires BLE range/power-cycle test
+
+**Last phase number:** 13
+
+**Archive:** `.planning/milestones/v0.4.2-*`
+
+---
+
