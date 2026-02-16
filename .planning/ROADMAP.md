@@ -128,7 +128,10 @@ Decompose the 2,886-line KableBleRepository monolith into 8 focused, testable mo
   4. KableBleRepository reduced to <400 lines (delegation only)
   5. All existing tests pass without modification
   6. Manual BLE testing on physical Vitruvian device passes all scenarios
-**Plans**: TBD
+**Plans**: 2 plans
+Plans:
+- [ ] 12-01-PLAN.md -- Create KableBleConnectionManager with all connection lifecycle code + tests
+- [ ] 12-02-PLAN.md -- Wire facade delegation, reduce KableBleRepository to <400 lines, manual BLE testing
 
 ## Progress
 
