@@ -25,13 +25,10 @@ import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
-import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.TimeoutCancellationException
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 import co.touchlab.kermit.Logger
 import kotlin.time.Clock
 import kotlin.uuid.ExperimentalUuidApi
@@ -41,13 +38,11 @@ import com.devil.phoenixproject.data.ble.DiscoMode
 import com.devil.phoenixproject.data.ble.HandleStateDetector
 import com.devil.phoenixproject.data.ble.MonitorDataProcessor
 import com.devil.phoenixproject.data.ble.BleOperationQueue
+import com.devil.phoenixproject.data.ble.MetricPollingEngine
 import com.devil.phoenixproject.data.ble.requestHighPriority
 import com.devil.phoenixproject.data.ble.requestMtuIfSupported
 import com.devil.phoenixproject.data.ble.parseRepPacket
-import com.devil.phoenixproject.data.ble.parseMonitorPacket
 import com.devil.phoenixproject.data.ble.parseDiagnosticPacket
-import com.devil.phoenixproject.data.ble.parseHeuristicPacket
-import com.devil.phoenixproject.data.ble.MonitorPacket
 import com.devil.phoenixproject.data.ble.getUInt16LE
 import com.devil.phoenixproject.data.ble.getUInt16BE
 import com.devil.phoenixproject.data.ble.toVitruvianHex
@@ -189,28 +184,25 @@ class KableBleRepository : BleRepository {
     // All 15 state variables moved to MonitorDataProcessor (Phase 10 extraction)
 
 
-    // Monitor polling job (for explicit control)
-    private var monitorPollingJob: kotlinx.coroutines.Job? = null
-
-    // Polling mutex to prevent race conditions (Task 4)
-    private val monitorPollingMutex = Mutex()
-
     // Issue #222: All BLE operations serialized through single queue
     private val bleQueue = BleOperationQueue()
 
-    // Diagnostic polling job (500ms keep-alive)
-    private var diagnosticPollingJob: kotlinx.coroutines.Job? = null
-    private var diagnosticPollCount: Long = 0
-    private var lastDiagnosticFaults: List<Short>? = null
-
-    // Heuristic polling job (250ms / 4Hz - force telemetry for Echo mode)
-    private var heuristicPollingJob: kotlinx.coroutines.Job? = null
-
-    // Deload debouncing, poll rate diagnostics, and notification counter
-    // moved to MonitorDataProcessor (Phase 10 extraction)
-
-    // Heartbeat job
-    private var heartbeatJob: kotlinx.coroutines.Job? = null
+    // Polling state moved to MetricPollingEngine (Phase 11 extraction)
+    private val pollingEngine = MetricPollingEngine(
+        scope = scope,
+        bleQueue = bleQueue,
+        monitorProcessor = monitorProcessor,
+        handleDetector = handleDetector,
+        onMetricEmit = { metric ->
+            val emitted = _metricsFlow.tryEmit(metric)
+            if (!emitted && monitorProcessor.notificationCount % 100 == 0L) {
+                log.w { "Failed to emit metric - buffer full? Count: ${monitorProcessor.notificationCount}" }
+            }
+            emitted
+        },
+        onHeuristicData = { stats -> _heuristicData.value = stats },
+        onConnectionLost = { disconnect() }
+    )
 
     // Detected firmware version (from DIS or proprietary characteristic)
     private var detectedFirmwareVersion: String? = null
@@ -538,9 +530,8 @@ class KableBleRepository : BleRepository {
                                     deviceAddress
                                 )
 
-                                // Stop heartbeat and reset state
-                                heartbeatJob?.cancel()
-                                heartbeatJob = null
+                                // Stop all polling jobs
+                                pollingEngine.stopAll()
                                 _connectionState.value = ConnectionState.Disconnected
                                 peripheral = null
                                 connectedDeviceName = ""
@@ -755,76 +746,6 @@ class KableBleRepository : BleRepository {
         )
 
         startObservingNotifications()
-        startHeartbeat()
-    }
-
-    /**
-     * Start the heartbeat to keep the BLE connection alive.
-     * Uses read-then-write pattern: tries to read first, falls back to write if read fails.
-     */
-    private fun startHeartbeat() {
-        heartbeatJob?.cancel()
-        heartbeatJob = scope.launch {
-            log.d { "Starting BLE heartbeat (interval=${BleConstants.Timing.HEARTBEAT_INTERVAL_MS}ms, read timeout=${BleConstants.Timing.HEARTBEAT_READ_TIMEOUT_MS}ms)" }
-            while (isActive) {
-                delay(BleConstants.Timing.HEARTBEAT_INTERVAL_MS)
-
-                val p = peripheral
-                if (p == null) {
-                    log.w { "Heartbeat: peripheral is null, stopping" }
-                    break
-                }
-
-                // ATTEMPT READ FIRST with timeout
-                val readSucceeded = try {
-                    kotlinx.coroutines.withTimeoutOrNull(BleConstants.Timing.HEARTBEAT_READ_TIMEOUT_MS) {
-                        performHeartbeatRead(p)
-                    } ?: false
-                } catch (e: Exception) {
-                    log.e { "Heartbeat read attempt crashed: ${e.message}" }
-                    false
-                }
-
-                // FALLBACK TO WRITE if read failed
-                if (!readSucceeded) {
-                    sendHeartbeatNoOp(p)
-                }
-            }
-        }
-    }
-
-    /**
-     * Issue #222 v15: Perform heartbeat read matching parent repo behavior.
-     * Parent reads TX characteristic (nusRxCharacteristic in parent naming).
-     * This typically fails (TX is write-only) which triggers the no-op write.
-     * Returns true if read succeeded, false otherwise.
-     */
-    private suspend fun performHeartbeatRead(p: Peripheral): Boolean {
-        return try {
-            bleQueue.read {
-                // Issue #222 v15: Read TX char to match parent (will typically fail)
-                p.read(txCharacteristic)
-            }
-            log.v { "Heartbeat read succeeded (TX char)" }
-            true
-        } catch (e: Exception) {
-            log.d { "Heartbeat read failed (expected): ${e.message}" }
-            false
-        }
-    }
-
-    /**
-     * Send heartbeat no-op write as fallback when read fails.
-     * Uses 4-byte no-op command (MUST be exactly 4 bytes).
-     * Issue #222 v15.1: V-Form requires WithResponse.
-     */
-    private suspend fun sendHeartbeatNoOp(p: Peripheral) {
-        try {
-            bleQueue.writeSimple(p, txCharacteristic, BleConstants.HEARTBEAT_NO_OP, WriteType.WithResponse)
-            log.v { "Heartbeat no-op write sent" }
-        } catch (e: Exception) {
-            log.w { "Heartbeat no-op write failed: ${e.message}" }
-        }
     }
 
     private fun startObservingNotifications() {
@@ -914,23 +835,9 @@ class KableBleRepository : BleRepository {
             }
         }
 
-        // ===== POLLING (NOT notifications - these chars are ReadableCharacteristics) =====
-
-        // MONITOR characteristic - use POLLING only (NOT notifications)
-        // Per parent repo: "SAMPLE_CHAR is NOT a NotifiableCharacteristic!"
-        log.i { "Starting MONITOR characteristic polling (real-time metrics)" }
-        startMonitorPolling(p)
-
-        // DIAGNOSTIC characteristic - 500ms keep-alive polling
-        // Maintains connection and provides fault/temperature data
-        log.i { "Starting DIAGNOSTIC characteristic polling (500ms keep-alive)" }
-        startDiagnosticPolling(p)
-
-        // HEURISTIC characteristic - 250ms/4Hz polling for force telemetry
-        // Per parent repo: Uses polling (not notifications) to get phase statistics
-        // Critical for Echo mode force feedback - provides kgMax for actual measured force
-        log.i { "Starting HEURISTIC characteristic polling (250ms/4Hz - force telemetry)" }
-        startHeuristicPolling(p)
+        // ===== POLLING (delegated to MetricPollingEngine) =====
+        stopDiscoMode()
+        pollingEngine.startAll(p)
     }
 
     /**
@@ -978,115 +885,13 @@ class KableBleRepository : BleRepository {
     }
 
     /**
-     * Poll DIAGNOSTIC characteristic every 500ms for keep-alive and health monitoring.
-     * Matches official app interval. Uses suspend-based reads.
-     */
-    private fun startDiagnosticPolling(p: Peripheral) {
-        diagnosticPollingJob?.cancel()
-        diagnosticPollingJob = scope.launch {
-            log.d { "🔄 Starting SEQUENTIAL diagnostic polling (${BleConstants.Timing.DIAGNOSTIC_POLL_INTERVAL_MS}ms interval - matches official app)" }
-            var successfulReads = 0L
-            var failedReads = 0L
-            diagnosticPollCount = 0
-            lastDiagnosticFaults = null
-
-            while (_connectionState.value is ConnectionState.Connected && isActive) {
-                try {
-                    val data = withTimeoutOrNull(BleConstants.Timing.HEARTBEAT_READ_TIMEOUT_MS) {
-                        bleQueue.read { p.read(diagnosticCharacteristic) }
-                    }
-
-                    if (data != null) {
-                        successfulReads++
-                        diagnosticPollCount++
-                        if (diagnosticPollCount == 1L || diagnosticPollCount % BleConstants.Timing.DIAGNOSTIC_LOG_EVERY == 0L) {
-                            log.d { "📊 Diagnostic poll #$diagnosticPollCount (bytes=${data.size}, failed=$failedReads)" }
-                        }
-                        parseDiagnosticData(data)
-                    } else {
-                        failedReads++
-                    }
-
-                    // Fixed 500ms interval for keep-alive purposes
-                    delay(BleConstants.Timing.DIAGNOSTIC_POLL_INTERVAL_MS)
-                } catch (e: Exception) {
-                    failedReads++
-                    if (failedReads <= 5 || failedReads % 20 == 0L) {
-                        log.w { "❌ Diagnostic poll failed #$failedReads: ${e.message}" }
-                    }
-                    delay(BleConstants.Timing.DIAGNOSTIC_POLL_INTERVAL_MS)
-                }
-            }
-            log.d { "📊 Diagnostic polling ended (success: $successfulReads, failed: $failedReads)" }
-        }
-    }
-
-    /**
-     * Poll HEURISTIC characteristic every 250ms (4Hz) for force telemetry.
-     * Matches parent repo and official app - provides phase statistics for
-     * concentric/eccentric analysis and Echo mode force feedback.
-     *
-     * Returns 48 bytes: 6 floats for concentric stats, 6 floats for eccentric stats
-     * Each phase has: kgAvg, kgMax, velAvg, velMax, wattAvg, wattMax
-     *
-     * This is critical for accurate force display - heuristicData.kgMax represents
-     * actual measured force from the machine, not the user's configured weight.
-     */
-    private fun startHeuristicPolling(p: Peripheral) {
-        heuristicPollingJob?.cancel()
-        heuristicPollingJob = scope.launch {
-            log.d { "🔄 Starting SEQUENTIAL heuristic polling (${BleConstants.Timing.HEURISTIC_POLL_INTERVAL_MS}ms interval / 4Hz - matching parent repo)" }
-            var successfulReads = 0L
-            var failedReads = 0L
-
-            while (_connectionState.value is ConnectionState.Connected && isActive) {
-                try {
-                    val data = withTimeoutOrNull(BleConstants.Timing.HEARTBEAT_READ_TIMEOUT_MS) {
-                        bleQueue.read { p.read(heuristicCharacteristic) }
-                    }
-
-                    if (data != null && data.isNotEmpty()) {
-                        successfulReads++
-                        if (successfulReads % 100 == 0L) {
-                            log.v { "📊 Heuristic poll #$successfulReads (failed: $failedReads)" }
-                        }
-                        parseHeuristicData(data)
-                    } else {
-                        failedReads++
-                        if (failedReads <= 3) {
-                            log.v { "Heuristic read returned null/empty" }
-                        }
-                    }
-
-                    // Fixed 250ms interval (4Hz) matching parent repo
-                    delay(BleConstants.Timing.HEURISTIC_POLL_INTERVAL_MS)
-                } catch (e: Exception) {
-                    failedReads++
-                    if (failedReads <= 5 || failedReads % 50 == 0L) {
-                        log.w { "❌ Heuristic poll failed #$failedReads: ${e.message}" }
-                    }
-                    delay(BleConstants.Timing.HEURISTIC_POLL_INTERVAL_MS)
-                }
-            }
-            log.d { "📊 Heuristic polling ended (success: $successfulReads, failed: $failedReads)" }
-        }
-    }
-
-    /**
      * Parse diagnostic data from DIAGNOSTIC/PROPERTY characteristic.
      * Contains fault codes and temperature readings.
      */
     private fun parseDiagnosticData(bytes: ByteArray) {
         try {
             val packet = parseDiagnosticPacket(bytes) ?: return
-
-            val faultSnapshot = packet.faults
-            val faultsChanged = lastDiagnosticFaults == null || lastDiagnosticFaults != faultSnapshot
-            if (faultsChanged) {
-                log.i { "DIAGNOSTIC update: faults=$faultSnapshot temps=${packet.temps.map { it.toInt() }}" }
-                lastDiagnosticFaults = faultSnapshot
-            }
-
+            log.i { "DIAGNOSTIC: faults=${packet.faults} temps=${packet.temps.map { it.toInt() }}" }
             if (packet.hasFaults) {
                 log.w { "DIAGNOSTIC FAULTS DETECTED: ${packet.faults}" }
             }
@@ -1095,136 +900,12 @@ class KableBleRepository : BleRepository {
         }
     }
 
-    /**
-     * Parse heuristic data from HEURISTIC characteristic.
-     * Contains concentric/eccentric phase statistics (48 bytes, Little Endian).
-     * Format: 6 floats for concentric stats, 6 floats for eccentric stats
-     */
-    private fun parseHeuristicData(bytes: ByteArray) {
-        try {
-            val stats = parseHeuristicPacket(bytes, timestamp = currentTimeMillis()) ?: return
-            _heuristicData.value = stats
-        } catch (e: Exception) {
-            log.v { "Failed to parse heuristic data: ${e.message}" }
-        }
-    }
-
-    /**
-     * Poll MONITOR characteristic for real-time position/load data.
-     * Per parent repo: "SAMPLE_CHAR is NOT a NotifiableCharacteristic!
-     * Per official Vitruvian app analysis, Sample data MUST be polled via readCharacteristic()"
-     *
-     * CRITICAL: Uses withTimeout to prevent hangs if BLE stack doesn't respond.
-     * Parent repo uses withTimeoutOrNull(BleConstants.Timing.HEARTBEAT_READ_TIMEOUT_MS) for the same reason.
-     * NO fixed delay between successful reads - natural rate-limiting by BLE response time.
-     *
-     * @param forAutoStart If true, enables handle detection with WaitingForRest state (for Just Lift auto-start).
-     *                     If false, sets handle state to Active (for active workout monitoring).
-     */
-    private fun startMonitorPolling(p: Peripheral, forAutoStart: Boolean = false) {
-        // Stop disco mode if running (safety - don't interfere with workout polling)
-        stopDiscoMode()
-
-        // Reset monitor processing state for new session (Phase 10 delegation)
-        val previousCount = monitorProcessor.notificationCount
-        monitorProcessor.resetForNewSession()
-        log.i { "Monitor processor reset (previous session: $previousCount notifications)" }
-
-        if (forAutoStart) {
-            // AUTO-START MODE: Delegate to HandleStateDetector
-            handleDetector.enable(autoStart = true)
-            log.i { "Monitor polling for AUTO-START - waiting for handles at rest (pos < ${BleConstants.Thresholds.HANDLE_REST_THRESHOLD}mm), vel threshold=${BleConstants.Thresholds.AUTO_START_VELOCITY_THRESHOLD}mm/s" }
-        }
-
-        // Cancel any existing polling job before starting new one
-        monitorPollingJob?.cancel()
-
-        // Start sequential polling using suspend-based reads (official app approach)
-        monitorPollingJob = scope.launch {
-            // Use mutex to ensure only one polling loop runs at a time.
-            // NOTE: We removed the premature `isLocked` check which caused a race condition
-            // where the second call to startMonitorPolling (with forAutoStart=true) would skip
-            // because the first call's mutex was still locked. Now we properly wait for the
-            // cancelled job to release the mutex before starting the new polling loop.
-            monitorPollingMutex.withLock {
-                var failCount = 0
-                var successCount = 0L
-                var consecutiveTimeouts = 0
-                log.i { "🔄 Starting SEQUENTIAL monitor polling (with timeout=${BleConstants.Timing.HEARTBEAT_READ_TIMEOUT_MS}ms, forAutoStart=$forAutoStart)" }
-
-                try {
-                    while (_connectionState.value is ConnectionState.Connected && isActive) {
-                    try {
-                        // CRITICAL: Wrap read in timeout to prevent indefinite hangs
-                        // BLE stack can sometimes fail to return success/failure callback
-                        // This matches parent repo's withTimeoutOrNull pattern
-                        val data = withTimeoutOrNull(BleConstants.Timing.HEARTBEAT_READ_TIMEOUT_MS) {
-                            bleQueue.read { p.read(monitorCharacteristic) }
-                        }
-
-                        if (data != null) {
-                            // Success - parse data and continue immediately
-                            successCount++
-                            consecutiveTimeouts = 0
-                            if (successCount == 1L || successCount % 500 == 0L) {
-                                log.i { "📊 Monitor poll SUCCESS #$successCount, data size: ${data.size}" }
-                            }
-                            parseMonitorData(data)
-                            failCount = 0
-                            // NO DELAY on success - BLE response time naturally rate-limits (~10-20ms)
-                        } else {
-                            // Timeout - BLE stack hung, continue polling
-                            consecutiveTimeouts++
-                            if (consecutiveTimeouts <= 3 || consecutiveTimeouts % 10 == 0) {
-                                log.w { "⏱️ Monitor read timed out (${BleConstants.Timing.HEARTBEAT_READ_TIMEOUT_MS}ms) - consecutive: $consecutiveTimeouts" }
-                            }
-                            // Task 13: Disconnect after too many consecutive timeouts
-                            if (consecutiveTimeouts >= BleConstants.Timing.MAX_CONSECUTIVE_TIMEOUTS) {
-                                log.e { "Too many consecutive timeouts ($consecutiveTimeouts), triggering disconnect" }
-                                _connectionState.value = ConnectionState.Disconnected
-                                scope.launch { disconnect() }
-                                return@withLock
-                            }
-                            // Small delay after timeout to avoid tight loop
-                            delay(50)
-                        }
-                    } catch (e: kotlinx.coroutines.TimeoutCancellationException) {
-                        // Explicit timeout exception (shouldn't happen with withTimeoutOrNull, but safety)
-                        consecutiveTimeouts++
-                        log.w { "⏱️ Monitor read timeout exception - consecutive: $consecutiveTimeouts" }
-                        delay(50)
-                    } catch (e: Exception) {
-                        // Kable exceptions (IOException, GattException, etc.)
-                        failCount++
-                        consecutiveTimeouts = 0
-                        if (failCount <= 5 || failCount % 50 == 0) {
-                            log.w { "❌ Monitor poll FAILED #$failCount: ${e.message}" }
-                        }
-                        // Delay on failure to prevent tight error loops
-                        delay(50)
-                    }
-                    }
-                } catch (e: Exception) {
-                    log.e { "Monitor polling stopped: ${e.message}" }
-                }
-                log.i { "📊 Monitor polling ended (reads: $successCount, failures: $failCount, timeouts: $consecutiveTimeouts)" }
-            }
-        }
-    }
-
     override suspend fun disconnect() {
         log.i { "Disconnecting (explicit)" }
         isExplicitDisconnect = true  // Mark as explicit disconnect to prevent auto-reconnect
 
         // Cancel all polling jobs
-        heartbeatJob?.cancel()
-        heartbeatJob = null
-        monitorPollingJob?.cancel()
-        monitorPollingJob = null
-        diagnosticPollingJob?.cancel()
-        diagnosticPollingJob = null
-        heuristicPollingJob?.cancel()
-        heuristicPollingJob = null
+        pollingEngine.stopAll()
 
         try {
             peripheral?.disconnect()
@@ -1414,10 +1095,10 @@ class KableBleRepository : BleRepository {
     override fun enableHandleDetection(enabled: Boolean) {
         log.i { "Handle detection ${if (enabled) "ENABLED" else "DISABLED"}" }
         if (enabled) {
-            handleDetector.enable(autoStart = true)
             val p = peripheral
             if (p != null) {
-                startMonitorPolling(p, forAutoStart = true)
+                stopDiscoMode()
+                pollingEngine.startMonitorPolling(p, forAutoStart = true)
             }
         } else {
             handleDetector.disable()
@@ -1429,128 +1110,35 @@ class KableBleRepository : BleRepository {
     override fun enableJustLiftWaitingMode() = handleDetector.enableJustLiftWaiting()
 
     override fun restartMonitorPolling() {
-        log.i { "🔄 Restarting monitor polling to clear machine fault state" }
-        val p = peripheral
-        if (p != null) {
-            // Restart polling WITHOUT arming auto-start (forAutoStart=false)
-            // This clears the machine's danger zone alarm but doesn't enable grab detection
-            startMonitorPolling(p, forAutoStart = false)
-        } else {
+        log.i { "Restarting monitor polling to clear machine fault state" }
+        val p = peripheral ?: run {
             log.w { "Cannot restart monitor polling - peripheral is null" }
+            return
         }
+        stopDiscoMode()
+        pollingEngine.startMonitorPolling(p, forAutoStart = false)
     }
 
     override fun startActiveWorkoutPolling() {
-        log.i { "🏋️ Starting active workout polling (no auto-start)" }
-        val p = peripheral
-        if (p != null) {
-            log.d {
-                "Issue #222 v16: Polling job states before restart - " +
-                    "monitor=${monitorPollingJob?.isActive}, " +
-                    "diagnostic=${diagnosticPollingJob?.isActive}, " +
-                    "heuristic=${heuristicPollingJob?.isActive}, " +
-                    "heartbeat=${heartbeatJob?.isActive}"
-            }
-
-            // Start polling for active workout (forAutoStart=false)
-            // Handle state is set to Active, no grab detection
-            startMonitorPolling(p, forAutoStart = false)
-
-            // Issue #222 v16: Restart keep-alive + telemetry polling if stopWorkout() canceled them
-            if (diagnosticPollingJob?.isActive != true) {
-                log.d { "Issue #222 v16: Restarting diagnostic polling (was stopped by previous stopWorkout)" }
-                startDiagnosticPolling(p)
-            }
-            if (heartbeatJob?.isActive != true) {
-                log.d { "Issue #222 v16: Restarting heartbeat (was stopped by previous stopWorkout)" }
-                startHeartbeat()
-            }
-            if (heuristicPollingJob?.isActive != true) {
-                log.d { "Issue #222 v16: Restarting heuristic polling (was stopped by previous stopWorkout)" }
-                startHeuristicPolling(p)
-            }
-        } else {
+        log.i { "Starting active workout polling (no auto-start)" }
+        val p = peripheral ?: run {
             log.w { "Cannot start active workout polling - peripheral is null" }
+            return
         }
+        stopDiscoMode()
+        pollingEngine.restartAll(p)
     }
 
-    override fun stopPolling() {
-        val timestamp = currentTimeMillis()
-        log.d { "STOP_DEBUG: [$timestamp] stopPolling() called" }
-        log.d {
-            "STOP_DEBUG: Job states before cancel - monitor=${monitorPollingJob?.isActive}, " +
-                "diagnostic=${diagnosticPollingJob?.isActive}, heuristic=${heuristicPollingJob?.isActive}, " +
-                "heartbeat=${heartbeatJob?.isActive}"
-        }
+    override fun stopPolling() = pollingEngine.stopAll()
 
-        // Log analysis from workout (position range from HandleStateDetector for diagnostics)
-        if (handleDetector.minPositionSeen != Double.MAX_VALUE && handleDetector.maxPositionSeen != Double.MIN_VALUE) {
-            log.i { "========== WORKOUT ANALYSIS ==========" }
-            log.i { "Position range: min=${handleDetector.minPositionSeen}, max=${handleDetector.maxPositionSeen}" }
-            log.i { "Detection thresholds (auto-start mode uses lower velocity):" }
-            log.i { "  Handle grab: pos > ${BleConstants.Thresholds.HANDLE_GRABBED_THRESHOLD} + velocity > ${if (handleDetector.isAutoStartMode) BleConstants.Thresholds.AUTO_START_VELOCITY_THRESHOLD else BleConstants.Thresholds.VELOCITY_THRESHOLD}${if (handleDetector.isAutoStartMode) " (auto-start)" else ""}" }
-            log.i { "  Handle release: pos < ${BleConstants.Thresholds.HANDLE_REST_THRESHOLD}" }
-            log.i { "======================================" }
-        }
+    override fun stopMonitorPollingOnly() = pollingEngine.stopMonitorOnly()
 
-        monitorPollingJob?.cancel()
-        diagnosticPollingJob?.cancel()
-        heuristicPollingJob?.cancel()
-        heartbeatJob?.cancel()
-
-        monitorPollingJob = null
-        diagnosticPollingJob = null
-        heuristicPollingJob = null
-        heartbeatJob = null
-        diagnosticPollCount = 0
-        lastDiagnosticFaults = null
-
-        val afterCancel = currentTimeMillis()
-        log.d { "STOP_DEBUG: [$afterCancel] Jobs cancelled (took ${afterCancel - timestamp}ms)" }
-    }
-
-    /**
-     * Stop monitor polling only, keeping diagnostic polling and heartbeat active.
-     * Issue #222: Used during bodyweight exercises to prevent BLE link degradation
-     * while not emitting workout metrics that would confuse the UI.
-     */
-    override fun stopMonitorPollingOnly() {
-        log.d { "Stopping monitor polling only - diagnostic polling + heartbeat continue" }
-        monitorPollingJob?.cancel()
-        monitorPollingJob = null
-        log.d {
-            "Monitor-only stop: diagnostic=${diagnosticPollingJob?.isActive}, " +
-                "heuristic=${heuristicPollingJob?.isActive}, heartbeat=${heartbeatJob?.isActive}"
-        }
-        // Keep diagnostic, heuristic, and heartbeat running
-    }
-
-    /**
-     * Restart diagnostic polling and heartbeat only (not monitor polling).
-     * Issue #222 v10: Use after bodyweight set completion to maintain BLE link during rest.
-     */
     override fun restartDiagnosticPolling() {
-        val p = peripheral
-        if (p == null) {
+        val p = peripheral ?: run {
             log.w { "Cannot restart diagnostic polling - peripheral is null" }
             return
         }
-
-        log.d { "Restarting diagnostic polling + heartbeat (Issue #222 v10)" }
-
-        // Restart diagnostic polling if not already running
-        if (diagnosticPollingJob?.isActive != true) {
-            startDiagnosticPolling(p)
-        } else {
-            log.d { "Diagnostic polling already active - skip restart" }
-        }
-
-        // Restart heartbeat if not already running
-        if (heartbeatJob?.isActive != true) {
-            startHeartbeat()
-        } else {
-            log.d { "Heartbeat already active - skip restart" }
-        }
+        pollingEngine.restartDiagnosticAndHeartbeat(p)
     }
 
     /**
@@ -1572,14 +1160,7 @@ class KableBleRepository : BleRepository {
         )
 
         // Cancel all polling jobs (matches disconnect() behavior)
-        heartbeatJob?.cancel()
-        heartbeatJob = null
-        monitorPollingJob?.cancel()
-        monitorPollingJob = null
-        diagnosticPollingJob?.cancel()
-        diagnosticPollingJob = null
-        heuristicPollingJob?.cancel()
-        heuristicPollingJob = null
+        pollingEngine.stopAll()
 
         // Disconnect and release the peripheral
         try {
@@ -1642,33 +1223,7 @@ class KableBleRepository : BleRepository {
         }
     }
 
-    /**
-     * Parse monitor characteristic data by delegating to MonitorDataProcessor.
-     * All position validation, velocity EMA, status flags, and jump filtering
-     * are handled by the processor (Phase 10 extraction).
-     */
-    private fun parseMonitorData(data: ByteArray) {
-        val packet = parseMonitorPacket(data)
-        if (packet == null) {
-            log.w { "Monitor data too short: ${data.size} bytes" }
-            return
-        }
-
-        try {
-            val metric = monitorProcessor.process(packet) ?: return
-
-            // Emit metric to flow
-            val emitted = _metricsFlow.tryEmit(metric)
-            if (!emitted && monitorProcessor.notificationCount % 100 == 0L) {
-                log.w { "Failed to emit metric - buffer full? Count: ${monitorProcessor.notificationCount}" }
-            }
-
-            // Handle detection delegated to HandleStateDetector
-            handleDetector.processMetric(metric)
-        } catch (e: Exception) {
-            log.e { "Error parsing monitor data: ${e.message}" }
-        }
-    }
+    // parseMonitorData() moved to MetricPollingEngine (Phase 11 extraction)
 
     // processStatusFlags() moved to MonitorDataProcessor (Phase 10 extraction)
 
