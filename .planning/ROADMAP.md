@@ -4,7 +4,7 @@
 
 - **v0.4.0 Foundation** - Phases 0 (pre-GSD, shipped)
 - **v0.4.1 Architectural Cleanup** - Phases 1-4 (shipped 2026-02-13)
-- **v0.4.2 BLE Layer Decomposition** - Phases 5-12 (in progress)
+- **v0.4.2 BLE Layer Decomposition** - Phases 5-13 (in progress)
 
 ## Overview
 
@@ -22,9 +22,10 @@ Decompose the 2,886-line KableBleRepository monolith into 8 focused, testable mo
 - [x] **Phase 7: BleOperationQueue** - Extract Mutex-based BLE serialization (low risk) ✓ 2026-02-15
 - [ ] **Phase 8: DiscoMode + Interface** - Extract easter egg and fix concrete cast (zero risk)
 - [ ] **Phase 9: HandleStateDetector** - Extract 4-state handle detection machine (low risk)
-- [x] **Phase 10: MonitorDataProcessor** - Extract position validation and velocity EMA (medium risk) (completed 2026-02-15)
+- [x] **Phase 10: MonitorDataProcessor** - Extract position validation and velocity EMA (medium risk)(completed 2026-02-15)
 - [ ] **Phase 11: MetricPollingEngine** - Extract all polling loops (medium risk)
-- [x] **Phase 12: KableBleConnectionManager + Facade** - Extract connection lifecycle, finalize facade (high risk) (completed 2026-02-16)
+- [x] **Phase 12: KableBleConnectionManager + Facade** - Extract connection lifecycle, finalize facade (high risk) (completed 2026-02-16)
+- [ ] **Phase 13: MetricPollingEngine Verification** - Formal verification of Phase 11 (gap closure)
 
 ## Phase Details
 
@@ -133,10 +134,23 @@ Plans:
 - [ ] 12-01-PLAN.md -- Create KableBleConnectionManager with all connection lifecycle code + tests
 - [ ] 12-02-PLAN.md -- Wire facade delegation, reduce KableBleRepository to <400 lines, manual BLE testing
 
+### Phase 13: MetricPollingEngine Verification
+**Goal**: Formal verification of Phase 11 success criteria (gap closure from milestone audit)
+**Depends on**: Phase 11
+**Requirements**: POLL-01, POLL-02, POLL-03
+**Gap Closure**: Closes 3 requirement gaps from v0.4.2 milestone audit
+**Success Criteria** (what must be TRUE):
+  1. VERIFICATION.md generated with evidence for all Phase 11 success criteria
+  2. POLL-01 verified: MetricPollingEngine manages monitor, diagnostic, heuristic, heartbeat loops
+  3. POLL-02 verified: stopMonitorOnly preserves diagnostic and heartbeat polling (Issue #222)
+  4. POLL-03 verified: Timeout disconnect after MAX_CONSECUTIVE_TIMEOUTS works correctly
+**Plans**: 1 plan
+  - [ ] 13-01-PLAN.md - Verify Phase 11 success criteria, generate VERIFICATION.md
+
 ## Progress
 
 **Execution Order:**
-Phases 5 -> 6 -> 7 -> 8 -> 9 -> 10 -> 11 -> 12
+Phases 5 -> 6 -> 7 -> 8 -> 9 -> 10 -> 11 -> 12 -> 13
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
@@ -148,6 +162,7 @@ Phases 5 -> 6 -> 7 -> 8 -> 9 -> 10 -> 11 -> 12
 | 10. MonitorDataProcessor | v0.4.2 | Complete    | 2026-02-15 | - |
 | 11. MetricPollingEngine | v0.4.2 | 0/? | Not started | - |
 | 12. KableBleConnectionManager + Facade | v0.4.2 | Complete    | 2026-02-16 | - |
+| 13. MetricPollingEngine Verification | v0.4.2 | 0/1 | Not started | - |
 
 ---
 *Roadmap created: 2026-02-15*
