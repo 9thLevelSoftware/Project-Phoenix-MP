@@ -267,12 +267,27 @@ class ActiveSessionEngine(
 
         val durationMs = metrics.last().timestamp - metrics.first().timestamp
 
-        // Parent-aligned: raw totalLoad / 2, no baseline subtraction
-        val heaviestLiftKgPerCable = metrics.maxOf { it.totalLoad / 2f }
-
         val peakCableA = metrics.maxOf { it.loadA }
         val peakCableB = metrics.maxOf { it.loadB }
-        val totalVolumeKg = metrics.maxOf { it.totalLoad / 2f } * 2f * repCount
+
+        // Issue #6 Fix: Detect single-cable (unilateral) exercises and don't halve the weight.
+        // Heuristic: if one cable's peak load is > 5x the other's, treat as single-cable.
+        // For single-cable, use the max of the active cable. For double-cable, use totalLoad/2.
+        val isSingleCable = (peakCableA > 0f && peakCableB > 0f &&
+            (peakCableA / peakCableB > 5f || peakCableB / peakCableA > 5f)) ||
+            (peakCableA > 0f && peakCableB == 0f) ||
+            (peakCableB > 0f && peakCableA == 0f)
+
+        val heaviestLiftKgPerCable = if (isSingleCable) {
+            // Single-cable: use the active cable's load (don't halve)
+            metrics.maxOf { maxOf(it.loadA, it.loadB) }
+        } else {
+            // Double-cable: raw totalLoad / 2, no baseline subtraction (parent-aligned)
+            metrics.maxOf { it.totalLoad / 2f }
+        }
+
+        // Volume calculation: for double-cable multiply by 2 (both cables), for single-cable use as-is
+        val totalVolumeKg = heaviestLiftKgPerCable * (if (isSingleCable) 1f else 2f) * repCount
 
         val concentricMetrics = metrics.filter { it.velocityA > 10 || it.velocityB > 10 }
         val eccentricMetrics = metrics.filter { it.velocityA < -10 || it.velocityB < -10 }
@@ -306,7 +321,11 @@ class ActiveSessionEngine(
         val estimatedCalories = (totalVolumeKg * 0.5f * 9.81f / 4184f).coerceAtLeast(1f)
 
         val peakPower = heaviestLiftKgPerCable
-        val averagePower = metrics.map { it.totalLoad / 2f }.average().toFloat()
+        val averagePower = if (isSingleCable) {
+            metrics.map { maxOf(it.loadA, it.loadB) }.average().toFloat()
+        } else {
+            metrics.map { it.totalLoad / 2f }.average().toFloat()
+        }
 
         // Echo Mode Phase-Aware Metrics
         var warmupAvgWeightKg = 0f
@@ -1310,6 +1329,7 @@ class ActiveSessionEngine(
              }
 
              val metrics = coordinator.collectedMetrics.toList()
+             Logger.i { "WEIGHT_DEBUG[Session]: At set completion - params.weightPerCableKg=${params.weightPerCableKg} kg" }
              val summary = calculateSetSummaryMetrics(
                  metrics = metrics,
                  repCount = repCount.totalReps,
@@ -1498,8 +1518,20 @@ class ActiveSessionEngine(
 
         val metricsSnapshot = coordinator.collectedMetrics.toList()
 
+        // Issue #6 Fix: Detect single-cable exercises for correct weight measurement
+        val peakA = metricsSnapshot.maxOfOrNull { it.loadA } ?: 0f
+        val peakB = metricsSnapshot.maxOfOrNull { it.loadB } ?: 0f
+        val isSingleCable = (peakA > 0f && peakB > 0f &&
+            (peakA / peakB > 5f || peakB / peakA > 5f)) ||
+            (peakA > 0f && peakB == 0f) ||
+            (peakB > 0f && peakA == 0f)
+
         val measuredPerCableKg = if (metricsSnapshot.isNotEmpty()) {
-            metricsSnapshot.maxOf { it.totalLoad / 2f }
+            if (isSingleCable) {
+                metricsSnapshot.maxOf { maxOf(it.loadA, it.loadB) }
+            } else {
+                metricsSnapshot.maxOf { it.totalLoad / 2f }
+            }
         } else {
             params.weightPerCableKg
         }

@@ -209,6 +209,8 @@ class DefaultWorkoutSessionManager(
     fun deleteRoutine(routineId: String) = routineFlowManager.deleteRoutine(routineId)
     fun deleteRoutines(routineIds: Set<String>) = routineFlowManager.deleteRoutines(routineIds)
     fun loadRoutine(routine: Routine) = routineFlowManager.loadRoutine(routine)
+    /** Issue #2 Fix: Suspend version that completes after routine is fully loaded */
+    suspend fun loadRoutineAsync(routine: Routine) = routineFlowManager.loadRoutineAsync(routine)
     fun loadRoutineById(routineId: String) = routineFlowManager.loadRoutineById(routineId)
     fun enterRoutineOverview(routine: Routine) = routineFlowManager.enterRoutineOverview(routine)
 

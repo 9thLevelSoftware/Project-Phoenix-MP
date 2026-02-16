@@ -489,6 +489,24 @@ class RoutineFlowManager(
         }
     }
 
+    /**
+     * Issue #2 Fix: Suspend version of loadRoutine that completes only after routine
+     * is fully loaded, including PR-based weight resolution.
+     *
+     * Use this when you need to ensure the routine is loaded before starting a workout,
+     * e.g., in SingleExerciseScreen where ensureConnection might fire immediately.
+     */
+    suspend fun loadRoutineAsync(routine: Routine): Boolean {
+        if (routine.exercises.isEmpty()) {
+            Logger.w { "Cannot load routine with no exercises" }
+            return false
+        }
+
+        val resolvedRoutine = resolveRoutineWeights(routine)
+        loadRoutineInternal(resolvedRoutine)
+        return true
+    }
+
     fun loadRoutineById(routineId: String) {
         val routine = coordinator._routines.value.find { it.id == routineId }
         if (routine != null) {
