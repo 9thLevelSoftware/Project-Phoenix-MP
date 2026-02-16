@@ -322,23 +322,32 @@ fun SingleExerciseScreen(
                                 exercises = listOf(configuredExercise)
                             )
 
-                            Logger.d { "SingleExercise: Loading temp routine" }
-                            viewModel.loadRoutine(tempRoutine)
-
-                            Logger.d { "SingleExercise: Calling ensureConnection" }
-                            viewModel.ensureConnection(
-                                onConnected = {
-                                    Logger.d { "SingleExercise: onConnected callback - starting workout" }
-                                    viewModel.startWorkout()
-                                    Logger.d { "SingleExercise: Navigating to ActiveWorkout" }
-                                    navController.navigate(NavigationRoutes.ActiveWorkout.route) {
-                                        popUpTo(NavigationRoutes.Home.route)
-                                    }
-                                },
-                                onFailed = {
-                                    Logger.e { "SingleExercise: onFailed callback - connection failed" }
+                            // Issue #2 Fix: Use coroutine to await routine loading (including PR weight
+                            // resolution) BEFORE calling ensureConnection, to prevent race condition where
+                            // onConnected fires before routine is loaded when device is already connected.
+                            coroutineScope.launch {
+                                Logger.d { "SingleExercise: Loading temp routine (async)" }
+                                val loaded = viewModel.loadRoutineAsync(tempRoutine)
+                                if (!loaded) {
+                                    Logger.e { "SingleExercise: Failed to load routine" }
+                                    return@launch
                                 }
-                            )
+                                Logger.d { "SingleExercise: Routine loaded, calling ensureConnection" }
+
+                                viewModel.ensureConnection(
+                                    onConnected = {
+                                        Logger.d { "SingleExercise: onConnected callback - starting workout" }
+                                        viewModel.startWorkout()
+                                        Logger.d { "SingleExercise: Navigating to ActiveWorkout" }
+                                        navController.navigate(NavigationRoutes.ActiveWorkout.route) {
+                                            popUpTo(NavigationRoutes.Home.route)
+                                        }
+                                    },
+                                    onFailed = {
+                                        Logger.e { "SingleExercise: onFailed callback - connection failed" }
+                                    }
+                                )
+                            }
 
                             exerciseToConfig = null
                         },

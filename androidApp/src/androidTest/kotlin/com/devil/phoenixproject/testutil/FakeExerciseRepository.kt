@@ -138,4 +138,11 @@ class FakeExerciseRepository : ExerciseRepository {
     override suspend fun findByName(name: String): Exercise? {
         return exercises.values.find { it.name == name }
     }
+
+    override suspend fun findByIdOrName(id: String?, name: String): Exercise? {
+        if (id != null) {
+            exercises[id]?.let { return it }
+        }
+        return exercises.values.find { it.name == name }
+    }
 }

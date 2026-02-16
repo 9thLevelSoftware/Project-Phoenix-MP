@@ -32,6 +32,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
+import co.touchlab.kermit.Logger
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
@@ -122,8 +123,13 @@ actual fun CompactNumberPicker(
     }
 
     // Commit the edited value
+    // Issue #4 Fix: Sanitize input and handle parse failure gracefully
     fun commitEdit() {
-        inputText.toFloatOrNull()?.let { parsed ->
+        // Sanitize input: remove non-numeric chars except decimal point and minus
+        val sanitized = inputText.filter { it.isDigit() || it == '.' || it == '-' }
+        val parsed = sanitized.toFloatOrNull()
+
+        if (parsed != null) {
             val clamped = parsed.coerceIn(range)
             val closestIndex = values.indices.minByOrNull { abs(values[it] - clamped) } ?: 0
             val newValue = values[closestIndex]
@@ -132,6 +138,15 @@ actual fun CompactNumberPicker(
             coroutineScope.launch {
                 listState.animateScrollToItem(closestIndex)
             }
+        } else {
+            // Parse failed - keep current scroll position value instead of defaulting to max
+            val currentScrollIndex = listState.firstVisibleItemIndex.coerceIn(values.indices)
+            if (values.isNotEmpty()) {
+                val currentValue = values[currentScrollIndex]
+                lastScrollSetValue = currentValue
+                onValueChange(currentValue)
+            }
+            Logger.w { "CompactNumberPicker: Failed to parse '$inputText', keeping current value" }
         }
         isEditing = false
         focusManager.clearFocus()
@@ -193,6 +208,7 @@ actual fun CompactNumberPicker(
             val centerIndex = listState.firstVisibleItemIndex
             if (centerIndex in values.indices) {
                 val scrollValue = values[centerIndex]
+                Logger.i { "PICKER_DEBUG[iOS]: centerIndex=$centerIndex, scrollValue=$scrollValue, currentValue=$currentValue, values.size=${values.size}" }
                 if (abs(scrollValue - currentValue) > 0.001f) {
                     lastScrollSetValue = scrollValue
                     currentOnValueChange(scrollValue)

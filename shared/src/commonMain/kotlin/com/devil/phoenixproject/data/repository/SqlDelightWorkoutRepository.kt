@@ -322,6 +322,12 @@ class SqlDelightWorkoutRepository(
             modeStr == "Echo" || modeStr.startsWith("Echo") -> {
                 ProgramMode.Echo
             }
+            // Issue #7 Fix: Handle unprefixed legacy mode strings
+            modeStr == "Pump" -> ProgramMode.Pump
+            modeStr == "TUT" -> ProgramMode.TUT
+            modeStr == "TUTBeast" -> ProgramMode.TUTBeast
+            modeStr == "EccentricOnly" -> ProgramMode.EccentricOnly
+            modeStr == "OldSchool" -> ProgramMode.OldSchool
             else -> ProgramMode.OldSchool
         }
     }

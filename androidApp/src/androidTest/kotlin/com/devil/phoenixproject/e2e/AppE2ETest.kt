@@ -30,7 +30,7 @@ import com.devil.phoenixproject.data.sync.RoutineSyncDto
 import com.devil.phoenixproject.data.sync.SyncManager
 import com.devil.phoenixproject.data.sync.SyncTriggerManager
 import com.devil.phoenixproject.data.sync.WorkoutSessionSyncDto
-import com.devil.phoenixproject.di.commonModule
+import com.devil.phoenixproject.di.appModule
 import com.devil.phoenixproject.di.platformModule
 import com.devil.phoenixproject.domain.usecase.RepCounterFromMachine
 import com.devil.phoenixproject.domain.usecase.ResolveRoutineWeightsUseCase
@@ -74,7 +74,7 @@ class AppE2ETest : KoinTest {
         startKoin {
             androidContext(ApplicationProvider.getApplicationContext())
             allowOverride(true)
-            modules(commonModule, platformModule, testModule)
+            modules(appModule, platformModule, testModule)
         }
     }
 
@@ -174,6 +174,7 @@ private val testModule = module {
             preferencesManager = get(),
             gamificationRepository = get(),
             trainingCycleRepository = get(),
+            completedSetRepository = get(),
             resolveWeightsUseCase = get()
         )
     }

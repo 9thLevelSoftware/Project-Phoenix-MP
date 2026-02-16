@@ -3,7 +3,6 @@ package com.devil.phoenixproject.presentation.manager
 import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.data.preferences.PreferencesManager
 import com.devil.phoenixproject.data.repository.BleRepository
-import com.devil.phoenixproject.data.repository.KableBleRepository
 import com.devil.phoenixproject.domain.model.UserPreferences
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.util.format
@@ -78,8 +77,8 @@ class SettingsManager(
         scope.launch {
             bleRepository.setColorScheme(schemeIndex)
             preferencesManager.setColorScheme(schemeIndex)
-            // Update disco mode's restore color index
-            (bleRepository as? KableBleRepository)?.setLastColorSchemeIndex(schemeIndex)
+            // Update disco mode's restore color index (Issue #144: via interface method)
+            bleRepository.setLastColorSchemeIndex(schemeIndex)
         }
     }
 

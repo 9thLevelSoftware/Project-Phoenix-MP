@@ -259,4 +259,13 @@ interface BleRepository {
      * Stop disco mode and restore the last selected color scheme.
      */
     fun stopDiscoMode()
+
+    /**
+     * Update the color scheme index for disco mode restore.
+     * Phase 8: Added to interface to eliminate concrete cast in SettingsManager (Issue #144).
+     * Default no-op for implementations that don't need it.
+     */
+    fun setLastColorSchemeIndex(index: Int) {
+        // No-op default - only KableBleRepository needs this
+    }
 }

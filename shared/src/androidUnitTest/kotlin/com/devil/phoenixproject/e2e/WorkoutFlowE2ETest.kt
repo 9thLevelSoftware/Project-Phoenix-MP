@@ -6,6 +6,7 @@ import com.devil.phoenixproject.domain.usecase.ResolveRoutineWeightsUseCase
 import com.devil.phoenixproject.e2e.robot.WorkoutRobot
 import com.devil.phoenixproject.e2e.robot.workoutRobot
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
+import com.devil.phoenixproject.testutil.FakeCompletedSetRepository
 import com.devil.phoenixproject.testutil.FakeBleRepository
 import com.devil.phoenixproject.testutil.FakeExerciseRepository
 import com.devil.phoenixproject.testutil.FakeGamificationRepository
@@ -39,6 +40,7 @@ class WorkoutFlowE2ETest {
     private lateinit var fakePreferencesManager: FakePreferencesManager
     private lateinit var fakeGamificationRepository: FakeGamificationRepository
     private lateinit var fakeTrainingCycleRepository: FakeTrainingCycleRepository
+    private lateinit var fakeCompletedSetRepository: FakeCompletedSetRepository
     private lateinit var repCounter: RepCounterFromMachine
     private lateinit var resolveWeightsUseCase: ResolveRoutineWeightsUseCase
     private lateinit var robot: WorkoutRobot
@@ -52,6 +54,7 @@ class WorkoutFlowE2ETest {
         fakePreferencesManager = FakePreferencesManager()
         fakeGamificationRepository = FakeGamificationRepository()
         fakeTrainingCycleRepository = FakeTrainingCycleRepository()
+        fakeCompletedSetRepository = FakeCompletedSetRepository()
         repCounter = RepCounterFromMachine()
         resolveWeightsUseCase = ResolveRoutineWeightsUseCase(fakePersonalRecordRepository)
 
@@ -64,6 +67,7 @@ class WorkoutFlowE2ETest {
             preferencesManager = fakePreferencesManager,
             gamificationRepository = fakeGamificationRepository,
             trainingCycleRepository = fakeTrainingCycleRepository,
+            completedSetRepository = fakeCompletedSetRepository,
             resolveWeightsUseCase = resolveWeightsUseCase
         )
 

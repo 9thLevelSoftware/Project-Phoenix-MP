@@ -363,6 +363,10 @@ class SimulatorBleRepository(
         _discoModeActive.value = false
     }
 
+    override fun setLastColorSchemeIndex(index: Int) {
+        // No-op in simulator - no physical LEDs
+    }
+
     // ========== Metrics Emission ==========
 
     private fun startMetricsEmission() {

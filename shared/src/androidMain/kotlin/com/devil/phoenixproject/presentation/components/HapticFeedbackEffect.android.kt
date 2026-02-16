@@ -16,6 +16,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalContext
 import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.domain.model.HapticEvent
+import com.devil.phoenixproject.util.DeviceInfo
 import kotlinx.coroutines.flow.SharedFlow
 import kotlin.random.Random
 
@@ -150,7 +151,8 @@ private fun loadSoundByName(context: Context, soundPool: SoundPool, name: String
 }
 
 /**
- * Play sound based on event type using SoundPool, with MediaPlayer fallback for key sounds
+ * Play sound based on event type using SoundPool, with MediaPlayer fallback for key sounds.
+ * Fire OS: Always uses MediaPlayer (SoundPool has documented volume bug on Fire OS).
  */
 private fun playSound(
     event: HapticEvent,
@@ -164,6 +166,12 @@ private fun playSound(
 ) {
     // ERROR event has no sound
     if (event is HapticEvent.ERROR) return
+
+    // Fire OS: Always use MediaPlayer (SoundPool has volume bug)
+    if (DeviceInfo.isFireOS()) {
+        playWithMediaPlayer(event, context)
+        return
+    }
 
     val soundId = when (event) {
         is HapticEvent.BADGE_EARNED -> {
@@ -210,25 +218,42 @@ private fun playSound(
 }
 
 /**
- * Fallback sound playback using MediaPlayer for when SoundPool fails.
- * Uses same USAGE_GAME attributes to ensure sounds play through DND and use media volume.
+ * Fallback sound playback using MediaPlayer for when SoundPool fails or on Fire OS.
+ * Fire OS: Uses USAGE_MEDIA to work around SoundPool volume bug.
+ * Standard Android: Uses USAGE_GAME to ensure sounds play through DND and use media volume.
  */
 private fun playWithMediaPlayer(event: HapticEvent, context: Context) {
     val soundName = when (event) {
-        is HapticEvent.DISCO_MODE_UNLOCKED -> "discomode"
-        is HapticEvent.BADGE_EARNED -> "victory"
-        is HapticEvent.PERSONAL_RECORD -> "new_personal_record"
+        is HapticEvent.REP_COMPLETED -> "beep"
+        is HapticEvent.WARMUP_COMPLETE -> "beepboop"
         is HapticEvent.WORKOUT_COMPLETE -> "boopbeepbeep"
-        else -> return
+        is HapticEvent.WORKOUT_START -> "chirpchirp"
+        is HapticEvent.WORKOUT_END -> "chirpchirp"
+        is HapticEvent.REST_ENDING -> "restover"
+        is HapticEvent.DISCO_MODE_UNLOCKED -> "discomode"
+        is HapticEvent.BADGE_EARNED -> getRandomBadgeSound()
+        is HapticEvent.PERSONAL_RECORD -> getRandomPRSound()
+        is HapticEvent.REP_COUNT_ANNOUNCED -> "rep_%02d".format(event.repNumber)
+        is HapticEvent.ERROR -> return
     }
 
     val packageName = context.packageName.removeSuffix(".debug")
-    val resId = context.resources.getIdentifier(soundName, "raw", packageName)
+    var resId = context.resources.getIdentifier(soundName, "raw", packageName)
+
+    // Fallback to actual package name if base didn't work
+    if (resId == 0) {
+        resId = context.resources.getIdentifier(soundName, "raw", context.packageName)
+    }
     if (resId == 0) return
 
     try {
+        // Fire OS: Use USAGE_MEDIA to work around SoundPool volume bug
+        // Standard Android: Use USAGE_GAME to mix with music without interrupting
         val audioAttributes = AudioAttributes.Builder()
-            .setUsage(AudioAttributes.USAGE_GAME)
+            .setUsage(
+                if (DeviceInfo.isFireOS()) AudioAttributes.USAGE_MEDIA
+                else AudioAttributes.USAGE_GAME
+            )
             .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
             .build()
 
@@ -239,6 +264,33 @@ private fun playWithMediaPlayer(event: HapticEvent, context: Context) {
     } catch (_: Exception) {
         // Silently fail - sound is not critical
     }
+}
+
+/**
+ * Get a random badge celebration sound name.
+ */
+private fun getRandomBadgeSound(): String {
+    val badgeSoundNames = listOf(
+        "absolute_domination", "absolute_unit", "another_milestone_crushed",
+        "beast_mode", "insane_performance", "maxed_out", "new_peak_achieved",
+        "new_record_secured", "no_ones_stopping_you_now", "power", "pr",
+        "pressure_create_greatness", "record", "shattered", "strenght_unlocked",
+        "that_bar_never_stood_a_chance", "that_was_a_demolition", "that_was_god_mode",
+        "that_was_monster_level", "that_was_next_tier_strenght", "that_was_pure_savagery",
+        "the_grind_continues", "the_grind_is_real", "this_is_what_champions_are_made",
+        "unchained_power", "unstoppable", "victory", "you_crushed_that",
+        "you_dominated_that_set", "you_just_broke_your_limits", "you_just_destroyed_that_weight",
+        "you_just_levelled_up", "you_went_full_throttle"
+    )
+    return badgeSoundNames[Random.nextInt(badgeSoundNames.size)]
+}
+
+/**
+ * Get a random PR celebration sound name.
+ */
+private fun getRandomPRSound(): String {
+    val prSoundNames = listOf("new_personal_record", "new_personal_record_2")
+    return prSoundNames[Random.nextInt(prSoundNames.size)]
 }
 
 @SuppressLint("MissingPermission")

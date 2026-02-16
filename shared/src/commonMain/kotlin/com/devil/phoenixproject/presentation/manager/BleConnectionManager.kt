@@ -8,6 +8,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.filter
@@ -32,6 +33,7 @@ class BleConnectionManager(
     private val bleRepository: BleRepository,
     private val settingsManager: SettingsManager,
     private val workoutStateProvider: WorkoutStateProvider,
+    private val bleErrorEvents: SharedFlow<String>,
     private val scope: CoroutineScope
 ) {
     val connectionState: StateFlow<ConnectionState> = bleRepository.connectionState
@@ -56,6 +58,13 @@ class BleConnectionManager(
     private var connectionJob: Job? = null
 
     init {
+        // Collect BLE error events from WorkoutCoordinator (replaces circular lateinit dependency)
+        scope.launch {
+            bleErrorEvents.collect { message ->
+                _connectionError.value = message
+            }
+        }
+
         // Connection state observer for detecting connection loss during workout (Issue #42)
         // When connection is lost during an active workout, show the ConnectionLostDialog
         // Moved from MainViewModel init block

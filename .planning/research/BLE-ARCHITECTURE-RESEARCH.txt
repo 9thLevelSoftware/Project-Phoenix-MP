@@ -1,0 +1,97 @@
+RESEARCH COMPLETE: KMP BLE Module Architecture
+
+Project: Project Phoenix MP - Vitruvian Trainer Control App
+Mode: Ecosystem + Feasibility (BLE module structure for KMP testability)
+Confidence: HIGH
+
+Key Findings:
+=============
+
+1. MODULE STRUCTURE (8 Focused Services in commonMain)
+   - BleOperationQueue: Serialize BLE operations (Issue #222)
+   - ProtocolParser: Pure functions for byte parsing
+   - HandleStateDetector: 4-state machine (Issue #176)
+   - MonitorDataProcessor: Cable validation + EMA (Issue #210)
+   - MetricPollingEngine: All polling loops + heartbeat
+   - KableBleConnectionManager: Scanning + lifecycle
+   - DiscoMode: LED cycling easter egg
+   - KableBleRepository: Thin orchestrator facade
+
+2. ARCHITECTURE DECISION: ALL MODULES IN commonMain
+   Rationale: BLE communication logic (parsing, state machines, queuing) is platform-agnostic.
+   Only Kable.Peripheral API is platform-specific (wrap in interface).
+   Result: Tests run on JVM without iOS/Android hardware.
+
+3. TESTABILITY PATTERNS VERIFIED
+   - Pattern 1: Interface + Constructor Injection (for Kable wrapping)
+   - Pattern 2: Pure Functions (for parsing/validation)
+   - Pattern 3: Callback-Based Polling (for async operations)
+   - Pattern 4: State Machines (for handle state, connection state)
+
+4. KMP BEST PRACTICES CONFIRMED
+   - commonTest for all shared logic (verified: Kotlin official docs)
+   - androidTest/iosTest only for platform-specific integration
+   - No expect/actual for business logic (use commonMain + dependency injection)
+   - Hand-written fakes preferred over MockK (KMP limitation)
+
+5. ALIGNMENT WITH EXISTING PATTERNS
+   - Matches v0.4.1 managers architecture (MainViewModel → 5 managers)
+   - Uses existing FakeBleRepository pattern (commonTest infrastructure)
+   - Leverages Koin DI for interface binding
+   - Preserves BleRepository interface contract
+
+Sources Verified:
+================
+
+HIGH confidence (official docs + existing codebase):
+- Kotlin Official Testing: https://kotlinlang.org/docs/multiplatform/multiplatform-run-tests.html
+- KMP Testing Guide 2025: https://www.kmpship.app/blog/kotlin-multiplatform-testing-guide-2025
+- Kable GitHub: https://github.com/JuulLabs/kable
+- Existing codebase: FakeBleRepository (commonTest), 5 managers (v0.4.1)
+
+Anti-Patterns Identified:
+=========================
+
+1. Hiding Kable behind concrete class (Untestable)
+   → Solution: Interface wrapper, mock in tests
+
+2. Circular mutable state dependencies
+   → Solution: Callbacks or shared state bus
+
+3. Testing platform-specific code
+   → Solution: Test abstraction in commonTest, skip integration tests
+
+4. Mixing polling state with domain logic
+   → Solution: Separate concerns, test independently
+
+File Created:
+==============
+.planning/research/ARCHITECTURE.md
+
+Contains:
+- Executive summary
+- Module structure and boundaries
+- Key architecture patterns with examples
+- commonMain vs platform-specific split reasoning
+- Testing strategy by module type
+- Anti-patterns and prevention
+- Scalability considerations
+- expect/actual decision with rationale
+- Alignment with existing project patterns
+- Recommended 8-phase extraction plan
+
+Next Steps:
+===========
+1. Review ARCHITECTURE.md for design approval
+2. Start Phase 1: Extract BleOperationQueue
+3. Write commonTest tests before extraction (characterization)
+4. Follow 8-phase plan with device validation each phase
+
+Confidence Assessment:
+=====================
+- Stack/Technology: HIGH (verified with official docs, Kable API studied)
+- Architecture Patterns: HIGH (based on v0.4.1 success, official KMP docs confirm)
+- Testability: HIGH (all patterns validated with existing test infrastructure)
+- Feasibility: HIGH (all modules feasible in commonMain, no blockers found)
+
+Overall: HIGH confidence for implementation approach and execution strategy.

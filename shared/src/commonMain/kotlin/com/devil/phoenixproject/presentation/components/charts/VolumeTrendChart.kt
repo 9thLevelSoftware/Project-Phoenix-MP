@@ -24,6 +24,7 @@ import com.devil.phoenixproject.presentation.util.LocalWindowSizeClass
 import com.devil.phoenixproject.presentation.util.ResponsiveDimensions
 import com.devil.phoenixproject.presentation.util.WindowWidthSizeClass
 import com.devil.phoenixproject.domain.model.WorkoutSession
+import com.devil.phoenixproject.domain.model.effectiveTotalVolumeKg
 import com.devil.phoenixproject.ui.theme.DataColors
 import com.devil.phoenixproject.util.KmpUtils
 import kotlin.time.Instant
@@ -214,10 +215,8 @@ private fun processVolumeData(
         }
 
     return sessionsByDay.map { (dateStr, daySessions) ->
-        // Calculate total volume for this day
-        // Volume = sum of (weightPerCableKg * totalReps * 2) for each session
         val totalVolume = daySessions.sumOf { session ->
-            (session.weightPerCableKg * session.totalReps * 2).toDouble()
+            session.effectiveTotalVolumeKg().toDouble()
         }.toFloat()
 
         // Convert to user's preferred unit

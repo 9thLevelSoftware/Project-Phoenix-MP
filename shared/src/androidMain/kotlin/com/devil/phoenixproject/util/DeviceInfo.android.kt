@@ -118,4 +118,15 @@ actual object DeviceInfo {
      * Check if running on Google Pixel
      */
     fun isPixel(): Boolean = manufacturer.equals("Google", ignoreCase = true)
+
+    /**
+     * Check if running on Amazon Fire OS (Fire Tablets, Fire TV)
+     */
+    fun isFireOS(): Boolean = manufacturer.equals("Amazon", ignoreCase = true)
+
+    /**
+     * Check if running on Amazon Fire Tablet specifically.
+     * Fire Tablet model names start with "AFT" (Amazon Fire Tablet).
+     */
+    fun isFireTablet(): Boolean = model.startsWith("AFT", ignoreCase = true)
 }

@@ -8,6 +8,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
@@ -39,7 +40,7 @@ class BleConnectionManagerTest {
         try {
             val workoutStateProvider = FakeWorkoutStateProvider(active = true)
             val settingsManager = SettingsManager(fakePreferencesManager, fakeBleRepository, managerScope)
-            val manager = BleConnectionManager(fakeBleRepository, settingsManager, workoutStateProvider, managerScope)
+            val manager = BleConnectionManager(fakeBleRepository, settingsManager, workoutStateProvider, MutableSharedFlow(), managerScope)
             advanceUntilIdle()
 
             fakeBleRepository.simulateConnect("Vee_Test")
@@ -62,7 +63,7 @@ class BleConnectionManagerTest {
         try {
             val workoutStateProvider = FakeWorkoutStateProvider(active = false)
             val settingsManager = SettingsManager(fakePreferencesManager, fakeBleRepository, managerScope)
-            val manager = BleConnectionManager(fakeBleRepository, settingsManager, workoutStateProvider, managerScope)
+            val manager = BleConnectionManager(fakeBleRepository, settingsManager, workoutStateProvider, MutableSharedFlow(), managerScope)
             advanceUntilIdle()
 
             fakeBleRepository.simulateConnect("Vee_Test")
@@ -82,7 +83,7 @@ class BleConnectionManagerTest {
         try {
             val workoutStateProvider = FakeWorkoutStateProvider(active = false)
             val settingsManager = SettingsManager(fakePreferencesManager, fakeBleRepository, managerScope)
-            val manager = BleConnectionManager(fakeBleRepository, settingsManager, workoutStateProvider, managerScope)
+            val manager = BleConnectionManager(fakeBleRepository, settingsManager, workoutStateProvider, MutableSharedFlow(), managerScope)
             fakeBleRepository.simulateConnect("Vee_Test")
             advanceUntilIdle()
 
@@ -109,7 +110,7 @@ class BleConnectionManagerTest {
         try {
             val workoutStateProvider = FakeWorkoutStateProvider(active = false)
             val settingsManager = SettingsManager(fakePreferencesManager, fakeBleRepository, managerScope)
-            val manager = BleConnectionManager(fakeBleRepository, settingsManager, workoutStateProvider, managerScope)
+            val manager = BleConnectionManager(fakeBleRepository, settingsManager, workoutStateProvider, MutableSharedFlow(), managerScope)
             fakeBleRepository.shouldFailConnect = true
 
             var failedCalls = 0
@@ -134,7 +135,7 @@ class BleConnectionManagerTest {
         try {
             val workoutStateProvider = FakeWorkoutStateProvider(active = false)
             val settingsManager = SettingsManager(fakePreferencesManager, fakeBleRepository, managerScope)
-            val manager = BleConnectionManager(fakeBleRepository, settingsManager, workoutStateProvider, managerScope)
+            val manager = BleConnectionManager(fakeBleRepository, settingsManager, workoutStateProvider, MutableSharedFlow(), managerScope)
             advanceUntilIdle()
 
             fakeBleRepository.simulateConnecting()

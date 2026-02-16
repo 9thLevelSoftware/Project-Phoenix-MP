@@ -11,9 +11,11 @@ object Constants {
     // Users must re-accept when this version increases
     const val EULA_VERSION = 1
 
-    // Weight limits (in kg)
+    // Weight limits (in kg) - per cable, not total
+    // V-Form Trainer: 100kg max per cable (200kg total)
+    // Trainer+: 110kg max per cable (220kg total) - use 100kg as safe default
     const val MIN_WEIGHT_KG = 0f
-    const val MAX_WEIGHT_KG = 220f
+    const val MAX_WEIGHT_KG = 100f
     const val WEIGHT_INCREMENT_KG = 0.5f
     const val MAX_PROGRESSION_KG = 3f
 

@@ -790,7 +790,7 @@ countTotalReps:
 SELECT SUM(totalReps) FROM WorkoutSession;
 
 countTotalVolume:
-SELECT SUM(totalReps * weightPerCableKg * 2) FROM WorkoutSession;
+SELECT SUM(COALESCE(totalVolumeKg, totalReps * weightPerCableKg * 2)) FROM WorkoutSession;
 
 countUniqueExercises:
 SELECT COUNT(DISTINCT exerciseId) FROM WorkoutSession WHERE exerciseId IS NOT NULL;

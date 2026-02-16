@@ -100,39 +100,38 @@ class MainViewModel constructor(
 
     // === Phase 2a: BleConnectionManager (extracted from this class) ===
     // Must be after workoutSessionManager since it implements WorkoutStateProvider
-    val bleConnectionManager = BleConnectionManager(bleRepository, settingsManager, workoutSessionManager, viewModelScope)
-
-    init {
-        // Wire the circular dependency: workoutSessionManager needs bleConnectionManager
-        workoutSessionManager.bleConnectionManager = bleConnectionManager
-    }
+    // BLE errors flow one-way via coordinator.bleErrorEvents (no circular dependency)
+    val bleConnectionManager = BleConnectionManager(
+        bleRepository, settingsManager, workoutSessionManager,
+        workoutSessionManager.coordinator.bleErrorEvents, viewModelScope
+    )
 
     // ===== Workout State Delegation =====
 
-    val workoutState: StateFlow<WorkoutState> get() = workoutSessionManager.workoutState
-    val isWorkoutActive: Boolean get() = workoutSessionManager.isWorkoutActive
-    val routineFlowState: StateFlow<RoutineFlowState> get() = workoutSessionManager.routineFlowState
-    val currentMetric: StateFlow<WorkoutMetric?> get() = workoutSessionManager.currentMetric
-    val currentHeuristicKgMax: StateFlow<Float> get() = workoutSessionManager.currentHeuristicKgMax
-    val loadBaselineA: StateFlow<Float> get() = workoutSessionManager.loadBaselineA
-    val loadBaselineB: StateFlow<Float> get() = workoutSessionManager.loadBaselineB
-    val workoutParameters: StateFlow<WorkoutParameters> get() = workoutSessionManager.workoutParameters
-    val repCount: StateFlow<RepCount> get() = workoutSessionManager.repCount
-    val timedExerciseRemainingSeconds: StateFlow<Int?> get() = workoutSessionManager.timedExerciseRemainingSeconds
-    val repRanges: StateFlow<com.devil.phoenixproject.domain.usecase.RepRanges?> get() = workoutSessionManager.repRanges
-    val autoStopState: StateFlow<AutoStopUiState> get() = workoutSessionManager.autoStopState
-    val autoStartCountdown: StateFlow<Int?> get() = workoutSessionManager.autoStartCountdown
-    val hapticEvents: SharedFlow<HapticEvent> get() = workoutSessionManager.hapticEvents
-    val userFeedbackEvents: SharedFlow<String> get() = workoutSessionManager.userFeedbackEvents
-    val routines: StateFlow<List<Routine>> get() = workoutSessionManager.routines
-    val loadedRoutine: StateFlow<Routine?> get() = workoutSessionManager.loadedRoutine
-    val currentExerciseIndex: StateFlow<Int> get() = workoutSessionManager.currentExerciseIndex
-    val currentSetIndex: StateFlow<Int> get() = workoutSessionManager.currentSetIndex
-    val skippedExercises: StateFlow<Set<Int>> get() = workoutSessionManager.skippedExercises
-    val completedExercises: StateFlow<Set<Int>> get() = workoutSessionManager.completedExercises
-    val currentSetRpe: StateFlow<Int?> get() = workoutSessionManager.currentSetRpe
-    val isCurrentExerciseBodyweight: StateFlow<Boolean> get() = workoutSessionManager.isCurrentExerciseBodyweight
-    val cycleDayCompletionEvent get() = workoutSessionManager.cycleDayCompletionEvent
+    val workoutState: StateFlow<WorkoutState> get() = workoutSessionManager.coordinator.workoutState
+    val isWorkoutActive: Boolean get() = workoutSessionManager.coordinator.isWorkoutActive
+    val routineFlowState: StateFlow<RoutineFlowState> get() = workoutSessionManager.coordinator.routineFlowState
+    val currentMetric: StateFlow<WorkoutMetric?> get() = workoutSessionManager.coordinator.currentMetric
+    val currentHeuristicKgMax: StateFlow<Float> get() = workoutSessionManager.coordinator.currentHeuristicKgMax
+    val loadBaselineA: StateFlow<Float> get() = workoutSessionManager.coordinator.loadBaselineA
+    val loadBaselineB: StateFlow<Float> get() = workoutSessionManager.coordinator.loadBaselineB
+    val workoutParameters: StateFlow<WorkoutParameters> get() = workoutSessionManager.coordinator.workoutParameters
+    val repCount: StateFlow<RepCount> get() = workoutSessionManager.coordinator.repCount
+    val timedExerciseRemainingSeconds: StateFlow<Int?> get() = workoutSessionManager.coordinator.timedExerciseRemainingSeconds
+    val repRanges: StateFlow<com.devil.phoenixproject.domain.usecase.RepRanges?> get() = workoutSessionManager.coordinator.repRanges
+    val autoStopState: StateFlow<AutoStopUiState> get() = workoutSessionManager.coordinator.autoStopState
+    val autoStartCountdown: StateFlow<Int?> get() = workoutSessionManager.coordinator.autoStartCountdown
+    val hapticEvents: SharedFlow<HapticEvent> get() = workoutSessionManager.coordinator.hapticEvents
+    val userFeedbackEvents: SharedFlow<String> get() = workoutSessionManager.coordinator.userFeedbackEvents
+    val routines: StateFlow<List<Routine>> get() = workoutSessionManager.coordinator.routines
+    val loadedRoutine: StateFlow<Routine?> get() = workoutSessionManager.coordinator.loadedRoutine
+    val currentExerciseIndex: StateFlow<Int> get() = workoutSessionManager.coordinator.currentExerciseIndex
+    val currentSetIndex: StateFlow<Int> get() = workoutSessionManager.coordinator.currentSetIndex
+    val skippedExercises: StateFlow<Set<Int>> get() = workoutSessionManager.coordinator.skippedExercises
+    val completedExercises: StateFlow<Set<Int>> get() = workoutSessionManager.coordinator.completedExercises
+    val currentSetRpe: StateFlow<Int?> get() = workoutSessionManager.coordinator.currentSetRpe
+    val isCurrentExerciseBodyweight: StateFlow<Boolean> get() = workoutSessionManager.coordinator.isCurrentExerciseBodyweight
+    val cycleDayCompletionEvent get() = workoutSessionManager.coordinator.cycleDayCompletionEvent
     fun clearCycleDayCompletionEvent() = workoutSessionManager.clearCycleDayCompletionEvent()
 
     // ===== BLE Connection Delegation =====
@@ -223,6 +222,8 @@ class MainViewModel constructor(
     fun deleteRoutine(routineId: String) = workoutSessionManager.deleteRoutine(routineId)
     fun deleteRoutines(routineIds: Set<String>) = workoutSessionManager.deleteRoutines(routineIds)
     fun loadRoutine(routine: Routine) = workoutSessionManager.loadRoutine(routine)
+    /** Issue #2 Fix: Suspend version that completes after routine is fully loaded (including PR weight resolution) */
+    suspend fun loadRoutineAsync(routine: Routine) = workoutSessionManager.loadRoutineAsync(routine)
     fun loadRoutineById(routineId: String) = workoutSessionManager.loadRoutineById(routineId)
     fun enterRoutineOverview(routine: Routine) = workoutSessionManager.enterRoutineOverview(routine)
     fun selectExerciseInOverview(index: Int) = workoutSessionManager.selectExerciseInOverview(index)

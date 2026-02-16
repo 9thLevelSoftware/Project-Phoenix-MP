@@ -269,4 +269,8 @@ class FakeBleRepository : BleRepository {
     override fun stopDiscoMode() {
         _discoModeActive.value = false
     }
+
+    override fun setLastColorSchemeIndex(index: Int) {
+        // No-op in fake - no color tracking needed
+    }
 }

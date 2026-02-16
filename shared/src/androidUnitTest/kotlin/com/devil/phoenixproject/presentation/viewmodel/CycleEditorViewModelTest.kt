@@ -5,6 +5,7 @@ import com.devil.phoenixproject.domain.model.Exercise
 import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.domain.model.RoutineExercise
+import com.devil.phoenixproject.domain.model.generateUUID
 import com.devil.phoenixproject.testutil.FakeTrainingCycleRepository
 import com.devil.phoenixproject.testutil.TestCoroutineRule
 import kotlinx.coroutines.test.advanceUntilIdle
@@ -30,9 +31,13 @@ class CycleEditorViewModelTest {
         viewModel = CycleEditorViewModel(repository)
     }
 
+    /** Helper to create N rest day template items */
+    private fun createRestDayTemplateItems(count: Int): List<CycleItem> =
+        (1..count).map { CycleItem.Rest(id = generateUUID(), dayNumber = it) }
+
     @Test
-    fun `initialize new cycle creates default rest days`() = runTest {
-        viewModel.initialize(cycleId = "new", initialDayCount = 3)
+    fun `initialize new cycle with template creates rest days`() = runTest {
+        viewModel.initialize(cycleId = "new", templateItems = createRestDayTemplateItems(3))
         advanceUntilIdle()
 
         assertEquals(3, viewModel.uiState.value.items.size)
@@ -41,7 +46,7 @@ class CycleEditorViewModelTest {
 
     @Test
     fun `addWorkoutDay appends item and tracks recent routine`() = runTest {
-        viewModel.initialize(cycleId = "new", initialDayCount = 1)
+        viewModel.initialize(cycleId = "new", templateItems = createRestDayTemplateItems(1))
         advanceUntilIdle()
 
         val routine = Routine(
@@ -72,7 +77,7 @@ class CycleEditorViewModelTest {
 
     @Test
     fun `deleteItem and undo restore items`() = runTest {
-        viewModel.initialize(cycleId = "new", initialDayCount = 2)
+        viewModel.initialize(cycleId = "new", templateItems = createRestDayTemplateItems(2))
         advanceUntilIdle()
 
         viewModel.deleteItem(0)
@@ -84,7 +89,7 @@ class CycleEditorViewModelTest {
 
     @Test
     fun `saveCycle persists cycle to repository`() = runTest {
-        viewModel.initialize(cycleId = "new", initialDayCount = 2)
+        viewModel.initialize(cycleId = "new", templateItems = createRestDayTemplateItems(2))
         advanceUntilIdle()
 
         val savedId = viewModel.saveCycle()

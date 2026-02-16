@@ -24,6 +24,7 @@ import com.devil.phoenixproject.data.repository.TrainingCycleRepository
 import com.devil.phoenixproject.domain.model.CycleProgress
 import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.domain.model.TrainingCycle
+import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.presentation.components.ConnectionErrorDialog
 import com.devil.phoenixproject.presentation.navigation.NavigationRoutes
@@ -61,6 +62,7 @@ fun HomeScreen(
     val routines by viewModel.routines.collectAsState()
     val workoutStreak by viewModel.workoutStreak.collectAsState()
     val recentSessions by viewModel.allWorkoutSessions.collectAsState()
+    val weightUnit by viewModel.weightUnit.collectAsState()
 
     // Training Cycles state
     val cycleRepository: TrainingCycleRepository = koinInject()
@@ -138,7 +140,7 @@ fun HomeScreen(
                         color = MaterialTheme.colorScheme.onSurface,
                         modifier = Modifier.padding(bottom = 8.dp)
                     )
-                    RecentActivitySummary(recentSessions)
+                    RecentActivitySummary(recentSessions, weightUnit)
                 }
 
                 // Spacer for FABs clearance
@@ -420,7 +422,7 @@ private fun ActiveCycleHero(
 // ============================================================================
 
 @Composable
-private fun RecentActivitySummary(history: List<WorkoutSession>) {
+private fun RecentActivitySummary(history: List<WorkoutSession>, weightUnit: WeightUnit = WeightUnit.KG) {
     if (history.isEmpty()) {
         Text(
             "No recent workouts recorded.",
@@ -448,13 +450,16 @@ private fun RecentActivitySummary(history: List<WorkoutSession>) {
                         )
                         Spacer(Modifier.width(12.dp))
                         Column {
+                            val displayWeight = if (weightUnit == WeightUnit.LB)
+                                (session.weightPerCableKg * 2.20462f).toInt() else session.weightPerCableKg.toInt()
+                            val unitLabel = if (weightUnit == WeightUnit.LB) "lbs" else "kg"
                             Text(
                                 session.exerciseName ?: "Workout Session",
                                 style = MaterialTheme.typography.labelLarge,
                                 fontWeight = FontWeight.SemiBold
                             )
                             Text(
-                                "${session.workingReps} reps • ${session.weightPerCableKg.toInt()} kg/cable",
+                                "${session.workingReps} reps • $displayWeight $unitLabel/cable",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )

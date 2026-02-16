@@ -1,0 +1,9 @@
+{
+  "project_name": "Project Phoenix MP",
+  "model_profile": "quality",
+  "settings": {
+    "auto_commit": true,
+    "require_verification": true,
+    "parallel_research": true
+  }
+}

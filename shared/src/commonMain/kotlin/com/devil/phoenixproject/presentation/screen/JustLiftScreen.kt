@@ -183,6 +183,7 @@ fun JustLiftScreen(
             stallDetectionEnabled = userPreferences.stallDetectionEnabled,
             selectedExerciseId = null // Issue #97: Clear exercise ID for Just Lift sessions
         )
+        Logger.i { "WEIGHT_DEBUG[Params]: weightPerCable=$weightPerCable kg → updatedParameters.weightPerCableKg=${updatedParameters.weightPerCableKg} kg" }
         Logger.d { "JustLift: Updating params - eccentricLoad=${eccentricLoad.percentage}%, echoLevel=${newEchoLevel.displayName}" }
         viewModel.updateWorkoutParameters(updatedParameters)
     }
@@ -299,7 +300,9 @@ fun JustLiftScreen(
                             CompactNumberPicker(
                                 value = displayWeight,
                                 onValueChange = { newValue ->
-                                    weightPerCable = viewModel.displayToKg(newValue, weightUnit)
+                                    val kg = viewModel.displayToKg(newValue, weightUnit)
+                                    Logger.i { "WEIGHT_DEBUG[JustLift]: Picker value=$newValue ($weightUnit) → displayToKg → $kg kg" }
+                                    weightPerCable = kg
                                 },
                                 range = 1f..maxWeight,
                                 step = weightStep,

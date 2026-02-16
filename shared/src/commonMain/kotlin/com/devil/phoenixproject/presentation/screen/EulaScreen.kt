@@ -50,9 +50,12 @@ fun EulaScreen(
 
     // Track when user has scrolled to the bottom
     LaunchedEffect(scrollState.value, scrollState.maxValue) {
-        if (scrollState.maxValue > 0) {
-            // Consider "scrolled to bottom" when within 50px of the end
-            hasScrolledToBottom = scrollState.value >= (scrollState.maxValue - 50)
+        // If maxValue is 0, content fits on screen without scrolling - consider it "scrolled"
+        // Otherwise, check if user has scrolled within 50px of the end
+        hasScrolledToBottom = when {
+            scrollState.maxValue == 0 -> true  // No scrolling needed
+            scrollState.maxValue > 0 -> scrollState.value >= (scrollState.maxValue - 50)
+            else -> false  // maxValue is negative (shouldn't happen, but defensive)
         }
     }
 

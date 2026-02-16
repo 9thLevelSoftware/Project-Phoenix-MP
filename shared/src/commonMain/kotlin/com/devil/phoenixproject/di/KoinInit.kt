@@ -8,7 +8,7 @@ import org.koin.mp.KoinPlatform
 
 fun initKoin(appDeclaration: KoinAppDeclaration = {}) = startKoin {
     appDeclaration()
-    modules(commonModule, platformModule)
+    modules(appModule, platformModule)
 }
 
 /**
