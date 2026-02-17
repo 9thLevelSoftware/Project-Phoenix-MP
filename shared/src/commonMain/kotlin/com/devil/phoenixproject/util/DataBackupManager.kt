@@ -1,11 +1,10 @@
 package com.devil.phoenixproject.util
 
 import co.touchlab.kermit.Logger
-import com.devil.phoenixproject.database.VitruvianDatabase
+import com.devil.phoenixproject.database.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
 import kotlinx.coroutines.withContext
-import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
 /**
@@ -36,6 +35,13 @@ interface DataBackupManager {
     suspend fun saveToFile(backup: BackupData): Result<String>
 
     /**
+     * Export all data to a file using streaming JSON to avoid OOM on large datasets.
+     * Writes data incrementally to disk -- peak memory is ~1 session's worth of metrics.
+     * Returns the final file path on success.
+     */
+    suspend fun exportToFile(onProgress: (BackupProgress) -> Unit = {}): Result<String>
+
+    /**
      * Import data from a file path
      */
     suspend fun importFromFile(filePath: String): Result<ImportResult>
@@ -60,12 +66,58 @@ abstract class BaseDataBackupManager(
 ) : DataBackupManager {
 
     protected val json = Json {
-        prettyPrint = true
+        prettyPrint = false
         ignoreUnknownKeys = true  // Forward compatibility
         encodeDefaults = true
     }
 
     private val queries get() = database.vitruvianDatabaseQueries
+
+    /**
+     * Create a platform-specific JSON writer for streaming export.
+     * The writer should point to a temporary/cache file location.
+     */
+    protected abstract fun createBackupWriter(): BackupJsonWriter
+
+    /**
+     * Platform-specific finalization after streaming export.
+     * Copies/moves the temp file to the platform's standard backup location.
+     */
+    protected abstract suspend fun finalizeExport(tempFilePath: String): Result<String>
+
+    // -- Streaming export (Discussion #244 OOM fix) --
+
+    override suspend fun exportToFile(onProgress: (BackupProgress) -> Unit): Result<String> =
+        withContext(Dispatchers.IO) {
+            try {
+                val cachePath = exportToCache(onProgress)
+                onProgress(BackupProgress(BackupPhase.FINALIZING, 0, 0))
+                finalizeExport(cachePath)
+            } catch (e: Exception) {
+                Logger.e(e) { "Streaming export failed" }
+                Result.failure(e)
+            }
+        }
+
+    /**
+     * Stream export to a cache/temp file. Returns the file path.
+     * Used by both exportToFile() and shareBackup().
+     */
+    protected suspend fun exportToCache(onProgress: (BackupProgress) -> Unit = {}): String {
+        val writer = createBackupWriter()
+        try {
+            writer.open()
+            streamExportToWriter(writer, onProgress)
+            writer.close()
+            return writer.filePath
+        } catch (e: Exception) {
+            runCatching { writer.close() }
+            runCatching { writer.delete() }
+            throw e
+        }
+    }
+
+    // -- Legacy export (kept for backward compatibility) --
 
     override suspend fun exportAllData(): BackupData = withContext(Dispatchers.IO) {
         val sessions = queries.selectAllSessionsSync().executeAsList()
@@ -73,7 +125,7 @@ abstract class BaseDataBackupManager(
         // IMPORTANT: Load metrics per-session to avoid memory exhaustion on iOS.
         // Loading all metrics at once can cause OOM crashes on iOS due to how the
         // native SQLite driver handles large result sets.
-        val metrics = mutableListOf<com.devil.phoenixproject.database.MetricSample>()
+        val metrics = mutableListOf<MetricSample>()
         for (session in sessions) {
             val sessionMetrics = queries.selectMetricsBySession(session.id).executeAsList()
             metrics.addAll(sessionMetrics)
@@ -83,7 +135,7 @@ abstract class BaseDataBackupManager(
         val routineExercises = queries.selectAllRoutineExercisesSync().executeAsList()
         // Supersets table might not exist on older databases
         val supersets = runCatching { queries.selectAllSupersetsSync().executeAsList() }.getOrElse { emptyList() }
-        val personalRecords = queries.selectAllRecords { id, exerciseId, exerciseName, weight, reps, oneRepMax, achievedAt, workoutMode, prType, volume, updatedAt, serverId, deletedAt ->
+        val personalRecords = queries.selectAllRecords { id, exerciseId, exerciseName, weight, reps, oneRepMax, achievedAt, workoutMode, prType, volume, _, _, _ ->
             PersonalRecordBackup(
                 id = id,
                 exerciseId = exerciseId,
@@ -364,7 +416,7 @@ abstract class BaseDataBackupManager(
             val backup = json.decodeFromString<BackupData>(jsonString)
 
             if (backup.version > 1) {
-                // Log warning but continue - forward compatibility via ignoreUnknownKeys
+                Logger.w { "Backup version ${backup.version} is newer than supported (v1). Proceeding with forward compatibility." }
             }
 
             // Get existing IDs for duplicate detection (before transaction)
@@ -801,4 +853,385 @@ abstract class BaseDataBackupManager(
     }
 
     override suspend fun getShareableContent(): String = exportToJson()
+
+    // -- Streaming JSON writer --
+
+    private fun streamExportToWriter(
+        writer: BackupJsonWriter,
+        onProgress: (BackupProgress) -> Unit
+    ) {
+        // Phase 1: Count
+        onProgress(BackupProgress(BackupPhase.COUNTING, 0, 0))
+        val sessionCount = queries.countTotalWorkouts().executeAsOne()
+        val metricCount = runCatching { queries.countAllMetricSamples().executeAsOne() }.getOrElse { 0L }
+
+        // JSON header
+        val exportedAt = KmpUtils.formatTimestamp(KmpUtils.currentTimeMillis(), "yyyy-MM-dd") + "T" +
+            KmpUtils.formatTimestamp(KmpUtils.currentTimeMillis(), "HH:mm:ss") + "Z"
+        writer.write("""{"version":1,"exportedAt":"$exportedAt","appVersion":"${Constants.APP_VERSION}","data":{""")
+
+        // Phase 2: Sessions
+        onProgress(BackupProgress(BackupPhase.SESSIONS, 0, sessionCount))
+        writer.write("\"workoutSessions\":[")
+        val sessions = queries.selectAllSessionsSync().executeAsList()
+        sessions.forEachIndexed { index, session ->
+            if (index > 0) writer.write(",")
+            writer.write(json.encodeToString(WorkoutSessionBackup.serializer(), mapSessionToBackup(session)))
+            val current = (index + 1).toLong()
+            if (current % 100 == 0L || current == sessions.size.toLong()) {
+                writer.flush()
+                onProgress(BackupProgress(BackupPhase.SESSIONS, current, sessionCount))
+            }
+        }
+        writer.write("],")
+        writer.flush()
+
+        // Phase 3: Metrics (critical path -- per-session to avoid OOM)
+        onProgress(BackupProgress(BackupPhase.METRICS, 0, metricCount))
+        writer.write("\"metricSamples\":[")
+        var metricIndex = 0L
+        var firstMetric = true
+        for (session in sessions) {
+            val sessionMetrics = queries.selectMetricsBySession(session.id).executeAsList()
+            for (metric in sessionMetrics) {
+                if (!firstMetric) writer.write(",")
+                firstMetric = false
+                writer.write(json.encodeToString(MetricSampleBackup.serializer(), mapMetricToBackup(metric)))
+                metricIndex++
+            }
+            if (sessionMetrics.isNotEmpty()) {
+                writer.flush()
+                onProgress(BackupProgress(BackupPhase.METRICS, metricIndex, metricCount))
+            }
+        }
+        writer.write("],")
+        writer.flush()
+
+        // Phase 4: Routines
+        onProgress(BackupProgress(BackupPhase.ROUTINES, 0, 0))
+        val routines = queries.selectAllRoutinesSync().executeAsList()
+        writeJsonArray(writer, "routines", routines.map { json.encodeToString(RoutineBackup.serializer(), mapRoutineToBackup(it)) })
+        writer.write(",")
+
+        val routineExercises = queries.selectAllRoutineExercisesSync().executeAsList()
+        writeJsonArray(writer, "routineExercises", routineExercises.map { json.encodeToString(RoutineExerciseBackup.serializer(), mapRoutineExerciseToBackup(it)) })
+        writer.write(",")
+
+        // Phase 5: Remaining tables (small, bulk-load is safe)
+        onProgress(BackupProgress(BackupPhase.OTHER, 0, 0))
+
+        val supersets = runCatching { queries.selectAllSupersetsSync().executeAsList() }.getOrElse { emptyList() }
+        writeJsonArray(writer, "supersets", supersets.map { json.encodeToString(SupersetBackup.serializer(), mapSupersetToBackup(it)) })
+        writer.write(",")
+
+        val personalRecords = queries.selectAllRecords().executeAsList()
+        writeJsonArray(writer, "personalRecords", personalRecords.map { json.encodeToString(PersonalRecordBackup.serializer(), mapPersonalRecordToBackup(it)) })
+        writer.write(",")
+
+        val trainingCycles = runCatching { queries.selectAllTrainingCycles().executeAsList() }.getOrElse { emptyList() }
+        writeJsonArray(writer, "trainingCycles", trainingCycles.map { json.encodeToString(TrainingCycleBackup.serializer(), mapTrainingCycleToBackup(it)) })
+        writer.write(",")
+
+        val cycleDays = trainingCycles.flatMap { cycle ->
+            runCatching { queries.selectCycleDaysByCycle(cycle.id).executeAsList() }.getOrElse { emptyList() }
+        }
+        writeJsonArray(writer, "cycleDays", cycleDays.map { json.encodeToString(CycleDayBackup.serializer(), mapCycleDayToBackup(it)) })
+        writer.write(",")
+
+        val cycleProgress = runCatching { queries.selectAllCycleProgressSync().executeAsList() }.getOrElse { emptyList() }
+        writeJsonArray(writer, "cycleProgress", cycleProgress.map { json.encodeToString(CycleProgressBackup.serializer(), mapCycleProgressToBackup(it)) })
+        writer.write(",")
+
+        val cycleProgressions = runCatching { queries.selectAllCycleProgressionsSync().executeAsList() }.getOrElse { emptyList() }
+        writeJsonArray(writer, "cycleProgressions", cycleProgressions.map { json.encodeToString(CycleProgressionBackup.serializer(), mapCycleProgressionToBackup(it)) })
+        writer.write(",")
+
+        val plannedSets = runCatching { queries.selectAllPlannedSetsSync().executeAsList() }.getOrElse { emptyList() }
+        writeJsonArray(writer, "plannedSets", plannedSets.map { json.encodeToString(PlannedSetBackup.serializer(), mapPlannedSetToBackup(it)) })
+        writer.write(",")
+
+        val completedSets = runCatching { queries.selectAllCompletedSetsSync().executeAsList() }.getOrElse { emptyList() }
+        writeJsonArray(writer, "completedSets", completedSets.map { json.encodeToString(CompletedSetBackup.serializer(), mapCompletedSetToBackup(it)) })
+        writer.write(",")
+
+        val progressionEvents = runCatching { queries.selectAllProgressionEventsSync().executeAsList() }.getOrElse { emptyList() }
+        writeJsonArray(writer, "progressionEvents", progressionEvents.map { json.encodeToString(ProgressionEventBackup.serializer(), mapProgressionEventToBackup(it)) })
+        writer.write(",")
+
+        val earnedBadges = runCatching { queries.selectAllEarnedBadgesSync().executeAsList() }.getOrElse { emptyList() }
+        writeJsonArray(writer, "earnedBadges", earnedBadges.map { json.encodeToString(EarnedBadgeBackup.serializer(), mapEarnedBadgeToBackup(it)) })
+        writer.write(",")
+
+        val streakHistory = runCatching { queries.selectAllStreakHistorySync().executeAsList() }.getOrElse { emptyList() }
+        writeJsonArray(writer, "streakHistory", streakHistory.map { json.encodeToString(StreakHistoryBackup.serializer(), mapStreakHistoryToBackup(it)) })
+        writer.write(",")
+
+        // gamificationStats -- single object or null
+        val gamificationStats = runCatching { queries.selectGamificationStatsSync().executeAsOneOrNull() }.getOrNull()
+        if (gamificationStats != null) {
+            writer.write("\"gamificationStats\":")
+            writer.write(json.encodeToString(GamificationStatsBackup.serializer(), mapGamificationStatsToBackup(gamificationStats)))
+        } else {
+            writer.write("\"gamificationStats\":null")
+        }
+        writer.write(",")
+
+        val userProfiles = runCatching { queries.selectAllUserProfilesSync().executeAsList() }.getOrElse { emptyList() }
+        writeJsonArray(writer, "userProfiles", userProfiles.map { json.encodeToString(UserProfileBackup.serializer(), mapUserProfileToBackup(it)) })
+
+        // Close JSON
+        writer.write("}}")
+        writer.flush()
+    }
+
+    private fun writeJsonArray(writer: BackupJsonWriter, fieldName: String, jsonStrings: List<String>) {
+        writer.write("\"$fieldName\":[")
+        jsonStrings.forEachIndexed { index, s ->
+            if (index > 0) writer.write(",")
+            writer.write(s)
+        }
+        writer.write("]")
+    }
+
+    // -- Mapper functions (DB types → Backup types) --
+
+    private fun mapSessionToBackup(session: WorkoutSession): WorkoutSessionBackup =
+        WorkoutSessionBackup(
+            id = session.id,
+            timestamp = session.timestamp,
+            mode = session.mode,
+            targetReps = session.targetReps.toInt(),
+            weightPerCableKg = session.weightPerCableKg.toFloat(),
+            progressionKg = session.progressionKg.toFloat(),
+            duration = session.duration,
+            totalReps = session.totalReps.toInt(),
+            warmupReps = session.warmupReps.toInt(),
+            workingReps = session.workingReps.toInt(),
+            isJustLift = session.isJustLift != 0L,
+            stopAtTop = session.stopAtTop != 0L,
+            eccentricLoad = session.eccentricLoad.toInt(),
+            echoLevel = session.echoLevel.toInt(),
+            exerciseId = session.exerciseId,
+            exerciseName = session.exerciseName,
+            routineSessionId = session.routineSessionId,
+            routineName = session.routineName,
+            safetyFlags = session.safetyFlags.toInt(),
+            deloadWarningCount = session.deloadWarningCount.toInt(),
+            romViolationCount = session.romViolationCount.toInt(),
+            spotterActivations = session.spotterActivations.toInt(),
+            peakForceConcentricA = session.peakForceConcentricA?.toFloat(),
+            peakForceConcentricB = session.peakForceConcentricB?.toFloat(),
+            peakForceEccentricA = session.peakForceEccentricA?.toFloat(),
+            peakForceEccentricB = session.peakForceEccentricB?.toFloat(),
+            avgForceConcentricA = session.avgForceConcentricA?.toFloat(),
+            avgForceConcentricB = session.avgForceConcentricB?.toFloat(),
+            avgForceEccentricA = session.avgForceEccentricA?.toFloat(),
+            avgForceEccentricB = session.avgForceEccentricB?.toFloat(),
+            heaviestLiftKg = session.heaviestLiftKg?.toFloat(),
+            totalVolumeKg = session.totalVolumeKg?.toFloat(),
+            estimatedCalories = session.estimatedCalories?.toFloat(),
+            warmupAvgWeightKg = session.warmupAvgWeightKg?.toFloat(),
+            workingAvgWeightKg = session.workingAvgWeightKg?.toFloat(),
+            burnoutAvgWeightKg = session.burnoutAvgWeightKg?.toFloat(),
+            peakWeightKg = session.peakWeightKg?.toFloat(),
+            rpe = session.rpe?.toInt()
+        )
+
+    private fun mapMetricToBackup(metric: MetricSample): MetricSampleBackup =
+        MetricSampleBackup(
+            id = metric.id,
+            sessionId = metric.sessionId,
+            timestamp = metric.timestamp,
+            position = metric.position?.toFloat(),
+            positionB = metric.positionB?.toFloat(),
+            velocity = metric.velocity?.toFloat(),
+            velocityB = metric.velocityB?.toFloat(),
+            load = metric.load?.toFloat(),
+            loadB = metric.loadB?.toFloat(),
+            power = metric.power?.toFloat(),
+            status = metric.status.toInt()
+        )
+
+    private fun mapRoutineToBackup(routine: Routine): RoutineBackup =
+        RoutineBackup(
+            id = routine.id,
+            name = routine.name,
+            description = routine.description,
+            createdAt = routine.createdAt,
+            lastUsed = routine.lastUsed,
+            useCount = routine.useCount.toInt()
+        )
+
+    private fun mapRoutineExerciseToBackup(exercise: RoutineExercise): RoutineExerciseBackup =
+        RoutineExerciseBackup(
+            id = exercise.id,
+            routineId = exercise.routineId,
+            exerciseName = exercise.exerciseName,
+            exerciseMuscleGroup = exercise.exerciseMuscleGroup,
+            exerciseEquipment = exercise.exerciseEquipment,
+            exerciseDefaultCableConfig = exercise.exerciseDefaultCableConfig,
+            exerciseId = exercise.exerciseId,
+            cableConfig = exercise.cableConfig,
+            orderIndex = exercise.orderIndex.toInt(),
+            setReps = exercise.setReps,
+            weightPerCableKg = exercise.weightPerCableKg.toFloat(),
+            setWeights = exercise.setWeights,
+            mode = exercise.mode,
+            eccentricLoad = exercise.eccentricLoad.toInt(),
+            echoLevel = exercise.echoLevel.toInt(),
+            progressionKg = exercise.progressionKg.toFloat(),
+            restSeconds = exercise.restSeconds.toInt(),
+            duration = exercise.duration?.toInt(),
+            setRestSeconds = exercise.setRestSeconds,
+            perSetRestTime = exercise.perSetRestTime != 0L,
+            isAMRAP = exercise.isAMRAP != 0L,
+            supersetId = exercise.supersetId,
+            orderInSuperset = exercise.orderInSuperset.toInt(),
+            usePercentOfPR = exercise.usePercentOfPR != 0L,
+            weightPercentOfPR = exercise.weightPercentOfPR.toInt(),
+            prTypeForScaling = exercise.prTypeForScaling,
+            setWeightsPercentOfPR = exercise.setWeightsPercentOfPR
+        )
+
+    private fun mapSupersetToBackup(superset: Superset): SupersetBackup =
+        SupersetBackup(
+            id = superset.id,
+            routineId = superset.routineId,
+            name = superset.name,
+            colorIndex = superset.colorIndex.toInt(),
+            restBetweenSeconds = superset.restBetweenSeconds.toInt(),
+            orderIndex = superset.orderIndex.toInt()
+        )
+
+    private fun mapPersonalRecordToBackup(pr: PersonalRecord): PersonalRecordBackup =
+        PersonalRecordBackup(
+            id = pr.id,
+            exerciseId = pr.exerciseId,
+            exerciseName = pr.exerciseName,
+            weight = pr.weight.toFloat(),
+            reps = pr.reps.toInt(),
+            oneRepMax = pr.oneRepMax.toFloat(),
+            achievedAt = pr.achievedAt,
+            workoutMode = pr.workoutMode,
+            prType = pr.prType,
+            volume = pr.volume.toFloat()
+        )
+
+    private fun mapTrainingCycleToBackup(cycle: TrainingCycle): TrainingCycleBackup =
+        TrainingCycleBackup(
+            id = cycle.id,
+            name = cycle.name,
+            description = cycle.description,
+            createdAt = cycle.created_at,
+            isActive = cycle.is_active != 0L
+        )
+
+    private fun mapCycleDayToBackup(day: CycleDay): CycleDayBackup =
+        CycleDayBackup(
+            id = day.id,
+            cycleId = day.cycle_id,
+            dayNumber = day.day_number.toInt(),
+            name = day.name,
+            routineId = day.routine_id,
+            isRestDay = day.is_rest_day != 0L
+        )
+
+    private fun mapCycleProgressToBackup(cp: CycleProgress): CycleProgressBackup =
+        CycleProgressBackup(
+            id = cp.id,
+            cycleId = cp.cycle_id,
+            currentDayNumber = cp.current_day_number.toInt(),
+            lastCompletedDate = cp.last_completed_date,
+            cycleStartDate = cp.cycle_start_date,
+            lastAdvancedAt = cp.last_advanced_at,
+            completedDays = cp.completed_days,
+            missedDays = cp.missed_days,
+            rotationCount = cp.rotation_count.toInt()
+        )
+
+    private fun mapCycleProgressionToBackup(cprog: CycleProgression): CycleProgressionBackup =
+        CycleProgressionBackup(
+            cycleId = cprog.cycle_id,
+            frequencyCycles = cprog.frequency_cycles.toInt(),
+            weightIncreasePercent = cprog.weight_increase_percent?.toFloat(),
+            echoLevelIncrease = cprog.echo_level_increase.toInt(),
+            eccentricLoadIncreasePercent = cprog.eccentric_load_increase_percent?.toInt()
+        )
+
+    private fun mapPlannedSetToBackup(ps: PlannedSet): PlannedSetBackup =
+        PlannedSetBackup(
+            id = ps.id,
+            routineExerciseId = ps.routine_exercise_id,
+            setNumber = ps.set_number.toInt(),
+            setType = ps.set_type,
+            targetReps = ps.target_reps?.toInt(),
+            targetWeightKg = ps.target_weight_kg?.toFloat(),
+            targetRpe = ps.target_rpe?.toInt(),
+            restSeconds = ps.rest_seconds?.toInt()
+        )
+
+    private fun mapCompletedSetToBackup(cs: CompletedSet): CompletedSetBackup =
+        CompletedSetBackup(
+            id = cs.id,
+            sessionId = cs.session_id,
+            plannedSetId = cs.planned_set_id,
+            setNumber = cs.set_number.toInt(),
+            setType = cs.set_type,
+            actualReps = cs.actual_reps.toInt(),
+            actualWeightKg = cs.actual_weight_kg.toFloat(),
+            loggedRpe = cs.logged_rpe?.toInt(),
+            isPr = cs.is_pr != 0L,
+            completedAt = cs.completed_at
+        )
+
+    private fun mapProgressionEventToBackup(pe: ProgressionEvent): ProgressionEventBackup =
+        ProgressionEventBackup(
+            id = pe.id,
+            exerciseId = pe.exercise_id,
+            suggestedWeightKg = pe.suggested_weight_kg.toFloat(),
+            previousWeightKg = pe.previous_weight_kg.toFloat(),
+            reason = pe.reason,
+            userResponse = pe.user_response,
+            actualWeightKg = pe.actual_weight_kg?.toFloat(),
+            timestamp = pe.timestamp
+        )
+
+    private fun mapEarnedBadgeToBackup(eb: EarnedBadge): EarnedBadgeBackup =
+        EarnedBadgeBackup(
+            id = eb.id,
+            badgeId = eb.badgeId,
+            earnedAt = eb.earnedAt,
+            celebratedAt = eb.celebratedAt
+        )
+
+    private fun mapStreakHistoryToBackup(sh: StreakHistory): StreakHistoryBackup =
+        StreakHistoryBackup(
+            id = sh.id,
+            startDate = sh.startDate,
+            endDate = sh.endDate,
+            length = sh.length.toInt()
+        )
+
+    private fun mapGamificationStatsToBackup(gs: GamificationStats): GamificationStatsBackup =
+        GamificationStatsBackup(
+            totalWorkouts = gs.totalWorkouts.toInt(),
+            totalReps = gs.totalReps.toInt(),
+            totalVolumeKg = gs.totalVolumeKg.toInt(),
+            longestStreak = gs.longestStreak.toInt(),
+            currentStreak = gs.currentStreak.toInt(),
+            uniqueExercisesUsed = gs.uniqueExercisesUsed.toInt(),
+            prsAchieved = gs.prsAchieved.toInt(),
+            lastWorkoutDate = gs.lastWorkoutDate,
+            streakStartDate = gs.streakStartDate,
+            lastUpdated = gs.lastUpdated
+        )
+
+    private fun mapUserProfileToBackup(up: UserProfile): UserProfileBackup =
+        UserProfileBackup(
+            id = up.id,
+            name = up.name,
+            colorIndex = up.colorIndex.toInt(),
+            createdAt = up.createdAt,
+            isActive = up.isActive != 0L
+        )
 }

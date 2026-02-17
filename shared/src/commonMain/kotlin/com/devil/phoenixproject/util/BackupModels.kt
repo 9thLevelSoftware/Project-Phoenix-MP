@@ -313,6 +313,27 @@ data class GamificationStatsBackup(
 )
 
 /**
+ * Progress tracking for streaming backup export
+ */
+data class BackupProgress(
+    val phase: BackupPhase,
+    val current: Long,
+    val total: Long
+)
+
+/**
+ * Phases of the streaming backup export process
+ */
+enum class BackupPhase(val displayName: String) {
+    COUNTING("Calculating size..."),
+    SESSIONS("Exporting sessions"),
+    METRICS("Exporting metrics"),
+    ROUTINES("Exporting routines"),
+    OTHER("Exporting remaining data"),
+    FINALIZING("Finalizing backup")
+}
+
+/**
  * Root backup data structure containing all exportable data
  */
 @Serializable

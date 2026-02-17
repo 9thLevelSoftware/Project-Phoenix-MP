@@ -26,6 +26,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.util.ColorSchemes
+import com.devil.phoenixproject.util.BackupProgress
 import com.devil.phoenixproject.util.DataBackupManager
 import com.devil.phoenixproject.util.ImportResult
 import com.devil.phoenixproject.util.rememberFilePicker
@@ -86,6 +87,7 @@ fun SettingsTab(
     var showRestoreDialog by remember { mutableStateOf(false) }
     var backupInProgress by remember { mutableStateOf(false) }
     var restoreInProgress by remember { mutableStateOf(false) }
+    var backupProgress by remember { mutableStateOf<BackupProgress?>(null) }
     var backupResult by remember { mutableStateOf<String?>(null) }
     var restoreResult by remember { mutableStateOf<ImportResult?>(null) }
     var showResultDialog by remember { mutableStateOf(false) }
@@ -1411,15 +1413,16 @@ fun SettingsTab(
             },
             confirmButton = {
                 Row(horizontalArrangement = Arrangement.spacedBy(Spacing.small)) {
-                    // Save to Files button
+                    // Save to Files button (streaming export)
                     Button(
                         onClick = {
                             showBackupDialog = false
                             backupInProgress = true
                             scope.launch {
                                 try {
-                                    val backup = backupManager.exportAllData()
-                                    val result = backupManager.saveToFile(backup)
+                                    val result = backupManager.exportToFile { progress ->
+                                        backupProgress = progress
+                                    }
                                     result.onSuccess { path ->
                                         backupResult = path
                                         showResultDialog = true
@@ -1428,28 +1431,31 @@ fun SettingsTab(
                                         showResultDialog = true
                                     }
                                 } catch (e: Exception) {
-                                    // Handle SQLite exceptions and other errors gracefully
-                                    // instead of crashing the app
                                     backupResult = "Export failed: ${e.message ?: "Unknown database error"}"
                                     showResultDialog = true
                                 } finally {
                                     backupInProgress = false
+                                    backupProgress = null
                                 }
                             }
                         }
                     ) {
                         Text("Save")
                     }
-                    // Share button
+                    // Share button (streaming export)
                     OutlinedButton(
                         onClick = {
                             showBackupDialog = false
+                            backupInProgress = true
                             scope.launch {
                                 try {
                                     backupManager.shareBackup()
                                 } catch (e: Exception) {
                                     backupResult = "Share failed: ${e.message ?: "Unknown error"}"
                                     showResultDialog = true
+                                } finally {
+                                    backupInProgress = false
+                                    backupProgress = null
                                 }
                             }
                         }
@@ -1529,18 +1535,41 @@ fun SettingsTab(
         )
     }
 
-    // Loading indicator dialog
+    // Loading indicator dialog with streaming progress
     if (backupInProgress || restoreInProgress) {
         AlertDialog(
             onDismissRequest = { },
             title = { Text(if (backupInProgress) "Creating Backup..." else "Restoring Data...", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold) },
             text = {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(Spacing.medium)
-                ) {
-                    CircularProgressIndicator()
-                    Text("Please wait...")
+                Column {
+                    backupProgress?.let { progress ->
+                        Text(
+                            progress.phase.displayName,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(modifier = Modifier.height(Spacing.small))
+                        if (progress.total > 0) {
+                            LinearProgressIndicator(
+                                progress = { (progress.current.toFloat() / progress.total.toFloat()).coerceIn(0f, 1f) },
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            Spacer(modifier = Modifier.height(Spacing.small))
+                            Text(
+                                "${formatCount(progress.current)} / ${formatCount(progress.total)}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        } else {
+                            LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                        }
+                    } ?: Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(Spacing.medium)
+                    ) {
+                        CircularProgressIndicator()
+                        Text("Please wait...")
+                    }
                 }
             },
             confirmButton = { }
@@ -1571,6 +1600,13 @@ fun SettingsTab(
             }
         }
     }
+}
+
+private fun formatCount(count: Long): String = when {
+    count >= 1_000_000 -> "${count / 1_000_000}.${(count % 1_000_000) / 100_000}M"
+    count >= 10_000 -> "${count / 1_000}K"
+    count >= 1_000 -> "${count / 1_000}.${(count % 1_000) / 100}K"
+    else -> count.toString()
 }
 
 /**

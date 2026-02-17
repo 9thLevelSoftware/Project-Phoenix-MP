@@ -786,6 +786,13 @@ VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 countTotalWorkouts:
 SELECT COUNT(*) FROM WorkoutSession;
 
+-- Count queries for streaming backup progress
+countAllMetricSamples:
+SELECT COUNT(*) FROM MetricSample;
+
+countAllRoutineExercises:
+SELECT COUNT(*) FROM RoutineExercise;
+
 countTotalReps:
 SELECT SUM(totalReps) FROM WorkoutSession;
 
