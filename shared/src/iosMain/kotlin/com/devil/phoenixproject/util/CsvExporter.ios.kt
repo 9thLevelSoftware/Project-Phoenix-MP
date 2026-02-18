@@ -64,7 +64,7 @@ class IosCsvExporter : CsvExporter {
     ): Result<String> {
         return try {
             val csv = buildString {
-                appendLine("Date,Time,Exercise,Mode,Weight (${weightUnit.name}),Reps,Duration (s)")
+                appendLine("Date,Time,Exercise,Mode,Weight (${weightUnit.name}),Progression,Reps,Duration (s)")
                 workoutSessions.forEach { session ->
                     val exerciseName = exerciseNames[session.exerciseId] ?: session.exerciseId ?: "Unknown"
                     val date = KmpUtils.formatTimestamp(session.timestamp, "yyyy-MM-dd")
@@ -78,7 +78,12 @@ class IosCsvExporter : CsvExporter {
                     }
                     val formattedWeight = formatWeight(effectiveWeight, weightUnit)
                     val durationSeconds = session.duration / 1000
-                    appendLine("$date,$time,\"$exerciseName\",${session.mode},$formattedWeight,${session.reps},$durationSeconds")
+                    val progression = when {
+                        session.progressionKg > 0f -> "+${formatWeight(session.progressionKg, weightUnit)}"
+                        session.progressionKg < 0f -> formatWeight(session.progressionKg, weightUnit)
+                        else -> "0"
+                    }
+                    appendLine("$date,$time,\"$exerciseName\",${session.mode},$formattedWeight,$progression,${session.reps},$durationSeconds")
                 }
             }
 
