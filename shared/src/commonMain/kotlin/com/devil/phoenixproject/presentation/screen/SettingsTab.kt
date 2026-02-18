@@ -88,6 +88,7 @@ fun SettingsTab(
     var restoreInProgress by remember { mutableStateOf(false) }
     var backupProgress by remember { mutableStateOf<BackupProgress?>(null) }
     var backupResult by remember { mutableStateOf<String?>(null) }
+    var backupError by remember { mutableStateOf<String?>(null) }
     var restoreResult by remember { mutableStateOf<ImportResult?>(null) }
     var showResultDialog by remember { mutableStateOf(false) }
     var launchFilePicker by remember { mutableStateOf(false) }
@@ -1398,11 +1399,11 @@ fun SettingsTab(
                                         backupResult = path
                                         showResultDialog = true
                                     }.onFailure { error ->
-                                        backupResult = "Error: ${error.message}"
+                                        backupError = error.message ?: "Unknown error"
                                         showResultDialog = true
                                     }
                                 } catch (e: Exception) {
-                                    backupResult = "Export failed: ${e.message ?: "Unknown database error"}"
+                                    backupError = e.message ?: "Unknown database error"
                                     showResultDialog = true
                                 } finally {
                                     backupInProgress = false
@@ -1422,7 +1423,7 @@ fun SettingsTab(
                                 try {
                                     backupManager.shareBackup()
                                 } catch (e: Exception) {
-                                    backupResult = "Share failed: ${e.message ?: "Unknown error"}"
+                                    backupError = e.message ?: "Unknown error"
                                     showResultDialog = true
                                 } finally {
                                     backupInProgress = false
@@ -1477,19 +1478,36 @@ fun SettingsTab(
 
     // Result dialog
     if (showResultDialog) {
+        val isError = backupError != null
         AlertDialog(
             onDismissRequest = { showResultDialog = false },
-            title = { Text(if (backupResult != null) "Backup Complete" else "Restore Complete", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold) },
+            title = {
+                Text(
+                    when {
+                        isError -> "Error"
+                        backupResult != null -> "Backup Complete"
+                        else -> "Restore Complete"
+                    },
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.Bold
+                )
+            },
             text = {
-                if (backupResult != null) {
-                    Text("Backup saved successfully to:\n$backupResult")
-                } else {
-                    restoreResult?.let { result ->
-                        Column {
-                            Text("Import completed!")
-                            Spacer(modifier = Modifier.height(Spacing.small))
-                            Text("Records imported: ${result.totalImported}")
-                            Text("Records skipped (duplicates): ${result.totalSkipped}")
+                when {
+                    isError -> {
+                        Text(backupError ?: "Unknown error")
+                    }
+                    backupResult != null -> {
+                        Text("Backup saved successfully to:\n$backupResult")
+                    }
+                    else -> {
+                        restoreResult?.let { result ->
+                            Column {
+                                Text("Import completed!")
+                                Spacer(modifier = Modifier.height(Spacing.small))
+                                Text("Records imported: ${result.totalImported}")
+                                Text("Records skipped (duplicates): ${result.totalSkipped}")
+                            }
                         }
                     }
                 }
@@ -1498,6 +1516,7 @@ fun SettingsTab(
                 Button(onClick = {
                     showResultDialog = false
                     backupResult = null
+                    backupError = null
                     restoreResult = null
                 }) {
                     Text("OK")
@@ -1561,7 +1580,7 @@ fun SettingsTab(
                             restoreResult = importResult
                             showResultDialog = true
                         }.onFailure { error ->
-                            backupResult = "Import failed: ${error.message}"
+                            backupError = "Import failed: ${error.message ?: "Unknown error"}"
                             showResultDialog = true
                         }
                     } finally {
