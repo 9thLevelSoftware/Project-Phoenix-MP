@@ -285,6 +285,8 @@ fun NavGraph(
             val connectionError by viewModel.connectionError.collectAsState()
             val connectionState by viewModel.connectionState.collectAsState()
             val discoModeActive by viewModel.discoModeActive.collectAsState()
+            val simulatorModeUnlocked by viewModel.simulatorModeUnlocked.collectAsState()
+            val simulatorModeEnabled by viewModel.simulatorModeEnabled.collectAsState()
             SettingsTab(
                 weightUnit = weightUnit,
                 enableVideoPlayback = userPreferences.enableVideoPlayback,
@@ -321,8 +323,8 @@ fun NavGraph(
                 gamificationEnabled = userPreferences.gamificationEnabled,
                 onGamificationEnabledChange = { viewModel.setGamificationEnabled(it) },
                 // Simulator mode Easter egg
-                simulatorModeUnlocked = viewModel.isSimulatorModeUnlocked(),
-                simulatorModeEnabled = viewModel.isSimulatorModeEnabled(),
+                simulatorModeUnlocked = simulatorModeUnlocked,
+                simulatorModeEnabled = simulatorModeEnabled,
                 onSimulatorModeUnlocked = { viewModel.unlockSimulatorMode() },
                 onSimulatorModeToggle = { viewModel.toggleSimulatorMode(it) }
             )

@@ -103,22 +103,19 @@ class FakePreferencesManager : PreferencesManager {
         _preferencesFlow.value = _preferencesFlow.value.copy(gamificationEnabled = enabled)
     }
 
-    private var simulatorModeUnlocked = false
-    private var simulatorModeEnabled = false
-
     override suspend fun setSimulatorModeUnlocked(unlocked: Boolean) {
-        simulatorModeUnlocked = unlocked
+        _preferencesFlow.value = _preferencesFlow.value.copy(simulatorModeUnlocked = unlocked)
     }
 
     override fun isSimulatorModeUnlocked(): Boolean {
-        return simulatorModeUnlocked
+        return _preferencesFlow.value.simulatorModeUnlocked
     }
 
     override suspend fun setSimulatorModeEnabled(enabled: Boolean) {
-        simulatorModeEnabled = enabled
+        _preferencesFlow.value = _preferencesFlow.value.copy(simulatorModeEnabled = enabled)
     }
 
     override fun isSimulatorModeEnabled(): Boolean {
-        return simulatorModeEnabled
+        return _preferencesFlow.value.simulatorModeEnabled
     }
 }

@@ -254,6 +254,10 @@ class SqlDelightWorkoutRepository(
                     duration = row.duration?.toInt(),
                     isAMRAP = row.isAMRAP == 1L,
                     perSetRestTime = row.perSetRestTime == 1L,
+                    // Per-exercise behavior overrides
+                    stallDetectionEnabled = row.stallDetectionEnabled == 1L,
+                    repCountTiming = try { com.devil.phoenixproject.domain.model.RepCountTiming.valueOf(row.repCountTiming) } catch (_: Exception) { com.devil.phoenixproject.domain.model.RepCountTiming.TOP },
+                    stopAtTop = row.stopAtTop == 1L,
                     supersetId = row.supersetId,
                     orderInSuperset = row.orderInSuperset.toInt(),
                     // PR percentage scaling fields
@@ -498,7 +502,11 @@ class SqlDelightWorkoutRepository(
             usePercentOfPR = if (exercise.usePercentOfPR) 1L else 0L,
             weightPercentOfPR = exercise.weightPercentOfPR.toLong(),
             prTypeForScaling = exercise.prTypeForScaling.name,
-            setWeightsPercentOfPR = if (exercise.setWeightsPercentOfPR.isEmpty()) null else json.encodeToString(exercise.setWeightsPercentOfPR)
+            setWeightsPercentOfPR = if (exercise.setWeightsPercentOfPR.isEmpty()) null else json.encodeToString(exercise.setWeightsPercentOfPR),
+            // Per-exercise behavior overrides
+            stallDetectionEnabled = if (exercise.stallDetectionEnabled) 1L else 0L,
+            stopAtTop = if (exercise.stopAtTop) 1L else 0L,
+            repCountTiming = exercise.repCountTiming.name
         )
     }
 

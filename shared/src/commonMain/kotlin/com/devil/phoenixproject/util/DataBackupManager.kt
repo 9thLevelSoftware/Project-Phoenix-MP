@@ -271,7 +271,10 @@ abstract class BaseDataBackupManager(
                         usePercentOfPR = exercise.usePercentOfPR != 0L,
                         weightPercentOfPR = exercise.weightPercentOfPR.toInt(),
                         prTypeForScaling = exercise.prTypeForScaling,
-                        setWeightsPercentOfPR = exercise.setWeightsPercentOfPR
+                        setWeightsPercentOfPR = exercise.setWeightsPercentOfPR,
+                        stallDetectionEnabled = exercise.stallDetectionEnabled != 0L,
+                        stopAtTop = exercise.stopAtTop != 0L,
+                        repCountTiming = exercise.repCountTiming
                     )
                 },
                 supersets = supersets.map { superset ->
@@ -611,7 +614,10 @@ abstract class BaseDataBackupManager(
                             usePercentOfPR = if (exercise.usePercentOfPR) 1L else 0L,
                             weightPercentOfPR = exercise.weightPercentOfPR.toLong(),
                             prTypeForScaling = exercise.prTypeForScaling,
-                            setWeightsPercentOfPR = exercise.setWeightsPercentOfPR
+                            setWeightsPercentOfPR = exercise.setWeightsPercentOfPR,
+                            stallDetectionEnabled = if (exercise.stallDetectionEnabled) 1L else 0L,
+                            stopAtTop = if (exercise.stopAtTop) 1L else 0L,
+                            repCountTiming = exercise.repCountTiming
                         )
                         routineExercisesImported++
                     }
@@ -1090,7 +1096,10 @@ abstract class BaseDataBackupManager(
             usePercentOfPR = exercise.usePercentOfPR != 0L,
             weightPercentOfPR = exercise.weightPercentOfPR.toInt(),
             prTypeForScaling = exercise.prTypeForScaling,
-            setWeightsPercentOfPR = exercise.setWeightsPercentOfPR
+            setWeightsPercentOfPR = exercise.setWeightsPercentOfPR,
+            stallDetectionEnabled = exercise.stallDetectionEnabled != 0L,
+            stopAtTop = exercise.stopAtTop != 0L,
+            repCountTiming = exercise.repCountTiming
         )
 
     private fun mapSupersetToBackup(superset: Superset): SupersetBackup =

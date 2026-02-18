@@ -183,7 +183,9 @@ class SettingsPreferencesManager(
             } ?: RepCountTiming.TOP,
             summaryCountdownSeconds = settings.getInt(KEY_SUMMARY_COUNTDOWN_SECONDS, 10),
             autoStartCountdownSeconds = settings.getInt(KEY_AUTOSTART_COUNTDOWN_SECONDS, 5),
-            gamificationEnabled = settings.getBoolean(KEY_GAMIFICATION_ENABLED, true)
+            gamificationEnabled = settings.getBoolean(KEY_GAMIFICATION_ENABLED, true),
+            simulatorModeUnlocked = settings.getBoolean(KEY_SIMULATOR_MODE_UNLOCKED, false),
+            simulatorModeEnabled = settings.getBoolean(KEY_SIMULATOR_MODE_ENABLED, false)
         )
     }
 
@@ -313,6 +315,7 @@ class SettingsPreferencesManager(
 
     override suspend fun setSimulatorModeUnlocked(unlocked: Boolean) {
         settings.putBoolean(KEY_SIMULATOR_MODE_UNLOCKED, unlocked)
+        updateAndEmit { copy(simulatorModeUnlocked = unlocked) }
     }
 
     override fun isSimulatorModeUnlocked(): Boolean {
@@ -321,6 +324,7 @@ class SettingsPreferencesManager(
 
     override suspend fun setSimulatorModeEnabled(enabled: Boolean) {
         settings.putBoolean(KEY_SIMULATOR_MODE_ENABLED, enabled)
+        updateAndEmit { copy(simulatorModeEnabled = enabled) }
     }
 
     override fun isSimulatorModeEnabled(): Boolean {

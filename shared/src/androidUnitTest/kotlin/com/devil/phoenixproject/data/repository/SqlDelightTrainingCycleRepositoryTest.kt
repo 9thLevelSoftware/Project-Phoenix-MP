@@ -217,7 +217,10 @@ class SqlDelightTrainingCycleRepositoryTest {
             usePercentOfPR = 0L,
             weightPercentOfPR = 80L,
             prTypeForScaling = "MAX_WEIGHT",
-            setWeightsPercentOfPR = null
+            setWeightsPercentOfPR = null,
+            stallDetectionEnabled = 1L,
+            stopAtTop = 0L,
+            repCountTiming = "TOP"
         )
     }
 }

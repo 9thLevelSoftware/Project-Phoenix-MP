@@ -128,7 +128,11 @@ data class RoutineExerciseBackup(
     val usePercentOfPR: Boolean = false,
     val weightPercentOfPR: Int = 80,
     val prTypeForScaling: String = "MAX_WEIGHT",
-    val setWeightsPercentOfPR: String? = null  // JSON array as string
+    val setWeightsPercentOfPR: String? = null,  // JSON array as string
+    // Per-exercise behavior overrides (PR #245)
+    val stallDetectionEnabled: Boolean = true,
+    val stopAtTop: Boolean = false,
+    val repCountTiming: String = "TOP"
 )
 
 /**

@@ -38,6 +38,14 @@ class SettingsManager(
         .map { it.gamificationEnabled }
         .stateIn(scope, SharingStarted.Eagerly, true)
 
+    val simulatorModeUnlocked: StateFlow<Boolean> = userPreferences
+        .map { it.simulatorModeUnlocked }
+        .stateIn(scope, SharingStarted.Eagerly, false)
+
+    val simulatorModeEnabled: StateFlow<Boolean> = userPreferences
+        .map { it.simulatorModeEnabled }
+        .stateIn(scope, SharingStarted.Eagerly, false)
+
     // Issue #167: Autoplay is now derived from summaryCountdownSeconds
     // - summaryCountdownSeconds == 0 (Unlimited) = autoplay OFF (manual control)
     // - summaryCountdownSeconds != 0 (-1 or 5-30) = autoplay ON (auto-advance)
@@ -80,6 +88,14 @@ class SettingsManager(
 
     fun setGamificationEnabled(enabled: Boolean) {
         scope.launch { preferencesManager.setGamificationEnabled(enabled) }
+    }
+
+    fun setSimulatorModeUnlocked(unlocked: Boolean) {
+        scope.launch { preferencesManager.setSimulatorModeUnlocked(unlocked) }
+    }
+
+    fun setSimulatorModeEnabled(enabled: Boolean) {
+        scope.launch { preferencesManager.setSimulatorModeEnabled(enabled) }
     }
 
     fun setColorScheme(schemeIndex: Int) {
