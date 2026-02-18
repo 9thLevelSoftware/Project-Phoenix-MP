@@ -593,6 +593,9 @@ actual class DriverFactory {
                 weightPercentOfPR INTEGER NOT NULL DEFAULT 80,
                 prTypeForScaling TEXT NOT NULL DEFAULT 'MAX_WEIGHT',
                 setWeightsPercentOfPR TEXT,
+                stallDetectionEnabled INTEGER NOT NULL DEFAULT 1,
+                stopAtTop INTEGER NOT NULL DEFAULT 0,
+                repCountTiming TEXT NOT NULL DEFAULT 'TOP',
                 FOREIGN KEY (routineId) REFERENCES Routine(id) ON DELETE CASCADE,
                 FOREIGN KEY (exerciseId) REFERENCES Exercise(id) ON DELETE SET NULL,
                 FOREIGN KEY (supersetId) REFERENCES Superset(id) ON DELETE SET NULL
@@ -830,6 +833,9 @@ actual class DriverFactory {
         safeAddColumn(driver, "RoutineExercise", "weightPercentOfPR", "INTEGER NOT NULL DEFAULT 80")
         safeAddColumn(driver, "RoutineExercise", "prTypeForScaling", "TEXT NOT NULL DEFAULT 'MAX_WEIGHT'")
         safeAddColumn(driver, "RoutineExercise", "setWeightsPercentOfPR", "TEXT")
+        safeAddColumn(driver, "RoutineExercise", "stallDetectionEnabled", "INTEGER NOT NULL DEFAULT 1")
+        safeAddColumn(driver, "RoutineExercise", "stopAtTop", "INTEGER NOT NULL DEFAULT 0")
+        safeAddColumn(driver, "RoutineExercise", "repCountTiming", "TEXT NOT NULL DEFAULT 'TOP'")
 
         // WorkoutSession columns (migration 5 + 11)
         safeAddColumn(driver, "WorkoutSession", "peakForceConcentricA", "REAL")

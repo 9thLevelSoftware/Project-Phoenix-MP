@@ -33,6 +33,9 @@ actual class DriverFactory(private val context: Context) {
                     db.execSQL("PRAGMA foreign_keys = ON;")
                     // Ensure gamification tables exist (no migration was ever added for them)
                     ensureGamificationTablesExist(db)
+                    // Issue #246: 0.5.0 added RoutineExercise columns without a migration.
+                    // Heal older v11 databases in-place so routines load correctly.
+                    ensureRoutineExerciseBehaviorColumns(db)
                 }
 
                 override fun onUpgrade(db: SupportSQLiteDatabase, oldVersion: Int, newVersion: Int) {
@@ -517,6 +520,68 @@ actual class DriverFactory(private val context: Context) {
                     }
 
                     Log.d(TAG, "Gamification tables verified/created")
+                }
+
+                /**
+                 * Backfill missing RoutineExercise columns introduced in 0.5.0.
+                 * Some users upgraded from 0.4.5->0.5.0 without these columns due a missed migration.
+                 */
+                private fun ensureRoutineExerciseBehaviorColumns(db: SupportSQLiteDatabase) {
+                    safeAddColumn(
+                        db,
+                        table = "RoutineExercise",
+                        column = "stallDetectionEnabled",
+                        definition = "INTEGER NOT NULL DEFAULT 1"
+                    )
+                    safeAddColumn(
+                        db,
+                        table = "RoutineExercise",
+                        column = "stopAtTop",
+                        definition = "INTEGER NOT NULL DEFAULT 0"
+                    )
+                    safeAddColumn(
+                        db,
+                        table = "RoutineExercise",
+                        column = "repCountTiming",
+                        definition = "TEXT NOT NULL DEFAULT 'TOP'"
+                    )
+                }
+
+                private fun safeAddColumn(
+                    db: SupportSQLiteDatabase,
+                    table: String,
+                    column: String,
+                    definition: String
+                ) {
+                    if (columnExists(db, table, column)) return
+
+                    try {
+                        db.execSQL("ALTER TABLE $table ADD COLUMN $column $definition")
+                        Log.i(TAG, "Schema heal: added $table.$column")
+                    } catch (e: SQLiteException) {
+                        if (e.message?.contains("duplicate column") == true) {
+                            Log.d(TAG, "Schema heal: $table.$column already exists")
+                        } else {
+                            Log.w(TAG, "Schema heal failed for $table.$column: ${e.message}")
+                        }
+                    }
+                }
+
+                private fun columnExists(db: SupportSQLiteDatabase, table: String, column: String): Boolean {
+                    return try {
+                        val cursor = db.query("PRAGMA table_info($table)")
+                        cursor.use {
+                            val nameIndex = cursor.getColumnIndex("name")
+                            while (cursor.moveToNext()) {
+                                val existing = if (nameIndex >= 0) cursor.getString(nameIndex) else cursor.getString(1)
+                                if (existing == column) return true
+                            }
+                        }
+                        false
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Schema heal: failed table_info($table): ${e.message}")
+                        false
+                    }
                 }
             }
         )
