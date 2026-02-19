@@ -1008,9 +1008,9 @@ abstract class BaseDataBackupManager(
      * self-describing and don't require manual data repair by end users.
      */
     private fun normalizeRoutineMetadataForBackup(session: WorkoutSession): Pair<String, String> {
-        val existingSessionId = session.routineSessionId?.takeUnless { it.isBlank() }
-        val existingRoutineName = session.routineName?.takeUnless { it.isBlank() }
-        val exerciseName = session.exerciseName?.takeUnless { it.isBlank() }
+        val existingSessionId = sanitizeLegacyLabel(session.routineSessionId)
+        val existingRoutineName = sanitizeLegacyLabel(session.routineName)
+        val exerciseName = sanitizeLegacyLabel(session.exerciseName)
 
         val normalizedSessionId = existingSessionId ?: "legacy_session_${session.id}"
         val normalizedRoutineName = existingRoutineName ?: when {
@@ -1020,6 +1020,18 @@ abstract class BaseDataBackupManager(
         }
 
         return normalizedSessionId to normalizedRoutineName
+    }
+
+    /**
+     * Treat low-quality legacy values as missing.
+     * Examples filtered out: blank, "null", ":", "--", punctuation-only tokens.
+     */
+    private fun sanitizeLegacyLabel(raw: String?): String? {
+        val trimmed = raw?.trim().orEmpty()
+        if (trimmed.isEmpty()) return null
+        if (trimmed.equals("null", ignoreCase = true)) return null
+        if (!trimmed.any { it.isLetterOrDigit() }) return null
+        return trimmed
     }
 
     private fun mapSessionToBackup(session: WorkoutSession): WorkoutSessionBackup {
