@@ -175,6 +175,7 @@ abstract class BaseDataBackupManager(
             appVersion = Constants.APP_VERSION,
             data = BackupContent(
                 workoutSessions = sessions.map { session ->
+                    val (routineSessionId, routineName) = normalizeRoutineMetadataForBackup(session)
                     WorkoutSessionBackup(
                         id = session.id,
                         timestamp = session.timestamp,
@@ -192,8 +193,8 @@ abstract class BaseDataBackupManager(
                         echoLevel = session.echoLevel.toInt(),
                         exerciseId = session.exerciseId,
                         exerciseName = session.exerciseName,
-                        routineSessionId = session.routineSessionId,
-                        routineName = session.routineName,
+                        routineSessionId = routineSessionId,
+                        routineName = routineName,
                         safetyFlags = session.safetyFlags.toInt(),
                         deloadWarningCount = session.deloadWarningCount.toInt(),
                         romViolationCount = session.romViolationCount.toInt(),
@@ -1001,8 +1002,29 @@ abstract class BaseDataBackupManager(
 
     // -- Mapper functions (DB types → Backup types) --
 
-    private fun mapSessionToBackup(session: WorkoutSession): WorkoutSessionBackup =
-        WorkoutSessionBackup(
+    /**
+     * Legacy sessions may have null routine metadata due to older client behavior.
+     * Normalize to stable non-null placeholders during export so backups remain
+     * self-describing and don't require manual data repair by end users.
+     */
+    private fun normalizeRoutineMetadataForBackup(session: WorkoutSession): Pair<String, String> {
+        val existingSessionId = session.routineSessionId?.takeUnless { it.isBlank() }
+        val existingRoutineName = session.routineName?.takeUnless { it.isBlank() }
+        val exerciseName = session.exerciseName?.takeUnless { it.isBlank() }
+
+        val normalizedSessionId = existingSessionId ?: "legacy_session_${session.id}"
+        val normalizedRoutineName = existingRoutineName ?: when {
+            session.isJustLift != 0L -> "Just Lift"
+            exerciseName != null -> exerciseName
+            else -> "Legacy Session"
+        }
+
+        return normalizedSessionId to normalizedRoutineName
+    }
+
+    private fun mapSessionToBackup(session: WorkoutSession): WorkoutSessionBackup {
+        val (routineSessionId, routineName) = normalizeRoutineMetadataForBackup(session)
+        return WorkoutSessionBackup(
             id = session.id,
             timestamp = session.timestamp,
             mode = session.mode,
@@ -1019,8 +1041,8 @@ abstract class BaseDataBackupManager(
             echoLevel = session.echoLevel.toInt(),
             exerciseId = session.exerciseId,
             exerciseName = session.exerciseName,
-            routineSessionId = session.routineSessionId,
-            routineName = session.routineName,
+            routineSessionId = routineSessionId,
+            routineName = routineName,
             safetyFlags = session.safetyFlags.toInt(),
             deloadWarningCount = session.deloadWarningCount.toInt(),
             romViolationCount = session.romViolationCount.toInt(),
@@ -1042,6 +1064,7 @@ abstract class BaseDataBackupManager(
             peakWeightKg = session.peakWeightKg?.toFloat(),
             rpe = session.rpe?.toInt()
         )
+    }
 
     private fun mapMetricToBackup(metric: MetricSample): MetricSampleBackup =
         MetricSampleBackup(

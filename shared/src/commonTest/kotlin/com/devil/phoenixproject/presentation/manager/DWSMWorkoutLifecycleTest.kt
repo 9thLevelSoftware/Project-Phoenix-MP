@@ -299,4 +299,65 @@ class DWSMWorkoutLifecycleTest {
             "stopWorkout(exitingWorkout=true) should still save a session before going to Idle")
         harness.cleanup()
     }
+
+    @Test
+    fun `stopWorkout in routine flow saves session with routine metadata`() = runTest {
+        val harness = DWSMTestHarness(this)
+        harness.fakeBleRepo.simulateConnect("Vee_Test")
+
+        val routine = createTestRoutine(exerciseCount = 1, setsPerExercise = 1)
+        routine.exercises.forEach { harness.fakeExerciseRepo.addExercise(it.exercise) }
+
+        harness.dwsm.loadRoutine(routine)
+        advanceUntilIdle()
+
+        harness.dwsm.startWorkout(skipCountdown = true)
+        advanceUntilIdle()
+        harness.dwsm.stopWorkout(exitingWorkout = false)
+        advanceUntilIdle()
+
+        val session = harness.fakeWorkoutRepo.getAllSessions().first().first()
+        assertTrue(
+            session.routineSessionId?.isNotBlank() == true,
+            "Routine workout sessions should include a non-empty routineSessionId"
+        )
+        assertEquals(
+            routine.name,
+            session.routineName,
+            "Routine workout sessions should include the routine name"
+        )
+        harness.cleanup()
+    }
+
+    @Test
+    fun `stopWorkout in temp single-exercise flow keeps routine metadata null`() = runTest {
+        val harness = DWSMTestHarness(this)
+        harness.fakeBleRepo.simulateConnect("Vee_Test")
+
+        val tempRoutine = createTestRoutine(exerciseCount = 1, setsPerExercise = 1).copy(
+            id = "${DefaultWorkoutSessionManager.TEMP_SINGLE_EXERCISE_PREFIX}test"
+        )
+        tempRoutine.exercises.forEach { harness.fakeExerciseRepo.addExercise(it.exercise) }
+
+        harness.dwsm.loadRoutine(tempRoutine)
+        advanceUntilIdle()
+
+        harness.dwsm.startWorkout(skipCountdown = true)
+        advanceUntilIdle()
+        harness.dwsm.stopWorkout(exitingWorkout = false)
+        advanceUntilIdle()
+
+        val session = harness.fakeWorkoutRepo.getAllSessions().first().first()
+        assertEquals(
+            null,
+            session.routineSessionId,
+            "Single-exercise temp routines should not set routineSessionId"
+        )
+        assertEquals(
+            null,
+            session.routineName,
+            "Single-exercise temp routines should not set routineName"
+        )
+        harness.cleanup()
+    }
 }

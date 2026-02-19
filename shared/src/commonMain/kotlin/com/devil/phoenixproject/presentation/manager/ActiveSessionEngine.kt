@@ -1103,6 +1103,7 @@ class ActiveSessionEngine(
         coordinator.workoutJob?.cancel()
 
         coordinator._workoutState.value = WorkoutState.Initializing
+        syncRoutineSessionContext()
 
         coordinator.workoutJob = scope.launch {
             val params = coordinator._workoutParameters.value
@@ -1321,6 +1322,28 @@ class ActiveSessionEngine(
                 Logger.d("ActiveSessionEngine") { "LOAD BASELINE: Set initial baseline loadA=${metric.loadA}kg, loadB=${metric.loadB}kg" }
             }
         }
+    }
+
+    /**
+     * Ensure routine session metadata is present for routine workouts so persisted
+     * sessions (and backups) can be grouped back to the originating routine run.
+     * Single-exercise temp routines and Just Lift sessions intentionally stay null.
+     */
+    private fun syncRoutineSessionContext() {
+        val loadedRoutine = coordinator._loadedRoutine.value
+        val isTrackedRoutine = loadedRoutine != null &&
+            !loadedRoutine.id.startsWith(DefaultWorkoutSessionManager.TEMP_SINGLE_EXERCISE_PREFIX)
+
+        if (!isTrackedRoutine) {
+            coordinator.currentRoutineSessionId = null
+            coordinator.currentRoutineName = null
+            return
+        }
+
+        if (coordinator.currentRoutineSessionId.isNullOrBlank()) {
+            coordinator.currentRoutineSessionId = KmpUtils.randomUUID()
+        }
+        coordinator.currentRoutineName = loadedRoutine.name
     }
 
     fun skipCountdown() {
