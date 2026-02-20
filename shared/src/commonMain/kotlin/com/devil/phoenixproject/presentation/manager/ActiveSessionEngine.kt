@@ -268,7 +268,8 @@ class ActiveSessionEngine(
         configuredWeightKgPerCable: Float,
         isEchoMode: Boolean = false,
         warmupRepsCount: Int = 0,
-        workingRepsCount: Int = 0
+        workingRepsCount: Int = 0,
+        warmupCompleteTimeMs: Long = 0L
     ): WorkoutState.SetSummary {
         if (metrics.isEmpty()) {
             return WorkoutState.SetSummary(
@@ -281,7 +282,13 @@ class ActiveSessionEngine(
             )
         }
 
-        val durationMs = metrics.last().timestamp - metrics.first().timestamp
+        // Issue #252: Exclude warmup time from set duration
+        val effectiveStart = if (warmupCompleteTimeMs > 0L) {
+            warmupCompleteTimeMs.coerceAtLeast(metrics.first().timestamp)
+        } else {
+            metrics.first().timestamp
+        }
+        val durationMs = metrics.last().timestamp - effectiveStart
 
         val peakCableA = metrics.maxOf { it.loadA }
         val peakCableB = metrics.maxOf { it.loadB }
@@ -591,6 +598,11 @@ class ActiveSessionEngine(
             repCounter.updatePhaseFromPosition(metric.positionA, metric.positionB)
             coordinator._repCount.value = repCounter.getRepCount()
             coordinator._repRanges.value = repCounter.getRepRanges()
+
+            // Issue #252: Record the moment warmup completes (once per set)
+            if (coordinator.warmupCompleteTimeMs == 0L && coordinator._repCount.value.isWarmupComplete) {
+                coordinator.warmupCompleteTimeMs = currentTimeMillis()
+            }
 
             if (shouldEnableAutoStop(params)) {
                 Logger.d { "Issue203 DEBUG: checkAutoStop called - isJustLift=${params.isJustLift}, isAMRAP=${params.isAMRAP}, isTimedCable=$coordinator.isCurrentTimedCableExercise, setIndex=${coordinator._currentSetIndex.value}" }
@@ -1065,6 +1077,7 @@ class ActiveSessionEngine(
         coordinator._workoutState.value = WorkoutState.Idle
         coordinator._repCount.value = RepCount()
         coordinator._repRanges.value = null
+        coordinator.warmupCompleteTimeMs = 0
     }
 
     fun recaptureLoadBaseline() {
@@ -1143,6 +1156,7 @@ class ActiveSessionEngine(
                     isAMRAP = false
                 )
                 coordinator._repCount.value = RepCount()
+                coordinator.warmupCompleteTimeMs = 0
 
                 if (!coordinator.skipCountdownRequested) {
                     for (i in 5 downTo 1) {
@@ -1234,6 +1248,7 @@ class ActiveSessionEngine(
 
             coordinator.currentSessionId = KmpUtils.randomUUID()
             coordinator._repCount.value = RepCount()
+            coordinator.warmupCompleteTimeMs = 0
             coordinator._currentHeuristicKgMax.value = 0f
             if (isJustLiftMode) {
                 repCounter.resetCountsOnly()
@@ -1409,9 +1424,12 @@ class ActiveSessionEngine(
                  configuredWeightKgPerCable = params.weightPerCableKg,
                  isEchoMode = params.isEchoMode,
                  warmupRepsCount = repCount.warmupReps,
-                 workingRepsCount = repCount.workingReps
+                 workingRepsCount = repCount.workingReps,
+                 warmupCompleteTimeMs = coordinator.warmupCompleteTimeMs
              )
 
+             // Issue #252: Exclude warmup time from session duration
+             val effectiveStart = if (coordinator.warmupCompleteTimeMs > 0L) coordinator.warmupCompleteTimeMs else coordinator.workoutStartTime
              val session = WorkoutSession(
                  timestamp = coordinator.workoutStartTime,
                  mode = params.programMode.displayName,
@@ -1420,7 +1438,7 @@ class ActiveSessionEngine(
                  totalReps = repCount.totalReps,
                  workingReps = repCount.workingReps,
                  warmupReps = repCount.warmupReps,
-                 duration = currentTimeMillis() - coordinator.workoutStartTime,
+                 duration = currentTimeMillis() - effectiveStart,
                  isJustLift = isJustLift,
                  exerciseId = params.selectedExerciseId,
                  exerciseName = exerciseName,
@@ -1518,6 +1536,7 @@ class ActiveSessionEngine(
             repCounter.reset()
             coordinator._repCount.value = RepCount()
             coordinator._repRanges.value = null
+            coordinator.warmupCompleteTimeMs = 0
             resetAutoStopState()
             coordinator._workoutState.value = WorkoutState.Idle
 
@@ -1587,7 +1606,9 @@ class ActiveSessionEngine(
         val params = coordinator._workoutParameters.value
         val warmup = coordinator._repCount.value.warmupReps
         val working = coordinator._repCount.value.workingReps
-        val duration = currentTimeMillis() - coordinator.workoutStartTime
+        // Issue #252: Exclude warmup time from session duration
+        val effectiveStart = if (coordinator.warmupCompleteTimeMs > 0L) coordinator.warmupCompleteTimeMs else coordinator.workoutStartTime
+        val duration = currentTimeMillis() - effectiveStart
 
         val metricsSnapshot = coordinator.collectedMetrics.toList()
 
@@ -1620,7 +1641,8 @@ class ActiveSessionEngine(
             configuredWeightKgPerCable = params.weightPerCableKg,
             isEchoMode = params.isEchoMode,
             warmupRepsCount = warmup,
-            workingRepsCount = working
+            workingRepsCount = working,
+            warmupCompleteTimeMs = coordinator.warmupCompleteTimeMs
         )
 
         val session = WorkoutSession(

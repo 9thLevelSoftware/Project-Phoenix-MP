@@ -190,6 +190,7 @@ class WorkoutCoordinator(
 
     internal var currentSessionId: String? = null
     internal var workoutStartTime: Long = 0
+    internal var warmupCompleteTimeMs: Long = 0  // Issue #252: Exclude warmup time from duration
     internal var routineStartTime: Long = 0  // Issue #195: Track routine start separately from per-set start
     internal val collectedMetrics = mutableListOf<WorkoutMetric>()
 
