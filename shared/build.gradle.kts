@@ -12,7 +12,6 @@ plugins {
 kotlin {
     // Global opt-ins for experimental APIs
     sourceSets.all {
-        languageSettings.optIn("kotlin.time.ExperimentalTime")
         languageSettings.optIn("kotlinx.coroutines.ExperimentalCoroutinesApi")
     }
 
