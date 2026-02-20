@@ -101,7 +101,8 @@ class SqlDelightGamificationRepositoryTest {
             workingAvgWeightKg = null,
             burnoutAvgWeightKg = null,
             peakWeightKg = null,
-            rpe = null
+            rpe = null,
+            routineId = null
         )
     }
 }

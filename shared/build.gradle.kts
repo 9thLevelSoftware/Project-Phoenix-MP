@@ -2,7 +2,7 @@ import org.jetbrains.kotlin.gradle.plugin.mpp.apple.XCFramework
 
 plugins {
     alias(libs.plugins.kotlin.multiplatform)
-    alias(libs.plugins.android.library)
+    alias(libs.plugins.android.kotlin.multiplatform.library)
     alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.compose.multiplatform)
     alias(libs.plugins.kotlin.compose)
@@ -20,11 +20,21 @@ kotlin {
         freeCompilerArgs.add("-Xexpect-actual-classes")
     }
 
-    // Android target
-    androidTarget {
+    // Android target (AGP 9.0 new DSL)
+    androidLibrary {
+        namespace = "com.devil.phoenixproject.shared"
+        compileSdk = 36
+        minSdk = 26
+
         compilerOptions {
             jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
         }
+
+        androidResources {
+            enable = true
+        }
+
+        withHostTest {}
     }
 
     // iOS target (iosArm64 only - physical devices for distribution)
@@ -120,7 +130,7 @@ kotlin {
             }
         }
 
-        val androidUnitTest by getting {
+        getByName("androidHostTest") {
             dependencies {
                 implementation(libs.junit)
                 implementation(libs.truth)
@@ -184,20 +194,6 @@ kotlin {
             }
         }
 
-    }
-}
-
-android {
-    namespace = "com.devil.phoenixproject.shared"
-    compileSdk = 36
-
-    defaultConfig {
-        minSdk = 26
-    }
-
-    compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_17
-        targetCompatibility = JavaVersion.VERSION_17
     }
 }
 

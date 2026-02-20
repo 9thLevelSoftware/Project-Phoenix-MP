@@ -1,6 +1,5 @@
 plugins {
     alias(libs.plugins.android.application)
-    alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
 }
 
@@ -57,12 +56,6 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
-    kotlin {
-        compilerOptions {
-            jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
-        }
-    }
-
     buildFeatures {
         compose = true
         buildConfig = true
@@ -74,12 +67,18 @@ android {
         }
     }
 
-    // Rename APK output files
-    applicationVariants.all {
-        val variant = this
-        outputs.all {
-            val output = this as com.android.build.gradle.internal.api.BaseVariantOutputImpl
-            output.outputFileName = "ProjectPhoenix-${variant.versionName}-${variant.buildType.name}.apk"
+}
+
+// Rename APK output files using modern androidComponents API
+androidComponents {
+    onVariants { variant ->
+        val apkDir = variant.artifacts.get(
+            com.android.build.api.artifact.SingleArtifact.APK
+        )
+        tasks.register<Copy>("rename${variant.name.replaceFirstChar { it.uppercase() }}Apk") {
+            from(apkDir)
+            into(layout.buildDirectory.dir("renamed-apks/${variant.name}"))
+            rename(".*\\.apk", "ProjectPhoenix-${variant.name}.apk")
         }
     }
 }
