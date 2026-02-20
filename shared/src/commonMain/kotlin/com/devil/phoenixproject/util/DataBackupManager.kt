@@ -85,6 +85,12 @@ abstract class BaseDataBackupManager(
      */
     protected abstract suspend fun finalizeExport(tempFilePath: String): Result<String>
 
+    private data class RoutineNameResolutionContext(
+        val routineNameById: Map<String, String>,
+        val uniqueRoutineNameByExerciseId: Map<String, String>,
+        val uniqueRoutineNameByExerciseName: Map<String, String>
+    )
+
     // -- Streaming export (Discussion #244 OOM fix) --
 
     override suspend fun exportToFile(onProgress: (BackupProgress) -> Unit): Result<String> =
@@ -133,6 +139,7 @@ abstract class BaseDataBackupManager(
 
         val routines = queries.selectAllRoutinesSync().executeAsList()
         val routineExercises = queries.selectAllRoutineExercisesSync().executeAsList()
+        val routineNameResolutionContext = buildRoutineNameResolutionContext(routines, routineExercises)
         // Supersets table might not exist on older databases
         val supersets = runCatching { queries.selectAllSupersetsSync().executeAsList() }.getOrElse { emptyList() }
         val personalRecords = queries.selectAllRecords { id, exerciseId, exerciseName, weight, reps, oneRepMax, achievedAt, workoutMode, prType, volume, _, _, _ ->
@@ -174,50 +181,7 @@ abstract class BaseDataBackupManager(
                     KmpUtils.formatTimestamp(KmpUtils.currentTimeMillis(), "HH:mm:ss") + "Z",
             appVersion = Constants.APP_VERSION,
             data = BackupContent(
-                workoutSessions = sessions.map { session ->
-                    val (routineSessionId, routineName) = normalizeRoutineMetadataForBackup(session)
-                    WorkoutSessionBackup(
-                        id = session.id,
-                        timestamp = session.timestamp,
-                        mode = session.mode,
-                        targetReps = session.targetReps.toInt(),
-                        weightPerCableKg = session.weightPerCableKg.toFloat(),
-                        progressionKg = session.progressionKg.toFloat(),
-                        duration = session.duration,
-                        totalReps = session.totalReps.toInt(),
-                        warmupReps = session.warmupReps.toInt(),
-                        workingReps = session.workingReps.toInt(),
-                        isJustLift = session.isJustLift != 0L,
-                        stopAtTop = session.stopAtTop != 0L,
-                        eccentricLoad = session.eccentricLoad.toInt(),
-                        echoLevel = session.echoLevel.toInt(),
-                        exerciseId = session.exerciseId,
-                        exerciseName = session.exerciseName,
-                        routineSessionId = routineSessionId,
-                        routineName = routineName,
-                        safetyFlags = session.safetyFlags.toInt(),
-                        deloadWarningCount = session.deloadWarningCount.toInt(),
-                        romViolationCount = session.romViolationCount.toInt(),
-                        spotterActivations = session.spotterActivations.toInt(),
-                        // New summary metrics
-                        peakForceConcentricA = session.peakForceConcentricA?.toFloat(),
-                        peakForceConcentricB = session.peakForceConcentricB?.toFloat(),
-                        peakForceEccentricA = session.peakForceEccentricA?.toFloat(),
-                        peakForceEccentricB = session.peakForceEccentricB?.toFloat(),
-                        avgForceConcentricA = session.avgForceConcentricA?.toFloat(),
-                        avgForceConcentricB = session.avgForceConcentricB?.toFloat(),
-                        avgForceEccentricA = session.avgForceEccentricA?.toFloat(),
-                        avgForceEccentricB = session.avgForceEccentricB?.toFloat(),
-                        heaviestLiftKg = session.heaviestLiftKg?.toFloat(),
-                        totalVolumeKg = session.totalVolumeKg?.toFloat(),
-                        estimatedCalories = session.estimatedCalories?.toFloat(),
-                        warmupAvgWeightKg = session.warmupAvgWeightKg?.toFloat(),
-                        workingAvgWeightKg = session.workingAvgWeightKg?.toFloat(),
-                        burnoutAvgWeightKg = session.burnoutAvgWeightKg?.toFloat(),
-                        peakWeightKg = session.peakWeightKg?.toFloat(),
-                        rpe = session.rpe?.toInt()
-                    )
-                },
+                workoutSessions = sessions.map { session -> mapSessionToBackup(session, routineNameResolutionContext) },
                 metricSamples = metrics.map { metric ->
                     MetricSampleBackup(
                         id = metric.id,
@@ -233,16 +197,7 @@ abstract class BaseDataBackupManager(
                         status = metric.status.toInt()
                     )
                 },
-                routines = routines.map { routine ->
-                    RoutineBackup(
-                        id = routine.id,
-                        name = routine.name,
-                        description = routine.description,
-                        createdAt = routine.createdAt,
-                        lastUsed = routine.lastUsed,
-                        useCount = routine.useCount.toInt()
-                    )
-                },
+                routines = routines.map { routine -> mapRoutineToBackup(routine) },
                 routineExercises = routineExercises.map { exercise ->
                     RoutineExerciseBackup(
                         id = exercise.id,
@@ -289,15 +244,7 @@ abstract class BaseDataBackupManager(
                     )
                 },
                 personalRecords = personalRecords,
-                trainingCycles = trainingCycles.map { cycle ->
-                    TrainingCycleBackup(
-                        id = cycle.id,
-                        name = cycle.name,
-                        description = cycle.description,
-                        createdAt = cycle.created_at,
-                        isActive = cycle.is_active != 0L
-                    )
-                },
+                trainingCycles = trainingCycles.map { cycle -> mapTrainingCycleToBackup(cycle) },
                 cycleDays = cycleDays.map { day ->
                     CycleDayBackup(
                         id = day.id,
@@ -871,6 +818,9 @@ abstract class BaseDataBackupManager(
         onProgress(BackupProgress(BackupPhase.COUNTING, 0, 0))
         val sessionCount = queries.countTotalWorkouts().executeAsOne()
         val metricCount = runCatching { queries.countAllMetricSamples().executeAsOne() }.getOrElse { 0L }
+        val routines = queries.selectAllRoutinesSync().executeAsList()
+        val routineExercises = queries.selectAllRoutineExercisesSync().executeAsList()
+        val routineNameResolutionContext = buildRoutineNameResolutionContext(routines, routineExercises)
 
         // JSON header
         val exportedAt = KmpUtils.formatTimestamp(KmpUtils.currentTimeMillis(), "yyyy-MM-dd") + "T" +
@@ -883,7 +833,7 @@ abstract class BaseDataBackupManager(
         val sessions = queries.selectAllSessionsSync().executeAsList()
         sessions.forEachIndexed { index, session ->
             if (index > 0) writer.write(",")
-            writer.write(json.encodeToString(WorkoutSessionBackup.serializer(), mapSessionToBackup(session)))
+            writer.write(json.encodeToString(WorkoutSessionBackup.serializer(), mapSessionToBackup(session, routineNameResolutionContext)))
             val current = (index + 1).toLong()
             if (current % 100 == 0L || current == sessions.size.toLong()) {
                 writer.flush()
@@ -916,11 +866,8 @@ abstract class BaseDataBackupManager(
 
         // Phase 4: Routines
         onProgress(BackupProgress(BackupPhase.ROUTINES, 0, 0))
-        val routines = queries.selectAllRoutinesSync().executeAsList()
         writeJsonArray(writer, "routines", routines.map { json.encodeToString(RoutineBackup.serializer(), mapRoutineToBackup(it)) })
         writer.write(",")
-
-        val routineExercises = queries.selectAllRoutineExercisesSync().executeAsList()
         writeJsonArray(writer, "routineExercises", routineExercises.map { json.encodeToString(RoutineExerciseBackup.serializer(), mapRoutineExerciseToBackup(it)) })
         writer.write(",")
 
@@ -1007,19 +954,107 @@ abstract class BaseDataBackupManager(
      * Normalize to stable non-null placeholders during export so backups remain
      * self-describing and don't require manual data repair by end users.
      */
-    private fun normalizeRoutineMetadataForBackup(session: WorkoutSession): Pair<String, String> {
+    private fun normalizeRoutineMetadataForBackup(
+        session: WorkoutSession,
+        routineNameResolutionContext: RoutineNameResolutionContext? = null
+    ): Pair<String, String> {
         val existingSessionId = sanitizeLegacyLabel(session.routineSessionId)
         val existingRoutineName = sanitizeLegacyLabel(session.routineName)
-        val exerciseName = sanitizeLegacyLabel(session.exerciseName)
+        val inferredRoutineNameById = session.exerciseId?.let { exerciseId ->
+            routineNameResolutionContext?.uniqueRoutineNameByExerciseId?.get(exerciseId)
+        }
+        val inferredRoutineNameByExerciseName = normalizeExerciseToken(session.exerciseName)?.let { normalizedExerciseName ->
+            routineNameResolutionContext?.uniqueRoutineNameByExerciseName?.get(normalizedExerciseName)
+        }
+        val inferredRoutineName = inferredRoutineNameById ?: inferredRoutineNameByExerciseName
+        val existingLooksLikeExercisePlaceholder =
+            normalizeExerciseToken(existingRoutineName) == normalizeExerciseToken(session.exerciseName)
 
         val normalizedSessionId = existingSessionId ?: "legacy_session_${session.id}"
-        val normalizedRoutineName = existingRoutineName ?: when {
+        val normalizedRoutineName = when {
             session.isJustLift != 0L -> "Just Lift"
-            exerciseName != null -> exerciseName
+            inferredRoutineName != null && (existingRoutineName == null || existingLooksLikeExercisePlaceholder) -> inferredRoutineName
+            existingRoutineName != null -> existingRoutineName
             else -> "Legacy Session"
         }
 
         return normalizedSessionId to normalizedRoutineName
+    }
+
+    private fun buildRoutineNameResolutionContext(
+        routines: List<Routine>,
+        routineExercises: List<RoutineExercise>
+    ): RoutineNameResolutionContext {
+        val routineNameById = routines.associate { routine ->
+            routine.id to sanitizeEntityName(routine.name, "Unnamed Routine")
+        }
+        val nonTemplateRoutineIds = routines
+            .asSequence()
+            .filterNot { it.id.startsWith("cycle_routine_") }
+            .map { it.id }
+            .toSet()
+
+        fun collectUniqueRoutineNames(
+            allowedRoutineIds: Set<String>? = null
+        ): Map<String, String> {
+            val routineIdsByExerciseId = mutableMapOf<String, MutableSet<String>>()
+            routineExercises.forEach { exercise ->
+                if (allowedRoutineIds != null && exercise.routineId !in allowedRoutineIds) return@forEach
+                val exerciseId = sanitizeLegacyLabel(exercise.exerciseId) ?: return@forEach
+                routineIdsByExerciseId.getOrPut(exerciseId) { mutableSetOf() }.add(exercise.routineId)
+            }
+
+            val uniqueRoutineNames = mutableMapOf<String, String>()
+            routineIdsByExerciseId.forEach { (exerciseId, routineIds) ->
+                if (routineIds.size != 1) return@forEach
+                val routineId = routineIds.first()
+                val routineName = routineNameById[routineId] ?: return@forEach
+                uniqueRoutineNames[exerciseId] = routineName
+            }
+            return uniqueRoutineNames
+        }
+
+        fun collectUniqueRoutineNamesByExerciseName(
+            allowedRoutineIds: Set<String>? = null
+        ): Map<String, String> {
+            val routineIdsByExerciseName = mutableMapOf<String, MutableSet<String>>()
+            routineExercises.forEach { exercise ->
+                if (allowedRoutineIds != null && exercise.routineId !in allowedRoutineIds) return@forEach
+                val normalizedExerciseName = normalizeExerciseToken(exercise.exerciseName) ?: return@forEach
+                routineIdsByExerciseName.getOrPut(normalizedExerciseName) { mutableSetOf() }.add(exercise.routineId)
+            }
+
+            val uniqueRoutineNames = mutableMapOf<String, String>()
+            routineIdsByExerciseName.forEach { (normalizedExerciseName, routineIds) ->
+                if (routineIds.size != 1) return@forEach
+                val routineId = routineIds.first()
+                val routineName = routineNameById[routineId] ?: return@forEach
+                uniqueRoutineNames[normalizedExerciseName] = routineName
+            }
+            return uniqueRoutineNames
+        }
+
+        // Prefer user-authored/non-template routines first to avoid cycle template noise.
+        val uniqueFromNonTemplate = collectUniqueRoutineNames(
+            allowedRoutineIds = nonTemplateRoutineIds.takeIf { it.isNotEmpty() }
+        )
+        val uniqueFromAll = collectUniqueRoutineNames()
+        val uniqueRoutineNameByExerciseId = uniqueFromAll.toMutableMap().apply {
+            putAll(uniqueFromNonTemplate)
+        }
+        val uniqueByNameFromNonTemplate = collectUniqueRoutineNamesByExerciseName(
+            allowedRoutineIds = nonTemplateRoutineIds.takeIf { it.isNotEmpty() }
+        )
+        val uniqueByNameFromAll = collectUniqueRoutineNamesByExerciseName()
+        val uniqueRoutineNameByExerciseName = uniqueByNameFromAll.toMutableMap().apply {
+            putAll(uniqueByNameFromNonTemplate)
+        }
+
+        return RoutineNameResolutionContext(
+            routineNameById = routineNameById,
+            uniqueRoutineNameByExerciseId = uniqueRoutineNameByExerciseId,
+            uniqueRoutineNameByExerciseName = uniqueRoutineNameByExerciseName
+        )
     }
 
     /**
@@ -1034,8 +1069,24 @@ abstract class BaseDataBackupManager(
         return trimmed
     }
 
-    private fun mapSessionToBackup(session: WorkoutSession): WorkoutSessionBackup {
-        val (routineSessionId, routineName) = normalizeRoutineMetadataForBackup(session)
+    private fun sanitizeEntityName(raw: String?, fallback: String): String {
+        return sanitizeLegacyLabel(raw) ?: fallback
+    }
+
+    private fun normalizeExerciseToken(raw: String?): String? {
+        val sanitized = sanitizeLegacyLabel(raw) ?: return null
+        val collapsedWhitespace = sanitized
+            .lowercase()
+            .replace(Regex("\\s+"), " ")
+            .trim()
+        return collapsedWhitespace.ifEmpty { null }
+    }
+
+    private fun mapSessionToBackup(
+        session: WorkoutSession,
+        routineNameResolutionContext: RoutineNameResolutionContext? = null
+    ): WorkoutSessionBackup {
+        val (routineSessionId, routineName) = normalizeRoutineMetadataForBackup(session, routineNameResolutionContext)
         return WorkoutSessionBackup(
             id = session.id,
             timestamp = session.timestamp,
@@ -1096,7 +1147,7 @@ abstract class BaseDataBackupManager(
     private fun mapRoutineToBackup(routine: Routine): RoutineBackup =
         RoutineBackup(
             id = routine.id,
-            name = routine.name,
+            name = sanitizeEntityName(routine.name, "Unnamed Routine"),
             description = routine.description,
             createdAt = routine.createdAt,
             lastUsed = routine.lastUsed,
@@ -1164,7 +1215,7 @@ abstract class BaseDataBackupManager(
     private fun mapTrainingCycleToBackup(cycle: TrainingCycle): TrainingCycleBackup =
         TrainingCycleBackup(
             id = cycle.id,
-            name = cycle.name,
+            name = sanitizeEntityName(cycle.name, "Unnamed Cycle"),
             description = cycle.description,
             createdAt = cycle.created_at,
             isActive = cycle.is_active != 0L

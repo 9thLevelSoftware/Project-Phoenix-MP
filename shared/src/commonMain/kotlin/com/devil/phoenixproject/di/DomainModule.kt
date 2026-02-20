@@ -21,5 +21,5 @@ val domainModule = module {
     single { TemplateConverter(get()) }
 
     // Migration
-    single { MigrationManager() }
+    single { MigrationManager(get()) }
 }
