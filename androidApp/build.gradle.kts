@@ -69,20 +69,6 @@ android {
 
 }
 
-// Rename APK output files using modern androidComponents API
-androidComponents {
-    onVariants { variant ->
-        val apkDir = variant.artifacts.get(
-            com.android.build.api.artifact.SingleArtifact.APK
-        )
-        tasks.register<Copy>("rename${variant.name.replaceFirstChar { it.uppercase() }}Apk") {
-            from(apkDir)
-            into(layout.buildDirectory.dir("renamed-apks/${variant.name}"))
-            rename(".*\\.apk", "ProjectPhoenix-${variant.name}.apk")
-        }
-    }
-}
-
 dependencies {
     // Shared module
     implementation(project(":shared"))
