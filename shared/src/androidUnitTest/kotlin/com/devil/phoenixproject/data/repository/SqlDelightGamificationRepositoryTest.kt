@@ -101,7 +101,12 @@ class SqlDelightGamificationRepositoryTest {
             workingAvgWeightKg = null,
             burnoutAvgWeightKg = null,
             peakWeightKg = null,
-            rpe = null
+            rpe = null,
+            avgMcvMmS = null,
+            avgAsymmetryPercent = null,
+            totalVelocityLossPercent = null,
+            dominantSide = null,
+            strengthProfile = null
         )
     }
 }

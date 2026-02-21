@@ -1,6 +1,7 @@
 package com.devil.phoenixproject.domain.premium
 
 import com.devil.phoenixproject.domain.model.StrengthProfile
+import com.devil.phoenixproject.domain.model.currentTimeMillis
 import com.devil.phoenixproject.domain.model.WorkoutMetric
 import kotlin.math.abs
 import kotlin.test.Test
@@ -422,7 +423,7 @@ class ForceCurveEngineTest {
                 val force = 50f + i * 10f  // Ascending
                 metrics.add(createMetric(positionA = position, loadA = force / 2, loadB = force / 2, timestamp = i.toLong() * 100))
             }
-            engine.processRep(repNum + 1, metrics, metrics, System.currentTimeMillis())
+            engine.processRep(repNum + 1, metrics, metrics, currentTimeMillis())
         }
 
         val summary = engine.getSetSummary()

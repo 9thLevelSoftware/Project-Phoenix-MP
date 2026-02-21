@@ -6,6 +6,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import com.devil.phoenixproject.domain.model.currentTimeMillis
 import kotlin.test.assertFalse
 
 /**
@@ -34,7 +35,7 @@ class VbtEngineTest {
         positionA: Float = 0f,
         positionB: Float = 0f
     ): WorkoutMetric = WorkoutMetric(
-        timestamp = System.currentTimeMillis(),
+        timestamp = currentTimeMillis(),
         loadA = loadA,
         loadB = loadB,
         positionA = positionA,
@@ -56,7 +57,7 @@ class VbtEngineTest {
         val engine = BiomechanicsEngine()
         val metrics = listOf(createMetric(velocityA = 50.0, velocityB = 0.0))
 
-        val result = engine.processRep(1, metrics, metrics, System.currentTimeMillis())
+        val result = engine.processRep(1, metrics, metrics, currentTimeMillis())
 
         assertEquals(50f, result.velocity.meanConcentricVelocityMmS, 0.1f,
             "Single metric with velocityA=50, velocityB=0 should give MCV=50")
@@ -67,7 +68,7 @@ class VbtEngineTest {
         val engine = BiomechanicsEngine()
         val metrics = listOf(createMetric(velocityA = 30.0, velocityB = 70.0))
 
-        val result = engine.processRep(1, metrics, metrics, System.currentTimeMillis())
+        val result = engine.processRep(1, metrics, metrics, currentTimeMillis())
 
         assertEquals(70f, result.velocity.meanConcentricVelocityMmS, 0.1f,
             "Should take max(30, 70) = 70 as the movement velocity")
@@ -85,7 +86,7 @@ class VbtEngineTest {
             createMetric(velocityA = 105.0, velocityB = 105.0)  // max = 105
         )
 
-        val result = engine.processRep(1, metrics, metrics, System.currentTimeMillis())
+        val result = engine.processRep(1, metrics, metrics, currentTimeMillis())
 
         assertEquals(110f, result.velocity.meanConcentricVelocityMmS, 0.1f,
             "Average of (100, 120, 110, 115, 105) should be 110")
@@ -96,7 +97,7 @@ class VbtEngineTest {
         val engine = BiomechanicsEngine()
         val metrics = listOf(createMetric(velocityA = -200.0, velocityB = 150.0))
 
-        val result = engine.processRep(1, metrics, metrics, System.currentTimeMillis())
+        val result = engine.processRep(1, metrics, metrics, currentTimeMillis())
 
         assertEquals(200f, result.velocity.meanConcentricVelocityMmS, 0.1f,
             "abs(-200) = 200 should be used as max velocity")
@@ -107,7 +108,7 @@ class VbtEngineTest {
         val engine = BiomechanicsEngine()
         val emptyMetrics = emptyList<WorkoutMetric>()
 
-        val result = engine.processRep(1, emptyMetrics, emptyMetrics, System.currentTimeMillis())
+        val result = engine.processRep(1, emptyMetrics, emptyMetrics, currentTimeMillis())
 
         assertEquals(0f, result.velocity.meanConcentricVelocityMmS, 0.1f,
             "Empty metrics should give MCV=0")
@@ -126,7 +127,7 @@ class VbtEngineTest {
             createMetric(velocityA = 150.0, velocityB = 140.0)   // max = 150
         )
 
-        val result = engine.processRep(1, metrics, metrics, System.currentTimeMillis())
+        val result = engine.processRep(1, metrics, metrics, currentTimeMillis())
 
         assertEquals(200f, result.velocity.peakVelocityMmS, 0.1f,
             "Peak velocity should be 200 (highest sample)")
@@ -139,7 +140,7 @@ class VbtEngineTest {
         val engine = BiomechanicsEngine()
         val metrics = createUniformMetrics(249.0)
 
-        val result = engine.processRep(1, metrics, metrics, System.currentTimeMillis())
+        val result = engine.processRep(1, metrics, metrics, currentTimeMillis())
 
         assertEquals(BiomechanicsVelocityZone.GRIND, result.velocity.zone,
             "MCV=249 should be GRIND (< 250)")
@@ -150,7 +151,7 @@ class VbtEngineTest {
         val engine = BiomechanicsEngine()
         val metrics = createUniformMetrics(250.0)
 
-        val result = engine.processRep(1, metrics, metrics, System.currentTimeMillis())
+        val result = engine.processRep(1, metrics, metrics, currentTimeMillis())
 
         assertEquals(BiomechanicsVelocityZone.SLOW, result.velocity.zone,
             "MCV=250 should be SLOW (>= 250)")
@@ -161,7 +162,7 @@ class VbtEngineTest {
         val engine = BiomechanicsEngine()
         val metrics = createUniformMetrics(499.0)
 
-        val result = engine.processRep(1, metrics, metrics, System.currentTimeMillis())
+        val result = engine.processRep(1, metrics, metrics, currentTimeMillis())
 
         assertEquals(BiomechanicsVelocityZone.SLOW, result.velocity.zone,
             "MCV=499 should be SLOW (< 500)")
@@ -172,7 +173,7 @@ class VbtEngineTest {
         val engine = BiomechanicsEngine()
         val metrics = createUniformMetrics(500.0)
 
-        val result = engine.processRep(1, metrics, metrics, System.currentTimeMillis())
+        val result = engine.processRep(1, metrics, metrics, currentTimeMillis())
 
         assertEquals(BiomechanicsVelocityZone.MODERATE, result.velocity.zone,
             "MCV=500 should be MODERATE (>= 500)")
@@ -183,7 +184,7 @@ class VbtEngineTest {
         val engine = BiomechanicsEngine()
         val metrics = createUniformMetrics(749.0)
 
-        val result = engine.processRep(1, metrics, metrics, System.currentTimeMillis())
+        val result = engine.processRep(1, metrics, metrics, currentTimeMillis())
 
         assertEquals(BiomechanicsVelocityZone.MODERATE, result.velocity.zone,
             "MCV=749 should be MODERATE (< 750)")
@@ -194,7 +195,7 @@ class VbtEngineTest {
         val engine = BiomechanicsEngine()
         val metrics = createUniformMetrics(750.0)
 
-        val result = engine.processRep(1, metrics, metrics, System.currentTimeMillis())
+        val result = engine.processRep(1, metrics, metrics, currentTimeMillis())
 
         assertEquals(BiomechanicsVelocityZone.FAST, result.velocity.zone,
             "MCV=750 should be FAST (>= 750)")
@@ -205,7 +206,7 @@ class VbtEngineTest {
         val engine = BiomechanicsEngine()
         val metrics = createUniformMetrics(999.0)
 
-        val result = engine.processRep(1, metrics, metrics, System.currentTimeMillis())
+        val result = engine.processRep(1, metrics, metrics, currentTimeMillis())
 
         assertEquals(BiomechanicsVelocityZone.FAST, result.velocity.zone,
             "MCV=999 should be FAST (< 1000)")
@@ -216,7 +217,7 @@ class VbtEngineTest {
         val engine = BiomechanicsEngine()
         val metrics = createUniformMetrics(1000.0)
 
-        val result = engine.processRep(1, metrics, metrics, System.currentTimeMillis())
+        val result = engine.processRep(1, metrics, metrics, currentTimeMillis())
 
         assertEquals(BiomechanicsVelocityZone.EXPLOSIVE, result.velocity.zone,
             "MCV=1000 should be EXPLOSIVE (>= 1000)")
@@ -227,7 +228,7 @@ class VbtEngineTest {
         val engine = BiomechanicsEngine()
         val metrics = createUniformMetrics(1500.0)
 
-        val result = engine.processRep(1, metrics, metrics, System.currentTimeMillis())
+        val result = engine.processRep(1, metrics, metrics, currentTimeMillis())
 
         assertEquals(BiomechanicsVelocityZone.EXPLOSIVE, result.velocity.zone,
             "MCV=1500 should be EXPLOSIVE")
@@ -240,7 +241,7 @@ class VbtEngineTest {
         val engine = BiomechanicsEngine()
         val metrics = createUniformMetrics(1000.0)
 
-        val result = engine.processRep(1, metrics, metrics, System.currentTimeMillis())
+        val result = engine.processRep(1, metrics, metrics, currentTimeMillis())
 
         assertNull(result.velocity.velocityLossPercent,
             "Rep 1 should have null velocityLossPercent")
@@ -251,10 +252,10 @@ class VbtEngineTest {
         val engine = BiomechanicsEngine()
 
         // Rep 1: MCV = 1000 mm/s
-        engine.processRep(1, createUniformMetrics(1000.0), emptyList(), System.currentTimeMillis())
+        engine.processRep(1, createUniformMetrics(1000.0), emptyList(), currentTimeMillis())
 
         // Rep 2: MCV = 800 mm/s (80% of 1000)
-        val result = engine.processRep(2, createUniformMetrics(800.0), emptyList(), System.currentTimeMillis())
+        val result = engine.processRep(2, createUniformMetrics(800.0), emptyList(), currentTimeMillis())
 
         assertEquals(20f, result.velocity.velocityLossPercent!!, 0.1f,
             "Rep 2 at 80% of rep 1 should show 20% velocity loss")
@@ -265,10 +266,10 @@ class VbtEngineTest {
         val engine = BiomechanicsEngine()
 
         // Rep 1: MCV = 1000 mm/s
-        engine.processRep(1, createUniformMetrics(1000.0), emptyList(), System.currentTimeMillis())
+        engine.processRep(1, createUniformMetrics(1000.0), emptyList(), currentTimeMillis())
 
         // Rep 2: MCV = 900 mm/s (90% of 1000)
-        val result = engine.processRep(2, createUniformMetrics(900.0), emptyList(), System.currentTimeMillis())
+        val result = engine.processRep(2, createUniformMetrics(900.0), emptyList(), currentTimeMillis())
 
         assertEquals(10f, result.velocity.velocityLossPercent!!, 0.1f,
             "Rep 2 at 90% of rep 1 should show 10% velocity loss")
@@ -279,10 +280,10 @@ class VbtEngineTest {
         val engine = BiomechanicsEngine()
 
         // Rep 1: MCV = 800 mm/s
-        engine.processRep(1, createUniformMetrics(800.0), emptyList(), System.currentTimeMillis())
+        engine.processRep(1, createUniformMetrics(800.0), emptyList(), currentTimeMillis())
 
         // Rep 2: MCV = 900 mm/s (faster than rep 1!)
-        val result = engine.processRep(2, createUniformMetrics(900.0), emptyList(), System.currentTimeMillis())
+        val result = engine.processRep(2, createUniformMetrics(900.0), emptyList(), currentTimeMillis())
 
         assertEquals(0f, result.velocity.velocityLossPercent!!, 0.1f,
             "Velocity loss should be clamped to 0 when rep is faster than rep 1")
@@ -293,18 +294,18 @@ class VbtEngineTest {
         val engine = BiomechanicsEngine()
 
         // Rep 1: MCV = 1000 mm/s (baseline)
-        engine.processRep(1, createUniformMetrics(1000.0), emptyList(), System.currentTimeMillis())
+        engine.processRep(1, createUniformMetrics(1000.0), emptyList(), currentTimeMillis())
 
         // Rep 2: MCV = 950 mm/s (5% loss)
-        val rep2 = engine.processRep(2, createUniformMetrics(950.0), emptyList(), System.currentTimeMillis())
+        val rep2 = engine.processRep(2, createUniformMetrics(950.0), emptyList(), currentTimeMillis())
         assertEquals(5f, rep2.velocity.velocityLossPercent!!, 0.1f)
 
         // Rep 3: MCV = 850 mm/s (15% loss from rep 1)
-        val rep3 = engine.processRep(3, createUniformMetrics(850.0), emptyList(), System.currentTimeMillis())
+        val rep3 = engine.processRep(3, createUniformMetrics(850.0), emptyList(), currentTimeMillis())
         assertEquals(15f, rep3.velocity.velocityLossPercent!!, 0.1f)
 
         // Rep 4: MCV = 750 mm/s (25% loss from rep 1)
-        val rep4 = engine.processRep(4, createUniformMetrics(750.0), emptyList(), System.currentTimeMillis())
+        val rep4 = engine.processRep(4, createUniformMetrics(750.0), emptyList(), currentTimeMillis())
         assertEquals(25f, rep4.velocity.velocityLossPercent!!, 0.1f)
     }
 
@@ -315,7 +316,7 @@ class VbtEngineTest {
         val engine = BiomechanicsEngine()
         val metrics = createUniformMetrics(500.0)
 
-        val result = engine.processRep(1, metrics, metrics, System.currentTimeMillis())
+        val result = engine.processRep(1, metrics, metrics, currentTimeMillis())
 
         assertFalse(result.velocity.shouldStopSet,
             "Rep 1 should never trigger shouldStopSet")
@@ -326,10 +327,10 @@ class VbtEngineTest {
         val engine = BiomechanicsEngine(velocityLossThresholdPercent = 20f)
 
         // Rep 1: MCV = 1000
-        engine.processRep(1, createUniformMetrics(1000.0), emptyList(), System.currentTimeMillis())
+        engine.processRep(1, createUniformMetrics(1000.0), emptyList(), currentTimeMillis())
 
         // Rep 2: MCV = 800 (exactly 20% loss)
-        val result = engine.processRep(2, createUniformMetrics(800.0), emptyList(), System.currentTimeMillis())
+        val result = engine.processRep(2, createUniformMetrics(800.0), emptyList(), currentTimeMillis())
 
         assertTrue(result.velocity.shouldStopSet,
             "shouldStopSet should be true when velocity loss equals 20% threshold")
@@ -340,10 +341,10 @@ class VbtEngineTest {
         val engine = BiomechanicsEngine(velocityLossThresholdPercent = 20f)
 
         // Rep 1: MCV = 1000
-        engine.processRep(1, createUniformMetrics(1000.0), emptyList(), System.currentTimeMillis())
+        engine.processRep(1, createUniformMetrics(1000.0), emptyList(), currentTimeMillis())
 
         // Rep 3: MCV = 700 (30% loss)
-        val result = engine.processRep(3, createUniformMetrics(700.0), emptyList(), System.currentTimeMillis())
+        val result = engine.processRep(3, createUniformMetrics(700.0), emptyList(), currentTimeMillis())
 
         assertTrue(result.velocity.shouldStopSet,
             "shouldStopSet should be true when velocity loss (30%) exceeds 20% threshold")
@@ -354,10 +355,10 @@ class VbtEngineTest {
         val engine = BiomechanicsEngine(velocityLossThresholdPercent = 20f)
 
         // Rep 1: MCV = 1000
-        engine.processRep(1, createUniformMetrics(1000.0), emptyList(), System.currentTimeMillis())
+        engine.processRep(1, createUniformMetrics(1000.0), emptyList(), currentTimeMillis())
 
         // Rep 2: MCV = 900 (10% loss)
-        val result = engine.processRep(2, createUniformMetrics(900.0), emptyList(), System.currentTimeMillis())
+        val result = engine.processRep(2, createUniformMetrics(900.0), emptyList(), currentTimeMillis())
 
         assertFalse(result.velocity.shouldStopSet,
             "shouldStopSet should be false when velocity loss (10%) is below 20% threshold")
@@ -368,15 +369,15 @@ class VbtEngineTest {
         val engine = BiomechanicsEngine(velocityLossThresholdPercent = 30f)
 
         // Rep 1: MCV = 1000
-        engine.processRep(1, createUniformMetrics(1000.0), emptyList(), System.currentTimeMillis())
+        engine.processRep(1, createUniformMetrics(1000.0), emptyList(), currentTimeMillis())
 
         // Rep 2: MCV = 750 (25% loss - below 30% custom threshold)
-        val rep2 = engine.processRep(2, createUniformMetrics(750.0), emptyList(), System.currentTimeMillis())
+        val rep2 = engine.processRep(2, createUniformMetrics(750.0), emptyList(), currentTimeMillis())
         assertFalse(rep2.velocity.shouldStopSet,
             "25% loss should not trigger 30% threshold")
 
         // Rep 3: MCV = 700 (30% loss - at threshold)
-        val rep3 = engine.processRep(3, createUniformMetrics(700.0), emptyList(), System.currentTimeMillis())
+        val rep3 = engine.processRep(3, createUniformMetrics(700.0), emptyList(), currentTimeMillis())
         assertTrue(rep3.velocity.shouldStopSet,
             "30% loss should trigger 30% threshold")
     }
@@ -388,7 +389,7 @@ class VbtEngineTest {
         val engine = BiomechanicsEngine()
         val metrics = createUniformMetrics(1000.0)
 
-        val result = engine.processRep(1, metrics, metrics, System.currentTimeMillis())
+        val result = engine.processRep(1, metrics, metrics, currentTimeMillis())
 
         assertNull(result.velocity.estimatedRepsRemaining,
             "Rep 1 should have null estimatedRepsRemaining")
@@ -399,11 +400,11 @@ class VbtEngineTest {
         val engine = BiomechanicsEngine(velocityLossThresholdPercent = 20f)
 
         // Rep 1: MCV = 1000
-        engine.processRep(1, createUniformMetrics(1000.0), emptyList(), System.currentTimeMillis())
+        engine.processRep(1, createUniformMetrics(1000.0), emptyList(), currentTimeMillis())
 
         // Rep 2: MCV = 950 (5% loss, 5% per rep decay rate)
         // At 5% per rep, to reach 20% threshold needs 3 more reps (10%, 15%, 20%)
-        val result = engine.processRep(2, createUniformMetrics(950.0), emptyList(), System.currentTimeMillis())
+        val result = engine.processRep(2, createUniformMetrics(950.0), emptyList(), currentTimeMillis())
 
         assertTrue(result.velocity.estimatedRepsRemaining != null,
             "Rep 2 should have estimated reps remaining")
@@ -417,11 +418,11 @@ class VbtEngineTest {
         val engine = BiomechanicsEngine(velocityLossThresholdPercent = 25f)
 
         // Rep 1: MCV = 1000
-        engine.processRep(1, createUniformMetrics(1000.0), emptyList(), System.currentTimeMillis())
+        engine.processRep(1, createUniformMetrics(1000.0), emptyList(), currentTimeMillis())
 
         // Rep 2: MCV = 900 (10% loss -> 10% per rep)
         // At 10% per rep, from 10% current loss, need 1.5 more to hit 25% -> rounds to 1
-        val rep2 = engine.processRep(2, createUniformMetrics(900.0), emptyList(), System.currentTimeMillis())
+        val rep2 = engine.processRep(2, createUniformMetrics(900.0), emptyList(), currentTimeMillis())
         // (25 - 10) / 10 = 1.5 -> 1 remaining
         assertTrue(rep2.velocity.estimatedRepsRemaining in 1..2,
             "At 10% per rep from 10%, should estimate 1-2 reps to 25%")
@@ -432,10 +433,10 @@ class VbtEngineTest {
         val engine = BiomechanicsEngine()
 
         // Rep 1: MCV = 800
-        engine.processRep(1, createUniformMetrics(800.0), emptyList(), System.currentTimeMillis())
+        engine.processRep(1, createUniformMetrics(800.0), emptyList(), currentTimeMillis())
 
         // Rep 2: MCV = 850 (velocity increasing, not decaying)
-        val result = engine.processRep(2, createUniformMetrics(850.0), emptyList(), System.currentTimeMillis())
+        val result = engine.processRep(2, createUniformMetrics(850.0), emptyList(), currentTimeMillis())
 
         // When velocity is increasing, projection is nonsensical
         assertNull(result.velocity.estimatedRepsRemaining,
@@ -447,10 +448,10 @@ class VbtEngineTest {
         val engine = BiomechanicsEngine(velocityLossThresholdPercent = 20f)
 
         // Rep 1: MCV = 1000
-        engine.processRep(1, createUniformMetrics(1000.0), emptyList(), System.currentTimeMillis())
+        engine.processRep(1, createUniformMetrics(1000.0), emptyList(), currentTimeMillis())
 
         // Rep 2: MCV = 999 (0.1% loss -> would project huge number)
-        val result = engine.processRep(2, createUniformMetrics(999.0), emptyList(), System.currentTimeMillis())
+        val result = engine.processRep(2, createUniformMetrics(999.0), emptyList(), currentTimeMillis())
 
         if (result.velocity.estimatedRepsRemaining != null) {
             assertTrue(result.velocity.estimatedRepsRemaining!! <= 99,
@@ -465,13 +466,13 @@ class VbtEngineTest {
         val engine = BiomechanicsEngine()
 
         // Process 2 reps to build state
-        engine.processRep(1, createUniformMetrics(1000.0), emptyList(), System.currentTimeMillis())
-        engine.processRep(2, createUniformMetrics(800.0), emptyList(), System.currentTimeMillis())
+        engine.processRep(1, createUniformMetrics(1000.0), emptyList(), currentTimeMillis())
+        engine.processRep(2, createUniformMetrics(800.0), emptyList(), currentTimeMillis())
 
         engine.reset()
 
         // After reset, rep 1 should have no velocity loss (fresh baseline)
-        val result = engine.processRep(1, createUniformMetrics(600.0), emptyList(), System.currentTimeMillis())
+        val result = engine.processRep(1, createUniformMetrics(600.0), emptyList(), currentTimeMillis())
 
         assertNull(result.velocity.velocityLossPercent,
             "After reset, rep 1 should have null velocity loss")
@@ -486,13 +487,13 @@ class VbtEngineTest {
         val engine = BiomechanicsEngine()
 
         // Rep 1: MCV = 1000 (baseline)
-        engine.processRep(1, createUniformMetrics(1000.0), emptyList(), System.currentTimeMillis())
+        engine.processRep(1, createUniformMetrics(1000.0), emptyList(), currentTimeMillis())
 
         // Rep 2: MCV = 900 (10% loss)
-        engine.processRep(2, createUniformMetrics(900.0), emptyList(), System.currentTimeMillis())
+        engine.processRep(2, createUniformMetrics(900.0), emptyList(), currentTimeMillis())
 
         // Rep 3: MCV = 800 (20% loss from rep 1)
-        engine.processRep(3, createUniformMetrics(800.0), emptyList(), System.currentTimeMillis())
+        engine.processRep(3, createUniformMetrics(800.0), emptyList(), currentTimeMillis())
 
         val summary = engine.getSetSummary()
 
@@ -505,9 +506,9 @@ class VbtEngineTest {
         val engine = BiomechanicsEngine()
 
         // 3 reps: 1000, 900, 800 -> avg = 900
-        engine.processRep(1, createUniformMetrics(1000.0), emptyList(), System.currentTimeMillis())
-        engine.processRep(2, createUniformMetrics(900.0), emptyList(), System.currentTimeMillis())
-        engine.processRep(3, createUniformMetrics(800.0), emptyList(), System.currentTimeMillis())
+        engine.processRep(1, createUniformMetrics(1000.0), emptyList(), currentTimeMillis())
+        engine.processRep(2, createUniformMetrics(900.0), emptyList(), currentTimeMillis())
+        engine.processRep(3, createUniformMetrics(800.0), emptyList(), currentTimeMillis())
 
         val summary = engine.getSetSummary()
 
@@ -520,10 +521,10 @@ class VbtEngineTest {
         val engine = BiomechanicsEngine()
 
         // 2 EXPLOSIVE, 1 FAST, 1 MODERATE
-        engine.processRep(1, createUniformMetrics(1000.0), emptyList(), System.currentTimeMillis()) // EXPLOSIVE
-        engine.processRep(2, createUniformMetrics(1100.0), emptyList(), System.currentTimeMillis()) // EXPLOSIVE
-        engine.processRep(3, createUniformMetrics(800.0), emptyList(), System.currentTimeMillis())  // FAST
-        engine.processRep(4, createUniformMetrics(600.0), emptyList(), System.currentTimeMillis())  // MODERATE
+        engine.processRep(1, createUniformMetrics(1000.0), emptyList(), currentTimeMillis()) // EXPLOSIVE
+        engine.processRep(2, createUniformMetrics(1100.0), emptyList(), currentTimeMillis()) // EXPLOSIVE
+        engine.processRep(3, createUniformMetrics(800.0), emptyList(), currentTimeMillis())  // FAST
+        engine.processRep(4, createUniformMetrics(600.0), emptyList(), currentTimeMillis())  // MODERATE
 
         val summary = engine.getSetSummary()
 

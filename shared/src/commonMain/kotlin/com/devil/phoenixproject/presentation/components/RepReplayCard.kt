@@ -11,6 +11,7 @@ import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.domain.model.RepMetricData
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.ui.theme.Spacing
+import com.devil.phoenixproject.util.KmpUtils
 import kotlin.math.max
 
 /**
@@ -120,13 +121,13 @@ fun RepReplayCard(
                 // Concentric duration
                 MetricColumn(
                     label = "Concentric",
-                    value = "${String.format("%.1f", concentricSeconds)}s"
+                    value = "${KmpUtils.formatFloat(concentricSeconds, 1)}s"
                 )
 
                 // Eccentric duration
                 MetricColumn(
                     label = "Eccentric",
-                    value = "${String.format("%.1f", eccentricSeconds)}s"
+                    value = "${KmpUtils.formatFloat(eccentricSeconds, 1)}s"
                 )
             }
         }

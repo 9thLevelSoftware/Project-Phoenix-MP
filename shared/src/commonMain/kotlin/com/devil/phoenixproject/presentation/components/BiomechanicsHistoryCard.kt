@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
+import com.devil.phoenixproject.util.KmpUtils
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.KeyboardArrowDown
@@ -173,7 +174,7 @@ fun BiomechanicsHistorySummary(
                         )
                         Spacer(modifier = Modifier.width(Spacing.extraSmall))
                         Text(
-                            "Avg MCV: ${String.format("%.1f", avgMcvMmS)} mm/s",
+                            "Avg MCV: ${KmpUtils.formatFloat(avgMcvMmS, 1)} mm/s",
                             style = MaterialTheme.typography.bodyMedium,
                             fontWeight = FontWeight.Medium,
                             color = MaterialTheme.colorScheme.onSurface
@@ -221,7 +222,7 @@ fun BiomechanicsHistorySummary(
                         else -> dominantSide ?: ""
                     }
                     Text(
-                        "Asymmetry: ${String.format("%.1f", avgAsymmetryPercent)}% ($sideLabel)",
+                        "Asymmetry: ${KmpUtils.formatFloat(avgAsymmetryPercent, 1)}% ($sideLabel)",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -232,7 +233,7 @@ fun BiomechanicsHistorySummary(
                 // Velocity loss
                 if (totalVelocityLossPercent != null) {
                     Text(
-                        "Vel. Loss: ${String.format("%.1f", totalVelocityLossPercent)}%",
+                        "Vel. Loss: ${KmpUtils.formatFloat(totalVelocityLossPercent, 1)}%",
                         style = MaterialTheme.typography.bodySmall,
                         color = if (totalVelocityLossPercent > 20f)
                             MaterialTheme.colorScheme.error
@@ -381,7 +382,7 @@ private fun RepBiomechanicsRow(
                     )
                     Spacer(modifier = Modifier.width(Spacing.small))
                     Text(
-                        "${String.format("%.1f", rep.velocity.meanConcentricVelocityMmS)} mm/s",
+                        "${KmpUtils.formatFloat(rep.velocity.meanConcentricVelocityMmS, 1)} mm/s",
                         style = MaterialTheme.typography.bodySmall,
                         fontWeight = FontWeight.Medium,
                         color = MaterialTheme.colorScheme.onSurface
@@ -394,7 +395,7 @@ private fun RepBiomechanicsRow(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     rep.velocity.velocityLossPercent?.let { loss ->
                         Text(
-                            "-${String.format("%.1f", loss)}%",
+                            "-${KmpUtils.formatFloat(loss, 1)}%",
                             style = MaterialTheme.typography.labelSmall,
                             color = if (loss > 20f)
                                 MaterialTheme.colorScheme.error
@@ -427,7 +428,7 @@ private fun RepBiomechanicsRow(
                     else -> rep.asymmetry.dominantSide
                 }
                 Text(
-                    "Asymmetry: ${String.format("%.1f", rep.asymmetry.asymmetryPercent)}% ($sideLabel)",
+                    "Asymmetry: ${KmpUtils.formatFloat(rep.asymmetry.asymmetryPercent, 1)}% ($sideLabel)",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -465,7 +466,7 @@ private fun RepBiomechanicsRow(
                         ) {
                             rep.forceCurve.stickingPointPct?.let { sp ->
                                 Text(
-                                    "Sticking point: ${String.format("%.0f", sp)}% ROM",
+                                    "Sticking point: ${KmpUtils.formatFloat(sp, 0)}% ROM",
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )

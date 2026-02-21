@@ -26,6 +26,7 @@ import com.devil.phoenixproject.presentation.components.VideoPlayer
 import com.devil.phoenixproject.presentation.viewmodel.AssessmentStep
 import com.devil.phoenixproject.presentation.viewmodel.AssessmentViewModel
 import com.devil.phoenixproject.ui.theme.Spacing
+import com.devil.phoenixproject.util.KmpUtils
 import com.devil.phoenixproject.ui.theme.ThemeMode
 import com.devil.phoenixproject.ui.theme.screenBackgroundBrush
 
@@ -562,7 +563,7 @@ private fun ResultsContent(
                     color = MaterialTheme.colorScheme.onPrimaryContainer
                 )
                 Text(
-                    text = "${"%.1f".format(step.estimatedOneRepMaxKg)} kg",
+                    text = "${KmpUtils.formatFloat(step.estimatedOneRepMaxKg, 1)} kg",
                     style = MaterialTheme.typography.displayMedium,
                     fontWeight = FontWeight.Black,
                     color = MaterialTheme.colorScheme.onPrimaryContainer
@@ -604,7 +605,7 @@ private fun ResultsContent(
                 )
                 Spacer(modifier = Modifier.width(Spacing.small))
                 Text(
-                    text = "$confidenceText (R² = ${"%.2f".format(step.r2)})",
+                    text = "$confidenceText (R² = ${KmpUtils.formatFloat(step.r2, 2)})",
                     style = MaterialTheme.typography.bodyMedium,
                     fontWeight = FontWeight.Bold,
                     color = confidenceColor
@@ -764,7 +765,7 @@ private fun CompleteContent(
             )
 
             Text(
-                text = "${step.exerciseName}: ${"%.1f".format(step.finalOneRepMaxKg)} kg",
+                text = "${step.exerciseName}: ${KmpUtils.formatFloat(step.finalOneRepMaxKg, 1)} kg",
                 style = MaterialTheme.typography.titleLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )

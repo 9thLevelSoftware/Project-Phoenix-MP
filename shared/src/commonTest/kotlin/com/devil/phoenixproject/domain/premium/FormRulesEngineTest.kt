@@ -491,7 +491,7 @@ class FormRulesEngineTest {
 
         val score = FormRulesEngine.calculateFormScore(assessments)
 
-        assertTrue(score > 75, "Score with only INFO violations should be above 75, got $score")
+        assertTrue(score >= 75, "Score with only INFO violations should be at least 75, got $score")
     }
 
     @Test

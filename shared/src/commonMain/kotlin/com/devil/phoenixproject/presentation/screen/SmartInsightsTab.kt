@@ -17,6 +17,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.data.repository.SmartSuggestionsRepository
 import com.devil.phoenixproject.domain.model.*
+import com.devil.phoenixproject.domain.model.currentTimeMillis
 import com.devil.phoenixproject.domain.premium.SmartSuggestionsEngine
 import com.devil.phoenixproject.domain.subscription.SubscriptionManager
 import com.devil.phoenixproject.presentation.components.LockedFeatureOverlay
@@ -63,7 +64,7 @@ private fun SmartInsightsContent(
 ) {
     val repository: SmartSuggestionsRepository = koinInject()
 
-    val nowMs = remember { System.currentTimeMillis() }
+    val nowMs = remember { currentTimeMillis() }
     val twentyEightDaysMs = 28L * 24 * 60 * 60 * 1000
 
     var isLoading by remember { mutableStateOf(true) }

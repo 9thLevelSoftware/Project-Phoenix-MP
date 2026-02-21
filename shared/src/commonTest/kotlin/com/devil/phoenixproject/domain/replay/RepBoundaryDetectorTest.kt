@@ -1,5 +1,6 @@
 package com.devil.phoenixproject.domain.replay
 
+import kotlin.random.Random
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -26,7 +27,7 @@ class RepBoundaryDetectorTest {
     // =========================================================================
 
     @Test
-    fun `detectBoundaries returns empty for insufficient data (less than 15 samples)`() {
+    fun `detectBoundaries returns empty for insufficient data - less than 15 samples`() {
         // Less than 15 samples - not enough for a single rep
         val positions = FloatArray(10) { 100f }
 
@@ -105,7 +106,7 @@ class RepBoundaryDetectorTest {
     // =========================================================================
 
     @Test
-    fun `detectBoundaries handles edge valleys (start of data)`() {
+    fun `detectBoundaries handles edge valleys at start of data`() {
         // Data starts at a valley (low position)
         val positions = buildMultiRepPositions(
             repCount = 2,
@@ -121,7 +122,7 @@ class RepBoundaryDetectorTest {
     }
 
     @Test
-    fun `detectBoundaries handles edge valleys (end of data)`() {
+    fun `detectBoundaries handles edge valleys at end of data`() {
         // Build data that ends at a valley
         val positions = buildMultiRepPositions(
             repCount = 2,
@@ -236,7 +237,7 @@ class RepBoundaryDetectorTest {
 
         // Add noise (+/- 3mm random variation)
         val noisyPositions = FloatArray(cleanPositions.size) { i ->
-            cleanPositions[i] + (Math.random().toFloat() - 0.5f) * 6f
+            cleanPositions[i] + (Random.nextFloat() - 0.5f) * 6f
         }
 
         val result = detector.detectBoundaries(noisyPositions)

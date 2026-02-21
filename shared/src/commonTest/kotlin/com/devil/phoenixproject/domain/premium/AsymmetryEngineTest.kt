@@ -1,6 +1,7 @@
 package com.devil.phoenixproject.domain.premium
 
 import com.devil.phoenixproject.domain.model.WorkoutMetric
+import com.devil.phoenixproject.domain.model.currentTimeMillis
 import kotlin.math.abs
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -24,7 +25,7 @@ class AsymmetryEngineTest {
 
     private fun createMetric(loadA: Float, loadB: Float): WorkoutMetric =
         WorkoutMetric(
-            timestamp = System.currentTimeMillis(),
+            timestamp = currentTimeMillis(),
             loadA = loadA,
             loadB = loadB,
             positionA = 0f,
