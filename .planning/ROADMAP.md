@@ -63,7 +63,7 @@ See `.planning/milestones/v0.4.7-*` for archived phase details.
 
 **Milestone Goal:** Add on-device CV form checking, persist biomechanics data to database, and build mobile UI components for premium features (ghost racing, RPG attributes, readiness briefing).
 
-- [ ] **Phase 13: Biomechanics Persistence** — Persist per-rep VBT, force curves, and asymmetry data to database with schema v16
+- [x] **Phase 13: Biomechanics Persistence** — Persist per-rep VBT, force curves, and asymmetry data to database with schema v16 (completed 2026-02-21)
 - [ ] **Phase 14: CV Form Check — Domain Logic** — Exercise-specific form rules engine and joint angle models in commonMain
 - [ ] **Phase 15: CV Form Check — Android Integration** — MediaPipe pose estimation, CameraX pipeline, skeleton overlay, thermal management
 - [ ] **Phase 16: CV Form Check — UI, Persistence, and Feature Gating** — Camera PiP, form warnings, form score persistence, iOS stub, tier gates
@@ -158,8 +158,7 @@ Note: Phase 14 can start in parallel with Phase 13 (no dependency). Phase 17 can
 | v0.4.1 Architectural Cleanup | 1-4 | 10 | ✅ Complete | 2026-02-13 |
 | v0.4.5 Premium Features Phase 1 | 1-5 | 11 | ✅ Complete | 2026-02-14 |
 | v0.4.6 Biomechanics MVP | 6-8 | 10 | ✅ Complete | 2026-02-15 |
-| v0.4.7 Mobile Platform Features | 9-12 | 13 | ✅ Complete | 2026-02-15 |
-| v0.5.0 Premium Mobile | 13-17 | TBD | 🚧 In progress | - |
+| v0.4.7 Mobile Platform Features | 9-12 | 13 | 2/2 | Complete   | 2026-02-21 | v0.5.0 Premium Mobile | 13-17 | TBD | 🚧 In progress | - |
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
