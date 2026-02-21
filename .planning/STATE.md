@@ -5,21 +5,21 @@
 See: .planning/PROJECT.md (updated 2026-02-20)
 
 **Core value:** Users can connect to their Vitruvian trainer and execute workouts reliably on both platforms.
-**Current focus:** Phase 13 — Biomechanics Persistence (v0.5.0 Premium Mobile)
+**Current focus:** Phase 14 — CV Form Check Domain Logic (v0.5.0 Premium Mobile)
 
 ## Current Position
 
-Phase: 13 of 17 (Biomechanics Persistence)
-Plan: 2 of 2 complete
-Status: Phase Complete
-Last activity: 2026-02-21 — Completed 13-02 (Session History Biomechanics UI)
+Phase: 14 of 17 (CV Form Check Domain Logic)
+Plan: 1 of 2 complete
+Status: In Progress
+Last activity: 2026-02-21 — Completed 14-01 (Form Check Domain Models & Rules Engine)
 
-Progress: [██████████] 100% (2/2 plans in phase 13)
+Progress: [█████-----] 50% (1/2 plans in phase 14)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 46
+- Total plans completed: 47
 - Average plan duration: ~5 minutes
 - Total execution time: ~2 days (across v0.4.5-v0.4.7)
 
@@ -27,6 +27,7 @@ Progress: [██████████] 100% (2/2 plans in phase 13)
 |------------|----------|-------|-------|------|
 | 13-01 | 13min | 2 | 18 | 2026-02-21 |
 | 13-02 | 6min | 2 | 2 | 2026-02-21 |
+| 14-01 | 4min | 2 | 2 | 2026-02-21 |
 
 **By Milestone:**
 
@@ -57,6 +58,9 @@ Recent decisions affecting current work:
 - [Phase 13-01]: Used INSERT OR REPLACE with UNIQUE INDEX on (sessionId, repNumber) for idempotent biomechanics writes
 - [Phase 13-02]: Used SubscriptionManager.hasProAccess/hasEliteAccess for tier gating (matches ActiveWorkoutScreen pattern) rather than raw FeatureGate.isEnabled
 - [Phase 13-02]: Lazy-load RepBiomechanics only on per-rep expand to avoid deserializing 101-point force curves eagerly
+- [Phase 14-01]: Used stateless object for FormRulesEngine (not stateful class) since each evaluate() call is independent
+- [Phase 14-01]: Included calculateFormScore() in domain engine (Phase 14) rather than deferring to Phase 16
+- [Phase 14-01]: Defined all 17 form rules as explicit FormRule instances (no bilateral helper) for clarity
 
 ### Pending Todos
 
@@ -71,6 +75,6 @@ None.
 ## Session Continuity
 
 Last session: 2026-02-21
-Stopped at: Completed 13-02-PLAN.md (Phase 13 complete)
-Resume file: .planning/phases/13-biomechanics-persistence/13-02-SUMMARY.md
-Next action: /gsd:execute-phase 14 (next phase)
+Stopped at: Completed 14-01-PLAN.md
+Resume file: .planning/phases/14-cv-form-check-domain-logic/14-01-SUMMARY.md
+Next action: Execute 14-02-PLAN.md (form rules engine tests)

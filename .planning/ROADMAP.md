@@ -164,7 +164,7 @@ Note: Phase 14 can start in parallel with Phase 13 (no dependency). Phase 17 can
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 13. Biomechanics Persistence | 1/2 | In progress | - |
-| 14. CV Domain Logic | 0/TBD | Not started | - |
+| 14. CV Domain Logic | 1/2 | In Progress|  |
 | 15. CV Android Integration | 0/TBD | Not started | - |
 | 16. CV UI + Persistence + Gating | 0/TBD | Not started | - |
 | 17. Premium UI Composables | 0/TBD | Not started | - |
