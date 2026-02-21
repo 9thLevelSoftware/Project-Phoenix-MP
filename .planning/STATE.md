@@ -61,6 +61,6 @@ None.
 ## Session Continuity
 
 Last session: 2026-02-20
-Stopped at: Roadmap created for v0.5.0 milestone
-Resume file: None
-Next action: Plan Phase 13 (Biomechanics Persistence)
+Stopped at: Phase 13 context gathered
+Resume file: .planning/phases/13-biomechanics-persistence/13-CONTEXT.md
+Next action: /gsd:plan-phase 13
