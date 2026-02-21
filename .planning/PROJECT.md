@@ -61,14 +61,21 @@ Users can connect to their Vitruvian trainer and execute workouts with accurate 
 
 <!-- Current scope. Building toward these. -->
 
-(Next milestone scope will be defined via `/gsd:new-milestone`)
+- [ ] Biomechanics persistence to database (per-rep VBT, force curves, asymmetry)
+- [ ] CV pose estimation with MediaPipe (on-device, Android)
+- [ ] CV form rules engine with exercise-specific joint angle thresholds
+- [ ] CV form scoring (composite 0-100) with local persistence
+- [ ] Ghost racing overlay composable (mobile, stub data until portal ships)
+- [ ] RPG attribute card composable (mobile, stub data until portal ships)
+- [ ] Pre-workout briefing composable (mobile, stub data until portal ships)
+- [ ] Premium feature gates for new features (RPG, Ghost Racing, CV Form Check)
 
 ### Out of Scope
 
 <!-- Explicit boundaries. Includes reasoning to prevent re-adding. -->
 
 - KableBleRepository decomposition — works reliably, refactoring risk outweighs benefit
-- Biomechanics persistence to database — v0.5.0+ scope (PERSIST-01 through PERSIST-03)
+- Biomechanics persistence to database — moved to Active for v0.5.0
 - Load-Velocity Profile — requires cross-session persistence
 - Auto-Regulation (Spec 03.3-4) — depends on historical velocity data
 - Portal sync backend (Spec 05) — v0.6.0 infrastructure work
@@ -94,18 +101,29 @@ Users can connect to their Vitruvian trainer and execute workouts with accurate 
 - ~30,500 lines of Kotlin in shared module
 - Database schema version: 15 (ExerciseSignature, AssessmentResult tables)
 
+## Current Milestone: v0.5.0 Premium Mobile
+
+**Goal:** Add on-device computer vision form checking, persist biomechanics data to database, and build mobile UI components for premium features (RPG, ghost racing, readiness briefing).
+
+**Target features:**
+- CV pose estimation with MediaPipe (Android) for real-time form warnings
+- CV form rules engine with exercise-specific joint angle thresholds
+- Biomechanics persistence (VBT metrics, force curves, asymmetry per-rep)
+- Ghost racing overlay, RPG attribute card, pre-workout briefing composables
+- Premium feature gates for all new features
+
 ## Current State
 
 **Version:** v0.4.7 (shipped 2026-02-15)
-**Status:** Mobile Platform Features milestone complete
+**Status:** Starting v0.5.0 Premium Mobile milestone
 
 Intelligent training platform established. VBT-based strength assessment with OLS regression accurately estimates 1RM from progressive sets. Exercise auto-detection identifies movements from 3-5 reps using weighted similarity matching with EMA-based learning. Mobile replay provides per-rep force curves with valley-based boundary detection. All features follow established patterns: injectable time providers, stateless pure functions, StateFlow exposure.
 
 ## Future Milestones
 
-- **v0.5.0** — Biomechanics Persistence (PERSIST-01 through PERSIST-03: database storage, historical views)
 - **v0.5.5** — Auth Migration + Portal Integration (Spec 05: Supabase auth, force curve sync)
 - **v0.6.0** — Portal Replay + Community Features (Spec 04 portal, Spec 05c-d)
+- **v0.7.0** — Premium Portal Features (RPG trees, ghost replay, digital twin, F-v dashboard, AI auto-regulation, CV analytics)
 
 ## Constraints
 
@@ -151,4 +169,4 @@ Intelligent training platform established. VBT-based strength assessment with OL
 | ForceSparkline 40dp height with peak marker | Compact card embedding with visual clarity | ✓ Good — v0.4.7 |
 
 ---
-*Last updated: 2026-02-15 after v0.4.7 milestone complete*
+*Last updated: 2026-02-20 after v0.5.0 milestone start*

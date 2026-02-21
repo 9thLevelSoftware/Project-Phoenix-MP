@@ -2,19 +2,17 @@
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-02-15)
+See: .planning/PROJECT.md (updated 2026-02-20)
 
 **Core value:** Users can connect to their Vitruvian trainer and execute workouts reliably on both platforms.
-**Current focus:** No active milestone — use `/gsd:new-milestone` to start v0.5.0
+**Current focus:** v0.5.0 Premium Mobile — CV form check, biomechanics persistence, premium mobile components
 
 ## Current Position
 
-Phase: N/A (between milestones)
-Plan: N/A
-Status: v0.4.7 milestone complete
-Last activity: 2026-02-15 — v0.4.7 shipped
-
-Progress: 44 plans shipped across 4 milestones (v0.4.1: 10, v0.4.5: 11, v0.4.6: 10, v0.4.7: 13)
+Phase: Not started (defining requirements)
+Plan: —
+Status: Defining requirements
+Last activity: 2026-02-20 — Milestone v0.5.0 started
 
 ## Performance Metrics
 
@@ -51,6 +49,6 @@ None.
 ## Session Continuity
 
 Last session: 2026-02-20
-Stopped at: Completed 02-02-PLAN.md (LED biofeedback integration checkpoint approved)
+Stopped at: Milestone v0.5.0 initialization
 Resume file: None
-Next action: `/gsd:new-milestone` to define v0.5.0 scope
+Next action: Define requirements → create roadmap
