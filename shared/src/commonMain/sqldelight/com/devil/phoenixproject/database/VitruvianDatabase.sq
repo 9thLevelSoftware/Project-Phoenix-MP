@@ -410,6 +410,11 @@ UPDATE WorkoutSession
 SET routineName = ?
 WHERE id = ?;
 
+updateSessionRoutineSessionId:
+UPDATE WorkoutSession
+SET routineSessionId = ?
+WHERE id = ?;
+
 updateSessionRoutineId:
 UPDATE WorkoutSession
 SET routineId = ?
