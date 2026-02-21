@@ -81,11 +81,11 @@ See `.planning/milestones/v0.4.7-*` for archived phase details.
   3. User can view per-rep asymmetry data (asymmetry %, dominant side) in session history
   4. User can see set-level biomechanics summary (avg MCV, avg asymmetry, velocity loss trend) on the workout session record
   5. App launches successfully on both Android and iOS after schema migration v16 with no data loss
-**Plans**: TBD
+**Plans**: 2 plans
 
 Plans:
-- [ ] 13-01: TBD
-- [ ] 13-02: TBD
+- [ ] 13-01-PLAN.md — Schema migration v16 + BiomechanicsRepository + persistence wiring
+- [ ] 13-02-PLAN.md — Biomechanics history UI with set-level summary and per-rep drill-down
 
 ### Phase 14: CV Form Check — Domain Logic
 **Goal**: Exercise-specific form rules can evaluate joint angles and produce form violations — entirely in cross-platform code with full test coverage
