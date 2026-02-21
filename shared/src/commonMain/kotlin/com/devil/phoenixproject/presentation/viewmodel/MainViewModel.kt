@@ -10,6 +10,7 @@ import com.devil.phoenixproject.data.repository.GamificationRepository
 import com.devil.phoenixproject.data.repository.PersonalRecordRepository
 import com.devil.phoenixproject.data.repository.ScannedDevice
 import com.devil.phoenixproject.data.repository.CompletedSetRepository
+import com.devil.phoenixproject.data.repository.BiomechanicsRepository
 import com.devil.phoenixproject.data.repository.RepMetricRepository
 import com.devil.phoenixproject.data.repository.TrainingCycleRepository
 import com.devil.phoenixproject.data.repository.WorkoutRepository
@@ -62,6 +63,7 @@ class MainViewModel constructor(
     private val completedSetRepository: CompletedSetRepository,
     private val syncTriggerManager: SyncTriggerManager? = null,
     private val repMetricRepository: RepMetricRepository,
+    private val biomechanicsRepository: BiomechanicsRepository,
     private val resolveWeightsUseCase: ResolveRoutineWeightsUseCase,
     private val detectionManager: ExerciseDetectionManager
 ) : ViewModel() {
@@ -97,6 +99,7 @@ class MainViewModel constructor(
         completedSetRepository = completedSetRepository,
         syncTriggerManager = syncTriggerManager,
         repMetricRepository = repMetricRepository,
+        biomechanicsRepository = biomechanicsRepository,
         resolveWeightsUseCase = resolveWeightsUseCase,
         settingsManager = settingsManager,
         detectionManager = detectionManager,

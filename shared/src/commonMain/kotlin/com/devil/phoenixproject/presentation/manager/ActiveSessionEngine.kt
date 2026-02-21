@@ -9,6 +9,7 @@ import com.devil.phoenixproject.data.repository.HandleState
 import com.devil.phoenixproject.data.repository.PersonalRecordRepository
 import com.devil.phoenixproject.data.repository.RepNotification
 import com.devil.phoenixproject.data.repository.CompletedSetRepository
+import com.devil.phoenixproject.data.repository.BiomechanicsRepository
 import com.devil.phoenixproject.data.repository.RepMetricRepository
 import com.devil.phoenixproject.data.repository.TrainingCycleRepository
 import com.devil.phoenixproject.data.repository.WorkoutRepository
@@ -58,6 +59,7 @@ class ActiveSessionEngine(
     private val completedSetRepository: CompletedSetRepository,
     private val syncTriggerManager: SyncTriggerManager?,
     private val repMetricRepository: RepMetricRepository,
+    private val biomechanicsRepository: BiomechanicsRepository,
     private val settingsManager: SettingsManager,
     private val scope: CoroutineScope,
     private val detectionManager: ExerciseDetectionManager? = null
@@ -1798,6 +1800,11 @@ class ActiveSessionEngine(
             baselineLoadB = coordinator._loadBaselineB.value
         )
 
+        // Capture biomechanics summary for WorkoutSession fields.
+        // Safe to call here: runs BEFORE biomechanicsEngine.reset() in handleSetCompletion.
+        // getSetSummary() is read-only/idempotent.
+        val bioSummary = coordinator.biomechanicsEngine.getSetSummary()
+
         val session = WorkoutSession(
             id = sessionId,
             timestamp = coordinator.workoutStartTime,
@@ -1830,7 +1837,13 @@ class ActiveSessionEngine(
             workingAvgWeightKg = if (params.isEchoMode) summary.workingAvgWeightKg else null,
             burnoutAvgWeightKg = if (params.isEchoMode) summary.burnoutAvgWeightKg else null,
             peakWeightKg = if (params.isEchoMode) summary.peakWeightKg else null,
-            rpe = coordinator._currentSetRpe.value
+            rpe = coordinator._currentSetRpe.value,
+            // Biomechanics summary (Phase 13 - captured for all tiers)
+            avgMcvMmS = bioSummary?.avgMcvMmS,
+            avgAsymmetryPercent = bioSummary?.avgAsymmetryPercent,
+            totalVelocityLossPercent = bioSummary?.totalVelocityLossPercent,
+            dominantSide = bioSummary?.dominantSide,
+            strengthProfile = bioSummary?.strengthProfile?.name
         )
 
         workoutRepository.saveSession(session)
@@ -1953,6 +1966,20 @@ class ActiveSessionEngine(
             }
             coordinator.setRepMetrics.clear()
 
+            // Persist per-rep biomechanics data (GATE-04: captured for all tiers)
+            val biomechanicsSummary = coordinator.biomechanicsEngine.getSetSummary()
+            if (sessionId != null && biomechanicsSummary != null) {
+                try {
+                    biomechanicsRepository.saveRepBiomechanics(
+                        sessionId,
+                        biomechanicsSummary.repResults
+                    )
+                    Logger.d { "Persisted ${biomechanicsSummary.repResults.size} rep biomechanics for session $sessionId" }
+                } catch (e: Exception) {
+                    Logger.e(e) { "Failed to persist rep biomechanics for session $sessionId" }
+                }
+            }
+
             // Capture rep quality summary BEFORE reset (null if no reps were scored)
             val qualitySummary = try {
                 coordinator.repQualityScorer.getSetSummary()
@@ -1965,8 +1992,8 @@ class ActiveSessionEngine(
             coordinator.repQualityScorer.reset()
             coordinator._latestRepQuality.value = null
 
-            // Capture biomechanics set summary BEFORE reset (null if no reps processed)
-            val biomechanicsSummary = coordinator.biomechanicsEngine.getSetSummary()
+            // Reuse biomechanics summary captured above for SetSummary display (no second engine call needed)
+            // biomechanicsSummary is already captured and engine hasn't been reset yet
 
             // Reset biomechanics engine and rep boundary timestamps for next set
             coordinator.biomechanicsEngine.reset()

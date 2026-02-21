@@ -25,6 +25,9 @@ val dataModule = module {
     // Rep Metrics Repository
     single<RepMetricRepository> { SqlDelightRepMetricRepository(get()) }
 
+    // Biomechanics Repository (Phase 13 - per-rep VBT, force curve, asymmetry)
+    single<BiomechanicsRepository> { SqlDelightBiomechanicsRepository(get()) }
+
     // Training Cycles Repositories
     single<TrainingCycleRepository> { SqlDelightTrainingCycleRepository(get()) }
     single<CompletedSetRepository> { SqlDelightCompletedSetRepository(get()) }
