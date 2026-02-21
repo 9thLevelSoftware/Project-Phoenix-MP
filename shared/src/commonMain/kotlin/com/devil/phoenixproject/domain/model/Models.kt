@@ -415,11 +415,21 @@ data class WorkoutSession(
     val workingAvgWeightKg: Float? = null,
     val burnoutAvgWeightKg: Float? = null,
     val peakWeightKg: Float? = null,
-    val rpe: Int? = null
+    val rpe: Int? = null,
+    // Biomechanics summary (added in v0.5.0 Phase 13)
+    val avgMcvMmS: Float? = null,
+    val avgAsymmetryPercent: Float? = null,
+    val totalVelocityLossPercent: Float? = null,
+    val dominantSide: String? = null,
+    val strengthProfile: String? = null
 ) {
     /** True if this session has detailed summary metrics (v0.2.1+) */
     val hasSummaryMetrics: Boolean
         get() = peakForceConcentricA != null || peakForceConcentricB != null
+
+    /** True if this session has biomechanics data (v0.5.0+) */
+    val hasBiomechanicsData: Boolean
+        get() = avgMcvMmS != null
 }
 
 /**

@@ -1,0 +1,37 @@
+-- Migration 15: Per-Rep Biomechanics table + WorkoutSession summary columns (Phase 13 - v16)
+
+CREATE TABLE RepBiomechanics (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    sessionId TEXT NOT NULL,
+    repNumber INTEGER NOT NULL,
+    -- VBT metrics (PERSIST-01)
+    mcvMmS REAL NOT NULL,
+    peakVelocityMmS REAL NOT NULL,
+    velocityZone TEXT NOT NULL,
+    velocityLossPercent REAL,
+    estimatedRepsRemaining INTEGER,
+    shouldStopSet INTEGER NOT NULL DEFAULT 0,
+    -- Force curve (PERSIST-02)
+    normalizedForceN TEXT NOT NULL,
+    normalizedPositionPct TEXT NOT NULL,
+    stickingPointPct REAL,
+    strengthProfile TEXT NOT NULL,
+    -- Asymmetry (PERSIST-03)
+    asymmetryPercent REAL NOT NULL,
+    dominantSide TEXT NOT NULL,
+    avgLoadA REAL NOT NULL,
+    avgLoadB REAL NOT NULL,
+    -- Metadata
+    timestamp INTEGER NOT NULL,
+    FOREIGN KEY (sessionId) REFERENCES WorkoutSession(id) ON DELETE CASCADE
+);
+
+CREATE INDEX idx_rep_biomechanics_session ON RepBiomechanics(sessionId);
+CREATE UNIQUE INDEX idx_rep_biomechanics_session_rep ON RepBiomechanics(sessionId, repNumber);
+
+-- Biomechanics summary columns on WorkoutSession (PERSIST-04)
+ALTER TABLE WorkoutSession ADD COLUMN avgMcvMmS REAL;
+ALTER TABLE WorkoutSession ADD COLUMN avgAsymmetryPercent REAL;
+ALTER TABLE WorkoutSession ADD COLUMN totalVelocityLossPercent REAL;
+ALTER TABLE WorkoutSession ADD COLUMN dominantSide TEXT;
+ALTER TABLE WorkoutSession ADD COLUMN strengthProfile TEXT;

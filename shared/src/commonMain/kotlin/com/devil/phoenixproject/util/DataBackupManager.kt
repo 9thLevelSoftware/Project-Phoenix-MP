@@ -162,7 +162,12 @@ abstract class BaseDataBackupManager(
                         workingAvgWeightKg = session.workingAvgWeightKg?.toFloat(),
                         burnoutAvgWeightKg = session.burnoutAvgWeightKg?.toFloat(),
                         peakWeightKg = session.peakWeightKg?.toFloat(),
-                        rpe = session.rpe?.toInt()
+                        rpe = session.rpe?.toInt(),
+                        avgMcvMmS = session.avgMcvMmS?.toFloat(),
+                        avgAsymmetryPercent = session.avgAsymmetryPercent?.toFloat(),
+                        totalVelocityLossPercent = session.totalVelocityLossPercent?.toFloat(),
+                        dominantSide = session.dominantSide,
+                        strengthProfile = session.strengthProfile
                     )
                 },
                 metricSamples = metrics.map { metric ->
@@ -449,7 +454,12 @@ abstract class BaseDataBackupManager(
                             workingAvgWeightKg = session.workingAvgWeightKg?.toDouble(),
                             burnoutAvgWeightKg = session.burnoutAvgWeightKg?.toDouble(),
                             peakWeightKg = session.peakWeightKg?.toDouble(),
-                            rpe = session.rpe?.toLong()
+                            rpe = session.rpe?.toLong(),
+                            avgMcvMmS = session.avgMcvMmS?.toDouble(),
+                            avgAsymmetryPercent = session.avgAsymmetryPercent?.toDouble(),
+                            totalVelocityLossPercent = session.totalVelocityLossPercent?.toDouble(),
+                            dominantSide = session.dominantSide,
+                            strengthProfile = session.strengthProfile
                         )
                         sessionsImported++
                     } else {

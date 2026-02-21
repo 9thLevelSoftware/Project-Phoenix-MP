@@ -76,6 +76,12 @@ class SqlDelightWorkoutRepository(
         burnoutAvgWeightKg: Double?,
         peakWeightKg: Double?,
         rpe: Long?,
+        // Biomechanics summary (migration 15 - Phase 13 v16)
+        avgMcvMmS: Double?,
+        avgAsymmetryPercent: Double?,
+        totalVelocityLossPercent: Double?,
+        dominantSide: String?,
+        strengthProfile: String?,
         // Sync fields (migration 6)
         updatedAt: Long?,
         serverId: String?,
@@ -120,7 +126,13 @@ class SqlDelightWorkoutRepository(
             workingAvgWeightKg = workingAvgWeightKg?.toFloat(),
             burnoutAvgWeightKg = burnoutAvgWeightKg?.toFloat(),
             peakWeightKg = peakWeightKg?.toFloat(),
-            rpe = rpe?.toInt()
+            rpe = rpe?.toInt(),
+            // Biomechanics summary
+            avgMcvMmS = avgMcvMmS?.toFloat(),
+            avgAsymmetryPercent = avgAsymmetryPercent?.toFloat(),
+            totalVelocityLossPercent = totalVelocityLossPercent?.toFloat(),
+            dominantSide = dominantSide,
+            strengthProfile = strengthProfile
         )
     }
 
@@ -384,7 +396,13 @@ class SqlDelightWorkoutRepository(
                 workingAvgWeightKg = session.workingAvgWeightKg?.toDouble(),
                 burnoutAvgWeightKg = session.burnoutAvgWeightKg?.toDouble(),
                 peakWeightKg = session.peakWeightKg?.toDouble(),
-                rpe = session.rpe?.toLong()
+                rpe = session.rpe?.toLong(),
+                // Biomechanics summary
+                avgMcvMmS = session.avgMcvMmS?.toDouble(),
+                avgAsymmetryPercent = session.avgAsymmetryPercent?.toDouble(),
+                totalVelocityLossPercent = session.totalVelocityLossPercent?.toDouble(),
+                dominantSide = session.dominantSide,
+                strengthProfile = session.strengthProfile
             )
         }
     }

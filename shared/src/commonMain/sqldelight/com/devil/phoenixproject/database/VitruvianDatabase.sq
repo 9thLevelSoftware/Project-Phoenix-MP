@@ -87,6 +87,12 @@ CREATE TABLE WorkoutSession (
     burnoutAvgWeightKg REAL,
     peakWeightKg REAL,
     rpe INTEGER,
+    -- Biomechanics Summary (added in migration 15 - Phase 13 v16)
+    avgMcvMmS REAL,
+    avgAsymmetryPercent REAL,
+    totalVelocityLossPercent REAL,
+    dominantSide TEXT,
+    strengthProfile TEXT,
     -- Sync fields (added in migration 6)
     updatedAt INTEGER,
     serverId TEXT,
@@ -306,6 +312,38 @@ CREATE TABLE RepMetric (
 CREATE INDEX idx_rep_metric_session ON RepMetric(sessionId);
 CREATE INDEX idx_rep_metric_session_rep ON RepMetric(sessionId, repNumber);
 
+-- ==================== PER-REP BIOMECHANICS ====================
+-- Per-rep biomechanics analysis (VBT, force curve, asymmetry) for premium analytics
+
+CREATE TABLE RepBiomechanics (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    sessionId TEXT NOT NULL,
+    repNumber INTEGER NOT NULL,
+    -- VBT metrics (PERSIST-01)
+    mcvMmS REAL NOT NULL,
+    peakVelocityMmS REAL NOT NULL,
+    velocityZone TEXT NOT NULL,
+    velocityLossPercent REAL,
+    estimatedRepsRemaining INTEGER,
+    shouldStopSet INTEGER NOT NULL DEFAULT 0,
+    -- Force curve (PERSIST-02)
+    normalizedForceN TEXT NOT NULL,
+    normalizedPositionPct TEXT NOT NULL,
+    stickingPointPct REAL,
+    strengthProfile TEXT NOT NULL,
+    -- Asymmetry (PERSIST-03)
+    asymmetryPercent REAL NOT NULL,
+    dominantSide TEXT NOT NULL,
+    avgLoadA REAL NOT NULL,
+    avgLoadB REAL NOT NULL,
+    -- Metadata
+    timestamp INTEGER NOT NULL,
+    FOREIGN KEY (sessionId) REFERENCES WorkoutSession(id) ON DELETE CASCADE
+);
+
+CREATE INDEX idx_rep_biomechanics_session ON RepBiomechanics(sessionId);
+CREATE UNIQUE INDEX idx_rep_biomechanics_session_rep ON RepBiomechanics(sessionId, repNumber);
+
 -- ==================== EXERCISE SIGNATURES ====================
 -- Movement signatures for exercise auto-detection
 
@@ -473,9 +511,10 @@ INSERT INTO WorkoutSession (
     peakForceConcentricA, peakForceConcentricB, peakForceEccentricA, peakForceEccentricB,
     avgForceConcentricA, avgForceConcentricB, avgForceEccentricA, avgForceEccentricB,
     heaviestLiftKg, totalVolumeKg, estimatedCalories,
-    warmupAvgWeightKg, workingAvgWeightKg, burnoutAvgWeightKg, peakWeightKg, rpe
+    warmupAvgWeightKg, workingAvgWeightKg, burnoutAvgWeightKg, peakWeightKg, rpe,
+    avgMcvMmS, avgAsymmetryPercent, totalVelocityLossPercent, dominantSide, strengthProfile
 )
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 updateSession:
 UPDATE WorkoutSession 
@@ -808,6 +847,33 @@ SELECT * FROM RepMetric;
 
 countRepMetricsBySession:
 SELECT COUNT(*) FROM RepMetric WHERE sessionId = ?;
+
+-- ==================== REP BIOMECHANICS QUERIES ====================
+
+selectRepBiomechanicsBySession:
+SELECT * FROM RepBiomechanics WHERE sessionId = ? ORDER BY repNumber ASC;
+
+insertRepBiomechanics:
+INSERT OR REPLACE INTO RepBiomechanics (
+    sessionId, repNumber, mcvMmS, peakVelocityMmS, velocityZone,
+    velocityLossPercent, estimatedRepsRemaining, shouldStopSet,
+    normalizedForceN, normalizedPositionPct, stickingPointPct, strengthProfile,
+    asymmetryPercent, dominantSide, avgLoadA, avgLoadB, timestamp
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+deleteRepBiomechanicsBySession:
+DELETE FROM RepBiomechanics WHERE sessionId = ?;
+
+selectAllRepBiomechanicsSync:
+SELECT * FROM RepBiomechanics;
+
+insertRepBiomechanicsIgnore:
+INSERT OR IGNORE INTO RepBiomechanics (
+    id, sessionId, repNumber, mcvMmS, peakVelocityMmS, velocityZone,
+    velocityLossPercent, estimatedRepsRemaining, shouldStopSet,
+    normalizedForceN, normalizedPositionPct, stickingPointPct, strengthProfile,
+    asymmetryPercent, dominantSide, avgLoadA, avgLoadB, timestamp
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 -- ==================== EXERCISE SIGNATURE QUERIES ====================
 
@@ -1466,9 +1532,10 @@ INSERT OR REPLACE INTO WorkoutSession (
     avgForceConcentricA, avgForceConcentricB, avgForceEccentricA, avgForceEccentricB,
     heaviestLiftKg, totalVolumeKg, estimatedCalories,
     warmupAvgWeightKg, workingAvgWeightKg, burnoutAvgWeightKg, peakWeightKg, rpe,
+    avgMcvMmS, avgAsymmetryPercent, totalVelocityLossPercent, dominantSide, strengthProfile,
     updatedAt, serverId, deletedAt
 )
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 -- Get PRs modified since last sync
 selectPRsModifiedSince:

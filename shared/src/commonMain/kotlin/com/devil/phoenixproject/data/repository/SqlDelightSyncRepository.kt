@@ -223,6 +223,11 @@ class SqlDelightSyncRepository(
                         burnoutAvgWeightKg = null,
                         peakWeightKg = null,
                         rpe = null,
+                        avgMcvMmS = null,
+                        avgAsymmetryPercent = null,
+                        totalVelocityLossPercent = null,
+                        dominantSide = null,
+                        strengthProfile = null,
                         updatedAt = dto.updatedAt,
                         serverId = dto.serverId,
                         deletedAt = dto.deletedAt

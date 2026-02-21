@@ -61,7 +61,13 @@ data class WorkoutSessionBackup(
     val workingAvgWeightKg: Float? = null,
     val burnoutAvgWeightKg: Float? = null,
     val peakWeightKg: Float? = null,
-    val rpe: Int? = null
+    val rpe: Int? = null,
+    // Biomechanics Summary (added in v0.5.0 Phase 13)
+    val avgMcvMmS: Float? = null,
+    val avgAsymmetryPercent: Float? = null,
+    val totalVelocityLossPercent: Float? = null,
+    val dominantSide: String? = null,
+    val strengthProfile: String? = null
 )
 
 /**

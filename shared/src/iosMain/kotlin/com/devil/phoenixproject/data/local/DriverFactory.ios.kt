@@ -54,7 +54,7 @@ actual class DriverFactory {
 
     companion object {
         /** Current schema version - must match SQLDelight (1 + number of .sqm files) */
-        private const val CURRENT_SCHEMA_VERSION = 15L
+        private const val CURRENT_SCHEMA_VERSION = 16L
     }
 
     /**
@@ -690,6 +690,30 @@ actual class DriverFactory {
                 FOREIGN KEY (sessionId) REFERENCES WorkoutSession(id) ON DELETE CASCADE
             )
             """,
+            // ==================== Per-Rep Biomechanics ====================
+            """
+            CREATE TABLE IF NOT EXISTS RepBiomechanics (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                sessionId TEXT NOT NULL,
+                repNumber INTEGER NOT NULL,
+                mcvMmS REAL NOT NULL,
+                peakVelocityMmS REAL NOT NULL,
+                velocityZone TEXT NOT NULL,
+                velocityLossPercent REAL,
+                estimatedRepsRemaining INTEGER,
+                shouldStopSet INTEGER NOT NULL DEFAULT 0,
+                normalizedForceN TEXT NOT NULL,
+                normalizedPositionPct TEXT NOT NULL,
+                stickingPointPct REAL,
+                strengthProfile TEXT NOT NULL,
+                asymmetryPercent REAL NOT NULL,
+                dominantSide TEXT NOT NULL,
+                avgLoadA REAL NOT NULL,
+                avgLoadB REAL NOT NULL,
+                timestamp INTEGER NOT NULL,
+                FOREIGN KEY (sessionId) REFERENCES WorkoutSession(id) ON DELETE CASCADE
+            )
+            """,
             // ==================== Exercise Signatures ====================
             """
             CREATE TABLE IF NOT EXISTS ExerciseSignature (
@@ -918,6 +942,12 @@ actual class DriverFactory {
         safeAddColumn(driver, "WorkoutSession", "burnoutAvgWeightKg", "REAL")
         safeAddColumn(driver, "WorkoutSession", "peakWeightKg", "REAL")
         safeAddColumn(driver, "WorkoutSession", "rpe", "INTEGER")
+        // WorkoutSession biomechanics summary columns (migration 15 - Phase 13 v16)
+        safeAddColumn(driver, "WorkoutSession", "avgMcvMmS", "REAL")
+        safeAddColumn(driver, "WorkoutSession", "avgAsymmetryPercent", "REAL")
+        safeAddColumn(driver, "WorkoutSession", "totalVelocityLossPercent", "REAL")
+        safeAddColumn(driver, "WorkoutSession", "dominantSide", "TEXT")
+        safeAddColumn(driver, "WorkoutSession", "strengthProfile", "TEXT")
         safeAddColumn(driver, "WorkoutSession", "updatedAt", "INTEGER")
         safeAddColumn(driver, "WorkoutSession", "serverId", "TEXT")
         safeAddColumn(driver, "WorkoutSession", "deletedAt", "INTEGER")
@@ -988,6 +1018,9 @@ actual class DriverFactory {
             // RepMetric indexes
             "CREATE INDEX IF NOT EXISTS idx_rep_metric_session ON RepMetric(sessionId)",
             "CREATE INDEX IF NOT EXISTS idx_rep_metric_session_rep ON RepMetric(sessionId, repNumber)",
+            // RepBiomechanics indexes
+            "CREATE INDEX IF NOT EXISTS idx_rep_biomechanics_session ON RepBiomechanics(sessionId)",
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_rep_biomechanics_session_rep ON RepBiomechanics(sessionId, repNumber)",
             // ExerciseSignature indexes
             "CREATE INDEX IF NOT EXISTS idx_exercise_signature_exercise ON ExerciseSignature(exerciseId)",
             // AssessmentResult indexes

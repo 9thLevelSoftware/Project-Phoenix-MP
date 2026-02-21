@@ -419,6 +419,37 @@ actual class DriverFactory(private val context: Context) {
                             )""",
                             "CREATE INDEX IF NOT EXISTS idx_assessment_result_exercise ON AssessmentResult(exerciseId)"
                         )
+                        15 -> listOf(
+                            // Migration 15: Per-Rep Biomechanics table + WorkoutSession summary columns (Phase 13 - v16)
+                            """CREATE TABLE IF NOT EXISTS RepBiomechanics (
+                                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                                sessionId TEXT NOT NULL,
+                                repNumber INTEGER NOT NULL,
+                                mcvMmS REAL NOT NULL,
+                                peakVelocityMmS REAL NOT NULL,
+                                velocityZone TEXT NOT NULL,
+                                velocityLossPercent REAL,
+                                estimatedRepsRemaining INTEGER,
+                                shouldStopSet INTEGER NOT NULL DEFAULT 0,
+                                normalizedForceN TEXT NOT NULL,
+                                normalizedPositionPct TEXT NOT NULL,
+                                stickingPointPct REAL,
+                                strengthProfile TEXT NOT NULL,
+                                asymmetryPercent REAL NOT NULL,
+                                dominantSide TEXT NOT NULL,
+                                avgLoadA REAL NOT NULL,
+                                avgLoadB REAL NOT NULL,
+                                timestamp INTEGER NOT NULL,
+                                FOREIGN KEY (sessionId) REFERENCES WorkoutSession(id) ON DELETE CASCADE
+                            )""",
+                            "CREATE INDEX IF NOT EXISTS idx_rep_biomechanics_session ON RepBiomechanics(sessionId)",
+                            "CREATE UNIQUE INDEX IF NOT EXISTS idx_rep_biomechanics_session_rep ON RepBiomechanics(sessionId, repNumber)",
+                            "ALTER TABLE WorkoutSession ADD COLUMN avgMcvMmS REAL",
+                            "ALTER TABLE WorkoutSession ADD COLUMN avgAsymmetryPercent REAL",
+                            "ALTER TABLE WorkoutSession ADD COLUMN totalVelocityLossPercent REAL",
+                            "ALTER TABLE WorkoutSession ADD COLUMN dominantSide TEXT",
+                            "ALTER TABLE WorkoutSession ADD COLUMN strengthProfile TEXT"
+                        )
                         else -> emptyList()
                     }
                 }
