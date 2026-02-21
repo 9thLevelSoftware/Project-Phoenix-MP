@@ -158,7 +158,7 @@ Note: Phase 14 can start in parallel with Phase 13 (no dependency). Phase 17 can
 | v0.4.1 Architectural Cleanup | 1-4 | 10 | ✅ Complete | 2026-02-13 |
 | v0.4.5 Premium Features Phase 1 | 1-5 | 11 | ✅ Complete | 2026-02-14 |
 | v0.4.6 Biomechanics MVP | 6-8 | 10 | ✅ Complete | 2026-02-15 |
-| v0.4.7 Mobile Platform Features | 9-12 | 13 | 2/2 | Complete   | 2026-02-21 | v0.5.0 Premium Mobile | 13-17 | TBD | 🚧 In progress | - |
+| v0.4.7 Mobile Platform Features | 9-12 | 13 | 2/2 | Complete    | 2026-02-21 | v0.5.0 Premium Mobile | 13-17 | TBD | 🚧 In progress | - |
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
