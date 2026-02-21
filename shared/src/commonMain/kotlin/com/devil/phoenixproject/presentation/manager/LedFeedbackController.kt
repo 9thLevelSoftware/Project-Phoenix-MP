@@ -121,12 +121,12 @@ class LedFeedbackController(
     }
 
     /**
-     * Set LED to blue (index 0) for rest period calming visual.
+     * Turn LEDs off during rest period.
      */
     fun onRestPeriodStart() {
         if (!enabled) return
         inRestPeriod = true
-        sendColorForced(VelocityZone.REST.schemeIndex) // Blue = index 0
+        sendColorForced(VelocityZone.REST.schemeIndex) // Off = index 7
     }
 
     /**

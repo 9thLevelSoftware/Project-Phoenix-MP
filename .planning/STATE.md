@@ -37,6 +37,8 @@ Progress: 44 plans shipped across 4 milestones (v0.4.1: 10, v0.4.5: 11, v0.4.6: 
 ### Decisions
 
 v0.4.7 decisions archived — see PROJECT.md Key Decisions table.
+- [Phase 02]: Simplified LED velocity zones from 6 to 4 (OFF/Green/Blue/Red) based on real hardware calibration
+- [Phase 02]: LedFeedbackController owned by WorkoutCoordinator, called through coordinator from ActiveSessionEngine
 
 ### Pending Todos
 
@@ -48,7 +50,7 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-02-15
-Stopped at: v0.4.7 milestone complete
+Last session: 2026-02-20
+Stopped at: Completed 02-02-PLAN.md (LED biofeedback integration checkpoint approved)
 Resume file: None
 Next action: `/gsd:new-milestone` to define v0.5.0 scope
