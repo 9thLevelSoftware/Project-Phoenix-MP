@@ -9,11 +9,11 @@ Requirements for v0.5.0 Premium Mobile milestone. Each maps to roadmap phases.
 
 ### Biomechanics Persistence
 
-- [ ] **PERSIST-01**: Per-rep VBT metrics (MCV, velocity zone, velocity loss, rep projection) are saved to database and available in session history
-- [ ] **PERSIST-02**: Per-rep force curve data (101-point normalized curve, sticking point info, strength profile) is saved to database
-- [ ] **PERSIST-03**: Per-rep asymmetry data (asymmetry %, dominant side) is saved to database
-- [ ] **PERSIST-04**: Set-level biomechanics summary (avg MCV, avg asymmetry, velocity loss trend) stored on WorkoutSession
-- [ ] **PERSIST-05**: Schema migration v16 applied safely on both Android and iOS (DriverFactory.ios.kt sync)
+- [x] **PERSIST-01**: Per-rep VBT metrics (MCV, velocity zone, velocity loss, rep projection) are saved to database and available in session history
+- [x] **PERSIST-02**: Per-rep force curve data (101-point normalized curve, sticking point info, strength profile) is saved to database
+- [x] **PERSIST-03**: Per-rep asymmetry data (asymmetry %, dominant side) is saved to database
+- [x] **PERSIST-04**: Set-level biomechanics summary (avg MCV, avg asymmetry, velocity loss trend) stored on WorkoutSession
+- [x] **PERSIST-05**: Schema migration v16 applied safely on both Android and iOS (DriverFactory.ios.kt sync)
 
 ### CV Form Check
 
@@ -88,11 +88,11 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| PERSIST-01 | Phase 13 | Pending |
-| PERSIST-02 | Phase 13 | Pending |
-| PERSIST-03 | Phase 13 | Pending |
-| PERSIST-04 | Phase 13 | Pending |
-| PERSIST-05 | Phase 13 | Pending |
+| PERSIST-01 | Phase 13 | Complete |
+| PERSIST-02 | Phase 13 | Complete |
+| PERSIST-03 | Phase 13 | Complete |
+| PERSIST-04 | Phase 13 | Complete |
+| PERSIST-05 | Phase 13 | Complete |
 | CV-01 | Phase 16 | Pending |
 | CV-02 | Phase 15 | Pending |
 | CV-03 | Phase 15 | Pending |

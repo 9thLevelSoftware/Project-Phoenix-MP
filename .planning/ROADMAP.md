@@ -84,7 +84,7 @@ See `.planning/milestones/v0.4.7-*` for archived phase details.
 **Plans**: 2 plans
 
 Plans:
-- [ ] 13-01-PLAN.md — Schema migration v16 + BiomechanicsRepository + persistence wiring
+- [x] 13-01-PLAN.md — Schema migration v16 + BiomechanicsRepository + persistence wiring
 - [ ] 13-02-PLAN.md — Biomechanics history UI with set-level summary and per-rep drill-down
 
 ### Phase 14: CV Form Check — Domain Logic
@@ -163,7 +163,7 @@ Note: Phase 14 can start in parallel with Phase 13 (no dependency). Phase 17 can
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 13. Biomechanics Persistence | 0/TBD | Not started | - |
+| 13. Biomechanics Persistence | 1/2 | In progress | - |
 | 14. CV Domain Logic | 0/TBD | Not started | - |
 | 15. CV Android Integration | 0/TBD | Not started | - |
 | 16. CV UI + Persistence + Gating | 0/TBD | Not started | - |

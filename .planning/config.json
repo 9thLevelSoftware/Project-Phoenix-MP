@@ -7,6 +7,6 @@
     "parallel_research": true
   },
   "workflow": {
-    "research": false
+    "research": true
   }
 }
