@@ -31,6 +31,7 @@ import com.devil.phoenixproject.util.ImportResult
 import com.devil.phoenixproject.util.rememberFilePicker
 import kotlinx.coroutines.launch
 import org.koin.compose.koinInject
+import com.devil.phoenixproject.domain.subscription.SubscriptionManager
 import com.devil.phoenixproject.presentation.components.CountdownDropdown
 import com.devil.phoenixproject.ui.theme.*
 import com.devil.phoenixproject.util.KmpUtils
@@ -109,6 +110,9 @@ fun SettingsTab(
 
     // Inject DataBackupManager
     val backupManager: DataBackupManager = koinInject()
+    // Inject SubscriptionManager for tier gating
+    val subscriptionManager: SubscriptionManager = koinInject()
+    val hasProAccess by subscriptionManager.hasProAccess.collectAsState()
 
     // Set global title
     LaunchedEffect(Unit) {
@@ -779,7 +783,7 @@ fun SettingsTab(
     }
 
     // LED Biofeedback Section - Phoenix tier gated (GATE-01)
-    // Visible for all users during development/testing; production gating via FeatureGate
+    if (hasProAccess) {
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -861,6 +865,7 @@ fun SettingsTab(
             }
         }
     }
+    } // end hasProAccess gate (GATE-01)
 
     // Data Management Section - Material 3 Expressive
     Card(
