@@ -94,10 +94,11 @@ Plans:
 **Success Criteria** (what must be TRUE):
   1. Given a set of joint angles for a squat, deadlift/RDL, overhead press, curl, or row, the form rules engine returns correct violations with severity and corrective cues
   2. Form warnings are advisory only — no code path exists that adjusts weight, stops the machine, or modifies workout parameters based on form data
-**Plans**: TBD
+**Plans**: 2 plans
 
 Plans:
-- [ ] 14-01: TBD
+- [ ] 14-01-PLAN.md — Domain models (FormCheckModels) + FormRulesEngine with 5 exercise rule sets and form score calculation
+- [ ] 14-02-PLAN.md — TDD test suite for all 5 exercises, confidence gating, form score, and CV-08 architectural compliance
 
 ### Phase 15: CV Form Check — Android Integration
 **Goal**: MediaPipe pose estimation runs on-device during an active workout without degrading BLE metric processing
