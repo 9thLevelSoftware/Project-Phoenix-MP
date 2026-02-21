@@ -88,40 +88,40 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| PERSIST-01 | — | Pending |
-| PERSIST-02 | — | Pending |
-| PERSIST-03 | — | Pending |
-| PERSIST-04 | — | Pending |
-| PERSIST-05 | — | Pending |
-| CV-01 | — | Pending |
-| CV-02 | — | Pending |
-| CV-03 | — | Pending |
-| CV-04 | — | Pending |
-| CV-05 | — | Pending |
-| CV-06 | — | Pending |
-| CV-07 | — | Pending |
-| CV-08 | — | Pending |
-| CV-09 | — | Pending |
-| CV-10 | — | Pending |
-| CV-11 | — | Pending |
-| GHOST-01 | — | Pending |
-| GHOST-02 | — | Pending |
-| GHOST-03 | — | Pending |
-| GHOST-04 | — | Pending |
-| RPG-01 | — | Pending |
-| RPG-02 | — | Pending |
-| RPG-03 | — | Pending |
-| RPG-04 | — | Pending |
-| BRIEF-01 | — | Pending |
-| BRIEF-02 | — | Pending |
-| BRIEF-03 | — | Pending |
-| BRIEF-04 | — | Pending |
+| PERSIST-01 | Phase 13 | Pending |
+| PERSIST-02 | Phase 13 | Pending |
+| PERSIST-03 | Phase 13 | Pending |
+| PERSIST-04 | Phase 13 | Pending |
+| PERSIST-05 | Phase 13 | Pending |
+| CV-01 | Phase 16 | Pending |
+| CV-02 | Phase 15 | Pending |
+| CV-03 | Phase 15 | Pending |
+| CV-04 | Phase 16 | Pending |
+| CV-05 | Phase 16 | Pending |
+| CV-06 | Phase 16 | Pending |
+| CV-07 | Phase 14 | Pending |
+| CV-08 | Phase 14 | Pending |
+| CV-09 | Phase 15 | Pending |
+| CV-10 | Phase 16 | Pending |
+| CV-11 | Phase 15 | Pending |
+| GHOST-01 | Phase 17 | Pending |
+| GHOST-02 | Phase 17 | Pending |
+| GHOST-03 | Phase 17 | Pending |
+| GHOST-04 | Phase 17 | Pending |
+| RPG-01 | Phase 17 | Pending |
+| RPG-02 | Phase 17 | Pending |
+| RPG-03 | Phase 17 | Pending |
+| RPG-04 | Phase 17 | Pending |
+| BRIEF-01 | Phase 17 | Pending |
+| BRIEF-02 | Phase 17 | Pending |
+| BRIEF-03 | Phase 17 | Pending |
+| BRIEF-04 | Phase 17 | Pending |
 
 **Coverage:**
 - v0.5.0 requirements: 28 total
-- Mapped to phases: 0
-- Unmapped: 28
+- Mapped to phases: 28
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-02-20*
-*Last updated: 2026-02-20 after initial definition*
+*Last updated: 2026-02-20 after roadmap creation (traceability complete)*
