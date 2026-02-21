@@ -1,522 +1,802 @@
-# Architecture Patterns: DefaultWorkoutSessionManager Decomposition
+# Architecture Patterns: v0.5.0 Premium Mobile Features
 
-**Domain:** KMP fitness app - architectural cleanup of 4,024-line manager class
-**Researched:** 2026-02-12
-**Overall confidence:** HIGH (based on direct codebase analysis, existing design docs, established patterns)
-
----
-
-## Current State Analysis
-
-### What Exists Today
-
-```
-MainViewModel (420L, facade)
-  |-- SettingsManager (concrete class, ~100L) -- DONE
-  |-- HistoryManager (concrete class, ~120L) -- DONE
-  |-- GamificationManager (concrete class, ~130L) -- DONE
-  |-- BleConnectionManager (concrete class, ~200L) -- DONE
-  |-- DefaultWorkoutSessionManager (4,024L) -- TARGET
-        implements WorkoutStateProvider (narrow interface for BLE circular dep)
-        lateinit var bleConnectionManager -- POST-INIT SETTER (the smell)
-```
-
-**Key observation:** Phases 1-2 of the architect's plan are COMPLETE. The 5 managers exist as concrete classes (not interfaces). MainViewModel is already a thin facade. The remaining work is decomposing DefaultWorkoutSessionManager and resolving the circular dependency properly.
-
-### DefaultWorkoutSessionManager Responsibility Map
-
-From the section headers and function analysis (4,024 lines):
-
-| Section | Lines | Responsibility | Coupling |
-|---------|-------|---------------|----------|
-| State declarations | 1-349 | 30+ MutableStateFlows, 10+ private vars | Shared across all sections |
-| Init block collectors | 377-562 | 8 coroutine collectors (routines, exercises, rep events, handle state, deload, metrics) | Reads/writes nearly all state |
-| Round 1: Pure helpers | 563-898 | Bodyweight detection, single-exercise mode, set summary metrics, auto-stop logic | Reads workout state + params |
-| Round 2: Superset navigation | 899-1168 | Superset flow, next/prev step calculation | Reads routine + exercise index state |
-| Round 3: Routine CRUD + nav | 1169-1772 | saveRoutine, loadRoutine, enterSetReady, exercise navigation, RPE | Writes routine flow state + workout params |
-| Round 4: Superset CRUD | 1773-1876 | Create/update/delete supersets | Writes routine state |
-| Round 5: Weight adjustment | 1877-1984 | adjustWeight, increment/decrement, BLE packet sending | Writes workout params + BLE commands |
-| Round 6: Just Lift | 1985-2187 | Handle detection, Just Lift defaults, single exercise defaults | Writes workout state + BLE commands |
-| Round 7: Training cycles | 2188-2255 | Cycle context, progress tracking | Reads routine state, writes cycle state |
-| Round 8: Core lifecycle | 2256-4024 | startWorkout, stopWorkout, handleRepNotification, handleMonitorMetric, checkAutoStop, saveWorkoutSession, restTimer, proceedFromSummary | Reads/writes EVERYTHING |
-
-**The critical insight:** Round 8 (core lifecycle) at ~1,770 lines is the hardest to decompose because it touches ALL state. Rounds 2-4 (superset/routine navigation) at ~970 lines are the cleanest extraction candidates because they mostly read shared state and write to routine flow state.
+**Domain:** KMP fitness app - CV pose estimation, biomechanics persistence, premium mobile UI
+**Researched:** 2026-02-20
+**Overall confidence:** HIGH (direct codebase analysis + official docs + design doc alignment)
 
 ---
 
-## Recommended Architecture
+## Current Architecture (v0.4.7 Baseline)
 
-### Target Structure
-
-```
-DefaultWorkoutSessionManager (~800L, coordinator + delegation)
-  |
-  |-- WorkoutCoordinator (shared state bus, ~200L)
-  |       All MutableStateFlows live here
-  |       Both sub-managers get a reference to this
-  |
-  |-- RoutineFlowManager (~1,200L)
-  |       Rounds 2, 3, 4: superset nav, routine CRUD, exercise navigation
-  |       Reads coordinator state, writes routine flow state
-  |
-  |-- ActiveSessionEngine (~1,800L)
-  |       Rounds 1, 5, 6, 7, 8: helpers, weight, just lift, cycles, core lifecycle
-  |       Reads/writes coordinator state, BLE commands
-  |
-  +-- BleConnectionManager (unchanged, external)
-        Still receives WorkoutStateProvider interface
-```
-
-### Why This Structure (Not Deeper Decomposition)
-
-The architect's original design doc proposed exactly this split. Having analyzed the actual code, I confirm it is the right cut because:
-
-1. **RoutineFlowManager is the natural seam.** Routine navigation (which exercise, which set, superset cycling) is conceptually separate from workout execution (start, stop, rep counting, auto-stop). They share state (current exercise index, workout parameters) but have distinct write domains.
-
-2. **Deeper decomposition (e.g., separate AutoStopManager, WeightManager) would create more coupling, not less.** Weight adjustment needs BLE commands + workout parameters + auto-stop state. Auto-stop needs metrics + rep counter + workout state. Splitting these creates more cross-references than the current structure.
-
-3. **800L coordinator class is manageable.** The coordinator mostly delegates to RoutineFlowManager or ActiveSessionEngine, wires init block collectors, and implements the public interface.
-
-### Component Boundaries
-
-| Component | Responsibility | Reads From | Writes To |
-|-----------|---------------|------------|-----------|
-| WorkoutCoordinator | Holds ALL MutableStateFlows, exposes read-only StateFlows | N/A (data store) | N/A (data store) |
-| DefaultWorkoutSessionManager | Public API, init block wiring, delegates to sub-managers | Coordinator | Coordinator (via sub-managers) |
-| RoutineFlowManager | Routine CRUD, exercise/set/superset navigation, set-ready flow | Coordinator (routineFlowState, loadedRoutine, exerciseIndex, setIndex, workoutParameters) | Coordinator (routineFlowState, exerciseIndex, setIndex, skippedExercises, completedExercises, workoutParameters) |
-| ActiveSessionEngine | Workout start/stop, rep processing, auto-stop, weight adjustment, Just Lift, training cycles, save session | Coordinator (workoutState, workoutParameters, repCount, metrics, etc.) | Coordinator (workoutState, repCount, currentMetric, autoStopState, etc.) |
-| BleConnectionManager | Connection lifecycle, connection-loss detection | WorkoutStateProvider (narrow interface) | Own state only |
-
-### Data Flow
+### Existing Component Map
 
 ```
-UI Screen
-  |
-  v
-MainViewModel (facade)
-  |
-  v
-DefaultWorkoutSessionManager (public API)
-  |
-  +---> RoutineFlowManager.loadRoutine(routine)
-  |       |-- Resolves weights
-  |       |-- Sets coordinator._loadedRoutine
-  |       |-- Sets coordinator._routineFlowState = Overview
-  |
-  +---> ActiveSessionEngine.startWorkout()
-  |       |-- Reads coordinator._workoutParameters
-  |       |-- Sends BLE start packet
-  |       |-- Sets coordinator._workoutState = Countdown/Active
-  |       |-- Starts monitorDataCollectionJob
-  |
-  +---> ActiveSessionEngine.handleSetCompletion() [internal]
-  |       |-- Calls saveWorkoutSession()
-  |       |-- Calls gamificationManager.processPostSaveEvents()
-  |       |-- Sets coordinator._workoutState = SetSummary
-  |
-  +---> DefaultWorkoutSessionManager.proceedFromSummary()
-          |-- If routine has next step:
-          |     ActiveSessionEngine checks autoplay
-          |     RoutineFlowManager.enterSetReady(nextEx, nextSet)
-          |-- If routine complete:
-          |     RoutineFlowManager.showRoutineComplete()
+MainViewModel (420L, thin facade)
+  |-- SettingsManager
+  |-- HistoryManager
+  |-- GamificationManager
+  |-- BleConnectionManager
+  |-- DefaultWorkoutSessionManager (449L, coordinator + delegation)
+        |-- WorkoutCoordinator (306L, shared state bus)
+        |     |-- BiomechanicsEngine (stateful, per-set lifecycle)
+        |     |-- RepQualityScorer (stateful, per-set lifecycle)
+        |     |-- LedFeedbackController (nullable, set via DI)
+        |     |-- collectedMetrics: MutableList<WorkoutMetric>
+        |     |-- setRepMetrics: MutableList<RepMetricData>
+        |     |-- repBoundaryTimestamps: MutableList<Long>
+        |
+        |-- RoutineFlowManager (1,091L)
+        |-- ActiveSessionEngine (~2,600L)
+              |-- ExerciseDetectionManager (optional, per-session)
 ```
 
-**Critical coupling point:** `proceedFromSummary()` is where ActiveSession and RoutineFlow meet. This function stays in DefaultWorkoutSessionManager (the coordinator layer) because it reads from both domains and decides the flow.
+### Existing Data Flow (Rep Processing)
+
+```
+BLE Device --> MetricSample --> WorkoutCoordinator.collectedMetrics
+                                       |
+                 ActiveSessionEngine.handleMonitorMetric()
+                                       |
+                          Rep boundary detected?
+                                /            \
+                             No               Yes
+                              |                |
+                         accumulate      processRepCompletion()
+                                               |
+                         +---------------------+---------------------+
+                         |                     |                     |
+                  RepQualityScorer    BiomechanicsEngine    RepBoundaryDetector
+                  .scoreRep()         .processRep()         (timestamps)
+                         |                     |                     |
+                  _latestRepQuality    _latestRepResult      setRepMetrics
+                  (StateFlow)          (StateFlow)           (List<RepMetricData>)
+                                                                     |
+                                                        saveRepMetrics() at set end
+                                                                     |
+                                                        RepMetricRepository
+                                                                     |
+                                                        SQLDelight RepMetric table
+```
+
+### Existing Module Boundaries
+
+```
+commonMain/
+  domain/premium/       -- BiomechanicsEngine, RepQualityScorer, FeatureGate, SubscriptionTier
+  domain/detection/     -- SignatureExtractor, ExerciseClassifier
+  domain/assessment/    -- AssessmentEngine
+  domain/replay/        -- RepBoundaryDetector
+  domain/model/         -- BiomechanicsModels, WorkoutModels, ExerciseModels
+  data/repository/      -- RepMetricRepository, WorkoutRepository, etc.
+  presentation/manager/ -- ActiveSessionEngine, WorkoutCoordinator, ExerciseDetectionManager
+  di/                   -- dataModule, domainModule, presentationModule, syncModule
+
+androidMain/
+  data/ble/             -- KableBleRepository (Nordic BLE)
+  data/local/           -- DriverFactory (SQLite)
+  di/                   -- platformModule (BLE, SQLite driver)
+
+iosMain/
+  data/local/           -- DriverFactory (Native SQLite)
+  di/                   -- platformModule
+```
+
+### Key Architectural Patterns (established)
+
+| Pattern | Example | Where Used |
+|---------|---------|------------|
+| Stateless pure-function engines | BiomechanicsEngine.computeVelocity() | Domain engines |
+| StateFlow-based reactive state | WorkoutCoordinator._latestRepQuality | All managers |
+| Interface + SQLDelight impl | RepMetricRepository / SqlDelightRepMetricRepository | Data layer |
+| Manual JSON serialization | FloatArray.toJsonString() for RepMetric curves | Array persistence |
+| Feature-scoped Koin modules | dataModule, domainModule, presentationModule | DI |
+| Nullable injection for optional features | LedFeedbackController?, ExerciseDetectionManager? | WorkoutCoordinator |
+| Single upstream gate pattern | Gate at data collection, null propagation to UI | FeatureGate |
+| Data capture for all tiers (GATE-04) | RepMetricRepository has no tier checks | Repositories |
+| Per-set lifecycle with reset() | BiomechanicsEngine.reset() between sets | Domain engines |
 
 ---
 
-## Resolving the Circular Dependency
+## New Features: Integration Architecture
 
-### Current State (The Smell)
+### Feature 1: Biomechanics Persistence
+
+**Status:** Data is computed but NOT persisted. BiomechanicsEngine produces per-rep VelocityResult, ForceCurveResult, AsymmetryResult. At set end, getSetSummary() returns BiomechanicsSetSummary. Currently both are used only for live UI display and discarded.
+
+**Goal:** Persist per-rep biomechanics data alongside existing RepMetricData so analytics, history, and portal sync can access it.
+
+#### Architecture Decision: Extend RepMetric vs. New Table
+
+**Recommendation: Extend the existing RepMetric table with biomechanics columns.**
+
+Rationale:
+- Per-rep biomechanics data is 1:1 with RepMetricData (same sessionId + repNumber)
+- Avoids a second table join for every rep query
+- Follows the existing pattern of RepMetricData being the "fat" per-rep record
+- Adding columns to RepMetric is a schema migration (v16), not a structural change
+- The existing `RepMetricRepository.saveRepMetrics()` call site in ActiveSessionEngine already has access to biomechanics results
+
+#### New Columns on RepMetric
+
+```sql
+-- VBT metrics
+meanConcentricVelocityMmS REAL,
+peakVelocityMmS REAL,
+velocityZone TEXT,                -- enum as string
+velocityLossPercent REAL,
+
+-- Force curve (101 points, stored as JSON array)
+normalizedForceCurve TEXT,        -- "[1.2,3.4,...]" (101 floats)
+stickingPointPct REAL,
+strengthProfile TEXT,             -- enum as string
+
+-- Asymmetry
+asymmetryPercent REAL,
+dominantSide TEXT                 -- "A", "B", or "BALANCED"
+```
+
+#### Data Flow Change
+
+```
+BiomechanicsEngine.processRep()
+       |
+  BiomechanicsRepResult
+       |
+  ActiveSessionEngine stores in WorkoutCoordinator.setRepMetrics
+       |                                    |
+  (NEW) Merge biomechanics fields     (EXISTING) raw curve data
+  into RepMetricData                   already stored
+       |
+  RepMetricRepository.saveRepMetrics()  <-- single write, now includes biomechanics
+       |
+  SQLDelight RepMetric table (v16 schema with new columns)
+```
+
+#### Modified Files
+
+| File | Change Type | What Changes |
+|------|-------------|--------------|
+| `domain/model/RepMetricData.kt` or wherever RepMetricData is defined | MODIFY | Add biomechanics fields (nullable for backward compat) |
+| `VitruvianDatabase.sq` | MODIFY | Add columns to RepMetric table + migration v16 |
+| `data/repository/RepMetricRepository.kt` | MODIFY | Map new fields in save/load |
+| `presentation/manager/ActiveSessionEngine.kt` | MODIFY | Populate biomechanics fields when building RepMetricData |
+| `di/DataModule.kt` | NO CHANGE | Repository already wired |
+
+#### Set-Level Summary Persistence
+
+For set-level aggregated biomechanics (BiomechanicsSetSummary), two options:
+
+**Recommendation: Add biomechanics columns to WorkoutSession table.**
+
+The set summary is 1:1 with WorkoutSession. Adding `avgMcvMmS`, `peakVelocityMmS`, `totalVelocityLossPercent`, `avgAsymmetryPercent`, `dominantSide`, `strengthProfile` to WorkoutSession keeps queries simple. The avgForceCurve (101-point JSON) can also be stored as a TEXT column on WorkoutSession.
+
+---
+
+### Feature 2: CV Pose Estimation (MediaPipe + CameraX)
+
+**This is an Android-only feature (androidMain).** iOS support (AVCapture + MediaPipe iOS SDK) is out of scope for v0.5.0 but the architecture should support it via expect/actual.
+
+#### Component Boundary: commonMain vs androidMain
+
+```
+commonMain/ (pure Kotlin, no platform dependencies)
+  domain/cv/
+    |-- JointAngleCalculator.kt      -- Pure math: 3D landmark coords -> joint angles
+    |-- FormRuleEngine.kt            -- Rule evaluation: angles + thresholds -> violations
+    |-- ExerciseFormRules.kt         -- Per-exercise rule definitions (data)
+    |-- CvModels.kt                  -- PoseLandmark, JointAngle, FormViolation, FormScore
+
+androidMain/ (Android SDK dependencies)
+  cv/
+    |-- PoseAnalyzerHelper.kt        -- MediaPipe PoseLandmarker wrapper
+    |-- CameraXProvider.kt           -- CameraX lifecycle + ImageAnalysis setup
+    |-- PoseOverlayView.kt           -- Compose Canvas drawing skeleton overlay
+```
+
+#### Key Architecture Decision: Where Pose Processing Lives
+
+**Recommendation: All ML inference stays in androidMain. Only computed joint angles cross into commonMain.**
+
+Rationale:
+- MediaPipe Tasks SDK is Android-only (Java/Kotlin API)
+- CameraX is Android-only (Jetpack library)
+- The `expect/actual` boundary is at the "joint angles" level, not the "camera frame" level
+- commonMain gets `List<JointAngle>` and runs `FormRuleEngine` against it
+- This keeps ~80% of the form-checking logic cross-platform (rules, scoring, violation tracking)
+
+#### Integration with Existing Architecture
+
+```
+                       androidMain                                commonMain
+                    +-----------------+                      +-------------------+
+CameraX             |                 |   List<JointAngle>   |                   |
+ImageAnalysis ----->| PoseAnalyzer    |--------------------->| FormRuleEngine    |
+  (30fps)           | Helper          |                      | .evaluate()       |
+                    |   MediaPipe     |                      |                   |
+                    |   PoseLandmarker|                      | FormViolation[]   |
+                    +-----------------+                      | FormScore         |
+                                                             +-------------------+
+                                                                      |
+                                                                      v
+                                                             WorkoutCoordinator
+                                                             ._latestFormResult
+                                                             (StateFlow)
+                                                                      |
+                                                                      v
+                                                             Compose UI
+                                                             (form warnings,
+                                                              skeleton overlay)
+```
+
+#### expect/actual Pattern for CV
 
 ```kotlin
-// In MainViewModel:
-val workoutSessionManager = DefaultWorkoutSessionManager(...)
-val bleConnectionManager = BleConnectionManager(..., workoutSessionManager, ...)
-init {
-    workoutSessionManager.bleConnectionManager = bleConnectionManager  // POST-INIT SETTER
-}
-```
-
-`DefaultWorkoutSessionManager` uses `bleConnectionManager` for:
-1. `setConnectionError(message)` -- when BLE send fails during workout
-2. That's it. One method call.
-
-`BleConnectionManager` uses `WorkoutStateProvider` for:
-1. `isWorkoutActiveForConnectionAlert` -- to decide if connection loss should show alert
-
-### Recommended Resolution: Event-Based Decoupling
-
-**Do NOT use the WorkoutCoordinator proposed in the architect doc for this.** The coordinator is for internal DWSM decomposition. The BLE circular dep is a separate concern.
-
-**Option chosen: Eliminate the lateinit entirely.**
-
-```kotlin
-// Step 1: DWSM no longer references BleConnectionManager directly
-// Instead, it emits connection errors through an event flow
-
-class DefaultWorkoutSessionManager(...) : WorkoutStateProvider {
-    // Replace: lateinit var bleConnectionManager
-    // With: event-driven error reporting
-    private val _connectionErrors = MutableSharedFlow<String>(extraBufferCapacity = 5)
-    val connectionErrors: SharedFlow<String> = _connectionErrors.asSharedFlow()
-
-    // In BLE send failure handlers, instead of:
-    //   bleConnectionManager.setConnectionError(message)
-    // Do:
-    //   _connectionErrors.emit(message)
+// commonMain
+expect class PoseEstimator {
+    fun isAvailable(): Boolean
+    fun start()
+    fun stop()
+    val latestJointAngles: StateFlow<List<JointAngle>>
 }
 
-// Step 2: MainViewModel wires the event to BleConnectionManager
-init {
-    viewModelScope.launch {
-        workoutSessionManager.connectionErrors.collect { error ->
-            bleConnectionManager.setConnectionError(error)
-        }
-    }
-}
-```
-
-**Why this is better:**
-- No `lateinit var` (eliminates potential UninitializedPropertyAccessException)
-- No circular reference (DWSM does not know BleConnectionManager exists)
-- WorkoutStateProvider interface stays (it's already clean -- read-only, one property)
-- MainViewModel already does coordination wiring; one more collector is natural
-
-**Confidence:** HIGH. This is a well-established pattern. The existing code only calls one method on bleConnectionManager from DWSM, making this trivial.
-
----
-
-## Koin Module Structure for 8+ Managers
-
-### Current Problem
-
-All DI is in a single `commonModule` (92 lines). Managers are NOT in Koin -- they're created inline in MainViewModel's constructor body, receiving `viewModelScope`.
-
-### Recommended: Keep Managers Out of Koin (For Now)
-
-**Do not put managers into Koin.** Here is why:
-
-1. **Scope lifecycle.** Managers need `viewModelScope` from MainViewModel. Koin `single` beans outlive viewModelScope. Koin `factory` beans create new instances each time. Neither matches "same lifecycle as the ViewModel that owns them."
-
-2. **Koin `viewModel` scoped providers** exist but add complexity for no gain. The managers are implementation details of MainViewModel's decomposition, not independently injectable services.
-
-3. **No screen needs to inject a manager directly.** All 20+ screens take `viewModel: MainViewModel` as a parameter (verified by grepping screen signatures). Screens access managers through the facade.
-
-### When to Move to Koin (Future Phase)
-
-Move managers to Koin ONLY when:
-- Screens start accessing managers directly (UI decoupling phase)
-- Multiple ViewModels need the same manager instance
-- Test setup becomes painful without DI
-
-### Recommended Koin Structure for When That Day Comes
-
-Split the single `commonModule` into feature modules:
-
-```kotlin
-// di/DataModule.kt
-val dataModule = module {
-    single { DatabaseFactory(get()).createDatabase() }
-    single { ExerciseImporter(get()) }
-    single<ExerciseRepository> { SqlDelightExerciseRepository(get(), get()) }
-    single<WorkoutRepository> { SqlDelightWorkoutRepository(get(), get()) }
-    single<PersonalRecordRepository> { SqlDelightPersonalRecordRepository(get()) }
-    single<GamificationRepository> { SqlDelightGamificationRepository(get()) }
-    single<TrainingCycleRepository> { SqlDelightTrainingCycleRepository(get()) }
-    single<CompletedSetRepository> { SqlDelightCompletedSetRepository(get()) }
-    single<ProgressionRepository> { SqlDelightProgressionRepository(get()) }
-    single<UserProfileRepository> { SqlDelightUserProfileRepository(get()) }
-}
-
-// di/SyncModule.kt
-val syncModule = module {
-    single { PortalTokenStorage(get()) }
-    single { PortalApiClient(tokenProvider = { get<PortalTokenStorage>().getToken() }) }
-    single<SyncRepository> { SqlDelightSyncRepository(get()) }
-    single { SyncManager(get(), get(), get()) }
-    single { SyncTriggerManager(get(), get()) }
-    single<AuthRepository> { PortalAuthRepository(get(), get()) }
-    single { SubscriptionManager(get()) }
-}
-
-// di/DomainModule.kt
-val domainModule = module {
-    single { RepCounterFromMachine() }
-    single { ProgressionUseCase(get(), get()) }
-    factory { ResolveRoutineWeightsUseCase(get()) }
-    single { TemplateConverter(get()) }
-}
-
-// di/PresentationModule.kt
-val presentationModule = module {
-    single<PreferencesManager> { SettingsPreferencesManager(get()) }
-    single { MigrationManager() }
-
-    factory { MainViewModel(get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get()) }
-    factory { ConnectionLogsViewModel() }
-    factory { CycleEditorViewModel(get()) }
-    factory { GamificationViewModel(get()) }
-    single { ThemeViewModel(get()) }
-    single { EulaViewModel(get()) }
-    factory { LinkAccountViewModel(get()) }
-}
-
-// di/KoinInit.kt
-fun initKoin() {
-    startKoin {
-        modules(platformModule, dataModule, syncModule, domainModule, presentationModule)
-    }
-}
-```
-
-**Confidence:** HIGH. This is standard Koin structuring for apps of this size.
-
----
-
-## UI Screen Access Pattern
-
-### Current Pattern (Keep It)
-
-All screens receive `viewModel: MainViewModel` as a Compose function parameter. This is passed down from the navigation graph. Screens observe `viewModel.workoutState`, `viewModel.routines`, etc.
-
-```kotlin
-// Example: ActiveWorkoutScreen
-fun ActiveWorkoutScreen(
-    navController: NavController,
-    viewModel: MainViewModel,
-    exerciseRepository: ExerciseRepository
+// androidMain
+actual class PoseEstimator(
+    private val context: Context
 ) {
-    val workoutState by viewModel.workoutState.collectAsState()
-    val repCount by viewModel.repCount.collectAsState()
+    private val helper = PoseAnalyzerHelper(context)
+    // ... wraps MediaPipe + CameraX
+}
+
+// iosMain (stub for now)
+actual class PoseEstimator {
+    fun isAvailable(): Boolean = false  // Not implemented yet
     // ...
 }
 ```
 
-### Why NOT to Change This Now
-
-1. **20+ screens** take MainViewModel. Changing signatures is a massive diff with no behavioral change.
-2. The facade pattern works. Screens don't care that workoutState comes from DWSM internally.
-3. The UI decoupler analysis (`.planning/refactoring/ui-decoupler-analysis.md`) already documents the future plan for screens to take narrower interfaces.
-
-### Future Pattern (When UI Decoupling Happens)
+**Alternative (recommended for v0.5.0):** Skip expect/actual entirely. Use nullable injection via Koin. The PoseEstimator is only created in androidMain's platformModule and injected as `PoseEstimator?` into the domain layer. iOS simply doesn't provide it.
 
 ```kotlin
-// Future: screens take narrow interfaces, not the god-ViewModel
-fun ActiveWorkoutScreen(
-    workoutState: StateFlow<WorkoutState>,
-    repCount: StateFlow<RepCount>,
-    onStopWorkout: () -> Unit,
-    onAdjustWeight: (Float) -> Unit,
-    // ...
+// androidMain platformModule
+single<PoseEstimator> { AndroidPoseEstimator(get()) }
+
+// commonMain - consumer
+class CvFormCheckManager(
+    private val poseEstimator: PoseEstimator?,  // null on iOS
+    private val formRuleEngine: FormRuleEngine
 )
 ```
 
-This is a separate milestone. Do NOT mix it with the DWSM decomposition.
+This matches the existing pattern used for `LedFeedbackController?` and `ExerciseDetectionManager?`.
 
----
+#### MediaPipe Integration Details
 
-## Patterns to Follow
+**Dependencies (androidApp/build.gradle.kts):**
+```kotlin
+// MediaPipe Pose Landmarker
+implementation("com.google.mediapipe:tasks-vision:0.10.20")
 
-### Pattern 1: Coordinator as Shared State Bus
+// CameraX (already compatible with min SDK 26)
+implementation("androidx.camera:camera-core:1.5.1")
+implementation("androidx.camera:camera-camera2:1.5.1")
+implementation("androidx.camera:camera-lifecycle:1.5.1")
+implementation("androidx.camera:camera-compose:1.5.1")
+```
 
-**What:** A concrete class holding all MutableStateFlows, referenced by both RoutineFlowManager and ActiveSessionEngine.
+**Model asset:** `pose_landmarker_lite.task` (~5MB) placed in `androidApp/src/main/assets/`.
 
-**When:** When two components need read/write access to the same state and splitting ownership would create excessive eventing.
+**Running mode:** `LIVE_STREAM` for real-time workout form checking.
 
-**Implementation:**
+**Threading:** MediaPipe LIVE_STREAM mode delivers results asynchronously via listener callback. CameraX ImageAnalysis can use a dedicated executor thread. Results flow into a StateFlow for Compose consumption.
+
+#### New Manager: CvFormCheckManager
 
 ```kotlin
-class WorkoutCoordinator {
-    // Workout execution state
-    val _workoutState = MutableStateFlow<WorkoutState>(WorkoutState.Idle)
-    val workoutState: StateFlow<WorkoutState> = _workoutState.asStateFlow()
+// commonMain - domain/cv/
+class CvFormCheckManager(
+    private val formRuleEngine: FormRuleEngine,
+    private val exerciseFormRules: ExerciseFormRules
+) {
+    private val _formState = MutableStateFlow<FormCheckState>(FormCheckState.Disabled)
+    val formState: StateFlow<FormCheckState> = _formState.asStateFlow()
 
-    val _workoutParameters = MutableStateFlow(WorkoutParameters.DEFAULT)
-    val workoutParameters: StateFlow<WorkoutParameters> = _workoutParameters.asStateFlow()
+    private val _latestViolations = MutableStateFlow<List<FormViolation>>(emptyList())
+    val latestViolations: StateFlow<List<FormViolation>> = _latestViolations.asStateFlow()
 
-    // Routine navigation state
-    val _routineFlowState = MutableStateFlow<RoutineFlowState>(RoutineFlowState.NotInRoutine)
-    val _currentExerciseIndex = MutableStateFlow(0)
-    val _currentSetIndex = MutableStateFlow(0)
-    val _loadedRoutine = MutableStateFlow<Routine?>(null)
+    fun onJointAnglesReceived(angles: List<JointAngle>, exerciseId: String?) {
+        val rules = exerciseFormRules.getRules(exerciseId)
+        val violations = formRuleEngine.evaluate(angles, rules)
+        _latestViolations.value = violations
+    }
 
-    // Non-flow mutable state
-    var currentSessionId: String? = null
-    var workoutStartTime: Long = 0
-    var stopWorkoutInProgress = false
-    var setCompletionInProgress = false
-    // ... etc
+    fun reset() {
+        _latestViolations.value = emptyList()
+        _formState.value = FormCheckState.Disabled
+    }
 }
 ```
 
-**Convention:** `_` prefix properties are mutable, used by sub-managers. Non-prefixed are read-only, exposed to UI.
+#### WorkoutCoordinator Integration
 
-### Pattern 2: Narrow Interface for Cross-Component Communication
+```kotlin
+// WorkoutCoordinator additions
+class WorkoutCoordinator(...) {
+    // ... existing fields ...
 
-**What:** Instead of passing full manager references, pass a minimal interface with only the needed property/method.
+    // ===== CV Form Check =====
+    /**
+     * CV form check manager. Null when CV is not available (iOS, older devices).
+     * Set during DI construction.
+     */
+    var cvFormCheckManager: CvFormCheckManager? = null
 
-**Already in use:** `WorkoutStateProvider` with single property `isWorkoutActiveForConnectionAlert`.
+    /**
+     * Latest form violations for HUD display.
+     * Delegates to cvFormCheckManager if available.
+     */
+    val latestFormViolations: StateFlow<List<FormViolation>>
+        get() = cvFormCheckManager?.latestViolations
+            ?: MutableStateFlow(emptyList())
+}
+```
 
-**Apply to:** The event-based connection error pattern replaces the need for DWSM to reference BleConnectionManager at all.
+This follows the exact same pattern as `ledFeedbackController` and `biomechanicsEngine`.
 
-### Pattern 3: Init Block Collector Ownership
+---
 
-**What:** Each coroutine collector in the init block should live in the component that acts on its data.
+### Feature 3: Ghost Racing Overlay (Mobile, Stub Data)
 
-**Current:** All 8 collectors are in DWSM's init block.
+**Scope:** Compose overlay composable that displays real-time vs. historical cable position. Uses stub data until portal sync ships in v0.5.5+.
 
-**After decomposition:**
+#### Architecture: Data Model
 
-| Collector | Owner | Why |
-|-----------|-------|-----|
-| Routines list (workoutRepository.getAllRoutines()) | DefaultWorkoutSessionManager | Initializes coordinator._routines |
-| Exercise import | DefaultWorkoutSessionManager | One-time initialization |
-| RepCounter onRepEvent | ActiveSessionEngine | Processes rep events, updates state |
-| HandleState collector | ActiveSessionEngine | Auto-start/stop logic |
-| Deload event collector | ActiveSessionEngine | Firmware auto-stop |
-| Monitor metrics collector | ActiveSessionEngine | Real-time BLE data processing |
-| Rep events collection | ActiveSessionEngine | Connects to BLE repo |
-| Workout data collection | ActiveSessionEngine | Metric history collection |
+```kotlin
+// commonMain - domain/model/
+data class GhostRaceData(
+    val ghostPositions: List<Float>,      // Historical cable positions, time-indexed
+    val ghostTimestamps: List<Long>,      // Timestamps for each position
+    val ghostMcvPerRep: List<Float>,      // Per-rep MCV from historical session
+    val exerciseName: String,
+    val weightKg: Float,
+    val totalReps: Int
+)
+
+data class GhostRaceState(
+    val isActive: Boolean = false,
+    val ghostData: GhostRaceData? = null,
+    val currentRepComparison: RepComparison? = null  // "AHEAD" or "BEHIND"
+)
+
+data class RepComparison(
+    val repNumber: Int,
+    val currentMcv: Float,
+    val ghostMcv: Float,
+    val verdict: GhostVerdict  // AHEAD, BEHIND, TIED
+)
+```
+
+#### Integration Point
+
+```kotlin
+// commonMain - presentation/manager/
+class GhostRaceManager {
+    private val _raceState = MutableStateFlow(GhostRaceState())
+    val raceState: StateFlow<GhostRaceState> = _raceState.asStateFlow()
+
+    // Called by ActiveSessionEngine when ghost racing is active
+    fun onCurrentMetric(position: Float, timestamp: Long) { ... }
+    fun onRepCompleted(repNumber: Int, mcv: Float) { ... }
+    fun startRace(ghostData: GhostRaceData) { ... }
+    fun stopRace() { ... }
+}
+```
+
+**Data source for v0.5.0:** Stub/demo data baked into the app. No portal query needed. The `GhostRaceManager` has a `loadStubData()` method that creates synthetic ghost race data from the last completed set in the current session, enabling dogfooding without backend infrastructure.
+
+#### UI Component Location
+
+```
+commonMain/presentation/components/premium/
+  |-- GhostRaceOverlay.kt         -- Side-by-side animated bars
+  |-- RepComparisonBadge.kt       -- "AHEAD +12mm/s" or "BEHIND -8mm/s"
+```
+
+These are standard Compose components in commonMain (no platform-specific code needed for the overlay).
+
+---
+
+### Feature 4: RPG Attribute Card (Mobile, Stub Data)
+
+**Scope:** Compact composable card showing 5 RPG attributes (Strength, Power, Stamina, Consistency, Mastery), character class, and overall level. Stub data until portal sync ships.
+
+#### Data Model
+
+```kotlin
+// commonMain - domain/model/
+data class RpgAttributes(
+    val strengthLevel: Int = 1,
+    val strengthXp: Long = 0,
+    val powerLevel: Int = 1,
+    val powerXp: Long = 0,
+    val staminaLevel: Int = 1,
+    val staminaXp: Long = 0,
+    val consistencyLevel: Int = 1,
+    val consistencyXp: Long = 0,
+    val masteryLevel: Int = 1,
+    val masteryXp: Long = 0,
+    val characterClass: String = "Initiate",
+    val overallLevel: Int = 1
+)
+```
+
+#### Architecture Decision: Local Computation vs Portal-Only
+
+**For v0.5.0: Stub data with local computation fallback.**
+
+The RPG XP formulas are defined in the design doc (portal `rpg.ts`). Implement a Kotlin equivalent in `commonMain/domain/rpg/RpgCalculator.kt` that computes attributes from local workout history. This enables the card to show real (approximate) data even before portal sync exists.
+
+```kotlin
+// commonMain/domain/rpg/RpgCalculator.kt
+class RpgCalculator {
+    fun calculateAttributes(
+        recentSessions: List<WorkoutSession>,
+        recentRepMetrics: List<RepMetricData>,
+        currentStreak: Int,
+        avgQualityScore: Float
+    ): RpgAttributes { ... }
+}
+```
+
+#### UI Component
+
+```
+commonMain/presentation/components/premium/
+  |-- RpgAttributeCard.kt       -- Radar chart + level numbers + class badge
+```
+
+Placed on the Profile/Gamification screen, gated behind PHOENIX tier via `FeatureGate.Feature.RPG_ATTRIBUTES` (new enum value).
+
+---
+
+### Feature 5: Pre-Workout Briefing (Mobile, Stub Data)
+
+**Scope:** Card shown before starting a workout that displays readiness score and weight recommendations. Stub data until portal fatigue model ships.
+
+#### Data Model
+
+```kotlin
+// commonMain - domain/model/
+data class PreWorkoutBriefing(
+    val readinessScore: Int,                    // 0-100
+    val readinessLevel: ReadinessLevel,         // GREEN, YELLOW, RED
+    val muscleGroupReadiness: Map<String, Int>, // per-muscle scores
+    val recommendation: String,                 // "Execute as planned" etc.
+    val weightAdjustmentPercent: Int?,          // null = no adjustment, -10 = reduce 10%
+    val isStubData: Boolean = true              // Flag for UI badge "Preview"
+)
+
+enum class ReadinessLevel { GREEN, YELLOW, RED }
+```
+
+#### Architecture
+
+```kotlin
+// commonMain - domain/readiness/
+class ReadinessBriefingProvider(
+    private val workoutRepository: WorkoutRepository,
+    private val gamificationRepository: GamificationRepository
+) {
+    suspend fun getBriefing(exerciseId: String?): PreWorkoutBriefing {
+        // v0.5.0: Local heuristic based on:
+        // - Time since last workout targeting same muscle group
+        // - Recent volume trend
+        // - Streak status
+        // Returns stub-flagged data
+    }
+}
+```
+
+#### UI Component
+
+```
+commonMain/presentation/components/premium/
+  |-- PreWorkoutBriefingCard.kt  -- Readiness gauge + recommendation + weight hint
+```
+
+Shown on the SetReady screen (before starting a set), gated behind ELITE tier.
+
+---
+
+## FeatureGate Extensions
+
+### New Feature Enum Values
+
+```kotlin
+enum class Feature {
+    // Existing...
+    FORCE_CURVES, PER_REP_METRICS, VBT_METRICS, PORTAL_SYNC,
+    LED_BIOFEEDBACK, REP_QUALITY_SCORE,
+    ASYMMETRY_ANALYSIS, AUTO_REGULATION, SMART_SUGGESTIONS,
+    WORKOUT_REPLAY, STRENGTH_ASSESSMENT, PORTAL_ADVANCED_ANALYTICS,
+
+    // NEW for v0.5.0
+    CV_FORM_CHECK,          // PHOENIX tier - basic form warnings
+    CV_ANALYTICS,           // ELITE tier - full postural analytics
+    GHOST_RACING_BASIC,     // PHOENIX tier - rep summary comparison
+    GHOST_RACING_FULL,      // ELITE tier - 50Hz position overlay
+    RPG_ATTRIBUTES,         // PHOENIX tier - attribute card
+    PRE_WORKOUT_BRIEFING    // ELITE tier - readiness + AI suggestions
+}
+```
+
+**Gating pattern remains the same:** Data capture for all tiers, UI display gated at composable level. CV camera frames are never stored (privacy). Only computed FormScore and FormViolation records are persisted.
+
+---
+
+## Koin DI Changes
+
+### domainModule Additions
+
+```kotlin
+val domainModule = module {
+    // ... existing ...
+
+    // CV Form Check (commonMain logic)
+    single { FormRuleEngine() }
+    single { JointAngleCalculator() }
+    single { ExerciseFormRules() }
+    factory { CvFormCheckManager(get(), get()) }
+
+    // RPG Calculator
+    single { RpgCalculator() }
+
+    // Readiness Briefing
+    factory { ReadinessBriefingProvider(get(), get()) }
+
+    // Ghost Race
+    factory { GhostRaceManager() }
+}
+```
+
+### androidMain platformModule Additions
+
+```kotlin
+// androidMain platformModule
+val platformModule = module {
+    // ... existing BLE, SQLite driver ...
+
+    // MediaPipe Pose Estimator (Android-only)
+    single { AndroidPoseEstimator(androidContext()) }
+}
+```
+
+### presentationModule Additions
+
+No new ViewModels needed. The new managers integrate into WorkoutCoordinator (same as BiomechanicsEngine pattern). The composables consume StateFlows from existing ViewModel hierarchy.
+
+---
+
+## Database Schema Changes (v16)
+
+### RepMetric Table Extensions
+
+```sql
+-- New columns on RepMetric (migration v16)
+ALTER TABLE RepMetric ADD COLUMN meanConcentricVelocityMmS REAL;
+ALTER TABLE RepMetric ADD COLUMN peakVelocityMmS REAL;
+ALTER TABLE RepMetric ADD COLUMN velocityZone TEXT;
+ALTER TABLE RepMetric ADD COLUMN velocityLossPercent REAL;
+ALTER TABLE RepMetric ADD COLUMN normalizedForceCurve TEXT;
+ALTER TABLE RepMetric ADD COLUMN stickingPointPct REAL;
+ALTER TABLE RepMetric ADD COLUMN strengthProfile TEXT;
+ALTER TABLE RepMetric ADD COLUMN asymmetryPercent REAL;
+ALTER TABLE RepMetric ADD COLUMN dominantSide TEXT;
+```
+
+### WorkoutSession Set Summary Extensions
+
+```sql
+-- Set-level biomechanics summary (migration v16)
+ALTER TABLE WorkoutSession ADD COLUMN avgMcvMmS REAL;
+ALTER TABLE WorkoutSession ADD COLUMN sessionPeakVelocityMmS REAL;
+ALTER TABLE WorkoutSession ADD COLUMN totalVelocityLossPercent REAL;
+ALTER TABLE WorkoutSession ADD COLUMN avgAsymmetryPercent REAL;
+ALTER TABLE WorkoutSession ADD COLUMN sessionDominantSide TEXT;
+ALTER TABLE WorkoutSession ADD COLUMN sessionStrengthProfile TEXT;
+ALTER TABLE WorkoutSession ADD COLUMN avgForceCurve TEXT;
+```
+
+### CV Form Data (New Table)
+
+```sql
+-- Form assessment per session+exercise (migration v16)
+CREATE TABLE FormAssessment (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    sessionId TEXT NOT NULL,
+    exerciseId TEXT,
+    formScore REAL NOT NULL,
+    violationCount INTEGER NOT NULL DEFAULT 0,
+    criticalViolationCount INTEGER NOT NULL DEFAULT 0,
+    jointAnglesSummary TEXT,          -- JSON: {"knee": {"min": 85, "max": 170, "avg": 120}, ...}
+    createdAt INTEGER NOT NULL,
+    FOREIGN KEY (sessionId) REFERENCES WorkoutSession(id) ON DELETE CASCADE
+);
+
+CREATE INDEX idx_form_assessment_session ON FormAssessment(sessionId);
+
+-- Individual form violations (migration v16)
+CREATE TABLE FormViolation (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    assessmentId INTEGER NOT NULL,
+    repNumber INTEGER NOT NULL,
+    joint TEXT NOT NULL,
+    angleDegrees REAL NOT NULL,
+    thresholdDegrees REAL NOT NULL,
+    severity TEXT NOT NULL,           -- "INFO", "WARNING", "CRITICAL"
+    message TEXT NOT NULL,
+    timestampMs INTEGER NOT NULL,
+    FOREIGN KEY (assessmentId) REFERENCES FormAssessment(id) ON DELETE CASCADE
+);
+
+CREATE INDEX idx_form_violation_assessment ON FormViolation(assessmentId);
+```
+
+---
+
+## Complete New Component Inventory
+
+### New Files (CREATE)
+
+| File | Location | Purpose |
+|------|----------|---------|
+| `JointAngleCalculator.kt` | commonMain/domain/cv/ | Pure math: landmarks -> angles |
+| `FormRuleEngine.kt` | commonMain/domain/cv/ | Rule evaluation against angles |
+| `ExerciseFormRules.kt` | commonMain/domain/cv/ | Per-exercise rule data |
+| `CvModels.kt` | commonMain/domain/cv/ | PoseLandmark, JointAngle, FormViolation, FormScore |
+| `CvFormCheckManager.kt` | commonMain/domain/cv/ | Orchestrates form checking from angles |
+| `RpgCalculator.kt` | commonMain/domain/rpg/ | Local RPG attribute computation |
+| `RpgModels.kt` | commonMain/domain/model/ | RpgAttributes, CharacterClass |
+| `ReadinessBriefingProvider.kt` | commonMain/domain/readiness/ | Local readiness heuristic |
+| `ReadinessModels.kt` | commonMain/domain/model/ | PreWorkoutBriefing, ReadinessLevel |
+| `GhostRaceManager.kt` | commonMain/presentation/manager/ | Ghost race state + comparison |
+| `GhostRaceModels.kt` | commonMain/domain/model/ | GhostRaceData, GhostRaceState |
+| `GhostRaceOverlay.kt` | commonMain/presentation/components/premium/ | Overlay composable |
+| `RepComparisonBadge.kt` | commonMain/presentation/components/premium/ | Ahead/Behind indicator |
+| `RpgAttributeCard.kt` | commonMain/presentation/components/premium/ | Attribute radar chart |
+| `PreWorkoutBriefingCard.kt` | commonMain/presentation/components/premium/ | Readiness card |
+| `PoseAnalyzerHelper.kt` | androidMain/cv/ | MediaPipe PoseLandmarker wrapper |
+| `CameraXProvider.kt` | androidMain/cv/ | CameraX lifecycle management |
+| `PoseOverlayView.kt` | androidMain/cv/ | Skeleton overlay Compose Canvas |
+| `AndroidPoseEstimator.kt` | androidMain/cv/ | Platform impl connecting CameraX -> MediaPipe |
+| `FormAssessmentRepository.kt` | commonMain/data/repository/ | Interface for form data CRUD |
+| `SqlDelightFormAssessmentRepository.kt` | commonMain/data/repository/ | SQLDelight impl |
+
+### Modified Files (EDIT)
+
+| File | What Changes |
+|------|-------------|
+| `VitruvianDatabase.sq` | Migration v16: new columns + new tables |
+| `domain/model/RepMetricData.kt` (or Models.kt) | Add biomechanics fields |
+| `data/repository/RepMetricRepository.kt` | Map new biomechanics columns |
+| `presentation/manager/ActiveSessionEngine.kt` | Populate biomechanics in RepMetricData, integrate CvFormCheckManager |
+| `presentation/manager/WorkoutCoordinator.kt` | Add cvFormCheckManager, ghostRaceManager refs |
+| `domain/premium/FeatureGate.kt` | Add new Feature enum values + tier mapping |
+| `di/DomainModule.kt` | Wire new engines/managers |
+| `di/DataModule.kt` | Wire FormAssessmentRepository |
+| `androidApp/build.gradle.kts` | Add MediaPipe + CameraX dependencies |
+| `androidMain/di/platformModule` | Provide AndroidPoseEstimator |
+| `iosMain/di/platformModule` | No-op for CV (null injection) |
+
+---
+
+## Suggested Build Order
+
+Build order follows dependency chain and leaves app buildable after each phase.
+
+### Phase 1: Biomechanics Persistence (foundation, no new dependencies)
+1. Schema migration v16 (add columns to RepMetric + WorkoutSession)
+2. Extend RepMetricData model with biomechanics fields
+3. Update SqlDelightRepMetricRepository to map new columns
+4. Modify ActiveSessionEngine to populate biomechanics fields
+5. Verify with existing characterization tests
+6. Update saveWorkoutSession to include set-level biomechanics
+
+**Rationale:** Zero risk. No new libraries. Existing data flow, just persisting what was already computed. All other features can build on persisted data.
+
+### Phase 2: CV Form Check - Domain Logic (no platform dependencies)
+1. Create CvModels.kt (PoseLandmark, JointAngle, FormViolation, FormScore)
+2. Create JointAngleCalculator.kt (pure math, heavily testable)
+3. Create ExerciseFormRules.kt (data definitions per exercise)
+4. Create FormRuleEngine.kt (rule evaluation)
+5. Create CvFormCheckManager.kt (orchestration)
+6. Wire into DomainModule
+7. Unit tests for angle calculations and rule evaluation
+
+**Rationale:** All pure Kotlin in commonMain. Can be developed and tested without camera hardware. Establishes the interface contract that androidMain will implement against.
+
+### Phase 3: CV Form Check - Android Integration
+1. Add MediaPipe + CameraX dependencies to androidApp/build.gradle.kts
+2. Create PoseAnalyzerHelper.kt (MediaPipe wrapper)
+3. Create CameraXProvider.kt (camera lifecycle)
+4. Create AndroidPoseEstimator.kt (connects CameraX -> MediaPipe -> JointAngles)
+5. Create PoseOverlayView.kt (skeleton drawing)
+6. Wire into platformModule
+7. Integration test with device camera
+
+**Rationale:** Depends on Phase 2 interfaces. Heavy platform work isolated in androidMain. CameraX lifecycle management is the trickiest part.
+
+### Phase 4: CV Form Check - UI + Persistence
+1. Create FormAssessmentRepository + SqlDelight impl
+2. Add FormAssessment/FormViolation tables to schema v16
+3. Create HUD warning overlay composable
+4. Create PiP camera preview composable
+5. Integrate "Enable Form Check" toggle on Active Workout Screen
+6. Wire violation persistence at set completion
+7. Add FeatureGate.Feature.CV_FORM_CHECK
+
+**Rationale:** Depends on Phases 2-3. Persistence and UI are the final layer.
+
+### Phase 5: Premium UI Composables (parallel, independent)
+1. Create GhostRaceOverlay + GhostRaceManager with stub data
+2. Create RpgAttributeCard + RpgCalculator with local computation
+3. Create PreWorkoutBriefingCard + ReadinessBriefingProvider with local heuristic
+4. Add FeatureGate entries for all new features
+5. Place components on appropriate screens with tier gating
+
+**Rationale:** These are self-contained UI features with stub backends. No dependencies on each other or on CV. Can be built in parallel by multiple developers.
 
 ---
 
 ## Anti-Patterns to Avoid
 
-### Anti-Pattern 1: Over-Decomposition
+### Anti-Pattern 1: Putting MediaPipe in commonMain
+**What:** Trying to abstract MediaPipe behind expect/actual at the SDK level
+**Why bad:** MediaPipe Android SDK has complex lifecycle (GPU delegates, model loading, context requirements). Abstracting at this level creates a leaky abstraction that breaks on every SDK update.
+**Instead:** Abstract at the "joint angles" level. MediaPipe is an implementation detail of androidMain. CommonMain only sees `List<JointAngle>`.
 
-**What:** Splitting DWSM into 6+ tiny managers (AutoStopManager, WeightManager, RestTimerManager, etc.)
+### Anti-Pattern 2: Separate BiomechanicsRepMetric table
+**What:** Creating a new table for biomechanics data instead of extending RepMetric
+**Why bad:** Every per-rep query now requires a JOIN. The biomechanics data is 1:1 with RepMetricData and computed from the same source data in the same code path.
+**Instead:** Add columns to RepMetric. NULL values for pre-v16 data are natural and handled by Kotlin nullable types.
 
-**Why bad:** Auto-stop reads metrics, workout state, rep counter, and workout parameters. Weight adjustment reads workout parameters and sends BLE commands. Rest timer reads workout state and transitions to next set via routine navigation. Each "small manager" would need references to 3-4 others, creating a web of dependencies worse than the current monolith.
+### Anti-Pattern 3: Real-time form score in WorkoutCoordinator state
+**What:** Adding formScore as a continuously-updated StateFlow that recalculates on every camera frame
+**Why bad:** 30fps frame updates would cause excessive recomposition. Form violations are event-driven (only when threshold exceeded), not continuous.
+**Instead:** Use event-based violation flow. Only emit when a new violation is detected. Use throttling (max 1 warning per 3 seconds) to avoid alert fatigue.
 
-**Instead:** Two sub-managers (RoutineFlow + ActiveSession) with a shared coordinator. This is the minimum viable decomposition.
+### Anti-Pattern 4: Camera permission in commonMain
+**What:** Trying to handle camera permissions in shared code
+**Why bad:** Permissions are fundamentally platform-specific (Android runtime permissions vs iOS Info.plist). No useful abstraction exists.
+**Instead:** Handle in Android's MainActivity/Activity. The CvFormCheckManager in commonMain only cares about `isAvailable(): Boolean` which checks both platform support AND permission status.
 
-### Anti-Pattern 2: Making Managers Koin Singletons
-
-**What:** Registering SettingsManager, HistoryManager, etc. as `single` in Koin and injecting them into screens.
-
-**Why bad:** Managers share `viewModelScope`. If a screen gets a Koin-scoped SettingsManager, it outlives the ViewModel, leading to scope cancellation bugs. Additionally, screens would need to import 3-4 managers instead of one ViewModel, increasing coupling.
-
-**Instead:** Keep managers as ViewModel-owned. Screens access through MainViewModel facade.
-
-### Anti-Pattern 3: Using Coordinator as a God Object
-
-**What:** Putting business logic IN the WorkoutCoordinator (e.g., validation, state transition rules).
-
-**Why bad:** Coordinator becomes the new monolith. It should be a dumb data container.
-
-**Instead:** Coordinator holds state. Sub-managers hold logic. Coordinator has zero methods (only properties).
-
-### Anti-Pattern 4: Premature Interface Extraction
-
-**What:** Creating interfaces for RoutineFlowManager and ActiveSessionEngine.
-
-**Why bad:** These are internal implementation details of DWSM. No external consumer needs to swap implementations. Interfaces add indirection with no testability benefit (test the integration, not mocked internals).
-
-**Instead:** Concrete classes. If testing is needed, test through DWSM's public API with fake repositories.
-
----
-
-## Build Order (Dependency-Aware)
-
-### Phase 1: WorkoutCoordinator (No Behavioral Change)
-
-**New file:** `WorkoutCoordinator.kt` (~200L)
-**Modifies:** `DefaultWorkoutSessionManager.kt`
-
-Extract all MutableStateFlow declarations and shared mutable vars into WorkoutCoordinator. DWSM creates it internally and delegates all StateFlow properties to it. Zero behavioral change, zero API change.
-
-**Verification:** All existing tests pass. App behavior identical.
-
-### Phase 2: Resolve Circular Dependency (Small Behavioral Change)
-
-**Modifies:** `DefaultWorkoutSessionManager.kt`, `MainViewModel.kt`
-
-Replace `lateinit var bleConnectionManager` with `connectionErrors: SharedFlow<String>`. Wire in MainViewModel's init block.
-
-**Verification:** Test that BLE send failures still surface as connection errors in the UI.
-
-### Phase 3: Extract RoutineFlowManager
-
-**New file:** `RoutineFlowManager.kt` (~1,200L)
-**Modifies:** `DefaultWorkoutSessionManager.kt` (removes ~1,200L)
-
-Move Rounds 2, 3, 4 (superset navigation, routine CRUD + navigation, superset CRUD). RoutineFlowManager takes WorkoutCoordinator + repositories as constructor params.
-
-DWSM creates RoutineFlowManager in constructor and delegates routine operations to it.
-
-**Critical integration point:** `proceedFromSummary()` stays in DWSM because it orchestrates between ActiveSession and RoutineFlow.
-
-**Verification:** Full routine flow E2E test: load routine -> navigate exercises -> complete sets -> rest timer -> routine complete.
-
-### Phase 4: Extract ActiveSessionEngine
-
-**New file:** `ActiveSessionEngine.kt` (~1,800L)
-**Modifies:** `DefaultWorkoutSessionManager.kt` (reduces to ~800L)
-
-Move Rounds 1, 5, 6, 7, 8 (helpers, weight, just lift, cycles, core lifecycle). ActiveSessionEngine takes WorkoutCoordinator + repositories + BLE + rep counter as constructor params.
-
-**Critical functions that stay in DWSM** (orchestration between both sub-managers):
-- `proceedFromSummary()` -- decides rest timer vs next set vs routine complete
-- `startSetFromReady()` -- transitions from routine flow (SetReady) to active workout
-- Init block collectors that reference both sub-managers
-
-**Verification:** Full workout lifecycle E2E test: start -> active -> auto-stop -> summary -> rest -> next set -> complete.
-
-### Phase 5: Characterization Tests (Parallel With Phases 3-4)
-
-Write tests BEFORE extraction where possible:
-- Routine loading with weight resolution
-- Superset navigation sequencing
-- Auto-stop stall detection state machine
-- Just Lift handle detection -> auto-start -> auto-stop flow
-- `proceedFromSummary()` branching logic (autoplay on/off, routine vs single exercise)
-
-Use the existing `WorkoutRobot` and fake repositories. The robot currently targets MainViewModel -- after extraction, it should still work identically (DWSM's API hasn't changed, just its internals).
+### Anti-Pattern 5: Blocking camera analysis on main thread
+**What:** Processing MediaPipe results synchronously on the UI thread
+**Why bad:** MediaPipe inference takes 10-30ms per frame. At 30fps this would cause jank.
+**Instead:** CameraX ImageAnalysis runs on a dedicated executor. MediaPipe LIVE_STREAM mode delivers results asynchronously. Results flow into StateFlow which Compose observes on the main thread (lightweight).
 
 ---
 
 ## Scalability Considerations
 
-| Concern | Current (4,024L monolith) | After decomposition (4 files) | Future (UI decoupling) |
-|---------|---------------------------|-------------------------------|------------------------|
-| Developer comprehension | Must understand entire file to change anything | Can focus on RoutineFlow or ActiveSession independently | Screens only know their narrow interface |
-| Test isolation | Must construct full DWSM with 13 deps to test anything | Can test RoutineFlowManager with coordinator + exercise repo only | Screen tests with mocked flows |
-| Merge conflicts | Any workout change touches same file | Routine changes in RoutineFlow, workout changes in ActiveSession | Minimal |
-| New workout mode | Understand all 4,024 lines | Add to ActiveSessionEngine (~1,800L relevant) | Same |
-| New exercise type | Understand routine nav + workout logic | Routine type in RoutineFlowManager, execution in ActiveSessionEngine | Same |
-
----
-
-## Integration Points Summary
-
-### New Components
-
-| Component | Type | Location | Depends On |
-|-----------|------|----------|------------|
-| `WorkoutCoordinator` | Concrete class | `presentation/manager/WorkoutCoordinator.kt` | Domain models only |
-| `RoutineFlowManager` | Concrete class | `presentation/manager/RoutineFlowManager.kt` | WorkoutCoordinator, ExerciseRepository, WorkoutRepository, PreferencesManager, ResolveRoutineWeightsUseCase |
-| `ActiveSessionEngine` | Concrete class | `presentation/manager/ActiveSessionEngine.kt` | WorkoutCoordinator, BleRepository, WorkoutRepository, ExerciseRepository, PersonalRecordRepository, RepCounterFromMachine, PreferencesManager, GamificationManager, TrainingCycleRepository, CompletedSetRepository, SyncTriggerManager, SettingsManager |
-
-### Modified Components
-
-| Component | Change | Risk |
-|-----------|--------|------|
-| `DefaultWorkoutSessionManager` | Reduced from 4,024L to ~800L coordinator | HIGH - must preserve all behavior |
-| `MainViewModel` | Add connectionErrors collector, remove lateinit wiring | LOW - small addition |
-| `BleConnectionManager` | None (WorkoutStateProvider interface unchanged) | NONE |
-
-### Unchanged Components
-
-All UI screens, all repositories, all other ViewModels, all domain models, Koin module structure.
+| Concern | Current (v0.4.7) | v0.5.0 Impact | Mitigation |
+|---------|-------------------|---------------|------------|
+| RepMetric row size | ~2KB per rep (curve data) | ~2.5KB per rep (+biomechanics) | Marginal increase, under 25% |
+| Camera battery drain | N/A | Significant (CameraX + ML) | Form Check is opt-in toggle. Auto-disable after set ends. |
+| Memory: model loading | N/A | ~15-30MB for pose_landmarker_lite.task | Load lazily on first Form Check enable. Unload when disabled. |
+| Database migration | 15 migrations | 1 more (v16) | ALTER TABLE ADD COLUMN is non-destructive |
+| DI graph complexity | 4 modules, ~30 bindings | ~40 bindings (+10) | All new bindings follow existing patterns |
+| WorkoutCoordinator size | 306 lines | ~330 lines (+2 nullable refs) | Minimal growth. Managers contain logic. |
+| ActiveSessionEngine size | ~2,600 lines | ~2,700 lines (+biomechanics population) | Most new logic in new manager classes |
 
 ---
 
 ## Sources
 
-- Direct codebase analysis (PRIMARY): `DefaultWorkoutSessionManager.kt` (4,024L), `MainViewModel.kt` (420L), `BleConnectionManager.kt` (~200L), `AppModule.kt` (92L)
-- Existing design docs: `.planning/refactoring/architect-interface-design.md`, `.planning/refactoring/surgeon-extraction-plan.md`
-- Existing state: `.planning/STATE.md` (confirms Phases 1-2 complete)
-- UI screen signature analysis: 20+ screens all take `viewModel: MainViewModel`
-- Test infrastructure: `WorkoutRobot.kt`, 10+ fake repositories in `testutil/`
+- [MediaPipe Pose Landmarker Android Guide](https://ai.google.dev/edge/mediapipe/solutions/vision/pose_landmarker/android) -- Official Google docs, HIGH confidence
+- [MediaPipe Samples - PoseLandmarkerHelper.kt](https://github.com/google-ai-edge/mediapipe-samples/blob/main/examples/pose_landmarker/android/app/src/main/java/com/google/mediapipe/examples/poselandmarker/PoseLandmarkerHelper.kt) -- Reference implementation, HIGH confidence
+- [AI Vision on Android: CameraX + MediaPipe + Compose](https://www.droidcon.com/2025/01/24/ai-vision-on-android-camerax-imageanalysis-mediapipe-compose/) -- Integration pattern, MEDIUM confidence
+- [MediaPiper - KMP MediaPipe Samples](https://github.com/2BAB/mediapiper) -- KMP abstraction pattern reference, MEDIUM confidence
+- [CameraX 1.5 Release](https://developer.android.com/jetpack/androidx/releases/camera) -- Version info, HIGH confidence
+- [Maven: com.google.mediapipe:tasks-vision](https://mvnrepository.com/artifact/com.google.mediapipe/tasks-vision) -- Version info, HIGH confidence
+- Direct codebase analysis of WorkoutCoordinator, ActiveSessionEngine, BiomechanicsEngine, RepMetricRepository, FeatureGate -- PRIMARY source, HIGH confidence
+- `docs/plans/2026-02-20-premium-enhancements-design.md` -- Internal design doc, HIGH confidence

@@ -1,302 +1,374 @@
-# Domain Pitfalls: DefaultWorkoutSessionManager Decomposition
+# Domain Pitfalls: v0.5.0 Premium Mobile Features
 
-**Domain:** KMP workout session manager decomposition (4,024 lines to sub-managers)
-**Researched:** 2026-02-12
-**Confidence:** HIGH (based on direct codebase analysis and KMP/coroutine ecosystem knowledge)
+**Domain:** Adding CV pose estimation, biomechanics persistence, ghost racing overlay, RPG attribute card, and pre-workout briefing to existing KMP BLE fitness app
+**Researched:** 2026-02-20
+**Confidence:** HIGH (codebase analysis + verified external sources)
 
 ## Critical Pitfalls
 
-Mistakes that cause broken workouts, data loss, or require reverts.
+Mistakes that cause crashes, data loss, performance collapse, or require rewrites.
 
-### Pitfall 1: Split Mutable State Creates Race Conditions Without synchronized()
+### Pitfall 1: MediaPipe + BLE Concurrent Processing Causes Thermal Throttling and Frame Starvation
 
-**What goes wrong:** The current manager has ~30 MutableStateFlow fields and ~15 plain mutable vars (like `stopWorkoutInProgress`, `setCompletionInProgress`, `autoStopStartTime`, `stallStartTime`) that are read and written across multiple coroutines launched on `scope`. When these are split across sub-managers, a single operation like `handleSetCompletion()` that currently atomically reads `_workoutState`, writes `_isCurrentExerciseBodyweight`, resets `isCurrentWorkoutTimed`, and updates `_repCount` now requires cross-manager coordination. Without it, sub-manager A reads stale state from sub-manager B between frames.
+**What goes wrong:** MediaPipe Pose Landmarker running at 15-30 FPS consumes significant CPU/GPU resources. The app already processes BLE telemetry at 10-20 Hz through `handleMonitorMetric()`, which feeds rep counting, auto-stop detection, velocity tracking, force curve construction, exercise signature extraction, and biomechanics analysis. Adding real-time camera frame processing on top of this saturates the device, causing thermal throttling that degrades BOTH the CV inference AND the BLE data processing.
 
-**Why it happens:** The current design works because all state lives in one class -- any method can read any field atomically within a single function call. Extraction breaks this implicit atomicity. Notably, this codebase does NOT use `synchronized(lock)` in DefaultWorkoutSessionManager (grep confirms zero hits) -- it relies on single-threaded coroutine dispatch on the shared `scope`. This means the implicit contract is "all mutations happen on the same dispatcher," which is easy to violate when sub-managers start launching their own coroutines.
+**Why it happens:** MediaPipe pose estimation achieves 2-10 FPS on lower-end devices even without other workloads (GitHub issue #3564). The existing BLE hot path in ActiveSessionEngine processes every metric sample through BiomechanicsEngine (MCV calculation, velocity zone classification, force curve normalization to 101 points, sticking point detection, asymmetry analysis) and RepQualityScorer (4-component scoring). These are CPU-intensive floating-point operations running on the same cores that MediaPipe needs. Thermal throttling causes both systems to degrade simultaneously, and neither has backpressure awareness of the other.
 
 **Consequences:**
-- `handleSetCompletion()` reads `_workoutState` as Active but by the time it calls `bleRepository.stopWorkout()`, another sub-manager has already transitioned to Idle
-- `stopWorkoutInProgress` guard flag in one sub-manager is not visible to the auto-stop sub-manager, causing duplicate session saves
-- The `previousExerciseWasBodyweight` flag (Issue #222) is set in set-completion but read in next `startWorkout()` -- if these land in different sub-managers, the flag write may not be visible before the read
+- BLE metric processing delays cause missed rep boundaries (valley detection uses 5-sample smoothing with 10mm threshold -- timing matters)
+- Auto-stop velocity stall detection (5-second timer at 2.5 mm/s threshold) fires incorrectly when metric samples arrive late
+- MediaPipe drops to 2-3 FPS, making pose feedback useless for form checking during fast movements
+- Device overheats during workout, OS kills app or user stops using camera feature
+- Battery drain makes the feature impractical for a full workout session
 
 **Prevention:**
-- Keep the workout state machine (`_workoutState`, `_routineFlowState`, guard flags) in a single "WorkoutStateCoordinator" that all sub-managers receive as a dependency
-- Use a `StateFlow<WorkoutState>` as the single source of truth, never duplicate it
-- All state transitions go through the coordinator, sub-managers request transitions rather than mutating directly
-- Design sub-manager boundaries along state *ownership* lines, not functional lines -- whoever owns the state owns all mutations to it
+- Use CameraX `STRATEGY_KEEP_ONLY_LATEST` backpressure so MediaPipe never queues frames
+- Run MediaPipe inference on a dedicated `Dispatchers.Default` coroutine, NOT on the BLE processing dispatcher
+- Implement adaptive frame rate: start at 15 FPS, drop to 5 FPS when thermal state exceeds THERMAL_STATUS_MODERATE (Android ThermalStatusListener)
+- Use `pose_landmarker_lite.task` model exclusively, never Full or Heavy -- the lite model is sufficient for joint angle thresholds in gym exercises
+- Use CPU delegate, not GPU -- GPU delegate has known memory swapping issues (GitHub issue #6223) and crashes on orientation change with Lite model (issue #5835)
+- Process pose landmarks on a separate coroutine from BLE metrics; they should NEVER contend for the same dispatcher
+- Add a "thermal budget" monitor that disables CV processing (graceful degradation to BLE-only mode) when the device is throttling
 
 **Detection:**
-- Intermittent duplicate session saves in workout history
-- "handleSetCompletion: already in progress" log never fires when it should
-- Machine stays in fault state (red lights) after workout stops
-- Bodyweight exercises incorrectly send BLE stop commands
+- Rep count lags behind actual movement when camera is active
+- `handleMonitorMetric()` processing time exceeds 50ms (measure with System.nanoTime delta)
+- MediaPipe result callback timestamps show gaps >200ms between frames
+- Android Vitals reports excessive wake locks or ANR during workout
 
-**Phase:** Address in Phase 1 (architecture design) -- this is the foundational decision
+**Phase:** Address in CV integration phase -- this is the highest-risk integration point
 
 ---
 
-### Pitfall 2: Coroutine Scope Sharing Creates Lifecycle Chaos
+### Pitfall 2: MediaPipe Lifecycle Mismanagement Causes Memory Leaks and Crashes
 
-**What goes wrong:** Currently all 35+ `scope.launch` calls use the same `CoroutineScope` (passed from `viewModelScope`). Sub-managers will either (a) share the same scope, creating ambiguity about who cancels what, or (b) get their own scopes, creating lifecycle divergence where one sub-manager's coroutines outlive another's.
+**What goes wrong:** MediaPipe PoseLandmarker and CameraX both require explicit lifecycle management. The current app architecture has no camera lifecycle -- BLE is the only hardware resource. Adding camera introduces a new lifecycle that must coordinate with the existing ViewModel-scoped workout lifecycle without leaking native resources.
 
-**Why it happens:** The manager has explicit job tracking (`monitorDataCollectionJob`, `autoStartJob`, `restTimerJob`, `bodyweightTimerJob`, `workoutJob`, `repEventsCollectionJob`) and cancels them at specific state transitions. When `stopWorkout()` cancels `workoutJob` and `bodyweightTimerJob`, these jobs MUST be in the same scope hierarchy, or cancellation from one sub-manager won't reach jobs in another.
+**Why it happens:** MediaPipe internally uses native (C++) resources that are not garbage-collected. `PoseLandmarker.close()` MUST be called to release them. CameraX binds to `LifecycleOwner`, but the workout logic lives in `MainViewModel` which outlives individual Composable lifecycle owners. Additionally, MediaPipe's `AndroidPacketGetter.copyRgbToBitmap` has a documented memory allocation issue where it uses `ByteBuffer.allocateDirect` for every frame instead of caching by size (GitHub issue #2098). Over a 45-minute workout, this causes OOM or excessive GC pauses.
 
 **Consequences:**
-- Rest timer continues counting after workout is stopped (different sub-manager, different scope)
-- `bodyweightTimerJob` fires completion after the workout has been manually stopped
-- Auto-start countdown triggers a new set after the user already exited the routine
-- BLE monitor collection continues after disconnect because the sub-manager scope wasn't cancelled
-- Memory leaks from orphaned collectors
+- Memory leak: PoseLandmarker not closed when navigating away from camera screen, native memory grows unbounded
+- Crash on orientation change: GPU delegate + Lite model crashes immediately on rotation (documented: GitHub issue #5835)
+- CameraX still bound after workout ends, consuming power and holding camera lock
+- OOM crash during long workouts from uncached ByteBuffer allocations
+- Black screen: CameraX preview intermittently shows black on certain devices (GitHub issue #4358)
 
 **Prevention:**
-- All sub-managers MUST share the same parent `CoroutineScope` (the `viewModelScope`)
-- Do NOT give sub-managers their own `CoroutineScope` -- pass the shared one
-- Job references that need cross-manager cancellation should live in the state coordinator
-- Use `SupervisorJob` children so one sub-manager's failure doesn't cascade
-- Document which jobs are cancelled by which state transitions (this is currently implicit knowledge spread across `stopWorkout()`, `handleSetCompletion()`, `resetForNewWorkout()`, and `cleanup()`)
+- Create a `PoseEstimationManager` that wraps MediaPipe and CameraX with explicit `start()`/`stop()` lifecycle methods
+- Bind CameraX to the Composable's `LocalLifecycleOwner`, NOT to the Activity lifecycle -- this ensures camera stops when leaving the workout screen
+- Call `poseLandmarker.close()` in `stop()` and create a new instance in `start()` -- do NOT reuse PoseLandmarker across lifecycle events
+- Use CPU delegate only (avoids GPU orientation crash entirely)
+- Lock screen orientation to portrait when camera is active (workaround for GPU crash, good UX for gym use anyway)
+- Implement frame bitmap pool: reuse Bitmap objects across frames rather than allocating new ones
+- DisposableEffect in Compose to guarantee cleanup even on unexpected navigation
 
 **Detection:**
-- Logcat shows "already in progress" guards firing unexpectedly
-- Timer UI shows stale countdown values after workout ends
-- BLE polling continues after disconnect (visible in Nordic nRF logs)
+- Android Profiler shows native memory growing linearly during workout
+- `onCleared()` in ViewModel fires but camera LED stays on
+- Black preview after navigating away and back to camera screen
+- Crash logs showing `OutOfMemoryError` with `ByteBuffer.allocateDirect` in stack trace
 
-**Phase:** Address in Phase 1 (architecture design) -- scope strategy must be decided before any extraction
+**Phase:** Address in CV integration phase -- lifecycle design must be correct from the start
 
 ---
 
-### Pitfall 3: Breaking the handleMonitorMetric() Hot Path
+### Pitfall 3: SQLDelight Migration v15->v16 Breaks iOS 4-Layer Defense System
 
-**What goes wrong:** `handleMonitorMetric()` is called on every BLE metric update (~10-20Hz) and reads/writes state across nearly every concern: rep counting, auto-stop detection, position tracking, phase animation, rep ranges, metrics collection. Splitting these concerns across sub-managers means this hot path now involves multiple method calls, potentially multiple flow emissions, and coordination overhead.
+**What goes wrong:** Adding biomechanics persistence columns (VBT metrics, force curves, asymmetry per-rep to RepMetric or new tables) requires a new SQLDelight migration (15.sqm) and bumping the schema version to 16. On Android this is straightforward. On iOS, the project uses a custom 4-layer defense system in `DriverFactory.ios.kt` that bypasses SQLDelight migrations entirely with a no-op schema. Every schema change requires MANUALLY updating the iOS DriverFactory with new CREATE TABLE statements, new `safeAddColumn()` calls, new index creation, AND updating `CURRENT_SCHEMA_VERSION`. Missing any of these causes iOS-only crashes or missing data.
 
-**Why it happens:** This is the core real-time loop. It currently does, in sequence:
-1. Updates position ranges on `repCounter` (rep counting concern)
-2. Collects metrics for history (persistence concern)
-3. Updates phase tracking and rep count flows (UI concern)
-4. Checks auto-stop with velocity stall detection (safety concern)
-5. Checks rep-target completion (workout logic concern)
+**Why it happens:** iOS SQLite migrations run on worker threads where exceptions propagate through Kotlin/Native's coroutine machinery to `terminateWithUnhandledException`, bypassing all try-catch blocks. The project solved this with a manual schema management system that duplicates the entire schema in Kotlin code. This means EVERY schema change must be applied in THREE places:
+1. `VitruvianDatabase.sq` (the source of truth)
+2. New `.sqm` migration file (for Android)
+3. `DriverFactory.ios.kt` -- `createAllTables()`, `ensureAllColumnsExist()`, `createAllIndexes()`, AND the `CURRENT_SCHEMA_VERSION` constant
 
-Each step depends on state from the previous step or from shared state.
+The Daem0n memory system has a specific warning (#155) about this: "VitruvianDatabase.sq changes: UPDATE query changes are safe, but CREATE TABLE/column changes require syncing iOS DriverFactory.ios.kt."
 
 **Consequences:**
-- Performance regression: 5 sub-manager calls instead of 1 inlined method adds overhead at 10-20Hz
-- State inconsistency: `repCounter.shouldStopWorkout()` is checked AFTER position updates -- if these are in different sub-managers, the check might happen before the update
-- Auto-stop false triggers: velocity stall detection uses `_workoutState.value` as a guard -- if the state check and the velocity check are in different managers, the guard may be stale
-- Lost workout data: `collectMetricForHistory()` adds to `collectedMetrics` list which is read by `handleSetCompletion()` -- if split, the list reference breaks
+- iOS app purges entire database on launch (version mismatch detection in `checkDatabaseHealth()` sees version 15 < 16 = OUTDATED = purge)
+- iOS users lose ALL workout history, routines, gamification progress, personal records
+- New columns missing on iOS: queries that reference them fail silently (SQLDelight generates code expecting them)
+- If `CURRENT_SCHEMA_VERSION` is bumped in iOS but tables not created, app crashes with missing table errors
 
 **Prevention:**
-- Keep `handleMonitorMetric()` as a single orchestration point in the parent manager or state coordinator
-- Sub-managers expose processing functions that are called synchronously from this orchestrator
-- Do NOT have sub-managers collect from `bleRepository.monitorData` independently -- one collector, dispatches to sub-managers
-- Consider a "MetricPipeline" pattern: metric comes in, passes through stages, each stage owned by a sub-manager but executed in sequence
+- Create a checklist for EVERY schema change: .sq file, .sqm migration, iOS DriverFactory (tables + columns + indexes + version constant)
+- For biomechanics columns on RepMetric: add via ALTER TABLE ADD COLUMN in the .sqm, AND add matching `safeAddColumn()` calls in iOS DriverFactory
+- For new tables (e.g., CvFormScore, BiomechanicsRepSummary): add to .sqm AND to `createAllTables()` AND to `createAllIndexes()` in iOS DriverFactory
+- Test migration locally: increment database version, build and run on existing database, verify no data loss
+- Use SQLDelight's `verifySqlDelightMigration` Gradle task with a reference .db file
+- Do NOT wrap migrations in BEGIN/END TRANSACTION (documented SQLDelight limitation)
+- Consider: add new columns as NULLABLE with defaults rather than creating new tables -- simpler migration path
 
 **Detection:**
-- Rep count lags behind actual movement
-- Auto-stop triggers at wrong times
-- Workout history shows fewer metrics than expected
-- Position bar visualization jumps or freezes
+- iOS test builds show empty workout history after update
+- iOS crash logs from `DriverFactory.ios.kt` during `ensureSchemaComplete()`
+- Android works fine but iOS doesn't -- classic migration desync symptom
+- SQLDelight generated code has column references that don't exist in iOS tables
 
-**Phase:** Address in Phase 2 (extraction of metric processing) -- this is the highest-risk extraction
+**Phase:** Address FIRST in the persistence phase -- schema design before any code
 
 ---
 
-### Pitfall 4: Circular Dependency Proliferation via lateinit
+### Pitfall 4: ProGuard/R8 Strips MediaPipe Classes in Release Builds
 
-**What goes wrong:** The existing `lateinit var bleConnectionManager` pattern (line 143) already works around a circular dependency. When sub-managers are extracted, new circular dependencies emerge: e.g., RoutineFlowManager needs WorkoutExecutionManager to start sets, but WorkoutExecutionManager needs RoutineFlowManager to know what exercise to load. Each new circular dep gets another `lateinit`, creating a fragile initialization web.
+**What goes wrong:** The existing Android app has `isMinifyEnabled = true` for release builds (visible in `androidApp/build.gradle.kts`). MediaPipe Tasks Vision library uses reflection and native JNI that R8 aggressively strips, causing crashes only in release builds. This is a documented, unresolved issue (GitHub issues #4806, #3509, #6138). The official MediaPipe sample app sets `minifyEnabled = false` for release as a workaround.
 
-**Why it happens:** The 4,024-line manager is a God object precisely because everything depends on everything. Naive extraction along functional boundaries (routine management, workout execution, auto-stop, metric processing) creates bidirectional dependencies because these concerns are deeply interleaved.
+**Why it happens:** MediaPipe's Android Tasks library uses protobuf-lite internally, and R8 strips `GeneratedMessageLite` fields that are accessed via reflection. Adding `-keep` rules for protobuf classes alone is insufficient -- the `TaskRunner` initialization itself fails with `ExceptionInInitializerError` when minified.
 
 **Consequences:**
-- `UninitializedPropertyAccessException` at runtime when a sub-manager method is called before wiring completes
-- Koin fails silently or with cryptic errors when circular `single{}` declarations exist
-- Order-dependent initialization in `MainViewModel.init{}` becomes a maze
-- Testing requires elaborate setup to wire all dependencies
+- App crashes on launch or when opening camera in release builds only
+- Debug builds work perfectly, masking the issue during development
+- Community users (who get release APKs) experience crashes while developers never see them
+- Standard ProGuard rules (`-keepclassmembers class * extends com.google.protobuf.GeneratedMessageLite`) do NOT fix it
 
 **Prevention:**
-- Use an **event bus or callback interface** pattern instead of direct references between sub-managers
-- Define narrow interfaces (like `WorkoutStateProvider` already does for BleConnectionManager) for each cross-cutting concern
-- Prefer **unidirectional dependencies**: sub-managers depend on the coordinator, never on each other
-- If A needs to tell B something, A emits an event, coordinator routes it to B
-- In Koin: register sub-managers with `single{}`, wire them in the `MainViewModel` constructor (not in module declarations) -- this keeps Koin's DI graph acyclic
+- Add comprehensive MediaPipe ProGuard rules before first release build:
+  ```
+  -keep class com.google.mediapipe.** { *; }
+  -keep class com.google.protobuf.** { *; }
+  -dontwarn com.google.mediapipe.**
+  ```
+- Test EVERY release build with the camera feature before shipping
+- If rules don't work (which is likely based on community reports), consider `isMinifyEnabled = false` for the release variant OR use R8 full mode with `proguardFiles` that keep the entire MediaPipe namespace
+- Alternative: keep `isMinifyEnabled = true` but add `-keep` rules iteratively based on crash reports from release testing
+- This MUST be tested in CI with a release build that exercises the MediaPipe code path
 
 **Detection:**
-- `lateinit` count increases during extraction (should decrease or stay flat)
-- Koin startup time increases
-- Test setup requires >5 lines of wiring boilerplate
+- Release APK crashes with `ExceptionInInitializerError` or `NoSuchMethodError` in MediaPipe classes
+- Debug APK works fine
+- Stack trace mentions `TaskRunner`, `BaseOptions`, or `PoseLandmarkerOptions`
 
-**Phase:** Address in Phase 1 (architecture design) -- interface boundaries must be designed before extraction
+**Phase:** Address immediately when adding MediaPipe dependency -- do not defer to "later"
 
 ---
 
-### Pitfall 5: Koin Module Registration Order and Scoping Failures
+### Pitfall 5: Building UI Components Against Non-Existent Portal APIs Creates Hardcoded Contract Assumptions
 
-**What goes wrong:** The current `AppModule.kt` has a comment "Order matters: ExerciseRepository must be created before WorkoutRepository." Adding sub-managers as `single{}` declarations creates new ordering sensitivities. Worse, `DefaultWorkoutSessionManager` is currently NOT registered in Koin at all -- it's manually constructed in `MainViewModel`'s property initializer. If extraction moves sub-managers into Koin, the circular dependency with `BleConnectionManager` must be resolved in the DI graph.
+**What goes wrong:** Ghost racing overlay, RPG attribute card, and pre-workout briefing composables are being built with stub data because the portal backend (v0.5.5/v0.6.0) doesn't exist yet. When the portal ships, the actual API response shapes will differ from the stub data models, requiring rewrites of the UI components, data mapping, and state management. Worse, "stub" implementations tend to skip error states, loading states, and edge cases that real APIs expose.
 
-**Why it happens:** Koin resolves dependencies eagerly for `single{}` and lazily for `factory{}`. If sub-manager A is `single{}` and depends on sub-manager B (also `single{}`), and B depends on A, Koin throws `StackOverflowError` during module verification or `NoBeanDefFoundException` at runtime.
+**Why it happens:** The project roadmap has these mobile UI components in v0.5.0 but the portal sync backend in v0.5.5 and portal features in v0.7.0. This is intentional (build UI early, integrate later), but the gap creates implicit contract assumptions. For example, a ghost racing overlay stub might assume the ghost data arrives as a flat list of timestamped positions, but the real API might paginate it, stream it via WebSocket, or require client-side interpolation.
 
 **Consequences:**
-- App crashes on startup with Koin resolution errors
-- Subtle bugs where a `factory{}` sub-manager creates a new instance per injection, losing state
-- iOS app crashes separately from Android because platform modules load differently
-- Koin `checkModules()` passes in tests but fails at runtime due to platform module differences
+- UI components assume specific data shapes that the portal team designs differently
+- Missing error states: stubs never fail, so the UI has no empty state, no retry, no offline fallback
+- Missing loading states: stubs return instantly, so loading indicators are never tested
+- "Works with stubs, breaks with real data" -- classic integration failure
+- Ghost racing replay assumes synchronized timestamps with BLE data, but real portal data may have different time resolution
 
 **Prevention:**
-- Keep manual construction in `MainViewModel` for the sub-manager graph (match existing pattern for `SettingsManager`, `HistoryManager`, `GamificationManager`, `BleConnectionManager`)
-- Do NOT move sub-managers into Koin modules unless they need to be injected elsewhere
-- If they must be in Koin, use `single{}` with `get()` parameters (not constructor injection) and wire circular deps post-construction
-- Run `koinApplication { checkModules() }` in a test after any DI changes
-- The `factory { MainViewModel(...) }` pattern means a new VM is created each time -- ensure sub-managers that were previously singletons within the VM aren't accidentally shared across VM instances
+- Define the data models in `commonMain` as domain objects NOW, even without the API -- these become the contract
+- Use a repository interface pattern: `GhostRaceRepository` interface in `commonMain` with a `StubGhostRaceRepository` implementation that exercises ALL states (loading, success, error, empty)
+- Stub implementations MUST include:
+  - 500ms artificial delay (simulates network)
+  - Random failure mode (10% chance of error)
+  - Empty data case
+  - Large data case (100+ ghost race points)
+- Build the UI to handle all states from day one: Loading, Error(retry), Empty, Content
+- Use a sealed class or sealed interface for each feature's UI state (e.g., `GhostRaceUiState.Loading`, `.Error`, `.Ready`)
+- Gate stubs behind FeatureGate so they don't leak into production accidentally
 
 **Detection:**
-- App crash on launch (immediate feedback, low risk of shipping)
-- Sub-manager state resets unexpectedly (factory instead of single)
-- iOS-only crashes (platform module ordering differs)
+- UI component only has a "happy path" -- no error or empty state handling
+- Stub data model doesn't match what the portal team is building
+- Loading indicator never appears in testing (stubs are instant)
+- Ghost race overlay doesn't handle null/missing data gracefully
 
-**Phase:** Address in Phase 1 (architecture design) and validate in each extraction phase
+**Phase:** Address when building each UI component -- design the interface first, stub second
 
 ## Moderate Pitfalls
 
-### Pitfall 6: Compose Recomposition Cascades from StateFlow Restructuring
+### Pitfall 6: CameraX Coordinate System Mismatch with Compose Overlay
 
-**What goes wrong:** Currently, `ActiveWorkoutScreen` collects 21 `StateFlow` properties from `MainViewModel`, each delegating to `workoutSessionManager`. If extraction changes the flow topology (e.g., combining multiple state flows into a single sealed-class state), screens that only need one field recompose when unrelated fields change.
+**What goes wrong:** MediaPipe returns pose landmarks in normalized coordinates (0.0-1.0) relative to the input image. CameraX preview may be letterboxed, mirrored (front camera), or rotated. Drawing landmarks on a Compose Canvas overlay requires correctly transforming from image coordinates to screen coordinates, accounting for all three factors. Getting this wrong means skeleton overlay lines don't align with the user's body in the preview.
 
-**Why it happens:** Compose skips recomposition when state values are `equals()`-identical. Individual `StateFlow<Int>` for `repCount` and `StateFlow<Float>` for `currentHeuristicKgMax` only trigger their respective collectors. But if these are combined into a `WorkoutUiState` data class, changing reps also triggers recomposition for the force display.
+**Why it happens:** The combination of device rotation, camera sensor orientation, mirror mode (front vs back camera), and CameraX preview scaling creates a 4-dimensional transformation problem. CameraX 1.4+ provides `CoordinateTransformer` and `TransformationInfo` with `sensorToBufferTransform`, but this only handles part of the chain. The Compose overlay also needs to account for the `CameraXViewfinder` layout bounds.
 
 **Prevention:**
-- Maintain the same public `StateFlow` signatures during extraction -- sub-managers expose the same individual flows
-- Do NOT consolidate flows into aggregate state classes unless wrapping in `derivedStateOf` or `distinctUntilChanged`
-- Use `@Stable` annotations on any new state holder classes
-- Keep the `MainViewModel` delegation pattern (`val repCount: StateFlow<RepCount> get() = workoutSessionManager.repCount`) -- consumers don't need to know about sub-managers
-- Test with Layout Inspector's recomposition counter during active workout
+- Use CameraX Compose integration (`camera-compose` artifact) which provides `CoordinateTransformer` for the viewfinder
+- Always use front camera (users face the phone during exercise) and handle mirror transformation explicitly
+- Build a `PoseLandmarkTransformer` utility that converts MediaPipe normalized coords to Compose Canvas coordinates in one step
+- Test on multiple screen aspect ratios (16:9, 19.5:9, 20:9, tablet) -- different ratios produce different letterboxing
+- Use `derivedStateOf` for landmark positions to avoid recomposing the entire screen when landmarks update at 15+ FPS
 
 **Detection:**
-- UI jank during active workout (dropped frames visible on performance overlay)
-- Layout Inspector shows unexpected recomposition counts
-- Battery drain increase during workout (continuous unnecessary recomposition at 10-20Hz)
+- Skeleton lines are offset from body in preview
+- Lines appear mirrored (left/right swapped) on front camera
+- Overlay is correct in portrait but wrong in landscape
+- Overlay drifts when device aspect ratio doesn't match camera aspect ratio
 
-**Phase:** Validate in each extraction phase, not a design-phase concern
+**Phase:** Address in CV integration phase -- coordinate transformation is a foundational utility
 
 ---
 
-### Pitfall 7: KMP commonTest Coroutine Testing Gaps
+### Pitfall 7: KMP expect/actual Boundary for Camera/ML Creates Leaky Abstraction
 
-**What goes wrong:** Tests in `commonTest` cannot use JUnit Rules (`TestCoroutineRule` is in `androidUnitTest` only). KMP's `runTest` from `kotlinx-coroutines-test` behaves differently across platforms -- `advanceUntilIdle()` on iOS may not advance virtual time the same way. Sub-manager tests that work on Android fail on iOS test targets.
+**What goes wrong:** MediaPipe and CameraX are Android-only libraries. The natural KMP pattern is `expect class PoseEstimator` in `commonMain` with `actual class PoseEstimator` in `androidMain` using MediaPipe, and a no-op stub in `iosMain`. But pose estimation produces RESULTS (landmark positions, joint angles) that the form rules engine in `commonMain` needs to consume. If the abstraction boundary is drawn at the wrong level, either `commonMain` has Android-specific types in its API or `androidMain` duplicates the form scoring logic.
 
-**Why it happens:** The project currently puts most tests in `androidUnitTest` (30+ files) vs `commonTest` (12 files). `commonTest` tests use `runTest` directly without a Rule. New sub-manager tests should ideally be in `commonTest` (since the code is in `commonMain`), but the testing infrastructure wasn't built for it.
+**Why it happens:** Camera and ML are inherently platform-specific. The input (camera frames) and the processing (ML inference) cannot be shared. But the OUTPUT (33 pose landmarks with x/y/z/visibility) and the BUSINESS LOGIC (joint angle calculation, form rules, scoring) should be shared. Drawing the boundary too high (expose camera preview in commonMain) or too low (keep all form logic in androidMain) both create problems.
 
 **Prevention:**
-- Write sub-manager tests in `commonTest` from the start
-- Use `runTest { }` with `StandardTestDispatcher()` explicitly (not via a Rule)
-- Pass `TestScope.backgroundScope` as the sub-manager's `CoroutineScope` parameter
-- Use `advanceUntilIdle()` after every state mutation that triggers a `scope.launch`
-- Avoid `delay()` in production code where possible -- use injectable time sources
-- For the `RepCounterFromMachine` callback pattern (`onRepEvent`), test the callback directly rather than through flow collection
+- Define the abstraction boundary at the LANDMARK level, not the camera level:
+  - `commonMain`: `PoseLandmarks` data class (33 landmarks with x/y/z/visibility), `FormRulesEngine`, `FormScorer`
+  - `androidMain`: `MediaPipePoseEstimator` (CameraX + MediaPipe integration, produces `PoseLandmarks`)
+  - `iosMain`: stub that returns null (no CV on iOS for v0.5.0)
+- Use `expect fun createPoseEstimator(): PoseEstimator?` returning nullable -- iOS returns null, Android returns real implementation
+- Form rules engine receives `PoseLandmarks` and returns `FormCheckResult` -- this is pure business logic in `commonMain`
+- Keep CameraX PreviewView / CameraXViewfinder in `androidMain` Compose code, never in `commonMain`
+- Do NOT try to abstract the camera preview composable with expect/actual -- use `expect` only for the processing pipeline
 
 **Detection:**
-- Tests pass locally (Android) but fail in CI (if running iOS tests)
-- Tests hang indefinitely (dispatcher not advancing)
-- Tests pass but don't actually test the async behavior (assertions run before coroutines complete)
+- `commonMain` imports from `com.google.mediapipe` or `androidx.camera` -- these should NEVER appear in commonMain
+- iOS build fails with unresolved references to camera/ML types
+- Form rules engine is in `androidMain` instead of `commonMain`, preventing future iOS implementation
 
-**Phase:** Address when writing first sub-manager tests (Phase 2)
+**Phase:** Address in architecture/design before CV implementation begins
 
 ---
 
-### Pitfall 8: Init Block Collector Ordering After Extraction
+### Pitfall 8: Biomechanics Persistence Bloats RepMetric Table with JSON Columns
 
-**What goes wrong:** The `init` block (lines 379-540+) launches 6+ coroutines that collect from repositories and wire up callbacks. The ordering of these launches matters: the routine loading collector must fire before a workout can start, and the exercise import must complete before exercise lookups work. When sub-managers have their own init blocks, the order becomes non-deterministic.
+**What goes wrong:** The existing RepMetric table already stores 32 columns including JSON arrays for force curve data (concentricPositions, concentricLoadsA, concentricLoadsB, concentricVelocities, concentricTimestamps, and eccentrics -- 12 TEXT columns containing JSON arrays). Adding VBT metrics (MCV, velocity zone, velocity loss %), force curve analysis (sticking point position, strength profile type), and asymmetry data (dominance ratio, dominant side, severity) as additional columns makes the table even wider and slower to query.
 
-**Why it happens:** Kotlin constructors and init blocks execute in declaration order. Currently: SettingsManager is constructed first, then HistoryManager, then GamificationManager, then DefaultWorkoutSessionManager. The DWSM init block runs after all dependencies are wired. If sub-managers are constructed in DWSM's constructor, their init blocks fire during DWSM construction, potentially before DWSM's own init is complete.
+**Why it happens:** The codebase uses manual JSON serialization for array data (project decision: "Manual JSON serialization for primitive arrays -- Avoid kotlinx.serialization complexity for simple cases"). Adding more computed metrics per-rep means either more JSON columns or more scalar columns. A 45-minute workout at 10 reps per set, 5 sets, 5 exercises = 250 rows. Each row with 40+ columns and JSON arrays becomes expensive to SELECT and INSERT.
 
 **Prevention:**
-- Prefer explicit `start()` or `initialize()` methods over init blocks for sub-managers
-- Call sub-manager `start()` methods in a defined order from the coordinator
-- Move repository collection (routines loading, exercise import) into a dedicated "DataLoader" sub-manager that starts first
-- Use `stateIn(scope, SharingStarted.Eagerly, ...)` for flows that must be hot immediately
-- Document the startup sequence in a comment
+- Add biomechanics summary fields as NULLABLE scalar columns on RepMetric (not JSON):
+  - `mcv REAL` (mean concentric velocity, mm/s)
+  - `velocityZone TEXT` (enum: STRENGTH/POWER/SPEED/etc)
+  - `velocityLossPercent REAL`
+  - `stickingPointRomPercent REAL`
+  - `strengthProfile TEXT` (enum: ASCENDING/DESCENDING/BELL)
+  - `asymmetryRatio REAL`
+  - `dominantSide TEXT` (LEFT/RIGHT/BALANCED)
+  - `formScore REAL` (0-100, nullable until CV is active)
+- Do NOT create a separate `BiomechanicsRepResult` table with FK to RepMetric -- the 1:1 join overhead is worse than wider columns
+- Compute these values from existing raw data (concentricLoadsA/B, concentricVelocities, etc.) and persist the summary at session save time
+- Use batch INSERT for rep metrics (existing pattern: reps are saved at set completion, not individually)
+- Add an index on `(sessionId, repNumber)` for the new columns -- this index already exists (`idx_rep_metric_session_rep`)
 
 **Detection:**
-- NPE or stale data on first workout after app launch
-- "Exercise not found" errors when starting a routine
-- Empty routine list on first navigation to Daily Routines screen
+- Session save takes >1 second (currently instant for ~20 reps)
+- Database file size grows faster than expected (monitor with `PRAGMA page_count * PRAGMA page_size`)
+- SELECT queries for session replay become noticeably slow
 
-**Phase:** Address in Phase 1 (architecture design) -- init ordering is a design constraint
+**Phase:** Address in persistence phase -- schema design is the first step
 
 ---
 
-### Pitfall 9: BLE Repository Interaction Points Create Implicit Coupling
+### Pitfall 9: Camera Permission Handling Disrupts Active Workout
 
-**What goes wrong:** `bleRepository` is called from 15+ locations in DefaultWorkoutSessionManager: `startWorkout()`, `stopWorkout()`, `handleSetCompletion()`, `sendWeight()`, `sendProgramMode()`, `restartMonitorPolling()`, `enableHandleDetection()`, etc. These calls are interspersed with state mutations. If BLE command sending is extracted to a sub-manager but workout state lives elsewhere, the BLE sub-manager must query workout state before every command.
+**What goes wrong:** Camera permission must be requested at runtime on Android. If the user denies permission, or grants it but later revokes it in Settings, the CV form check feature must degrade gracefully WITHOUT disrupting the active workout. The current app has no camera permission handling -- only Bluetooth and notification permissions.
 
-**Why it happens:** BLE commands are tightly coupled to workout state transitions. You cannot send a weight command without knowing the current workout mode. You cannot call `stopWorkout()` on BLE without checking if the exercise is bodyweight (Issue #222). The machine's state and the app's state must remain synchronized.
+**Why it happens:** The camera permission dialog blocks the UI. If requested mid-workout while reps are being counted and BLE metrics are flowing, the permission dialog can cause the Activity to pause, which may trigger CameraX lifecycle events. If denied, the UI must switch from "camera + form feedback" mode to "no camera" mode without losing workout state. Android 11+ auto-revokes permissions for apps not used recently.
 
 **Prevention:**
-- Do NOT extract BLE command sending into a separate sub-manager
-- BLE commands should stay co-located with the workout state transitions that trigger them
-- Extract read-only BLE data processing (metric collection, position tracking) but keep command sending in the workout execution layer
-- Treat `bleRepository.stopWorkout()`, `bleRepository.startWorkout()`, and `bleRepository.sendWeight()` as part of the state transition, not as a separate concern
+- Request camera permission BEFORE workout starts (on feature enable screen, not mid-set)
+- Never show permission dialog during active workout -- check permission state and disable CV if not granted
+- Build the CV overlay as an optional layer: `ActiveWorkoutScreen` renders with or without it based on `cameraPermissionGranted && cvFeatureEnabled`
+- Use Accompanist `rememberPermissionState` in Compose, check `shouldShowRationale` for educational messaging
+- If permission is revoked mid-session (user goes to Settings), detect on resume and hide camera overlay without crashing
+- Add a `CVFormCheckState` sealed class: `Unavailable` (no permission/not supported), `Ready`, `Active`, `Paused` (thermal throttle), `Disabled` (user opted out)
 
 **Detection:**
-- Machine doesn't respond to weight changes
-- Machine stays in workout mode after app shows Idle
-- Machine shows red fault lights after sets (monitor polling not restarted)
-- Issue #222 regression: bodyweight exercise sends BLE stop
+- Workout crashes when camera permission is denied
+- Permission dialog appears mid-set, causing confusion
+- Camera preview shows after permission revoke (stale state)
+- BLE processing pauses during permission dialog
 
-**Phase:** Address in Phase 1 (architecture design) -- BLE boundary is a key design decision
+**Phase:** Address at the start of CV integration -- permission flow is a prerequisite
+
+---
+
+### Pitfall 10: ActiveSessionEngine Grows Beyond Maintainability Threshold
+
+**What goes wrong:** ActiveSessionEngine is already ~2,600 lines (documented in PROJECT.md). Adding CV pose processing callbacks, form score calculation triggers, biomechanics persistence calls, and additional state flows (formScore, poseConfidence, cvState) will push it past 3,000+ lines, recreating the God object problem that the v0.4.1 decomposition solved for DefaultWorkoutSessionManager.
+
+**Why it happens:** ActiveSessionEngine is the natural home for "during-workout processing" concerns. CV form checking is processed during workout. Biomechanics persistence happens at set completion (already in ActiveSessionEngine). The existing pattern of adding features to ActiveSessionEngine worked for v0.4.5 through v0.4.7, but CV is a fundamentally new concern (camera + ML) that doesn't belong in the BLE metric processing pipeline.
+
+**Prevention:**
+- Create `CvFormCheckManager` as a SEPARATE manager (peer to ActiveSessionEngine), NOT nested inside it
+- CvFormCheckManager owns: PoseEstimator lifecycle, form rules evaluation, form score StateFlow
+- ActiveSessionEngine delegates to CvFormCheckManager via interface, same pattern as existing `detectionManager` (ExerciseDetectionManager)
+- Communication: CvFormCheckManager exposes `StateFlow<FormCheckResult?>`, ActiveSessionEngine reads it, no reverse dependency
+- Biomechanics persistence: create a `BiomechanicsPersistenceManager` or add persistence to existing `RepMetricRepository` -- do NOT add 15 new persistence method calls to ActiveSessionEngine
+- Follow the established delegate pattern: optional nullable parameter `cvFormCheckManager: CvFormCheckManager? = null`
+
+**Detection:**
+- ActiveSessionEngine exceeds 3,000 lines
+- New features require modifying `handleMonitorMetric()` (the hot path)
+- CV state management is mixed with BLE state management in the same class
+- Testing CV form check requires the full ActiveSessionEngine test harness
+
+**Phase:** Address in architecture design -- decide manager boundaries before implementation
 
 ## Minor Pitfalls
 
-### Pitfall 10: collectedMetrics List Reference Breaks on Extraction
+### Pitfall 11: Ghost Race Overlay Assumes Time-Synchronized Data
 
-**What goes wrong:** `collectedMetrics` is a `mutableListOf<WorkoutMetric>()` that is appended to in `handleMonitorMetric()` (via `collectMetricForHistory()`) and read in `handleSetCompletion()` and `stopWorkout()` to build the session summary. If metric collection is in one sub-manager and session saving is in another, they need to share this mutable list reference.
+**What goes wrong:** Ghost racing compares current workout performance against a previous "ghost" session. This requires timestamp-aligned position/force data. But BLE metric samples have variable timing (10-20Hz, not exact), and the ghost data (loaded from database or portal) may have been sampled at different rates. Naive playback at wall-clock time causes the ghost to drift out of sync with the actual exercise.
 
-**Prevention:** Make `collectedMetrics` a property of the state coordinator, or have the metric collector expose it as `List<WorkoutMetric>` (immutable view) to the session saver.
-
----
-
-### Pitfall 11: Guard Flags Lose Effectiveness Across Sub-Managers
-
-**What goes wrong:** `stopWorkoutInProgress` and `setCompletionInProgress` are boolean guard flags preventing re-entrant calls. These work because the check and the set happen in the same synchronous function. If `checkAutoStop()` (in auto-stop sub-manager) triggers `handleSetCompletion()` (in completion sub-manager), the guard flag may not prevent the race because the flag is in a different object.
-
-**Prevention:** Guard flags must live in the same object that checks them. Move all guard flags to the state coordinator, or use `StateFlow<Boolean>` for cross-manager visibility.
+**Prevention:** Use position-based or rep-based alignment rather than timestamp-based. Map ghost data to ROM percentage (0-100% of the rep) and align by position in the movement, not by elapsed time. This matches the existing 101-point ROM normalization pattern used for force curves.
 
 ---
 
-### Pitfall 12: Test Fakes Multiply Exponentially
+### Pitfall 12: FeatureGate Enum Must Be Extended Without Breaking Existing Patterns
 
-**What goes wrong:** Each sub-manager needs its own dependencies mocked. Currently `BleConnectionManagerTest` uses `FakeBleRepository`, `FakePreferencesManager`, `FakeWorkoutStateProvider`. For N sub-managers with M dependencies each, you need N*M fakes. Existing fakes may not cover the new interfaces.
+**What goes wrong:** Adding new `Feature` enum values (CV_FORM_CHECK, GHOST_RACING, RPG_ATTRIBUTES, PRE_WORKOUT_BRIEFING) to `FeatureGate.Feature` requires updating the `phoenixFeatures` and `eliteFeatures` sets. If a new feature is added to the enum but not to either set, `isEnabled()` returns false for ALL tiers including Elite, which silently gates the feature for paying users.
 
-**Prevention:** Define narrow interfaces for sub-manager dependencies. Reuse existing fakes. Create a `TestWorkoutFixture` builder that wires up the full sub-manager graph with defaults, allowing tests to override only what they care about.
+**Prevention:** Add a unit test that verifies every `Feature` enum value appears in at least one tier's feature set. Existing `FeatureGateTest.kt` should be extended. Consider: which features go to which tier? CV form check = Phoenix or Elite? RPG = Elite? Define tier assignments in the feature specification, not during implementation.
 
 ---
 
-### Pitfall 13: SharedFlow Event Loss During Extraction
+### Pitfall 13: MediaPipe Model Asset Size Increases APK Size
 
-**What goes wrong:** `_hapticEvents` is a `MutableSharedFlow` passed into DWSM from MainViewModel. Both `GamificationManager` and `DefaultWorkoutSessionManager` emit to it. If sub-managers need to emit haptic events, the flow reference must be shared. Creating a new `MutableSharedFlow` in a sub-manager means events are emitted to a flow nobody collects.
+**What goes wrong:** `pose_landmarker_lite.task` is ~5-10 MB. The app bundles this in `assets/`, increasing the APK size for ALL users, including those who never use the CV feature. The existing APK should be lean (BLE app, no camera features currently).
 
-**Prevention:** Pass the shared `MutableSharedFlow<HapticEvent>` to any sub-manager that needs to emit haptic/feedback events. Do not create new flow instances. Same applies to `_userFeedbackEvents`.
+**Prevention:** Use Android App Bundle (AAB) with on-demand delivery for the model file, OR download the model on first use and cache it locally. For v0.5.0 MVP, bundling in assets is acceptable but document the size impact. The model file should be added to `.gitattributes` for Git LFS if it exceeds 10 MB.
+
+---
+
+### Pitfall 14: Compose Recomposition Storm from Pose Landmarks at 15+ FPS
+
+**What goes wrong:** MediaPipe produces 33 pose landmarks at 15-30 FPS. If exposed as `StateFlow<List<PoseLandmark>>`, every frame triggers recomposition of the overlay Canvas AND any composable that reads the landmarks. This adds to the existing recomposition load from BLE metrics (velocity HUD, force curve mini-graph, balance bar) that update at 10-20 Hz.
+
+**Prevention:** Use `Canvas` with `drawWithCache` for the skeleton overlay -- Canvas draw calls don't trigger recomposition. Store landmarks in a `mutableStateOf` read ONLY inside the Canvas `onDraw` lambda. Use `derivedStateOf` for computed values like joint angles that the UI needs. The existing pattern of individual `StateFlow` per UI metric (not aggregated state objects) should be followed. Do NOT emit a new `FormCheckResult` on every frame -- only emit when the form score changes meaningfully (e.g., > 5 point delta).
 
 ## Phase-Specific Warnings
 
 | Phase Topic | Likely Pitfall | Mitigation |
 |-------------|---------------|------------|
-| Architecture design (Phase 1) | Over-decomposition: splitting into too many sub-managers creates coordination overhead worse than the monolith | Target 3-4 sub-managers max: WorkoutStateCoordinator, RoutineFlowManager, MetricProcessor, AutoStopController |
-| WorkoutState extraction | Breaking the state machine transitions that currently prevent re-entrant calls | Keep ALL state transitions in one coordinator, sub-managers request transitions |
-| Routine flow extraction | Losing the implicit ordering between exercise index, set index, skipped/completed sets | These 4 flows must stay together -- they form an atomic "routine position" concept |
-| Auto-stop extraction | Velocity stall detection depends on workout state guards | Auto-stop controller must receive workout state as input, not query it independently |
-| Metric processing extraction | `handleMonitorMetric()` touches every concern | Keep as orchestration point, delegate to sub-managers synchronously |
-| Rep counting extraction | `RepCounterFromMachine` callback (`onRepEvent`) triggers state transitions | Callback must route through coordinator, not directly to sub-managers |
-| Session saving extraction | `collectedMetrics`, `currentSessionId`, `workoutStartTime` are read during save | These must be accessible to the saver -- pass as parameters or keep in coordinator |
-| Testing | Tests in `androidUnitTest` use JUnit Rules unavailable in `commonTest` | Write new sub-manager tests in `commonTest` with `runTest` pattern |
-| Koin registration | New sub-managers might be incorrectly registered as `single{}` in AppModule | Keep manual construction in MainViewModel, matching existing pattern |
-| Compose UI layer | Changing StateFlow source paths could cause recomposition regressions | Maintain identical public API signatures through delegation |
+| Schema migration (persistence) | iOS DriverFactory desync | Checklist: .sq, .sqm, iOS DriverFactory (tables + columns + indexes + version) |
+| Schema migration (persistence) | Existing data loss on iOS update | iOS defense purges DB when version mismatches -- bump version LAST after all tables/columns are in place |
+| MediaPipe integration | Release build crash from R8 | Add ProGuard keep rules on day one, test release build BEFORE any other MediaPipe work |
+| MediaPipe integration | Memory leak from native resources | PoseEstimationManager with explicit start/stop, DisposableEffect in Compose |
+| MediaPipe + BLE concurrent | Thermal throttling kills both systems | Adaptive frame rate, separate dispatchers, thermal budget monitor |
+| CameraX overlay | Coordinate mismatch skeleton/body | PoseLandmarkTransformer utility, test on multiple aspect ratios |
+| KMP boundary for CV | commonMain importing Android types | Abstraction at landmark level, not camera level |
+| Form rules engine | Over-coupling to specific exercises | Parameterize angle thresholds per exercise, not hardcoded per movement |
+| Ghost racing UI | Stub data shapes diverge from portal | Define domain models in commonMain NOW, repository interface with comprehensive stubs |
+| RPG attribute card UI | Missing error/loading states | Stub must simulate delay, errors, empty states |
+| Pre-workout briefing UI | Assumes specific portal response shape | Sealed class UI state, handle all cases from day one |
+| Camera permission | Dialog during active workout | Request before workout starts, never mid-set |
+| ActiveSessionEngine growth | God object recurrence | New managers for CV and persistence, delegate pattern |
+| FeatureGate extension | New feature silently gated | Unit test: every enum value in at least one tier set |
+| APK size | Model file bloats download | App Bundle on-demand delivery or runtime download |
+| Compose performance | Recomposition storm from landmarks | Canvas drawWithCache, derivedStateOf for computed values |
 
 ## Sources
 
-- Direct codebase analysis of `DefaultWorkoutSessionManager.kt` (4,024 lines)
-- Direct codebase analysis of `MainViewModel.kt` (420 lines, delegation pattern)
-- Direct codebase analysis of `AppModule.kt` (Koin DI registration)
-- Direct codebase analysis of `BleConnectionManager.kt` (existing extraction pattern with `WorkoutStateProvider` interface)
-- Direct codebase analysis of `BleConnectionManagerTest.kt` (existing test patterns)
-- Direct codebase analysis of `TestCoroutineRule.kt` (androidUnitTest-only infrastructure)
-- KMP coroutine testing documentation (kotlinx-coroutines-test)
-- Compose recomposition behavior (Jetpack Compose stability documentation)
-- Koin dependency injection resolution semantics (circular dependency behavior)
+- Direct codebase analysis: `ActiveSessionEngine.kt` (~2,600 lines), `DriverFactory.ios.kt` (1,073 lines, 4-layer defense), `VitruvianDatabase.sq` (schema v15), `FeatureGate.kt`, `BiomechanicsEngine.kt`, `androidApp/build.gradle.kts` (minifyEnabled = true)
+- [MediaPipe Pose Landmarker Android Guide](https://ai.google.dev/edge/mediapipe/solutions/vision/pose_landmarker/android) -- official setup, threading model, delegate options
+- [MediaPipe GPU memory swapping issue #6223](https://github.com/google-ai-edge/mediapipe/issues/6223) -- GPU delegate memory concerns
+- [MediaPipe GPU orientation crash issue #5835](https://github.com/google-ai-edge/mediapipe/issues/5835) -- Lite model + GPU crashes on rotation
+- [MediaPipe memory leak issue #2098](https://github.com/google/mediapipe/issues/2098) -- ByteBuffer.allocateDirect misuse
+- [MediaPipe slow performance issue #3564](https://github.com/google/mediapipe/issues/3564) -- 2-3 FPS on Android devices
+- [MediaPipe R8/ProGuard crash issue #4806](https://github.com/google-ai-edge/mediapipe/issues/4806) -- minifyEnabled crashes
+- [MediaPipe R8 issue #6138](https://github.com/google-ai-edge/mediapipe/issues/6138) -- ExceptionInInitializerError with ProGuard
+- [MediaPipe R8 issue #3509](https://github.com/google/mediapipe/issues/3509) -- minifyEnabled not buildable
+- [CameraX ImageAnalysis backpressure](https://developer.android.com/media/camera/camerax/analyze) -- STRATEGY_KEEP_ONLY_LATEST documentation
+- [CameraX Compose integration](https://proandroiddev.com/goodbye-androidview-camerax-goes-full-compose-4d21ca234c4e) -- CameraXViewfinder, CoordinateTransformer
+- [SQLDelight 2.0.2 Migrations](https://sqldelight.github.io/sqldelight/2.0.2/multiplatform_sqlite/migrations/) -- migration file format, verification, no-transaction rule
+- [Adapting MediaPipe for KMP](https://2bab.me/en/blog/2024-10-04-on-device-model-integration-kmp-2/) -- expect/actual pattern for ML features
+- [Android CameraX black screen issue #4358](https://github.com/google-ai-edge/mediapipe/issues/4358) -- intermittent black preview
+- [Accompanist Permissions](https://google.github.io/accompanist/permissions/) -- Compose permission handling
+- [Android Runtime Permissions Best Practices](https://developer.android.com/training/permissions/requesting) -- graceful degradation pattern
+- Daem0n memory warning #155: "VitruvianDatabase.sq changes require syncing iOS DriverFactory.ios.kt"
