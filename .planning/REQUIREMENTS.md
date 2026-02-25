@@ -27,7 +27,7 @@ Requirements for v0.5.0 Premium Mobile milestone. Each maps to roadmap phases.
 - [x] **CV-08**: Warnings are advisory only — no automatic weight or machine adjustments
 - [ ] **CV-09**: Adaptive frame rate prevents CV processing from degrading BLE metric pipeline
 - [ ] **CV-10**: iOS displays "Form Check coming soon" stub when toggle is tapped
-- [ ] **CV-11**: MediaPipe functions correctly in release builds (ProGuard/R8 keep rules validated)
+- [x] **CV-11**: MediaPipe functions correctly in release builds (ProGuard/R8 keep rules validated)
 
 ### Ghost Racing
 
@@ -103,7 +103,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | CV-08 | Phase 14 | Complete |
 | CV-09 | Phase 15 | Pending |
 | CV-10 | Phase 16 | Pending |
-| CV-11 | Phase 15 | Pending |
+| CV-11 | Phase 15 | Complete |
 | GHOST-01 | Phase 17 | Pending |
 | GHOST-02 | Phase 17 | Pending |
 | GHOST-03 | Phase 17 | Pending |
