@@ -18,8 +18,8 @@ Requirements for v0.5.0 Premium Mobile milestone. Each maps to roadmap phases.
 ### CV Form Check
 
 - [ ] **CV-01**: User can enable "Form Check" toggle on Active Workout Screen (Phoenix+ tier)
-- [ ] **CV-02**: Camera preview appears as PiP overlay when Form Check is enabled
-- [ ] **CV-03**: Skeleton overlay renders tracked landmarks on camera feed
+- [x] **CV-02**: Camera preview appears as PiP overlay when Form Check is enabled
+- [x] **CV-03**: Skeleton overlay renders tracked landmarks on camera feed
 - [ ] **CV-04**: Real-time form warnings display for exercise-specific joint angle violations (audio + visual)
 - [ ] **CV-05**: Form score (0-100) calculated per exercise from joint angle compliance
 - [ ] **CV-06**: Form assessment data (score, violations, joint angles) persisted locally per exercise
@@ -94,8 +94,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 | PERSIST-04 | Phase 13 | Complete |
 | PERSIST-05 | Phase 13 | Complete |
 | CV-01 | Phase 16 | Pending |
-| CV-02 | Phase 15 | Pending |
-| CV-03 | Phase 15 | Pending |
+| CV-02 | Phase 15 | Complete |
+| CV-03 | Phase 15 | Complete |
 | CV-04 | Phase 16 | Pending |
 | CV-05 | Phase 16 | Pending |
 | CV-06 | Phase 16 | Pending |

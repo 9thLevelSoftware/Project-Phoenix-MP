@@ -8,8 +8,8 @@ See: .planning/PROJECT.md
 
 **Milestone:** v0.5.0 Premium Mobile
 **Current phase:** Phase 15: CV Form Check — Android Integration
-**Status:** In Progress (2/3 plans complete)
-**Current Plan:** 03 of 3
+**Status:** Complete (3/3 plans complete)
+**Current Plan:** 03 of 3 (COMPLETE)
 
 ## Decisions
 
@@ -19,6 +19,10 @@ See: .planning/PROJECT.md
 - 100ms minimum inference interval (~10 FPS max) balances form check accuracy with BLE pipeline protection
 - Prefer world landmarks (3D) over normalized landmarks (2D) for camera-angle-robust joint angles
 - Bundled lite model in APK assets - 5.78MB is acceptable for v1
+- 160x120dp PiP size - small enough to not block workout metrics
+- Front camera with horizontal flip for self-view workout feedback
+- iOS stub provides no-op actual - Form Check deferred to v0.6.0+
+- Callback pattern (onFormAssessment) decouples overlay from business logic
 
 ## Session Log
 
@@ -26,3 +30,5 @@ See: .planning/PROJECT.md
 - 2026-02-25: Phase 15 planning completed — 3 plans created (15-01, 15-02, 15-03)
 - 2026-02-25: Plan 15-01 completed — MediaPipe and CameraX dependencies added
 - 2026-02-25: Plan 15-02 completed — PoseLandmarkerHelper and LandmarkAngleCalculator created
+- 2026-02-25: Plan 15-03 completed — FormCheckOverlay composable with CameraX PiP and skeleton overlay
+- 2026-02-25: Phase 15 execution complete — all 3 plans finished

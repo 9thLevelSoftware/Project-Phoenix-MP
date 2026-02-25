@@ -65,7 +65,7 @@ See `.planning/milestones/v0.4.7-*` for archived phase details.
 
 - [x] **Phase 13: Biomechanics Persistence** — Persist per-rep VBT, force curves, and asymmetry data to database with schema v16 (completed 2026-02-21)
 - [x] **Phase 14: CV Form Check — Domain Logic** — Exercise-specific form rules engine and joint angle models in commonMain (completed 2026-02-21)
-- [ ] **Phase 15: CV Form Check — Android Integration** — MediaPipe pose estimation, CameraX pipeline, skeleton overlay, thermal management
+- [x] **Phase 15: CV Form Check — Android Integration** — MediaPipe pose estimation, CameraX pipeline, skeleton overlay, thermal management (completed 2026-02-25)
 - [ ] **Phase 16: CV Form Check — UI, Persistence, and Feature Gating** — Camera PiP, form warnings, form score persistence, iOS stub, tier gates
 - [ ] **Phase 17: Premium UI Composables** — Ghost racing overlay, RPG attribute card, pre-workout briefing with local data
 
@@ -166,7 +166,7 @@ Note: Phase 14 can start in parallel with Phase 13 (no dependency). Phase 17 can
 |-------|----------------|--------|-----------|
 | 13. Biomechanics Persistence | 1/2 | In progress | - |
 | 14. CV Domain Logic | 2/2 | Complete    | 2026-02-21 |
-| 15. CV Android Integration | 2/3 | In Progress|  |
+| 15. CV Android Integration | 3/3 | Complete   | 2026-02-25 |
 | 16. CV UI + Persistence + Gating | 0/TBD | Not started | - |
 | 17. Premium UI Composables | 0/TBD | Not started | - |
 
