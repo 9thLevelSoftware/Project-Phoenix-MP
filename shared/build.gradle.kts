@@ -158,6 +158,15 @@ kotlin {
 
                 // Activity Compose (for file picker Activity Result APIs)
                 implementation(libs.androidx.activity.compose)
+
+                // MediaPipe Pose Estimation (CV Form Check)
+                implementation(libs.mediapipe.tasks.vision)
+
+                // CameraX for camera preview and frame capture
+                implementation(libs.camerax.core)
+                implementation(libs.camerax.camera2)
+                implementation(libs.camerax.lifecycle)
+                implementation(libs.camerax.view)
             }
         }
         

@@ -109,11 +109,12 @@ Plans:
   2. Skeleton overlay renders tracked body landmarks on the camera feed in real-time
   3. BLE metric processing (rep counting, velocity tracking) shows no degradation when CV processing is active — no missed reps, no metric delays >50ms
   4. App does not crash in release builds with minifyEnabled=true (ProGuard/R8 keep rules validated)
-**Plans**: TBD
+**Plans**: 3 plans
 
 Plans:
-- [ ] 15-01: TBD
-- [ ] 15-02: TBD
+- [ ] 15-01-PLAN.md — MediaPipe + CameraX dependencies, ProGuard keep rules, camera permission
+- [ ] 15-02-PLAN.md — PoseLandmarkerHelper wrapper, LandmarkAngleCalculator, model file
+- [ ] 15-03-PLAN.md — FormCheckOverlay composable with camera preview and skeleton overlay
 
 ### Phase 16: CV Form Check — UI, Persistence, and Feature Gating
 **Goal**: Users can enable form checking during workouts, receive real-time form warnings, and review form scores after sessions
@@ -165,7 +166,7 @@ Note: Phase 14 can start in parallel with Phase 13 (no dependency). Phase 17 can
 |-------|----------------|--------|-----------|
 | 13. Biomechanics Persistence | 1/2 | In progress | - |
 | 14. CV Domain Logic | 2/2 | Complete    | 2026-02-21 |
-| 15. CV Android Integration | 0/TBD | Not started | - |
+| 15. CV Android Integration | 0/3 | Planned | - |
 | 16. CV UI + Persistence + Gating | 0/TBD | Not started | - |
 | 17. Premium UI Composables | 0/TBD | Not started | - |
 
