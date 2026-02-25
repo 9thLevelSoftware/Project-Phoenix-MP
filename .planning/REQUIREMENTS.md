@@ -25,7 +25,7 @@ Requirements for v0.5.0 Premium Mobile milestone. Each maps to roadmap phases.
 - [ ] **CV-06**: Form assessment data (score, violations, joint angles) persisted locally per exercise
 - [x] **CV-07**: Exercise-specific form rules defined for squat, deadlift/RDL, overhead press, curl, and row
 - [x] **CV-08**: Warnings are advisory only — no automatic weight or machine adjustments
-- [ ] **CV-09**: Adaptive frame rate prevents CV processing from degrading BLE metric pipeline
+- [x] **CV-09**: Adaptive frame rate prevents CV processing from degrading BLE metric pipeline
 - [ ] **CV-10**: iOS displays "Form Check coming soon" stub when toggle is tapped
 - [x] **CV-11**: MediaPipe functions correctly in release builds (ProGuard/R8 keep rules validated)
 
@@ -101,7 +101,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | CV-06 | Phase 16 | Pending |
 | CV-07 | Phase 14 | Complete |
 | CV-08 | Phase 14 | Complete |
-| CV-09 | Phase 15 | Pending |
+| CV-09 | Phase 15 | Complete |
 | CV-10 | Phase 16 | Pending |
 | CV-11 | Phase 15 | Complete |
 | GHOST-01 | Phase 17 | Pending |
