@@ -104,3 +104,25 @@
 #     public static int d(...);
 #     public static int i(...);
 # }
+
+# ==================== MediaPipe ====================
+# Keep all MediaPipe framework classes (JNI + reflection)
+-keep class com.google.mediapipe.** { *; }
+-keep class com.google.mediapipe.framework.** { *; }
+
+# Keep protobuf classes used by MediaPipe via reflection
+-keep class com.google.protobuf.** { *; }
+-keepclassmembers class * extends com.google.protobuf.GeneratedMessageLite {
+    *;
+}
+
+# Keep MediaPipe model task infrastructure
+-keep class com.google.mediapipe.tasks.** { *; }
+
+# Don't warn about optional GPU delegate classes
+-dontwarn com.google.mediapipe.**
+
+# ==================== CameraX ====================
+# Keep CameraX classes (usually handled by CameraX's own rules, but be safe)
+-keep class androidx.camera.** { *; }
+-dontwarn androidx.camera.**
