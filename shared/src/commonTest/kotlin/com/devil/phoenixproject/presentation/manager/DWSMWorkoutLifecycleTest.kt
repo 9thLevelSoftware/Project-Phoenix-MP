@@ -4,7 +4,9 @@ import app.cash.turbine.test
 import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.RepCount
 import com.devil.phoenixproject.domain.model.WorkoutParameters
+import com.devil.phoenixproject.domain.model.WorkoutMetric
 import com.devil.phoenixproject.domain.model.WorkoutState
+import com.devil.phoenixproject.domain.model.currentTimeMillis
 import com.devil.phoenixproject.testutil.DWSMTestHarness
 import com.devil.phoenixproject.testutil.WorkoutStateFixtures.activeDWSM
 import com.devil.phoenixproject.testutil.WorkoutStateFixtures.createTestRoutine
@@ -14,6 +16,7 @@ import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
@@ -263,6 +266,116 @@ class DWSMWorkoutLifecycleTest {
         // clears any previous auto-stop timers and resets the UI state
         val autoStop = harness.dwsm.coordinator.autoStopState.value
         assertNotNull(autoStop, "autoStopState should be reset after startWorkout")
+        harness.cleanup()
+    }
+
+    @Test
+    fun `deload starts stall timer for standard set when stall detection enabled`() = runTest {
+        val harness = DWSMTestHarness(this)
+        harness.fakeBleRepo.simulateConnect("Vee_Test")
+
+        harness.dwsm.updateWorkoutParameters(
+            WorkoutParameters(
+                programMode = ProgramMode.OldSchool,
+                reps = 8,
+                warmupReps = 0,
+                weightPerCableKg = 35f,
+                stallDetectionEnabled = true,
+                isAMRAP = false,
+                isJustLift = false
+            )
+        )
+        harness.dwsm.startWorkout(skipCountdown = true)
+        advanceUntilIdle()
+        assertIs<WorkoutState.Active>(harness.dwsm.coordinator.workoutState.value)
+
+        harness.fakeBleRepo.emitDeloadOccurred()
+        advanceUntilIdle()
+
+        assertNotNull(
+            harness.dwsm.coordinator.stallStartTime,
+            "DELOAD should start the 5s stall timer even before meaningful ROM is established"
+        )
+        assertTrue(harness.dwsm.coordinator.isCurrentlyStalled)
+        harness.cleanup()
+    }
+
+    @Test
+    fun `standard set ignores position-based auto-stop countdown`() = runTest {
+        val harness = DWSMTestHarness(this)
+        harness.fakeBleRepo.simulateConnect("Vee_Test")
+
+        harness.dwsm.updateWorkoutParameters(
+            WorkoutParameters(
+                programMode = ProgramMode.OldSchool,
+                reps = 8,
+                warmupReps = 0,
+                weightPerCableKg = 35f,
+                stallDetectionEnabled = true,
+                isAMRAP = false,
+                isJustLift = false
+            )
+        )
+        harness.dwsm.startWorkout(skipCountdown = true)
+        advanceUntilIdle()
+        assertIs<WorkoutState.Active>(harness.dwsm.coordinator.workoutState.value)
+
+        // Regression guard: regular sets should not use the 2.5s "handles at rest" path.
+        harness.dwsm.coordinator.autoStopStartTime = currentTimeMillis() - 10_000L
+        harness.fakeBleRepo.emitMetric(
+            WorkoutMetric(
+                positionA = 0f,
+                positionB = 0f,
+                velocityA = 0.0,
+                velocityB = 0.0,
+                loadA = 0f,
+                loadB = 0f
+            )
+        )
+        advanceUntilIdle()
+
+        assertIs<WorkoutState.Active>(harness.dwsm.coordinator.workoutState.value)
+        assertFalse(harness.dwsm.coordinator.autoStopTriggered)
+        harness.cleanup()
+    }
+
+    @Test
+    fun `standard set auto-stops after stalled deload timer expires`() = runTest {
+        val harness = DWSMTestHarness(this)
+        harness.fakeBleRepo.simulateConnect("Vee_Test")
+
+        harness.dwsm.updateWorkoutParameters(
+            WorkoutParameters(
+                programMode = ProgramMode.OldSchool,
+                reps = 8,
+                warmupReps = 0,
+                weightPerCableKg = 35f,
+                stallDetectionEnabled = true,
+                isAMRAP = false,
+                isJustLift = false
+            )
+        )
+        harness.dwsm.startWorkout(skipCountdown = true)
+        advanceUntilIdle()
+        assertIs<WorkoutState.Active>(harness.dwsm.coordinator.workoutState.value)
+
+        harness.fakeBleRepo.emitDeloadOccurred()
+        advanceUntilIdle()
+        harness.dwsm.coordinator.stallStartTime = currentTimeMillis() - 6_000L
+
+        harness.fakeBleRepo.emitMetric(
+            WorkoutMetric(
+                positionA = 120f,
+                positionB = 120f,
+                velocityA = 0.0,
+                velocityB = 0.0,
+                loadA = 10f,
+                loadB = 10f
+            )
+        )
+        advanceUntilIdle()
+
+        assertIs<WorkoutState.SetSummary>(harness.dwsm.coordinator.workoutState.value)
         harness.cleanup()
     }
 

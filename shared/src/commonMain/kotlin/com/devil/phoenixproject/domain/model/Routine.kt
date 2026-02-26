@@ -62,7 +62,7 @@ data class RoutineExercise(
     val isAMRAP: Boolean = false,
     // Per Set Rest Time toggle - when true, each set has its own rest time; when false, single rest time applies to all sets
     val perSetRestTime: Boolean = false,
-    // Stall detection toggle - when true, auto-stops set if user hesitates too long (applies to AMRAP/Just Lift modes)
+    // Stall detection toggle - when true, auto-stops set after 5s movement stall/de-load
     val stallDetectionEnabled: Boolean = true,
     // Rep count timing - when to count working reps (TOP=concentric peak, BOTTOM=eccentric valley)
     val repCountTiming: RepCountTiming = RepCountTiming.TOP,

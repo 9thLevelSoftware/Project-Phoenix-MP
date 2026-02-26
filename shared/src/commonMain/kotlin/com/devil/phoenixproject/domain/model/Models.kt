@@ -256,7 +256,7 @@ data class WorkoutParameters(
     val isAMRAP: Boolean = false,  // AMRAP (As Many Reps As Possible) - disables auto-stop
     val lastUsedWeightKg: Float? = null,  // Last used weight for this exercise (for quick preset)
     val prWeightKg: Float? = null,  // Personal record weight for this exercise (for quick preset)
-    val stallDetectionEnabled: Boolean = true,  // Enable stall detection auto-stop for Just Lift/AMRAP modes
+    val stallDetectionEnabled: Boolean = true,  // Enable 5s stall/de-load auto-stop during active sets
     val repCountTiming: RepCountTiming = RepCountTiming.TOP,  // When to count working reps (TOP=concentric peak, BOTTOM=eccentric valley)
     // Echo-specific settings (only used when programMode == ProgramMode.Echo)
     val echoLevel: EchoLevel = EchoLevel.HARD,

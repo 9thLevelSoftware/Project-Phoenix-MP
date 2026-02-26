@@ -199,20 +199,18 @@ class ActiveSessionEngine(
                 val params = coordinator._workoutParameters.value
                 val currentState = coordinator._workoutState.value
 
-                if (shouldEnableAutoStop(params) && currentState is WorkoutState.Active) {
+                if (params.stallDetectionEnabled && shouldEnableAutoStop(params) && currentState is WorkoutState.Active) {
                     Logger.d("DELOAD_OCCURRED: Machine detected cable release - starting auto-stop timer")
 
                     val hasMeaningfulRange = repCounter.hasMeaningfulRange(WorkoutCoordinator.MIN_RANGE_THRESHOLD)
                     val inGrace = isInAmrapStartupGrace(hasMeaningfulRange)
 
-                    if (coordinator.stallStartTime == null && !inGrace && hasMeaningfulRange) {
+                    if (coordinator.stallStartTime == null && !inGrace) {
                         coordinator.stallStartTime = currentTimeMillis()
                         coordinator.isCurrentlyStalled = true
                         Logger.d("Auto-stop stall timer STARTED via DELOAD_OCCURRED flag")
                     } else if (inGrace) {
                         Logger.d("DELOAD_OCCURRED ignored - in AMRAP startup grace period")
-                    } else if (!hasMeaningfulRange) {
-                        Logger.d("DELOAD_OCCURRED ignored - no meaningful ROM established yet (warmup incomplete)")
                     }
                 }
             }
@@ -498,11 +496,20 @@ class ActiveSessionEngine(
     }
 
     /**
-     * Whether auto-stop logic should run for the current mode/state.
+     * Whether 2.5s position-based auto-stop should run.
      */
-    private fun shouldEnableAutoStop(params: WorkoutParameters): Boolean {
+    private fun shouldRunPositionBasedAutoStop(params: WorkoutParameters): Boolean {
         val timedCableReadyForAutoStop = coordinator.isCurrentTimedCableExercise && coordinator._repCount.value.isWarmupComplete
         return params.isJustLift || params.isAMRAP || timedCableReadyForAutoStop
+    }
+
+    /**
+     * Whether any auto-stop evaluation should run.
+     * - 5s velocity/deload stall path: controlled by stallDetectionEnabled.
+     * - 2.5s position path: Just Lift / AMRAP / timed cable (post-warmup).
+     */
+    private fun shouldEnableAutoStop(params: WorkoutParameters): Boolean {
+        return params.stallDetectionEnabled || shouldRunPositionBasedAutoStop(params)
     }
 
     /**
@@ -609,6 +616,7 @@ class ActiveSessionEngine(
                 checkAutoStop(metric)
             } else {
                 resetAutoStopTimer()
+                resetStallTimer()
             }
 
             if (repCounter.shouldStopWorkout()) {
@@ -646,10 +654,9 @@ class ActiveSessionEngine(
 
             val maxPosition = maxOf(metric.positionA, metric.positionB)
             val isActivelyUsing = maxPosition > WorkoutCoordinator.STALL_MIN_POSITION || hasMeaningfulRange
-            val handlesAtRest = maxPosition < WorkoutCoordinator.HANDLE_REST_THRESHOLD
 
             val inGrace = isInAmrapStartupGrace(hasMeaningfulRange)
-            if (isDefinitelyStalled && (isActivelyUsing || handlesAtRest) && coordinator.stallStartTime == null && !inGrace && hasMeaningfulRange) {
+            if (isDefinitelyStalled && isActivelyUsing && coordinator.stallStartTime == null && !inGrace) {
                 coordinator.stallStartTime = currentTimeMillis()
                 coordinator.isCurrentlyStalled = true
             } else if (isDefinitelyMoving && coordinator.stallStartTime != null) {
@@ -678,6 +685,11 @@ class ActiveSessionEngine(
             }
         } else {
             resetStallTimer()
+        }
+
+        if (!shouldRunPositionBasedAutoStop(params)) {
+            resetAutoStopTimer()
+            return
         }
 
         // ===== 2. POSITION-BASED DETECTION =====
