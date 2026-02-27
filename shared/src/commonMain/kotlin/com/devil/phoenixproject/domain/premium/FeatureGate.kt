@@ -16,8 +16,8 @@ object FeatureGate {
     /**
      * All premium features available in the app.
      *
-     * Phoenix tier: Force curves, per-rep metrics, VBT, portal sync, LED biofeedback, rep quality
-     * Elite tier: All Phoenix features + asymmetry, auto-regulation, smart suggestions, replay, assessment, advanced analytics
+     * Phoenix tier: Force curves, per-rep metrics, VBT, portal sync, LED biofeedback, rep quality, CV form check, RPG attributes, ghost racing
+     * Elite tier: All Phoenix features + asymmetry, auto-regulation, smart suggestions, replay, assessment, advanced analytics, readiness briefing
      */
     enum class Feature {
         // Phoenix tier features
@@ -27,6 +27,10 @@ object FeatureGate {
         PORTAL_SYNC,
         LED_BIOFEEDBACK,
         REP_QUALITY_SCORE,
+        // New Phoenix tier features (v0.5.1)
+        CV_FORM_CHECK,
+        RPG_ATTRIBUTES,
+        GHOST_RACING,
 
         // Elite tier features
         ASYMMETRY_ANALYSIS,
@@ -34,7 +38,9 @@ object FeatureGate {
         SMART_SUGGESTIONS,
         WORKOUT_REPLAY,
         STRENGTH_ASSESSMENT,
-        PORTAL_ADVANCED_ANALYTICS
+        PORTAL_ADVANCED_ANALYTICS,
+        // New Elite tier feature (v0.5.1)
+        READINESS_BRIEFING
     }
 
     private val phoenixFeatures = setOf(
@@ -43,7 +49,10 @@ object FeatureGate {
         Feature.VBT_METRICS,
         Feature.PORTAL_SYNC,
         Feature.LED_BIOFEEDBACK,
-        Feature.REP_QUALITY_SCORE
+        Feature.REP_QUALITY_SCORE,
+        Feature.CV_FORM_CHECK,
+        Feature.RPG_ATTRIBUTES,
+        Feature.GHOST_RACING
     )
 
     private val eliteFeatures = phoenixFeatures + setOf(
@@ -52,7 +61,8 @@ object FeatureGate {
         Feature.SMART_SUGGESTIONS,
         Feature.WORKOUT_REPLAY,
         Feature.STRENGTH_ASSESSMENT,
-        Feature.PORTAL_ADVANCED_ANALYTICS
+        Feature.PORTAL_ADVANCED_ANALYTICS,
+        Feature.READINESS_BRIEFING
     )
 
     /**

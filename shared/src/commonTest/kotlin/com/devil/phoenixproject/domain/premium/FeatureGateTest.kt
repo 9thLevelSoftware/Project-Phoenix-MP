@@ -39,7 +39,10 @@ class FeatureGateTest {
             Feature.VBT_METRICS,
             Feature.PORTAL_SYNC,
             Feature.LED_BIOFEEDBACK,
-            Feature.REP_QUALITY_SCORE
+            Feature.REP_QUALITY_SCORE,
+            Feature.CV_FORM_CHECK,
+            Feature.RPG_ATTRIBUTES,
+            Feature.GHOST_RACING
         )
 
         phoenixFeatures.forEach { feature ->
@@ -58,7 +61,8 @@ class FeatureGateTest {
             Feature.SMART_SUGGESTIONS,
             Feature.WORKOUT_REPLAY,
             Feature.STRENGTH_ASSESSMENT,
-            Feature.PORTAL_ADVANCED_ANALYTICS
+            Feature.PORTAL_ADVANCED_ANALYTICS,
+            Feature.READINESS_BRIEFING
         )
 
         eliteOnlyFeatures.forEach { feature ->
@@ -79,6 +83,36 @@ class FeatureGateTest {
                 "Feature $feature should be enabled for ELITE tier"
             )
         }
+    }
+
+    // ========== isEnabled - v0.5.1 features ==========
+
+    @Test
+    fun `PHOENIX tier has v051 phoenix features`() {
+        assertTrue(
+            FeatureGate.isEnabled(Feature.CV_FORM_CHECK, SubscriptionTier.PHOENIX),
+            "CV_FORM_CHECK should be enabled for PHOENIX tier"
+        )
+        assertTrue(
+            FeatureGate.isEnabled(Feature.RPG_ATTRIBUTES, SubscriptionTier.PHOENIX),
+            "RPG_ATTRIBUTES should be enabled for PHOENIX tier"
+        )
+        assertTrue(
+            FeatureGate.isEnabled(Feature.GHOST_RACING, SubscriptionTier.PHOENIX),
+            "GHOST_RACING should be enabled for PHOENIX tier"
+        )
+    }
+
+    @Test
+    fun `READINESS_BRIEFING is elite-only`() {
+        assertFalse(
+            FeatureGate.isEnabled(Feature.READINESS_BRIEFING, SubscriptionTier.PHOENIX),
+            "READINESS_BRIEFING should NOT be enabled for PHOENIX tier"
+        )
+        assertTrue(
+            FeatureGate.isEnabled(Feature.READINESS_BRIEFING, SubscriptionTier.ELITE),
+            "READINESS_BRIEFING should be enabled for ELITE tier"
+        )
     }
 
     // ========== resolveEffectiveTier ==========
