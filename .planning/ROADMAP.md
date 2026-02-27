@@ -75,7 +75,7 @@ See `.planning/milestones/v0.5.0-*` for archived phase details.
 
 **Milestone Goal:** Complete carried-over premium UI features (CV Form Check UX, ghost racing, RPG attributes, readiness briefing) and address all Board of Directors conditions (accessibility, security, UX, versioning).
 
-- [ ] **Phase 16: Foundation & Board Conditions** — FeatureGate entries, versionName, UTC fix, backup exclusion, camera rationale, iOS suppression, asset fallback
+- [x] **Phase 16: Foundation & Board Conditions** — FeatureGate entries, versionName, UTC fix, backup exclusion, camera rationale, iOS suppression, asset fallback (completed 2026-02-27)
 - [ ] **Phase 17: WCAG Accessibility** — Color-blind mode toggle, secondary visual signals on all color-coded indicators
 - [ ] **Phase 18: HUD Customization** — Preset-based HUD page visibility with string-key persistence
 - [ ] **Phase 19: CV Form Check UX & Persistence** — Toggle UI, real-time warnings, form score persistence, iOS stub, tier gating
@@ -214,7 +214,7 @@ Note: Phase 19 (CV UX) can proceed after Phase 16 completes (independent of Phas
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 16. Foundation & Board Conditions | 1/2 | In Progress|  |
+| 16. Foundation & Board Conditions | 2/2 | Complete   | 2026-02-27 |
 | 17. WCAG Accessibility | 0/TBD | Not started | - |
 | 18. HUD Customization | 0/TBD | Not started | - |
 | 19. CV Form Check UX & Persistence | 0/TBD | Not started | - |

@@ -13,7 +13,7 @@ See: .planning/PROJECT.md (updated 2026-02-27)
 **Current phase:** Phase 16 of 22 (Foundation & Board Conditions)
 **Current Plan:** 2 of 2 (Phase 16 complete)
 **Status:** Phase complete
-**Last activity:** 2026-02-27 -- Phase 16 complete (2 plans executed)
+**Last activity:** 2026-02-27 -- Plan 16-01 executed (FeatureGate entries, version bump, timezone fix)
 
 Progress: [=░░░░░░░░░] 14%
 
@@ -42,6 +42,7 @@ Progress: [=░░░░░░░░░] 14%
 - (v0.5.1) RPG attributes get dedicated table (not GamificationStats singleton) -- schema v17
 - (v0.5.1) Ghost racing syncs on rep index, not wall-clock -- pre-load ghost session to memory
 - (v0.5.1) CV Form Check UX split from Ghost Racing into separate phase (independent concerns)
+- (v0.5.1) Injectable TimeZone parameter pattern for timezone-dependent functions (default to system, explicit for tests)
 - (v0.5.1) Targeted backup exclusion (allowBackup=true + specific file exclusions) rather than blanket disable
 - (v0.5.1) Always-show camera rationale with on-device guarantee before permission request
 
@@ -57,5 +58,5 @@ Progress: [=░░░░░░░░░] 14%
 - 2026-02-27: v0.5.0 shipped (Phases 13-15)
 - 2026-02-27: v0.5.1 milestone started, requirements defined (26 total)
 - 2026-02-27: Research completed, roadmap created (7 phases: 16-22)
-- 2026-02-27: Phase 16 Plan 01 executed (FeatureGate entries + isIosPlatform)
 - 2026-02-27: Phase 16 Plan 02 executed (backup exclusion, camera rationale, error handling)
+- 2026-02-27: Phase 16 Plan 01 executed (FeatureGate v0.5.1 entries, version bump, UTC timezone fix)
