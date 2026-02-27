@@ -1,181 +1,264 @@
 # Project Research Summary
 
-**Project:** Project Phoenix MP — v0.5.0 Premium Mobile Features
-**Domain:** KMP BLE fitness app — CV pose estimation, VBT persistence, gamified premium UI
-**Researched:** 2026-02-20
+**Project:** Project Phoenix MP — v0.5.1 Board Polish & Premium UI
+**Domain:** KMP connected fitness app — premium UI features, gamification, accessibility hardening
+**Researched:** 2026-02-27
 **Confidence:** HIGH
 
 ## Executive Summary
 
-Project Phoenix v0.5.0 adds five premium feature sets to an already-functional KMP BLE fitness app: biomechanics data persistence, on-device CV pose estimation for form checking, a ghost racing overlay, an RPG attribute card, and a pre-workout readiness briefing. The architectural foundations are strong — the app already computes all the VBT and biomechanics data it needs; the core problem is that none of it is persisted. This makes biomechanics persistence the mandatory first phase, since ghost racing, RPG XP, and the readiness model all depend on locally-stored historical data. CV pose estimation is independent and can be developed in parallel once the domain boundary is set correctly.
+v0.5.1 is a targeted polish milestone that activates six premium features already stubbed in v0.5.0 (ghost racing, RPG attributes, pre-workout readiness, WCAG accessibility, HUD customization, CV form check UX) and closes nine Board of Directors compliance conditions (versionName, UTC bug, backup exclusion, camera rationale, iOS suppression, asset fallback). The critical research finding is that every feature is implementable using the existing dependency set — zero new production runtime libraries are required. The entire milestone is local-only and avoids any Supabase/portal dependency, which is reserved for v0.6.0. This radically lowers integration risk: there are no external API rate limits, no auth flows, and no network failure modes to account for.
 
-The recommended approach follows the existing architectural patterns strictly: new managers (CvFormCheckManager, GhostRaceManager, ReadinessBriefingProvider) follow the nullable-injection delegate pattern established by LedFeedbackController and ExerciseDetectionManager; MediaPipe stays entirely in androidMain with the abstraction boundary drawn at the joint-angles level; and all new UI composables are built stub-first with comprehensive error/loading/empty states to avoid contract drift when the portal backend ships. Three features (ghost racing data, RPG XP, readiness model) will use local or synthetic data for v0.5.0 and receive portal integration in v0.5.5+. This is an intentional design decision, not technical debt.
+The recommended technical approach follows three patterns already established in the codebase: stateless pure-function domain engines (following `SmartSuggestionsEngine`), `CompositionLocal` for cross-cutting theme concerns (color-blind mode), and JSON-serialized config blobs in `PreferencesManager` (following `SingleExerciseDefaults`). All new premium features (Ghost Racing, RPG Attributes, Readiness Briefing) belong in `domain/premium/` as Kotlin `object` singletons with no Koin registration. The single most complex integration is ghost racing, because it must overlay live workout state with pre-loaded historical session data during an active BLE session — and this must be built last, after all other features are stable.
 
-The top risk is the combination of MediaPipe inference and BLE metric processing competing for CPU resources during an active workout — thermal throttling degrades both the BLE rep counting pipeline and CV pose quality simultaneously. The second-highest risk is the iOS database migration system: every schema change must be manually replicated in DriverFactory.ios.kt or iOS users lose all workout history on update. Both risks are well-understood with documented prevention strategies, but they must be addressed at the start of their respective phases, not retrofitted later.
+The top risk is implementation ordering. Ghost racing touches `ActiveSessionEngine` (2600L), `WorkoutCoordinator`, and `WorkoutHud` simultaneously. If built first, it creates a large unstable surface while other features are still being added. Four other features (WCAG, HUD customization, RPG attributes, readiness briefing) are self-contained and can be built in sequence with no cross-feature conflicts. Board condition fixes (versionName, UTC bug, backup rules, camera rationale) are isolated one-file changes that must land in Phase 1 to unblock Board review at any point during the milestone.
+
+---
 
 ## Key Findings
 
 ### Recommended Stack
 
-The existing stack (Kotlin 2.3.0, Compose Multiplatform 1.10.0, SQLDelight 2.2.1, Koin 4.1.1) requires only three new library additions. MediaPipe Tasks Vision 0.10.32 provides 33 3D world-coordinate landmarks on-device at 30fps via LIVE_STREAM mode and is Google's actively maintained replacement for ML Kit Pose. CameraX 1.5.3 (stable, January 2026) provides the camera-compose artifact with a CameraXViewfinder composable that requires no AndroidView wrapper. Accompanist Permissions 0.37.3 handles Compose-idiomatic camera permission flow. Biomechanics persistence, ghost racing, RPG, and readiness briefing require zero new dependencies — all use the existing Compose and SQLDelight stack.
+The existing stack requires no production runtime additions for v0.5.1. The full feature set — ghost racing UI, RPG computation, readiness ACWR heuristic, WCAG palette swaps, HUD preference persistence, camera permission rationale, UTC bug fix, and Android backup exclusion — is achievable with Kotlin 2.3.0, Compose Multiplatform 1.10.0, `kotlinx-datetime` 0.7.1, `multiplatform-settings` 1.3.0, `accompanist-permissions` 0.37.3, and the existing Compose BOM (2025.12.01 / compose-ui 1.10.4). One new test-only dependency is needed: `androidx.compose.ui:ui-test-junit4-accessibility` (pulled via existing BOM, no version pin required).
 
-**Core technologies (new additions only):**
-- **MediaPipe Tasks Vision 0.10.32**: On-device 33-landmark pose estimation — only library offering 3D world coordinates without camera calibration; ML Kit Pose is a wrapper around this
-- **CameraX 1.5.3 (core, camera2, lifecycle, compose)**: Camera pipeline with lifecycle management — stable Compose-native API; no Camera2 boilerplate or AndroidView wrappers
-- **Accompanist Permissions 0.37.3**: Runtime camera permission — Compose-idiomatic; consistent with rest of UI layer
-- **pose_landmarker_lite.task (~5MB model asset)**: Use CPU delegate only; GPU delegate has documented orientation-crash bugs (GitHub #5835, #6223)
-- **ABI splits (arm64-v8a + armeabi-v7a)**: Mandatory — MediaPipe native .so files add ~5-8MB per ABI; total APK size increase ~10-13MB with splits
+**Core technologies and their v0.5.1 roles:**
+- `kotlinx-datetime` 0.7.1: `TimeZone.currentSystemDefault()` for the UTC fix in `SmartSuggestionsEngine`; `Clock` injection in `ReadinessBriefingEngine` for testable time-dependent computation
+- `multiplatform-settings` 1.3.0 + coroutines module: HUD page config persistence as JSON blob; `StateFlow` for reactive HUD preference updates — already in project, zero incremental cost
+- `accompanist-permissions` 0.37.3: Camera permission rationale dialog with `shouldShowRationale` Compose state — already in project
+- `reorderable` 3.0.0: Drag-to-reorder in HUD settings if metric reordering is in scope (already in catalog)
+- `compose.foundation` Canvas + `animateFloatAsState`: Ghost racing dual progress bar; RPG attribute visualization
+- `compose-material-icons-extended`: Warning/info icons for color-blind-safe secondary visual cues
+- `compose-ui:ui-test-junit4-accessibility` (NEW, test-only): ATF-based automated WCAG contrast and touch target checks in instrumented tests
+
+**What NOT to add:** DataStore (Android-only; `multiplatform-settings` already solves this KMP-wide), WorkManager (readiness computes on ViewModel init, no background scheduling needed), RevenueCat (blocked on v0.6.0 auth migration), Axe Android (ATF via BOM provides equivalent automated checks at zero additional cost), `java.time` or `java.util.TimeZone` (JVM-only, breaks commonMain compilation).
 
 ### Expected Features
 
-The feature research reveals a clear dependency hierarchy and a clean split between what ships in v0.5.0 with stub/local data and what requires portal infrastructure in v0.5.5+.
+**Must have — table stakes (P1, required for Board approval):**
+- Ghost racing overlay: rep-by-rep velocity comparison vs. personal best session, dual animated progress bars, numeric delta label. Zwift HoloReplay is the reference implementation; local-only via `RepBiomechanics` + `RepMetric` queries (no schema changes needed). PHOENIX tier minimum; ELITE gets sample-level 50Hz position overlay.
+- RPG attribute card: 5 attributes (Strength, Power, Stamina, Consistency, Mastery) auto-derived from existing persisted data (1RM from `AssessmentResult`, MCV from `RepBiomechanics`, volume/streaks from `GamificationStats`, quality scores from `RepMetric`). 5 auto-assigned character classes. Pure KMP commonMain math — no server dependency. PHOENIX tier.
+- Pre-workout readiness briefing: ACWR (Acute:Chronic Workload Ratio) using 7-day/28-day rolling session volume. Green/Yellow/Red advisory with bootstrap states for sparse data history. Always shows override. ELITE tier.
+- WCAG AA secondary differentiators: Text labels or icons alongside all color-coded indicators (velocity zones, balance bar, readiness card, rep quality chip). Compose semantics on Canvas wrapper elements. Not palette-replacement-only. All tiers.
+- Color-blind mode toggle: Deuteranopia-safe MaterialTheme ColorScheme (blue/orange/teal replaces green/red palette). In-app toggle in Settings, implemented via `LocalColorBlindMode` CompositionLocal. All tiers.
+- Board conditions: UTC timezone fix in `SmartSuggestionsEngine.classifyTimeWindow()`, `allowBackup` exclusion XML (both API 30 format and API 31+ format required), camera permission rationale text with on-device processing guarantee, `versionName = "0.5.1"` bump, iOS Form Check upgrade prompt suppression, asset verification fallback.
 
-**Must have for v0.5.0 (table stakes):**
-- **Biomechanics persistence** — every competing VBT platform (GymAware, RepOne, Metric VBT) persists per-rep velocity and force data; Phoenix currently discards it at workout end
-- **Feature gates for new features** — CV_FORM_CHECK (PHOENIX), GHOST_RACING_BASIC/FULL (PHOENIX/ELITE), RPG_ATTRIBUTES (PHOENIX), PRE_WORKOUT_BRIEFING (ELITE)
-- **CV pose estimation + exercise-specific form warnings** — no competitor combines cable machine telemetry with CV pose; this is the unique market differentiator
+**Should have — competitive differentiators (P2):**
+- HUD page presets: Three preset pages (Essential 4 metrics, Biomechanics 5 metrics, Full with ghost + readiness overlay). Horizontal swipe, dynamic `visiblePages` list drives `rememberPagerState`. Page order stored as stable string keys, not integer indices.
+- Per-metric HUD toggles: On/off per non-essential metric in Settings → HUD Preferences. Toggle removes metric from all pages. No drag-and-drop in v0.5.1.
+- CV Form Check UX: Toggle UI, real-time warning display, form score persistence, iOS stub UI.
 
-**Should have for v0.5.0 (differentiators):**
-- **CV form score (0-100)** — mirrors existing rep quality score; enables form-fatigue tracking across sessions
-- **Ghost racing overlay (stub mode)** — races against locally-persisted session data from same device; two vertical progress bars with per-rep AHEAD/BEHIND verdict
-- **RPG attribute card (stub mode)** — 5 attributes computed locally from existing GamificationStats + biomechanics; reads real data, no portal required
-- **Pre-workout briefing (stub mode)** — local volume-based readiness heuristic; shows "Connect to Portal" upsell for full model
+**Defer to v0.6.0 — all require Supabase/portal:**
+- Ghost racing against portal session data (Supabase RPC for best-matching session)
+- RPG attributes with server-validated XP via Edge Functions
+- Full readiness with HRV/sleep from wearable API (WHOOP, Oura, Garmin)
+- Form data sync to portal
 
-**Defer to v0.5.5+ (portal dependency):**
-- Ghost racing against portal-matched sessions (full 50Hz telemetry for ELITE)
-- RPG XP computed server-side via compute-attributes Edge Function
-- Readiness briefing with Bannister FFM + HRV/sleep biometric correction
-- CV form data sync to portal for post-workout analysis
-
-**Confirmed anti-features (do not build):**
-- CV auto-deload on form detection (safety hazard — false positives under load cause injury)
-- Full 3D skeleton rendering during workout (performance conflict with BLE HUD)
-- Ghost racing against other users' data (privacy, consent, different body mechanics)
-- Readiness score blocking workouts (advisory only, always overridable)
-- Full biomechanics persistence for FREE tier (storage bloat; follow GATE-04 pattern)
+**Anti-features to reject:** Ghost racing against other users' sessions (physically meaningless — cable position reflects individual limb length/machine calibration), readiness score blocking workouts (advisory only per Board condition), animated avatar ghost overlay (frame drop risk on mid-range Android), RPG stat manual override (destroys data integrity), full WCAG AAA (7:1 contrast unachievable on dark workout HUD without overhaul), per-exercise HUD layouts (v0.7+ request).
 
 ### Architecture Approach
 
-All new features slot into the existing delegate-manager architecture without modifying the BLE data hot path. The pattern is: create a new manager class (CvFormCheckManager, GhostRaceManager, ReadinessBriefingProvider), inject it as a nullable parameter into WorkoutCoordinator, expose results as StateFlow, and consume in Compose. The same pattern already governs LedFeedbackController and ExerciseDetectionManager. The critical architectural boundary for CV: MediaPipe and CameraX live entirely in androidMain; commonMain sees only domain types (PoseLandmarks, JointAngle, FormViolation). The schema requires one migration (v15 to v16) adding columns to RepMetric and WorkoutSession, and two new tables (FormAssessment, FormViolation).
+All six new features integrate cleanly into the existing three-layer clean architecture (Presentation / Domain / Data) without modifying the BLE data hot path. Three of five new domain engines follow the exact `SmartSuggestionsEngine` stateless object pattern: pure `fun compute(inputs): Output`, no DI, no mutable state, injectable clock for time-dependent functions. User preferences (HUD config, color-blind mode) follow the existing `SingleExerciseDefaults` pattern: `@Serializable` data class stored as JSON blob via `SettingsPreferencesManager`. Ghost racing is the only feature that modifies the active workout lifecycle — it adds one `StateFlow<GhostRaceState?>` to `WorkoutCoordinator` and pre-loads historical session data at workout start. Five of six feature areas require zero schema migrations.
 
-**Major components:**
-1. **BiomechanicsPersistence** — Extend RepMetricData + RepMetricRepository; populate from existing BiomechanicsEngine output in ActiveSessionEngine at set completion; schema migration v16
-2. **CvFormCheckManager (commonMain) + AndroidPoseEstimator (androidMain)** — Manager receives JointAngles from platform layer, runs FormRuleEngine, emits FormCheckState StateFlow; MediaPipe/CameraX remain entirely platform-specific
-3. **GhostRaceManager** — Loads best-matching session from local DB (same exercise, weight +/- 5%); emits synchronized rep comparison data; stub-first with repository interface
-4. **RpgCalculator** — Local computation of 5 attributes from existing GamificationStats + biomechanics data; designed for easy swap to portal XP computation in v0.5.5+
-5. **ReadinessBriefingProvider** — Local volume/streak heuristic in v0.5.0; same interface consumed by portal-backed implementation in v0.5.5+
-6. **Premium UI composables** — GhostRaceOverlay, RpgAttributeCard, PreWorkoutBriefingCard; all in commonMain/presentation/components/premium/; all handle Loading/Error/Empty/Content states from day one
+**Major new components:**
+1. `domain/premium/GhostRacingEngine` — stateless object; pre-loaded ghost session data; pure rep-index comparison during BLE hot path; no DB I/O during active session
+2. `domain/premium/RpgAttributeEngine` — stateless object; reads from `GamificationStats` + `PersonalRecord` + `WorkoutSession` via `combine()`; computes on profile screen load, never during a session
+3. `domain/premium/ReadinessBriefingEngine` — stateless object; reuses `SmartSuggestionsRepository.getSessionSummariesSince()`; one-shot pre-session computation
+4. `ui/theme/AccessibilityColors` + `LocalColorBlindMode` CompositionLocal — color-blind palette injected at theme root, consumed by `BalanceBar`, velocity HUD, and new composables without parameter threading
+5. `domain/model/HudPageConfig` + `HudCustomizationSheet` — serializable page visibility config; dynamic `visiblePages` list drives `rememberPagerState(pageCount = { visiblePages.size })`
+6. New SQL named query: `selectBestSessionForExercise` in `VitruvianDatabase.sq` — only schema file addition needed (no new tables, no migration required)
 
 ### Critical Pitfalls
 
-1. **MediaPipe + BLE concurrent processing causes thermal throttling** — MediaPipe at 15-30fps and the existing BLE metric pipeline (BiomechanicsEngine, RepQualityScorer running per-metric-sample) compete for CPU and cause thermal throttling that degrades both systems simultaneously. Prevention: separate Dispatchers for BLE and CV, STRATEGY_KEEP_ONLY_LATEST backpressure, adaptive frame rate via Android ThermalStatusListener, CPU-only delegate (no GPU), and a thermal budget monitor that disables CV gracefully. Missing this causes the BLE rep-counting pipeline to miss rep boundaries.
+1. **Ghost racing timestamp desync** — Naive wall-clock replay causes ghost to lead or lag the live athlete from rep 1 because live BLE timestamps and stored session timestamps have different epoch references (different session start times, BLE jitter). Prevention: synchronize on rep index as the structural anchor, not wall-clock elapsed time. Pre-load ghost as a `List<GhostRepData>` indexed by rep number; look up by index during `handleMonitorMetric()`; zero DB I/O in the BLE hot path.
 
-2. **iOS schema migration desync causes total data loss** — The iOS DriverFactory.ios.kt bypasses SQLDelight migrations with a manual 4-layer defense system. Every schema change (v16) must be applied in three places: VitruvianDatabase.sq, the .sqm migration file (Android), AND DriverFactory.ios.kt (createAllTables + ensureAllColumnsExist + createAllIndexes + CURRENT_SCHEMA_VERSION). Missing any step causes iOS to purge the entire database on launch, deleting all workout history. Daem0n warning #155 documents this exactly.
+2. **Ghost racing DB reads in BLE hot path** — `ActiveSessionEngine.handleMonitorMetric()` already runs BiomechanicsEngine and RepQualityScorer per tick at 10-20 Hz. Any inline SQLDelight query for ghost data at this rate equals 200+ queries/second, immediate BLE processing stall, and missed reps. Prevention: pre-load the entire ghost session (~1200 rows, ~19KB) into memory at workout start. Pure function lookup only during the active session. No coroutines, no suspension in the hot path.
 
-3. **ProGuard/R8 strips MediaPipe classes in release builds** — isMinifyEnabled = true in the project's release config will crash the app on MediaPipe initialization. This is a documented upstream issue (GitHub #4806, #3509, #6138). Add comprehensive keep rules on the same day MediaPipe is added as a dependency; test release builds immediately; do not defer.
+3. **RPG attributes causing reactive DB recomputation storm** — SQLDelight Flows emit on any write to observed tables. If RPG attributes are computed from a live reactive `combine()` on `WorkoutSession` + `RepBiomechanics` + `PersonalRecord` + `GamificationStats`, a single set completion triggers 4 separate emissions each recomputing all 5 attributes from scratch. Prevention: compute RPG attributes as a one-shot post-session step in `GamificationManager.processPostSaveEvents()`, not from a continuous reactive query.
 
-4. **Stub UI components assume non-existent portal contract shapes** — Ghost racing, RPG, and briefing components built with stub data will diverge from the actual portal API shapes when v0.5.5 lands. Prevention: define domain models in commonMain now as the contract; use a repository interface with comprehensive stubs that simulate delay (500ms), random failures (10%), empty states, and large data cases.
+4. **GamificationStats singleton schema bloat via upsert path conflicts** — Adding RPG attribute columns to the existing `GamificationStats` singleton row means every `upsertGamificationStats()` call site in `ActiveSessionEngine` must be updated simultaneously or new columns are silently zeroed on each set completion. Prevention: create a separate `RpgAttributes` singleton table (ID=1) with isolated write paths that only `processPostSaveEvents()` touches. Never mix session save paths with RPG computation paths.
 
-5. **ActiveSessionEngine God object recurrence** — Already at ~2,600 lines; adding CV callbacks, form persistence, and new state flows here pushes past 3,000+ lines. CvFormCheckManager must be a separate peer manager (not nested), following the ExerciseDetectionManager delegate pattern.
+5. **FeatureGate enum entries missing before UI composables ship** — Composables wired up before `Feature.RPG_ATTRIBUTES`, `Feature.READINESS_BRIEFING`, `Feature.CV_FORM_CHECK` are added to the enum and their tier sets will silently bypass tier enforcement. Board conditions explicitly require tier gating for all three. Prevention: add all new `Feature` enum entries AND tier set membership as the very first commit of the milestone, before any composable work. Extend `FeatureGateTest.kt` to assert `isEnabled(feature, FREE) == false` for every new entry.
+
+6. **Android backup exclusion requiring two separate XML formats** — Providing only `fullBackupContent` (API 30) or only `dataExtractionRules` (API 31+) leaves the uncovered API range silently backing up the SQLite database, including subscription status data. Both XML files are mandatory. Prevention: create both `backup_rules.xml` and `backup_rules_legacy.xml` in `res/xml/`, reference both attributes in `AndroidManifest.xml`, test with `adb backup` on both API 30 and API 33 emulators.
+
+7. **HUD page order stored as integer indices** — Persisting `[0, 2, 1]` is fragile; any future page addition or reordering corrupts stored user preferences silently. Prevention: persist as stable string keys (`"EXECUTION"`, `"STATS"`, `"INSTRUCTION"`); map to integer indices at runtime; drop unknown keys gracefully on deserialize.
+
+---
 
 ## Implications for Roadmap
 
-Research establishes a clear five-phase build order based on hard dependencies and risk sequencing. Biomechanics persistence is the prerequisite that unblocks three other features. CV is independent but has the most complex integration risk and should be subdivided. Premium UI composables are self-contained and can be built after the foundation is in place.
+Based on architecture analysis, feature dependencies, and pitfall prevention requirements, six phases are recommended. The ordering is driven by three hard constraints: (a) Board condition fixes must land early to unblock review at any time during the milestone, (b) FeatureGate enum entries must exist before any composable references them, (c) ghost racing must be built last because it is the only feature that modifies the active workout lifecycle.
 
-### Phase 1: Biomechanics Persistence (Schema Foundation)
-**Rationale:** Everything else depends on this. Ghost racing needs historical per-rep velocity data. RPG XP uses MCV and power from persisted biomechanics. The readiness model needs historical velocity trends. Zero new libraries means zero new risk. Data is already computed — this phase just stores it.
-**Delivers:** Per-rep VBT metrics (MCV, zone, velocity loss, sticking point, strength profile, asymmetry) persisted to SQLite; set-level summary columns on WorkoutSession; schema v16 migration with full iOS DriverFactory sync.
-**Addresses:** Biomechanics persistence (P1 table stake), per-rep biomechanics in session history (P1 table stake)
-**Avoids:** iOS migration desync (Pitfall 2) — a schema change checklist covering all three sync locations must be produced before any code is written
+### Phase 1: Foundation — Version, Gates, and Board Conditions
 
-### Phase 2: CV Form Check — Domain Logic (Platform-Agnostic)
-**Rationale:** Establish the commonMain contract before touching any Android-specific code. JointAngleCalculator and FormRuleEngine are pure math — heavily testable without camera hardware. Defining these interfaces locks in what androidMain must deliver, preventing leaky abstractions later.
-**Delivers:** CvModels.kt, JointAngleCalculator, FormRuleEngine, ExerciseFormRules (squat/deadlift/press initial rules), CvFormCheckManager; full unit test coverage; no platform dependencies.
-**Addresses:** CV pose estimation domain (P1 differentiator)
-**Avoids:** KMP abstraction boundary violation (Pitfall 7) — no MediaPipe types in commonMain; ActiveSessionEngine God object (Pitfall 10) — CvFormCheckManager is a separate peer manager from the start
+**Rationale:** These changes are prerequisites for everything else. `versionName` must be correct before any release candidate can be tagged. FeatureGate enum entries must exist before any composable references them (compilation error if they don't, but the risk is the inverse: a composable wired up without a gate check). Board condition fixes are isolated one-file changes with zero risk of breaking other features. Landing them first means Board review can begin at any time during the milestone without waiting for premium features.
 
-### Phase 3: CV Form Check — Android Integration (High-Risk Platform Work)
-**Rationale:** Highest-risk phase in the milestone. MediaPipe + CameraX lifecycle management, CPU/thermal contention with BLE, ProGuard crash in release builds, and coordinate transformation for skeleton overlay are all addressed here. Sequenced after Phase 2 so platform work implements against proven interfaces.
-**Delivers:** PoseAnalyzerHelper (MediaPipe wrapper), CameraXProvider (lifecycle), AndroidPoseEstimator (connects CameraX to domain), PoseOverlayView (skeleton canvas); ProGuard rules; release build validation; thermal budget monitor.
-**Addresses:** CV form warnings (P1 differentiator)
-**Avoids:** Thermal throttling killing BLE pipeline (Pitfall 1) — separate dispatchers and adaptive frame rate; MediaPipe lifecycle leaks (Pitfall 2) — explicit start/stop PoseEstimationManager; ProGuard crash (Pitfall 3) — keep rules and release build test on day one; coordinate mismatch (Pitfall 6)
+**Delivers:** Correct `versionName = "0.5.1"` in `build.gradle.kts`, all three new `Feature` enum entries (`CV_FORM_CHECK`, `RPG_ATTRIBUTES`, `READINESS_BRIEFING`) with tier set membership, `SmartSuggestionsEngine.classifyTimeWindow()` UTC fix using `TimeZone.currentSystemDefault()`, both Android backup exclusion XML files (`backup_rules.xml` + `backup_rules_legacy.xml`) with both `AndroidManifest.xml` attributes, camera permission rationale text update (on-device processing guarantee), iOS Form Check upgrade prompt suppression.
 
-### Phase 4: CV Form Check — UI, Persistence, and Feature Gating
-**Rationale:** Final CV layer — camera PiP overlay, form warning HUD, form score persistence, and feature gates. Depends on Phases 2 and 3 being complete. Smaller scope, mostly Compose composables and repository wiring.
-**Delivers:** Camera PiP composable, form warning HUD overlay, FormAssessment + FormViolation tables and repositories, "Enable Form Check" toggle on Active Workout Screen, Feature.CV_FORM_CHECK and Feature.CV_ANALYTICS gates, FeatureGate unit test extension.
-**Addresses:** CV form score (P1), CV persistence (P2), Feature gates (P1)
-**Avoids:** Camera permission mid-workout disruption (Pitfall 9) — permission requested before workout starts; Compose recomposition storm (Pitfall 14) — Canvas drawWithCache, derivedStateOf; FeatureGate silent gating (Pitfall 12) — unit test verifies every enum value in at least one tier set
+**Addresses:** All P1 Board compliance conditions; pitfall prevention for FeatureGate (Pitfall 5), backup exclusion (Pitfall 6), UTC bug (PITFALLS Pitfall 12), versionName (PITFALLS Pitfall 11).
 
-### Phase 5: Premium UI Composables (Parallel-Eligible After Phase 1)
-**Rationale:** Ghost racing, RPG, and readiness briefing are self-contained UI features with no dependencies on each other or on the CV phases. They can be started after Phase 1 completes (they need persisted biomechanics data to show real content). Building stub-first with repository interfaces protects against portal API contract drift.
-**Delivers:** GhostRaceOverlay + GhostRaceManager (with repository interface and comprehensive stub); RpgAttributeCard + RpgCalculator (local attribute computation from existing data); PreWorkoutBriefingCard + ReadinessBriefingProvider (local heuristic); all with Loading/Error/Empty/Content states; Feature.GHOST_RACING_BASIC, Feature.GHOST_RACING_FULL, Feature.RPG_ATTRIBUTES, Feature.PRE_WORKOUT_BRIEFING gates.
-**Addresses:** Ghost racing (P2), RPG attribute card (P2), Pre-workout briefing (P2)
-**Avoids:** Stub contract drift (Pitfall 5) — repository interface in commonMain with comprehensive stubs simulating delay, failure, empty, and large-data cases; Ghost race timestamp sync (Pitfall 11) — use position/rep-based alignment rather than wall-clock timestamps
+**Avoids:** Ungated features shipping to wrong tier, backup data leakage on either API range, wrong time-window classification for non-UTC users, versionName audit trail corruption.
+
+**Research flag:** Standard patterns. All changes are isolated, fully specified in STACK.md and PITFALLS.md. No deeper research needed.
+
+---
+
+### Phase 2: WCAG Accessibility and Color-Blind Mode
+
+**Rationale:** WCAG is a Board condition and a cross-cutting concern that affects composables built in all later phases. Establishing `AccessibilityColors.kt` and `LocalColorBlindMode` CompositionLocal now means all new composables (readiness card, ghost overlay, RPG card) can consume the correct pattern from the start rather than retrofitting it after build. This is also the lowest regression risk phase — no domain logic changes, no schema changes, no active workout lifecycle involvement.
+
+**Delivers:** `ui/theme/AccessibilityColors.kt` (deuteranopia-safe palette: blue/orange/teal replacing green/red), `LocalColorBlindMode` CompositionLocal injected at theme root, `colorBlindModeEnabled: Boolean` in `UserPreferences` + `PreferencesManager` + `SettingsPreferencesManager`, secondary non-color indicators on all existing color-coded components (`BalanceBar` numeric percentage, velocity zone text labels, rep quality chip letter grade), Canvas wrapper semantics (`contentDescription` on wrapper Box with state-encoded descriptions; `clearAndSetSemantics` on decorative canvas elements), Color-blind mode toggle in Settings under Display.
+
+**Uses:** `compose.foundation` Canvas, `compose-material-icons-extended` (warning/info icons), `compose.material3` ColorScheme, `compose-ui:ui-test-junit4-accessibility` (new test dependency for ATF automated checks).
+
+**Implements:** CompositionLocal for cross-cutting theme values (Architecture Pattern 5); secondary-differentiator pattern per WCAG G111 technique.
+
+**Avoids:** Color-only indicators failing Board WCAG review (Pitfall 6), Canvas semantics misapplied inside drawing code instead of wrapper composable (Pitfall 7).
+
+**Research flag:** Standard patterns. WCAG G111 technique is canonical; Compose CompositionLocal is well-documented; `AccessibilityColors` palette fully specified in ARCHITECTURE.md. No deeper research needed.
+
+---
+
+### Phase 3: HUD Customization
+
+**Rationale:** HUD customization modifies `WorkoutHud.kt` — the same file ghost racing will also touch in Phase 6. Completing HUD customization first stabilizes the pager structure (the dynamic `visiblePages` list approach must be in place before ghost racing adds its overlay slot to `ExecutionPage`). Building HUD customization second also lets it consume the `LocalColorBlindMode` pattern established in Phase 2.
+
+**Delivers:** `HudPageConfig` serializable model (`showInstructionPage`, `showStatsPage` booleans; `ExecutionPage` always visible), `HudCustomizationSheet` composable (bottom sheet or Settings entry), dynamic `visiblePages` list in `WorkoutHud.kt` (`buildList { EXECUTION always; INSTRUCTION if enabled; STATS if enabled }`), page order persisted as stable string keys (not integer indices), per-metric toggles in Settings → HUD Preferences, `pagerState.pageCount` driven by `visiblePages.size`.
+
+**Uses:** `multiplatform-settings` 1.3.0 + coroutines module for reactive HUD preference `StateFlow`; existing `PreferencesManager` JSON blob pattern (identical to `SingleExerciseDefaults`).
+
+**Implements:** Preferences for user-configurable device state (Architecture Pattern 3); stable string key persistence to prevent Pitfall 7.
+
+**Avoids:** Integer index persistence corrupting user preferences after any future page addition (Pitfall 7), HUD customization inaccessible from the workout screen (add long-press gesture on page dots or a visible edit icon).
+
+**Research flag:** Standard patterns. `PreferencesManager` JSON blob pattern is already proven in the codebase. String-key persistence design fully specified in PITFALLS.md. No deeper research needed.
+
+---
+
+### Phase 4: Pre-Workout Readiness Briefing
+
+**Rationale:** Readiness briefing is the simplest of the three new domain engines: it reuses `SmartSuggestionsRepository.getSessionSummariesSince()` with no new repository, computes pre-session with no active workout interaction, and renders as a dismissible card rather than an overlay. The ACWR formula is well-documented from sports science literature. The bootstrap states (insufficient data guard) must be designed and unit-tested before the composable is wired up — the `InsufficientData` state is not optional.
+
+**Delivers:** `ReadinessBriefingEngine` stateless object (ACWR from 7-day/28-day rolling volume ratio; `InsufficientData` returned when fewer than 3 sessions in past 14 days), `ReadinessBriefingModels` (`ReadinessBriefing`, `ReadinessLevel` enum with Green/Yellow/Red and `InsufficientData`), `ReadinessBriefingCard` composable with WCAG-compliant secondary indicators (icon + text label alongside traffic-light color), `FeatureGate.READINESS_BRIEFING` (Elite tier) enforced at the data-fetch call site. Bootstrap states: `< 7 days: InsufficientData`, `8–14 days: Early estimate`, `15–27 days: Limited history`, `28+ days: Full ACWR`.
+
+**Uses:** `kotlinx-datetime` 0.7.1 (`Clock.System` injection for testable time computation using `TimeZone.currentSystemDefault()`); `SmartSuggestionsRepository` (existing, no change required); `GamificationRepository.getGamificationStats()` for streak data.
+
+**Implements:** Stateless domain engine pattern (Architecture Pattern 1); single upstream feature gate (Architecture Pattern 2).
+
+**Avoids:** Overconfident readiness score with sparse data displaying misleading high-confidence numbers (Pitfall 10 — `InsufficientData` guard is mandatory and must be verified on fresh install), UTC bug inherited in time-of-day classification (use `TimeZone.currentSystemDefault()` throughout, same fix as Phase 1).
+
+**Research flag:** ACWR threshold values (Green 0.8–1.3, Yellow 0.5–0.8 or 1.3–1.5, Red outside) come from group-level sports science studies and will need per-user calibration post-launch. The formula shape is sound for v0.5.1; flag scaling parameters for v0.5.2 adjustment based on real-user data. The readiness card must be labeled "Estimated from training volume" — not "HRV-based" or "physiological" — per Board condition framing.
+
+---
+
+### Phase 5: RPG Attribute Engine and Card
+
+**Rationale:** RPG attributes require a schema design decision before any implementation begins: dedicated `RpgAttributes` singleton table vs. columns added to `GamificationStats`. The research is unambiguous — a separate table is mandatory to prevent upsert path conflicts. Once the schema decision is locked, the computation engine is a pure function reading from three existing repositories via `combine()`. Building RPG after Readiness means the stateless engine pattern is already freshly exercised and the team is in the right mode for this kind of work.
+
+**Delivers:** `RpgAttributeEngine` stateless object (5-attribute formula: Strength from `PersonalRecord.oneRepMax`, Power from `WorkoutSession.avgMcvMmS`, Stamina from `GamificationStats` volume, Consistency from streak data, Balance from `WorkoutSession.avgAsymmetryPercent`; 5 auto-assigned character classes from dominant attribute), `RpgModels` (`RpgAttributes`, `CharacterClass` enum), `RpgAttributeCard` composable (Phoenix tier, rendered on profile/analytics screen), `FeatureGate.RPG_ATTRIBUTES` (Phoenix tier) enforced at the `combine()` data-fetch call site, characterization test verifying `upsertGamificationStats()` does not affect RPG columns. If schema storage is chosen: schema migration with iOS `DriverFactory.ios.kt` `CURRENT_SCHEMA_VERSION` increment.
+
+**Uses:** `GamificationRepository`, `PersonalRecordRepository`, `WorkoutRepository` (all existing); `combine()` from `kotlinx-coroutines`; pure Kotlin math for normalization. No Koin registration needed (stateless object).
+
+**Implements:** Stateless domain engine pattern (Architecture Pattern 1); post-session trigger via `GamificationManager.processPostSaveEvents()` to avoid reactive recomputation storm (Pitfall 3).
+
+**Avoids:** Reactive DB Flow recomputation storm on every set completion (Pitfall 3), `GamificationStats` singleton upsert path conflicts (Pitfall 4), iOS schema version mismatch if migration is added (Daem0n warning #155 — increment `CURRENT_SCHEMA_VERSION` in `DriverFactory.ios.kt` whenever any `.sqm` file is added).
+
+**Research flag:** Attribute normalization scaling constants (what raw 1RM or MCV value constitutes 100/100 Strength or 100/100 Power for this user base?) need calibration against real user data. Ship with conservative scales; expose scaling constants as configurable data (not hardcoded), adjust in v0.5.2 patch. Do not surface normalization math to users — show the attribute level and a "based on your estimated 1RM" tooltip only.
+
+---
+
+### Phase 6: Ghost Racing Engine, Overlay, and Workout Integration
+
+**Rationale:** Ghost racing is the most complex feature in the milestone: it modifies `WorkoutCoordinator` (shared state bus for the entire workout flow), `ActiveSessionEngine` (pre-loads historical data at workout start), and `WorkoutHud` (adds overlay slot to `ExecutionPage`). It must be built last because: (a) `WorkoutHud.kt` must be stable after Phase 3 HUD customization before this phase touches it again, (b) `WorkoutCoordinator` changes carry regression risk for the entire workout flow, and (c) all other features should be in a reviewable and mergeable state before the highest-risk component is modified. The synchronization contract (rep-index alignment, not wall-clock) must be defined and unit-tested before any UI code is written.
+
+**Delivers:** `GhostRacingEngine` stateless object (rep-index comparison, fractional completion interpolation, AHEAD/BEHIND/TIED verdict), `GhostRacingModels` (`GhostRaceState`, `GhostRepData`), `GhostRaceOverlay` composable (dual animated `animateFloatAsState` progress bars, numeric delta label; color-blind-safe via opacity/alpha differential not hue; WCAG semantics on wrapper Box), `WorkoutCoordinator.ghostRaceState: MutableStateFlow<GhostRaceState?>`, pre-session ghost data loading in `ActiveSessionEngine.start()`, `selectBestSessionForExercise` named query in `VitruvianDatabase.sq`, `FeatureGate.GHOST_RACING` (Phoenix/Elite tier), overlay conditionally rendered on `ExecutionPage` when `ghostRaceState != null`.
+
+**Uses:** `RepMetricRepository.getRepMetricsBySession()` for ghost data pre-load; `WorkoutRepository` + new `selectBestSessionForExercise` query for best-session lookup; `compose.foundation` Canvas + `animateFloatAsState` for smooth animation; WCAG-compliant semantics from Phase 2 infrastructure.
+
+**Implements:** WorkoutCoordinator as state conduit (Architecture Pattern 4); stateless domain engine (Architecture Pattern 1); single upstream feature gate (Architecture Pattern 2). Ghost overlay rendered on `ExecutionPage` as a conditionally visible composable — NOT as a new pager page requiring swipe navigation during active lifting (Anti-Pattern 5 explicitly avoided).
+
+**Avoids:** Ghost timestamp desync causing permanent lead/lag from rep 1 (Pitfall 1 — rep-index synchronization is the design contract, verified by unit test before any UI code), DB reads in BLE hot path causing missed reps (Pitfall 2 — full pre-load at session start, pure function lookup only during session; measure `handleMonitorMetric()` latency with ghost active, must be < 5ms overhead), ghost as a fourth pager page that users cannot reach while actively lifting (Anti-Pattern 5).
+
+**Research flag:** This phase requires integration testing on mid-range Android devices before merge. Measure `handleMonitorMetric()` latency with ghost racing active under realistic conditions. The ELITE tier sample-level 50Hz position overlay adds significant complexity on top of the PHOENIX rep-level implementation — evaluate shipping PHOENIX tier only in v0.5.1 and deferring ELITE sample-level overlay to v0.5.2 if device performance is borderline.
+
+---
 
 ### Phase Ordering Rationale
 
-- **Phase 1 must come first**: Three of five feature sets cannot function without persisted biomechanics data; it is also the foundation for portal sync (v0.5.5+)
-- **Phase 2 before Phase 3**: commonMain interfaces must be defined and tested before androidMain implements them; prevents leaky abstraction from forming
-- **Phase 3 before Phase 4**: Cannot build CV overlay UI without the platform camera pipeline working
-- **Phase 5 is parallel-eligible after Phase 1**: Premium composables need persisted data to show real content; CV not required; can proceed while Phases 2-4 are in progress
-- **iOS migration risk demands Phase 1 schema is a specification artifact**: The schema change checklist is not boilerplate — it is the work product of Phase 1 planning
-- **ProGuard risk demands release build validation is a Phase 3 completion criterion**: Not a pre-release task; must be validated before Phase 4 UI work begins
+The six-phase sequence is driven by three hard constraints:
+
+1. **Board conditions first:** Board review can be triggered at any point during the milestone. Phase 1 makes the app Board-reviewable immediately (correct versionName, backup rules, UTC fix, camera rationale). Phases 2–6 incrementally add premium features without blocking or delaying review.
+2. **FeatureGate before composables:** Phase 1 adds all three new Feature enum entries with tier set membership. No composable in Phases 2–6 references a non-existent Feature enum value — the compilation error catches it if someone tries. More importantly, no composable can be accidentally merged without a gate check because the test suite verifies every Feature value is locked to at least one tier.
+3. **Ghost racing last:** `WorkoutHud.kt` must be stable (Phase 3 complete) before ghost racing adds its overlay slot. `WorkoutCoordinator` changes carry the highest regression risk of any single change in this milestone. Ghost racing should be the last feature merged so it can be reverted without affecting the four completed features below it if a blocking issue is found near release.
+
+Additional grouping rationale:
+- Phase 2 (WCAG) establishes `AccessibilityColors` and `LocalColorBlindMode` that Phases 3–6 all consume — building the infrastructure before the consumers ensures new composables get the right pattern from day one.
+- Phase 3 (HUD) stabilizes `WorkoutHud.kt` before Phase 6 reopens it for the ghost overlay slot.
+- Phases 4 and 5 (Readiness, RPG) are independent of each other and can be parallelized if engineering capacity allows — both follow the identical stateless engine pattern and neither touches the active workout lifecycle.
 
 ### Research Flags
 
-**Phases needing closer attention during planning:**
-- **Phase 1 (Schema):** iOS DriverFactory.ios.kt sync is well-documented but manually error-prone; the planning task should produce a concrete schema change checklist as a deliverable, not just code
-- **Phase 3 (Android CV Integration):** Highest implementation uncertainty; thermal behavior is device-dependent; plan should include explicit performance test criteria (no BLE metric processing delays >50ms when CV is active) and identify two test devices (high-end and low-end, min SDK 26)
-- **Phase 5 (Ghost Racing):** Portal API shape is unknown; the repository interface design is the critical planning deliverable; stub must be validated against multiple edge cases before portal integration begins
+Phases likely needing validation or post-launch calibration:
+- **Phase 4 (Readiness):** ACWR threshold values come from population-level sports science studies. Flag for post-v0.5.1 per-user calibration. The `InsufficientData` guard must be manually verified on a fresh install before release — the unit test suite alone is insufficient because fixture data in tests typically has 30+ sessions.
+- **Phase 5 (RPG):** Attribute normalization scaling parameters need real-user data distribution to calibrate. Ship with conservative scaling constants exposed as configurable values; adjust in v0.5.2 patch based on field data.
+- **Phase 6 (Ghost Racing):** Integration testing on mid-range Android devices (min SDK 26) is required before merge. `handleMonitorMetric()` latency budget must be measured. ELITE tier 50Hz overlay complexity should be evaluated during implementation — if it adds unacceptable latency, defer ELITE to v0.5.2 and ship PHOENIX rep-level only.
 
-**Phases with standard, low-uncertainty patterns (lighter planning needed):**
-- **Phase 2 (CV Domain Logic):** Pure Kotlin math and rule evaluation; well-understood patterns; standard unit testing applies
-- **Phase 4 (CV UI):** Standard Compose composables and SQLDelight repository wiring; all patterns are established throughout the existing codebase
+Phases with standard patterns where deeper research is not needed:
+- **Phase 1 (Board conditions):** All changes are isolated, fully specified in STACK.md and PITFALLS.md. UTC fix, backup XML structure, and versionName are all fully resolved.
+- **Phase 2 (WCAG):** WCAG G111 technique is canonical; Compose CompositionLocal is well-documented; `AccessibilityColors` palette fully specified in ARCHITECTURE.md.
+- **Phase 3 (HUD customization):** Follows existing `SingleExerciseDefaults` JSON blob pattern exactly. String-key persistence design fully specified in PITFALLS.md.
+
+---
 
 ## Confidence Assessment
 
 | Area | Confidence | Notes |
 |------|------------|-------|
-| Stack | HIGH | All recommendations from official Google docs and stable release notes; MediaPipe 0.10.32 and CameraX 1.5.3 are current stable releases; no alpha or beta dependencies required |
-| Features | HIGH | Strong competitor precedent for VBT persistence and form scoring; ghost racing and RPG are novel but well-scoped with identified anti-features; dependency graph is fully mapped |
-| Architecture | HIGH | Based on direct codebase analysis of WorkoutCoordinator, ActiveSessionEngine, DriverFactory.ios.kt; all new patterns follow established codebase conventions; no architectural invention required |
-| Pitfalls | HIGH | Top pitfalls are backed by specific GitHub issue numbers and direct codebase analysis; MediaPipe threading and ProGuard issues are documented community problems with known mitigations, not speculation |
+| Stack | HIGH | Zero new production dependencies. All decisions verified against current `libs.versions.toml` and official docs. Single new test dependency resolves via existing BOM with no version risk. |
+| Features | HIGH | Ghost racing (Zwift HoloReplay reference), RPG (INFITNITE/FitDM competitor analysis), ACWR readiness (Garmin/TritonWear implementations) all have well-documented precedent. Local-only implementations are straightforward given existing schema v16. |
+| Architecture | HIGH | Based on direct codebase inspection, not inference. All patterns are already proven in the codebase (`SmartSuggestionsEngine`, `SingleExerciseDefaults`, `FeatureGate`). Component boundaries and data flows fully specified. Five of six feature areas require zero schema migrations. |
+| Pitfalls | HIGH | 12 pitfalls identified from codebase analysis and verified external sources. All critical pitfalls (ghost timing desync, RPG recomputation storm, FeatureGate gaps) have specific actionable prevention strategies and verification test criteria. |
 
 **Overall confidence:** HIGH
 
 ### Gaps to Address
 
-- **Portal API shape for ghost racing**: The GhostRaceRepository interface must be designed to accommodate both local SQLite queries and future Supabase RPC calls. The exact response shape from the portal's best-matching-session RPC is unknown. Mitigation: design the interface around domain objects defined in commonMain now; validate stub contract with portal team when v0.5.5 planning begins.
-- **Per-device thermal behavior**: The adaptive frame rate strategy uses Android ThermalStatusListener, but actual throttling thresholds vary significantly by device. The performance acceptance criterion (no BLE metric delays >50ms with CV active) needs validation on low-end target devices (min SDK 26). Mitigation: identify two test devices and run thermal stress tests during Phase 3.
-- **Exercise form rule thresholds**: Initial rules for squat, deadlift, and overhead press use literature-sourced joint angle thresholds. These will need calibration against real users on real Vitruvian machine postures (cable machine exercises have different body positioning than free weights). Mitigation: implement rules as configurable data (ExerciseFormRules as data class map, not hardcoded), gather feedback post-launch.
-- **APK size impact of MediaPipe model**: The pose_landmarker_lite.task (~5MB) is bundled in assets for v0.5.0. With ABI splits, estimated APK size increase is 10-13MB. Evaluate whether on-demand App Bundle delivery is required based on community distribution concerns.
+- **RPG attribute normalization scales:** The computation formulas are sound but the scaling constants (what raw 1RM or MCV value maps to 100/100) require real user data distribution to calibrate. Expose as configurable constants, not hardcoded values, so they can be adjusted in a v0.5.2 patch without schema changes.
+- **Ghost racing ELITE tier (50Hz sample-level position overlay):** The PHOENIX tier (rep-level delta) is fully specified and low-risk. The ELITE tier adds per-sample position interpolation at BLE sample rate on top of the existing hot path. Evaluate during Phase 6 implementation — if it adds unacceptable latency on mid-range devices (SDK 26 minimum), defer ELITE to v0.5.2 and ship PHOENIX only.
+- **Accompanist 0.37.3 compatibility with Compose 1.10.x:** Accompanist targets Compose 1.7. The permissions module is expected to work with 1.10.x (no API changes in the permissions surface), but if a runtime crash occurs on the permissions composable during Phase 1 camera rationale implementation, the fallback is `rememberLauncherForActivityResult` with manual `shouldShowRequestPermissionRationale()` — this is well-documented and the fallback is straightforward.
+- **iOS HUD customization pager equivalent:** Research covers the Android `HorizontalPager` structure. iOS SwiftUI equivalent for the HUD preset pages (tab-based or swipe-based) is not specified in this research. Flag for iOS-specific design if the milestone scope includes iOS HUD customization beyond a stub.
+
+---
 
 ## Sources
 
 ### Primary (HIGH confidence)
-- [MediaPipe Pose Landmarker Android Guide](https://ai.google.dev/edge/mediapipe/solutions/vision/pose_landmarker/android) — setup, API, threading model, landmark coordinates
-- [CameraX Release Notes v1.5.3](https://developer.android.com/jetpack/androidx/releases/camera) — stable release confirmation, camera-compose artifact
-- [SQLDelight 2.0.2 Migrations Guide](https://sqldelight.github.io/sqldelight/2.0.2/multiplatform_sqlite/migrations/) — migration file format, no-transaction rule
-- [Accompanist Permissions v0.37.3](https://google.github.io/accompanist/permissions/) — Compose permission handling
-- Direct codebase analysis: ActiveSessionEngine.kt (~2,600L), WorkoutCoordinator.kt (306L), DriverFactory.ios.kt (1,073L, 4-layer defense), VitruvianDatabase.sq (schema v15), FeatureGate.kt, BiomechanicsEngine.kt, androidApp/build.gradle.kts (minifyEnabled=true)
-- docs/plans/2026-02-20-premium-enhancements-design.md — internal design doc
+- `shared/.../sqldelight/.../VitruvianDatabase.sq` — complete schema v16 inspection; all tables, columns, and existing query capabilities verified
+- `shared/.../presentation/screen/WorkoutHud.kt` — HUD pager structure, ExecutionPage slot pattern
+- `shared/.../domain/premium/SmartSuggestionsEngine.kt` — stateless engine pattern to follow exactly
+- `shared/.../domain/premium/FeatureGate.kt` — tier gate system, Feature enum, `phoenixFeatures` and `eliteFeatures` sets
+- `shared/.../data/preferences/PreferencesManager.kt` — JSON blob preference pattern (`SingleExerciseDefaults`, `JustLiftDefaults`)
+- `shared/.../iosMain/.../DriverFactory.ios.kt` — 4-layer defense, `CURRENT_SCHEMA_VERSION = 16L`
+- [Android Developers — Auto Backup Configuration](https://developer.android.com/identity/data/autobackup) — `fullBackupContent` / `dataExtractionRules` XML format and dual-attribute requirement
+- [Android Developers — Compose Accessibility Testing](https://developer.android.com/develop/ui/compose/accessibility/testing) — `enableAccessibilityChecks()`, `ui-test-junit4-accessibility` artifact
+- [kotlinx-datetime API — currentSystemDefault](https://kotlinlang.org/api/kotlinx-datetime/kotlinx-datetime/kotlinx.datetime/-time-zone/-companion/current-system-default.html) — KMP-correct local timezone API
+- [WCAG 1.4.1: Use of Color](https://www.w3.org/WAI/WCAG21/Understanding/use-of-color.html) — primary standard; secondary differentiator requirement
+- [WCAG G111: Using Color and Pattern](https://www.w3.org/TR/WCAG20-TECHS/G111.html) — canonical implementation technique for color-blind compliance
 
 ### Secondary (MEDIUM confidence)
-- [AI Vision on Android: CameraX + MediaPipe + Compose](https://www.droidcon.com/2025/01/24/ai-vision-on-android-camerax-imageanalysis-mediapipe-compose/) — CameraX + MediaPipe integration pattern
-- [MediaPiper KMP project](https://github.com/2BAB/mediapiper) — expect/actual boundary pattern for ML in KMP
-- [RepDetect exercise form app](https://github.com/giaongo/RepDetect) — MediaPipe Pose for fitness rep counting validation
-- [CameraX Compose-Native Guide](https://proandroiddev.com/goodbye-androidview-camerax-goes-full-compose-4d21ca234c4e) — CameraXViewfinder patterns, CoordinateTransformer
-- [Zwift HoloReplay](https://zwiftinsider.com/holoreplay/), [Apple Watch Race Route](https://www.tomsguide.com/how-to/i-used-this-new-apple-watch-fitness-feature-to-gamify-my-weekly-run) — ghost racing UX precedent
-- [Oura Readiness Score](https://support.ouraring.com/hc/en-us/articles/360025589793-Readiness-Score), [Fitbit Daily Readiness](https://store.google.com/us/magazine/fitbit_daily_readiness_score) — readiness briefing UX patterns
-- [GymAware Cloud](https://gymaware.com/), [RepOne Strength](https://www.reponestrength.com/), [Metric VBT](https://www.metric.coach/) — competitor VBT persistence benchmarks
+- [Zwift HoloReplay Feature Overview](https://zwiftinsider.com/holoreplay/) — ghost racing architecture; time-indexed replay model; personal-best-only design rationale
+- [Garmin Acute:Chronic Load Ratio](https://support.garmin.com/en-US/?faq=C6iHdy0SS05RkoSVbFz066) — ACWR thresholds: Green 0.8–1.3, Yellow 0.5–0.8 / 1.3–1.5, Red outside
+- [TritonWear Readiness Score Methodology](https://support.tritonwear.com/how-readiness-score-is-calculated) — volume-only ACWR without wearable; bootstrap state design with sparse data
+- [Accompanist Permissions](https://google.github.io/accompanist/permissions/) — `shouldShowRationale`, `rememberPermissionState` API; 0.37.3 confirmed latest stable
+- [multiplatform-settings GitHub](https://github.com/russhwolf/multiplatform-settings) — version 1.3.0, coroutines module for StateFlow integration
+- [Compose BOM to Library Mapping](https://developer.android.com/develop/ui/compose/bom/bom-mapping) — BOM 2025.12.01 maps to compose-ui 1.10.4; ATF artifact resolves via BOM
 
-### Tertiary (documented issue reports, HIGH reliability as documented bugs)
-- MediaPipe GitHub issues #5835, #6223 — GPU delegate orientation crash, memory swapping under load
-- MediaPipe GitHub issues #4806, #3509, #6138 — ProGuard/R8 crash with minifyEnabled=true
-- MediaPipe GitHub issue #2098 — ByteBuffer.allocateDirect memory leak pattern (long workouts)
-- MediaPipe GitHub issue #3564 — 2-3 FPS on lower-end Android devices without optimization
-- Daem0n memory warning #155 — iOS DriverFactory.ios.kt sync requirement for ALL schema changes
+### Tertiary (MEDIUM-LOW confidence)
+- [Readiness/Recovery Scores 2025 Evaluation — De Gruyter](https://www.degruyterbrill.com/document/doi/10.1515/teb-2025-0001/html) — academic review of ACWR validity; confirms ±20% error margin; validates advisory-only framing as correct approach
+- [INFITNITE Fitness Fantasy RPG](https://fitnessfantasyrpg.com/) — auto-assigned character class from workout history; confirms v0.5.1 differentiator claim vs. user-selected classes in competitors
+- [FitDM Character Classes](https://fitdm.io/classes) — competitor analysis; user-selected class confirmed as weaker approach than auto-assignment from biomechanics
 
 ---
-*Research completed: 2026-02-20*
+
+*Research completed: 2026-02-27*
 *Ready for roadmap: yes*

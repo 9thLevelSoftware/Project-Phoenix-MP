@@ -1,802 +1,654 @@
-# Architecture Patterns: v0.5.0 Premium Mobile Features
+# Architecture Research
 
-**Domain:** KMP fitness app - CV pose estimation, biomechanics persistence, premium mobile UI
-**Researched:** 2026-02-20
-**Overall confidence:** HIGH (direct codebase analysis + official docs + design doc alignment)
-
----
-
-## Current Architecture (v0.4.7 Baseline)
-
-### Existing Component Map
-
-```
-MainViewModel (420L, thin facade)
-  |-- SettingsManager
-  |-- HistoryManager
-  |-- GamificationManager
-  |-- BleConnectionManager
-  |-- DefaultWorkoutSessionManager (449L, coordinator + delegation)
-        |-- WorkoutCoordinator (306L, shared state bus)
-        |     |-- BiomechanicsEngine (stateful, per-set lifecycle)
-        |     |-- RepQualityScorer (stateful, per-set lifecycle)
-        |     |-- LedFeedbackController (nullable, set via DI)
-        |     |-- collectedMetrics: MutableList<WorkoutMetric>
-        |     |-- setRepMetrics: MutableList<RepMetricData>
-        |     |-- repBoundaryTimestamps: MutableList<Long>
-        |
-        |-- RoutineFlowManager (1,091L)
-        |-- ActiveSessionEngine (~2,600L)
-              |-- ExerciseDetectionManager (optional, per-session)
-```
-
-### Existing Data Flow (Rep Processing)
-
-```
-BLE Device --> MetricSample --> WorkoutCoordinator.collectedMetrics
-                                       |
-                 ActiveSessionEngine.handleMonitorMetric()
-                                       |
-                          Rep boundary detected?
-                                /            \
-                             No               Yes
-                              |                |
-                         accumulate      processRepCompletion()
-                                               |
-                         +---------------------+---------------------+
-                         |                     |                     |
-                  RepQualityScorer    BiomechanicsEngine    RepBoundaryDetector
-                  .scoreRep()         .processRep()         (timestamps)
-                         |                     |                     |
-                  _latestRepQuality    _latestRepResult      setRepMetrics
-                  (StateFlow)          (StateFlow)           (List<RepMetricData>)
-                                                                     |
-                                                        saveRepMetrics() at set end
-                                                                     |
-                                                        RepMetricRepository
-                                                                     |
-                                                        SQLDelight RepMetric table
-```
-
-### Existing Module Boundaries
-
-```
-commonMain/
-  domain/premium/       -- BiomechanicsEngine, RepQualityScorer, FeatureGate, SubscriptionTier
-  domain/detection/     -- SignatureExtractor, ExerciseClassifier
-  domain/assessment/    -- AssessmentEngine
-  domain/replay/        -- RepBoundaryDetector
-  domain/model/         -- BiomechanicsModels, WorkoutModels, ExerciseModels
-  data/repository/      -- RepMetricRepository, WorkoutRepository, etc.
-  presentation/manager/ -- ActiveSessionEngine, WorkoutCoordinator, ExerciseDetectionManager
-  di/                   -- dataModule, domainModule, presentationModule, syncModule
-
-androidMain/
-  data/ble/             -- KableBleRepository (Nordic BLE)
-  data/local/           -- DriverFactory (SQLite)
-  di/                   -- platformModule (BLE, SQLite driver)
-
-iosMain/
-  data/local/           -- DriverFactory (Native SQLite)
-  di/                   -- platformModule
-```
-
-### Key Architectural Patterns (established)
-
-| Pattern | Example | Where Used |
-|---------|---------|------------|
-| Stateless pure-function engines | BiomechanicsEngine.computeVelocity() | Domain engines |
-| StateFlow-based reactive state | WorkoutCoordinator._latestRepQuality | All managers |
-| Interface + SQLDelight impl | RepMetricRepository / SqlDelightRepMetricRepository | Data layer |
-| Manual JSON serialization | FloatArray.toJsonString() for RepMetric curves | Array persistence |
-| Feature-scoped Koin modules | dataModule, domainModule, presentationModule | DI |
-| Nullable injection for optional features | LedFeedbackController?, ExerciseDetectionManager? | WorkoutCoordinator |
-| Single upstream gate pattern | Gate at data collection, null propagation to UI | FeatureGate |
-| Data capture for all tiers (GATE-04) | RepMetricRepository has no tier checks | Repositories |
-| Per-set lifecycle with reset() | BiomechanicsEngine.reset() between sets | Domain engines |
+**Domain:** KMP Fitness App — v0.5.1 Feature Integration
+**Researched:** 2026-02-27
+**Confidence:** HIGH — drawn entirely from direct codebase inspection
 
 ---
 
-## New Features: Integration Architecture
+## Standard Architecture
 
-### Feature 1: Biomechanics Persistence
-
-**Status:** Data is computed but NOT persisted. BiomechanicsEngine produces per-rep VelocityResult, ForceCurveResult, AsymmetryResult. At set end, getSetSummary() returns BiomechanicsSetSummary. Currently both are used only for live UI display and discarded.
-
-**Goal:** Persist per-rep biomechanics data alongside existing RepMetricData so analytics, history, and portal sync can access it.
-
-#### Architecture Decision: Extend RepMetric vs. New Table
-
-**Recommendation: Extend the existing RepMetric table with biomechanics columns.**
-
-Rationale:
-- Per-rep biomechanics data is 1:1 with RepMetricData (same sessionId + repNumber)
-- Avoids a second table join for every rep query
-- Follows the existing pattern of RepMetricData being the "fat" per-rep record
-- Adding columns to RepMetric is a schema migration (v16), not a structural change
-- The existing `RepMetricRepository.saveRepMetrics()` call site in ActiveSessionEngine already has access to biomechanics results
-
-#### New Columns on RepMetric
-
-```sql
--- VBT metrics
-meanConcentricVelocityMmS REAL,
-peakVelocityMmS REAL,
-velocityZone TEXT,                -- enum as string
-velocityLossPercent REAL,
-
--- Force curve (101 points, stored as JSON array)
-normalizedForceCurve TEXT,        -- "[1.2,3.4,...]" (101 floats)
-stickingPointPct REAL,
-strengthProfile TEXT,             -- enum as string
-
--- Asymmetry
-asymmetryPercent REAL,
-dominantSide TEXT                 -- "A", "B", or "BALANCED"
-```
-
-#### Data Flow Change
+### System Overview
 
 ```
-BiomechanicsEngine.processRep()
-       |
-  BiomechanicsRepResult
-       |
-  ActiveSessionEngine stores in WorkoutCoordinator.setRepMetrics
-       |                                    |
-  (NEW) Merge biomechanics fields     (EXISTING) raw curve data
-  into RepMetricData                   already stored
-       |
-  RepMetricRepository.saveRepMetrics()  <-- single write, now includes biomechanics
-       |
-  SQLDelight RepMetric table (v16 schema with new columns)
+┌──────────────────────────────────────────────────────────────────┐
+│                    Presentation Layer (commonMain)                │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐           │
+│  │ MainViewModel│  │ GamificationVM│  │AssessmentVM  │           │
+│  │ (420L facade)│  │              │  │              │           │
+│  └──────┬───────┘  └──────┬───────┘  └──────┬───────┘           │
+│         │                │                  │                   │
+│  ┌──────▼───────────────────────────────────▼───────┐           │
+│  │               5 Delegated Managers                │           │
+│  │  BleManager  WorkoutSessionManager  ExerciseDetect│           │
+│  │  GamificationManager  AnalyticsManager            │           │
+│  └──────┬─────────────────────────────────┬──────────┘           │
+│         │                                 │                      │
+│  ┌──────▼─────────────────────────────────┐                      │
+│  │      DefaultWorkoutSessionManager      │                      │
+│  │  ┌──────────────────────────────────┐  │                      │
+│  │  │  WorkoutCoordinator (state bus)  │  │                      │
+│  │  │  RoutineFlowManager (1,091L)     │  │                      │
+│  │  │  ActiveSessionEngine (~2,600L)   │  │                      │
+│  │  └──────────────────────────────────┘  │                      │
+│  └────────────────────────────────────────┘                      │
+└──────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────┐
+│                    Domain Layer (commonMain)                      │
+│  ┌──────────────┐  ┌─────────────────┐  ┌──────────────────────┐ │
+│  │BiomechanicsE │  │ RepQualityScorer │  │SmartSuggestionsEngine│ │
+│  │FormRulesEngine│  │ AssessmentEngine │  │(stateless object)    │ │
+│  │FeatureGate   │  │ ExerciseClassifier│  │SignatureExtractor     │ │
+│  └──────────────┘  └─────────────────┘  └──────────────────────┘ │
+└──────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────┐
+│                      Data Layer (commonMain)                      │
+│  ┌──────────────┐  ┌────────────────┐  ┌──────────────────────┐  │
+│  │WorkoutRepo   │  │BiomechanicsRepo│  │SmartSuggestionsRepo  │  │
+│  │GamificationR │  │RepMetricRepo   │  │AssessmentRepo        │  │
+│  │PersonalRecordR│  │ExerciseRepo   │  │PreferencesManager    │  │
+│  └──────────────┘  └────────────────┘  └──────────────────────┘  │
+│              SQLDelight (schema v16 — 15 migration files)         │
+│  ┌──────────────────────────────────────────────────────────────┐ │
+│  │ WorkoutSession | MetricSample | RepMetric | RepBiomechanics  │ │
+│  │ PersonalRecord | GamificationStats(singleton) | EarnedBadge  │ │
+│  │ ExerciseSignature | AssessmentResult | Routine | CompletedSet│ │
+│  └──────────────────────────────────────────────────────────────┘ │
+└──────────────────────────────────────────────────────────────────┘
 ```
 
-#### Modified Files
+### Component Responsibilities
 
-| File | Change Type | What Changes |
-|------|-------------|--------------|
-| `domain/model/RepMetricData.kt` or wherever RepMetricData is defined | MODIFY | Add biomechanics fields (nullable for backward compat) |
-| `VitruvianDatabase.sq` | MODIFY | Add columns to RepMetric table + migration v16 |
-| `data/repository/RepMetricRepository.kt` | MODIFY | Map new fields in save/load |
-| `presentation/manager/ActiveSessionEngine.kt` | MODIFY | Populate biomechanics fields when building RepMetricData |
-| `di/DataModule.kt` | NO CHANGE | Repository already wired |
-
-#### Set-Level Summary Persistence
-
-For set-level aggregated biomechanics (BiomechanicsSetSummary), two options:
-
-**Recommendation: Add biomechanics columns to WorkoutSession table.**
-
-The set summary is 1:1 with WorkoutSession. Adding `avgMcvMmS`, `peakVelocityMmS`, `totalVelocityLossPercent`, `avgAsymmetryPercent`, `dominantSide`, `strengthProfile` to WorkoutSession keeps queries simple. The avgForceCurve (101-point JSON) can also be stored as a TEXT column on WorkoutSession.
+| Component | Responsibility | Communicates With |
+|-----------|---------------|-------------------|
+| MainViewModel | Thin 420L facade, exposes StateFlows to UI | 5 managers |
+| WorkoutCoordinator | Zero-method shared state bus | 3 sub-managers of DWSM |
+| ActiveSessionEngine | BLE commands, rep counting, quality scoring, biomechanics | Coordinator, domain engines |
+| FeatureGate | Stateless tier-gate utility (object, pure function) | UI composables |
+| SmartSuggestionsEngine | Stateless pure computation over `List<SessionSummary>` | Called with data, no DI |
+| PreferencesManager | Key-value user settings via multiplatform-settings | UI, managers |
+| GamificationStats (DB) | Singleton row (id=1) for aggregate counters | SqlDelightGamificationRepository |
+| BiomechanicsRepository | Per-rep VBT/force/asymmetry CRUD | SQLDelight RepBiomechanics table |
 
 ---
 
-### Feature 2: CV Pose Estimation (MediaPipe + CameraX)
+## v0.5.1 Feature Integration Analysis
 
-**This is an Android-only feature (androidMain).** iOS support (AVCapture + MediaPipe iOS SDK) is out of scope for v0.5.0 but the architecture should support it via expect/actual.
+### 1. Ghost Racing
 
-#### Component Boundary: commonMain vs androidMain
+**Question:** Where does the matcher/comparator live? How does it access historical session data during an active workout?
 
-```
-commonMain/ (pure Kotlin, no platform dependencies)
-  domain/cv/
-    |-- JointAngleCalculator.kt      -- Pure math: 3D landmark coords -> joint angles
-    |-- FormRuleEngine.kt            -- Rule evaluation: angles + thresholds -> violations
-    |-- ExerciseFormRules.kt         -- Per-exercise rule definitions (data)
-    |-- CvModels.kt                  -- PoseLandmark, JointAngle, FormViolation, FormScore
+**Integration decision:** New `domain/premium/GhostRacingEngine.kt` as a stateless pure-function object. It does NOT live inside `ActiveSessionEngine` — ghost racing is a display-only consumer of workout data with no control responsibility. Placing it in the 2,600L engine would add unrelated logic to an already large class.
 
-androidMain/ (Android SDK dependencies)
-  cv/
-    |-- PoseAnalyzerHelper.kt        -- MediaPipe PoseLandmarker wrapper
-    |-- CameraXProvider.kt           -- CameraX lifecycle + ImageAnalysis setup
-    |-- PoseOverlayView.kt           -- Compose Canvas drawing skeleton overlay
-```
-
-#### Key Architecture Decision: Where Pose Processing Lives
-
-**Recommendation: All ML inference stays in androidMain. Only computed joint angles cross into commonMain.**
-
-Rationale:
-- MediaPipe Tasks SDK is Android-only (Java/Kotlin API)
-- CameraX is Android-only (Jetpack library)
-- The `expect/actual` boundary is at the "joint angles" level, not the "camera frame" level
-- commonMain gets `List<JointAngle>` and runs `FormRuleEngine` against it
-- This keeps ~80% of the form-checking logic cross-platform (rules, scoring, violation tracking)
-
-#### Integration with Existing Architecture
+**Data access model:**
 
 ```
-                       androidMain                                commonMain
-                    +-----------------+                      +-------------------+
-CameraX             |                 |   List<JointAngle>   |                   |
-ImageAnalysis ----->| PoseAnalyzer    |--------------------->| FormRuleEngine    |
-  (30fps)           | Helper          |                      | .evaluate()       |
-                    |   MediaPipe     |                      |                   |
-                    |   PoseLandmarker|                      | FormViolation[]   |
-                    +-----------------+                      | FormScore         |
-                                                             +-------------------+
-                                                                      |
-                                                                      v
-                                                             WorkoutCoordinator
-                                                             ._latestFormResult
-                                                             (StateFlow)
-                                                                      |
-                                                                      v
-                                                             Compose UI
-                                                             (form warnings,
-                                                              skeleton overlay)
+Pre-workout (before first rep):
+  PersonalRecord.selectBestWeightPR(exerciseId, workoutMode)
+      ↓ returns the PR row containing sessionId reference...
+      note: PersonalRecord does NOT store sessionId.
+
+  Alternative: WorkoutRepository.getRecentSessionsSync(limit=N)
+      ↓ filter by exerciseId + workoutMode, pick session with highest
+        totalVolumeKg or workingReps (best performance proxy)
+      ↓ bestSessionId determined
+
+  RepMetricRepository.getRepMetricsBySession(bestSessionId)
+      ↓ List<RepMetricRow> already has: concentricVelocities (JSON),
+        durationMs, rangeOfMotionMm, avgVelocityConcentric per rep
+      ↓ held in GhostRacingEngine memory for session duration
+
+During workout (per-rep):
+  ActiveSessionEngine emits repCompleted → WorkoutCoordinator
+      ↓ currentRepNumber, currentRepMcv (already computed)
+  GhostRacingEngine.compare(currentRepNumber, ghostRepData[n-1])
+      ↓ GhostRaceState (mcvDelta, verdict: AHEAD/BEHIND/TIED)
+      ↓ WorkoutCoordinator.ghostRaceState StateFlow updated
+      ↓ MainViewModel.ghostRaceState → HUD overlay composable
 ```
 
-#### expect/actual Pattern for CV
+**Schema change required:** None. All data needed already exists in `RepMetric` (per-rep `avgVelocityConcentric`, `durationMs`, `rangeOfMotionMm`) keyed by `sessionId`. The `RepBiomechanics` table also has `mcvMmS` per rep if biomechanics data exists.
+
+**Best-session lookup gap:** `PersonalRecord` does not store `sessionId`. The approach is to query `WorkoutSession` rows filtered by `exerciseId` and sort by `totalVolumeKg DESC` to find the best historical session. This query does not exist yet — needs a new named query in `VitruvianDatabase.sq`: `selectBestSessionForExercise`.
+
+**HUD integration:** Ghost racing renders as an overlay on `ExecutionPage` (page 0), not as a new pager page. Users do not scroll during lifting. The `GhostRaceOverlay` composable is conditionally rendered over `ExecutionPage` when `ghostRaceState != null`. This avoids changing `pageCount = { 3 }` in the existing pager.
+
+**WorkoutCoordinator addition:** Add `val ghostRaceState: MutableStateFlow<GhostRaceState?> = MutableStateFlow(null)` to `WorkoutCoordinator`. `ActiveSessionEngine` updates it on each rep completion.
+
+**New files:**
+- `shared/.../domain/premium/GhostRacingEngine.kt`
+- `shared/.../domain/model/GhostRacingModels.kt`
+- `shared/.../presentation/components/GhostRaceOverlay.kt`
+
+**Modified files:**
+- `WorkoutCoordinator.kt` — add `ghostRaceState` StateFlow
+- `ActiveSessionEngine.kt` — populate ghost state on rep completion, load ghost data pre-session
+- `WorkoutHud.kt` — wire overlay into `ExecutionPage` slot
+- `FeatureGate.kt` — add `GHOST_RACING` (Phoenix tier)
+- `VitruvianDatabase.sq` — add `selectBestSessionForExercise` named query
+- `WorkoutRepository.kt` + `SqlDelightWorkoutRepository.kt` — expose best-session query
+
+---
+
+### 2. RPG Attributes
+
+**Question:** Where does the computation engine live? New schema? Interaction with GamificationStats singleton?
+
+**Integration decision:** New `domain/premium/RpgAttributeEngine.kt` as a stateless pure-function object. Follows `SmartSuggestionsEngine` pattern exactly. Takes `GamificationStats`, `List<WorkoutSession>`, `List<PersonalRecord>` as input and returns `RpgAttributes`. No DI dependencies. No DB writes.
+
+**The 5 attributes map to already-persisted data (zero new schema):**
+
+| Attribute | Source Data | Column / Table |
+|-----------|-------------|----------------|
+| Strength | Best 1RM across exercises | `PersonalRecord.oneRepMax` |
+| Endurance | Total volume + session count | `GamificationStats.totalVolumeKg`, `totalWorkouts` |
+| Consistency | Streak data | `GamificationStats.currentStreak`, `longestStreak` |
+| Power | Average MCV across sessions | `WorkoutSession.avgMcvMmS` (schema v16 column) |
+| Balance | Average asymmetry across sessions | `WorkoutSession.avgAsymmetryPercent` (schema v16 column) |
+
+**No new schema tables required.** All five attribute inputs are derivable from data already in the database. Attribute values are computed on-demand and never stored — they are display-only derived values.
+
+**Character class** is determined by whichever attribute ranks highest (pure function, no persistence).
+
+**Interaction with GamificationStats singleton:** The RPG engine reads from `GamificationStats` (singleton row id=1) via `GamificationRepository.getGamificationStats(): Flow<GamificationStats>`. It does NOT write to it. The singleton already tracks `totalVolumeKg`, `longestStreak`, `currentStreak`.
+
+**Data pipeline:**
+
+```
+GamificationRepository.getGamificationStats()    → GamificationStats
+PersonalRecordRepository.getAllPersonalRecords()  → List<PersonalRecord> (for Strength)
+WorkoutRepository.getAllSessions()                → List<WorkoutSession> (Power/Balance)
+         ↓ (all three collected in coroutine, combine())
+RpgAttributeEngine.compute(stats, sessions, records) → RpgAttributes
+         ↓
+RpgAttributeCard composable (Phoenix tier gated via FeatureGate.RPG_ATTRIBUTES)
+```
+
+**Computation trigger:** Analytics/profile screen load. One-shot computation (not a continuous flow), acceptable latency for an off-workout analytics screen.
+
+**New files:**
+- `shared/.../domain/premium/RpgAttributeEngine.kt`
+- `shared/.../domain/model/RpgModels.kt` — `RpgAttributes`, `CharacterClass` enum, `RpgAttribute` sealed class
+- `shared/.../presentation/components/RpgAttributeCard.kt`
+
+**Modified files:**
+- `FeatureGate.kt` — add `RPG_ATTRIBUTES` to Feature enum (Phoenix tier)
+- `DomainModule.kt` — no change (stateless object, no Koin registration needed)
+- Screen composable that hosts the card (likely analytics or gamification screen)
+
+---
+
+### 3. HUD Customization
+
+**Question:** Preferences storage, how to make StatsPage visibility user-configurable without breaking existing HUD?
+
+**Storage decision:** `PreferencesManager` / `SettingsPreferencesManager` — the established pattern for all user toggles. Uses `multiplatform-settings` (SharedPreferences on Android, NSUserDefaults on iOS). Do NOT use the database — this is a local device preference, not synced data.
+
+**Config model:** Add `HudPageConfig` as a `@Serializable` data class stored as a single JSON blob under one key. This follows the identical pattern used for `SingleExerciseDefaults` and `JustLiftDefaults`.
 
 ```kotlin
-// commonMain
-expect class PoseEstimator {
-    fun isAvailable(): Boolean
-    fun start()
-    fun stop()
-    val latestJointAngles: StateFlow<List<JointAngle>>
-}
+// commonMain/domain/model/HudPageConfig.kt
+@Serializable
+data class HudPageConfig(
+    val showInstructionPage: Boolean = true,  // page 1 (video/exercise instructions)
+    val showStatsPage: Boolean = true          // page 2 (biomechanics stats)
+    // ExecutionPage (page 0) is always visible — not toggleable
+)
+```
 
-// androidMain
-actual class PoseEstimator(
-    private val context: Context
+**PreferencesManager changes:**
+- Add `val hudPageConfig: HudPageConfig` to `UserPreferences` with default `HudPageConfig()`
+- Add `suspend fun setHudPageConfig(config: HudPageConfig)` to interface
+- Implement with `settings.putString(KEY_HUD_PAGE_CONFIG, json.encodeToString(config))`
+- Read back on `loadPreferences()` with null-safe decode
+
+**WorkoutHud.kt change — dynamic page list:**
+
+```kotlin
+// WorkoutHud now accepts hudPageConfig parameter
+val visiblePages: List<PageType> = buildList {
+    add(PageType.EXECUTION)
+    if (hudPageConfig.showInstructionPage) add(PageType.INSTRUCTION)
+    if (hudPageConfig.showStatsPage) add(PageType.STATS)
+}
+val pagerState = rememberPagerState(pageCount = { visiblePages.size })
+// ...
+when (visiblePages[page]) {
+    PageType.EXECUTION -> ExecutionPage(...)
+    PageType.INSTRUCTION -> InstructionPage(...)
+    PageType.STATS -> StatsPage(...)
+}
+```
+
+**Breaking risk assessment:** Low. `ExecutionPage` (page 0) is always included — cannot be hidden. `StatsPage` (current page 2) becomes conditional. The pager dots update automatically since they're based on `pagerState.pageCount`. If a user hides the stats page, the pager simply has 2 pages instead of 3.
+
+**New files:**
+- `shared/.../domain/model/HudPageConfig.kt`
+- `shared/.../presentation/screen/HudCustomizationSheet.kt` (bottom sheet or settings entry)
+
+**Modified files:**
+- `UserPreferences.kt` — add `hudPageConfig` field with default
+- `PreferencesManager.kt` — add `setHudPageConfig` method
+- `SettingsPreferencesManager.kt` — implement save/load with JSON
+- `WorkoutHud.kt` — accept `hudPageConfig` param, build dynamic page list
+- `MainViewModel.kt` or `WorkoutTab.kt` — pass config from preferences to HUD
+
+**No schema migration required.**
+
+---
+
+### 4. Readiness Briefing
+
+**Question:** Where does the heuristic engine live? When does it compute? How does it access recent session history?
+
+**Integration decision:** New `domain/premium/ReadinessBriefingEngine.kt` as a stateless pure-function object. Computes from `List<SessionSummary>` — the exact same type already used by `SmartSuggestionsEngine`. No new repository is needed: existing `SmartSuggestionsRepository.getSessionSummariesSince(timestamp)` provides all required data.
+
+**Trigger timing:** Computes pre-first-set, after exercise selection, before `ActiveSessionEngine.start()`. One-time computation per workout session. Not a continuous or streaming computation.
+
+**Proposed data flow:**
+
+```
+User selects exercise / routine day → WorkoutSetupScreen (or wherever pre-set state lives)
+  ↓
+SmartSuggestionsRepository.getSessionSummariesSince(nowMs - 28 * DAY_MS)
+  ↓  List<SessionSummary> (already fetches exerciseId, muscleGroup, timestamp, weightPerCableKg, workingReps)
+ReadinessBriefingEngine.compute(sessions, targetMuscleGroup, nowMs)
+  ↓ ReadinessBriefing (readinessLevel: GREEN/YELLOW/RED, advisoryText, daysSinceLastTraining)
+  ↓
+ReadinessBriefingCard composable displayed (Elite tier gated)
+User dismisses
+  ↓
+ActiveSessionEngine.start()
+```
+
+**Heuristic inputs from existing data:**
+- Days since last training the same muscle group → computed from `SessionSummary.timestamp` filtered by `muscleGroup`
+- Volume in last 7 days for target muscle group → `SmartSuggestionsEngine.computeWeeklyVolume()` pattern (can reuse)
+- Current streak → `GamificationStats.currentStreak` (read via `GamificationRepository`)
+
+**Advisory only — no machine control.** The briefing is a text/visual card. It does not modify `WorkoutParameters` or send BLE commands. This aligns with constraint CV-08 (no output types reference machine control).
+
+**Elite tier gate:** Add `READINESS_BRIEFING` to `FeatureGate.Feature` enum in the elite features set.
+
+**New files:**
+- `shared/.../domain/premium/ReadinessBriefingEngine.kt`
+- `shared/.../domain/model/ReadinessBriefingModels.kt` — `ReadinessBriefing`, `ReadinessLevel` enum
+- `shared/.../presentation/components/ReadinessBriefingCard.kt`
+
+**Modified files:**
+- `FeatureGate.kt` — add `READINESS_BRIEFING` (Elite tier)
+- Pre-workout screen composable — render card before session start
+
+**No schema migration required.** Data comes from existing `WorkoutSession` table via `SmartSuggestionsRepository`.
+
+---
+
+### 5. WCAG Color-Blind Fallbacks
+
+**Question:** Theme-level vs component-level approach for color-blind fallbacks?
+
+**Current state of color systems in the codebase:**
+
+The codebase has three distinct color systems:
+1. **Theme colors** — `ui/theme/Color.kt` + `Theme.kt` — Material3 `colorScheme`, used by most UI components
+2. **Data visualization colors** — `ui/theme/DataColors.kt` — `LoadA` (blue) vs `LoadB` (orange) already avoids red/green conflict. Comment explicitly notes "colorblind-safe" intent.
+3. **Velocity zone colors / balance severity** — embedded inline in `WorkoutHud.kt` and `BalanceBar.kt` — these are the primary WCAG gap. Velocity zones use green/yellow/red semantics that fail deuteranopia/protanopia.
+
+**Recommended approach: Hybrid infrastructure**
+
+**Theme-level infrastructure:** Create `ui/theme/AccessibilityColors.kt` with deuteranopia-safe alternatives for all data-status colors:
+
+```kotlin
+// ui/theme/AccessibilityColors.kt (NEW FILE)
+object AccessibilityColors {
+    // Velocity zones — blue/cyan/orange/purple instead of green/yellow/red
+    val zoneExplosive  = Color(0xFF0077BB)  // Strong blue
+    val zoneFast       = Color(0xFF33BBEE)  // Cyan
+    val zoneModerate   = Color(0xFFEE7733)  // Orange
+    val zoneSlow       = Color(0xFFAA3377)  // Magenta-purple
+    val zoneGrind      = Color(0xFFBBBBBB)  // Neutral grey
+
+    // Balance bar — cable A vs B, already OK in DataColors but provide here for consistency
+    val balanceCableA  = Color(0xFF0077BB)  // Blue (same as DataColors.LoadA)
+    val balanceCableB  = Color(0xFFEE7733)  // Orange (same as DataColors.LoadB)
+
+    // Readiness card (new feature — design accessible from the start)
+    val readinessGood    = Color(0xFF0077BB)  // Blue (not green)
+    val readinessCaution = Color(0xFFEE7733)  // Orange (not yellow)
+    val readinessFatigue = Color(0xFFAA3377)  // Purple (not red)
+}
+```
+
+**Color-blind toggle:** Stored in `UserPreferences` as `colorBlindModeEnabled: Boolean = false`. Persisted via `PreferencesManager`. Not in the database.
+
+**Component-level application via CompositionLocal (NOT parameter threading):**
+
+```kotlin
+// In Theme.kt or a new CompositionLocals.kt
+val LocalColorBlindMode = compositionLocalOf { false }
+
+// In VitruvianTheme / AndroidTheme:
+CompositionLocalProvider(
+    LocalColorBlindMode provides userPreferences.colorBlindModeEnabled
 ) {
-    private val helper = PoseAnalyzerHelper(context)
-    // ... wraps MediaPipe + CameraX
+    content()
 }
 
-// iosMain (stub for now)
-actual class PoseEstimator {
-    fun isAvailable(): Boolean = false  // Not implemented yet
-    // ...
-}
+// In components (BalanceBar, velocity HUD, ReadinessBriefingCard):
+val isColorBlindMode = LocalColorBlindMode.current
+val zoneColor = if (isColorBlindMode) AccessibilityColors.zoneModerate else DefaultColors.zoneModerate
 ```
 
-**Alternative (recommended for v0.5.0):** Skip expect/actual entirely. Use nullable injection via Koin. The PoseEstimator is only created in androidMain's platformModule and injected as `PoseEstimator?` into the domain layer. iOS simply doesn't provide it.
+**Why CompositionLocal over parameters:** Threading `colorBlindEnabled: Boolean` through `WorkoutHud` → `ExecutionPage` → `BalanceBar` adds 3+ call-site changes for a cross-cutting concern. `CompositionLocal` is the Compose-idiomatic solution for theme-like cross-cutting values.
 
-```kotlin
-// androidMain platformModule
-single<PoseEstimator> { AndroidPoseEstimator(get()) }
+**Shape + text as primary indicator:** For the readiness card (new feature), implement the readiness level with both a shape/icon AND color as primary signals. Color-blind users can read the icon (checkmark/warning/stop) independently. This is the correct WCAG approach: color is enhancement, not the only signal.
 
-// commonMain - consumer
-class CvFormCheckManager(
-    private val poseEstimator: PoseEstimator?,  // null on iOS
-    private val formRuleEngine: FormRuleEngine
-)
-```
+**Modified files (WCAG):**
+- `UserPreferences.kt` — add `colorBlindModeEnabled: Boolean = false`
+- `PreferencesManager.kt` — add `setColorBlindModeEnabled` method
+- `SettingsPreferencesManager.kt` — implement
+- `ui/theme/AccessibilityColors.kt` — new file
+- `Theme.kt` or new `CompositionLocals.kt` — inject `LocalColorBlindMode`
+- `BalanceBar.kt` — consume `LocalColorBlindMode` for severity colors
+- `WorkoutHud.kt` — consume `LocalColorBlindMode` for velocity zone colors inline
+- Settings screen — expose toggle
 
-This matches the existing pattern used for `LedFeedbackController?` and `ExerciseDetectionManager?`.
+**New files (WCAG):**
+- `shared/.../ui/theme/AccessibilityColors.kt`
 
-#### MediaPipe Integration Details
-
-**Dependencies (androidApp/build.gradle.kts):**
-```kotlin
-// MediaPipe Pose Landmarker
-implementation("com.google.mediapipe:tasks-vision:0.10.20")
-
-// CameraX (already compatible with min SDK 26)
-implementation("androidx.camera:camera-core:1.5.1")
-implementation("androidx.camera:camera-camera2:1.5.1")
-implementation("androidx.camera:camera-lifecycle:1.5.1")
-implementation("androidx.camera:camera-compose:1.5.1")
-```
-
-**Model asset:** `pose_landmarker_lite.task` (~5MB) placed in `androidApp/src/main/assets/`.
-
-**Running mode:** `LIVE_STREAM` for real-time workout form checking.
-
-**Threading:** MediaPipe LIVE_STREAM mode delivers results asynchronously via listener callback. CameraX ImageAnalysis can use a dedicated executor thread. Results flow into a StateFlow for Compose consumption.
-
-#### New Manager: CvFormCheckManager
-
-```kotlin
-// commonMain - domain/cv/
-class CvFormCheckManager(
-    private val formRuleEngine: FormRuleEngine,
-    private val exerciseFormRules: ExerciseFormRules
-) {
-    private val _formState = MutableStateFlow<FormCheckState>(FormCheckState.Disabled)
-    val formState: StateFlow<FormCheckState> = _formState.asStateFlow()
-
-    private val _latestViolations = MutableStateFlow<List<FormViolation>>(emptyList())
-    val latestViolations: StateFlow<List<FormViolation>> = _latestViolations.asStateFlow()
-
-    fun onJointAnglesReceived(angles: List<JointAngle>, exerciseId: String?) {
-        val rules = exerciseFormRules.getRules(exerciseId)
-        val violations = formRuleEngine.evaluate(angles, rules)
-        _latestViolations.value = violations
-    }
-
-    fun reset() {
-        _latestViolations.value = emptyList()
-        _formState.value = FormCheckState.Disabled
-    }
-}
-```
-
-#### WorkoutCoordinator Integration
-
-```kotlin
-// WorkoutCoordinator additions
-class WorkoutCoordinator(...) {
-    // ... existing fields ...
-
-    // ===== CV Form Check =====
-    /**
-     * CV form check manager. Null when CV is not available (iOS, older devices).
-     * Set during DI construction.
-     */
-    var cvFormCheckManager: CvFormCheckManager? = null
-
-    /**
-     * Latest form violations for HUD display.
-     * Delegates to cvFormCheckManager if available.
-     */
-    val latestFormViolations: StateFlow<List<FormViolation>>
-        get() = cvFormCheckManager?.latestViolations
-            ?: MutableStateFlow(emptyList())
-}
-```
-
-This follows the exact same pattern as `ledFeedbackController` and `biomechanicsEngine`.
+**No schema migration required.**
 
 ---
 
-### Feature 3: Ghost Racing Overlay (Mobile, Stub Data)
+## Component Boundaries for New v0.5.1 Components
 
-**Scope:** Compose overlay composable that displays real-time vs. historical cable position. Uses stub data until portal sync ships in v0.5.5+.
-
-#### Architecture: Data Model
-
-```kotlin
-// commonMain - domain/model/
-data class GhostRaceData(
-    val ghostPositions: List<Float>,      // Historical cable positions, time-indexed
-    val ghostTimestamps: List<Long>,      // Timestamps for each position
-    val ghostMcvPerRep: List<Float>,      // Per-rep MCV from historical session
-    val exerciseName: String,
-    val weightKg: Float,
-    val totalReps: Int
-)
-
-data class GhostRaceState(
-    val isActive: Boolean = false,
-    val ghostData: GhostRaceData? = null,
-    val currentRepComparison: RepComparison? = null  // "AHEAD" or "BEHIND"
-)
-
-data class RepComparison(
-    val repNumber: Int,
-    val currentMcv: Float,
-    val ghostMcv: Float,
-    val verdict: GhostVerdict  // AHEAD, BEHIND, TIED
-)
-```
-
-#### Integration Point
-
-```kotlin
-// commonMain - presentation/manager/
-class GhostRaceManager {
-    private val _raceState = MutableStateFlow(GhostRaceState())
-    val raceState: StateFlow<GhostRaceState> = _raceState.asStateFlow()
-
-    // Called by ActiveSessionEngine when ghost racing is active
-    fun onCurrentMetric(position: Float, timestamp: Long) { ... }
-    fun onRepCompleted(repNumber: Int, mcv: Float) { ... }
-    fun startRace(ghostData: GhostRaceData) { ... }
-    fun stopRace() { ... }
-}
-```
-
-**Data source for v0.5.0:** Stub/demo data baked into the app. No portal query needed. The `GhostRaceManager` has a `loadStubData()` method that creates synthetic ghost race data from the last completed set in the current session, enabling dogfooding without backend infrastructure.
-
-#### UI Component Location
-
-```
-commonMain/presentation/components/premium/
-  |-- GhostRaceOverlay.kt         -- Side-by-side animated bars
-  |-- RepComparisonBadge.kt       -- "AHEAD +12mm/s" or "BEHIND -8mm/s"
-```
-
-These are standard Compose components in commonMain (no platform-specific code needed for the overlay).
+| New Component | Type | Location | Dependencies |
+|---------------|------|----------|--------------|
+| `GhostRacingEngine` | Stateless object | `domain/premium/` | None (pure functions) |
+| `GhostRacingModels` | Data models | `domain/model/` | None |
+| `GhostRaceOverlay` | Composable | `presentation/components/` | `GhostRaceState` model |
+| `RpgAttributeEngine` | Stateless object | `domain/premium/` | None (pure functions) |
+| `RpgModels` | Data models | `domain/model/` | None |
+| `RpgAttributeCard` | Composable | `presentation/components/` | `RpgAttributes` model |
+| `ReadinessBriefingEngine` | Stateless object | `domain/premium/` | None (pure functions) |
+| `ReadinessBriefingModels` | Data models | `domain/model/` | None |
+| `ReadinessBriefingCard` | Composable | `presentation/components/` | `ReadinessBriefing` model |
+| `HudPageConfig` | Serializable model | `domain/model/` | kotlinx.serialization |
+| `HudCustomizationSheet` | Composable | `presentation/screen/` | `PreferencesManager` |
+| `AccessibilityColors` | Color object | `ui/theme/` | Compose `Color` |
 
 ---
 
-### Feature 4: RPG Attribute Card (Mobile, Stub Data)
+## Data Flow for New Features
 
-**Scope:** Compact composable card showing 5 RPG attributes (Strength, Power, Stamina, Consistency, Mastery), character class, and overall level. Stub data until portal sync ships.
-
-#### Data Model
-
-```kotlin
-// commonMain - domain/model/
-data class RpgAttributes(
-    val strengthLevel: Int = 1,
-    val strengthXp: Long = 0,
-    val powerLevel: Int = 1,
-    val powerXp: Long = 0,
-    val staminaLevel: Int = 1,
-    val staminaXp: Long = 0,
-    val consistencyLevel: Int = 1,
-    val consistencyXp: Long = 0,
-    val masteryLevel: Int = 1,
-    val masteryXp: Long = 0,
-    val characterClass: String = "Initiate",
-    val overallLevel: Int = 1
-)
-```
-
-#### Architecture Decision: Local Computation vs Portal-Only
-
-**For v0.5.0: Stub data with local computation fallback.**
-
-The RPG XP formulas are defined in the design doc (portal `rpg.ts`). Implement a Kotlin equivalent in `commonMain/domain/rpg/RpgCalculator.kt` that computes attributes from local workout history. This enables the card to show real (approximate) data even before portal sync exists.
-
-```kotlin
-// commonMain/domain/rpg/RpgCalculator.kt
-class RpgCalculator {
-    fun calculateAttributes(
-        recentSessions: List<WorkoutSession>,
-        recentRepMetrics: List<RepMetricData>,
-        currentStreak: Int,
-        avgQualityScore: Float
-    ): RpgAttributes { ... }
-}
-```
-
-#### UI Component
+### Ghost Racing Data Flow
 
 ```
-commonMain/presentation/components/premium/
-  |-- RpgAttributeCard.kt       -- Radar chart + level numbers + class badge
+Pre-workout (before first rep, triggered by exercise selection):
+  WorkoutRepository.getRecentSessionsSync(limit=50)
+      ↓ filter by exerciseId + mode, sort by totalVolumeKg DESC
+      ↓ bestSessionId = first match
+  RepMetricRepository.getRepMetricsBySession(bestSessionId)
+      ↓ List<RepMetricRow> — avgVelocityConcentric, durationMs, rangeOfMotionMm per rep
+      ↓ GhostRacingEngine holds as ghostRepData[]
+
+During workout (per-rep):
+  ActiveSessionEngine completes rep → WorkoutCoordinator receives repCompleted event
+      ↓ currentRepNumber, currentMcvMmS
+  GhostRacingEngine.compare(currentRepNumber, ghostRepData) → GhostRaceState
+      ↓ WorkoutCoordinator.ghostRaceState.value = newState
+      ↓ MainViewModel.ghostRaceState StateFlow
+      ↓ WorkoutHud.ExecutionPage → GhostRaceOverlay composable
 ```
 
-Placed on the Profile/Gamification screen, gated behind PHOENIX tier via `FeatureGate.Feature.RPG_ATTRIBUTES` (new enum value).
-
----
-
-### Feature 5: Pre-Workout Briefing (Mobile, Stub Data)
-
-**Scope:** Card shown before starting a workout that displays readiness score and weight recommendations. Stub data until portal fatigue model ships.
-
-#### Data Model
-
-```kotlin
-// commonMain - domain/model/
-data class PreWorkoutBriefing(
-    val readinessScore: Int,                    // 0-100
-    val readinessLevel: ReadinessLevel,         // GREEN, YELLOW, RED
-    val muscleGroupReadiness: Map<String, Int>, // per-muscle scores
-    val recommendation: String,                 // "Execute as planned" etc.
-    val weightAdjustmentPercent: Int?,          // null = no adjustment, -10 = reduce 10%
-    val isStubData: Boolean = true              // Flag for UI badge "Preview"
-)
-
-enum class ReadinessLevel { GREEN, YELLOW, RED }
-```
-
-#### Architecture
-
-```kotlin
-// commonMain - domain/readiness/
-class ReadinessBriefingProvider(
-    private val workoutRepository: WorkoutRepository,
-    private val gamificationRepository: GamificationRepository
-) {
-    suspend fun getBriefing(exerciseId: String?): PreWorkoutBriefing {
-        // v0.5.0: Local heuristic based on:
-        // - Time since last workout targeting same muscle group
-        // - Recent volume trend
-        // - Streak status
-        // Returns stub-flagged data
-    }
-}
-```
-
-#### UI Component
+### RPG Attribute Data Flow
 
 ```
-commonMain/presentation/components/premium/
-  |-- PreWorkoutBriefingCard.kt  -- Readiness gauge + recommendation + weight hint
+Profile / Analytics screen load:
+  combine(
+    GamificationRepository.getGamificationStats(),       → GamificationStats
+    PersonalRecordRepository.getAllPersonalRecords(),     → List<PersonalRecord>
+    WorkoutRepository.getAllSessions()                    → List<WorkoutSession>
+  )
+      ↓
+  RpgAttributeEngine.compute(stats, sessions, records) → RpgAttributes
+      ↓
+  RpgAttributeCard (gated: FeatureGate.isEnabled(RPG_ATTRIBUTES, tier))
 ```
 
-Shown on the SetReady screen (before starting a set), gated behind ELITE tier.
+### Readiness Briefing Data Flow
 
----
-
-## FeatureGate Extensions
-
-### New Feature Enum Values
-
-```kotlin
-enum class Feature {
-    // Existing...
-    FORCE_CURVES, PER_REP_METRICS, VBT_METRICS, PORTAL_SYNC,
-    LED_BIOFEEDBACK, REP_QUALITY_SCORE,
-    ASYMMETRY_ANALYSIS, AUTO_REGULATION, SMART_SUGGESTIONS,
-    WORKOUT_REPLAY, STRENGTH_ASSESSMENT, PORTAL_ADVANCED_ANALYTICS,
-
-    // NEW for v0.5.0
-    CV_FORM_CHECK,          // PHOENIX tier - basic form warnings
-    CV_ANALYTICS,           // ELITE tier - full postural analytics
-    GHOST_RACING_BASIC,     // PHOENIX tier - rep summary comparison
-    GHOST_RACING_FULL,      // ELITE tier - 50Hz position overlay
-    RPG_ATTRIBUTES,         // PHOENIX tier - attribute card
-    PRE_WORKOUT_BRIEFING    // ELITE tier - readiness + AI suggestions
-}
+```
+Pre-workout (exercise selected, before session start):
+  SmartSuggestionsRepository.getSessionSummariesSince(nowMs - 28 * DAY_MS)
+      ↓ List<SessionSummary> — same type SmartSuggestionsEngine uses
+  ReadinessBriefingEngine.compute(sessions, targetMuscleGroup, nowMs)
+      ↓ ReadinessBriefing (readinessLevel, advisoryText, daysSinceLastTraining)
+      ↓ ReadinessBriefingCard shown (gated: READINESS_BRIEFING, ELITE tier)
+  User dismisses → ActiveSessionEngine.start()
 ```
 
-**Gating pattern remains the same:** Data capture for all tiers, UI display gated at composable level. CV camera frames are never stored (privacy). Only computed FormScore and FormViolation records are persisted.
+### HUD Customization Data Flow
 
----
-
-## Koin DI Changes
-
-### domainModule Additions
-
-```kotlin
-val domainModule = module {
-    // ... existing ...
-
-    // CV Form Check (commonMain logic)
-    single { FormRuleEngine() }
-    single { JointAngleCalculator() }
-    single { ExerciseFormRules() }
-    factory { CvFormCheckManager(get(), get()) }
-
-    // RPG Calculator
-    single { RpgCalculator() }
-
-    // Readiness Briefing
-    factory { ReadinessBriefingProvider(get(), get()) }
-
-    // Ghost Race
-    factory { GhostRaceManager() }
-}
 ```
+Settings screen:
+  HudCustomizationSheet
+      ↓ toggle changed
+  PreferencesManager.setHudPageConfig(newConfig)
+      ↓ stored as JSON in Settings (SharedPrefs / NSUserDefaults)
+      ↓ _preferencesFlow.value updated
 
-### androidMain platformModule Additions
-
-```kotlin
-// androidMain platformModule
-val platformModule = module {
-    // ... existing BLE, SQLite driver ...
-
-    // MediaPipe Pose Estimator (Android-only)
-    single { AndroidPoseEstimator(androidContext()) }
-}
-```
-
-### presentationModule Additions
-
-No new ViewModels needed. The new managers integrate into WorkoutCoordinator (same as BiomechanicsEngine pattern). The composables consume StateFlows from existing ViewModel hierarchy.
-
----
-
-## Database Schema Changes (v16)
-
-### RepMetric Table Extensions
-
-```sql
--- New columns on RepMetric (migration v16)
-ALTER TABLE RepMetric ADD COLUMN meanConcentricVelocityMmS REAL;
-ALTER TABLE RepMetric ADD COLUMN peakVelocityMmS REAL;
-ALTER TABLE RepMetric ADD COLUMN velocityZone TEXT;
-ALTER TABLE RepMetric ADD COLUMN velocityLossPercent REAL;
-ALTER TABLE RepMetric ADD COLUMN normalizedForceCurve TEXT;
-ALTER TABLE RepMetric ADD COLUMN stickingPointPct REAL;
-ALTER TABLE RepMetric ADD COLUMN strengthProfile TEXT;
-ALTER TABLE RepMetric ADD COLUMN asymmetryPercent REAL;
-ALTER TABLE RepMetric ADD COLUMN dominantSide TEXT;
-```
-
-### WorkoutSession Set Summary Extensions
-
-```sql
--- Set-level biomechanics summary (migration v16)
-ALTER TABLE WorkoutSession ADD COLUMN avgMcvMmS REAL;
-ALTER TABLE WorkoutSession ADD COLUMN sessionPeakVelocityMmS REAL;
-ALTER TABLE WorkoutSession ADD COLUMN totalVelocityLossPercent REAL;
-ALTER TABLE WorkoutSession ADD COLUMN avgAsymmetryPercent REAL;
-ALTER TABLE WorkoutSession ADD COLUMN sessionDominantSide TEXT;
-ALTER TABLE WorkoutSession ADD COLUMN sessionStrengthProfile TEXT;
-ALTER TABLE WorkoutSession ADD COLUMN avgForceCurve TEXT;
-```
-
-### CV Form Data (New Table)
-
-```sql
--- Form assessment per session+exercise (migration v16)
-CREATE TABLE FormAssessment (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    sessionId TEXT NOT NULL,
-    exerciseId TEXT,
-    formScore REAL NOT NULL,
-    violationCount INTEGER NOT NULL DEFAULT 0,
-    criticalViolationCount INTEGER NOT NULL DEFAULT 0,
-    jointAnglesSummary TEXT,          -- JSON: {"knee": {"min": 85, "max": 170, "avg": 120}, ...}
-    createdAt INTEGER NOT NULL,
-    FOREIGN KEY (sessionId) REFERENCES WorkoutSession(id) ON DELETE CASCADE
-);
-
-CREATE INDEX idx_form_assessment_session ON FormAssessment(sessionId);
-
--- Individual form violations (migration v16)
-CREATE TABLE FormViolation (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    assessmentId INTEGER NOT NULL,
-    repNumber INTEGER NOT NULL,
-    joint TEXT NOT NULL,
-    angleDegrees REAL NOT NULL,
-    thresholdDegrees REAL NOT NULL,
-    severity TEXT NOT NULL,           -- "INFO", "WARNING", "CRITICAL"
-    message TEXT NOT NULL,
-    timestampMs INTEGER NOT NULL,
-    FOREIGN KEY (assessmentId) REFERENCES FormAssessment(id) ON DELETE CASCADE
-);
-
-CREATE INDEX idx_form_violation_assessment ON FormViolation(assessmentId);
+Workout screen:
+  MainViewModel collects preferencesFlow → exposes hudPageConfig StateFlow
+      ↓ WorkoutHud(hudPageConfig = ...)
+      ↓ visiblePages = buildList { EXECUTION always, INSTRUCTION if enabled, STATS if enabled }
+      ↓ HorizontalPager(pageCount = { visiblePages.size })
 ```
 
 ---
 
-## Complete New Component Inventory
+## Schema Migration Assessment
 
-### New Files (CREATE)
+| Feature | Schema Change Required | Migration | iOS DriverFactory Impact |
+|---------|----------------------|-----------|--------------------------|
+| Ghost Racing | Minimal — new SQL query only | New named query in `.sq` file (no table change) | None |
+| RPG Attributes | None | None | None |
+| HUD Customization | None (PreferencesManager) | None | None |
+| Readiness Briefing | None | None | None |
+| WCAG Accessibility | None (PreferencesManager) | None | None |
+| CV Form Check persistence | Yes — form score/violations storage | New migration `16.sqm` → schema v17 | **CRITICAL: Increment `CURRENT_SCHEMA_VERSION = 17L`, add all new tables with `IF NOT EXISTS`, add new columns with `ALTER TABLE ADD COLUMN` and duplicate detection** |
 
-| File | Location | Purpose |
-|------|----------|---------|
-| `JointAngleCalculator.kt` | commonMain/domain/cv/ | Pure math: landmarks -> angles |
-| `FormRuleEngine.kt` | commonMain/domain/cv/ | Rule evaluation against angles |
-| `ExerciseFormRules.kt` | commonMain/domain/cv/ | Per-exercise rule data |
-| `CvModels.kt` | commonMain/domain/cv/ | PoseLandmark, JointAngle, FormViolation, FormScore |
-| `CvFormCheckManager.kt` | commonMain/domain/cv/ | Orchestrates form checking from angles |
-| `RpgCalculator.kt` | commonMain/domain/rpg/ | Local RPG attribute computation |
-| `RpgModels.kt` | commonMain/domain/model/ | RpgAttributes, CharacterClass |
-| `ReadinessBriefingProvider.kt` | commonMain/domain/readiness/ | Local readiness heuristic |
-| `ReadinessModels.kt` | commonMain/domain/model/ | PreWorkoutBriefing, ReadinessLevel |
-| `GhostRaceManager.kt` | commonMain/presentation/manager/ | Ghost race state + comparison |
-| `GhostRaceModels.kt` | commonMain/domain/model/ | GhostRaceData, GhostRaceState |
-| `GhostRaceOverlay.kt` | commonMain/presentation/components/premium/ | Overlay composable |
-| `RepComparisonBadge.kt` | commonMain/presentation/components/premium/ | Ahead/Behind indicator |
-| `RpgAttributeCard.kt` | commonMain/presentation/components/premium/ | Attribute radar chart |
-| `PreWorkoutBriefingCard.kt` | commonMain/presentation/components/premium/ | Readiness card |
-| `PoseAnalyzerHelper.kt` | androidMain/cv/ | MediaPipe PoseLandmarker wrapper |
-| `CameraXProvider.kt` | androidMain/cv/ | CameraX lifecycle management |
-| `PoseOverlayView.kt` | androidMain/cv/ | Skeleton overlay Compose Canvas |
-| `AndroidPoseEstimator.kt` | androidMain/cv/ | Platform impl connecting CameraX -> MediaPipe |
-| `FormAssessmentRepository.kt` | commonMain/data/repository/ | Interface for form data CRUD |
-| `SqlDelightFormAssessmentRepository.kt` | commonMain/data/repository/ | SQLDelight impl |
+**Five of six feature areas in this research require zero schema changes.** Only CV Form Check persistence (which has its own separate implementation plan) needs a migration.
 
-### Modified Files (EDIT)
-
-| File | What Changes |
-|------|-------------|
-| `VitruvianDatabase.sq` | Migration v16: new columns + new tables |
-| `domain/model/RepMetricData.kt` (or Models.kt) | Add biomechanics fields |
-| `data/repository/RepMetricRepository.kt` | Map new biomechanics columns |
-| `presentation/manager/ActiveSessionEngine.kt` | Populate biomechanics in RepMetricData, integrate CvFormCheckManager |
-| `presentation/manager/WorkoutCoordinator.kt` | Add cvFormCheckManager, ghostRaceManager refs |
-| `domain/premium/FeatureGate.kt` | Add new Feature enum values + tier mapping |
-| `di/DomainModule.kt` | Wire new engines/managers |
-| `di/DataModule.kt` | Wire FormAssessmentRepository |
-| `androidApp/build.gradle.kts` | Add MediaPipe + CameraX dependencies |
-| `androidMain/di/platformModule` | Provide AndroidPoseEstimator |
-| `iosMain/di/platformModule` | No-op for CV (null injection) |
+**iOS DriverFactory sync rule (Daem0n warning #155):** When any `.sqm` migration file is added, `CURRENT_SCHEMA_VERSION` in `DriverFactory.ios.kt` must be incremented. The 4-layer defense purges outdated databases rather than migrating them — so the constant must match or iOS users will lose data on launch.
 
 ---
 
-## Suggested Build Order
+## Architectural Patterns to Follow
 
-Build order follows dependency chain and leaves app buildable after each phase.
+### Pattern 1: Stateless Domain Engine
 
-### Phase 1: Biomechanics Persistence (foundation, no new dependencies)
-1. Schema migration v16 (add columns to RepMetric + WorkoutSession)
-2. Extend RepMetricData model with biomechanics fields
-3. Update SqlDelightRepMetricRepository to map new columns
-4. Modify ActiveSessionEngine to populate biomechanics fields
-5. Verify with existing characterization tests
-6. Update saveWorkoutSession to include set-level biomechanics
+**What:** Pure `object` with `fun compute(inputs): Output` signature. No mutable state, no DI, no DB.
+**When to use:** All three new computation engines (Ghost, RPG, Readiness).
+**Why this matters:** Enables pure unit tests with zero setup. Pass `nowMs` as explicit parameter for time-dependent functions — same discipline as `SmartSuggestionsEngine`.
 
-**Rationale:** Zero risk. No new libraries. Existing data flow, just persisting what was already computed. All other features can build on persisted data.
+```kotlin
+// Correct pattern (stateless object)
+object GhostRacingEngine {
+    fun compare(currentRepNumber: Int, ghostReps: List<GhostRepData>): GhostRaceState { ... }
+}
 
-### Phase 2: CV Form Check - Domain Logic (no platform dependencies)
-1. Create CvModels.kt (PoseLandmark, JointAngle, FormViolation, FormScore)
-2. Create JointAngleCalculator.kt (pure math, heavily testable)
-3. Create ExerciseFormRules.kt (data definitions per exercise)
-4. Create FormRuleEngine.kt (rule evaluation)
-5. Create CvFormCheckManager.kt (orchestration)
-6. Wire into DomainModule
-7. Unit tests for angle calculations and rule evaluation
+// Incorrect (stateful class with injected dependencies for pure computation)
+class GhostRacingEngine(private val repository: RepMetricRepository) { ... }
+```
 
-**Rationale:** All pure Kotlin in commonMain. Can be developed and tested without camera hardware. Establishes the interface contract that androidMain will implement against.
+### Pattern 2: Single Upstream Feature Gate
 
-### Phase 3: CV Form Check - Android Integration
-1. Add MediaPipe + CameraX dependencies to androidApp/build.gradle.kts
-2. Create PoseAnalyzerHelper.kt (MediaPipe wrapper)
-3. Create CameraXProvider.kt (camera lifecycle)
-4. Create AndroidPoseEstimator.kt (connects CameraX -> MediaPipe -> JointAngles)
-5. Create PoseOverlayView.kt (skeleton drawing)
-6. Wire into platformModule
-7. Integration test with device camera
+**What:** Gate at the data-fetching or engine invocation call site. Return null if tier insufficient. Null propagation handles all downstream UI naturally.
+**When to use:** Every new premium feature.
 
-**Rationale:** Depends on Phase 2 interfaces. Heavy platform work isolated in androidMain. CameraX lifecycle management is the trickiest part.
+```kotlin
+// In ActiveSessionEngine or calling code:
+val ghostState = if (FeatureGate.isEnabled(Feature.GHOST_RACING, tier))
+    GhostRacingEngine.compare(repNum, ghostData)
+else null
+// Overlay composable: if (ghostState != null) GhostRaceOverlay(ghostState)
+```
 
-### Phase 4: CV Form Check - UI + Persistence
-1. Create FormAssessmentRepository + SqlDelight impl
-2. Add FormAssessment/FormViolation tables to schema v16
-3. Create HUD warning overlay composable
-4. Create PiP camera preview composable
-5. Integrate "Enable Form Check" toggle on Active Workout Screen
-6. Wire violation persistence at set completion
-7. Add FeatureGate.Feature.CV_FORM_CHECK
+### Pattern 3: Preferences for User-Configurable Device State
 
-**Rationale:** Depends on Phases 2-3. Persistence and UI are the final layer.
+**What:** `@Serializable` data class stored as JSON blob via `SettingsPreferencesManager`. One key per logical config group.
+**When to use:** Any user preference that is local-only (not synced, not analytics).
 
-### Phase 5: Premium UI Composables (parallel, independent)
-1. Create GhostRaceOverlay + GhostRaceManager with stub data
-2. Create RpgAttributeCard + RpgCalculator with local computation
-3. Create PreWorkoutBriefingCard + ReadinessBriefingProvider with local heuristic
-4. Add FeatureGate entries for all new features
-5. Place components on appropriate screens with tier gating
+```kotlin
+// Consistent with existing SingleExerciseDefaults and JustLiftDefaults
+private const val KEY_HUD_PAGE_CONFIG = "hud_page_config"
 
-**Rationale:** These are self-contained UI features with stub backends. No dependencies on each other or on CV. Can be built in parallel by multiple developers.
+override suspend fun setHudPageConfig(config: HudPageConfig) {
+    settings.putString(KEY_HUD_PAGE_CONFIG, json.encodeToString(config))
+    updateAndEmit { copy(hudPageConfig = config) }
+}
+```
+
+### Pattern 4: WorkoutCoordinator as State Conduit
+
+**What:** New state that crosses manager boundaries lives as a `StateFlow` field on `WorkoutCoordinator`. Sub-managers write it; the HUD reads it via `MainViewModel`.
+**When to use:** Ghost race state (written by `ActiveSessionEngine`, read by HUD overlay).
+
+### Pattern 5: CompositionLocal for Cross-Cutting Theme Values
+
+**What:** `compositionLocalOf { defaultValue }` injected at the theme root. Components consume locally without parameter threading.
+**When to use:** Color-blind mode — it affects many components and would require threading through every call site if passed as a parameter.
 
 ---
 
 ## Anti-Patterns to Avoid
 
-### Anti-Pattern 1: Putting MediaPipe in commonMain
-**What:** Trying to abstract MediaPipe behind expect/actual at the SDK level
-**Why bad:** MediaPipe Android SDK has complex lifecycle (GPU delegates, model loading, context requirements). Abstracting at this level creates a leaky abstraction that breaks on every SDK update.
-**Instead:** Abstract at the "joint angles" level. MediaPipe is an implementation detail of androidMain. CommonMain only sees `List<JointAngle>`.
+### Anti-Pattern 1: Adding Computation to ActiveSessionEngine
 
-### Anti-Pattern 2: Separate BiomechanicsRepMetric table
-**What:** Creating a new table for biomechanics data instead of extending RepMetric
-**Why bad:** Every per-rep query now requires a JOIN. The biomechanics data is 1:1 with RepMetricData and computed from the same source data in the same code path.
-**Instead:** Add columns to RepMetric. NULL values for pre-v16 data are natural and handled by Kotlin nullable types.
+**What people do:** Embed ghost comparison, RPG calculation, or readiness heuristic inside the 2,600L `ActiveSessionEngine`.
+**Why it's wrong:** The engine manages BLE, rep counting, weight control, and quality scoring — adding unrelated display computation increases size and regression risk. Ghost racing specifically is display-only.
+**Do this instead:** New stateless engines in `domain/premium/`. State flows via `WorkoutCoordinator`.
 
-### Anti-Pattern 3: Real-time form score in WorkoutCoordinator state
-**What:** Adding formScore as a continuously-updated StateFlow that recalculates on every camera frame
-**Why bad:** 30fps frame updates would cause excessive recomposition. Form violations are event-driven (only when threshold exceeded), not continuous.
-**Instead:** Use event-based violation flow. Only emit when a new violation is detected. Use throttling (max 1 warning per 3 seconds) to avoid alert fatigue.
+### Anti-Pattern 2: Persisting Derived RPG Attributes
 
-### Anti-Pattern 4: Camera permission in commonMain
-**What:** Trying to handle camera permissions in shared code
-**Why bad:** Permissions are fundamentally platform-specific (Android runtime permissions vs iOS Info.plist). No useful abstraction exists.
-**Instead:** Handle in Android's MainActivity/Activity. The CvFormCheckManager in commonMain only cares about `isAvailable(): Boolean` which checks both platform support AND permission status.
+**What people do:** Create an `RpgAttributes` table to cache computed scores.
+**Why it's wrong:** Attributes are fully derivable from existing data. Caching creates staleness — attributes would be wrong until the cache is invalidated after every new session.
+**Do this instead:** Compute on demand in the analytics screen. The computation is O(sessions) — acceptable for an off-workout screen.
 
-### Anti-Pattern 5: Blocking camera analysis on main thread
-**What:** Processing MediaPipe results synchronously on the UI thread
-**Why bad:** MediaPipe inference takes 10-30ms per frame. At 30fps this would cause jank.
-**Instead:** CameraX ImageAnalysis runs on a dedicated executor. MediaPipe LIVE_STREAM mode delivers results asynchronously. Results flow into StateFlow which Compose observes on the main thread (lightweight).
+### Anti-Pattern 3: Parameter-Threading Color-Blind Flag
+
+**What people do:** Add `colorBlindEnabled: Boolean` to `WorkoutHud` → `ExecutionPage` → `BalanceBar` → every leaf component.
+**Why it's wrong:** 5+ call-site changes for a cross-cutting theme concern. Parameter bloat.
+**Do this instead:** `LocalColorBlindMode` CompositionLocal. Leaf components read it directly.
+
+### Anti-Pattern 4: New Koin Module for Stateless Engines
+
+**What people do:** Register `GhostRacingEngine`, `RpgAttributeEngine`, `ReadinessBriefingEngine` in a new Koin module.
+**Why it's wrong:** These are Kotlin `object` singletons — they do not need Koin registration. Koin is only needed for classes with injected dependencies.
+**Do this instead:** Call them directly. Only update `DomainModule` if an engine requires a repository dependency.
+
+### Anti-Pattern 5: Ghost Racing as a New Pager Page
+
+**What people do:** Add ghost racing as a fourth page in the `HorizontalPager`.
+**Why it's wrong:** Users cannot swipe to a different page while actively lifting. Ghost racing must be visible on the main `ExecutionPage` (page 0) during the rep.
+**Do this instead:** Overlay composable on `ExecutionPage`, conditionally rendered when ghost state is non-null.
 
 ---
 
-## Scalability Considerations
+## Build Order Considering Dependencies
 
-| Concern | Current (v0.4.7) | v0.5.0 Impact | Mitigation |
-|---------|-------------------|---------------|------------|
-| RepMetric row size | ~2KB per rep (curve data) | ~2.5KB per rep (+biomechanics) | Marginal increase, under 25% |
-| Camera battery drain | N/A | Significant (CameraX + ML) | Form Check is opt-in toggle. Auto-disable after set ends. |
-| Memory: model loading | N/A | ~15-30MB for pose_landmarker_lite.task | Load lazily on first Form Check enable. Unload when disabled. |
-| Database migration | 15 migrations | 1 more (v16) | ALTER TABLE ADD COLUMN is non-destructive |
-| DI graph complexity | 4 modules, ~30 bindings | ~40 bindings (+10) | All new bindings follow existing patterns |
-| WorkoutCoordinator size | 306 lines | ~330 lines (+2 nullable refs) | Minimal growth. Managers contain logic. |
-| ActiveSessionEngine size | ~2,600 lines | ~2,700 lines (+biomechanics population) | Most new logic in new manager classes |
+```
+Independent:
+  ┌─ Domain models (GhostRacingModels, RpgModels, ReadinessBriefingModels, HudPageConfig)
+  ├─ FeatureGate additions (3 new Feature enum values)
+  └─ AccessibilityColors.kt + LocalColorBlindMode
+
+Foundation (no inter-feature dependencies):
+  ├─ UserPreferences + PreferencesManager extensions (colorBlindMode, HudPageConfig)
+  └─ SQL query: selectBestSessionForExercise (WorkoutRepository addition)
+
+Engines (depend on models only):
+  ├─ ReadinessBriefingEngine
+  ├─ RpgAttributeEngine
+  └─ GhostRacingEngine
+
+UI components (depend on engines + preferences):
+  ├─ ReadinessBriefingCard + integration (simplest, reuses SmartSuggestionsRepository)
+  ├─ RpgAttributeCard + integration (reads from 3 existing repos)
+  ├─ WCAG component updates (BalanceBar, WorkoutHud velocity colors)
+  ├─ HUD customization (WorkoutHud.kt dynamic pager + settings sheet)
+  └─ GhostRaceOverlay + WorkoutCoordinator wiring (most complex — last)
+```
+
+**Recommended phase sequence:**
+
+1. **Foundation** — Domain models + FeatureGate + PreferencesManager extensions + `selectBestSessionForExercise` query. All testable, no UI.
+2. **WCAG + HUD customization** — Board condition items. Preferences-based, no new engines. Lowest regression risk.
+3. **Readiness briefing** — Stateless engine + single card composable. Reuses existing `SmartSuggestionsRepository`.
+4. **RPG attributes** — Stateless engine + card. Reads from 3 existing repos via `combine()`.
+5. **Ghost racing** — Most complex: `WorkoutCoordinator` change + pre-workout data loading + real-time HUD overlay. Last because it touches active workout lifecycle.
+
+---
+
+## Integration Points Summary
+
+### New vs Modified Components
+
+| Component | Status | Risk Level |
+|-----------|--------|------------|
+| `GhostRacingEngine.kt` | New | Low |
+| `GhostRacingModels.kt` | New | Low |
+| `GhostRaceOverlay.kt` | New | Low |
+| `RpgAttributeEngine.kt` | New | Low |
+| `RpgModels.kt` | New | Low |
+| `RpgAttributeCard.kt` | New | Low |
+| `ReadinessBriefingEngine.kt` | New | Low |
+| `ReadinessBriefingModels.kt` | New | Low |
+| `ReadinessBriefingCard.kt` | New | Low |
+| `AccessibilityColors.kt` | New | Low |
+| `HudPageConfig.kt` | New | Low |
+| `HudCustomizationSheet.kt` | New | Low |
+| `FeatureGate.kt` | Modified — add 3 Feature entries | Low |
+| `UserPreferences.kt` | Modified — add 2 fields with defaults | Low (additive) |
+| `PreferencesManager.kt` | Modified — add 4 methods | Low (additive) |
+| `SettingsPreferencesManager.kt` | Modified — implement new methods | Low |
+| `Theme.kt` | Modified — inject LocalColorBlindMode | Low |
+| `BalanceBar.kt` | Modified — consume LocalColorBlindMode | Low |
+| `WorkoutHud.kt` | Modified — dynamic page count + overlay slot | **Medium** |
+| `WorkoutCoordinator.kt` | Modified — add ghostRaceState StateFlow | Medium |
+| `MainViewModel.kt` | Modified — expose new StateFlows | Low (additive) |
+| `WorkoutRepository.kt` | Modified — add best-session query | Low |
+| `VitruvianDatabase.sq` | Modified — add selectBestSessionForExercise | Low |
+| `DomainModule.kt` | No change needed (stateless objects) | None |
+| `DataModule.kt` | No change needed | None |
+| `DriverFactory.ios.kt` | Only if schema version changes | Critical if triggered |
 
 ---
 
 ## Sources
 
-- [MediaPipe Pose Landmarker Android Guide](https://ai.google.dev/edge/mediapipe/solutions/vision/pose_landmarker/android) -- Official Google docs, HIGH confidence
-- [MediaPipe Samples - PoseLandmarkerHelper.kt](https://github.com/google-ai-edge/mediapipe-samples/blob/main/examples/pose_landmarker/android/app/src/main/java/com/google/mediapipe/examples/poselandmarker/PoseLandmarkerHelper.kt) -- Reference implementation, HIGH confidence
-- [AI Vision on Android: CameraX + MediaPipe + Compose](https://www.droidcon.com/2025/01/24/ai-vision-on-android-camerax-imageanalysis-mediapipe-compose/) -- Integration pattern, MEDIUM confidence
-- [MediaPiper - KMP MediaPipe Samples](https://github.com/2BAB/mediapiper) -- KMP abstraction pattern reference, MEDIUM confidence
-- [CameraX 1.5 Release](https://developer.android.com/jetpack/androidx/releases/camera) -- Version info, HIGH confidence
-- [Maven: com.google.mediapipe:tasks-vision](https://mvnrepository.com/artifact/com.google.mediapipe/tasks-vision) -- Version info, HIGH confidence
-- Direct codebase analysis of WorkoutCoordinator, ActiveSessionEngine, BiomechanicsEngine, RepMetricRepository, FeatureGate -- PRIMARY source, HIGH confidence
-- `docs/plans/2026-02-20-premium-enhancements-design.md` -- Internal design doc, HIGH confidence
+- Direct codebase inspection (all HIGH confidence):
+  - `shared/.../sqldelight/.../VitruvianDatabase.sq` — complete schema v16 with all tables and queries
+  - `shared/.../presentation/screen/WorkoutHud.kt` — HUD pager structure, page types, biomechanics overlay
+  - `shared/.../domain/premium/SmartSuggestionsEngine.kt` — stateless engine pattern to follow
+  - `shared/.../domain/premium/FeatureGate.kt` — tier gate system, Feature enum, phoenixFeatures set
+  - `shared/.../domain/premium/SubscriptionTier.kt` — FREE/PHOENIX/ELITE structure
+  - `shared/.../data/preferences/PreferencesManager.kt` — preferences storage pattern (JSON blob)
+  - `shared/.../data/repository/SmartSuggestionsRepository.kt` — SessionSummary data access
+  - `shared/.../data/repository/BiomechanicsRepository.kt` — GATE-04 pattern (no tier checks in repos)
+  - `shared/.../data/repository/WorkoutRepository.kt` — session query capabilities
+  - `shared/.../data/repository/GamificationRepository.kt` — stats singleton access
+  - `shared/.../domain/model/Gamification.kt` — GamificationStats fields
+  - `shared/.../domain/model/BiomechanicsModels.kt` — VBT/force/asymmetry result types
+  - `shared/.../domain/model/UserPreferences.kt` — existing preference fields
+  - `shared/.../ui/theme/DataColors.kt` — existing color-blind-safe data colors
+  - `shared/.../iosMain/.../DriverFactory.ios.kt` — 4-layer defense, CURRENT_SCHEMA_VERSION = 16L
+  - `shared/.../di/DomainModule.kt` and `DataModule.kt` — Koin wiring patterns
+- `.planning/PROJECT.md` — v0.5.1 milestone scope, architecture summary, constraints
+
+---
+*Architecture research for: Project Phoenix MP v0.5.1 Board Polish & Premium UI*
+*Researched: 2026-02-27*

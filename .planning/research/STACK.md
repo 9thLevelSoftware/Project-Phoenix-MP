@@ -1,410 +1,502 @@
-# Technology Stack: v0.5.0 Premium Mobile Additions
+# Technology Stack: v0.5.1 Board Polish & Premium UI
 
-**Project:** Project Phoenix MP - Premium Mobile Features
-**Researched:** 2026-02-20
-**Scope:** New library additions for CV pose estimation (MediaPipe), CameraX integration, biomechanics persistence, ghost racing/RPG/readiness UI composables
+**Project:** Project Phoenix MP - v0.5.1 Board Polish & Premium UI
+**Researched:** 2026-02-27
+**Scope:** Stack additions for WCAG accessibility, Android backup exclusion, HUD customization, ghost racing UI, RPG attributes, readiness heuristic, camera permission rationale, SmartSuggestions local time fix
 **Overall Confidence:** HIGH
 
-## Existing Stack (DO NOT Change)
+---
+
+## Existing Stack (Validated — DO NOT Change)
 
 | Technology | Version | Notes |
 |------------|---------|-------|
-| Kotlin | 2.3.0 | Current in libs.versions.toml |
-| Compose Multiplatform | 1.10.0 | Unified @Preview, Hot Reload |
-| AGP | 9.0.1 | Current |
-| Koin | 4.1.1 | Feature-scoped modules |
-| SQLDelight | 2.2.1 | Schema v15 |
-| Coroutines | 1.10.2 | Current |
-| compileSdk | 36 | Current |
-| minSdk | 26 | Current |
+| Kotlin | 2.3.0 | |
+| Compose Multiplatform | 1.10.0 | |
+| AGP | 9.0.1 | |
+| Koin | 4.1.1 | |
+| SQLDelight | 2.2.1 | Schema v16 (RepBiomechanics added) |
+| Coroutines | 1.10.2 | |
+| kotlinx-datetime | 0.7.1 | Already in catalog — used for UTC fix |
+| multiplatform-settings | 1.3.0 | Already in catalog — used for HUD prefs |
+| compose-bom | 2025.12.01 | Maps to compose-ui 1.10.4 |
+| accompanist-permissions | 0.37.3 | Already in catalog — camera rationale |
+| compileSdk / targetSdk | 36 | |
+| minSdk | 26 | |
 
-## Recommended Stack Additions
+---
 
-### 1. MediaPipe Pose Landmarker (CV Form Checking)
+## Recommended Stack Additions for v0.5.1
 
-| Technology | Version | Artifact | Purpose | Confidence |
-|------------|---------|----------|---------|------------|
-| MediaPipe Tasks Vision | 0.10.32 | `com.google.mediapipe:tasks-vision` | On-device 33-landmark pose estimation | HIGH |
+### Summary Verdict: Zero New Runtime Library Dependencies
 
-**Why MediaPipe over ML Kit Pose:**
-- MediaPipe Pose Landmarker provides 33 3D landmarks with world coordinates (hip-centered origin), ML Kit only provides 2D image coordinates
-- MediaPipe's world coordinates enable biomechanical angle calculation without camera calibration
-- Three model tiers (Lite/Full/Heavy) allow tuning accuracy vs. performance per device
-- MediaPipe is Google's actively maintained replacement for ML Kit Vision (ML Kit Pose is beta and uses MediaPipe under the hood)
-- The RepDetect project (fitness rep counting with MediaPipe Pose) validates this exact use case
+All eight v0.5.1 features are implementable with the current dependency set. What IS needed:
 
-**Model Selection:** Use `pose_landmarker_lite.task` for real-time LIVE_STREAM mode during workouts. The Lite model uses MobileNetV2-class architecture optimized for on-device inference at 30fps. The Full/Heavy models can be offered as user settings if accuracy improvements are needed.
+1. **New test dependency**: `compose-ui:ui-test-junit4-accessibility` (via existing BOM, no version pin needed)
+2. **New XML resources**: `backup_rules.xml` + `data_extraction_rules.xml` in `res/xml/`
+3. **No new production runtime libraries**
 
-**Running Mode:** LIVE_STREAM for real-time camera feed processing. Returns results asynchronously via callback, compatible with coroutine-based architecture via `callbackFlow`.
+---
 
-**Configuration Defaults:**
-- `min_pose_detection_confidence`: 0.5 (default, tune higher for noisy gym environments)
-- `min_tracking_confidence`: 0.5 (default)
-- `min_pose_presence_confidence`: 0.5 (default)
-- `num_poses`: 1 (single user)
-- `output_segmentation_masks`: false (not needed for form checking)
+## Feature-by-Feature Stack Analysis
 
-**KMP Integration Pattern:**
-MediaPipe is Android-only. Use `expect/actual` in the existing pattern:
+### 1. WCAG AA Color-Blind Accessibility
 
-```kotlin
-// commonMain: Interface for pose estimation (platform-agnostic)
-expect class PoseEstimator {
-    fun isAvailable(): Boolean
-    // Returns landmarks as domain model, not MediaPipe types
-}
+**Stack verdict: No new dependencies. Existing Compose + testing frameworks cover this.**
 
-// androidMain: Actual implementation wrapping MediaPipe
-actual class PoseEstimator(private val context: Context) {
-    actual fun isAvailable(): Boolean = true
-    // Uses PoseLandmarker internally
-}
+#### Production Implementation
 
-// iosMain: Stub that returns unavailable
-actual class PoseEstimator {
-    actual fun isAvailable(): Boolean = false
-}
-```
+The accessibility changes are pure code changes to existing Compose composables — no new library needed:
 
-**Where It Goes:** `shared/build.gradle.kts` in `androidMain` dependencies (NOT commonMain). MediaPipe is an Android AAR library.
+- **Pattern/shape redundancy**: Add secondary visual indicators alongside color-coded elements (velocity zone bars, balance bar, readiness card). Compose `Canvas` with `drawLine` / `drawRect` / `drawPath` shapes already available via `compose.foundation`.
+- **contentDescription semantics**: Add `semantics { contentDescription = "..." }` to color-coded indicators. Already in Compose core via `androidx.compose.ui.semantics`.
+- **Material3 color roles**: Material3's `MaterialTheme.colorScheme` uses semantic color tokens (`error`, `onError`, `surface`, `onSurface`) that pass WCAG AA automatically when used in the right role pairs. No extra library needed.
 
-### 2. CameraX with Compose Support (Camera Pipeline)
+**Targets in this project:**
+- `VelocityZoneBar` — color-only velocity zone indicator
+- `BalanceBar` — color-only asymmetry severity
+- `ReadinessCard` (new) — readiness score color coding
+- RPG attribute bars — if using color-coded tiers
 
-| Technology | Version | Artifact | Purpose | Confidence |
-|------------|---------|----------|---------|------------|
-| CameraX Core | 1.5.3 | `androidx.camera:camera-core` | Camera abstraction layer | HIGH |
-| CameraX Camera2 | 1.5.3 | `androidx.camera:camera-camera2` | Camera2 implementation | HIGH |
-| CameraX Lifecycle | 1.5.3 | `androidx.camera:camera-lifecycle` | Lifecycle-aware camera binding | HIGH |
-| CameraX Compose | 1.5.3 | `androidx.camera:camera-compose` | CameraXViewfinder composable | HIGH |
+**Pattern:** Add shape cues (e.g., warning triangle icon from `compose-material-icons-extended`, already a dependency) alongside color. Do NOT rely on color alone per WCAG 1.4.1.
 
-**Why CameraX 1.5.3:**
-- Stable release (January 28, 2026) -- not alpha/beta
-- Native `camera-compose` artifact with `CameraXViewfinder` composable (no AndroidView wrapper needed)
-- `CameraXViewfinder` handles Surface lifecycle, rotation, scaling automatically
-- `ImageAnalysis` use case integrates directly with MediaPipe's LIVE_STREAM mode
-- Backpressure strategy `STRATEGY_KEEP_ONLY_LATEST` prevents frame queue buildup during ML inference
+#### Test-Time Tooling (NEW test dependency)
 
-**What We Do NOT Need:**
-- `camera-view`: Only for XML-based PreviewView. We use `camera-compose` instead
-- `camera-extensions`: HDR/Night mode, irrelevant for pose estimation
-- `camera-video`: No video recording needed
-- `camera-effects`: Overlays are done in Compose Canvas, not camera effects pipeline
-
-**Pipeline Architecture:**
-```
-CameraX Preview --> CameraXViewfinder (Compose)
-CameraX ImageAnalysis --> MediaPipe PoseLandmarker (LIVE_STREAM)
-                       --> Landmark results via callback
-                       --> Compose Canvas overlay (skeleton + form warnings)
-```
-
-**Key Configuration:**
-- `ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST` -- drops frames when ML is busy
-- `OUTPUT_IMAGE_FORMAT_RGBA_8888` -- matches MediaPipe's expected input
-- Front camera default (user facing for form checking)
-- 640x480 target resolution for ImageAnalysis (balance speed vs. accuracy)
-
-**Where It Goes:** `shared/build.gradle.kts` in `androidMain` dependencies. CameraX is Android-only.
-
-### 3. Permission Handling (Camera Access)
-
-| Technology | Version | Artifact | Purpose | Confidence |
-|------------|---------|----------|---------|------------|
-| Accompanist Permissions | 0.37.3 | `com.google.accompanist:accompanist-permissions` | Compose-idiomatic runtime permissions | MEDIUM |
-
-**Why Accompanist over ActivityResultContracts:**
-- `rememberPermissionState()` integrates naturally with Compose recomposition
-- Declarative permission UI -- check status, show rationale, launch request in composable flow
-- Project already uses Compose for all UI; mixing imperative Activity result APIs is inconsistent
-- Still experimental (`@OptIn(ExperimentalPermissionsApi::class)`) but widely used and stable in practice
-
-**Alternative Considered:** Raw `ActivityResultContracts.RequestPermission()` via `rememberLauncherForActivityResult()`. This works but requires more boilerplate for rationale dialogs and state management. If Accompanist causes issues with Compose Multiplatform 1.10.0, fall back to this.
-
-**Permissions Required:**
-- `android.permission.CAMERA` -- runtime permission for pose estimation camera feed
-- No storage permissions needed (model bundled in assets, no photo capture)
-
-**Where It Goes:** `shared/build.gradle.kts` in `androidMain` dependencies OR `androidApp/build.gradle.kts`. Recommend androidApp since permissions are UI-layer concerns.
-
-### 4. Biomechanics Persistence -- NO New Libraries Needed
-
-**Verdict: Zero new dependencies.** The existing stack handles everything:
-
-| Need | Existing Solution |
-|------|-------------------|
-| Per-rep VBT data storage | New columns on RepMetric table via SQLDelight migration 15.sqm |
-| Force curve persistence | JSON-encoded FloatArray in TEXT columns (existing pattern from RepMetric) |
-| Asymmetry data | New columns on RepMetric table |
-| Set-level biomechanics summary | New BiomechanicsSetResult table or columns on WorkoutSession |
-| Data serialization | Manual JSON serialization (existing pattern, see RepMetricRepository) |
-
-**Migration Strategy:**
-- Add `15.sqm` migration file with ALTER TABLE statements
-- Add new columns to RepMetric: `mcvMmS REAL`, `peakVelocityMmS REAL`, `velocityZone TEXT`, `velocityLossPercent REAL`, `normalizedForceCurve TEXT` (JSON FloatArray), `stickingPointPct REAL`, `strengthProfile TEXT`, `asymmetryPercent REAL`, `dominantSide TEXT`, `avgLoadA REAL`, `avgLoadB REAL`
-- Increment database version to 16
-- Follow existing pattern: nullable columns for backward compatibility, JSON for arrays
-
-**Why NOT a separate table:**
-RepMetric already stores per-rep data with the same sessionId/repNumber granularity. Adding biomechanics columns to RepMetric keeps queries simple (single JOIN) and matches the existing pattern. A separate BiomechanicsRepMetric table would duplicate the sessionId/repNumber foreign key pattern and require extra JOINs.
-
-### 5. Ghost Racing / RPG / Readiness Briefing UI -- NO New Libraries Needed
-
-**Verdict: Zero new dependencies.** All UI components use existing Compose Multiplatform stack.
-
-| Feature | Compose Solution | Existing Dependency |
-|---------|-----------------|---------------------|
-| Ghost Racing overlay | `Canvas` composable with `drawLine`/`drawCircle` for race progress | compose.foundation |
-| Ghost Racing animation | `InfiniteTransition` / `animateFloatAsState` for running indicators | compose.animation (included in compose.foundation) |
-| RPG Attribute Card | `Card` + `Column` + `LinearProgressIndicator` for stat bars | compose.material3 |
-| RPG Radar Chart | Custom `Canvas` with `drawPath` for hexagonal/pentagonal chart | compose.foundation |
-| Readiness Briefing | `LazyColumn` with `Card` items, `CircularProgressIndicator` for scores | compose.material3 |
-| Skeleton overlay | `Canvas` composable over `CameraXViewfinder` using `Box` stacking | compose.foundation |
-| Lottie animations | Compottie (already in project) for celebration effects | compottie 2.0.2 |
-
-**Stub Data Pattern:**
-All three composables (ghost racing, RPG, readiness) will accept domain model data classes as parameters. Until the portal backend ships in v0.6.0, hardcoded preview data drives the UI. This is the same pattern used for `@Preview` composables throughout the project.
-
-```kotlin
-// Data classes in commonMain (stub-friendly)
-data class GhostRaceState(
-    val myProgress: Float,        // 0.0 - 1.0
-    val ghostProgress: Float,
-    val exerciseName: String,
-    val ghostLabel: String         // "Your PR" or "Community Avg"
-)
-
-data class RpgAttributeCard(
-    val strength: Int,    // 1-100
-    val endurance: Int,
-    val power: Int,
-    val consistency: Int,
-    val technique: Int
-)
-
-data class ReadinessBriefing(
-    val overallScore: Int,        // 0-100
-    val fatigueLevel: String,
-    val suggestedExercises: List<String>,
-    val streakDays: Int,
-    val lastSessionSummary: String
-)
-```
-
-## Alternatives Considered
-
-| Category | Recommended | Alternative | Why Not |
-|----------|-------------|-------------|---------|
-| Pose Estimation | MediaPipe Pose Landmarker | ML Kit Pose Detection | ML Kit uses MediaPipe internally, provides only 2D landmarks. MediaPipe gives 3D world coordinates essential for biomechanical angle calculation. |
-| Pose Estimation | MediaPipe Pose Landmarker | TensorFlow Lite PoseNet | Older model, lower accuracy, no built-in hand/foot landmarks. MediaPipe is Google's recommended replacement. |
-| Camera | CameraX 1.5.3 camera-compose | Camera2 API directly | Camera2 is low-level, requires extensive lifecycle management. CameraX abstracts this with compose-native support. |
-| Camera Compose | camera-compose CameraXViewfinder | AndroidView wrapping PreviewView | AndroidView is a workaround. camera-compose 1.5.3 is stable and purpose-built. |
-| Permissions | Accompanist 0.37.3 | ActivityResultContracts | Works but requires more boilerplate. Accompanist is idiomatic Compose. Experimental but stable in practice. |
-| Biomechanics DB | ALTER TABLE on RepMetric | New BiomechanicsRepMetric table | Extra JOINs, duplicated foreign keys. Same granularity as RepMetric. |
-| Force Curve Storage | JSON TEXT column | BLOB column | JSON is human-readable, debuggable, and follows existing project pattern for FloatArray storage. |
-| Charts (RPG radar) | Custom Canvas composable | Vico Charts (already in project) | Vico is for standard line/bar charts. Radar/hexagonal charts need custom drawing. Canvas is trivial for this. |
-| Ghost Racing Anim | Compose animation APIs | Compottie Lottie | Overkill for simple progress bar animation. Compose APIs are sufficient. Reserve Compottie for celebration effects. |
-
-## Libraries Explicitly NOT Adding
-
-| Library | Why Skip |
-|---------|----------|
-| **ML Kit Pose Detection** | Uses MediaPipe internally. Going directly to MediaPipe avoids the wrapper and gives access to 3D world coordinates. |
-| **TensorFlow Lite** | MediaPipe bundles TFLite internally. No need for separate dependency. |
-| **ARCore** | 3D pose in world space is NOT needed. MediaPipe's image-plane landmarks + world coordinates are sufficient for joint angle calculation. ARCore would add complexity (ARSession, depth sensing) with no benefit. |
-| **OpenCV** | Not needed. MediaPipe handles all image processing internally. Joint angle calculation is basic trigonometry on landmark coordinates. |
-| **kotlinx-serialization for DB** | Project uses manual JSON serialization for FloatArray columns. This is a documented decision (see Models.kt key decisions). Don't change it. |
-| **Room** | Project uses SQLDelight for multiplatform. Adding Room would create two competing DB frameworks. |
-| **Accompanist Navigation Animation** | Project uses Compose Multiplatform navigation, not AndroidX Navigation Compose. Accompanist nav animations are incompatible. |
-| **camera-mlkit-vision** | CameraX ML Kit integration artifact. Not needed since we use MediaPipe directly, not through ML Kit. |
-| **camera-effects** | For camera-pipeline overlays (watermarks, etc.). Our skeleton overlay is Compose Canvas on top of the viewfinder, not a camera effect. |
-
-## Installation
-
-### Version Catalog Additions (`gradle/libs.versions.toml`)
+| Artifact | Via | Purpose | Confidence |
+|----------|-----|---------|------------|
+| `compose-ui:ui-test-junit4-accessibility` | Existing compose-bom 2025.12.01 | Automated accessibility checks in instrumented tests | HIGH |
 
 ```toml
-[versions]
-# ... existing versions ...
-mediapipe = "0.10.32"
-camerax = "1.5.3"
-accompanist-permissions = "0.37.3"
-
-[libraries]
-# ... existing libraries ...
-
-# MediaPipe Pose Estimation (Android only)
-mediapipe-tasks-vision = { module = "com.google.mediapipe:tasks-vision", version.ref = "mediapipe" }
-
-# CameraX (Android only - for CV camera pipeline)
-camerax-core = { module = "androidx.camera:camera-core", version.ref = "camerax" }
-camerax-camera2 = { module = "androidx.camera:camera-camera2", version.ref = "camerax" }
-camerax-lifecycle = { module = "androidx.camera:camera-lifecycle", version.ref = "camerax" }
-camerax-compose = { module = "androidx.camera:camera-compose", version.ref = "camerax" }
-
-# Permissions (Android only - for camera runtime permission)
-accompanist-permissions = { module = "com.google.accompanist:accompanist-permissions", version.ref = "accompanist-permissions" }
+# libs.versions.toml — add to [libraries]
+compose-ui-test-accessibility = { module = "androidx.compose.ui:ui-test-junit4-accessibility" }
+# No version needed — resolved by compose-bom
 ```
 
-### Shared Module (`shared/build.gradle.kts`)
+```kotlin
+// androidApp/build.gradle.kts — add to androidTestImplementation
+androidTestImplementation(libs.compose.ui.test.accessibility)
+```
+
+**Usage pattern:**
+```kotlin
+@Test
+fun velocityZoneBarMeetsColorContrast() {
+    composeTestRule.enableAccessibilityChecks()
+    composeTestRule.setContent { VelocityZoneBar(zone = VelocityZone.OPTIMAL, ...) }
+    composeTestRule.onRoot().tryPerformAccessibilityChecks()
+}
+```
+
+Available automated checks: color contrast (4.5:1 normal text, 3:1 large text), touch target size, missing content descriptions, traversal order.
+
+**Android Studio Compose UI Check** (no dependency): In Android Studio, open a `@Preview`, click the accessibility icon. Shows color vision deficiency simulations (Protanopia, Deuteranopia, Tritanopia) and contrast violations. Zero-cost development-time check.
+
+---
+
+### 2. Android Backup Exclusion Rules
+
+**Stack verdict: No new dependencies. Pure XML resource files + AndroidManifest attributes.**
+
+Two XML files are required to cover all API levels (minSdk 26 to targetSdk 36):
+
+#### File 1: `res/xml/backup_rules.xml` (Android 11 / API 30 and lower)
+
+```xml
+<?xml version="1.0" encoding="utf-8"?>
+<full-backup-content>
+    <exclude domain="database" path="VitruvianDatabase.db"/>
+    <exclude domain="database" path="VitruvianDatabase.db-shm"/>
+    <exclude domain="database" path="VitruvianDatabase.db-wal"/>
+</full-backup-content>
+```
+
+#### File 2: `res/xml/data_extraction_rules.xml` (Android 12+ / API 31+)
+
+```xml
+<?xml version="1.0" encoding="utf-8"?>
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="database" path="VitruvianDatabase.db"/>
+        <exclude domain="database" path="VitruvianDatabase.db-shm"/>
+        <exclude domain="database" path="VitruvianDatabase.db-wal"/>
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="database" path="VitruvianDatabase.db"/>
+        <exclude domain="database" path="VitruvianDatabase.db-shm"/>
+        <exclude domain="database" path="VitruvianDatabase.db-wal"/>
+    </device-transfer>
+</data-extraction-rules>
+```
+
+#### AndroidManifest.xml changes
+
+```xml
+<application
+    android:allowBackup="true"
+    android:fullBackupContent="@xml/backup_rules"
+    android:dataExtractionRules="@xml/data_extraction_rules"
+    ... >
+```
+
+`android:allowBackup="true"` stays — we want backup, but want to exclude the SQLite DB file. Keeping `allowBackup="true"` allows shared preferences (settings, HUD config) to be backed up while excluding the workout data DB.
+
+**Important:** `android:fullBackupContent` is required for API 30 and below even when targeting API 31+. Both attributes must coexist. The `tools:ignore="GoogleBackupTransport"` lint suppression is not needed since we're providing proper rules.
+
+---
+
+### 3. HUD Page Customization (User-Configurable Metric Visibility)
+
+**Stack verdict: No new dependencies. Use existing `multiplatform-settings` 1.3.0 already in the project.**
+
+`multiplatform-settings` (com.russhwolf:multiplatform-settings) is already declared in `libs.versions.toml` at 1.3.0 and wired into the project. This is the correct tool for HUD preferences.
+
+**Why multiplatform-settings over DataStore:**
+- Already in the project — zero incremental cost
+- commonMain-compatible — preferences can be defined and read in shared module
+- `multiplatform-settings-coroutines` provides `StateFlow` integration for reactive UI updates
+- DataStore is Android-only for the Preferences variant; the KMP DataStore alpha exists but adds complexity that multiplatform-settings already solves
+
+**Storage pattern for HUD page ordering/visibility:**
 
 ```kotlin
-val androidMain by getting {
-    dependencies {
-        // ... existing dependencies ...
+// commonMain — HudPreferencesRepository
+class HudPreferencesRepository(private val settings: Settings) {
 
-        // MediaPipe Pose Estimation (CV form checking)
-        implementation(libs.mediapipe.tasks.vision)
+    // Store ordered list of enabled metric IDs as comma-separated string
+    fun getVisibleMetrics(): List<HudMetric> {
+        val raw = settings.getStringOrNull(KEY_HUD_METRICS)
+            ?: DEFAULT_METRICS.joinToString(",") { it.name }
+        return raw.split(",").mapNotNull { HudMetric.fromName(it) }
+    }
 
-        // CameraX (camera pipeline for pose estimation)
-        implementation(libs.camerax.core)
-        implementation(libs.camerax.camera2)
-        implementation(libs.camerax.lifecycle)
-        implementation(libs.camerax.compose)
+    fun setVisibleMetrics(metrics: List<HudMetric>) {
+        settings[KEY_HUD_METRICS] = metrics.joinToString(",") { it.name }
+    }
+
+    // StateFlow for reactive UI (requires multiplatform-settings-coroutines)
+    fun visibleMetricsFlow(scope: CoroutineScope): StateFlow<List<HudMetric>> =
+        settings.getStringOrNullStateFlow(scope, KEY_HUD_METRICS)
+            .map { raw -> /* parse */ }
+            .stateIn(scope, SharingStarted.Eagerly, DEFAULT_METRICS)
+
+    companion object {
+        private const val KEY_HUD_METRICS = "hud_visible_metrics"
+        val DEFAULT_METRICS = listOf(HudMetric.VELOCITY, HudMetric.LOAD, HudMetric.REPS, ...)
     }
 }
 ```
 
-### Android App Module (`androidApp/build.gradle.kts`)
+**Reorder UI:** Use existing `reorderable` 3.0.0 library (already in catalog) for drag-to-reorder metric list in HUD settings screen.
+
+**Koin wiring:** Add `HudPreferencesRepository` to the existing `data` module, injecting `Settings` which is already provided via Koin in the existing setup.
+
+---
+
+### 4. Ghost Racing Overlay (Dual Progress Bars, Real-Time Comparison)
+
+**Stack verdict: No new dependencies. Compose Canvas + `animateFloatAsState` from existing `compose.animation`.**
+
+The ghost racing UI requires:
+- Two overlapping horizontal progress bars (current session vs. personal best)
+- Animated progress as rep count advances
+- Delta label (e.g., "+3 reps ahead")
+
+**Implementation approach — custom Canvas composable:**
 
 ```kotlin
-dependencies {
-    // ... existing dependencies ...
+// Renders two stacked bars: ghost (dimmed) + current (solid)
+@Composable
+fun GhostRaceBar(
+    currentProgress: Float,   // 0f..1f
+    ghostProgress: Float,     // 0f..1f (personal best pace)
+    modifier: Modifier = Modifier
+) {
+    val animatedCurrent by animateFloatAsState(
+        targetValue = currentProgress,
+        animationSpec = tween(durationMillis = 300),
+        label = "currentProgress"
+    )
+    val animatedGhost by animateFloatAsState(
+        targetValue = ghostProgress,
+        animationSpec = tween(durationMillis = 300),
+        label = "ghostProgress"
+    )
 
-    // Permissions for camera access
-    implementation(libs.accompanist.permissions)
+    Canvas(modifier = modifier) {
+        // Ghost bar (semi-transparent, drawn first so current overlaps)
+        drawRect(
+            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+            size = size.copy(width = size.width * animatedGhost)
+        )
+        // Current bar (solid)
+        drawRect(
+            color = MaterialTheme.colorScheme.primary,
+            size = size.copy(width = size.width * animatedCurrent)
+        )
+    }
 }
 ```
 
-### Model Asset
+**Why Canvas over two LinearProgressIndicators:**
+`LinearProgressIndicator` uses Material3 track styling and cannot be layered at arbitrary Z-order without clip issues. Canvas gives pixel-precise control for the ghost (dimmed/transparent) visual effect. The dual-bar reading is the entire point — Canvas is the right primitive.
 
-Download `pose_landmarker_lite.task` from Google's MediaPipe model repository and place in:
-```
-shared/src/androidMain/assets/pose_landmarker_lite.task
-```
+**Color-blind note:** Ghost bar uses opacity/alpha difference (0.5 vs 1.0), not a different hue. This is inherently color-blind safe. Add a text delta label (`+3 reps`) as the primary semantic indicator.
 
-Alternatively, use the `download_models.gradle.kts` pattern to fetch at build time (avoids large binary in git).
+---
 
-### AndroidManifest.xml
+### 5. RPG Attribute Computation Engine
 
-```xml
-<uses-permission android:name="android.permission.CAMERA" />
-<uses-feature android:name="android.hardware.camera" android:required="false" />
-```
+**Stack verdict: No new dependencies. Pure commonMain Kotlin math.**
 
-Note: `required="false"` because the app works without a camera (camera is only for optional CV form checking).
+The RPG attribute engine is a pure computation — 5 stats (Strength, Endurance, Power, Consistency, Technique) derived from existing persisted data (RepBiomechanics, WorkoutSession, PersonalRecord tables).
 
-## Integration Points with Existing Architecture
+**No library needed because:**
+- Input: existing SQLDelight query results (already typed Kotlin objects)
+- Computation: weighted averages, normalization, min/max scaling — pure arithmetic
+- Output: `RpgAttributes` data class with Int fields (1-100 scale)
+- Character class classification: if-else or `when` branching on composite score
 
-### Koin DI Module
-
-New dependencies slot into the existing 4-module DI structure:
+**Engine location:** `shared/src/commonMain/kotlin/.../domain/engine/RpgAttributeEngine.kt`
 
 ```kotlin
-// di/modules/DomainModule.kt (existing)
-val domainModule = module {
-    // ... existing engines ...
+// Pure function, no dependencies
+data class RpgAttributes(
+    val strength: Int,       // 1-100, derived from max loads / 1RM estimates
+    val endurance: Int,      // 1-100, derived from session volume / set count
+    val power: Int,          // 1-100, derived from MCV velocity measurements
+    val consistency: Int,    // 1-100, derived from workout streak + session frequency
+    val technique: Int       // 1-100, derived from form scores + asymmetry penalties
+)
 
-    // New: CV pose estimation
-    single { PoseEstimator(androidContext()) }  // expect/actual
-    single { FormRulesEngine() }                // Pure commonMain
-    single { FormScorer() }                     // Pure commonMain
+class RpgAttributeEngine {
+    fun compute(
+        recentSessions: List<WorkoutSession>,
+        repBiomechanics: List<RepBiomechanicsRecord>,
+        personalRecords: List<PersonalRecord>,
+        formScores: List<FormScoreRecord>,
+        streakDays: Int
+    ): RpgAttributes { ... }
 }
 ```
 
-### Data Flow for CV Form Checking
+**Character class:** Derived from which attribute is highest (Strength → Warrior, Endurance → Ranger, Power → Berserker, Technique → Monk, Consistency → Guardian). No external data needed.
 
-```
-CameraX ImageAnalysis
-    --> PoseEstimator (androidMain, wraps MediaPipe)
-    --> PoseLandmarks (commonMain domain model, 33 landmarks with x,y,z,visibility)
-    --> FormRulesEngine (commonMain, exercise-specific angle thresholds)
-    --> FormFeedback (commonMain domain model: warnings, score, corrections)
-    --> Compose UI overlay (skeleton + warning badges)
-```
+---
 
-### FeatureGate Integration
+### 6. Pre-Workout Readiness Heuristic
 
-New features need Feature enum entries:
+**Stack verdict: No new dependencies. Pure commonMain logic using existing `kotlinx-datetime` 0.7.1.**
+
+The readiness briefing is a heuristic using locally persisted data:
+- Days since last workout (from WorkoutSession timestamps)
+- Volume from last 3-7 sessions (from MetricSample / WorkoutSession)
+- Gamification streak data (already persisted)
+
+**Heuristic engine:** Pure function in commonMain, similar pattern to `SmartSuggestionsEngine` (stateless, injectable clock for testing).
 
 ```kotlin
-enum class Feature {
-    // ... existing features ...
+class ReadinessEngine(private val clock: Clock = Clock.System) {
+    fun computeReadiness(
+        recentSessions: List<WorkoutSession>,
+        streakDays: Int,
+        lastSessionTimestamp: Long
+    ): ReadinessBriefing {
+        val daysSinceLast = computeDaysSince(lastSessionTimestamp, clock)
+        val recentVolume = computeRecentVolume(recentSessions)
+        // advisory logic...
+    }
 
-    // v0.5.0 additions
-    CV_FORM_CHECK,      // Elite tier
-    GHOST_RACING,       // Elite tier
-    RPG_ATTRIBUTES,     // Phoenix tier
-    READINESS_BRIEFING  // Elite tier
+    private fun computeDaysSince(epochMs: Long, clock: Clock): Int {
+        val now = clock.now()
+        val then = Instant.fromEpochMilliseconds(epochMs)
+        return (now - then).inWholeDays.toInt()
+    }
 }
 ```
 
-### Database Schema Integration
+**No new library** — `kotlinx.datetime.Clock` and `Instant` are already available via the existing `kotlinx-datetime` 0.7.1 dependency.
 
-Biomechanics columns added to RepMetric via migration 15.sqm. The BiomechanicsEngine already produces `VelocityResult`, `ForceCurveResult`, `AsymmetryResult` -- these map directly to new RepMetric columns.
+---
 
-## ProGuard / R8 Considerations
+### 7. Camera Permission Rationale UI (On-Device Guarantee)
 
-MediaPipe uses native libraries (.so files) and TFLite models. Add to `proguard-rules.pro`:
+**Stack verdict: No new dependencies. `accompanist-permissions` 0.37.3 already in the project.**
 
-```
-# MediaPipe
--keep class com.google.mediapipe.** { *; }
--keep class com.google.protobuf.** { *; }
--dontwarn com.google.mediapipe.**
-```
+Accompanist permissions is already declared in `libs.versions.toml` at 0.37.3. This covers the camera rationale dialog.
 
-CameraX is already part of AndroidX and handles ProGuard automatically.
-
-## APK Size Impact
-
-| Addition | Estimated Size | Notes |
-|----------|---------------|-------|
-| MediaPipe tasks-vision AAR | ~3-5 MB | Includes TFLite runtime |
-| MediaPipe native .so libs | ~5-8 MB (per ABI) | arm64-v8a primarily |
-| pose_landmarker_lite.task | ~5 MB | Model file in assets |
-| CameraX libraries | ~2-3 MB | Shared with other AndroidX |
-| Accompanist Permissions | ~100 KB | Minimal |
-| **Total estimated increase** | **~15-20 MB** | With ABI splits: ~10-13 MB |
-
-Recommend enabling ABI splits in `androidApp/build.gradle.kts` if not already configured to avoid shipping all native architectures:
-
+**Implementation pattern:**
 ```kotlin
-android {
-    splits {
-        abi {
-            isEnable = true
-            reset()
-            include("arm64-v8a", "armeabi-v7a")
-            isUniversalApk = false
+@OptIn(ExperimentalPermissionsApi::class)
+@Composable
+fun FormCheckPermissionGate(onPermissionGranted: @Composable () -> Unit) {
+    val cameraPermissionState = rememberPermissionState(
+        android.Manifest.permission.CAMERA
+    )
+
+    when {
+        cameraPermissionState.status.isGranted -> onPermissionGranted()
+
+        cameraPermissionState.status.shouldShowRationale -> {
+            // User denied once — show rationale explaining on-device-only processing
+            CameraRationaleDialog(
+                onConfirm = { cameraPermissionState.launchPermissionRequest() },
+                onDismiss = { /* skip form check */ }
+            )
+        }
+
+        else -> {
+            // First time or permanent denial
+            LaunchedEffect(Unit) {
+                cameraPermissionState.launchPermissionRequest()
+            }
         }
     }
 }
+
+@Composable
+private fun CameraRationaleDialog(onConfirm: () -> Unit, onDismiss: () -> Unit) {
+    AlertDialog(
+        title = { Text("Camera Access") },
+        text = { Text(
+            "Form Check uses your camera to analyze exercise form. " +
+            "All processing happens on your device — no video is uploaded or stored."
+        )},
+        confirmButton = { TextButton(onClick = onConfirm) { Text("Allow") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Not Now") } },
+        onDismissRequest = onDismiss
+    )
+}
 ```
+
+**Why Accompanist over raw `ActivityResultContracts`:** `shouldShowRationale` from `PermissionStatus` is Compose-state-aware. Raw `ActivityResultContracts` requires manual `shouldShowRequestPermissionRationale()` calls outside of Compose. Accompanist wraps this correctly in a `State` that triggers recomposition automatically.
+
+---
+
+### 8. SmartSuggestions UTC Time Fix
+
+**Stack verdict: No new dependencies. `kotlinx-datetime` 0.7.1 already provides the fix API.**
+
+**The bug:** `classifyTimeWindow` in `SmartSuggestionsEngine` calls `Clock.System.now()` (returns UTC `Instant`) and reads `.hour` directly, assuming UTC = local time. This mis-classifies time windows for users outside UTC.
+
+**The fix — `kotlinx-datetime` 0.7.1 API:**
+```kotlin
+// BEFORE (broken — uses UTC hour):
+val hour = Clock.System.now().toLocalDateTime(TimeZone.UTC).hour
+
+// AFTER (correct — uses device local time):
+val hour = Clock.System.now()
+    .toLocalDateTime(TimeZone.currentSystemDefault())
+    .hour
+```
+
+`TimeZone.currentSystemDefault()` is available in `kotlinx-datetime` 0.7.1 (already in the project). It reads the device's configured timezone on Android (via `java.util.TimeZone.getDefault()`) and on iOS (via `NSTimeZone.localTimeZone`). This is the correct KMP-idiomatic fix — no platform-specific code needed.
+
+**Why NOT `java.time.ZoneId.systemDefault()` or `java.util.Calendar`:**
+Those are JVM-only and would break commonMain compilation. `TimeZone.currentSystemDefault()` is the KMP-correct equivalent.
+
+---
+
+## Full Dependency Delta for v0.5.1
+
+### New Production Dependencies: None
+
+### New Test Dependencies: 1 artifact (via existing BOM)
+
+```toml
+# gradle/libs.versions.toml — add to [libraries] section
+compose-ui-test-accessibility = { module = "androidx.compose.ui:ui-test-junit4-accessibility" }
+```
+
+```kotlin
+// androidApp/build.gradle.kts — add to dependencies
+androidTestImplementation(libs.compose.ui.test.accessibility)
+```
+
+### New Resource Files: 2 XML files
+
+```
+androidApp/src/main/res/xml/backup_rules.xml         # API 30 and below backup rules
+androidApp/src/main/res/xml/data_extraction_rules.xml # API 31+ backup rules
+```
+
+### AndroidManifest.xml Changes: 2 new attributes
+
+```xml
+<application
+    android:fullBackupContent="@xml/backup_rules"
+    android:dataExtractionRules="@xml/data_extraction_rules"
+    ... >
+```
+
+### versionName Fix (No Library Change)
+
+```kotlin
+// androidApp/build.gradle.kts
+defaultConfig {
+    versionName = "0.5.1"   // was "0.4.0" — update to reflect actual shipped version
+}
+```
+
+---
+
+## Existing Libraries Doing New Work in v0.5.1
+
+| Library | Version | New v0.5.1 Usage |
+|---------|---------|-----------------|
+| `kotlinx-datetime` | 0.7.1 | `TimeZone.currentSystemDefault()` for UTC fix; `Clock` injection in ReadinessEngine |
+| `multiplatform-settings` | 1.3.0 | HUD metric visibility/order persistence in `HudPreferencesRepository` |
+| `multiplatform-settings-coroutines` | 1.3.0 | `StateFlow` for reactive HUD preference updates |
+| `reorderable` | 3.0.0 | Drag-to-reorder in HUD customization settings screen |
+| `accompanist-permissions` | 0.37.3 | Camera permission rationale dialog (`shouldShowRationale` state) |
+| `compose.animation` | via BOM | `animateFloatAsState` for ghost racing bar animation |
+| `compose.foundation` (Canvas) | via BOM | Ghost racing dual-bar, RPG radar chart, pattern/shape accessibility cues |
+| `compose-material-icons-extended` | via BOM | Warning/info icons for color-blind-safe redundant visual cues |
+| `compose.material3` | via BOM | `AlertDialog` for camera rationale; `LinearProgressIndicator` for RPG stat bars |
+
+---
+
+## What NOT to Add
+
+| Avoid | Why | Use Instead |
+|-------|-----|-------------|
+| **Jetpack DataStore (Preferences)** | Android-only. Project is KMP. `multiplatform-settings` is already in the project and KMP-compatible. | `multiplatform-settings` 1.3.0 (already present) |
+| **AccessibilityNodeInfoCompat / ViewCompat** | These are View-system accessibility APIs. Compose uses semantics modifiers instead. | `Modifier.semantics { }` from `compose.ui` |
+| **AndroidX Test Accessibility Library (old)** | Pre-Compose 1.8 approach using `AccessibilityChecks.enable()` in Espresso. | `compose-ui:ui-test-junit4-accessibility` via BOM |
+| **Deque Axe Android** | Third-party library with separate integration overhead. The `ui-test-junit4-accessibility` (ATF-based) provides equivalent automated checks with zero additional dependency. | `ui-test-junit4-accessibility` |
+| **Custom color-blind simulation library** | Android Studio's Compose UI Check renders color vision deficiency simulations natively in previews. | Android Studio built-in (zero cost) |
+| **java.time or java.util.TimeZone** | JVM-only, breaks commonMain compilation. | `kotlinx.datetime.TimeZone.currentSystemDefault()` |
+| **RevenueCat** | Out of scope for v0.5.1 — blocked on auth migration per PROJECT.md. | Not applicable this milestone |
+| **WorkManager** | Not needed for readiness heuristic — it computes on ViewModel initialization from local DB data, no background scheduling needed. | Direct ViewModel call |
+
+---
+
+## Version Compatibility Notes
+
+| Package | Current Version | Compose BOM | Notes |
+|---------|----------------|-------------|-------|
+| compose-bom | 2025.12.01 | — | Maps compose-ui to 1.10.4 |
+| ui-test-junit4-accessibility | via BOM (1.10.4) | 2025.12.01 | Available since Compose 1.8.0 stable. No separate version pin needed. |
+| accompanist-permissions | 0.37.3 | Compose 1.7 | Tested against Compose 1.7. Compose 1.10.x is backward compatible. Watch for recomposition edge cases. |
+| multiplatform-settings-coroutines | 1.3.0 | — | Separate artifact from `multiplatform-settings`; must match version |
+
+**Accompanist 0.37.3 + Compose 1.10 note:** Accompanist 0.37.x targets Compose 1.7. In practice it functions correctly with 1.10.x (no API surface changes in the permissions module). If a runtime crash occurs on the permissions composable, upgrade accompanist to 0.38.x if released, or fall back to `rememberLauncherForActivityResult` with manual `shouldShowRequestPermissionRationale()`.
+
+---
 
 ## Sources
 
-### MediaPipe
-- [MediaPipe Pose Landmarker Android Guide](https://ai.google.dev/edge/mediapipe/solutions/vision/pose_landmarker/android) - Official setup, API, landmarks (HIGH confidence)
-- [MediaPipe Pose Landmarker Overview](https://ai.google.dev/edge/mediapipe/solutions/vision/pose_landmarker) - Model variants, configuration options (HIGH confidence)
-- [MediaPipe Releases](https://github.com/google-ai-edge/mediapipe/releases) - v0.10.32 latest (HIGH confidence)
-- [MediaPipe Android Setup Guide](https://ai.google.dev/edge/mediapipe/solutions/setup_android) - Google Maven distribution (HIGH confidence)
-- [MediaPipe Samples - Pose Landmarker](https://github.com/google-ai-edge/mediapipe-samples/blob/main/examples/pose_landmarker/android/app/build.gradle) - Reference implementation (HIGH confidence)
-- [RepDetect - MediaPipe Pose for Exercise](https://github.com/giaongo/RepDetect) - Fitness app using MediaPipe Pose (MEDIUM confidence, community project)
-- [MediaPiper KMP Project](https://github.com/2BAB/mediapiper) - KMP expect/actual pattern for MediaPipe (MEDIUM confidence)
+- [Android Developers — Auto Backup Configuration](https://developer.android.com/identity/data/autobackup) — fullBackupContent / dataExtractionRules XML format verified (HIGH confidence)
+- [Android Developers — Backup Security Best Practices](https://developer.android.com/privacy-and-security/risks/backup-best-practices) — sensitive data exclusion guidance (HIGH confidence)
+- [Android Developers — Compose Accessibility Testing](https://developer.android.com/develop/ui/compose/accessibility/testing) — `enableAccessibilityChecks()`, `ui-test-junit4-accessibility` artifact (HIGH confidence)
+- [Compose BOM to Library Mapping](https://developer.android.com/develop/ui/compose/bom/bom-mapping) — BOM 2025.12.01 maps to compose-ui 1.10.4; latest BOM 2026.02.01 also 1.10.4 (HIGH confidence)
+- [kotlinx-datetime API — currentSystemDefault](https://kotlinlang.org/api/kotlinx-datetime/kotlinx-datetime/kotlinx.datetime/-time-zone/-companion/current-system-default.html) — KMP-correct local timezone API (HIGH confidence)
+- [Accompanist Permissions](https://google.github.io/accompanist/permissions/) — `shouldShowRationale`, `rememberPermissionState` API (HIGH confidence)
+- [Accompanist GitHub Releases](https://github.com/google/accompanist/releases) — Latest stable is 0.37.3 (April 28, 2024), targets Compose 1.7 (HIGH confidence)
+- [multiplatform-settings GitHub](https://github.com/russhwolf/multiplatform-settings) — Version 1.3.0, coroutines module for StateFlow (HIGH confidence)
+- [Compose Canvas Animation — Android Developers](https://medium.com/androiddevelopers/custom-canvas-animations-in-jetpack-compose-e7767e349339) — Custom Canvas with `animateFloatAsState` pattern (MEDIUM confidence)
+- [WCAG 1.4.1 — Use of Color](https://www.w3.org/WAI/WCAG21/Understanding/use-of-color.html) — Color must not be the only visual means (HIGH confidence — W3C standard)
 
-### CameraX
-- [CameraX Release Notes](https://developer.android.com/jetpack/androidx/releases/camera) - v1.5.3 stable, camera-compose stable (HIGH confidence)
-- [CameraX Compose-Native Stable Guide](https://proandroiddev.com/goodbye-androidview-camerax-goes-full-compose-4d21ca234c4e) - CameraXViewfinder patterns (MEDIUM confidence)
-- [CameraX 1.5 Announcement](https://android-developers.googleblog.com/2025/11/introducing-camerax-15-powerful-video.html) - Feature overview (HIGH confidence)
-- [AI Vision: CameraX + MediaPipe + Compose](https://www.droidcon.com/2025/01/24/ai-vision-on-android-camerax-imageanalysis-mediapipe-compose/) - Integration pattern (MEDIUM confidence)
+---
 
-### Permissions
-- [Accompanist Permissions](https://google.github.io/accompanist/permissions/) - Official docs, v0.37.3 (HIGH confidence)
-
-### Compose Animation / Canvas
-- [Compose Animation Guide](https://developer.android.com/develop/ui/compose/animation/introduction) - InfiniteTransition, animateAsState (HIGH confidence)
-- [Compose Canvas Graphics](https://developer.android.com/develop/ui/compose/graphics/draw/overview) - drawLine, drawCircle, drawPath (HIGH confidence)
-- [Pose Detection with Compose Canvas Overlay](https://pradyotprksh4.medium.com/pose-detection-in-android-with-ml-kit-jetpack-compose-real-time-pose-skeleton-ab9553f96587) - Skeleton overlay pattern (MEDIUM confidence)
-
-### SQLDelight Migrations
-- [SQLDelight Migrations Guide](https://sqldelight.github.io/sqldelight/2.0.2/multiplatform_sqlite/migrations/) - ALTER TABLE pattern (HIGH confidence)
+*Stack research for: v0.5.1 Board Polish & Premium UI — Project Phoenix MP*
+*Researched: 2026-02-27*
