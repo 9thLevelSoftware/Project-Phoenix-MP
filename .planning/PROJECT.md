@@ -56,19 +56,32 @@ Users can connect to their Vitruvian trainer and execute workouts with accurate 
 - ✓ Non-blocking bottom sheet for exercise confirmation — v0.4.7
 - ✓ Mobile replay cards with per-rep force sparklines — v0.4.7
 - ✓ Valley-based rep boundary detection for accurate rep isolation — v0.4.7
+- ✓ Biomechanics persistence: RepBiomechanics table, per-rep VBT/force/asymmetry saved to DB — v0.5.0
+- ✓ Biomechanics history UI with lazy-loading and set-level summary — v0.5.0
+- ✓ CV form rules engine for 5 exercises (squat, deadlift, OHP, curl, row) with form scoring 0-100 — v0.5.0
+- ✓ MediaPipe pose estimation on Android (LIVE_STREAM, CPU delegate, 100ms throttle) — v0.5.0
+- ✓ FormCheckOverlay composable with CameraX PiP + skeleton overlay — v0.5.0
+- ✓ iOS no-op stub for FormCheckOverlay (CV deferred to v0.6.0+) — v0.5.0
 
 ### Active
 
 <!-- Current scope. Building toward these. -->
 
-- [ ] Biomechanics persistence to database (per-rep VBT, force curves, asymmetry)
-- [ ] CV pose estimation with MediaPipe (on-device, Android)
-- [ ] CV form rules engine with exercise-specific joint angle thresholds
-- [ ] CV form scoring (composite 0-100) with local persistence
-- [ ] Ghost racing overlay composable (mobile, stub data until portal ships)
-- [ ] RPG attribute card composable (mobile, stub data until portal ships)
-- [ ] Pre-workout briefing composable (mobile, stub data until portal ships)
-- [ ] Premium feature gates for new features (RPG, Ghost Racing, CV Form Check)
+- [ ] CV Form Check UI: toggle, real-time warnings, form score display, tier gating
+- [ ] CV Form Check persistence: form score + violations saved locally per exercise
+- [ ] iOS "Form Check coming soon" stub UI
+- [ ] Ghost racing overlay composable (race personal best session, local data)
+- [ ] RPG attribute card composable (5 stats + character class, local computation)
+- [ ] Pre-workout readiness briefing composable (volume heuristic, advisory only)
+- [ ] Premium feature gates for new features (Form Check → Phoenix, RPG → Phoenix, Readiness → Elite)
+- [ ] SmartSuggestions UTC time bug fix (classifyTimeWindow uses UTC not local)
+- [ ] WCAG color-blind fallbacks (velocity zones, balance bar, readiness card)
+- [ ] HUD page customization (user-configurable metric visibility)
+- [ ] android:allowBackup exclusion rules for sensitive DB data
+- [ ] Camera permission custom rationale text (on-device-only guarantee)
+- [ ] iOS Form Check suppression in PHOENIX upgrade prompts
+- [ ] versionName update (currently 0.4.0, needs to reflect actual version)
+- [ ] pose_landmarker_lite.task asset verification (fallback on missing model)
 
 ### Out of Scope
 
@@ -87,8 +100,8 @@ Users can connect to their Vitruvian trainer and execute workouts with accurate 
 
 ## Context
 
-- App is at v0.4.7, actively used by community
-- Premium features shipped: biomechanics analysis, LED biofeedback, rep quality scoring, smart suggestions, strength assessment, exercise auto-detection, mobile replay
+- App is at v0.5.0, actively used by community
+- Premium features shipped: biomechanics analysis, LED biofeedback, rep quality scoring, smart suggestions, strength assessment, exercise auto-detection, mobile replay, biomechanics persistence, CV form check infrastructure
 - MainViewModel is a thin 420-line facade delegating to 5 specialized managers
 - DefaultWorkoutSessionManager (449 lines) orchestrates 3 sub-managers:
   - WorkoutCoordinator (257L) — shared state bus, zero business logic
@@ -99,31 +112,33 @@ Users can connect to their Vitruvian trainer and execute workouts with accurate 
 - Koin DI: 4 feature-scoped modules (data, sync, domain, presentation) with verify() test
 - Test infrastructure: DWSMTestHarness, WorkoutStateFixtures, fakes for all repositories
 - ~30,500 lines of Kotlin in shared module
-- Database schema version: 15 (ExerciseSignature, AssessmentResult tables)
+- Database schema version: 16 (RepBiomechanics table added in v0.5.0)
+- Domain engines added: FormRulesEngine, PoseLandmarkerHelper, LandmarkAngleCalculator
+- New UI: FormCheckOverlay (CameraX PiP + skeleton), BiomechanicsHistoryCard
 
-## Current Milestone: v0.5.0 Premium Mobile
+## Current Milestone: v0.5.1 Board Polish & Premium UI
 
-**Goal:** Add on-device computer vision form checking, persist biomechanics data to database, and build mobile UI components for premium features (RPG, ghost racing, readiness briefing).
+**Goal:** Complete carried-over premium UI features (CV Form Check UX, ghost racing, RPG attributes, readiness briefing) and address all Board of Directors conditions (accessibility, security, UX, versioning).
 
 **Target features:**
-- CV pose estimation with MediaPipe (Android) for real-time form warnings
-- CV form rules engine with exercise-specific joint angle thresholds
-- Biomechanics persistence (VBT metrics, force curves, asymmetry per-rep)
-- Ghost racing overlay, RPG attribute card, pre-workout briefing composables
-- Premium feature gates for all new features
+- CV Form Check: toggle UI, real-time warnings, form score persistence, iOS stub, tier gating
+- Ghost racing overlay (race personal best, dual progress bars, velocity delta)
+- RPG attributes (5 stats + character class, local computation, Phoenix tier)
+- Pre-workout readiness briefing (volume heuristic, advisory only, Elite tier)
+- Board conditions: UTC fix, WCAG accessibility, allowBackup exclusion, HUD customization, camera rationale, iOS marketing suppression, versionName, asset verification
 
 ## Current State
 
-**Version:** v0.4.7 (shipped 2026-02-15)
-**Status:** Starting v0.5.0 Premium Mobile milestone
+**Version:** v0.5.0 (shipped 2026-02-27)
+**Status:** Starting v0.5.1 Board Polish & Premium UI milestone
 
-Intelligent training platform established. VBT-based strength assessment with OLS regression accurately estimates 1RM from progressive sets. Exercise auto-detection identifies movements from 3-5 reps using weighted similarity matching with EMA-based learning. Mobile replay provides per-rep force curves with valley-based boundary detection. All features follow established patterns: injectable time providers, stateless pure functions, StateFlow exposure.
+CV form checking infrastructure complete: MediaPipe running on-device with skeleton overlay, form rules engine for 5 exercises, biomechanics data persisted. Board of Directors review (2026-02-27) approved 5-0 with 9 conditions targeting accessibility (WCAG color-blind), security (allowBackup), UX (HUD density), and operational polish (versionName, UTC bug). Premium UI composables (ghost racing, RPG, readiness) ready for implementation with all domain logic in place.
 
 ## Future Milestones
 
-- **v0.5.5** — Auth Migration + Portal Integration (Spec 05: Supabase auth, force curve sync)
-- **v0.6.0** — Portal Replay + Community Features (Spec 04 portal, Spec 05c-d)
-- **v0.7.0** — Premium Portal Features (RPG trees, ghost replay, digital twin, F-v dashboard, AI auto-regulation, CV analytics)
+- **v0.6.0** — Auth Migration + Portal Integration (Supabase auth, force curve sync, iOS CV)
+- **v0.7.0** — Portal Replay + Community Features (Spec 04 portal, Spec 05c-d)
+- **v0.8.0** — Premium Portal Features (RPG trees, ghost replay, digital twin, F-v dashboard, AI auto-regulation, CV analytics)
 
 ## Constraints
 
@@ -169,4 +184,4 @@ Intelligent training platform established. VBT-based strength assessment with OL
 | ForceSparkline 40dp height with peak marker | Compact card embedding with visual clarity | ✓ Good — v0.4.7 |
 
 ---
-*Last updated: 2026-02-20 after v0.5.0 milestone start*
+*Last updated: 2026-02-27 after v0.5.1 milestone start*

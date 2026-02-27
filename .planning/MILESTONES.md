@@ -100,3 +100,21 @@
 
 ---
 
+
+## v0.5.0 Premium Mobile (Shipped: 2026-02-27)
+
+**Delivered:** On-device computer vision form checking infrastructure, biomechanics persistence, and CV domain logic — establishing the foundation for real-time form analysis during workouts.
+
+**Phases completed:** 3 phases (13-15), 7 plans. Phases 16-17 rolled forward to v0.5.1.
+
+**Key accomplishments:**
+- Biomechanics Persistence: Schema migration v16 with RepBiomechanics table, BiomechanicsRepository, per-rep VBT/force/asymmetry data saved to DB, biomechanics history UI with lazy-loading
+- CV Form Check Domain Logic: FormCheckModels with JointAngle, FormViolation, FormAssessment types, FormRulesEngine with exercise-specific rules for 5 exercises (squat, deadlift/RDL, OHP, curl, row), form scoring 0-100, 25 unit tests
+- CV Android Integration: MediaPipe pose_landmarker_lite model bundled (5.78MB), PoseLandmarkerHelper with LIVE_STREAM async + 100ms throttle, LandmarkAngleCalculator for joint angle extraction, FormCheckOverlay composable with CameraX PiP + skeleton overlay, iOS no-op stub, ProGuard keep rules
+
+**Rolled forward to v0.5.1:** Phase 16 (CV UI/Persistence/Gating), Phase 17 (Ghost Racing, RPG Attributes, Readiness Briefing)
+
+**Last phase number:** 15
+
+---
+
