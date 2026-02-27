@@ -122,38 +122,38 @@ Which phases cover which requirements. Updated during roadmap creation.
 | CV-08 | Phase 14 | Complete |
 | CV-09 | Phase 15 | Complete |
 | CV-11 | Phase 15 | Complete |
-| CV-01 | TBD | Pending |
-| CV-04 | TBD | Pending |
-| CV-05 | TBD | Pending |
-| CV-06 | TBD | Pending |
-| CV-10 | TBD | Pending |
-| GHOST-01 | TBD | Pending |
-| GHOST-02 | TBD | Pending |
-| GHOST-03 | TBD | Pending |
-| GHOST-04 | TBD | Pending |
-| RPG-01 | TBD | Pending |
-| RPG-02 | TBD | Pending |
-| RPG-03 | TBD | Pending |
-| RPG-04 | TBD | Pending |
-| BRIEF-01 | TBD | Pending |
-| BRIEF-02 | TBD | Pending |
-| BRIEF-03 | TBD | Pending |
-| BRIEF-04 | TBD | Pending |
-| BOARD-01 | TBD | Pending |
-| BOARD-02 | TBD | Pending |
-| BOARD-03 | TBD | Pending |
-| BOARD-04 | TBD | Pending |
-| BOARD-05 | TBD | Pending |
-| BOARD-06 | TBD | Pending |
-| BOARD-07 | TBD | Pending |
-| BOARD-08 | TBD | Pending |
-| BOARD-09 | TBD | Pending |
+| CV-01 | Phase 19 | Pending |
+| CV-04 | Phase 19 | Pending |
+| CV-05 | Phase 19 | Pending |
+| CV-06 | Phase 19 | Pending |
+| CV-10 | Phase 19 | Pending |
+| GHOST-01 | Phase 22 | Pending |
+| GHOST-02 | Phase 22 | Pending |
+| GHOST-03 | Phase 22 | Pending |
+| GHOST-04 | Phase 22 | Pending |
+| RPG-01 | Phase 21 | Pending |
+| RPG-02 | Phase 21 | Pending |
+| RPG-03 | Phase 21 | Pending |
+| RPG-04 | Phase 21 | Pending |
+| BRIEF-01 | Phase 20 | Pending |
+| BRIEF-02 | Phase 20 | Pending |
+| BRIEF-03 | Phase 20 | Pending |
+| BRIEF-04 | Phase 20 | Pending |
+| BOARD-01 | Phase 16 | Pending |
+| BOARD-02 | Phase 17 | Pending |
+| BOARD-03 | Phase 16 | Pending |
+| BOARD-04 | Phase 18 | Pending |
+| BOARD-05 | Phase 16 | Pending |
+| BOARD-06 | Phase 16 | Pending |
+| BOARD-07 | Phase 16 | Pending |
+| BOARD-08 | Phase 16 | Pending |
+| BOARD-09 | Phase 16 | Pending |
 
 **Coverage:**
 - v0.5.1 requirements: 26 total
-- Mapped to phases: 0 (TBD — awaiting roadmap)
-- Unmapped: 26
+- Mapped to phases: 26/26
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-02-20*
-*Last updated: 2026-02-27 after v0.5.1 milestone start*
+*Last updated: 2026-02-27 after v0.5.1 roadmap creation*

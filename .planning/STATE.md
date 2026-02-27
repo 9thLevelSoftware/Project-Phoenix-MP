@@ -4,39 +4,53 @@
 
 See: .planning/PROJECT.md (updated 2026-02-27)
 
-**Core value:** Users can connect to their Vitruvian trainer and execute workouts with accurate rep counting, weight control, and progress tracking — reliably, on both platforms.
-**Current focus:** Defining requirements for v0.5.1
+**Core value:** Users can connect to their Vitruvian trainer and execute workouts with accurate rep counting, weight control, and progress tracking -- reliably, on both platforms.
+**Current focus:** Phase 16 — Foundation & Board Conditions
 
 ## Position
 
 **Milestone:** v0.5.1 Board Polish & Premium UI
-**Current phase:** Not started (defining requirements)
-**Status:** Defining requirements
-**Last activity:** 2026-02-27 — Milestone v0.5.1 started
+**Current phase:** Phase 16 of 22 (Foundation & Board Conditions)
+**Status:** Ready to plan
+**Last activity:** 2026-02-27 -- Roadmap created for v0.5.1 (7 phases, 26 requirements mapped)
 
-## Decisions
+Progress: [░░░░░░░░░░] 0%
 
-(Carried from v0.5.0)
-- Dependencies in androidMain not commonMain - MediaPipe and CameraX are Android-only
-- android:required=false for camera features - Form Check is optional premium feature
-- CPU delegate only for v1 - GPU delegate has documented crashes on some devices
-- 100ms minimum inference interval (~10 FPS max) balances form check accuracy with BLE pipeline protection
-- Bundled lite model in APK assets - 5.78MB is acceptable for v1
-- 160x120dp PiP size - small enough to not block workout metrics
-- iOS stub provides no-op actual - Form Check deferred to v0.6.0+
+## Performance Metrics
+
+**Velocity:**
+- Total plans completed: 51 (across v0.4.1 through v0.5.0)
+- v0.5.1 plans completed: 0
+
+**By Milestone:**
+
+| Milestone | Phases | Plans |
+|-----------|--------|-------|
+| v0.4.1 | 4 | 10 |
+| v0.4.5 | 5 | 11 |
+| v0.4.6 | 3 | 10 |
+| v0.4.7 | 4 | 13 |
+| v0.5.0 | 3 | 7 |
 
 ## Accumulated Context
 
-- Board of Directors review (2026-02-27): 5-0 APPROVED WITH REVIEW, 9 conditions
-- SmartSuggestions classifyTimeWindow() uses UTC not local time — affects all non-UTC users
-- android:allowBackup=true exposes DB to cloud backup extraction — needs exclusion rules
-- HUD has 6+ simultaneous data streams — needs user-configurable page visibility before adding ghost racing
-- Velocity zones, balance bar, readiness card use color-only encoding — WCAG AA failure for ~8% of male users
-- versionName still reads 0.4.0 in androidApp/build.gradle.kts despite v0.5.0 content
-- Phase 17 RPG attributes may require schema migration 17 (gamification singleton row insufficient)
-- FeatureGate.Feature enum missing CV_FORM_CHECK — Phase 16 must add it
+### Decisions
+
+- (v0.5.0) MediaPipe CPU delegate only, 100ms throttle, 160x120dp PiP
+- (v0.5.0) iOS stub provides no-op actual -- Form Check deferred to v0.6.0+
+- (v0.5.1) RPG attributes get dedicated table (not GamificationStats singleton) -- schema v17
+- (v0.5.1) Ghost racing syncs on rep index, not wall-clock -- pre-load ghost session to memory
+- (v0.5.1) CV Form Check UX split from Ghost Racing into separate phase (independent concerns)
+
+### Blockers/Concerns
+
+- Ghost racing modifies WorkoutCoordinator + ActiveSessionEngine + WorkoutHud -- must come after HUD customization stabilizes (Phase 18 before Phase 22)
+- RPG schema migration v17 requires iOS DriverFactory.ios.kt CURRENT_SCHEMA_VERSION sync
+- ELITE tier 50Hz ghost overlay may need deferral to v0.5.2 if mid-range device performance is insufficient
+- Board of Directors review can be triggered at any point -- Phase 16 must complete first
 
 ## Session Log
 
-- 2026-02-27: v0.5.0 completed (Phases 13-15), Phases 16-17 rolled forward to v0.5.1
-- 2026-02-27: Milestone v0.5.1 started — Board Polish & Premium UI
+- 2026-02-27: v0.5.0 shipped (Phases 13-15)
+- 2026-02-27: v0.5.1 milestone started, requirements defined (26 total)
+- 2026-02-27: Research completed, roadmap created (7 phases: 16-22)
