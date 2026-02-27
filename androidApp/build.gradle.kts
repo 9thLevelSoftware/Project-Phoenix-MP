@@ -13,8 +13,8 @@ android {
         minSdk = 26
         targetSdk = 36
         // CI can override versionCode via -Pversion.code=XXX
-        versionCode = (project.findProperty("version.code") as String?)?.toInt() ?: 3
-        versionName = "0.4.0"
+        versionCode = (project.findProperty("version.code") as String?)?.toInt() ?: 4
+        versionName = "0.5.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {

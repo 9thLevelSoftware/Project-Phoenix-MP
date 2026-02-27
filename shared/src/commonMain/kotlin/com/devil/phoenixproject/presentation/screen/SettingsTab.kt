@@ -34,6 +34,7 @@ import org.koin.compose.koinInject
 import com.devil.phoenixproject.domain.subscription.SubscriptionManager
 import com.devil.phoenixproject.presentation.components.CountdownDropdown
 import com.devil.phoenixproject.ui.theme.*
+import com.devil.phoenixproject.util.DeviceInfo
 import com.devil.phoenixproject.util.KmpUtils
 
 @Composable
@@ -1378,7 +1379,7 @@ fun SettingsTab(
                 )
             }
                 Spacer(modifier = Modifier.height(Spacing.small))
-                Text("Version: 0.4.0", color = MaterialTheme.colorScheme.onSurface)
+                Text("Version: ${DeviceInfo.appVersionName}", color = MaterialTheme.colorScheme.onSurface)
                 Spacer(modifier = Modifier.height(Spacing.small))
                 Text(
                     "Open source community project to control Vitruvian Trainer machines locally.",
