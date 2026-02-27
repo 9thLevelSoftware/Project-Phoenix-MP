@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- API 23-30 backup exclusion rules (android:fullBackupContent) -->
+<!-- Excludes Vitruvian database and sensitive preferences from Android auto-backup -->
+<full-backup-content>
+    <exclude domain="database" path="vitruvian.db" />
+    <exclude domain="database" path="vitruvian.db-journal" />
+    <exclude domain="database" path="vitruvian.db-wal" />
+    <exclude domain="database" path="vitruvian.db-shm" />
+    <exclude domain="sharedpref" path="vitruvian_preferences.xml" />
+</full-backup-content>

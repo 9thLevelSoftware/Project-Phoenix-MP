@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- API 31+ data extraction rules (android:dataExtractionRules) -->
+<!-- Excludes Vitruvian database and sensitive preferences from both cloud backup and device transfer -->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="database" path="vitruvian.db" />
+        <exclude domain="database" path="vitruvian.db-journal" />
+        <exclude domain="database" path="vitruvian.db-wal" />
+        <exclude domain="database" path="vitruvian.db-shm" />
+        <exclude domain="sharedpref" path="vitruvian_preferences.xml" />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="database" path="vitruvian.db" />
+        <exclude domain="database" path="vitruvian.db-journal" />
+        <exclude domain="database" path="vitruvian.db-wal" />
+        <exclude domain="database" path="vitruvian.db-shm" />
+        <exclude domain="sharedpref" path="vitruvian_preferences.xml" />
+    </device-transfer>
+</data-extraction-rules>
