@@ -3,9 +3,9 @@
 **Defined:** 2026-02-20
 **Core Value:** Users can connect to their Vitruvian trainer and execute workouts with accurate rep counting, weight control, and progress tracking — reliably, on both platforms.
 
-## v0.5.0 Requirements
+## v0.5.0 Requirements (SHIPPED)
 
-Requirements for v0.5.0 Premium Mobile milestone. Each maps to roadmap phases.
+All v0.5.0 requirements that shipped with Phases 13-15.
 
 ### Biomechanics Persistence
 
@@ -15,19 +15,26 @@ Requirements for v0.5.0 Premium Mobile milestone. Each maps to roadmap phases.
 - [x] **PERSIST-04**: Set-level biomechanics summary (avg MCV, avg asymmetry, velocity loss trend) stored on WorkoutSession
 - [x] **PERSIST-05**: Schema migration v16 applied safely on both Android and iOS (DriverFactory.ios.kt sync)
 
-### CV Form Check
+### CV Form Check (Infrastructure — shipped in v0.5.0)
 
-- [ ] **CV-01**: User can enable "Form Check" toggle on Active Workout Screen (Phoenix+ tier)
 - [x] **CV-02**: Camera preview appears as PiP overlay when Form Check is enabled
 - [x] **CV-03**: Skeleton overlay renders tracked landmarks on camera feed
-- [ ] **CV-04**: Real-time form warnings display for exercise-specific joint angle violations (audio + visual)
-- [ ] **CV-05**: Form score (0-100) calculated per exercise from joint angle compliance
-- [ ] **CV-06**: Form assessment data (score, violations, joint angles) persisted locally per exercise
 - [x] **CV-07**: Exercise-specific form rules defined for squat, deadlift/RDL, overhead press, curl, and row
 - [x] **CV-08**: Warnings are advisory only — no automatic weight or machine adjustments
 - [x] **CV-09**: Adaptive frame rate prevents CV processing from degrading BLE metric pipeline
-- [ ] **CV-10**: iOS displays "Form Check coming soon" stub when toggle is tapped
 - [x] **CV-11**: MediaPipe functions correctly in release builds (ProGuard/R8 keep rules validated)
+
+## v0.5.1 Requirements
+
+Requirements for v0.5.1 Board Polish & Premium UI. Each maps to roadmap phases.
+
+### CV Form Check (UX & Persistence)
+
+- [ ] **CV-01**: User can enable "Form Check" toggle on Active Workout Screen (Phoenix+ tier)
+- [ ] **CV-04**: Real-time form warnings display for exercise-specific joint angle violations (audio + visual)
+- [ ] **CV-05**: Form score (0-100) calculated per exercise from joint angle compliance
+- [ ] **CV-06**: Form assessment data (score, violations, joint angles) persisted locally per exercise
+- [ ] **CV-10**: iOS displays "Form Check coming soon" message when Form Check toggle is tapped
 
 ### Ghost Racing
 
@@ -45,10 +52,22 @@ Requirements for v0.5.0 Premium Mobile milestone. Each maps to roadmap phases.
 
 ### Readiness Briefing
 
-- [ ] **BRIEF-01**: Local volume-based readiness heuristic computes readiness score (0-100)
+- [ ] **BRIEF-01**: Local ACWR-based readiness heuristic computes readiness score (0-100) with data sufficiency guard
 - [ ] **BRIEF-02**: Pre-workout briefing card shows readiness with Green/Yellow/Red status before first set (Elite tier)
 - [ ] **BRIEF-03**: Briefing is advisory only — user can always proceed with workout
 - [ ] **BRIEF-04**: "Connect to Portal for full readiness model" upsell displayed
+
+### Board Conditions (Accessibility & Security)
+
+- [ ] **BOARD-01**: SmartSuggestions classifyTimeWindow() uses local time instead of UTC for training window classification
+- [ ] **BOARD-02**: All color-coded indicators (velocity zones, balance bar, readiness card) have secondary visual signals (icon, label, or pattern) for WCAG AA 1.4.1 compliance
+- [ ] **BOARD-03**: android:allowBackup exclusion rules prevent VitruvianDatabase and sensitive preferences from cloud/ADB backup (both fullBackupContent and dataExtractionRules XMLs)
+- [ ] **BOARD-04**: User can configure which HUD pages are visible during workouts via Settings (preset-based: Essential, Biomechanics, Full)
+- [ ] **BOARD-05**: Camera permission dialog shows custom rationale text explaining on-device-only CV processing guarantee
+- [ ] **BOARD-06**: iOS PHOENIX tier upgrade prompts do not mention Form Check as a feature until iOS CV parity ships
+- [ ] **BOARD-07**: versionName in androidApp/build.gradle.kts reflects actual app version (not hardcoded 0.4.0)
+- [ ] **BOARD-08**: PoseLandmarkerHelper gracefully handles missing pose_landmarker_lite.task asset with user-facing error instead of crash
+- [ ] **BOARD-09**: FeatureGate.Feature enum includes CV_FORM_CHECK, RPG_ATTRIBUTES, GHOST_RACING, and READINESS_BRIEFING entries with correct tier assignments
 
 ## v0.6.0+ Requirements
 
@@ -81,6 +100,10 @@ Explicitly excluded. Documented to prevent scope creep.
 | Full biomechanics persistence for FREE tier | Storage bloat; follow GATE-04 data-capture-for-all, UI-gating pattern |
 | Portal-side features (RPG page, twin, F-v dashboard) | Tracked in phoenix-portal repo, not this KMP repo |
 | iOS CV implementation (beyond stub) | Deferred to v0.6.0+; Android-first with iOS placeholder |
+| Drag-and-drop HUD customization | Over-engineered for v0.5.1; preset pages (Essential/Biomechanics/Full) sufficient |
+| Server-side subscription validation | RevenueCat disabled; client-side FeatureGate is accepted for pre-launch |
+| SQLCipher database encryption | OS sandbox provides adequate protection for fitness data at current stage |
+| ELITE 50Hz ghost telemetry overlay | May require v0.5.2 if mid-range device performance is insufficient |
 
 ## Traceability
 
@@ -93,35 +116,44 @@ Which phases cover which requirements. Updated during roadmap creation.
 | PERSIST-03 | Phase 13 | Complete |
 | PERSIST-04 | Phase 13 | Complete |
 | PERSIST-05 | Phase 13 | Complete |
-| CV-01 | Phase 16 | Pending |
 | CV-02 | Phase 15 | Complete |
 | CV-03 | Phase 15 | Complete |
-| CV-04 | Phase 16 | Pending |
-| CV-05 | Phase 16 | Pending |
-| CV-06 | Phase 16 | Pending |
 | CV-07 | Phase 14 | Complete |
 | CV-08 | Phase 14 | Complete |
 | CV-09 | Phase 15 | Complete |
-| CV-10 | Phase 16 | Pending |
 | CV-11 | Phase 15 | Complete |
-| GHOST-01 | Phase 17 | Pending |
-| GHOST-02 | Phase 17 | Pending |
-| GHOST-03 | Phase 17 | Pending |
-| GHOST-04 | Phase 17 | Pending |
-| RPG-01 | Phase 17 | Pending |
-| RPG-02 | Phase 17 | Pending |
-| RPG-03 | Phase 17 | Pending |
-| RPG-04 | Phase 17 | Pending |
-| BRIEF-01 | Phase 17 | Pending |
-| BRIEF-02 | Phase 17 | Pending |
-| BRIEF-03 | Phase 17 | Pending |
-| BRIEF-04 | Phase 17 | Pending |
+| CV-01 | TBD | Pending |
+| CV-04 | TBD | Pending |
+| CV-05 | TBD | Pending |
+| CV-06 | TBD | Pending |
+| CV-10 | TBD | Pending |
+| GHOST-01 | TBD | Pending |
+| GHOST-02 | TBD | Pending |
+| GHOST-03 | TBD | Pending |
+| GHOST-04 | TBD | Pending |
+| RPG-01 | TBD | Pending |
+| RPG-02 | TBD | Pending |
+| RPG-03 | TBD | Pending |
+| RPG-04 | TBD | Pending |
+| BRIEF-01 | TBD | Pending |
+| BRIEF-02 | TBD | Pending |
+| BRIEF-03 | TBD | Pending |
+| BRIEF-04 | TBD | Pending |
+| BOARD-01 | TBD | Pending |
+| BOARD-02 | TBD | Pending |
+| BOARD-03 | TBD | Pending |
+| BOARD-04 | TBD | Pending |
+| BOARD-05 | TBD | Pending |
+| BOARD-06 | TBD | Pending |
+| BOARD-07 | TBD | Pending |
+| BOARD-08 | TBD | Pending |
+| BOARD-09 | TBD | Pending |
 
 **Coverage:**
-- v0.5.0 requirements: 28 total
-- Mapped to phases: 28
-- Unmapped: 0
+- v0.5.1 requirements: 26 total
+- Mapped to phases: 0 (TBD — awaiting roadmap)
+- Unmapped: 26
 
 ---
 *Requirements defined: 2026-02-20*
-*Last updated: 2026-02-20 after roadmap creation (traceability complete)*
+*Last updated: 2026-02-27 after v0.5.1 milestone start*
