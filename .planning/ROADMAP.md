@@ -97,11 +97,11 @@ See `.planning/milestones/v0.5.0-*` for archived phase details.
   5. iOS PHOENIX tier upgrade prompts do not mention Form Check as a feature
   6. PoseLandmarkerHelper displays a user-facing error message instead of crashing when pose_landmarker_lite.task asset is missing
   7. FeatureGate correctly gates CV_FORM_CHECK, RPG_ATTRIBUTES, GHOST_RACING, and READINESS_BRIEFING at their assigned tiers (FREE users cannot access any of these)
-**Plans**: TBD
+**Plans**: 2 plans
 
 Plans:
-- [ ] 16-01: TBD
-- [ ] 16-02: TBD
+- [ ] 16-01-PLAN.md — FeatureGate v0.5.1 entries, version bump to 0.5.1, UTC timezone fix
+- [ ] 16-02-PLAN.md — Backup exclusion, camera rationale, PoseLandmarker error handling, iOS platform detection
 
 ### Phase 17: WCAG Accessibility
 **Goal**: All color-coded UI indicators are usable by color-blind users through secondary visual signals and an optional color-blind palette
@@ -214,7 +214,7 @@ Note: Phase 19 (CV UX) can proceed after Phase 16 completes (independent of Phas
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 16. Foundation & Board Conditions | 0/TBD | Not started | - |
+| 16. Foundation & Board Conditions | 0/2 | Not started | - |
 | 17. WCAG Accessibility | 0/TBD | Not started | - |
 | 18. HUD Customization | 0/TBD | Not started | - |
 | 19. CV Form Check UX & Persistence | 0/TBD | Not started | - |
@@ -225,4 +225,4 @@ Note: Phase 19 (CV UX) can proceed after Phase 16 completes (independent of Phas
 **Last phase number:** 22
 
 ---
-*Last updated: 2026-02-27 after v0.5.1 roadmap creation*
+*Last updated: 2026-02-27 after Phase 16 planning*
