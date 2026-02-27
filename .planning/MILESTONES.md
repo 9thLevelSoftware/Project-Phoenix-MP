@@ -118,3 +118,24 @@
 
 ---
 
+
+## v0.5.1 Board Polish & Premium UI (In Progress)
+
+**Goal:** Complete carried-over premium UI features (CV Form Check UX, ghost racing, RPG attributes, readiness briefing) and address all Board of Directors conditions (accessibility, security, UX, versioning).
+
+**Phases planned:** 7 phases (16-22), plans TBD
+
+**Target features:**
+- Phase 16: Foundation — versionName, FeatureGate entries, UTC fix, backup exclusion, camera rationale, iOS suppression, asset fallback
+- Phase 17: WCAG Accessibility — color-blind mode, secondary visual signals on all color-coded indicators
+- Phase 18: HUD Customization — preset-based page visibility, string-key persistence, dynamic pager
+- Phase 19: CV Form Check UX — toggle UI, real-time warnings, form score persistence, iOS stub
+- Phase 20: Readiness Briefing — ACWR engine, readiness card, InsufficientData guard
+- Phase 21: RPG Attributes — attribute engine, character class, attribute card, schema v17
+- Phase 22: Ghost Racing — ghost engine, dual progress bars, rep-index sync, workout lifecycle integration
+
+**Requirements:** 26 total (CV-01/04/05/06/10, GHOST-01/02/03/04, RPG-01/02/03/04, BRIEF-01/02/03/04, BOARD-01 through BOARD-09)
+
+**Last phase number:** 22
+
+---
