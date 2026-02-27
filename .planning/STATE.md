@@ -11,16 +11,17 @@ See: .planning/PROJECT.md (updated 2026-02-27)
 
 **Milestone:** v0.5.1 Board Polish & Premium UI
 **Current phase:** Phase 16 of 22 (Foundation & Board Conditions)
-**Status:** Ready to plan
-**Last activity:** 2026-02-27 -- Roadmap created for v0.5.1 (7 phases, 26 requirements mapped)
+**Current Plan:** 2 of 2 (Phase 16 complete)
+**Status:** Phase complete
+**Last activity:** 2026-02-27 -- Phase 16 complete (2 plans executed)
 
-Progress: [░░░░░░░░░░] 0%
+Progress: [=░░░░░░░░░] 14%
 
 ## Performance Metrics
 
 **Velocity:**
 - Total plans completed: 51 (across v0.4.1 through v0.5.0)
-- v0.5.1 plans completed: 0
+- v0.5.1 plans completed: 2
 
 **By Milestone:**
 
@@ -41,6 +42,8 @@ Progress: [░░░░░░░░░░] 0%
 - (v0.5.1) RPG attributes get dedicated table (not GamificationStats singleton) -- schema v17
 - (v0.5.1) Ghost racing syncs on rep index, not wall-clock -- pre-load ghost session to memory
 - (v0.5.1) CV Form Check UX split from Ghost Racing into separate phase (independent concerns)
+- (v0.5.1) Targeted backup exclusion (allowBackup=true + specific file exclusions) rather than blanket disable
+- (v0.5.1) Always-show camera rationale with on-device guarantee before permission request
 
 ### Blockers/Concerns
 
@@ -54,3 +57,5 @@ Progress: [░░░░░░░░░░] 0%
 - 2026-02-27: v0.5.0 shipped (Phases 13-15)
 - 2026-02-27: v0.5.1 milestone started, requirements defined (26 total)
 - 2026-02-27: Research completed, roadmap created (7 phases: 16-22)
+- 2026-02-27: Phase 16 Plan 01 executed (FeatureGate entries + isIosPlatform)
+- 2026-02-27: Phase 16 Plan 02 executed (backup exclusion, camera rationale, error handling)

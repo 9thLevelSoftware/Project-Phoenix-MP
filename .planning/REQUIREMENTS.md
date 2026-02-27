@@ -61,12 +61,12 @@ Requirements for v0.5.1 Board Polish & Premium UI. Each maps to roadmap phases.
 
 - [ ] **BOARD-01**: SmartSuggestions classifyTimeWindow() uses local time instead of UTC for training window classification
 - [ ] **BOARD-02**: All color-coded indicators (velocity zones, balance bar, readiness card) have secondary visual signals (icon, label, or pattern) for WCAG AA 1.4.1 compliance
-- [ ] **BOARD-03**: android:allowBackup exclusion rules prevent VitruvianDatabase and sensitive preferences from cloud/ADB backup (both fullBackupContent and dataExtractionRules XMLs)
+- [x] **BOARD-03**: android:allowBackup exclusion rules prevent VitruvianDatabase and sensitive preferences from cloud/ADB backup (both fullBackupContent and dataExtractionRules XMLs)
 - [ ] **BOARD-04**: User can configure which HUD pages are visible during workouts via Settings (preset-based: Essential, Biomechanics, Full)
-- [ ] **BOARD-05**: Camera permission dialog shows custom rationale text explaining on-device-only CV processing guarantee
-- [ ] **BOARD-06**: iOS PHOENIX tier upgrade prompts do not mention Form Check as a feature until iOS CV parity ships
+- [x] **BOARD-05**: Camera permission dialog shows custom rationale text explaining on-device-only CV processing guarantee
+- [x] **BOARD-06**: iOS PHOENIX tier upgrade prompts do not mention Form Check as a feature until iOS CV parity ships
 - [ ] **BOARD-07**: versionName in androidApp/build.gradle.kts reflects actual app version (not hardcoded 0.4.0)
-- [ ] **BOARD-08**: PoseLandmarkerHelper gracefully handles missing pose_landmarker_lite.task asset with user-facing error instead of crash
+- [x] **BOARD-08**: PoseLandmarkerHelper gracefully handles missing pose_landmarker_lite.task asset with user-facing error instead of crash
 - [ ] **BOARD-09**: FeatureGate.Feature enum includes CV_FORM_CHECK, RPG_ATTRIBUTES, GHOST_RACING, and READINESS_BRIEFING entries with correct tier assignments
 
 ## v0.6.0+ Requirements
@@ -141,12 +141,12 @@ Which phases cover which requirements. Updated during roadmap creation.
 | BRIEF-04 | Phase 20 | Pending |
 | BOARD-01 | Phase 16 | Pending |
 | BOARD-02 | Phase 17 | Pending |
-| BOARD-03 | Phase 16 | Pending |
+| BOARD-03 | Phase 16 | Complete |
 | BOARD-04 | Phase 18 | Pending |
-| BOARD-05 | Phase 16 | Pending |
-| BOARD-06 | Phase 16 | Pending |
+| BOARD-05 | Phase 16 | Complete |
+| BOARD-06 | Phase 16 | Complete |
 | BOARD-07 | Phase 16 | Pending |
-| BOARD-08 | Phase 16 | Pending |
+| BOARD-08 | Phase 16 | Complete |
 | BOARD-09 | Phase 16 | Pending |
 
 **Coverage:**
