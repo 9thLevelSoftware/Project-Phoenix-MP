@@ -1,6 +1,7 @@
 package com.devil.phoenixproject.domain.premium
 
 import com.devil.phoenixproject.domain.model.*
+import kotlinx.datetime.TimeZone
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
@@ -246,12 +247,12 @@ class SmartSuggestionsEngineTest {
 
     @Test
     fun timeOfDayAllMorning() {
-        // Sessions at 8am (MORNING window: 7-10)
-        val baseTime = NOW - (NOW % ONE_DAY_MS) // midnight
+        // Sessions at 8am UTC (MORNING window: 7-10)
+        val baseTime = NOW - (NOW % ONE_DAY_MS) // midnight UTC
         val sessions = (0 until 5).map { i ->
             session(timestamp = baseTime - ONE_DAY_MS * i + 8 * ONE_HOUR_MS) // 8am each day
         }
-        val analysis = SmartSuggestionsEngine.analyzeTimeOfDay(sessions)
+        val analysis = SmartSuggestionsEngine.analyzeTimeOfDay(sessions, TimeZone.UTC)
         assertEquals(TimeWindow.MORNING, analysis.optimalWindow)
         assertEquals(5, analysis.windowCounts[TimeWindow.MORNING])
     }
@@ -268,7 +269,7 @@ class SmartSuggestionsEngineTest {
             // 1 morning session (lower volume)
             session(timestamp = baseTime + 8 * ONE_HOUR_MS, weightPerCableKg = 40f)
         )
-        val analysis = SmartSuggestionsEngine.analyzeTimeOfDay(sessions)
+        val analysis = SmartSuggestionsEngine.analyzeTimeOfDay(sessions, TimeZone.UTC)
         assertEquals(TimeWindow.EVENING, analysis.optimalWindow)
     }
 
@@ -284,7 +285,7 @@ class SmartSuggestionsEngineTest {
             session(timestamp = baseTime - ONE_DAY_MS + 17 * ONE_HOUR_MS, weightPerCableKg = 40f),
             session(timestamp = baseTime - 2 * ONE_DAY_MS + 17 * ONE_HOUR_MS, weightPerCableKg = 40f)
         )
-        val analysis = SmartSuggestionsEngine.analyzeTimeOfDay(sessions)
+        val analysis = SmartSuggestionsEngine.analyzeTimeOfDay(sessions, TimeZone.UTC)
         // Morning has higher volume per session but only 2 sessions -> not eligible
         // Evening has 3 sessions -> eligible
         assertEquals(TimeWindow.EVENING, analysis.optimalWindow)
@@ -325,5 +326,36 @@ class SmartSuggestionsEngineTest {
     fun classifyUnknownDefaultsToCore() {
         assertEquals(MovementCategory.CORE, SmartSuggestionsEngine.classifyMuscleGroup("Unknown"))
         assertEquals(MovementCategory.CORE, SmartSuggestionsEngine.classifyMuscleGroup(""))
+    }
+
+    // ========== classifyTimeWindow timezone fix (BOARD-01) ==========
+
+    @Test
+    fun classifyTimeWindowUsesLocalTime() {
+        // 2023-11-15 08:00:00 UTC = 19:00 in AEDT (UTC+11, November DST)
+        val utc8am = 1_700_035_200_000L
+        val utcPlus10 = TimeZone.of("Australia/Melbourne")
+        // In AEDT, 8am UTC is 7pm local -> EVENING (15..19)
+        val result = SmartSuggestionsEngine.classifyTimeWindow(utc8am, utcPlus10)
+        assertEquals(TimeWindow.EVENING, result)
+    }
+
+    @Test
+    fun classifyTimeWindowMorningInUtc() {
+        // 2023-11-15 08:00:00 UTC
+        val utc8am = 1_700_035_200_000L
+        val utc = TimeZone.UTC
+        val result = SmartSuggestionsEngine.classifyTimeWindow(utc8am, utc)
+        assertEquals(TimeWindow.MORNING, result)
+    }
+
+    @Test
+    fun classifyTimeWindowNightCrossover() {
+        // 2023-11-15 23:00:00 UTC = 10:00 next day in UTC+11
+        val utc11pm = 1_700_089_200_000L
+        val utcPlus11 = TimeZone.of("Pacific/Noumea")
+        // In UTC+11, 11pm UTC is 10am next day -> AFTERNOON (10..14)
+        val result = SmartSuggestionsEngine.classifyTimeWindow(utc11pm, utcPlus11)
+        assertEquals(TimeWindow.AFTERNOON, result)
     }
 }

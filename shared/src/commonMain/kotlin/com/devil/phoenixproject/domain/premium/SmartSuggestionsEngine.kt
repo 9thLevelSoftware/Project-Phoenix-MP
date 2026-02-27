@@ -1,6 +1,9 @@
 package com.devil.phoenixproject.domain.premium
 
 import com.devil.phoenixproject.domain.model.*
+import kotlin.time.Instant
+import kotlinx.datetime.TimeZone
+import kotlinx.datetime.toLocalDateTime
 
 /**
  * Pure computation engine for training insight suggestions.
@@ -13,7 +16,6 @@ object SmartSuggestionsEngine {
     private const val FOUR_WEEKS_MS = 28 * 24 * 60 * 60 * 1000L
     private const val FOURTEEN_DAYS_MS = 14 * 24 * 60 * 60 * 1000L
     private const val ONE_DAY_MS = 24 * 60 * 60 * 1000L
-    private const val ONE_HOUR_MS = 60 * 60 * 1000L
 
     private const val IMBALANCE_LOW_THRESHOLD = 0.25f
     private const val IMBALANCE_HIGH_THRESHOLD = 0.45f
@@ -189,7 +191,10 @@ object SmartSuggestionsEngine {
      * Maps sessions to time windows and finds optimal training time.
      * Requires minimum 3 sessions in a window to consider it for optimal.
      */
-    fun analyzeTimeOfDay(sessions: List<SessionSummary>): TimeOfDayAnalysis {
+    fun analyzeTimeOfDay(
+        sessions: List<SessionSummary>,
+        timeZone: TimeZone = TimeZone.currentSystemDefault()
+    ): TimeOfDayAnalysis {
         if (sessions.isEmpty()) {
             return TimeOfDayAnalysis(
                 windowVolumes = emptyMap(),
@@ -200,7 +205,7 @@ object SmartSuggestionsEngine {
         }
 
         // Group sessions by time window
-        val byWindow = sessions.groupBy { classifyTimeWindow(it.timestamp) }
+        val byWindow = sessions.groupBy { classifyTimeWindow(it.timestamp, timeZone) }
 
         val windowCounts = mutableMapOf<TimeWindow, Int>()
         val windowAvgVolumes = mutableMapOf<TimeWindow, Float>()
@@ -249,11 +254,17 @@ object SmartSuggestionsEngine {
     }
 
     /**
-     * Maps a timestamp to a TimeWindow based on hour of day (UTC).
+     * Maps a timestamp to a TimeWindow based on local hour of day.
+     * Uses the device's local timezone by default. The timeZone parameter is injectable for testing.
      * EARLY_MORNING (5-7), MORNING (7-10), AFTERNOON (10-15), EVENING (15-20), NIGHT (20-5)
      */
-    private fun classifyTimeWindow(timestampMs: Long): TimeWindow {
-        val hourOfDay = ((timestampMs % ONE_DAY_MS) / ONE_HOUR_MS).toInt()
+    internal fun classifyTimeWindow(
+        timestampMs: Long,
+        timeZone: TimeZone = TimeZone.currentSystemDefault()
+    ): TimeWindow {
+        val instant = Instant.fromEpochMilliseconds(timestampMs)
+        val localDateTime = instant.toLocalDateTime(timeZone)
+        val hourOfDay = localDateTime.hour
         return when (hourOfDay) {
             in 5..6 -> TimeWindow.EARLY_MORNING
             in 7..9 -> TimeWindow.MORNING
