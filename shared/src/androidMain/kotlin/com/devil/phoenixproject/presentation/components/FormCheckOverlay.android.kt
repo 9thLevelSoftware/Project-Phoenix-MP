@@ -12,12 +12,21 @@ import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CameraAlt
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -31,6 +40,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -84,15 +94,21 @@ actual fun FormCheckOverlay(
         hasCameraPermission = granted
     }
 
-    // Request permission on first composition if not granted
+    // Show rationale before requesting camera permission (BOARD-05)
+    var showRationale by remember { mutableStateOf(false) }
+
     LaunchedEffect(Unit) {
         if (!hasCameraPermission) {
-            permissionLauncher.launch(Manifest.permission.CAMERA)
+            // Always show rationale first - builds user trust by explaining on-device processing
+            showRationale = true
         }
     }
 
     // Landmark state for skeleton drawing
     var currentLandmarks by remember { mutableStateOf<List<NormalizedLandmark>?>(null) }
+
+    // Error state for user-facing error display (BOARD-03)
+    var errorMessage by remember { mutableStateOf<String?>(null) }
 
     // PoseLandmarkerHelper instance
     val poseLandmarkerHelper = remember {
@@ -125,21 +141,20 @@ actual fun FormCheckOverlay(
                 }
 
                 override fun onError(error: String) {
-                    // Log error but continue - form check is optional feature
                     co.touchlab.kermit.Logger.w("FormCheckOverlay") { "Pose detection error: $error" }
+                    // Only set user-facing error for initialization failures (BOARD-03)
+                    if (error.contains("not available") || error.contains("model")) {
+                        errorMessage = error
+                    }
                     currentLandmarks = null
                 }
             }
         )
     }
 
-    // Initialize MediaPipe on composition
+    // Initialize MediaPipe on composition (errors handled internally via listener.onError)
     LaunchedEffect(Unit) {
-        try {
-            poseLandmarkerHelper.setupPoseLandmarker()
-        } catch (e: Exception) {
-            co.touchlab.kermit.Logger.e("FormCheckOverlay") { "Failed to init PoseLandmarker: ${e.message}" }
-        }
+        poseLandmarkerHelper.setupPoseLandmarker()
     }
 
     // Cleanup on disposal
@@ -149,9 +164,29 @@ actual fun FormCheckOverlay(
         }
     }
 
+    // Error state: show user-facing error when PoseLandmarker init fails (BOARD-03)
+    if (errorMessage != null) {
+        Box(
+            modifier = modifier
+                .size(160.dp, 120.dp)
+                .clip(RoundedCornerShape(12.dp))
+                .background(MaterialTheme.colorScheme.errorContainer),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                text = errorMessage!!,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onErrorContainer,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.padding(8.dp)
+            )
+        }
+        return
+    }
+
     // Render based on permission state
     if (!hasCameraPermission) {
-        // Show permission request state
+        // Camera permission rationale with on-device processing guarantee (BOARD-05)
         Box(
             modifier = modifier
                 .size(160.dp, 120.dp)
@@ -159,11 +194,29 @@ actual fun FormCheckOverlay(
                 .background(MaterialTheme.colorScheme.surfaceVariant),
             contentAlignment = Alignment.Center
         ) {
-            Text(
-                text = "Camera access required",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center,
+                modifier = Modifier.padding(8.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.CameraAlt,
+                    contentDescription = null,
+                    modifier = Modifier.size(24.dp),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = "Camera needed for Form Check.\nAll processing stays on your device.",
+                    style = MaterialTheme.typography.labelSmall,
+                    textAlign = TextAlign.Center,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                TextButton(onClick = { permissionLauncher.launch(Manifest.permission.CAMERA) }) {
+                    Text("Allow Camera")
+                }
+            }
         }
     } else {
         // Camera preview with skeleton overlay

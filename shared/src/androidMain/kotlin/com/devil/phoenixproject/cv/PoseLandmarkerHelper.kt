@@ -45,25 +45,35 @@ class PoseLandmarkerHelper(
      * Initialize MediaPipe PoseLandmarker with LIVE_STREAM mode.
      * Must be called before [detectLiveStream].
      *
-     * @throws RuntimeException if model file not found in assets
+     * If the model asset is missing or initialization fails, reports the error
+     * via [PoseLandmarkerListener.onError] instead of crashing (BOARD-03).
      */
     fun setupPoseLandmarker() {
-        val baseOptions = BaseOptions.builder()
-            .setModelAssetPath(modelName)
-            .setDelegate(Delegate.CPU) // CPU-only for v1 (GPU has documented crashes)
-            .build()
+        try {
+            val baseOptions = BaseOptions.builder()
+                .setModelAssetPath(modelName)
+                .setDelegate(Delegate.CPU) // CPU-only for v1 (GPU has documented crashes)
+                .build()
 
-        val options = PoseLandmarker.PoseLandmarkerOptions.builder()
-            .setBaseOptions(baseOptions)
-            .setMinPoseDetectionConfidence(minDetectionConfidence)
-            .setMinTrackingConfidence(minTrackingConfidence)
-            .setMinPosePresenceConfidence(minPresenceConfidence)
-            .setRunningMode(RunningMode.LIVE_STREAM)
-            .setResultListener(this::handleResult)
-            .setErrorListener(this::handleError)
-            .build()
+            val options = PoseLandmarker.PoseLandmarkerOptions.builder()
+                .setBaseOptions(baseOptions)
+                .setMinPoseDetectionConfidence(minDetectionConfidence)
+                .setMinTrackingConfidence(minTrackingConfidence)
+                .setMinPosePresenceConfidence(minPresenceConfidence)
+                .setRunningMode(RunningMode.LIVE_STREAM)
+                .setResultListener(this::handleResult)
+                .setErrorListener(this::handleError)
+                .build()
 
-        poseLandmarker = PoseLandmarker.createFromOptions(context, options)
+            poseLandmarker = PoseLandmarker.createFromOptions(context, options)
+        } catch (e: Exception) {
+            co.touchlab.kermit.Logger.e("PoseLandmarkerHelper") {
+                "Failed to initialize PoseLandmarker: ${e.message}"
+            }
+            listener.onError(
+                "Form Check model not available. Please reinstall the app to restore this feature."
+            )
+        }
     }
 
     /**
