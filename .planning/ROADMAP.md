@@ -142,11 +142,11 @@ Plans:
   2. User sees real-time visual warnings and hears audio cues when exercise-specific joint angle thresholds are violated during a set
   3. User can view a form score (0-100) after completing an exercise, and that score persists locally across app restarts
   4. iOS user sees a "Form Check coming soon" message when tapping the Form Check toggle instead of activating the camera
-**Plans**: TBD
+**Plans**: 2 plans
 
 Plans:
-- [ ] 19-01: TBD
-- [ ] 19-02: TBD
+- [ ] 19-01-PLAN.md — Schema migration (formScore column), HapticEvent.FORM_WARNING, assessment accumulation in ActiveSessionEngine, form score computation at set end
+- [ ] 19-02-PLAN.md — Form check toggle in WorkoutHud with tier gating, FormWarningBanner, FormCheckOverlay wiring, form score in SetSummaryCard, iOS "coming soon" dialog
 
 ### Phase 20: Readiness Briefing
 **Goal**: Users receive an evidence-based pre-workout readiness advisory that helps them calibrate training intensity without blocking their workout
