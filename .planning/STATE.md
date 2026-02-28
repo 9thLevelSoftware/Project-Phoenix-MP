@@ -5,7 +5,7 @@ milestone_name: milestone
 current_phase: Phase 22 of 22 (Ghost Racing)
 current_plan: Not started
 status: completed
-last_updated: "2026-02-28T20:26:20.459Z"
+last_updated: "2026-02-28T20:31:00.061Z"
 last_activity: 2026-02-28 -- Phase 22 Plan 03 executed (ghost racing UI overlay, 7 files, 2 tasks)
 progress:
   total_phases: 22
@@ -44,7 +44,7 @@ See: .planning/PROJECT.md (updated 2026-02-27)
 **Milestone:** v0.5.1 Board Polish & Premium UI
 **Current phase:** Phase 22 of 22 (Ghost Racing)
 **Current Plan:** Not started
-**Status:** Milestone complete
+**Status:** v0.5.1 milestone complete
 **Last activity:** 2026-02-28 -- Phase 22 Plan 03 executed (ghost racing UI overlay, 7 files, 2 tasks)
 
 Progress: [==========] 100%

@@ -1,4 +1,28 @@
 # Milestones
+## v0.5.1 Board Polish & Premium UI (Shipped: 2026-02-28)
+
+**Delivered:** Complete premium UI feature set — WCAG accessibility, HUD customization, CV form check UX, readiness briefing, RPG attributes, and ghost racing — plus all Board of Directors conditions resolved.
+
+**Phases completed:** 7 phases (16-22), 16 plans
+
+**Key accomplishments:**
+- WCAG AA accessibility infrastructure with color-blind mode toggle, deuteranopia-safe palette, and secondary visual signals on all color-coded indicators (velocity zones, balance bar, readiness card)
+- CV Form Check UX: toggle UI with Phoenix+ gating, real-time form warnings with audio/haptic cues, per-exercise form scoring (0-100), iOS "coming soon" stub
+- Preset-based HUD customization (Essential/Biomechanics/Full) with string-key persistence and dynamic pager filtering
+- ACWR-based readiness briefing with traffic-light advisory card, data sufficiency guards, dismissible (advisory only), Elite tier gating
+- RPG attribute engine computing 5 attributes (Strength/Power/Stamina/Consistency/Mastery) and auto-assigning character classes, schema v17, Phoenix+ tier gating
+- Ghost racing: personal-best matching via rep-index-synced velocity comparison, dual progress bar overlay on ExecutionPage, per-rep AHEAD/BEHIND verdict, post-set velocity delta summary
+- Board of Directors conditions: FeatureGate entries for all v0.5.1 features, backup exclusion, camera rationale, UTC timezone fix, version bump, iOS form check suppression, PoseLandmarker error handling
+
+**Stats:** 133 files changed, +12,874/-468 lines, 26/26 requirements satisfied
+**Timeline:** 2 days (2026-02-27 → 2026-02-28)
+
+**Last phase number:** 22
+
+**Archive:** `.planning/milestones/v0.5.1-*`
+
+---
+
 
 ## v0.4.0 — Foundation (Pre-GSD)
 
