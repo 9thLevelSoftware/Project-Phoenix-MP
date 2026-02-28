@@ -70,6 +70,30 @@ class SettingsManagerTest {
     }
 
     @Test
+    fun `hudPreset defaults to full and updates on change`() = runTest {
+        val managerScope = CoroutineScope(coroutineContext + SupervisorJob())
+        try {
+            val manager = SettingsManager(fakePreferencesManager, fakeBleRepository, managerScope)
+
+            // Default is "full"
+            assertEquals("full", manager.hudPreset.value)
+
+            // Change to essential
+            manager.setHudPreset("essential")
+            advanceUntilIdle()
+            assertEquals("essential", fakePreferencesManager.preferencesFlow.value.hudPreset)
+            assertEquals("essential", manager.hudPreset.value)
+
+            // Change to biomechanics
+            manager.setHudPreset("biomechanics")
+            advanceUntilIdle()
+            assertEquals("biomechanics", manager.hudPreset.value)
+        } finally {
+            managerScope.cancel()
+        }
+    }
+
+    @Test
     fun `weight conversion and formatting preserves legacy behavior`() = runTest {
         val managerScope = CoroutineScope(coroutineContext + SupervisorJob())
         try {

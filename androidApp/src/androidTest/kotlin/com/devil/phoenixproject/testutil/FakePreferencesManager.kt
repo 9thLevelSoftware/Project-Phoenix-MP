@@ -64,6 +64,18 @@ class FakePreferencesManager : PreferencesManager {
         _preferencesFlow.value = _preferencesFlow.value.copy(audioRepCountEnabled = enabled)
     }
 
+    override suspend fun setLedFeedbackEnabled(enabled: Boolean) {
+        _preferencesFlow.value = _preferencesFlow.value.copy(ledFeedbackEnabled = enabled)
+    }
+
+    override suspend fun setColorBlindModeEnabled(enabled: Boolean) {
+        _preferencesFlow.value = _preferencesFlow.value.copy(colorBlindModeEnabled = enabled)
+    }
+
+    override suspend fun setHudPreset(preset: String) {
+        _preferencesFlow.value = _preferencesFlow.value.copy(hudPreset = preset)
+    }
+
     override suspend fun getSingleExerciseDefaults(exerciseId: String): SingleExerciseDefaults? {
         return exerciseDefaults[exerciseId]
     }
