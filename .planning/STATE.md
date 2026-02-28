@@ -1,33 +1,17 @@
 ---
 gsd_state_version: 1.0
-milestone: v0.4
-milestone_name: milestone
-current_phase: Phase 17 of 22 (WCAG Accessibility)
-current_plan: Not started
-status: completed
-last_updated: "2026-02-28T02:44:41.149Z"
-last_activity: 2026-02-28 -- Plan 17-02 executed (AccessibilityColors composable retrofit, zone labels, BalanceBar relocation)
-progress:
-  total_phases: 17
-  completed_phases: 16
-  total_plans: 41
-  completed_plans: 45
----
-
----
-gsd_state_version: 1.0
-milestone: v0.4
-milestone_name: milestone
-current_phase: Phase 17 of 22 (WCAG Accessibility)
-current_plan: Plan 2 of 2
-status: phase-complete
-last_updated: "2026-02-28T02:37:56Z"
-last_activity: 2026-02-28 -- Plan 17-02 executed (AccessibilityColors composable retrofit, zone labels, BalanceBar relocation)
+milestone: v0.5.1
+milestone_name: Board Polish & Premium UI
+current_phase: Phase 18 of 22 (HUD Customization)
+current_plan: Plan 1 of 2
+status: in-progress
+last_updated: "2026-02-28T03:27:00Z"
+last_activity: 2026-02-28 -- Plan 18-01 executed (HudPage/HudPreset enums, preference pipeline wiring)
 progress:
   total_phases: 22
-  completed_phases: 16
-  total_plans: 41
-  completed_plans: 45
+  completed_phases: 17
+  total_plans: 43
+  completed_plans: 46
 ---
 
 # Session State
@@ -37,23 +21,23 @@ progress:
 See: .planning/PROJECT.md (updated 2026-02-27)
 
 **Core value:** Users can connect to their Vitruvian trainer and execute workouts with accurate rep counting, weight control, and progress tracking -- reliably, on both platforms.
-**Current focus:** Phase 17 -- WCAG Accessibility
+**Current focus:** Phase 18 -- HUD Customization
 
 ## Position
 
 **Milestone:** v0.5.1 Board Polish & Premium UI
-**Current phase:** Phase 17 of 22 (WCAG Accessibility)
-**Current Plan:** Not started
-**Status:** Milestone complete
-**Last activity:** 2026-02-28 -- Plan 17-02 executed (AccessibilityColors composable retrofit, zone labels, BalanceBar relocation)
+**Current phase:** Phase 18 of 22 (HUD Customization)
+**Current Plan:** Plan 1 of 2
+**Status:** In progress
+**Last activity:** 2026-02-28 -- Plan 18-01 executed (HudPage/HudPreset enums, preference pipeline wiring)
 
-Progress: [=====░░░░░] 29%
+Progress: [======░░░░] 33%
 
 ## Performance Metrics
 
 **Velocity:**
 - Total plans completed: 51 (across v0.4.1 through v0.5.0)
-- v0.5.1 plans completed: 4
+- v0.5.1 plans completed: 5
 
 **By Milestone:**
 
@@ -81,6 +65,9 @@ Progress: [=====░░░░░] 29%
 - (v0.5.1) Color-blind mode wired through MainViewModel delegation (not Koin injection) following existing settings pattern
 - (v0.5.1) Pre-compute @Composable colors before Canvas blocks for AccessibilityTheme compatibility
 - (v0.5.1) Decorative/brand colors (profile palette, LED previews, brand gradient) exempt from AccessibilityTheme migration
+- (v0.5.1) HudPreset persisted as string key (not ordinal) for forward-compatible extensibility
+- (v0.5.1) FULL preset as default ensures existing users see no behavior change
+- (v0.5.1) EXECUTION page present in every HUD preset (core workout page always visible)
 
 ### Blockers/Concerns
 
@@ -98,3 +85,4 @@ Progress: [=====░░░░░] 29%
 - 2026-02-27: Phase 16 Plan 01 executed (FeatureGate v0.5.1 entries, version bump, UTC timezone fix)
 - 2026-02-28: Phase 17 Plan 01 executed (AccessibilityColors infrastructure, color-blind mode settings toggle)
 - 2026-02-28: Phase 17 Plan 02 executed (AccessibilityColors composable retrofit, 19 files, zone labels, BalanceBar relocation)
+- 2026-02-28: Phase 18 Plan 01 executed (HudPage/HudPreset enums, preference pipeline wiring, FakePreferencesManager fixes)

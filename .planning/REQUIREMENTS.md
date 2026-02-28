@@ -62,7 +62,7 @@ Requirements for v0.5.1 Board Polish & Premium UI. Each maps to roadmap phases.
 - [x] **BOARD-01**: SmartSuggestions classifyTimeWindow() uses local time instead of UTC for training window classification
 - [x] **BOARD-02**: All color-coded indicators (velocity zones, balance bar, readiness card) have secondary visual signals (icon, label, or pattern) for WCAG AA 1.4.1 compliance
 - [x] **BOARD-03**: android:allowBackup exclusion rules prevent VitruvianDatabase and sensitive preferences from cloud/ADB backup (both fullBackupContent and dataExtractionRules XMLs)
-- [ ] **BOARD-04**: User can configure which HUD pages are visible during workouts via Settings (preset-based: Essential, Biomechanics, Full)
+- [x] **BOARD-04**: User can configure which HUD pages are visible during workouts via Settings (preset-based: Essential, Biomechanics, Full)
 - [x] **BOARD-05**: Camera permission dialog shows custom rationale text explaining on-device-only CV processing guarantee
 - [x] **BOARD-06**: iOS PHOENIX tier upgrade prompts do not mention Form Check as a feature until iOS CV parity ships
 - [x] **BOARD-07**: versionName in androidApp/build.gradle.kts reflects actual app version (not hardcoded 0.4.0)
@@ -142,7 +142,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | BOARD-01 | Phase 16 | Complete |
 | BOARD-02 | Phase 17 | Complete |
 | BOARD-03 | Phase 16 | Complete |
-| BOARD-04 | Phase 18 | Pending |
+| BOARD-04 | Phase 18 | Complete |
 | BOARD-05 | Phase 16 | Complete |
 | BOARD-06 | Phase 16 | Complete |
 | BOARD-07 | Phase 16 | Complete |
