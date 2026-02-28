@@ -38,10 +38,10 @@ Requirements for v0.5.1 Board Polish & Premium UI. Each maps to roadmap phases.
 
 ### Ghost Racing
 
-- [ ] **GHOST-01**: User can race against their best matching local session during a set (Phoenix+ tier)
+- [x] **GHOST-01**: User can race against their best matching local session during a set (Phoenix+ tier)
 - [ ] **GHOST-02**: Two vertical progress bars show current vs. ghost cable position in real-time
-- [ ] **GHOST-03**: Per-rep AHEAD/BEHIND verdict displayed based on velocity comparison
-- [ ] **GHOST-04**: End-of-set summary shows total velocity delta vs. ghost
+- [x] **GHOST-03**: Per-rep AHEAD/BEHIND verdict displayed based on velocity comparison
+- [x] **GHOST-04**: End-of-set summary shows total velocity delta vs. ghost
 
 ### RPG Attributes
 
@@ -127,10 +127,10 @@ Which phases cover which requirements. Updated during roadmap creation.
 | CV-05 | Phase 19 | Complete |
 | CV-06 | Phase 19 | Complete |
 | CV-10 | Phase 19 | Complete |
-| GHOST-01 | Phase 22 | Pending |
+| GHOST-01 | Phase 22 | Complete |
 | GHOST-02 | Phase 22 | Pending |
-| GHOST-03 | Phase 22 | Pending |
-| GHOST-04 | Phase 22 | Pending |
+| GHOST-03 | Phase 22 | Complete |
+| GHOST-04 | Phase 22 | Complete |
 | RPG-01 | Phase 21 | Complete |
 | RPG-02 | Phase 21 | Complete |
 | RPG-03 | Phase 21 | Complete |

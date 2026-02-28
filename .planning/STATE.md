@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v0.5.1
 milestone_name: Board Polish & Premium UI
-current_phase: Phase 21 of 22 (RPG Attributes)
-current_plan: Plan 2 of 2
-status: completed
-last_updated: "2026-02-28T17:37:46Z"
-last_activity: 2026-02-28 -- Phase 21 Plan 02 executed (RpgAttributeCard composable, BadgesScreen Phoenix+ tier gate, repository RPG methods)
+current_phase: Phase 22 of 22 (Ghost Racing)
+current_plan: Plan 1 of 3
+status: in-progress
+last_updated: "2026-02-28T19:15:00Z"
+last_activity: 2026-02-28 -- Phase 22 Plan 01 executed (GhostRacingEngine TDD, 12 tests, selectBestGhostSession SQL query)
 progress:
   total_phases: 22
   completed_phases: 21
-  total_plans: 46
-  completed_plans: 54
+  total_plans: 48
+  completed_plans: 55
 ---
 
 # Session State
@@ -21,23 +21,23 @@ progress:
 See: .planning/PROJECT.md (updated 2026-02-27)
 
 **Core value:** Users can connect to their Vitruvian trainer and execute workouts with accurate rep counting, weight control, and progress tracking -- reliably, on both platforms.
-**Current focus:** Phase 21 -- RPG Attributes
+**Current focus:** Phase 22 -- Ghost Racing
 
 ## Position
 
 **Milestone:** v0.5.1 Board Polish & Premium UI
-**Current phase:** Phase 21 of 22 (RPG Attributes)
-**Current Plan:** Plan 2 of 2
-**Status:** completed
-**Last activity:** 2026-02-28 -- Phase 21 Plan 02 executed (RpgAttributeCard composable, BadgesScreen Phoenix+ tier gate, repository RPG methods)
+**Current phase:** Phase 22 of 22 (Ghost Racing)
+**Current Plan:** Plan 1 of 3
+**Status:** in-progress
+**Last activity:** 2026-02-28 -- Phase 22 Plan 01 executed (GhostRacingEngine TDD, 12 tests, selectBestGhostSession SQL query)
 
-Progress: [==========] 95%
+Progress: [==========] 96%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 54 (across v0.4.1 through v0.5.1)
-- v0.5.1 plans completed: 13
+- Total plans completed: 55 (across v0.4.1 through v0.5.1)
+- v0.5.1 plans completed: 14
 
 **By Milestone:**
 
@@ -56,6 +56,7 @@ Progress: [==========] 95%
 **Phase 20 P02:** 6min, 2 tasks, 2 files
 **Phase 21 P01:** 9min, 2 tasks (TDD), 7 files
 **Phase 21 P02:** 7min, 2 tasks, 7 files
+**Phase 22 P01:** 7min, 2 tasks (TDD), 4 files
 
 ## Accumulated Context
 
@@ -92,6 +93,10 @@ Progress: [==========] 95%
 - (v0.5.1) Ceiling constants tuned for Vitruvian Trainer (200kg max weight, 2000W power, 500k volume)
 - (v0.5.1) Mastery-dominant attribute maps to PHOENIX class (well-rounded achiever)
 - [Phase 21]: On-demand RPG computation via LaunchedEffect (not init) avoids unnecessary DB queries for non-BadgesScreen users
+- (v0.5.1) GhostRacingEngine follows ReadinessEngine pattern: stateless object, pure functions, no DI
+- (v0.5.1) 5% tied tolerance for compareRep prevents noisy verdict flicker on near-equal velocities
+- (v0.5.1) BEYOND reps excluded from ghost delta calculations (incomparable data)
+- (v0.5.1) selectBestGhostSession is SELECT-only query -- no iOS DriverFactory sync needed
 
 ### Blockers/Concerns
 
@@ -119,3 +124,4 @@ Progress: [==========] 95%
 - 2026-02-28: Phase 20 Plan 02 executed (ReadinessBriefingCard composable, ActiveWorkoutScreen Elite gating, WCAG colors)
 - 2026-02-28: Phase 21 Plan 01 executed (RpgAttributeEngine TDD, schema v17 migration, 13 tests, 7 files)
 - 2026-02-28: Phase 21 Plan 02 executed (RpgAttributeCard composable, BadgesScreen Phoenix+ tier gate, repository RPG methods)
+- 2026-02-28: Phase 22 Plan 01 executed (GhostRacingEngine TDD, 12 tests, selectBestGhostSession SQL query, 4 files)
