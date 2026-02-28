@@ -2,6 +2,8 @@
 phase: 22-ghost-racing
 verified: 2026-02-28T21:00:00Z
 status: passed
+human_approved: true
+human_approved_date: "2026-02-28"
 score: 18/18 must-haves verified
 re_verification: false
 human_verification:
