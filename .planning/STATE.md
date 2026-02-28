@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v0.5.1
 milestone_name: Board Polish & Premium UI
 current_phase: Phase 20 of 22 (Readiness Briefing)
-current_plan: Plan 0 of 0
-status: ready-to-plan
-last_updated: "2026-02-28T16:10:00Z"
-last_activity: 2026-02-28 -- Phase 19 verified (9/9, human-approved), advancing to Phase 20
+current_plan: Plan 1 of 2
+status: executing
+last_updated: "2026-02-28T16:29:00Z"
+last_activity: 2026-02-28 -- Phase 20 Plan 01 executed (ReadinessEngine ACWR TDD, 13 tests)
 progress:
   total_phases: 22
   completed_phases: 19
-  total_plans: 44
-  completed_plans: 50
+  total_plans: 46
+  completed_plans: 51
 ---
 
 # Session State
@@ -27,17 +27,17 @@ See: .planning/PROJECT.md (updated 2026-02-27)
 
 **Milestone:** v0.5.1 Board Polish & Premium UI
 **Current phase:** Phase 20 of 22 (Readiness Briefing)
-**Current Plan:** Plan 0 of 0
-**Status:** ready-to-plan
-**Last activity:** 2026-02-28 -- Phase 19 verified (9/9, human-approved), advancing to Phase 20
+**Current Plan:** Plan 1 of 2
+**Status:** executing
+**Last activity:** 2026-02-28 -- Phase 20 Plan 01 executed (ReadinessEngine ACWR TDD, 13 tests)
 
-Progress: [========░░] 38%
+Progress: [========░░] 39%
 
 ## Performance Metrics
 
 **Velocity:**
 - Total plans completed: 51 (across v0.4.1 through v0.5.0)
-- v0.5.1 plans completed: 9
+- v0.5.1 plans completed: 10
 
 **By Milestone:**
 
@@ -52,6 +52,7 @@ Progress: [========░░] 38%
 **Phase 19 P01:** 10min, 2 tasks, 13 files
 **Phase 19 P02:** 9min, 2 tasks, 6 files
 **Phase 19 P03:** 2min, 1 task, 2 files
+**Phase 20 P01:** 6min, 2 tasks (TDD), 5 files
 
 ## Accumulated Context
 
@@ -80,6 +81,8 @@ Progress: [========░░] 38%
 - (v0.5.1) FormWarningBanner shows only highest-severity violation to avoid HUD clutter
 - (v0.5.1) ExerciseFormType.fromExerciseName() keyword mapper resolves exercise type from name (bench/chest press excluded from overhead)
 - (v0.5.1) Null ExerciseFormType return for unrecognized exercises preserves camera preview without form rules (graceful degradation)
+- (v0.5.1) Rolling average ACWR (not EWMA) for local readiness heuristic -- full Bannister FFM deferred to Portal
+- (v0.5.1) Four data sufficiency guards prevent misleading readiness scores (empty, <28d history, <3 recent, zero chronic)
 
 ### Blockers/Concerns
 
@@ -103,3 +106,4 @@ Progress: [========░░] 38%
 - 2026-02-28: Phase 19 Plan 02 executed (form check toggle, FormWarningBanner, FormCheckOverlay PiP, form score in SetSummaryCard)
 - 2026-02-28: Phase 19 Plan 03 executed (ExerciseFormType.fromExerciseName() mapper, WorkoutHud wiring, CV form check pipeline fully unblocked)
 - 2026-02-28: Phase 19 verified (9/9 must-haves, human-approved), advancing to Phase 20
+- 2026-02-28: Phase 20 Plan 01 executed (ReadinessEngine ACWR computation engine, 13 TDD tests, pure stateless object)

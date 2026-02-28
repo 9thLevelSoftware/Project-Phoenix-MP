@@ -52,7 +52,7 @@ Requirements for v0.5.1 Board Polish & Premium UI. Each maps to roadmap phases.
 
 ### Readiness Briefing
 
-- [ ] **BRIEF-01**: Local ACWR-based readiness heuristic computes readiness score (0-100) with data sufficiency guard
+- [x] **BRIEF-01**: Local ACWR-based readiness heuristic computes readiness score (0-100) with data sufficiency guard
 - [ ] **BRIEF-02**: Pre-workout briefing card shows readiness with Green/Yellow/Red status before first set (Elite tier)
 - [ ] **BRIEF-03**: Briefing is advisory only — user can always proceed with workout
 - [ ] **BRIEF-04**: "Connect to Portal for full readiness model" upsell displayed
@@ -135,7 +135,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | RPG-02 | Phase 21 | Pending |
 | RPG-03 | Phase 21 | Pending |
 | RPG-04 | Phase 21 | Pending |
-| BRIEF-01 | Phase 20 | Pending |
+| BRIEF-01 | Phase 20 | Complete |
 | BRIEF-02 | Phase 20 | Pending |
 | BRIEF-03 | Phase 20 | Pending |
 | BRIEF-04 | Phase 20 | Pending |
