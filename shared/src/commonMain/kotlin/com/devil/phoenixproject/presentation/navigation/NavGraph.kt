@@ -337,6 +337,9 @@ fun NavGraph(
                 // Color-blind mode (WCAG accessibility)
                 colorBlindModeEnabled = userPreferences.colorBlindModeEnabled,
                 onColorBlindModeChange = { viewModel.setColorBlindModeEnabled(it) },
+                // HUD preset customization
+                hudPreset = userPreferences.hudPreset,
+                onHudPresetChange = { viewModel.setHudPreset(it) },
                 // Simulator mode Easter egg
                 simulatorModeUnlocked = viewModel.isSimulatorModeUnlocked(),
                 simulatorModeEnabled = viewModel.isSimulatorModeUnlocked(),
