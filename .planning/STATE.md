@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v0.5.1
 milestone_name: Board Polish & Premium UI
 current_phase: Phase 22 of 22 (Ghost Racing)
-current_plan: Plan 2 of 3
-status: in-progress
-last_updated: "2026-02-28T19:28:00Z"
-last_activity: 2026-02-28 -- Phase 22 Plan 02 executed (ghost racing wiring into workout lifecycle, 7 files, 2 tasks)
+current_plan: Plan 3 of 3
+status: complete
+last_updated: "2026-02-28T20:19:45Z"
+last_activity: 2026-02-28 -- Phase 22 Plan 03 executed (ghost racing UI overlay, 7 files, 2 tasks)
 progress:
   total_phases: 22
   completed_phases: 21
   total_plans: 48
-  completed_plans: 56
+  completed_plans: 57
 ---
 
 # Session State
@@ -27,17 +27,17 @@ See: .planning/PROJECT.md (updated 2026-02-27)
 
 **Milestone:** v0.5.1 Board Polish & Premium UI
 **Current phase:** Phase 22 of 22 (Ghost Racing)
-**Current Plan:** Plan 2 of 3
-**Status:** in-progress
-**Last activity:** 2026-02-28 -- Phase 22 Plan 02 executed (ghost racing wiring into workout lifecycle, 7 files, 2 tasks)
+**Current Plan:** Plan 3 of 3
+**Status:** complete
+**Last activity:** 2026-02-28 -- Phase 22 Plan 03 executed (ghost racing UI overlay, 7 files, 2 tasks)
 
-Progress: [==========] 97%
+Progress: [==========] 100%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 55 (across v0.4.1 through v0.5.1)
-- v0.5.1 plans completed: 14
+- Total plans completed: 56 (across v0.4.1 through v0.5.1)
+- v0.5.1 plans completed: 15
 
 **By Milestone:**
 
@@ -58,6 +58,7 @@ Progress: [==========] 97%
 **Phase 21 P02:** 7min, 2 tasks, 7 files
 **Phase 22 P01:** 7min, 2 tasks (TDD), 4 files
 **Phase 22 P02:** 8min, 2 tasks, 7 files
+**Phase 22 P03:** 8min, 2 tasks, 7 files
 
 ## Accumulated Context
 
@@ -101,6 +102,8 @@ Progress: [==========] 97%
 - (v0.5.1) Ghost pre-loaded in separate scope.launch coroutine (non-blocking workout start, graceful degradation)
 - (v0.5.1) Ghost comparisons reset between sets but ghost session persists across multi-set workout
 - (v0.5.1) ProgramMode.displayName used for ghost DB mode matching (sealed class has no .name)
+- (v0.5.1) Ghost state threaded through full parameter chain (MainViewModel -> ActiveWorkoutScreen -> WorkoutUiState -> WorkoutTab -> WorkoutHud)
+- (v0.5.1) Ghost overlay gated via hasProAccess in ActiveWorkoutScreen (consistent with form check and biomechanics gating)
 
 ### Blockers/Concerns
 
@@ -130,3 +133,5 @@ Progress: [==========] 97%
 - 2026-02-28: Phase 21 Plan 02 executed (RpgAttributeCard composable, BadgesScreen Phoenix+ tier gate, repository RPG methods)
 - 2026-02-28: Phase 22 Plan 01 executed (GhostRacingEngine TDD, 12 tests, selectBestGhostSession SQL query, 4 files)
 - 2026-02-28: Phase 22 Plan 02 executed (ghost racing wiring into workout lifecycle, 7 files, 2 tasks)
+- 2026-02-28: Phase 22 Plan 03 executed (ghost racing UI overlay, GhostRacingOverlay composable, WorkoutHud + SetSummaryCard integration, 7 files, 2 tasks)
+- 2026-02-28: Phase 22 Ghost Racing COMPLETE -- v0.5.1 milestone finished (all 22 phases, 57 plans)
