@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v0.5.1
 milestone_name: Board Polish & Premium UI
 current_phase: Phase 22 of 22 (Ghost Racing)
-current_plan: Plan 1 of 3
+current_plan: Plan 2 of 3
 status: in-progress
-last_updated: "2026-02-28T19:15:00Z"
-last_activity: 2026-02-28 -- Phase 22 Plan 01 executed (GhostRacingEngine TDD, 12 tests, selectBestGhostSession SQL query)
+last_updated: "2026-02-28T19:28:00Z"
+last_activity: 2026-02-28 -- Phase 22 Plan 02 executed (ghost racing wiring into workout lifecycle, 7 files, 2 tasks)
 progress:
   total_phases: 22
   completed_phases: 21
   total_plans: 48
-  completed_plans: 55
+  completed_plans: 56
 ---
 
 # Session State
@@ -27,11 +27,11 @@ See: .planning/PROJECT.md (updated 2026-02-27)
 
 **Milestone:** v0.5.1 Board Polish & Premium UI
 **Current phase:** Phase 22 of 22 (Ghost Racing)
-**Current Plan:** Plan 1 of 3
+**Current Plan:** Plan 2 of 3
 **Status:** in-progress
-**Last activity:** 2026-02-28 -- Phase 22 Plan 01 executed (GhostRacingEngine TDD, 12 tests, selectBestGhostSession SQL query)
+**Last activity:** 2026-02-28 -- Phase 22 Plan 02 executed (ghost racing wiring into workout lifecycle, 7 files, 2 tasks)
 
-Progress: [==========] 96%
+Progress: [==========] 97%
 
 ## Performance Metrics
 
@@ -57,6 +57,7 @@ Progress: [==========] 96%
 **Phase 21 P01:** 9min, 2 tasks (TDD), 7 files
 **Phase 21 P02:** 7min, 2 tasks, 7 files
 **Phase 22 P01:** 7min, 2 tasks (TDD), 4 files
+**Phase 22 P02:** 8min, 2 tasks, 7 files
 
 ## Accumulated Context
 
@@ -97,6 +98,9 @@ Progress: [==========] 96%
 - (v0.5.1) 5% tied tolerance for compareRep prevents noisy verdict flicker on near-equal velocities
 - (v0.5.1) BEYOND reps excluded from ghost delta calculations (incomparable data)
 - (v0.5.1) selectBestGhostSession is SELECT-only query -- no iOS DriverFactory sync needed
+- (v0.5.1) Ghost pre-loaded in separate scope.launch coroutine (non-blocking workout start, graceful degradation)
+- (v0.5.1) Ghost comparisons reset between sets but ghost session persists across multi-set workout
+- (v0.5.1) ProgramMode.displayName used for ghost DB mode matching (sealed class has no .name)
 
 ### Blockers/Concerns
 
@@ -125,3 +129,4 @@ Progress: [==========] 96%
 - 2026-02-28: Phase 21 Plan 01 executed (RpgAttributeEngine TDD, schema v17 migration, 13 tests, 7 files)
 - 2026-02-28: Phase 21 Plan 02 executed (RpgAttributeCard composable, BadgesScreen Phoenix+ tier gate, repository RPG methods)
 - 2026-02-28: Phase 22 Plan 01 executed (GhostRacingEngine TDD, 12 tests, selectBestGhostSession SQL query, 4 files)
+- 2026-02-28: Phase 22 Plan 02 executed (ghost racing wiring into workout lifecycle, 7 files, 2 tasks)
