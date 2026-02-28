@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v0.5.1
 milestone_name: Board Polish & Premium UI
 current_phase: Phase 20 of 22 (Readiness Briefing)
-current_plan: Plan 1 of 2
-status: executing
-last_updated: "2026-02-28T16:29:00Z"
-last_activity: 2026-02-28 -- Phase 20 Plan 01 executed (ReadinessEngine ACWR TDD, 13 tests)
+current_plan: Plan 2 of 2
+status: phase-complete
+last_updated: "2026-02-28T16:37:46Z"
+last_activity: 2026-02-28 -- Phase 20 Plan 02 executed (ReadinessBriefingCard composable, ActiveWorkoutScreen Elite gating)
 progress:
   total_phases: 22
-  completed_phases: 19
+  completed_phases: 20
   total_plans: 46
-  completed_plans: 51
+  completed_plans: 52
 ---
 
 # Session State
@@ -27,17 +27,17 @@ See: .planning/PROJECT.md (updated 2026-02-27)
 
 **Milestone:** v0.5.1 Board Polish & Premium UI
 **Current phase:** Phase 20 of 22 (Readiness Briefing)
-**Current Plan:** Plan 1 of 2
-**Status:** executing
-**Last activity:** 2026-02-28 -- Phase 20 Plan 01 executed (ReadinessEngine ACWR TDD, 13 tests)
+**Current Plan:** Plan 2 of 2
+**Status:** phase-complete
+**Last activity:** 2026-02-28 -- Phase 20 Plan 02 executed (ReadinessBriefingCard composable, ActiveWorkoutScreen Elite gating)
 
-Progress: [========░░] 39%
+Progress: [=========░] 42%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 51 (across v0.4.1 through v0.5.0)
-- v0.5.1 plans completed: 10
+- Total plans completed: 52 (across v0.4.1 through v0.5.1)
+- v0.5.1 plans completed: 11
 
 **By Milestone:**
 
@@ -53,6 +53,7 @@ Progress: [========░░] 39%
 **Phase 19 P02:** 9min, 2 tasks, 6 files
 **Phase 19 P03:** 2min, 1 task, 2 files
 **Phase 20 P01:** 6min, 2 tasks (TDD), 5 files
+**Phase 20 P02:** 6min, 2 tasks, 2 files
 
 ## Accumulated Context
 
@@ -83,6 +84,8 @@ Progress: [========░░] 39%
 - (v0.5.1) Null ExerciseFormType return for unrecognized exercises preserves camera preview without form rules (graceful degradation)
 - (v0.5.1) Rolling average ACWR (not EWMA) for local readiness heuristic -- full Bannister FFM deferred to Portal
 - (v0.5.1) Four data sufficiency guards prevent misleading readiness scores (empty, <28d history, <3 recent, zero chronic)
+- (v0.5.1) ReadinessBriefingCard placed above WorkoutTab in Column layout (not overlay/dialog) -- non-blocking advisory
+- (v0.5.1) koinInject SmartSuggestionsRepository inside Elite guard to avoid DI resolution for non-Elite users
 
 ### Blockers/Concerns
 
@@ -107,3 +110,4 @@ Progress: [========░░] 39%
 - 2026-02-28: Phase 19 Plan 03 executed (ExerciseFormType.fromExerciseName() mapper, WorkoutHud wiring, CV form check pipeline fully unblocked)
 - 2026-02-28: Phase 19 verified (9/9 must-haves, human-approved), advancing to Phase 20
 - 2026-02-28: Phase 20 Plan 01 executed (ReadinessEngine ACWR computation engine, 13 TDD tests, pure stateless object)
+- 2026-02-28: Phase 20 Plan 02 executed (ReadinessBriefingCard composable, ActiveWorkoutScreen Elite gating, WCAG colors)
