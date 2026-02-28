@@ -78,6 +78,9 @@ fun SettingsTab(
     // LED Biofeedback (Phoenix tier)
     ledFeedbackEnabled: Boolean = false,
     onLedFeedbackChange: (Boolean) -> Unit = {},
+    // Color-blind mode (WCAG accessibility)
+    colorBlindModeEnabled: Boolean = false,
+    onColorBlindModeChange: (Boolean) -> Unit = {},
     // Simulator mode Easter egg
     simulatorModeUnlocked: Boolean = false,
     simulatorModeEnabled: Boolean = false,
@@ -779,6 +782,78 @@ fun SettingsTab(
                         enabled = isConnected
                     )
                 }
+            }
+        }
+    }
+
+    // Accessibility Section - Color-blind mode toggle
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .shadow(8.dp, RoundedCornerShape(20.dp)),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest),
+        shape = RoundedCornerShape(20.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
+        border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f))
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(Spacing.medium)
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    modifier = Modifier
+                        .size(48.dp)
+                        .shadow(8.dp, RoundedCornerShape(20.dp))
+                        .background(
+                            Brush.linearGradient(
+                                listOf(Color(0xFF42A5F5), Color(0xFFFF9800))
+                            ),
+                            RoundedCornerShape(20.dp)
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        Icons.Default.Accessibility,
+                        contentDescription = "Accessibility",
+                        tint = MaterialTheme.colorScheme.onPrimary,
+                        modifier = Modifier.size(24.dp)
+                    )
+                }
+                Spacer(modifier = Modifier.width(Spacing.medium))
+                Text(
+                    "Accessibility",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            }
+
+            Spacer(modifier = Modifier.height(Spacing.medium))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        "Color-blind Mode",
+                        style = MaterialTheme.typography.bodyLarge,
+                        fontWeight = FontWeight.Medium,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(
+                        "Deuteranopia-safe palette (blue/orange)",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Switch(
+                    checked = colorBlindModeEnabled,
+                    onCheckedChange = { onColorBlindModeChange(it) }
+                )
             }
         }
     }

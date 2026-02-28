@@ -203,6 +203,8 @@ class MainViewModel constructor(
     fun setStallDetectionEnabled(enabled: Boolean) = settingsManager.setStallDetectionEnabled(enabled)
     fun setAudioRepCountEnabled(enabled: Boolean) = settingsManager.setAudioRepCountEnabled(enabled)
     fun setLedFeedbackEnabled(enabled: Boolean) = settingsManager.setLedFeedbackEnabled(enabled)
+    val colorBlindModeEnabled: StateFlow<Boolean> get() = settingsManager.colorBlindModeEnabled
+    fun setColorBlindModeEnabled(enabled: Boolean) = settingsManager.setColorBlindModeEnabled(enabled)
     fun setSummaryCountdownSeconds(seconds: Int) = settingsManager.setSummaryCountdownSeconds(seconds)
     fun setAutoStartCountdownSeconds(seconds: Int) = settingsManager.setAutoStartCountdownSeconds(seconds)
     fun setColorScheme(schemeIndex: Int) = settingsManager.setColorScheme(schemeIndex)

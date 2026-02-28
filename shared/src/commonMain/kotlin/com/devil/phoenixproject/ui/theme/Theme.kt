@@ -5,6 +5,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.graphics.Color
 
 enum class ThemeMode { SYSTEM, LIGHT, DARK }
@@ -102,6 +103,7 @@ private val LightColorScheme = lightColorScheme(
 @Composable
 fun VitruvianTheme(
     themeMode: ThemeMode = ThemeMode.SYSTEM,
+    colorBlindMode: Boolean = false,
     content: @Composable () -> Unit
 ) {
     val useDarkColors = when (themeMode) {
@@ -109,11 +111,17 @@ fun VitruvianTheme(
         ThemeMode.LIGHT -> false
         ThemeMode.DARK -> true
     }
+    val accessibilityColors = if (colorBlindMode) ColorBlindPalette else StandardPalette
 
     MaterialTheme(
         colorScheme = if (useDarkColors) DarkColorScheme else LightColorScheme,
         typography = Typography,
         shapes = ExpressiveShapes, // Material 3 Expressive: More rounded shapes
-        content = content
-    )
+    ) {
+        CompositionLocalProvider(
+            LocalColorBlindMode provides colorBlindMode,
+            LocalAccessibilityColors provides accessibilityColors,
+            content = content
+        )
+    }
 }

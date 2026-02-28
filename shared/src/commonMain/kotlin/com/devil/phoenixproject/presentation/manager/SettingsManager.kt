@@ -73,6 +73,14 @@ class SettingsManager(
         scope.launch { preferencesManager.setLedFeedbackEnabled(enabled) }
     }
 
+    val colorBlindModeEnabled: StateFlow<Boolean> = userPreferences
+        .map { it.colorBlindModeEnabled }
+        .stateIn(scope, SharingStarted.Eagerly, false)
+
+    fun setColorBlindModeEnabled(enabled: Boolean) {
+        scope.launch { preferencesManager.setColorBlindModeEnabled(enabled) }
+    }
+
     fun setSummaryCountdownSeconds(seconds: Int) {
         Logger.d("setSummaryCountdownSeconds: Setting value to $seconds")
         scope.launch { preferencesManager.setSummaryCountdownSeconds(seconds) }

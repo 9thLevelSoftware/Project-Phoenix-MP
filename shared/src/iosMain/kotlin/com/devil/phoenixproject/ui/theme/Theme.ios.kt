@@ -17,11 +17,12 @@ import com.devil.phoenixproject.ui.theme.VitruvianTheme as SharedVitruvianTheme
 @Composable
 fun VitruvianTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
+    colorBlindMode: Boolean = false,
     content: @Composable () -> Unit
 ) {
     val themeMode = if (darkTheme) SharedThemeMode.DARK else SharedThemeMode.LIGHT
 
-    SharedVitruvianTheme(themeMode = themeMode) {
+    SharedVitruvianTheme(themeMode = themeMode, colorBlindMode = colorBlindMode) {
         // iOS-specific styling can be added here if needed
         // For example: status bar appearance, safe area insets, etc.
         // Currently, Compose Multiplatform handles these automatically

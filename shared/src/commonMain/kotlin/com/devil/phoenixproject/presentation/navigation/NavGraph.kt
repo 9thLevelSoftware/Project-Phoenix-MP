@@ -334,6 +334,9 @@ fun NavGraph(
                 // LED Biofeedback
                 ledFeedbackEnabled = userPreferences.ledFeedbackEnabled,
                 onLedFeedbackChange = { viewModel.setLedFeedbackEnabled(it) },
+                // Color-blind mode (WCAG accessibility)
+                colorBlindModeEnabled = userPreferences.colorBlindModeEnabled,
+                onColorBlindModeChange = { viewModel.setColorBlindModeEnabled(it) },
                 // Simulator mode Easter egg
                 simulatorModeUnlocked = viewModel.isSimulatorModeUnlocked(),
                 simulatorModeEnabled = viewModel.isSimulatorModeUnlocked(),
