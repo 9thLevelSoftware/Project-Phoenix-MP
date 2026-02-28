@@ -190,12 +190,12 @@ Plans:
   3. User sees a per-rep AHEAD/BEHIND verdict based on velocity comparison after each rep completes
   4. User sees an end-of-set summary showing total velocity delta vs. the ghost session
   5. Ghost racing overlay renders on the ExecutionPage as a conditional element (not a separate pager page)
-**Plans**: TBD
+**Plans**: 3 plans
 
 Plans:
-- [ ] 22-01: TBD
-- [ ] 22-02: TBD
-- [ ] 22-03: TBD
+- [ ] 22-01-PLAN.md — GhostRacingEngine (TDD), GhostModels domain types, selectBestGhostSession SQL query
+- [ ] 22-02-PLAN.md — WorkoutCoordinator ghost state, ActiveSessionEngine lifecycle (pre-load, compare, summarize, reset), WorkoutRepository method
+- [ ] 22-03-PLAN.md — GhostRacingOverlay composable, WorkoutHud overlay integration, SetSummaryCard ghost delta
 
 ## Progress
 
@@ -210,7 +210,7 @@ Note: Phase 19 (CV UX) can proceed after Phase 16 completes (independent of Phas
 | v0.4.6 Biomechanics MVP | 6-8 | 10 | Complete | 2026-02-15 |
 | v0.4.7 Mobile Platform Features | 9-12 | 13 | Complete | 2026-02-15 |
 | v0.5.0 Premium Mobile | 13-15 | 7 | Complete | 2026-02-27 |
-| v0.5.1 Board Polish & Premium UI | 16-22 | TBD | In progress | - |
+| v0.5.1 Board Polish & Premium UI | 16-22 | 16 | In progress | - |
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
@@ -220,9 +220,9 @@ Note: Phase 19 (CV UX) can proceed after Phase 16 completes (independent of Phas
 | 19. CV Form Check UX & Persistence | 3/3 | Complete   | 2026-02-28 |
 | 20. Readiness Briefing | 2/2 | Complete    | 2026-02-28 |
 | 21. RPG Attributes | 2/2 | Complete   | 2026-02-28 |
-| 22. Ghost Racing | 0/TBD | Not started | - |
+| 22. Ghost Racing | 0/3 | Not started | - |
 
 **Last phase number:** 22
 
 ---
-*Last updated: 2026-02-28 after Phase 21 planning*
+*Last updated: 2026-02-28 after Phase 22 planning*
