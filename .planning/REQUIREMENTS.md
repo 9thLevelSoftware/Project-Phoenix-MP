@@ -60,7 +60,7 @@ Requirements for v0.5.1 Board Polish & Premium UI. Each maps to roadmap phases.
 ### Board Conditions (Accessibility & Security)
 
 - [x] **BOARD-01**: SmartSuggestions classifyTimeWindow() uses local time instead of UTC for training window classification
-- [ ] **BOARD-02**: All color-coded indicators (velocity zones, balance bar, readiness card) have secondary visual signals (icon, label, or pattern) for WCAG AA 1.4.1 compliance
+- [x] **BOARD-02**: All color-coded indicators (velocity zones, balance bar, readiness card) have secondary visual signals (icon, label, or pattern) for WCAG AA 1.4.1 compliance
 - [x] **BOARD-03**: android:allowBackup exclusion rules prevent VitruvianDatabase and sensitive preferences from cloud/ADB backup (both fullBackupContent and dataExtractionRules XMLs)
 - [ ] **BOARD-04**: User can configure which HUD pages are visible during workouts via Settings (preset-based: Essential, Biomechanics, Full)
 - [x] **BOARD-05**: Camera permission dialog shows custom rationale text explaining on-device-only CV processing guarantee
@@ -140,7 +140,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | BRIEF-03 | Phase 20 | Pending |
 | BRIEF-04 | Phase 20 | Pending |
 | BOARD-01 | Phase 16 | Complete |
-| BOARD-02 | Phase 17 | Pending |
+| BOARD-02 | Phase 17 | Complete |
 | BOARD-03 | Phase 16 | Complete |
 | BOARD-04 | Phase 18 | Pending |
 | BOARD-05 | Phase 16 | Complete |

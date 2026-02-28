@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v0.4
 milestone_name: milestone
-current_phase: Phase 16 of 22 (Foundation & Board Conditions)
-current_plan: Not started
-status: completed
-last_updated: "2026-02-27T22:04:28.199Z"
-last_activity: 2026-02-27 -- Plan 16-01 executed (FeatureGate entries, version bump, timezone fix)
+current_phase: Phase 17 of 22 (WCAG Accessibility)
+current_plan: Plan 1 of 2
+status: in-progress
+last_updated: "2026-02-28T02:22:39Z"
+last_activity: 2026-02-28 -- Plan 17-01 executed (AccessibilityColors infrastructure, color-blind mode settings toggle)
 progress:
-  total_phases: 16
-  completed_phases: 15
-  total_plans: 39
-  completed_plans: 43
+  total_phases: 22
+  completed_phases: 16
+  total_plans: 41
+  completed_plans: 44
 ---
 
 # Session State
@@ -21,23 +21,23 @@ progress:
 See: .planning/PROJECT.md (updated 2026-02-27)
 
 **Core value:** Users can connect to their Vitruvian trainer and execute workouts with accurate rep counting, weight control, and progress tracking -- reliably, on both platforms.
-**Current focus:** Phase 16 — Foundation & Board Conditions
+**Current focus:** Phase 17 -- WCAG Accessibility
 
 ## Position
 
 **Milestone:** v0.5.1 Board Polish & Premium UI
-**Current phase:** Phase 16 of 22 (Foundation & Board Conditions)
-**Current Plan:** Not started
-**Status:** Milestone complete
-**Last activity:** 2026-02-27 -- Plan 16-01 executed (FeatureGate entries, version bump, timezone fix)
+**Current phase:** Phase 17 of 22 (WCAG Accessibility)
+**Current Plan:** Plan 1 of 2 complete
+**Status:** In progress
+**Last activity:** 2026-02-28 -- Plan 17-01 executed (AccessibilityColors infrastructure, color-blind mode settings toggle)
 
-Progress: [=░░░░░░░░░] 14%
+Progress: [====░░░░░░] 21%
 
 ## Performance Metrics
 
 **Velocity:**
 - Total plans completed: 51 (across v0.4.1 through v0.5.0)
-- v0.5.1 plans completed: 2
+- v0.5.1 plans completed: 3
 
 **By Milestone:**
 
@@ -61,6 +61,8 @@ Progress: [=░░░░░░░░░] 14%
 - (v0.5.1) Injectable TimeZone parameter pattern for timezone-dependent functions (default to system, explicit for tests)
 - (v0.5.1) Targeted backup exclusion (allowBackup=true + specific file exclusions) rather than blanket disable
 - (v0.5.1) Always-show camera rationale with on-device guarantee before permission request
+- (v0.5.1) VBT-standard velocity zone colors (Cyan=Explosive through Red=Grind) as canonical via AccessibilityColors
+- (v0.5.1) Color-blind mode wired through MainViewModel delegation (not Koin injection) following existing settings pattern
 
 ### Blockers/Concerns
 
@@ -76,3 +78,4 @@ Progress: [=░░░░░░░░░] 14%
 - 2026-02-27: Research completed, roadmap created (7 phases: 16-22)
 - 2026-02-27: Phase 16 Plan 02 executed (backup exclusion, camera rationale, error handling)
 - 2026-02-27: Phase 16 Plan 01 executed (FeatureGate v0.5.1 entries, version bump, UTC timezone fix)
+- 2026-02-28: Phase 17 Plan 01 executed (AccessibilityColors infrastructure, color-blind mode settings toggle)
