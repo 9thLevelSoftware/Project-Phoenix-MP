@@ -1,6 +1,8 @@
 package com.devil.phoenixproject.data.repository
 
 import com.devil.phoenixproject.domain.model.*
+import com.devil.phoenixproject.domain.model.RpgInput
+import com.devil.phoenixproject.domain.model.RpgProfile
 import kotlinx.coroutines.flow.Flow
 
 /**
@@ -60,6 +62,17 @@ interface GamificationRepository {
      * @return List of newly awarded badges
      */
     suspend fun checkAndAwardBadges(): List<Badge>
+
+    /**
+     * Gather aggregate workout data for RPG attribute computation.
+     * Queries across WorkoutSession, RepMetric, GamificationStats, PersonalRecord, EarnedBadge.
+     */
+    suspend fun getRpgInput(): RpgInput
+
+    /**
+     * Persist a computed RPG profile to the RpgAttributes table.
+     */
+    suspend fun saveRpgProfile(profile: RpgProfile)
 
     /**
      * Get progress toward a specific badge

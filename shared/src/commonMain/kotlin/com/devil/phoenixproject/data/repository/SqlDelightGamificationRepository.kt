@@ -7,6 +7,8 @@ import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.data.local.BadgeDefinitions
 import com.devil.phoenixproject.database.VitruvianDatabase
 import com.devil.phoenixproject.domain.model.*
+import com.devil.phoenixproject.domain.model.RpgInput
+import com.devil.phoenixproject.domain.model.RpgProfile
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
 import kotlinx.coroutines.flow.Flow
@@ -465,6 +467,62 @@ class SqlDelightGamificationRepository(
 
         // User must have had a previous streak break and rebuilt to required length
         return streakBreaks > 0 && stats.currentStreak >= requiredDays
+    }
+
+    override suspend fun getRpgInput(): RpgInput {
+        return withContext(Dispatchers.IO) {
+            val totalWorkouts = queries.countTotalWorkouts().executeAsOne().toInt()
+            val totalReps = (queries.countTotalReps().executeAsOneOrNull()?.SUM ?: 0L).toInt()
+            val totalVolumeKg = queries.countTotalVolume().executeAsOneOrNull()?.SUM ?: 0.0
+            val uniqueExercises = queries.countUniqueExercises().executeAsOne().toInt()
+            val personalRecords = queries.countPersonalRecords().executeAsOne().toInt()
+            val badgesEarned = queries.countEarnedBadges().executeAsOne().toInt()
+
+            val maxWeightLiftedKg = queries.selectMaxWeightLifted().executeAsOneOrNull()?.MAX ?: 0.0
+            val avgWorkingWeightKg = queries.selectAvgWorkingWeight().executeAsOneOrNull()?.AVG ?: 0.0
+
+            // Peak power: try RepMetric first, fall back to MetricSample
+            val peakRepPower = queries.selectPeakRepPower().executeAsOneOrNull()?.MAX
+            val peakPowerWatts = peakRepPower
+                ?: queries.selectPeakPower().executeAsOneOrNull()?.peakPower?.toDouble()
+                ?: 0.0
+
+            val trainingDays = queries.countTrainingDays().executeAsOne().toInt()
+
+            // Streak data from GamificationStats singleton
+            val stats = queries.selectGamificationStats().executeAsOneOrNull()
+            val currentStreak = stats?.currentStreak?.toInt() ?: 0
+            val longestStreak = stats?.longestStreak?.toInt() ?: 0
+
+            RpgInput(
+                maxWeightLiftedKg = maxWeightLiftedKg,
+                totalVolumeKg = totalVolumeKg,
+                totalWorkouts = totalWorkouts,
+                totalReps = totalReps,
+                uniqueExercises = uniqueExercises,
+                personalRecords = personalRecords,
+                peakPowerWatts = peakPowerWatts,
+                avgWorkingWeightKg = avgWorkingWeightKg,
+                currentStreak = currentStreak,
+                longestStreak = longestStreak,
+                trainingDays = trainingDays,
+                badgesEarned = badgesEarned
+            )
+        }
+    }
+
+    override suspend fun saveRpgProfile(profile: RpgProfile) {
+        withContext(Dispatchers.IO) {
+            queries.upsertRpgAttributes(
+                strength = profile.strength.toLong(),
+                power = profile.power.toLong(),
+                stamina = profile.stamina.toLong(),
+                consistency = profile.consistency.toLong(),
+                mastery = profile.mastery.toLong(),
+                characterClass = profile.characterClass.name,
+                lastComputed = profile.lastComputed
+            )
+        }
     }
 
     override suspend fun checkAndAwardBadges(): List<Badge> {

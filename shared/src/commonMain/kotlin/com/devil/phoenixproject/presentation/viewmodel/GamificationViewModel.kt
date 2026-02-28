@@ -6,6 +6,8 @@ import com.devil.phoenixproject.data.local.BadgeDefinitions
 import com.devil.phoenixproject.data.repository.BadgeWithProgress
 import com.devil.phoenixproject.data.repository.GamificationRepository
 import com.devil.phoenixproject.domain.model.*
+import com.devil.phoenixproject.domain.model.currentTimeMillis
+import com.devil.phoenixproject.domain.premium.RpgAttributeEngine
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -40,6 +42,10 @@ class GamificationViewModel(
     val uncelebratedBadges: StateFlow<List<EarnedBadge>> = repository.getUncelebratedBadges()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
+    // RPG Profile state (computed on demand from BadgesScreen)
+    private val _rpgProfile = MutableStateFlow<RpgProfile?>(null)
+    val rpgProfile: StateFlow<RpgProfile?> = _rpgProfile.asStateFlow()
+
     // Filtered badges based on selected category
     val filteredBadges: StateFlow<List<BadgeWithProgress>> = combine(
         _badgesWithProgress,
@@ -73,6 +79,24 @@ class GamificationViewModel(
                 // Handle error
             } finally {
                 _isLoading.value = false
+            }
+        }
+    }
+
+    /**
+     * Compute RPG profile from aggregate workout data.
+     * Called from BadgesScreen LaunchedEffect (not init) to avoid
+     * unnecessary computation for users who never visit the screen.
+     */
+    fun loadRpgProfile() {
+        viewModelScope.launch {
+            try {
+                val input = repository.getRpgInput()
+                val profile = RpgAttributeEngine.computeProfile(input)
+                _rpgProfile.value = profile
+                repository.saveRpgProfile(profile.copy(lastComputed = currentTimeMillis()))
+            } catch (e: Exception) {
+                // Log error, leave profile null (card won't show)
             }
         }
     }
