@@ -29,6 +29,7 @@ import com.devil.phoenixproject.data.local.ConnectionLogEntity
 import com.devil.phoenixproject.data.repository.LogLevel
 import com.devil.phoenixproject.presentation.viewmodel.ConnectionLogsViewModel
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
+import com.devil.phoenixproject.ui.theme.AccessibilityTheme
 import kotlin.time.Instant
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
@@ -431,11 +432,12 @@ private fun LogEntryCard(log: ConnectionLogEntity) {
 
 @Composable
 private fun getLevelColor(level: LogLevel): Color {
+    val colors = AccessibilityTheme.colors
     return when (level) {
-        LogLevel.DEBUG -> Color(0xFF9E9E9E) // Gray
-        LogLevel.INFO -> Color(0xFF2196F3)  // Blue
-        LogLevel.WARNING -> Color(0xFFFF9800) // Orange
-        LogLevel.ERROR -> Color(0xFFF44336) // Red
+        LogLevel.DEBUG -> colors.neutral
+        LogLevel.INFO -> Color(0xFF2196F3) // Blue (informational, not semantic status)
+        LogLevel.WARNING -> colors.warning
+        LogLevel.ERROR -> colors.error
     }
 }
 

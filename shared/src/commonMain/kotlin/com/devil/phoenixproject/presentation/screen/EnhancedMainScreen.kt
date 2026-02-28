@@ -39,6 +39,7 @@ import com.devil.phoenixproject.presentation.components.HapticFeedbackEffect
 import com.devil.phoenixproject.presentation.navigation.NavGraph
 import com.devil.phoenixproject.presentation.navigation.NavigationRoutes
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
+import com.devil.phoenixproject.ui.theme.AccessibilityTheme
 import com.devil.phoenixproject.ui.theme.ThemeMode
 import com.devil.phoenixproject.data.repository.UserProfileRepository
 import com.devil.phoenixproject.presentation.components.AddProfileDialog
@@ -500,10 +501,10 @@ private fun ConnectionStatusIndicator(
         else -> "Tap to connect to machine"
     }
 
-    // Static colors for non-connecting states
-    val blueColor = Color(0xFF3B82F6)
-    val greenColor = Color(0xFF22C55E)
-    val redColor = Color(0xFFEF4444)
+    // Connection status colors from AccessibilityTheme
+    val blueColor = Color(0xFF3B82F6) // Blue -- informational, not semantic status
+    val greenColor = AccessibilityTheme.colors.success
+    val redColor = AccessibilityTheme.colors.error
 
     Box(
         modifier = Modifier

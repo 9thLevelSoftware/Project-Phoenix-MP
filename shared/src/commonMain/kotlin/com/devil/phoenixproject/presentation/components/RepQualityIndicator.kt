@@ -20,22 +20,23 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.devil.phoenixproject.ui.theme.AccessibilityTheme
 import kotlinx.coroutines.delay
 
 /**
- * Returns the color for a rep quality score using a gradient scale:
- * - 0-39: Red
- * - 40-59: Orange
- * - 60-79: Yellow
- * - 80-94: Green
- * - 95-100: Bright green (excellent)
+ * Returns the color for a rep quality score using a gradient scale from AccessibilityTheme.
+ * Colors change with color-blind mode for WCAG 1.4.1 compliance.
  */
-private fun scoreColor(score: Int): Color = when {
-    score >= 95 -> Color(0xFF00E676)  // Bright green - excellent
-    score >= 80 -> Color(0xFF43A047)  // Green - good
-    score >= 60 -> Color(0xFFFDD835)  // Yellow - fair
-    score >= 40 -> Color(0xFFFF9800)  // Orange - below average
-    else -> Color(0xFFE53935)         // Red - poor
+@Composable
+private fun scoreColor(score: Int): Color {
+    val colors = AccessibilityTheme.colors
+    return when {
+        score >= 95 -> colors.qualityExcellent
+        score >= 80 -> colors.qualityGood
+        score >= 60 -> colors.qualityFair
+        score >= 40 -> colors.qualityBelowAverage
+        else -> colors.qualityPoor
+    }
 }
 
 /**

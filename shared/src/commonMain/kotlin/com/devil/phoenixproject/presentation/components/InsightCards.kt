@@ -34,6 +34,7 @@ import com.devil.phoenixproject.domain.model.PersonalRecord
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.presentation.components.charts.*
+import com.devil.phoenixproject.ui.theme.AccessibilityTheme
 import com.devil.phoenixproject.util.KmpLocalDate
 import com.devil.phoenixproject.util.KmpUtils
 import kotlin.math.roundToInt
@@ -230,12 +231,12 @@ private fun WeekStatRow(
     val (icon, color, comparisonText) = when (comparison) {
         is Comparison.Increase -> Triple(
             Icons.Default.ArrowUpward,
-            Color(0xFF4CAF50), // Green
+            AccessibilityTheme.colors.success,
             comparison.value
         )
         is Comparison.Decrease -> Triple(
             Icons.Default.ArrowDownward,
-            Color(0xFFF44336), // Red
+            AccessibilityTheme.colors.error,
             comparison.value
         )
         is Comparison.NoChange -> Triple(

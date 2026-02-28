@@ -738,11 +738,12 @@ private fun VelocitySummaryCard(biomechanics: BiomechanicsSetSummary) {
                     val lossText = biomechanics.totalVelocityLossPercent?.let { loss ->
                         "${loss.toInt()}%"
                     } ?: "--"
+                    val accessColors = AccessibilityTheme.colors
                     val lossColor = biomechanics.totalVelocityLossPercent?.let { loss ->
                         when {
-                            loss >= 20f -> Color(0xFFE53935)  // Red - high fatigue
-                            loss >= 10f -> Color(0xFFFF9800)  // Orange - moderate
-                            else -> Color(0xFF43A047)          // Green - minimal
+                            loss >= 20f -> accessColors.error
+                            loss >= 10f -> accessColors.warning
+                            else -> accessColors.success
                         }
                     } ?: MaterialTheme.colorScheme.onSurfaceVariant
                     Text(
@@ -1045,13 +1046,17 @@ private fun ForceCurveSummaryCard(
 // ===== Balance Analysis Section =====
 
 /**
- * Asymmetry severity color (matches HUD balance bar from 07-02).
- * Green: < 10%, Yellow: 10-15%, Red: > 15%
+ * Asymmetry severity color from AccessibilityTheme.
+ * Uses asymmetryGood/Caution/Bad which change with color-blind mode.
  */
-private fun asymmetrySeverityColor(percent: Float): Color = when {
-    percent > 15f -> Color(0xFFE53935)   // Red - significant imbalance
-    percent >= 10f -> Color(0xFFFDD835)  // Yellow - moderate imbalance
-    else -> Color(0xFF43A047)            // Green - acceptable
+@Composable
+private fun asymmetrySeverityColor(percent: Float): Color {
+    val colors = AccessibilityTheme.colors
+    return when {
+        percent > 15f -> colors.asymmetryBad
+        percent >= 10f -> colors.asymmetryCaution
+        else -> colors.asymmetryGood
+    }
 }
 
 /**
@@ -1167,8 +1172,8 @@ private fun AsymmetrySummaryCard(biomechanics: BiomechanicsSetSummary) {
                         AsymmetryTrend.STABLE -> Icons.Default.TrendingFlat
                     }
                     val trendColor = when (trend) {
-                        AsymmetryTrend.WORSENING -> Color(0xFFE53935)
-                        AsymmetryTrend.IMPROVING -> Color(0xFF43A047)
+                        AsymmetryTrend.WORSENING -> AccessibilityTheme.colors.error
+                        AsymmetryTrend.IMPROVING -> AccessibilityTheme.colors.success
                         AsymmetryTrend.STABLE -> Color.Gray
                     }
                     val trendLabel = when (trend) {
@@ -1205,7 +1210,18 @@ private fun AsymmetrySummaryCard(biomechanics: BiomechanicsSetSummary) {
 @Composable
 private fun AsymmetrySparkline(asymmetryValues: List<Float>) {
     val thresholdYellow = 10f
-    val thresholdRed = 15f
+
+    // Pre-compute colors in @Composable scope for Canvas use
+    val cautionColor = AccessibilityTheme.colors.asymmetryCaution
+    val segmentColors = if (asymmetryValues.size > 1) {
+        (0 until asymmetryValues.size - 1).map { i ->
+            val avgValue = (asymmetryValues[i] + asymmetryValues[i + 1]) / 2f
+            asymmetrySeverityColor(avgValue)
+        }
+    } else {
+        emptyList()
+    }
+    val dotColors = asymmetryValues.map { value -> asymmetrySeverityColor(value) }
 
     Canvas(
         modifier = Modifier
@@ -1233,7 +1249,7 @@ private fun AsymmetrySparkline(asymmetryValues: List<Float>) {
         // Draw dashed reference line at 10% (yellow threshold)
         val refY = padding + effectiveHeight * (1f - thresholdYellow / maxVal)
         drawLine(
-            color = Color(0xFFFDD835).copy(alpha = 0.5f),
+            color = cautionColor.copy(alpha = 0.5f),
             start = Offset(padding, refY),
             end = Offset(padding + effectiveWidth, refY),
             strokeWidth = 1.dp.toPx(),
@@ -1245,10 +1261,8 @@ private fun AsymmetrySparkline(asymmetryValues: List<Float>) {
 
         // Draw line segments with severity colors
         for (i in 0 until points.size - 1) {
-            val avgValue = (asymmetryValues[i] + asymmetryValues[i + 1]) / 2f
-            val segColor = asymmetrySeverityColor(avgValue)
             drawLine(
-                color = segColor,
+                color = segmentColors[i],
                 start = points[i],
                 end = points[i + 1],
                 strokeWidth = 2.dp.toPx()
@@ -1258,7 +1272,7 @@ private fun AsymmetrySparkline(asymmetryValues: List<Float>) {
         // Draw dots at each point
         points.forEachIndexed { index, point ->
             drawCircle(
-                color = asymmetrySeverityColor(asymmetryValues[index]),
+                color = dotColors[index],
                 radius = 3.dp.toPx(),
                 center = point
             )
@@ -1269,14 +1283,18 @@ private fun AsymmetrySparkline(asymmetryValues: List<Float>) {
 // ===== Rep Quality Section =====
 
 /**
- * Quality color based on score (0-100)
+ * Quality color from AccessibilityTheme. Changes with color-blind mode.
  */
-private fun qualityColor(score: Int): Color = when {
-    score >= 95 -> Color(0xFF00E676)  // Bright green (excellent)
-    score >= 80 -> Color(0xFF43A047)  // Green (good)
-    score >= 60 -> Color(0xFFFDD835)  // Yellow (fair)
-    score >= 40 -> Color(0xFFFF9800)  // Orange (needs work)
-    else -> Color(0xFFE53935)         // Red (poor)
+@Composable
+private fun qualityColor(score: Int): Color {
+    val colors = AccessibilityTheme.colors
+    return when {
+        score >= 95 -> colors.qualityExcellent
+        score >= 80 -> colors.qualityGood
+        score >= 60 -> colors.qualityFair
+        score >= 40 -> colors.qualityBelowAverage
+        else -> colors.qualityPoor
+    }
 }
 
 /**
@@ -1322,9 +1340,9 @@ private fun QualityStatsSection(quality: SetQualitySummary) {
                         QualityTrend.DECLINING -> Icons.Default.TrendingDown
                     }
                     val trendColor = when (quality.trend) {
-                        QualityTrend.IMPROVING -> Color(0xFF43A047)
+                        QualityTrend.IMPROVING -> AccessibilityTheme.colors.success
                         QualityTrend.STABLE -> Color.Gray
-                        QualityTrend.DECLINING -> Color(0xFFE53935)
+                        QualityTrend.DECLINING -> AccessibilityTheme.colors.error
                     }
                     Icon(
                         trendIcon,
@@ -1340,9 +1358,9 @@ private fun QualityStatsSection(quality: SetQualitySummary) {
                     QualityTrend.DECLINING -> "Declining"
                 }
                 val trendLabelColor = when (quality.trend) {
-                    QualityTrend.IMPROVING -> Color(0xFF43A047)
+                    QualityTrend.IMPROVING -> AccessibilityTheme.colors.success
                     QualityTrend.STABLE -> Color.Gray
-                    QualityTrend.DECLINING -> Color(0xFFE53935)
+                    QualityTrend.DECLINING -> AccessibilityTheme.colors.error
                 }
                 Text(
                     trendLabel,
@@ -1438,6 +1456,23 @@ private fun QualitySparkline(quality: SetQualitySummary) {
     val scores = quality.repScores.map { it.composite }
     if (scores.isEmpty()) return
 
+    // Pre-compute colors in @Composable scope for Canvas use
+    val dotColors = scores.map { score -> qualityColor(score) }
+    val segmentColors = if (scores.size > 1) {
+        (0 until scores.size - 1).map { i ->
+            val startColor = dotColors[i]
+            val endColor = dotColors[i + 1]
+            Color(
+                red = (startColor.red + endColor.red) / 2f,
+                green = (startColor.green + endColor.green) / 2f,
+                blue = (startColor.blue + endColor.blue) / 2f,
+                alpha = 1f
+            )
+        }
+    } else {
+        emptyList()
+    }
+
     Canvas(
         modifier = Modifier
             .fillMaxWidth()
@@ -1462,17 +1497,8 @@ private fun QualitySparkline(quality: SetQualitySummary) {
 
         // Draw line connecting points
         for (i in 0 until points.size - 1) {
-            val startColor = qualityColor(scores[i])
-            val endColor = qualityColor(scores[i + 1])
-            // Use average color for the segment
-            val segColor = Color(
-                red = (startColor.red + endColor.red) / 2f,
-                green = (startColor.green + endColor.green) / 2f,
-                blue = (startColor.blue + endColor.blue) / 2f,
-                alpha = 1f
-            )
             drawLine(
-                color = segColor,
+                color = segmentColors[i],
                 start = points[i],
                 end = points[i + 1],
                 strokeWidth = 2.dp.toPx()
@@ -1482,7 +1508,7 @@ private fun QualitySparkline(quality: SetQualitySummary) {
         // Draw dots at each point
         points.forEachIndexed { index, point ->
             drawCircle(
-                color = qualityColor(scores[index]),
+                color = dotColors[index],
                 radius = 3.dp.toPx(),
                 center = point
             )
@@ -1506,8 +1532,9 @@ private fun RadarChart(quality: SetQualitySummary) {
     val avgSmoothness = quality.repScores.map { it.smoothnessScore }.average().toFloat()
 
     val gridColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)
-    val fillColor = Color(0xFF43A047).copy(alpha = 0.25f)
-    val strokeColor = Color(0xFF43A047)
+    val radarBaseColor = AccessibilityTheme.colors.success
+    val fillColor = radarBaseColor.copy(alpha = 0.25f)
+    val strokeColor = radarBaseColor
 
     // Axes: ROM (top), Velocity (right), Eccentric (bottom), Smoothness (left)
     val axisValues = listOf(avgRom / 30f, avgVelocity / 25f, avgEccentric / 25f, avgSmoothness / 20f)

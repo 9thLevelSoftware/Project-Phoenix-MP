@@ -38,6 +38,7 @@ import com.devil.phoenixproject.domain.model.*
 import com.devil.phoenixproject.presentation.viewmodel.GamificationViewModel
 import com.devil.phoenixproject.presentation.util.LocalWindowSizeClass
 import com.devil.phoenixproject.presentation.util.WindowWidthSizeClass
+import com.devil.phoenixproject.ui.theme.AccessibilityTheme
 import com.devil.phoenixproject.ui.theme.Spacing
 import org.koin.compose.koinInject
 
@@ -574,14 +575,14 @@ private fun BadgeDetailDialog(
                         Icon(
                             imageVector = Icons.Default.CheckCircle,
                             contentDescription = null,
-                            tint = Color(0xFF4CAF50),
+                            tint = AccessibilityTheme.colors.success,
                             modifier = Modifier.size(20.dp)
                         )
                         Spacer(modifier = Modifier.width(4.dp))
                         Text(
                             text = "Earned!",
                             style = MaterialTheme.typography.bodyMedium,
-                            color = Color(0xFF4CAF50),
+                            color = AccessibilityTheme.colors.success,
                             fontWeight = FontWeight.Bold
                         )
                     }

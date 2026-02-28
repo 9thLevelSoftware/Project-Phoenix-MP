@@ -21,6 +21,7 @@ import com.devil.phoenixproject.domain.model.currentTimeMillis
 import com.devil.phoenixproject.domain.premium.SmartSuggestionsEngine
 import com.devil.phoenixproject.domain.subscription.SubscriptionManager
 import com.devil.phoenixproject.presentation.components.LockedFeatureOverlay
+import com.devil.phoenixproject.ui.theme.AccessibilityTheme
 import com.devil.phoenixproject.ui.theme.Spacing
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
@@ -279,7 +280,7 @@ private fun BalanceAnalysisCard(analysis: BalanceAnalysis) {
                 Text(
                     "Your training is well-balanced",
                     style = MaterialTheme.typography.bodyMedium,
-                    color = Color(0xFF22C55E), // Green
+                    color = AccessibilityTheme.colors.success,
                     fontWeight = FontWeight.Medium
                 )
             } else {

@@ -18,6 +18,7 @@ import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.domain.detection.ExerciseClassification
 import com.devil.phoenixproject.domain.model.Exercise
+import com.devil.phoenixproject.ui.theme.AccessibilityTheme
 
 /**
  * Non-blocking bottom sheet for exercise auto-detection confirmation.
@@ -225,9 +226,9 @@ private fun ConfidenceBadge(
 ) {
     val confidencePercent = (confidence * 100).toInt()
     val backgroundColor = when {
-        confidence > 0.8f -> Color(0xFF4CAF50) // Green
-        confidence > 0.6f -> Color(0xFFFFC107) // Yellow/Amber
-        else -> Color(0xFFFF9800) // Orange
+        confidence > 0.8f -> AccessibilityTheme.colors.success
+        confidence > 0.6f -> AccessibilityTheme.colors.warning
+        else -> AccessibilityTheme.colors.neutral
     }
     val textColor = when {
         confidence > 0.6f -> Color.Black

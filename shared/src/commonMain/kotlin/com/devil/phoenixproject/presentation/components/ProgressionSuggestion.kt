@@ -23,6 +23,7 @@ import com.devil.phoenixproject.domain.model.ProgressionEvent
 import com.devil.phoenixproject.domain.model.ProgressionReason
 import com.devil.phoenixproject.domain.model.ProgressionResponse
 import com.devil.phoenixproject.domain.model.WeightUnit
+import com.devil.phoenixproject.ui.theme.AccessibilityTheme
 
 /**
  * Banner component that shows a weight progression suggestion.
@@ -49,7 +50,7 @@ fun ProgressionSuggestionBanner(
         Card(
             modifier = modifier.fillMaxWidth(),
             colors = CardDefaults.cardColors(
-                containerColor = Color(0xFF4CAF50).copy(alpha = 0.15f)
+                containerColor = AccessibilityTheme.colors.success.copy(alpha = 0.15f)
             ),
             shape = RoundedCornerShape(16.dp)
         ) {
@@ -65,7 +66,7 @@ fun ProgressionSuggestionBanner(
                     Icon(
                         Icons.AutoMirrored.Filled.TrendingUp,
                         contentDescription = null,
-                        tint = Color(0xFF4CAF50),
+                        tint = AccessibilityTheme.colors.success,
                         modifier = Modifier.size(24.dp)
                     )
                     Spacer(Modifier.width(8.dp))
@@ -74,7 +75,7 @@ fun ProgressionSuggestionBanner(
                             "Weight Increase Suggested",
                             style = MaterialTheme.typography.titleSmall,
                             fontWeight = FontWeight.Bold,
-                            color = Color(0xFF2E7D32)
+                            color = AccessibilityTheme.colors.success
                         )
                         Text(
                             when (event.reason) {
@@ -82,7 +83,7 @@ fun ProgressionSuggestionBanner(
                                 ProgressionReason.LOW_RPE -> "Your recent sets felt easier than target"
                             },
                             style = MaterialTheme.typography.bodySmall,
-                            color = Color(0xFF388E3C)
+                            color = AccessibilityTheme.colors.success
                         )
                     }
                 }
@@ -94,7 +95,7 @@ fun ProgressionSuggestionBanner(
                     modifier = Modifier
                         .fillMaxWidth()
                         .background(
-                            Color(0xFF4CAF50).copy(alpha = 0.1f),
+                            AccessibilityTheme.colors.success.copy(alpha = 0.1f),
                             RoundedCornerShape(12.dp)
                         )
                         .padding(12.dp),
@@ -117,7 +118,7 @@ fun ProgressionSuggestionBanner(
                     Icon(
                         Icons.AutoMirrored.Filled.ArrowForward,
                         contentDescription = null,
-                        tint = Color(0xFF4CAF50),
+                        tint = AccessibilityTheme.colors.success,
                         modifier = Modifier.size(20.dp)
                     )
 
@@ -125,18 +126,18 @@ fun ProgressionSuggestionBanner(
                         Text(
                             "Suggested",
                             style = MaterialTheme.typography.labelSmall,
-                            color = Color(0xFF4CAF50)
+                            color = AccessibilityTheme.colors.success
                         )
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(
                                 formatWeight(event.suggestedWeightKg, weightUnit),
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.Bold,
-                                color = Color(0xFF2E7D32)
+                                color = AccessibilityTheme.colors.success
                             )
                             Spacer(Modifier.width(4.dp))
                             Surface(
-                                color = Color(0xFF4CAF50),
+                                color = AccessibilityTheme.colors.success,
                                 shape = RoundedCornerShape(4.dp)
                             ) {
                                 Text(
@@ -193,7 +194,7 @@ fun ProgressionSuggestionBanner(
                         modifier = Modifier.weight(1f),
                         shape = RoundedCornerShape(8.dp),
                         colors = ButtonDefaults.buttonColors(
-                            containerColor = Color(0xFF4CAF50)
+                            containerColor = AccessibilityTheme.colors.success
                         )
                     ) {
                         Icon(
@@ -341,7 +342,7 @@ fun ProgressionIndicator(
 ) {
     Surface(
         onClick = onClick,
-        color = Color(0xFF4CAF50).copy(alpha = 0.2f),
+        color = AccessibilityTheme.colors.success.copy(alpha = 0.2f),
         shape = RoundedCornerShape(8.dp),
         modifier = modifier
     ) {
@@ -352,7 +353,7 @@ fun ProgressionIndicator(
             Icon(
                 Icons.AutoMirrored.Filled.TrendingUp,
                 contentDescription = null,
-                tint = Color(0xFF4CAF50),
+                tint = AccessibilityTheme.colors.success,
                 modifier = Modifier.size(14.dp)
             )
             Spacer(Modifier.width(4.dp))
@@ -360,7 +361,7 @@ fun ProgressionIndicator(
                 "+${formatWeight(increment, weightUnit)}",
                 style = MaterialTheme.typography.labelSmall,
                 fontWeight = FontWeight.SemiBold,
-                color = Color(0xFF2E7D32)
+                color = AccessibilityTheme.colors.success
             )
         }
     }

@@ -25,6 +25,7 @@ import com.devil.phoenixproject.domain.model.PersonalRecord
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.domain.model.currentTimeMillis
+import com.devil.phoenixproject.ui.theme.AccessibilityTheme
 import com.devil.phoenixproject.ui.theme.Spacing
 import com.devil.phoenixproject.util.KmpUtils
 
@@ -122,14 +123,14 @@ fun StrengthScoreCard(
                         Icon(
                             imageVector = if (scoreDiff > 0) Icons.AutoMirrored.Filled.TrendingUp else Icons.AutoMirrored.Filled.TrendingDown,
                             contentDescription = null,
-                            tint = if (scoreDiff > 0) Color(0xFF10B981) else Color(0xFFEF4444),
+                            tint = if (scoreDiff > 0) AccessibilityTheme.colors.success else AccessibilityTheme.colors.error,
                             modifier = Modifier.size(20.dp)
                         )
                         Spacer(modifier = Modifier.width(4.dp))
                         Text(
                             text = "${if (scoreDiff > 0) "+" else ""}$scoreDiff from last week",
                             style = MaterialTheme.typography.bodyMedium,
-                            color = if (scoreDiff > 0) Color(0xFF10B981) else Color(0xFFEF4444),
+                            color = if (scoreDiff > 0) AccessibilityTheme.colors.success else AccessibilityTheme.colors.error,
                             fontWeight = FontWeight.SemiBold
                         )
                     }

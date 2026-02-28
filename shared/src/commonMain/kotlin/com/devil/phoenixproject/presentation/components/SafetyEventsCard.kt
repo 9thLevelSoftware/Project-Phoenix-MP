@@ -11,6 +11,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.domain.model.SafetyEventSummary
+import com.devil.phoenixproject.ui.theme.AccessibilityTheme
 import com.devil.phoenixproject.ui.theme.Spacing
 
 @Composable
@@ -54,7 +55,7 @@ fun SafetyEventsCard(
                 SafetyEventRow(
                     label = "Deload Warnings",
                     count = summary.deloadWarnings,
-                    color = Color(0xFFFF9800) // Orange
+                    color = AccessibilityTheme.colors.warning
                 )
             }
 
@@ -62,7 +63,7 @@ fun SafetyEventsCard(
                 SafetyEventRow(
                     label = "ROM Violations",
                     count = summary.romViolations,
-                    color = Color(0xFFF44336) // Red
+                    color = AccessibilityTheme.colors.error
                 )
             }
 

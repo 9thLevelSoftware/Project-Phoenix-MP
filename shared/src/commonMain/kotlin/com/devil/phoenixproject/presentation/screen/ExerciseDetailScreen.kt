@@ -30,6 +30,7 @@ import com.devil.phoenixproject.presentation.navigation.NavigationRoutes
 import com.devil.phoenixproject.presentation.components.charts.ProgressionLineChart
 import com.devil.phoenixproject.presentation.components.charts.VolumeTrendChart
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
+import com.devil.phoenixproject.ui.theme.AccessibilityTheme
 import com.devil.phoenixproject.ui.theme.Spacing
 import com.devil.phoenixproject.ui.theme.ThemeMode
 import com.devil.phoenixproject.util.KmpUtils
@@ -227,14 +228,14 @@ private fun OneRepMaxCard(
                             if (isPositive) Icons.AutoMirrored.Filled.TrendingUp
                             else Icons.AutoMirrored.Filled.TrendingDown,
                             contentDescription = null,
-                            tint = if (isPositive) Color(0xFF10B981) else Color(0xFFEF4444),
+                            tint = if (isPositive) AccessibilityTheme.colors.success else AccessibilityTheme.colors.error,
                             modifier = Modifier.size(20.dp)
                         )
                         Spacer(Modifier.width(4.dp))
                         Text(
                             "${if (isPositive) "+" else ""}${formatWeight(delta, weightUnit)} from last",
                             style = MaterialTheme.typography.bodyMedium,
-                            color = if (isPositive) Color(0xFF10B981) else Color(0xFFEF4444)
+                            color = if (isPositive) AccessibilityTheme.colors.success else AccessibilityTheme.colors.error
                         )
                     }
                 }

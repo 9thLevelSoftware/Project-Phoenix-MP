@@ -54,6 +54,7 @@ import com.devil.phoenixproject.presentation.components.ProfileSidePanel
 import com.devil.phoenixproject.presentation.components.ProgressionSlider
 import com.devil.phoenixproject.presentation.navigation.NavigationRoutes
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
+import com.devil.phoenixproject.ui.theme.AccessibilityTheme
 import com.devil.phoenixproject.ui.theme.Spacing
 import kotlinx.coroutines.launch
 import org.koin.compose.koinInject
@@ -639,13 +640,8 @@ fun ActiveStatusCard(
     }
 }
 
-// Auto-start theme colors
-private val AutoStartGreen = Color(0xFF10B981)
-private val AutoStartGreenLight = Color(0xFF34D399)
-private val CountdownOrange = Color(0xFFF59E0B)
-private val CountdownOrangeLight = Color(0xFFFBBF24)
-private val StopRed = Color(0xFFEF4444)
-private val StopRedLight = Color(0xFFF87171)
+// Auto-start theme colors - resolved from AccessibilityTheme at composable call sites
+// Light variants are computed by blending with white for gradient pairs
 
 /**
  * Compact Auto-Start/Auto-Stop Banner for Just Lift Mode
@@ -701,17 +697,21 @@ fun AutoStartStopCard(
         label = "rotation"
     )
 
-    // Determine colors based on state
+    // Determine colors based on state (from AccessibilityTheme for color-blind support)
+    val autoStartGreen = AccessibilityTheme.colors.success
+    val countdownOrange = AccessibilityTheme.colors.warning
+    val stopRed = AccessibilityTheme.colors.error
     val primaryColor = when {
-        isStopping -> StopRed
-        isCountingDown -> CountdownOrange
-        else -> AutoStartGreen
+        isStopping -> stopRed
+        isCountingDown -> countdownOrange
+        else -> autoStartGreen
     }
-    val secondaryColor = when {
-        isStopping -> StopRedLight
-        isCountingDown -> CountdownOrangeLight
-        else -> AutoStartGreenLight
-    }
+    // Light variants computed by blending with white for gradient pairs
+    val secondaryColor = primaryColor.copy(
+        red = (primaryColor.red + 1f) / 2f,
+        green = (primaryColor.green + 1f) / 2f,
+        blue = (primaryColor.blue + 1f) / 2f
+    )
 
     Card(
         modifier = Modifier.fillMaxWidth(),

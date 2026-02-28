@@ -21,6 +21,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.devil.phoenixproject.ui.theme.AccessibilityTheme
 import com.devil.phoenixproject.ui.theme.Spacing
 import kotlin.math.roundToInt
 
@@ -305,12 +306,13 @@ fun RpeQuickSelect(
  */
 @Composable
 fun getRpeColor(rpe: Int): Color {
+    val colors = AccessibilityTheme.colors
     return when (rpe) {
-        6 -> Color(0xFF4CAF50)  // Green - easy
-        7 -> Color(0xFF8BC34A)  // Light green
-        8 -> Color(0xFFFFC107)  // Amber - moderate
-        9 -> Color(0xFFFF9800)  // Orange - hard
-        10 -> Color(0xFFF44336) // Red - max effort
+        6 -> colors.success       // Easy
+        7 -> colors.qualityGood   // Light effort
+        8 -> colors.warning       // Moderate
+        9 -> colors.qualityBelowAverage  // Hard
+        10 -> colors.error        // Max effort
         else -> MaterialTheme.colorScheme.primary
     }
 }

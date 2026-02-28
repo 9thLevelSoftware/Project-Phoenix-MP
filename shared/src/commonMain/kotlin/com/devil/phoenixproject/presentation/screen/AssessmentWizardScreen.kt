@@ -25,6 +25,7 @@ import com.devil.phoenixproject.domain.assessment.LoadVelocityPoint
 import com.devil.phoenixproject.presentation.components.VideoPlayer
 import com.devil.phoenixproject.presentation.viewmodel.AssessmentStep
 import com.devil.phoenixproject.presentation.viewmodel.AssessmentViewModel
+import com.devil.phoenixproject.ui.theme.AccessibilityTheme
 import com.devil.phoenixproject.ui.theme.Spacing
 import com.devil.phoenixproject.util.KmpUtils
 import com.devil.phoenixproject.ui.theme.ThemeMode
@@ -383,11 +384,12 @@ private fun ProgressiveLoadingContent(
             Spacer(modifier = Modifier.height(Spacing.small))
 
             step.recordedSets.forEach { set ->
+                val assessColors = AccessibilityTheme.colors
                 val velocityColor = when {
-                    set.meanVelocityMs > 0.8f -> Color(0xFF4CAF50)  // Green - light
-                    set.meanVelocityMs > 0.5f -> Color(0xFFFFC107)  // Yellow - moderate
-                    set.meanVelocityMs > 0.3f -> Color(0xFFFF9800)  // Orange - heavy
-                    else -> Color(0xFFF44336)                        // Red - at/past threshold
+                    set.meanVelocityMs > 0.8f -> assessColors.success
+                    set.meanVelocityMs > 0.5f -> assessColors.warning
+                    set.meanVelocityMs > 0.3f -> assessColors.qualityBelowAverage
+                    else -> assessColors.error
                 }
 
                 Card(
@@ -580,9 +582,9 @@ private fun ResultsContent(
             else -> "Low confidence - consider retesting"
         }
         val confidenceColor = when {
-            step.r2 > 0.9f -> Color(0xFF4CAF50)
-            step.r2 > 0.7f -> Color(0xFFFFC107)
-            else -> Color(0xFFF44336)
+            step.r2 > 0.9f -> AccessibilityTheme.colors.success
+            step.r2 > 0.7f -> AccessibilityTheme.colors.warning
+            else -> AccessibilityTheme.colors.error
         }
 
         Card(
@@ -753,7 +755,7 @@ private fun CompleteContent(
             Icon(
                 Icons.Default.Check,
                 contentDescription = "Success",
-                tint = Color(0xFF4CAF50),
+                tint = AccessibilityTheme.colors.success,
                 modifier = Modifier.size(72.dp)
             )
 
