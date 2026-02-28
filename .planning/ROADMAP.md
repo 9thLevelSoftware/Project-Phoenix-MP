@@ -174,11 +174,11 @@ Plans:
   3. Attribute card displays a "View full skill tree on Phoenix Portal" deep link
   4. RPG attributes are stored in a dedicated table (not the GamificationStats singleton) and survive app restarts
   5. RPG attribute card is gated to Phoenix+ tier (FREE users do not see it)
-**Plans**: TBD
+**Plans**: 2 plans
 
 Plans:
-- [ ] 21-01: TBD
-- [ ] 21-02: TBD
+- [ ] 21-01-PLAN.md — RpgAttributeEngine (TDD), RpgModels domain types, schema migration v17, SQL queries, iOS DriverFactory sync
+- [ ] 21-02-PLAN.md — RpgAttributeCard composable, BadgesScreen wiring with Phoenix+ tier gate, GamificationViewModel rpgProfile, Portal deep link
 
 ### Phase 22: Ghost Racing
 **Goal**: Users can race against their personal best during a set, with real-time visual comparison and post-set velocity delta summary
@@ -219,10 +219,10 @@ Note: Phase 19 (CV UX) can proceed after Phase 16 completes (independent of Phas
 | 18. HUD Customization | 2/2 | Complete    | 2026-02-28 |
 | 19. CV Form Check UX & Persistence | 3/3 | Complete   | 2026-02-28 |
 | 20. Readiness Briefing | 2/2 | Complete    | 2026-02-28 |
-| 21. RPG Attributes | 0/TBD | Not started | - |
+| 21. RPG Attributes | 0/2 | Not started | - |
 | 22. Ghost Racing | 0/TBD | Not started | - |
 
 **Last phase number:** 22
 
 ---
-*Last updated: 2026-02-28 after Phase 20 planning*
+*Last updated: 2026-02-28 after Phase 21 planning*
