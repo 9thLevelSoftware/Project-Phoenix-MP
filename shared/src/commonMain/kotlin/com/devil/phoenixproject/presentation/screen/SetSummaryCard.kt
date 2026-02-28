@@ -263,6 +263,49 @@ fun SetSummaryCard(
                 AsymmetrySummaryCard(biomechanics)
             }
 
+            // Form Check Score (CV-05) - shown when form check was enabled during set
+            summary.formScore?.let { score ->
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
+                    ),
+                    shape = RoundedCornerShape(16.dp)
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(12.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Filled.Visibility,
+                                contentDescription = "Form Score",
+                                modifier = Modifier.size(18.dp),
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "Form Score",
+                                style = MaterialTheme.typography.bodyMedium
+                            )
+                        }
+                        Text(
+                            text = "$score / 100",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = when {
+                                score >= 80 -> MaterialTheme.colorScheme.primary  // Good form
+                                score >= 50 -> MaterialTheme.colorScheme.tertiary  // Needs work
+                                else -> MaterialTheme.colorScheme.error  // Poor form
+                            }
+                        )
+                    }
+                }
+            }
+
             // RPE section - show read-only in history view, interactive in live view
             if (isHistoryView && savedRpe != null) {
                 // Show saved RPE as read-only

@@ -22,6 +22,8 @@ import com.devil.phoenixproject.data.repository.AutoStopUiState
 import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.domain.model.*
 import com.devil.phoenixproject.domain.model.BiomechanicsRepResult
+import com.devil.phoenixproject.domain.model.FormAssessment
+import com.devil.phoenixproject.domain.model.FormViolation
 import com.devil.phoenixproject.domain.model.HudPreset
 import com.devil.phoenixproject.domain.usecase.RepRanges
 import com.devil.phoenixproject.presentation.components.AutoStartOverlay
@@ -54,6 +56,9 @@ fun WorkoutTab(
     actions: WorkoutActions,
     exerciseRepository: ExerciseRepository,
     hapticEvents: SharedFlow<HapticEvent>? = null,
+    hasFormCheckAccess: Boolean = false,
+    onToggleFormCheck: () -> Unit = {},
+    onFormAssessment: (FormAssessment) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     // Delegate to the original implementation
@@ -111,7 +116,12 @@ fun WorkoutTab(
         detectionState = state.detectionState,
         onDetectionConfirmed = actions::onDetectionConfirmed,
         onDetectionDismissed = actions::onDetectionDismissed,
-        hudPreset = state.hudPreset
+        hudPreset = state.hudPreset,
+        isFormCheckEnabled = state.isFormCheckEnabled,
+        hasFormCheckAccess = hasFormCheckAccess,
+        latestFormViolations = state.latestFormViolations,
+        onToggleFormCheck = onToggleFormCheck,
+        onFormAssessment = onFormAssessment
     )
 }
 
@@ -174,7 +184,13 @@ fun WorkoutTab(
     detectionState: DetectionState = DetectionState(),  // Exercise auto-detection state
     onDetectionConfirmed: suspend (String, String) -> Unit = { _, _ -> },  // Detection confirm callback
     onDetectionDismissed: () -> Unit = {},  // Detection dismiss callback
-    hudPreset: String = HudPreset.FULL.key  // HUD page preset for pager filtering
+    hudPreset: String = HudPreset.FULL.key,  // HUD page preset for pager filtering
+    // CV Form Check parameters (Phase 19)
+    isFormCheckEnabled: Boolean = false,
+    hasFormCheckAccess: Boolean = false,
+    latestFormViolations: List<FormViolation> = emptyList(),
+    onToggleFormCheck: () -> Unit = {},
+    onFormAssessment: (FormAssessment) -> Unit = {}
 ) {
     // Note: HapticFeedbackEffect is now global in EnhancedMainScreen
     // No need for local haptic effect here
@@ -212,6 +228,11 @@ fun WorkoutTab(
                 onDetectionConfirmed = onDetectionConfirmed,
                 onDetectionDismissed = onDetectionDismissed,
                 hudPreset = hudPreset,
+                isFormCheckEnabled = isFormCheckEnabled,
+                hasFormCheckAccess = hasFormCheckAccess,
+                latestFormViolations = latestFormViolations,
+                onToggleFormCheck = onToggleFormCheck,
+                onFormAssessment = onFormAssessment,
                 modifier = Modifier.fillMaxSize()
             )
 

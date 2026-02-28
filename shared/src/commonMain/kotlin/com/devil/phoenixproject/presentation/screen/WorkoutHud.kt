@@ -24,7 +24,11 @@ import com.devil.phoenixproject.data.repository.ExerciseVideoEntity
 import com.devil.phoenixproject.domain.model.*
 import com.devil.phoenixproject.domain.model.BiomechanicsRepResult
 import com.devil.phoenixproject.domain.model.BiomechanicsVelocityZone
+import com.devil.phoenixproject.domain.model.FormAssessment
+import com.devil.phoenixproject.domain.model.FormViolation
 import com.devil.phoenixproject.presentation.components.AutoDetectionSheet
+import com.devil.phoenixproject.presentation.components.FormCheckOverlay
+import com.devil.phoenixproject.presentation.components.FormWarningBanner
 import com.devil.phoenixproject.presentation.components.BalanceBar
 import com.devil.phoenixproject.presentation.components.ExpandedForceCurve
 import com.devil.phoenixproject.presentation.components.ForceCurveMiniGraph
@@ -80,6 +84,12 @@ fun WorkoutHud(
     onDetectionConfirmed: suspend (exerciseId: String, exerciseName: String) -> Unit = { _, _ -> },
     onDetectionDismissed: () -> Unit = {},
     hudPreset: String = HudPreset.FULL.key,  // HUD page preset for pager filtering
+    // CV Form Check parameters (Phase 19)
+    isFormCheckEnabled: Boolean = false,
+    hasFormCheckAccess: Boolean = false,
+    latestFormViolations: List<FormViolation> = emptyList(),
+    onToggleFormCheck: () -> Unit = {},
+    onFormAssessment: (FormAssessment) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val scope = rememberCoroutineScope()
@@ -118,7 +128,10 @@ fun WorkoutHud(
             HudTopBar(
                 connectionState = connectionState,
                 workoutMode = topBarModeLabel,
-                onStopWorkout = onStopWorkout
+                onStopWorkout = onStopWorkout,
+                isFormCheckEnabled = isFormCheckEnabled,
+                hasFormCheckAccess = hasFormCheckAccess,
+                onToggleFormCheck = onToggleFormCheck
             )
         },
         bottomBar = {
@@ -321,6 +334,32 @@ fun WorkoutHud(
                     onDismiss = onDetectionDismissed
                 )
             }
+
+            // FormCheckOverlay -- camera preview with skeleton (CV-04)
+            // Conditionally composed (not just hidden) so camera resources are released when disabled
+            if (isFormCheckEnabled) {
+                FormCheckOverlay(
+                    isEnabled = true,
+                    exerciseType = null, // Exercise-to-form-type mapping deferred to follow-up
+                    onFormAssessment = onFormAssessment,
+                    modifier = Modifier
+                        .size(width = 160.dp, height = 120.dp)
+                        .align(Alignment.TopEnd)
+                        .padding(top = 48.dp, end = 8.dp)
+                )
+            }
+
+            // FormWarningBanner -- real-time corrective cue for highest-severity violation (CV-04)
+            if (isFormCheckEnabled) {
+                FormWarningBanner(
+                    violations = latestFormViolations,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 4.dp)
+                        .align(Alignment.TopStart)
+                        .padding(top = 56.dp)
+                )
+            }
         }
     }
 }
@@ -329,7 +368,10 @@ fun WorkoutHud(
 private fun HudTopBar(
     connectionState: ConnectionState,
     workoutMode: String,
-    onStopWorkout: () -> Unit
+    onStopWorkout: () -> Unit,
+    isFormCheckEnabled: Boolean = false,
+    hasFormCheckAccess: Boolean = false,
+    onToggleFormCheck: () -> Unit = {}
 ) {
     val windowSizeClass = LocalWindowSizeClass.current
     val buttonHeight = when (windowSizeClass.widthSizeClass) {
@@ -364,16 +406,36 @@ private fun HudTopBar(
             )
         }
 
-        // Right: STOP Button (Prominent)
-        Button(
-            onClick = onStopWorkout,
-            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
-            shape = RoundedCornerShape(20.dp),
-            contentPadding = PaddingValues(horizontal = 24.dp, vertical = 0.dp)
-        ) {
-            Icon(Icons.Default.Stop, contentDescription = null)
-            Spacer(modifier = Modifier.width(8.dp))
-            Text("STOP", fontWeight = FontWeight.Bold)
+        // Right: Form Check toggle + STOP Button
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            // Form Check toggle (CV-01) - only visible for Phoenix+ tier
+            if (hasFormCheckAccess) {
+                IconToggleButton(
+                    checked = isFormCheckEnabled,
+                    onCheckedChange = { onToggleFormCheck() }
+                ) {
+                    Icon(
+                        imageVector = if (isFormCheckEnabled)
+                            Icons.Filled.Visibility else Icons.Filled.VisibilityOff,
+                        contentDescription = if (isFormCheckEnabled)
+                            "Disable Form Check" else "Enable Form Check",
+                        tint = if (isFormCheckEnabled)
+                            MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+
+            // STOP Button (Prominent)
+            Button(
+                onClick = onStopWorkout,
+                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                shape = RoundedCornerShape(20.dp),
+                contentPadding = PaddingValues(horizontal = 24.dp, vertical = 0.dp)
+            ) {
+                Icon(Icons.Default.Stop, contentDescription = null)
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("STOP", fontWeight = FontWeight.Bold)
+            }
         }
     }
 }

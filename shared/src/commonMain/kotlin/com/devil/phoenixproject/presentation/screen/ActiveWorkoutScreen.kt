@@ -17,6 +17,8 @@ import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
 import com.devil.phoenixproject.presentation.manager.DefaultWorkoutSessionManager
 import com.devil.phoenixproject.presentation.navigation.NavigationRoutes
 import co.touchlab.kermit.Logger
+import com.devil.phoenixproject.domain.model.FormAssessment
+import com.devil.phoenixproject.isIosPlatform
 import com.devil.phoenixproject.presentation.manager.DetectionState
 import com.devil.phoenixproject.util.setKeepScreenOn
 import kotlinx.coroutines.delay
@@ -56,6 +58,10 @@ fun ActiveWorkoutScreen(
     val latestRepQuality by viewModel.latestRepQuality.collectAsState()
     val latestBiomechanicsResult by viewModel.latestBiomechanicsResult.collectAsState()
     val detectionState by viewModel.detectionState.collectAsState()
+    // CV Form Check state (Phase 19)
+    val isFormCheckEnabled by viewModel.isFormCheckEnabled.collectAsState()
+    val latestFormViolations by viewModel.latestFormViolations.collectAsState()
+    val latestFormScore by viewModel.latestFormScore.collectAsState()
     @Suppress("UNUSED_VARIABLE") // Reserved for future connecting overlay
     val isAutoConnecting by viewModel.isAutoConnecting.collectAsState()
     val connectionError by viewModel.connectionError.collectAsState()
@@ -82,6 +88,25 @@ fun ActiveWorkoutScreen(
     // Free tier: all biomechanics elements (velocity card, balance bar, force curve) are hidden
     // Data capture still happens regardless (GATE-04 from Phase 6)
     val gatedBiomechanicsResult = if (hasProAccess) latestBiomechanicsResult else null
+
+    // Form check - gated to Phoenix+ tier (CV-01)
+    val hasFormCheckAccess = hasProAccess
+
+    // iOS "coming soon" dialog state (CV-10)
+    var showFormCheckComingSoonDialog by remember { mutableStateOf(false) }
+
+    // Form check toggle callback with iOS guard
+    val onToggleFormCheck: () -> Unit = {
+        if (isIosPlatform) {
+            // CV-10: iOS shows "coming soon" dialog
+            showFormCheckComingSoonDialog = true
+        } else {
+            viewModel.toggleFormCheck()
+        }
+    }
+    val onFormAssessment: (FormAssessment) -> Unit = { assessment ->
+        viewModel.onFormAssessment(assessment)
+    }
 
     // Badge Celebration state
     val gamificationRepository: GamificationRepository = koinInject()
@@ -279,7 +304,8 @@ fun ActiveWorkoutScreen(
         loadedRoutine, currentExerciseIndex, currentSetIndex, autoplayEnabled,
         userPreferences.summaryCountdownSeconds, loadBaselineA, loadBaselineB, canGoBack, canSkipForward,
         timedExerciseRemainingSeconds, isCurrentExerciseBodyweight, gatedRepQualityScore,
-        gatedBiomechanicsResult, detectionState, hudPreset
+        gatedBiomechanicsResult, detectionState, hudPreset,
+        isFormCheckEnabled, latestFormViolations, latestFormScore
     ) {
         WorkoutUiState(
             connectionState = connectionState,
@@ -309,7 +335,10 @@ fun ActiveWorkoutScreen(
             latestRepQualityScore = gatedRepQualityScore,
             latestBiomechanicsResult = gatedBiomechanicsResult,
             detectionState = detectionState,
-            hudPreset = hudPreset
+            hudPreset = hudPreset,
+            isFormCheckEnabled = isFormCheckEnabled,
+            latestFormViolations = latestFormViolations,
+            latestFormScore = latestFormScore
         )
     }
 
@@ -352,6 +381,9 @@ fun ActiveWorkoutScreen(
             actions = workoutActions,
             exerciseRepository = exerciseRepository,
             hapticEvents = hapticEvents,
+            hasFormCheckAccess = hasFormCheckAccess,
+            onToggleFormCheck = onToggleFormCheck,
+            onFormAssessment = onFormAssessment,
             modifier = Modifier.padding(paddingValues)
         )
     }
@@ -387,6 +419,20 @@ fun ActiveWorkoutScreen(
             dismissButton = {
                 TextButton(onClick = { showExitConfirmation = false }) {
                     Text("Cancel")
+                }
+            }
+        )
+    }
+
+    // iOS Form Check "coming soon" dialog (CV-10)
+    if (showFormCheckComingSoonDialog) {
+        AlertDialog(
+            onDismissRequest = { showFormCheckComingSoonDialog = false },
+            title = { Text("Form Check") },
+            text = { Text("Form Check is coming soon to iOS. Stay tuned!") },
+            confirmButton = {
+                TextButton(onClick = { showFormCheckComingSoonDialog = false }) {
+                    Text("OK")
                 }
             }
         )
