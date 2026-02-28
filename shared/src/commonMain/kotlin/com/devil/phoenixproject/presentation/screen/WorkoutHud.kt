@@ -34,6 +34,8 @@ import com.devil.phoenixproject.presentation.components.CircularForceGauge
 import com.devil.phoenixproject.presentation.components.EnhancedCablePositionBar
 import com.devil.phoenixproject.presentation.components.StableRepProgress
 import com.devil.phoenixproject.presentation.manager.DetectionState
+import com.devil.phoenixproject.ui.theme.velocityZoneColor
+import com.devil.phoenixproject.ui.theme.velocityZoneLabel
 import kotlinx.coroutines.launch
 import com.devil.phoenixproject.presentation.util.ResponsiveDimensions
 import com.devil.phoenixproject.presentation.util.LocalWindowSizeClass
@@ -840,7 +842,7 @@ private fun StatsPage(
         if (latestBiomechanicsResult != null) {
             val mcv = latestBiomechanicsResult.velocity.meanConcentricVelocityMmS
             val zone = latestBiomechanicsResult.velocity.zone
-            val zColor = zoneColor(zone)
+            val zColor = velocityZoneColor(zone)
 
             Card(
                 modifier = Modifier.fillMaxWidth(),
@@ -870,7 +872,7 @@ private fun StatsPage(
                         )
                         StatColumn(
                             label = "Zone",
-                            value = zone.name,
+                            value = velocityZoneLabel(zone),
                             color = zColor
                         )
                         StatColumn(
@@ -1042,17 +1044,6 @@ private fun StatsPage(
     }
 }
 
-/**
- * Maps a BiomechanicsVelocityZone to a display color for zone-coded UI elements.
- */
-@Composable
-private fun zoneColor(zone: BiomechanicsVelocityZone): Color = when (zone) {
-    BiomechanicsVelocityZone.EXPLOSIVE -> Color(0xFFE53935)  // Red
-    BiomechanicsVelocityZone.FAST -> Color(0xFFFF9800)       // Orange
-    BiomechanicsVelocityZone.MODERATE -> Color(0xFFFDD835)   // Yellow
-    BiomechanicsVelocityZone.SLOW -> Color(0xFF42A5F5)       // Blue
-    BiomechanicsVelocityZone.GRIND -> Color(0xFF9E9E9E)      // Gray
-}
 
 /**
  * Formats velocity from mm/s to m/s with 2 decimal places.

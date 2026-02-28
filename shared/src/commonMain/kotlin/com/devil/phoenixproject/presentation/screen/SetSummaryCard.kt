@@ -30,6 +30,9 @@ import com.devil.phoenixproject.domain.model.StrengthProfile
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.domain.model.WorkoutState
 import com.devil.phoenixproject.presentation.components.RpeIndicator
+import com.devil.phoenixproject.ui.theme.AccessibilityTheme
+import com.devil.phoenixproject.ui.theme.velocityZoneColor
+import com.devil.phoenixproject.ui.theme.velocityZoneLabel
 import kotlin.math.abs
 import kotlin.math.cos
 import kotlin.math.roundToInt
@@ -622,16 +625,7 @@ private fun PhaseStatColumn(
 
 // ===== Velocity Analysis Section =====
 
-/**
- * Zone color for BiomechanicsVelocityZone (matches WorkoutHud.kt zoneColor()).
- */
-private fun zoneColor(zone: BiomechanicsVelocityZone): Color = when (zone) {
-    BiomechanicsVelocityZone.EXPLOSIVE -> Color(0xFFE53935)
-    BiomechanicsVelocityZone.FAST -> Color(0xFFFF9800)
-    BiomechanicsVelocityZone.MODERATE -> Color(0xFFFDD835)
-    BiomechanicsVelocityZone.SLOW -> Color(0xFF42A5F5)
-    BiomechanicsVelocityZone.GRIND -> Color.Gray
-}
+// Zone color now provided by velocityZoneColor() from AccessibilityColors.kt
 
 /**
  * Format MCV from mm/s to m/s display string using integer arithmetic (KMP-safe).
@@ -705,7 +699,7 @@ private fun VelocitySummaryCard(biomechanics: BiomechanicsSetSummary) {
                         formatMcvDisplay(biomechanics.avgMcvMmS),
                         style = MaterialTheme.typography.headlineMedium,
                         fontWeight = FontWeight.Bold,
-                        color = zoneColor(BiomechanicsVelocityZone.fromMcv(biomechanics.avgMcvMmS))
+                        color = velocityZoneColor(BiomechanicsVelocityZone.fromMcv(biomechanics.avgMcvMmS))
                     )
                     Text(
                         "m/s",
@@ -788,7 +782,7 @@ private fun VelocitySummaryCard(biomechanics: BiomechanicsSetSummary) {
                                     .weight(weight)
                                     .fillMaxHeight()
                                     .background(
-                                        zoneColor(zone),
+                                        velocityZoneColor(zone),
                                         shape = when (zone) {
                                             activeZones.first() -> RoundedCornerShape(
                                                 topStart = 6.dp, bottomStart = 6.dp,
@@ -819,10 +813,10 @@ private fun VelocitySummaryCard(biomechanics: BiomechanicsSetSummary) {
                                 Box(
                                     modifier = Modifier
                                         .size(8.dp)
-                                        .background(zoneColor(zone), RoundedCornerShape(2.dp))
+                                        .background(velocityZoneColor(zone), RoundedCornerShape(2.dp))
                                 )
                                 Text(
-                                    "${zone.name.lowercase().replaceFirstChar { it.uppercase() }}: $count",
+                                    "${velocityZoneLabel(zone)}: $count",
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )

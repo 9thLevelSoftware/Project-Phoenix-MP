@@ -47,27 +47,10 @@ import com.devil.phoenixproject.domain.model.BiomechanicsRepResult
 import com.devil.phoenixproject.domain.model.BiomechanicsVelocityZone
 import com.devil.phoenixproject.domain.model.StrengthProfile
 import com.devil.phoenixproject.ui.theme.Spacing
+import com.devil.phoenixproject.ui.theme.velocityZoneColor
+import com.devil.phoenixproject.ui.theme.velocityZoneLabel
 
-/**
- * Returns a semantic color for a [BiomechanicsVelocityZone].
- *
- * Color coding follows VBT convention:
- * - GRIND (near-max effort) = Red
- * - SLOW (strength) = Orange
- * - MODERATE (strength-speed) = Yellow/Amber
- * - FAST (speed-strength) = Green
- * - EXPLOSIVE (speed/power) = Cyan/Blue
- */
-@Composable
-private fun velocityZoneColor(zone: BiomechanicsVelocityZone): Color {
-    return when (zone) {
-        BiomechanicsVelocityZone.GRIND -> MaterialTheme.colorScheme.error                     // Red
-        BiomechanicsVelocityZone.SLOW -> Color(0xFFF97316)                                    // Orange
-        BiomechanicsVelocityZone.MODERATE -> Color(0xFFF59E0B)                                // Amber
-        BiomechanicsVelocityZone.FAST -> Color(0xFF22C55E)                                    // Green
-        BiomechanicsVelocityZone.EXPLOSIVE -> Color(0xFF06B6D4)                               // Cyan
-    }
-}
+// velocityZoneColor() now provided by shared utility from AccessibilityColors.kt
 
 /**
  * Human-readable label for a [StrengthProfile].
@@ -81,18 +64,7 @@ private fun strengthProfileLabel(profile: StrengthProfile): String {
     }
 }
 
-/**
- * Human-readable label for a [BiomechanicsVelocityZone].
- */
-private fun velocityZoneLabel(zone: BiomechanicsVelocityZone): String {
-    return when (zone) {
-        BiomechanicsVelocityZone.EXPLOSIVE -> "Explosive"
-        BiomechanicsVelocityZone.FAST -> "Fast"
-        BiomechanicsVelocityZone.MODERATE -> "Moderate"
-        BiomechanicsVelocityZone.SLOW -> "Slow"
-        BiomechanicsVelocityZone.GRIND -> "Grind"
-    }
-}
+// velocityZoneLabel() now provided by shared utility from AccessibilityColors.kt
 
 // ──────────────────────────────────────────────────────────────────────────────
 // 1. Set-level summary ("at a glance")

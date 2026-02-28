@@ -21,11 +21,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.width
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.devil.phoenixproject.ui.theme.AccessibilityTheme
 
 /**
  * Horizontal balance bar visualizing left/right (A/B cable) force asymmetry.
@@ -52,14 +55,18 @@ fun BalanceBar(
     showAlert: Boolean = false,
     modifier: Modifier = Modifier
 ) {
-    // Severity color based on asymmetry thresholds (ASYM-04)
+    // Severity color from AccessibilityTheme (ASYM-04)
+    val colors = AccessibilityTheme.colors
     val severityColor = when {
-        asymmetryPercent < 10f -> Color(0xFF4CAF50)    // Green - acceptable
-        asymmetryPercent < 15f -> Color(0xFFFFC107)    // Yellow/Amber - caution
-        else -> Color(0xFFF44336)                       // Red - concerning
+        asymmetryPercent < 10f -> colors.asymmetryGood
+        asymmetryPercent < 15f -> colors.asymmetryCaution
+        else -> colors.asymmetryBad
     }
 
-    // Alert animation (ASYM-05): pulsing red border when showAlert is true
+    // Alert border color from theme (resolve in @Composable scope for Canvas use)
+    val alertBorderColor = colors.asymmetryBad
+
+    // Alert animation (ASYM-05): pulsing border when showAlert is true
     // Always create the transition to satisfy Compose's call-site stability requirement.
     // When showAlert is false the animated value is simply unused.
     val alertTransition = rememberInfiniteTransition(label = "AsymmetryAlert")
@@ -76,7 +83,7 @@ fun BalanceBar(
     val borderModifier = if (showAlert) {
         Modifier.border(
             width = 2.dp,
-            color = Color(0xFFF44336).copy(alpha = alertAlpha),
+            color = alertBorderColor.copy(alpha = alertAlpha),
             shape = RoundedCornerShape(8.dp)
         )
     } else {
@@ -85,77 +92,84 @@ fun BalanceBar(
 
     val backgroundColor = MaterialTheme.colorScheme.surfaceContainerHigh
 
-    Box(
-        modifier = modifier
-            .height(16.dp)
-            .then(borderModifier)
+    // Row layout: bar + percentage beside it (WCAG: numeric value beside bar, not inside)
+    Row(
+        modifier = modifier,
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        // Canvas for the bar drawing
-        Canvas(
-            modifier = Modifier.fillMaxSize()
+        Box(
+            modifier = Modifier
+                .weight(1f)
+                .height(16.dp)
+                .then(borderModifier)
         ) {
-            val barWidth = size.width
-            val barHeight = size.height
-            val centerX = barWidth / 2f
+            // Canvas for the bar drawing
+            Canvas(
+                modifier = Modifier.fillMaxSize()
+            ) {
+                val barWidth = size.width
+                val barHeight = size.height
+                val centerX = barWidth / 2f
 
-            // 1. Background rounded rectangle
-            drawRoundRect(
-                color = backgroundColor,
-                topLeft = Offset.Zero,
-                size = Size(barWidth, barHeight),
-                cornerRadius = CornerRadius(8.dp.toPx(), 8.dp.toPx())
-            )
-
-            // 2. Center tick mark (50/50 balance point)
-            drawLine(
-                color = Color.White.copy(alpha = 0.5f),
-                start = Offset(centerX, 2f),
-                end = Offset(centerX, barHeight - 2f),
-                strokeWidth = 1.5f
-            )
-
-            // 3. Asymmetry indicator from center toward dominant side
-            val maxIndicatorWidth = barWidth / 2f - 4f // Max extent from center
-            val indicatorWidth = (asymmetryPercent / 100f).coerceIn(0f, 1f) * maxIndicatorWidth
-            val indicatorY = 2f
-            val indicatorHeight = barHeight - 4f
-
-            if (indicatorWidth > 0.5f) {
-                val indicatorX = when (dominantSide) {
-                    "A" -> centerX - indicatorWidth // Extends left (cable A = left)
-                    "B" -> centerX                   // Extends right (cable B = right)
-                    else -> centerX - indicatorWidth / 2f // Balanced: tiny centered
-                }
-
+                // 1. Background rounded rectangle
                 drawRoundRect(
-                    color = severityColor.copy(alpha = 0.8f),
-                    topLeft = Offset(indicatorX, indicatorY),
-                    size = Size(indicatorWidth, indicatorHeight),
-                    cornerRadius = CornerRadius(4.dp.toPx(), 4.dp.toPx())
+                    color = backgroundColor,
+                    topLeft = Offset.Zero,
+                    size = Size(barWidth, barHeight),
+                    cornerRadius = CornerRadius(8.dp.toPx(), 8.dp.toPx())
                 )
+
+                // 2. Center tick mark (50/50 balance point)
+                drawLine(
+                    color = Color.White.copy(alpha = 0.5f),
+                    start = Offset(centerX, 2f),
+                    end = Offset(centerX, barHeight - 2f),
+                    strokeWidth = 1.5f
+                )
+
+                // 3. Asymmetry indicator from center toward dominant side
+                val maxIndicatorWidth = barWidth / 2f - 4f // Max extent from center
+                val indicatorWidth = (asymmetryPercent / 100f).coerceIn(0f, 1f) * maxIndicatorWidth
+                val indicatorY = 2f
+                val indicatorHeight = barHeight - 4f
+
+                if (indicatorWidth > 0.5f) {
+                    val indicatorX = when (dominantSide) {
+                        "A" -> centerX - indicatorWidth // Extends left (cable A = left)
+                        "B" -> centerX                   // Extends right (cable B = right)
+                        else -> centerX - indicatorWidth / 2f // Balanced: tiny centered
+                    }
+
+                    drawRoundRect(
+                        color = severityColor.copy(alpha = 0.8f),
+                        topLeft = Offset(indicatorX, indicatorY),
+                        size = Size(indicatorWidth, indicatorHeight),
+                        cornerRadius = CornerRadius(4.dp.toPx(), 4.dp.toPx())
+                    )
+                }
             }
+
+            // Side labels "L" and "R" at edges
+            Text(
+                text = "L",
+                style = MaterialTheme.typography.labelSmall.copy(fontSize = 8.sp),
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                modifier = Modifier
+                    .align(Alignment.CenterStart)
+                    .padding(start = 4.dp)
+            )
+
+            Text(
+                text = "R",
+                style = MaterialTheme.typography.labelSmall.copy(fontSize = 8.sp),
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                modifier = Modifier
+                    .align(Alignment.CenterEnd)
+                    .padding(end = 4.dp)
+            )
         }
 
-        // Side labels "L" and "R" at edges
-        Text(
-            text = "L",
-            style = MaterialTheme.typography.labelSmall.copy(fontSize = 8.sp),
-            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
-            modifier = Modifier
-                .align(Alignment.CenterStart)
-                .padding(start = 4.dp)
-        )
-
-        Text(
-            text = "R",
-            style = MaterialTheme.typography.labelSmall.copy(fontSize = 8.sp),
-            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
-            modifier = Modifier
-                .align(Alignment.CenterEnd)
-                .padding(end = 4.dp)
-        )
-
-        // Asymmetry percentage text centered
+        // Asymmetry percentage text BESIDE the bar (not inside)
         Text(
             text = "${asymmetryPercent.toInt()}%",
             style = MaterialTheme.typography.labelSmall.copy(
@@ -167,8 +181,8 @@ fun BalanceBar(
             } else {
                 severityColor
             },
-            textAlign = TextAlign.Center,
-            modifier = Modifier.align(Alignment.Center)
+            textAlign = TextAlign.End,
+            modifier = Modifier.width(32.dp).padding(start = 4.dp)
         )
     }
 }
