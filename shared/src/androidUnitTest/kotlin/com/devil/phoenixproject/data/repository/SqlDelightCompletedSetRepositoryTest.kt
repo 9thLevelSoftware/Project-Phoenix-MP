@@ -193,7 +193,8 @@ class SqlDelightCompletedSetRepositoryTest {
             avgAsymmetryPercent = null,
             totalVelocityLossPercent = null,
             dominantSide = null,
-            strengthProfile = null
+            strengthProfile = null,
+            formScore = null
         )
     }
 }

@@ -106,7 +106,8 @@ class SqlDelightGamificationRepositoryTest {
             avgAsymmetryPercent = null,
             totalVelocityLossPercent = null,
             dominantSide = null,
-            strengthProfile = null
+            strengthProfile = null,
+            formScore = null
         )
     }
 }
