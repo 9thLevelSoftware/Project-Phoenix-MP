@@ -1,0 +1,11 @@
+-- Migration 17: RPG Attributes table (Phase 21, RPG-01/RPG-04)
+CREATE TABLE RpgAttributes (
+    id INTEGER PRIMARY KEY DEFAULT 1,
+    strength INTEGER NOT NULL DEFAULT 0,
+    power INTEGER NOT NULL DEFAULT 0,
+    stamina INTEGER NOT NULL DEFAULT 0,
+    consistency INTEGER NOT NULL DEFAULT 0,
+    mastery INTEGER NOT NULL DEFAULT 0,
+    characterClass TEXT NOT NULL DEFAULT 'Phoenix',
+    lastComputed INTEGER NOT NULL DEFAULT 0
+);
