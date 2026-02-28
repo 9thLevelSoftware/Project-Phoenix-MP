@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v0.4
 milestone_name: milestone
 current_phase: Phase 17 of 22 (WCAG Accessibility)
-current_plan: Plan 1 of 2
-status: in-progress
-last_updated: "2026-02-28T02:22:39Z"
-last_activity: 2026-02-28 -- Plan 17-01 executed (AccessibilityColors infrastructure, color-blind mode settings toggle)
+current_plan: Plan 2 of 2
+status: phase-complete
+last_updated: "2026-02-28T02:37:56Z"
+last_activity: 2026-02-28 -- Plan 17-02 executed (AccessibilityColors composable retrofit, zone labels, BalanceBar relocation)
 progress:
   total_phases: 22
   completed_phases: 16
   total_plans: 41
-  completed_plans: 44
+  completed_plans: 45
 ---
 
 # Session State
@@ -27,17 +27,17 @@ See: .planning/PROJECT.md (updated 2026-02-27)
 
 **Milestone:** v0.5.1 Board Polish & Premium UI
 **Current phase:** Phase 17 of 22 (WCAG Accessibility)
-**Current Plan:** Plan 1 of 2 complete
-**Status:** In progress
-**Last activity:** 2026-02-28 -- Plan 17-01 executed (AccessibilityColors infrastructure, color-blind mode settings toggle)
+**Current Plan:** Plan 2 of 2 complete
+**Status:** Phase complete
+**Last activity:** 2026-02-28 -- Plan 17-02 executed (AccessibilityColors composable retrofit, zone labels, BalanceBar relocation)
 
-Progress: [====░░░░░░] 21%
+Progress: [=====░░░░░] 29%
 
 ## Performance Metrics
 
 **Velocity:**
 - Total plans completed: 51 (across v0.4.1 through v0.5.0)
-- v0.5.1 plans completed: 3
+- v0.5.1 plans completed: 4
 
 **By Milestone:**
 
@@ -63,6 +63,8 @@ Progress: [====░░░░░░] 21%
 - (v0.5.1) Always-show camera rationale with on-device guarantee before permission request
 - (v0.5.1) VBT-standard velocity zone colors (Cyan=Explosive through Red=Grind) as canonical via AccessibilityColors
 - (v0.5.1) Color-blind mode wired through MainViewModel delegation (not Koin injection) following existing settings pattern
+- (v0.5.1) Pre-compute @Composable colors before Canvas blocks for AccessibilityTheme compatibility
+- (v0.5.1) Decorative/brand colors (profile palette, LED previews, brand gradient) exempt from AccessibilityTheme migration
 
 ### Blockers/Concerns
 
@@ -79,3 +81,4 @@ Progress: [====░░░░░░] 21%
 - 2026-02-27: Phase 16 Plan 02 executed (backup exclusion, camera rationale, error handling)
 - 2026-02-27: Phase 16 Plan 01 executed (FeatureGate v0.5.1 entries, version bump, UTC timezone fix)
 - 2026-02-28: Phase 17 Plan 01 executed (AccessibilityColors infrastructure, color-blind mode settings toggle)
+- 2026-02-28: Phase 17 Plan 02 executed (AccessibilityColors composable retrofit, 19 files, zone labels, BalanceBar relocation)
