@@ -67,6 +67,9 @@ fun ActiveWorkoutScreen(
     val isFormCheckEnabled by viewModel.isFormCheckEnabled.collectAsState()
     val latestFormViolations by viewModel.latestFormViolations.collectAsState()
     val latestFormScore by viewModel.latestFormScore.collectAsState()
+    // Ghost Racing state (Phase 22)
+    val ghostSession by viewModel.ghostSession.collectAsState()
+    val latestGhostVerdict by viewModel.latestGhostVerdict.collectAsState()
     @Suppress("UNUSED_VARIABLE") // Reserved for future connecting overlay
     val isAutoConnecting by viewModel.isAutoConnecting.collectAsState()
     val connectionError by viewModel.connectionError.collectAsState()
@@ -96,6 +99,10 @@ fun ActiveWorkoutScreen(
 
     // Form check - gated to Phoenix+ tier (CV-01)
     val hasFormCheckAccess = hasProAccess
+
+    // Ghost racing - gated to Phoenix+ tier (GHOST-02)
+    val gatedGhostSession = if (hasProAccess) ghostSession else null
+    val gatedGhostVerdict = if (hasProAccess) latestGhostVerdict else null
 
     // Readiness briefing - gated to Elite tier (BRIEF-02)
     val hasEliteAccess by subscriptionManager.hasEliteAccess.collectAsState()
@@ -326,7 +333,8 @@ fun ActiveWorkoutScreen(
         userPreferences.summaryCountdownSeconds, loadBaselineA, loadBaselineB, canGoBack, canSkipForward,
         timedExerciseRemainingSeconds, isCurrentExerciseBodyweight, gatedRepQualityScore,
         gatedBiomechanicsResult, detectionState, hudPreset,
-        isFormCheckEnabled, latestFormViolations, latestFormScore
+        isFormCheckEnabled, latestFormViolations, latestFormScore,
+        gatedGhostSession, gatedGhostVerdict
     ) {
         WorkoutUiState(
             connectionState = connectionState,
@@ -359,7 +367,9 @@ fun ActiveWorkoutScreen(
             hudPreset = hudPreset,
             isFormCheckEnabled = isFormCheckEnabled,
             latestFormViolations = latestFormViolations,
-            latestFormScore = latestFormScore
+            latestFormScore = latestFormScore,
+            ghostSession = gatedGhostSession,
+            latestGhostVerdict = gatedGhostVerdict
         )
     }
 

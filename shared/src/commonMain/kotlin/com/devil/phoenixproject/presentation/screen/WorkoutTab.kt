@@ -24,6 +24,8 @@ import com.devil.phoenixproject.domain.model.*
 import com.devil.phoenixproject.domain.model.BiomechanicsRepResult
 import com.devil.phoenixproject.domain.model.FormAssessment
 import com.devil.phoenixproject.domain.model.FormViolation
+import com.devil.phoenixproject.domain.model.GhostRepComparison
+import com.devil.phoenixproject.domain.model.GhostSession
 import com.devil.phoenixproject.domain.model.HudPreset
 import com.devil.phoenixproject.domain.usecase.RepRanges
 import com.devil.phoenixproject.presentation.components.AutoStartOverlay
@@ -121,7 +123,9 @@ fun WorkoutTab(
         hasFormCheckAccess = hasFormCheckAccess,
         latestFormViolations = state.latestFormViolations,
         onToggleFormCheck = onToggleFormCheck,
-        onFormAssessment = onFormAssessment
+        onFormAssessment = onFormAssessment,
+        ghostSession = state.ghostSession,
+        latestGhostVerdict = state.latestGhostVerdict
     )
 }
 
@@ -190,7 +194,10 @@ fun WorkoutTab(
     hasFormCheckAccess: Boolean = false,
     latestFormViolations: List<FormViolation> = emptyList(),
     onToggleFormCheck: () -> Unit = {},
-    onFormAssessment: (FormAssessment) -> Unit = {}
+    onFormAssessment: (FormAssessment) -> Unit = {},
+    // Ghost Racing parameters (Phase 22)
+    ghostSession: GhostSession? = null,
+    latestGhostVerdict: GhostRepComparison? = null
 ) {
     // Note: HapticFeedbackEffect is now global in EnhancedMainScreen
     // No need for local haptic effect here
@@ -233,6 +240,8 @@ fun WorkoutTab(
                 latestFormViolations = latestFormViolations,
                 onToggleFormCheck = onToggleFormCheck,
                 onFormAssessment = onFormAssessment,
+                ghostSession = ghostSession,
+                latestGhostVerdict = latestGhostVerdict,
                 modifier = Modifier.fillMaxSize()
             )
 

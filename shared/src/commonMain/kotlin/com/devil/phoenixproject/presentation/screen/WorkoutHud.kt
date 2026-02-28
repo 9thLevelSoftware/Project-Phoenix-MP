@@ -29,6 +29,10 @@ import com.devil.phoenixproject.domain.model.FormViolation
 import com.devil.phoenixproject.presentation.components.AutoDetectionSheet
 import com.devil.phoenixproject.presentation.components.FormCheckOverlay
 import com.devil.phoenixproject.presentation.components.FormWarningBanner
+import com.devil.phoenixproject.presentation.components.GhostRacingOverlay
+import com.devil.phoenixproject.domain.model.GhostRepComparison
+import com.devil.phoenixproject.domain.model.GhostSession
+import com.devil.phoenixproject.domain.model.GhostVerdict
 import com.devil.phoenixproject.presentation.components.BalanceBar
 import com.devil.phoenixproject.presentation.components.ExpandedForceCurve
 import com.devil.phoenixproject.presentation.components.ForceCurveMiniGraph
@@ -90,6 +94,9 @@ fun WorkoutHud(
     latestFormViolations: List<FormViolation> = emptyList(),
     onToggleFormCheck: () -> Unit = {},
     onFormAssessment: (FormAssessment) -> Unit = {},
+    // Ghost Racing parameters (Phase 22)
+    ghostSession: GhostSession? = null,
+    latestGhostVerdict: GhostRepComparison? = null,
     modifier: Modifier = Modifier
 ) {
     val scope = rememberCoroutineScope()
@@ -324,6 +331,27 @@ fun WorkoutHud(
                         .align(Alignment.BottomCenter)
                         .fillMaxWidth(0.7f)
                         .padding(bottom = 24.dp)
+                )
+            }
+
+            // Ghost Racing overlay (Phase 22) -- positioned inset from cable bars
+            if (ghostSession != null) {
+                val repVelocity = latestGhostVerdict?.currentMcvMmS ?: 0f
+                val ghostVelocity = if (latestGhostVerdict != null && latestGhostVerdict.verdict != GhostVerdict.BEYOND) {
+                    latestGhostVerdict.ghostMcvMmS
+                } else {
+                    ghostSession.avgMcvMmS  // Show average as baseline before first rep
+                }
+                val maxVelocity = (ghostSession.avgMcvMmS * 2f).coerceAtLeast(100f)
+
+                GhostRacingOverlay(
+                    currentRepVelocity = repVelocity,
+                    ghostRepVelocity = ghostVelocity,
+                    maxVelocity = maxVelocity,
+                    verdict = latestGhostVerdict,
+                    modifier = Modifier
+                        .align(Alignment.CenterStart)
+                        .padding(start = 48.dp, top = 32.dp)  // Inset from cable bar
                 )
             }
 

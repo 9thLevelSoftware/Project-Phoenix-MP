@@ -168,6 +168,14 @@ class MainViewModel constructor(
         workoutSessionManager.activeSessionEngine.onFormAssessment(assessment)
     }
 
+    // ===== Ghost Racing Delegation (Phase 22) =====
+
+    /** Ghost session loaded for current exercise (null if no qualifying session) */
+    val ghostSession get() = workoutSessionManager.coordinator.ghostSession
+
+    /** Latest per-rep ghost comparison verdict */
+    val latestGhostVerdict get() = workoutSessionManager.coordinator.latestGhostVerdict
+
     // ===== Exercise Detection Delegation =====
     val detectionState get() = workoutSessionManager.detectionManager.detectionState
 
