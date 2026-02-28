@@ -220,7 +220,7 @@ Note: Phase 19 (CV UX) can proceed after Phase 16 completes (independent of Phas
 | 19. CV Form Check UX & Persistence | 3/3 | Complete   | 2026-02-28 |
 | 20. Readiness Briefing | 2/2 | Complete    | 2026-02-28 |
 | 21. RPG Attributes | 2/2 | Complete   | 2026-02-28 |
-| 22. Ghost Racing | 3/3 | Complete   | 2026-02-28 |
+| 22. Ghost Racing | 3/3 | Complete    | 2026-02-28 |
 
 **Last phase number:** 22
 
