@@ -281,6 +281,23 @@ class WorkoutCoordinator(
     internal val _latestRepQuality = MutableStateFlow<RepQualityScore?>(null)
     val latestRepQuality: StateFlow<RepQualityScore?> = _latestRepQuality.asStateFlow()
 
+    // ===== Form Check State =====
+
+    /** Accumulated form assessments during current set (cleared at set completion) */
+    val formAssessments = mutableListOf<FormAssessment>()
+
+    /** Latest form violations for real-time UI display */
+    val _latestFormViolations = MutableStateFlow<List<FormViolation>>(emptyList())
+
+    /** Whether form check is currently enabled by user */
+    val _isFormCheckEnabled = MutableStateFlow(false)
+
+    /** Latest computed form score for current/last set */
+    val _latestFormScore = MutableStateFlow<Int?>(null)
+
+    /** Timestamp of last form warning audio emission per JointAngleType (debounce tracking) */
+    val formWarningLastEmitTimestamps = mutableMapOf<JointAngleType, Long>()
+
     // ===== Biomechanics Engine =====
 
     /**
