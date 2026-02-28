@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v0.5.1
 milestone_name: Board Polish & Premium UI
 current_phase: Phase 19 of 22 (CV Form Check UX & Persistence)
-current_plan: Plan 2 of 2
+current_plan: Plan 3 of 3
 status: phase-complete
-last_updated: "2026-02-28T15:20:00Z"
-last_activity: 2026-02-28 -- Plan 19-02 executed (form check UI layer, toggle, overlays, form score in SetSummaryCard)
+last_updated: "2026-02-28T15:37:43Z"
+last_activity: 2026-02-28 -- Plan 19-03 executed (ExerciseFormType.fromExerciseName() mapper, WorkoutHud wiring, CV form check pipeline unblocked)
 progress:
   total_phases: 22
   completed_phases: 19
-  total_plans: 43
-  completed_plans: 49
+  total_plans: 44
+  completed_plans: 50
 ---
 
 # Session State
@@ -27,9 +27,9 @@ See: .planning/PROJECT.md (updated 2026-02-27)
 
 **Milestone:** v0.5.1 Board Polish & Premium UI
 **Current phase:** Phase 19 of 22 (CV Form Check UX & Persistence)
-**Current Plan:** Plan 2 of 2
+**Current Plan:** Plan 3 of 3
 **Status:** phase-complete
-**Last activity:** 2026-02-28 -- Plan 19-02 executed (form check UI layer, toggle, overlays, form score in SetSummaryCard)
+**Last activity:** 2026-02-28 -- Plan 19-03 executed (ExerciseFormType.fromExerciseName() mapper, WorkoutHud wiring, CV form check pipeline unblocked)
 
 Progress: [========░░] 38%
 
@@ -37,7 +37,7 @@ Progress: [========░░] 38%
 
 **Velocity:**
 - Total plans completed: 51 (across v0.4.1 through v0.5.0)
-- v0.5.1 plans completed: 8
+- v0.5.1 plans completed: 9
 
 **By Milestone:**
 
@@ -51,6 +51,7 @@ Progress: [========░░] 38%
 
 **Phase 19 P01:** 10min, 2 tasks, 13 files
 **Phase 19 P02:** 9min, 2 tasks, 6 files
+**Phase 19 P03:** 2min, 1 task, 2 files
 
 ## Accumulated Context
 
@@ -77,7 +78,8 @@ Progress: [========░░] 38%
 - (v0.5.1) Form score computed at set completion (not real-time) via FormRulesEngine.calculateFormScore()
 - (v0.5.1) Form check toggle placed in HudTopBar right section alongside STOP button
 - (v0.5.1) FormWarningBanner shows only highest-severity violation to avoid HUD clutter
-- (v0.5.1) exerciseType passed as null to FormCheckOverlay; exercise-to-form-type mapping deferred
+- (v0.5.1) ExerciseFormType.fromExerciseName() keyword mapper resolves exercise type from name (bench/chest press excluded from overhead)
+- (v0.5.1) Null ExerciseFormType return for unrecognized exercises preserves camera preview without form rules (graceful degradation)
 
 ### Blockers/Concerns
 
@@ -99,3 +101,4 @@ Progress: [========░░] 38%
 - 2026-02-28: Phase 18 Plan 02 executed (HUD preset UI layer, SettingsTab selector, dynamic pager filtering)
 - 2026-02-28: Phase 19 Plan 01 executed (formScore DB migration 16, FORM_WARNING haptic, assessment accumulation pipeline)
 - 2026-02-28: Phase 19 Plan 02 executed (form check toggle, FormWarningBanner, FormCheckOverlay PiP, form score in SetSummaryCard)
+- 2026-02-28: Phase 19 Plan 03 executed (ExerciseFormType.fromExerciseName() mapper, WorkoutHud wiring, CV form check pipeline fully unblocked)
