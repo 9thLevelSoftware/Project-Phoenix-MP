@@ -27,6 +27,7 @@ import com.devil.phoenixproject.domain.model.ForceCurveResult
 import com.devil.phoenixproject.domain.model.QualityTrend
 import com.devil.phoenixproject.domain.model.SetQualitySummary
 import com.devil.phoenixproject.domain.model.StrengthProfile
+import com.devil.phoenixproject.domain.model.GhostVerdict
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.domain.model.WorkoutState
 import com.devil.phoenixproject.presentation.components.RpeIndicator
@@ -302,6 +303,106 @@ fun SetSummaryCard(
                                 else -> MaterialTheme.colorScheme.error  // Poor form
                             }
                         )
+                    }
+                }
+            }
+
+            // Ghost Racing Delta (Phase 22) - shown when ghost comparison data is available
+            summary.ghostSetSummary?.let { ghost ->
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
+                    ),
+                    shape = RoundedCornerShape(16.dp)
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(12.dp)
+                    ) {
+                        // Header row
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.Speed,
+                                contentDescription = "Ghost Racing",
+                                modifier = Modifier.size(20.dp),
+                                tint = MaterialTheme.colorScheme.onSurface
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                "vs Personal Best",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(4.dp))
+
+                        // Overall verdict with color
+                        val successColor = AccessibilityTheme.colors.success
+                        val errorColor = AccessibilityTheme.colors.error
+                        val warningColor = AccessibilityTheme.colors.warning
+
+                        val (verdictText, verdictColor) = when (ghost.overallVerdict) {
+                            GhostVerdict.AHEAD -> "FASTER" to successColor
+                            GhostVerdict.BEHIND -> "SLOWER" to errorColor
+                            GhostVerdict.TIED -> "MATCHED" to warningColor
+                            GhostVerdict.BEYOND -> "NEW BEST" to successColor
+                        }
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                verdictText,
+                                style = MaterialTheme.typography.headlineSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = verdictColor
+                            )
+                            // Average velocity delta (KMP-safe formatting)
+                            val deltaSign = if (ghost.avgDeltaMcvMmS >= 0) "+" else ""
+                            val deltaFormatted = ((ghost.avgDeltaMcvMmS * 10).roundToInt() / 10f).toString()
+                            Text(
+                                "${deltaSign}${deltaFormatted} mm/s avg",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+
+                        // Rep breakdown: X ahead, Y behind, Z beyond
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            if (ghost.repsAhead > 0) {
+                                Text(
+                                    "${ghost.repsAhead} ahead",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = successColor
+                                )
+                            }
+                            if (ghost.repsBehind > 0) {
+                                Text(
+                                    "${ghost.repsBehind} behind",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = errorColor
+                                )
+                            }
+                            if (ghost.repsBeyondGhost > 0) {
+                                Text(
+                                    "${ghost.repsBeyondGhost} beyond ghost",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = successColor
+                                )
+                            }
+                        }
                     }
                 }
             }
