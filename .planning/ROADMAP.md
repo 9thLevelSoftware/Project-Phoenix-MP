@@ -112,11 +112,11 @@ Plans:
   2. Velocity zone indicators display text labels (e.g., "Explosive", "Grind") alongside color coding, visible regardless of color-blind mode
   3. Balance bar shows numeric asymmetry percentage alongside the colored bar
   4. All new composables built in Phases 18-22 consume LocalColorBlindMode and AccessibilityColors from the theme root
-**Plans**: TBD
+**Plans**: 2 plans
 
 Plans:
-- [ ] 17-01: TBD
-- [ ] 17-02: TBD
+- [ ] 17-01-PLAN.md — AccessibilityColors infrastructure, CompositionLocal wiring, Settings toggle
+- [ ] 17-02-PLAN.md — Retrofit all composables to use AccessibilityColors, add velocity zone text labels, relocate BalanceBar percentage
 
 ### Phase 18: HUD Customization
 **Goal**: Users can control which HUD pages are visible during workouts without being overwhelmed by data density
