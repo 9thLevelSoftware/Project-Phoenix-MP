@@ -75,10 +75,10 @@ See `.planning/milestones/v0.5.0-*` for archived phase details.
 
 **Milestone Goal:** Complete carried-over premium UI features (CV Form Check UX, ghost racing, RPG attributes, readiness briefing) and address all Board of Directors conditions (accessibility, security, UX, versioning).
 
-- [x] **Phase 16: Foundation & Board Conditions** — FeatureGate entries, versionName, UTC fix, backup exclusion, camera rationale, iOS suppression, asset fallback (completed 2026-02-27)
-- [x] **Phase 17: WCAG Accessibility** — Color-blind mode toggle, secondary visual signals on all color-coded indicators (completed 2026-02-28)
-- [x] **Phase 18: HUD Customization** — Preset-based HUD page visibility with string-key persistence (completed 2026-02-28)
-- [x] **Phase 19: CV Form Check UX & Persistence** — Toggle UI, real-time warnings, form score persistence, iOS stub, tier gating (completed 2026-02-28)
+- [x] **Phase 16: Foundation & Board Conditions** — FeatureGate entries, versionName, UTC fix, backup exclusion, camera rationale, iOS suppression, asset fallback (completed 2026-02-27)
+- [x] **Phase 17: WCAG Accessibility** — Color-blind mode toggle, secondary visual signals on all color-coded indicators (completed 2026-02-28)
+- [x] **Phase 18: HUD Customization** — Preset-based HUD page visibility with string-key persistence (completed 2026-02-28)
+- [x] **Phase 19: CV Form Check UX & Persistence** — Toggle UI, real-time warnings, form score persistence, iOS stub, tier gating (completed 2026-02-28)
 - [ ] **Phase 20: Readiness Briefing** — ACWR engine, readiness card, InsufficientData guard, Elite tier gate
 - [ ] **Phase 21: RPG Attributes** — Attribute engine, character class, attribute card, schema migration v17, Phoenix tier gate
 - [ ] **Phase 22: Ghost Racing** — Ghost engine, dual progress bars, rep-index sync, workout lifecycle integration
@@ -158,11 +158,11 @@ Plans:
   3. User can always dismiss the readiness briefing and proceed with their workout (advisory only, never blocks)
   4. Readiness briefing card displays a "Connect to Portal for full readiness model" upsell link
   5. Readiness briefing is gated to Elite tier (FREE and PHOENIX users do not see it)
-**Plans**: TBD
+**Plans**: 2 plans
 
 Plans:
-- [ ] 20-01: TBD
-- [ ] 20-02: TBD
+- [ ] 20-01-PLAN.md — ReadinessEngine ACWR computation (TDD), ReadinessModels domain types, data sufficiency guards, score mapping
+- [ ] 20-02-PLAN.md — ReadinessBriefingCard composable, ActiveWorkoutScreen wiring with Elite tier gate, dismissible state, Portal upsell
 
 ### Phase 21: RPG Attributes
 **Goal**: Users can see five computed RPG attributes and an auto-assigned character class that gamifies their training profile
@@ -218,11 +218,11 @@ Note: Phase 19 (CV UX) can proceed after Phase 16 completes (independent of Phas
 | 17. WCAG Accessibility | 2/2 | Complete    | 2026-02-28 |
 | 18. HUD Customization | 2/2 | Complete    | 2026-02-28 |
 | 19. CV Form Check UX & Persistence | 3/3 | Complete   | 2026-02-28 |
-| 20. Readiness Briefing | 0/TBD | Not started | - |
+| 20. Readiness Briefing | 0/2 | Not started | - |
 | 21. RPG Attributes | 0/TBD | Not started | - |
 | 22. Ghost Racing | 0/TBD | Not started | - |
 
 **Last phase number:** 22
 
 ---
-*Last updated: 2026-02-27 after Phase 16 planning*
+*Last updated: 2026-02-28 after Phase 20 planning*
