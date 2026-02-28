@@ -45,10 +45,10 @@ Requirements for v0.5.1 Board Polish & Premium UI. Each maps to roadmap phases.
 
 ### RPG Attributes
 
-- [ ] **RPG-01**: Five attributes (Strength, Power, Stamina, Consistency, Mastery) computed locally from workout data
-- [ ] **RPG-02**: Character class auto-assigned from attribute ratios (Powerlifter, Athlete, Ironman, Monk, Phoenix)
+- [x] **RPG-01**: Five attributes (Strength, Power, Stamina, Consistency, Mastery) computed locally from workout data
+- [x] **RPG-02**: Character class auto-assigned from attribute ratios (Powerlifter, Athlete, Ironman, Monk, Phoenix)
 - [ ] **RPG-03**: Compact attribute card displayed on gamification screen (Phoenix+ tier)
-- [ ] **RPG-04**: "View full skill tree on Phoenix Portal" deep link on attribute card
+- [x] **RPG-04**: "View full skill tree on Phoenix Portal" deep link on attribute card
 
 ### Readiness Briefing
 
@@ -131,10 +131,10 @@ Which phases cover which requirements. Updated during roadmap creation.
 | GHOST-02 | Phase 22 | Pending |
 | GHOST-03 | Phase 22 | Pending |
 | GHOST-04 | Phase 22 | Pending |
-| RPG-01 | Phase 21 | Pending |
-| RPG-02 | Phase 21 | Pending |
+| RPG-01 | Phase 21 | Complete |
+| RPG-02 | Phase 21 | Complete |
 | RPG-03 | Phase 21 | Pending |
-| RPG-04 | Phase 21 | Pending |
+| RPG-04 | Phase 21 | Complete |
 | BRIEF-01 | Phase 20 | Complete |
 | BRIEF-02 | Phase 20 | Complete |
 | BRIEF-03 | Phase 20 | Complete |

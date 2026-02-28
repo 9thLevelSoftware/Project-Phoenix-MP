@@ -219,7 +219,7 @@ Note: Phase 19 (CV UX) can proceed after Phase 16 completes (independent of Phas
 | 18. HUD Customization | 2/2 | Complete    | 2026-02-28 |
 | 19. CV Form Check UX & Persistence | 3/3 | Complete   | 2026-02-28 |
 | 20. Readiness Briefing | 2/2 | Complete    | 2026-02-28 |
-| 21. RPG Attributes | 0/2 | Not started | - |
+| 21. RPG Attributes | 1/2 | In Progress|  |
 | 22. Ghost Racing | 0/TBD | Not started | - |
 
 **Last phase number:** 22

@@ -18,16 +18,16 @@ progress:
 gsd_state_version: 1.0
 milestone: v0.5.1
 milestone_name: Board Polish & Premium UI
-current_phase: Phase 20 of 22 (Readiness Briefing)
-current_plan: Plan 2 of 2
-status: phase-complete
-last_updated: "2026-02-28T16:37:46Z"
-last_activity: 2026-02-28 -- Phase 20 Plan 02 executed (ReadinessBriefingCard composable, ActiveWorkoutScreen Elite gating)
+current_phase: Phase 21 of 22 (RPG Attributes)
+current_plan: Plan 1 of 2
+status: in-progress
+last_updated: "2026-02-28T17:25:22Z"
+last_activity: 2026-02-28 -- Phase 21 Plan 01 executed (RpgAttributeEngine TDD, schema v17 migration, 13 tests)
 progress:
   total_phases: 22
   completed_phases: 20
   total_plans: 46
-  completed_plans: 52
+  completed_plans: 53
 ---
 
 # Session State
@@ -37,23 +37,23 @@ progress:
 See: .planning/PROJECT.md (updated 2026-02-27)
 
 **Core value:** Users can connect to their Vitruvian trainer and execute workouts with accurate rep counting, weight control, and progress tracking -- reliably, on both platforms.
-**Current focus:** Phase 20 -- Readiness Briefing
+**Current focus:** Phase 21 -- RPG Attributes
 
 ## Position
 
 **Milestone:** v0.5.1 Board Polish & Premium UI
-**Current phase:** Phase 20 of 22 (Readiness Briefing)
-**Current Plan:** Not started
-**Status:** Milestone complete
-**Last activity:** 2026-02-28 -- Phase 20 Plan 02 executed (ReadinessBriefingCard composable, ActiveWorkoutScreen Elite gating)
+**Current phase:** Phase 21 of 22 (RPG Attributes)
+**Current Plan:** Plan 1 of 2
+**Status:** In progress
+**Last activity:** 2026-02-28 -- Phase 21 Plan 01 executed (RpgAttributeEngine TDD, schema v17 migration, 13 tests)
 
 Progress: [=========░] 42%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 52 (across v0.4.1 through v0.5.1)
-- v0.5.1 plans completed: 11
+- Total plans completed: 53 (across v0.4.1 through v0.5.1)
+- v0.5.1 plans completed: 12
 
 **By Milestone:**
 
@@ -70,6 +70,7 @@ Progress: [=========░] 42%
 **Phase 19 P03:** 2min, 1 task, 2 files
 **Phase 20 P01:** 6min, 2 tasks (TDD), 5 files
 **Phase 20 P02:** 6min, 2 tasks, 2 files
+**Phase 21 P01:** 9min, 2 tasks (TDD), 7 files
 
 ## Accumulated Context
 
@@ -102,11 +103,14 @@ Progress: [=========░] 42%
 - (v0.5.1) Four data sufficiency guards prevent misleading readiness scores (empty, <28d history, <3 recent, zero chronic)
 - (v0.5.1) ReadinessBriefingCard placed above WorkoutTab in Column layout (not overlay/dialog) -- non-blocking advisory
 - (v0.5.1) koinInject SmartSuggestionsRepository inside Elite guard to avoid DI resolution for non-Elite users
+- (v0.5.1) RpgAttributeEngine follows ReadinessEngine pattern: stateless object, pure functions, no DI
+- (v0.5.1) Ceiling constants tuned for Vitruvian Trainer (200kg max weight, 2000W power, 500k volume)
+- (v0.5.1) Mastery-dominant attribute maps to PHOENIX class (well-rounded achiever)
 
 ### Blockers/Concerns
 
 - Ghost racing modifies WorkoutCoordinator + ActiveSessionEngine + WorkoutHud -- must come after HUD customization stabilizes (Phase 18 before Phase 22)
-- RPG schema migration v17 requires iOS DriverFactory.ios.kt CURRENT_SCHEMA_VERSION sync
+- ~~RPG schema migration v17 requires iOS DriverFactory.ios.kt CURRENT_SCHEMA_VERSION sync~~ (RESOLVED: 21-01)
 - ELITE tier 50Hz ghost overlay may need deferral to v0.5.2 if mid-range device performance is insufficient
 - Board of Directors review can be triggered at any point -- Phase 16 must complete first
 
@@ -127,3 +131,4 @@ Progress: [=========░] 42%
 - 2026-02-28: Phase 19 verified (9/9 must-haves, human-approved), advancing to Phase 20
 - 2026-02-28: Phase 20 Plan 01 executed (ReadinessEngine ACWR computation engine, 13 TDD tests, pure stateless object)
 - 2026-02-28: Phase 20 Plan 02 executed (ReadinessBriefingCard composable, ActiveWorkoutScreen Elite gating, WCAG colors)
+- 2026-02-28: Phase 21 Plan 01 executed (RpgAttributeEngine TDD, schema v17 migration, 13 tests, 7 files)
