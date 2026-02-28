@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v0.5.1
 milestone_name: Board Polish & Premium UI
 current_phase: Phase 19 of 22 (CV Form Check UX & Persistence)
-current_plan: Plan 1 of 2
-status: in-progress
-last_updated: "2026-02-28T04:24:11Z"
-last_activity: 2026-02-28 -- Plan 19-01 executed (formScore DB migration, FORM_WARNING haptic, assessment accumulation pipeline)
+current_plan: Plan 2 of 2
+status: phase-complete
+last_updated: "2026-02-28T15:20:00Z"
+last_activity: 2026-02-28 -- Plan 19-02 executed (form check UI layer, toggle, overlays, form score in SetSummaryCard)
 progress:
   total_phases: 22
-  completed_phases: 18
+  completed_phases: 19
   total_plans: 43
-  completed_plans: 48
+  completed_plans: 49
 ---
 
 # Session State
@@ -27,17 +27,17 @@ See: .planning/PROJECT.md (updated 2026-02-27)
 
 **Milestone:** v0.5.1 Board Polish & Premium UI
 **Current phase:** Phase 19 of 22 (CV Form Check UX & Persistence)
-**Current Plan:** Plan 1 of 2
-**Status:** in-progress
-**Last activity:** 2026-02-28 -- Plan 19-01 executed (formScore DB migration, FORM_WARNING haptic, assessment accumulation pipeline)
+**Current Plan:** Plan 2 of 2
+**Status:** phase-complete
+**Last activity:** 2026-02-28 -- Plan 19-02 executed (form check UI layer, toggle, overlays, form score in SetSummaryCard)
 
-Progress: [=======░░░] 36%
+Progress: [========░░] 38%
 
 ## Performance Metrics
 
 **Velocity:**
 - Total plans completed: 51 (across v0.4.1 through v0.5.0)
-- v0.5.1 plans completed: 7
+- v0.5.1 plans completed: 8
 
 **By Milestone:**
 
@@ -50,6 +50,7 @@ Progress: [=======░░░] 36%
 | v0.5.0 | 3 | 7 |
 
 **Phase 19 P01:** 10min, 2 tasks, 13 files
+**Phase 19 P02:** 9min, 2 tasks, 6 files
 
 ## Accumulated Context
 
@@ -74,6 +75,9 @@ Progress: [=======░░░] 36%
 - (v0.5.1) Reuse restover.ogg as interim form warning sound (distinct from rep beep, no new asset needed)
 - (v0.5.1) Per-JointAngleType 3s debounce for form warning audio prevents audio spam
 - (v0.5.1) Form score computed at set completion (not real-time) via FormRulesEngine.calculateFormScore()
+- (v0.5.1) Form check toggle placed in HudTopBar right section alongside STOP button
+- (v0.5.1) FormWarningBanner shows only highest-severity violation to avoid HUD clutter
+- (v0.5.1) exerciseType passed as null to FormCheckOverlay; exercise-to-form-type mapping deferred
 
 ### Blockers/Concerns
 
@@ -94,3 +98,4 @@ Progress: [=======░░░] 36%
 - 2026-02-28: Phase 18 Plan 01 executed (HudPage/HudPreset enums, preference pipeline wiring, FakePreferencesManager fixes)
 - 2026-02-28: Phase 18 Plan 02 executed (HUD preset UI layer, SettingsTab selector, dynamic pager filtering)
 - 2026-02-28: Phase 19 Plan 01 executed (formScore DB migration 16, FORM_WARNING haptic, assessment accumulation pipeline)
+- 2026-02-28: Phase 19 Plan 02 executed (form check toggle, FormWarningBanner, FormCheckOverlay PiP, form score in SetSummaryCard)

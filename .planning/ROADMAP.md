@@ -78,7 +78,7 @@ See `.planning/milestones/v0.5.0-*` for archived phase details.
 - [x] **Phase 16: Foundation & Board Conditions** — FeatureGate entries, versionName, UTC fix, backup exclusion, camera rationale, iOS suppression, asset fallback (completed 2026-02-27)
 - [x] **Phase 17: WCAG Accessibility** — Color-blind mode toggle, secondary visual signals on all color-coded indicators (completed 2026-02-28)
 - [x] **Phase 18: HUD Customization** — Preset-based HUD page visibility with string-key persistence (completed 2026-02-28)
-- [ ] **Phase 19: CV Form Check UX & Persistence** — Toggle UI, real-time warnings, form score persistence, iOS stub, tier gating
+- [x] **Phase 19: CV Form Check UX & Persistence** — Toggle UI, real-time warnings, form score persistence, iOS stub, tier gating (completed 2026-02-28)
 - [ ] **Phase 20: Readiness Briefing** — ACWR engine, readiness card, InsufficientData guard, Elite tier gate
 - [ ] **Phase 21: RPG Attributes** — Attribute engine, character class, attribute card, schema migration v17, Phoenix tier gate
 - [ ] **Phase 22: Ghost Racing** — Ghost engine, dual progress bars, rep-index sync, workout lifecycle integration
@@ -217,7 +217,7 @@ Note: Phase 19 (CV UX) can proceed after Phase 16 completes (independent of Phas
 | 16. Foundation & Board Conditions | 2/2 | Complete    | 2026-02-27 |
 | 17. WCAG Accessibility | 2/2 | Complete    | 2026-02-28 |
 | 18. HUD Customization | 2/2 | Complete    | 2026-02-28 |
-| 19. CV Form Check UX & Persistence | 1/2 | In Progress|  |
+| 19. CV Form Check UX & Persistence | 2/2 | Complete   | 2026-02-28 |
 | 20. Readiness Briefing | 0/TBD | Not started | - |
 | 21. RPG Attributes | 0/TBD | Not started | - |
 | 22. Ghost Racing | 0/TBD | Not started | - |
