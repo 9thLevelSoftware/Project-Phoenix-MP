@@ -70,7 +70,8 @@ data class WorkoutUiState(
     val isCurrentExerciseBodyweight: Boolean = false,
     val latestRepQualityScore: Int? = null,
     val latestBiomechanicsResult: BiomechanicsRepResult? = null,
-    val detectionState: DetectionState = DetectionState()
+    val detectionState: DetectionState = DetectionState(),
+    val hudPreset: String = "full"  // HUD page preset: "essential", "biomechanics", or "full"
 )
 
 /**

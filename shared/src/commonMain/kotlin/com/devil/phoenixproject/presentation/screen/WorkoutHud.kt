@@ -79,12 +79,16 @@ fun WorkoutHud(
     detectionState: DetectionState = DetectionState(),
     onDetectionConfirmed: suspend (exerciseId: String, exerciseName: String) -> Unit = { _, _ -> },
     onDetectionDismissed: () -> Unit = {},
+    hudPreset: String = HudPreset.FULL.key,  // HUD page preset for pager filtering
     modifier: Modifier = Modifier
 ) {
     val scope = rememberCoroutineScope()
     // Determine if we're in Echo mode
     val isEchoMode = workoutParameters.isEchoMode
-    val pagerState = rememberPagerState(pageCount = { 3 })
+    val visiblePages = remember(hudPreset) {
+        HudPreset.fromKey(hudPreset).pages
+    }
+    val pagerState = rememberPagerState(pageCount = { visiblePages.size })
     val topBarModeLabel = if (isCurrentExerciseBodyweight) "Bodyweight" else workoutParameters.programMode.displayName
 
     // Track consecutive high-asymmetry reps for alert (ASYM-05)
@@ -141,9 +145,9 @@ fun WorkoutHud(
             HorizontalPager(
                 state = pagerState,
                 modifier = Modifier.fillMaxSize()
-            ) { page ->
-                when (page) {
-                    0 -> {
+            ) { pageIndex ->
+                when (visiblePages[pageIndex]) {
+                    HudPage.EXECUTION -> {
                         // Derive exercise info for display
                         val currentExercise = loadedRoutine?.exercises?.getOrNull(currentExerciseIndex)
                         val exerciseName = currentExercise?.exercise?.name
@@ -166,13 +170,13 @@ fun WorkoutHud(
                             isCurrentExerciseBodyweight = isCurrentExerciseBodyweight
                         )
                     }
-                    1 -> InstructionPage(
+                    HudPage.INSTRUCTION -> InstructionPage(
                         loadedRoutine = loadedRoutine,
                         currentExerciseIndex = currentExerciseIndex,
                         exerciseRepository = exerciseRepository,
                         enableVideoPlayback = enableVideoPlayback
                     )
-                    2 -> StatsPage(
+                    HudPage.STATS -> StatsPage(
                         metric = metric,
                         weightUnit = weightUnit,
                         formatWeight = formatWeight,

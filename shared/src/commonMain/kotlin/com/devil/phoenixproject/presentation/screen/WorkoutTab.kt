@@ -22,6 +22,7 @@ import com.devil.phoenixproject.data.repository.AutoStopUiState
 import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.domain.model.*
 import com.devil.phoenixproject.domain.model.BiomechanicsRepResult
+import com.devil.phoenixproject.domain.model.HudPreset
 import com.devil.phoenixproject.domain.usecase.RepRanges
 import com.devil.phoenixproject.presentation.components.AutoStartOverlay
 import com.devil.phoenixproject.presentation.components.AutoStopOverlay
@@ -109,7 +110,8 @@ fun WorkoutTab(
         latestBiomechanicsResult = state.latestBiomechanicsResult,
         detectionState = state.detectionState,
         onDetectionConfirmed = actions::onDetectionConfirmed,
-        onDetectionDismissed = actions::onDetectionDismissed
+        onDetectionDismissed = actions::onDetectionDismissed,
+        hudPreset = state.hudPreset
     )
 }
 
@@ -171,7 +173,8 @@ fun WorkoutTab(
     latestBiomechanicsResult: BiomechanicsRepResult? = null,  // Latest biomechanics analysis result
     detectionState: DetectionState = DetectionState(),  // Exercise auto-detection state
     onDetectionConfirmed: suspend (String, String) -> Unit = { _, _ -> },  // Detection confirm callback
-    onDetectionDismissed: () -> Unit = {}  // Detection dismiss callback
+    onDetectionDismissed: () -> Unit = {},  // Detection dismiss callback
+    hudPreset: String = HudPreset.FULL.key  // HUD page preset for pager filtering
 ) {
     // Note: HapticFeedbackEffect is now global in EnhancedMainScreen
     // No need for local haptic effect here
@@ -208,6 +211,7 @@ fun WorkoutTab(
                 detectionState = detectionState,
                 onDetectionConfirmed = onDetectionConfirmed,
                 onDetectionDismissed = onDetectionDismissed,
+                hudPreset = hudPreset,
                 modifier = Modifier.fillMaxSize()
             )
 

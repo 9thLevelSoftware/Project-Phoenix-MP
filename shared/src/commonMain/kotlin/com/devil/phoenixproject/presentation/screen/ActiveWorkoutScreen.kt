@@ -271,13 +271,15 @@ fun ActiveWorkoutScreen(
         currentWorkoutState
     }
 
+    val hudPreset by viewModel.hudPreset.collectAsState()
+
     val workoutUiState = remember(
         connectionState, gatedWorkoutState, currentMetric, currentHeuristicKgMax, workoutParameters,
         repCount, repRanges, autoStopState, weightUnit, enableVideoPlayback,
         loadedRoutine, currentExerciseIndex, currentSetIndex, autoplayEnabled,
         userPreferences.summaryCountdownSeconds, loadBaselineA, loadBaselineB, canGoBack, canSkipForward,
         timedExerciseRemainingSeconds, isCurrentExerciseBodyweight, gatedRepQualityScore,
-        gatedBiomechanicsResult, detectionState
+        gatedBiomechanicsResult, detectionState, hudPreset
     ) {
         WorkoutUiState(
             connectionState = connectionState,
@@ -306,7 +308,8 @@ fun ActiveWorkoutScreen(
             isCurrentExerciseBodyweight = isCurrentExerciseBodyweight,
             latestRepQualityScore = gatedRepQualityScore,
             latestBiomechanicsResult = gatedBiomechanicsResult,
-            detectionState = detectionState
+            detectionState = detectionState,
+            hudPreset = hudPreset
         )
     }
 
