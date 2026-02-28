@@ -127,11 +127,11 @@ Plans:
   2. WorkoutHud pager only shows pages included in the selected preset (page count changes dynamically)
   3. HUD preference persists across app restarts (stored as stable string keys, not integer indices)
   4. Execution page is always visible regardless of preset selection (cannot be hidden)
-**Plans**: TBD
+**Plans**: 2 plans
 
 Plans:
-- [ ] 18-01: TBD
-- [ ] 18-02: TBD
+- [ ] 18-01-PLAN.md — HudPage/HudPreset domain models, preference pipeline (UserPreferences -> PreferencesManager -> SettingsManager -> MainViewModel), FakePreferencesManager fixes, SettingsManager test
+- [ ] 18-02-PLAN.md — WorkoutHud dynamic pager filtering, ActiveWorkoutScreen/WorkoutUiState/WorkoutTab threading, SettingsTab preset selector UI, NavGraph wiring
 
 ### Phase 19: CV Form Check UX & Persistence
 **Goal**: Users can enable form checking during workouts, see real-time form warnings, and review persisted form scores after sessions
