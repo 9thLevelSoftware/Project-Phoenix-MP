@@ -4,6 +4,7 @@ import com.devil.phoenixproject.domain.model.GhostRepComparison
 import com.devil.phoenixproject.domain.model.GhostSessionCandidate
 import com.devil.phoenixproject.domain.model.GhostSetSummary
 import com.devil.phoenixproject.domain.model.GhostVerdict
+import kotlin.math.abs
 
 /**
  * Pure stateless computation engine for ghost racing.
@@ -17,9 +18,12 @@ import com.devil.phoenixproject.domain.model.GhostVerdict
  */
 object GhostRacingEngine {
 
+    private const val TIED_TOLERANCE_PERCENT = 5f
+
     /**
      * Find the best ghost session candidate from a list of candidates.
-     * Filters by weight tolerance and selects the one with the highest avgMcvMmS.
+     * Filters by weight tolerance, positive working reps, and positive avgMcvMmS,
+     * then selects the one with the highest avgMcvMmS.
      *
      * @param candidates List of session candidates from DB query
      * @param exerciseId Exercise to match (pre-filtered by DB query)
@@ -35,7 +39,11 @@ object GhostRacingEngine {
         weightPerCableKg: Float,
         weightToleranceKg: Float = 5f
     ): GhostSessionCandidate? {
-        TODO("RED phase stub")
+        return candidates
+            .filter { abs(it.weightPerCableKg - weightPerCableKg) <= weightToleranceKg }
+            .filter { it.workingReps > 0 }
+            .filter { it.avgMcvMmS > 0f }
+            .maxByOrNull { it.avgMcvMmS }
     }
 
     /**
@@ -46,7 +54,15 @@ object GhostRacingEngine {
      * @return AHEAD if >5% faster, BEHIND if >5% slower, TIED if within tolerance
      */
     fun compareRep(currentMcvMmS: Float, ghostMcvMmS: Float): GhostVerdict {
-        TODO("RED phase stub")
+        // Guard: bad ghost data -- treat as always ahead
+        if (ghostMcvMmS <= 0f) return GhostVerdict.AHEAD
+
+        val deltaPercent = ((currentMcvMmS - ghostMcvMmS) / ghostMcvMmS) * 100f
+        return when {
+            deltaPercent > TIED_TOLERANCE_PERCENT -> GhostVerdict.AHEAD
+            deltaPercent < -TIED_TOLERANCE_PERCENT -> GhostVerdict.BEHIND
+            else -> GhostVerdict.TIED
+        }
     }
 
     /**
@@ -57,6 +73,28 @@ object GhostRacingEngine {
      * @return Summary with totals, averages, counts, and overall verdict
      */
     fun computeSetDelta(comparisons: List<GhostRepComparison>): GhostSetSummary {
-        TODO("RED phase stub")
+        val comparable = comparisons.filter { it.verdict != GhostVerdict.BEYOND }
+        val beyondCount = comparisons.count { it.verdict == GhostVerdict.BEYOND }
+
+        val totalDelta = comparable.sumOf { it.deltaMcvMmS.toDouble() }.toFloat()
+        val avgDelta = if (comparable.isNotEmpty()) totalDelta / comparable.size else 0f
+        val repsAhead = comparable.count { it.verdict == GhostVerdict.AHEAD }
+        val repsBehind = comparable.count { it.verdict == GhostVerdict.BEHIND }
+
+        val overallVerdict = when {
+            avgDelta > 0f -> GhostVerdict.AHEAD
+            avgDelta < 0f -> GhostVerdict.BEHIND
+            else -> GhostVerdict.TIED
+        }
+
+        return GhostSetSummary(
+            totalDeltaMcvMmS = totalDelta,
+            avgDeltaMcvMmS = avgDelta,
+            repsCompared = comparable.size,
+            repsAhead = repsAhead,
+            repsBehind = repsBehind,
+            repsBeyondGhost = beyondCount,
+            overallVerdict = overallVerdict
+        )
     }
 }

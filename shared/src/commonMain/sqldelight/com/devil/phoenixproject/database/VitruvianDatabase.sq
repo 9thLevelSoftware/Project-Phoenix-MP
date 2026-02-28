@@ -1664,3 +1664,19 @@ SELECT ws.exerciseId, ws.exerciseName, ws.weightPerCableKg, ws.timestamp
 FROM WorkoutSession ws
 WHERE ws.exerciseId IS NOT NULL
 ORDER BY ws.exerciseId, ws.timestamp ASC;
+
+-- ==================== GHOST RACING QUERIES ====================
+
+-- Find the best ghost session candidate for a given exercise, mode, and weight range.
+-- Returns the session with the highest avgMcvMmS within weight tolerance.
+selectBestGhostSession:
+SELECT id, exerciseName, weightPerCableKg, workingReps, avgMcvMmS
+FROM WorkoutSession
+WHERE exerciseId = ?
+  AND mode = ?
+  AND avgMcvMmS IS NOT NULL
+  AND avgMcvMmS > 0
+  AND workingReps > 0
+  AND ABS(weightPerCableKg - ?) <= ?
+ORDER BY avgMcvMmS DESC
+LIMIT 1;
