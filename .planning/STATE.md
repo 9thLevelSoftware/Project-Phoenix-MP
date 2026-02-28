@@ -2,11 +2,11 @@
 gsd_state_version: 1.0
 milestone: v0.5.1
 milestone_name: Board Polish & Premium UI
-current_phase: Phase 19 of 22 (CV Form Check UX & Persistence)
-current_plan: Plan 3 of 3
-status: phase-complete
-last_updated: "2026-02-28T15:37:43Z"
-last_activity: 2026-02-28 -- Plan 19-03 executed (ExerciseFormType.fromExerciseName() mapper, WorkoutHud wiring, CV form check pipeline unblocked)
+current_phase: Phase 20 of 22 (Readiness Briefing)
+current_plan: Plan 0 of 0
+status: ready-to-plan
+last_updated: "2026-02-28T16:10:00Z"
+last_activity: 2026-02-28 -- Phase 19 verified (9/9, human-approved), advancing to Phase 20
 progress:
   total_phases: 22
   completed_phases: 19
@@ -21,15 +21,15 @@ progress:
 See: .planning/PROJECT.md (updated 2026-02-27)
 
 **Core value:** Users can connect to their Vitruvian trainer and execute workouts with accurate rep counting, weight control, and progress tracking -- reliably, on both platforms.
-**Current focus:** Phase 19 -- CV Form Check UX & Persistence
+**Current focus:** Phase 20 -- Readiness Briefing
 
 ## Position
 
 **Milestone:** v0.5.1 Board Polish & Premium UI
-**Current phase:** Phase 19 of 22 (CV Form Check UX & Persistence)
-**Current Plan:** Plan 3 of 3
-**Status:** phase-complete
-**Last activity:** 2026-02-28 -- Plan 19-03 executed (ExerciseFormType.fromExerciseName() mapper, WorkoutHud wiring, CV form check pipeline unblocked)
+**Current phase:** Phase 20 of 22 (Readiness Briefing)
+**Current Plan:** Plan 0 of 0
+**Status:** ready-to-plan
+**Last activity:** 2026-02-28 -- Phase 19 verified (9/9, human-approved), advancing to Phase 20
 
 Progress: [========░░] 38%
 
@@ -102,3 +102,4 @@ Progress: [========░░] 38%
 - 2026-02-28: Phase 19 Plan 01 executed (formScore DB migration 16, FORM_WARNING haptic, assessment accumulation pipeline)
 - 2026-02-28: Phase 19 Plan 02 executed (form check toggle, FormWarningBanner, FormCheckOverlay PiP, form score in SetSummaryCard)
 - 2026-02-28: Phase 19 Plan 03 executed (ExerciseFormType.fromExerciseName() mapper, WorkoutHud wiring, CV form check pipeline fully unblocked)
+- 2026-02-28: Phase 19 verified (9/9 must-haves, human-approved), advancing to Phase 20
