@@ -1,33 +1,17 @@
 ---
 gsd_state_version: 1.0
-milestone: v0.4
-milestone_name: milestone
-current_phase: Phase 18 of 22 (HUD Customization)
-current_plan: Not started
-status: completed
-last_updated: "2026-02-28T03:42:40.382Z"
-last_activity: 2026-02-28 -- Plan 18-02 executed (HUD preset UI layer, SettingsTab selector, dynamic pager)
-progress:
-  total_phases: 18
-  completed_phases: 17
-  total_plans: 43
-  completed_plans: 47
----
-
----
-gsd_state_version: 1.0
 milestone: v0.5.1
 milestone_name: Board Polish & Premium UI
-current_phase: Phase 18 of 22 (HUD Customization)
-current_plan: Plan 2 of 2
-status: phase-complete
-last_updated: "2026-02-28T03:37:00Z"
-last_activity: 2026-02-28 -- Plan 18-02 executed (HUD preset UI layer, SettingsTab selector, dynamic pager)
+current_phase: Phase 19 of 22 (CV Form Check UX & Persistence)
+current_plan: Plan 1 of 2
+status: in-progress
+last_updated: "2026-02-28T04:24:11Z"
+last_activity: 2026-02-28 -- Plan 19-01 executed (formScore DB migration, FORM_WARNING haptic, assessment accumulation pipeline)
 progress:
   total_phases: 22
   completed_phases: 18
   total_plans: 43
-  completed_plans: 47
+  completed_plans: 48
 ---
 
 # Session State
@@ -37,15 +21,15 @@ progress:
 See: .planning/PROJECT.md (updated 2026-02-27)
 
 **Core value:** Users can connect to their Vitruvian trainer and execute workouts with accurate rep counting, weight control, and progress tracking -- reliably, on both platforms.
-**Current focus:** Phase 18 -- HUD Customization
+**Current focus:** Phase 19 -- CV Form Check UX & Persistence
 
 ## Position
 
 **Milestone:** v0.5.1 Board Polish & Premium UI
-**Current phase:** Phase 18 of 22 (HUD Customization)
-**Current Plan:** Not started
-**Status:** Milestone complete
-**Last activity:** 2026-02-28 -- Plan 18-02 executed (HUD preset UI layer, SettingsTab selector, dynamic pager)
+**Current phase:** Phase 19 of 22 (CV Form Check UX & Persistence)
+**Current Plan:** Plan 1 of 2
+**Status:** in-progress
+**Last activity:** 2026-02-28 -- Plan 19-01 executed (formScore DB migration, FORM_WARNING haptic, assessment accumulation pipeline)
 
 Progress: [=======░░░] 36%
 
@@ -53,7 +37,7 @@ Progress: [=======░░░] 36%
 
 **Velocity:**
 - Total plans completed: 51 (across v0.4.1 through v0.5.0)
-- v0.5.1 plans completed: 6
+- v0.5.1 plans completed: 7
 
 **By Milestone:**
 
@@ -64,6 +48,8 @@ Progress: [=======░░░] 36%
 | v0.4.6 | 3 | 10 |
 | v0.4.7 | 4 | 13 |
 | v0.5.0 | 3 | 7 |
+
+**Phase 19 P01:** 10min, 2 tasks, 13 files
 
 ## Accumulated Context
 
@@ -85,6 +71,9 @@ Progress: [=======░░░] 36%
 - (v0.5.1) FULL preset as default ensures existing users see no behavior change
 - (v0.5.1) EXECUTION page present in every HUD preset (core workout page always visible)
 - (v0.5.1) Dynamic pager uses visiblePages list from HudPreset.fromKey(key).pages for type-safe page dispatch
+- (v0.5.1) Reuse restover.ogg as interim form warning sound (distinct from rep beep, no new asset needed)
+- (v0.5.1) Per-JointAngleType 3s debounce for form warning audio prevents audio spam
+- (v0.5.1) Form score computed at set completion (not real-time) via FormRulesEngine.calculateFormScore()
 
 ### Blockers/Concerns
 
@@ -104,3 +93,4 @@ Progress: [=======░░░] 36%
 - 2026-02-28: Phase 17 Plan 02 executed (AccessibilityColors composable retrofit, 19 files, zone labels, BalanceBar relocation)
 - 2026-02-28: Phase 18 Plan 01 executed (HudPage/HudPreset enums, preference pipeline wiring, FakePreferencesManager fixes)
 - 2026-02-28: Phase 18 Plan 02 executed (HUD preset UI layer, SettingsTab selector, dynamic pager filtering)
+- 2026-02-28: Phase 19 Plan 01 executed (formScore DB migration 16, FORM_WARNING haptic, assessment accumulation pipeline)

@@ -32,8 +32,8 @@ Requirements for v0.5.1 Board Polish & Premium UI. Each maps to roadmap phases.
 
 - [ ] **CV-01**: User can enable "Form Check" toggle on Active Workout Screen (Phoenix+ tier)
 - [ ] **CV-04**: Real-time form warnings display for exercise-specific joint angle violations (audio + visual)
-- [ ] **CV-05**: Form score (0-100) calculated per exercise from joint angle compliance
-- [ ] **CV-06**: Form assessment data (score, violations, joint angles) persisted locally per exercise
+- [x] **CV-05**: Form score (0-100) calculated per exercise from joint angle compliance
+- [x] **CV-06**: Form assessment data (score, violations, joint angles) persisted locally per exercise
 - [ ] **CV-10**: iOS displays "Form Check coming soon" message when Form Check toggle is tapped
 
 ### Ghost Racing
@@ -124,8 +124,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 | CV-11 | Phase 15 | Complete |
 | CV-01 | Phase 19 | Pending |
 | CV-04 | Phase 19 | Pending |
-| CV-05 | Phase 19 | Pending |
-| CV-06 | Phase 19 | Pending |
+| CV-05 | Phase 19 | Complete |
+| CV-06 | Phase 19 | Complete |
 | CV-10 | Phase 19 | Pending |
 | GHOST-01 | Phase 22 | Pending |
 | GHOST-02 | Phase 22 | Pending |
