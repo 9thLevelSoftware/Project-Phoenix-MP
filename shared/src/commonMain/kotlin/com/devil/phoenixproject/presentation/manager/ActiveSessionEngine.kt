@@ -16,6 +16,7 @@ import com.devil.phoenixproject.data.repository.WorkoutRepository
 import com.devil.phoenixproject.data.sync.SyncTriggerManager
 import com.devil.phoenixproject.domain.model.*
 import com.devil.phoenixproject.domain.premium.FormRulesEngine
+import com.devil.phoenixproject.domain.premium.GhostRacingEngine
 import com.devil.phoenixproject.domain.premium.RepQualityScorer
 import com.devil.phoenixproject.domain.replay.RepBoundaryDetector
 import com.devil.phoenixproject.domain.usecase.RepCounterFromMachine
@@ -545,6 +546,43 @@ class ActiveSessionEngine(
                     scope = scope,
                     hasExerciseAssigned = hasExerciseAssigned
                 )
+            }
+
+            // Ghost racing: compare current rep against ghost (Phase 22)
+            val ghostSession = coordinator._ghostSession.value
+            if (ghostSession != null) {
+                scope.launch {
+                    // Small delay to let processBiomechanicsForRep complete on Default dispatcher
+                    delay(50)
+                    val latestBio = coordinator.biomechanicsEngine.latestRepResult.value
+                    if (latestBio != null && latestBio.repNumber == repCountAfter) {
+                        val currentMcv = latestBio.velocity.meanConcentricVelocityMmS
+                        val ghostRepIndex = repCountAfter - 1  // 0-based index (Pitfall 2: off-by-one)
+                        if (ghostRepIndex < ghostSession.repVelocities.size) {
+                            val ghostMcv = ghostSession.repVelocities[ghostRepIndex]
+                            val comparison = GhostRepComparison(
+                                repNumber = repCountAfter,
+                                currentMcvMmS = currentMcv,
+                                ghostMcvMmS = ghostMcv,
+                                deltaMcvMmS = currentMcv - ghostMcv,
+                                verdict = GhostRacingEngine.compareRep(currentMcv, ghostMcv)
+                            )
+                            coordinator.ghostRepComparisons.add(comparison)
+                            coordinator._latestGhostVerdict.value = comparison
+                        } else {
+                            // Beyond ghost rep count -- user exceeded their PB
+                            val comparison = GhostRepComparison(
+                                repNumber = repCountAfter,
+                                currentMcvMmS = currentMcv,
+                                ghostMcvMmS = 0f,
+                                deltaMcvMmS = 0f,
+                                verdict = GhostVerdict.BEYOND
+                            )
+                            coordinator.ghostRepComparisons.add(comparison)
+                            coordinator._latestGhostVerdict.value = comparison
+                        }
+                    }
+                }
             }
         }
     }
@@ -1290,6 +1328,10 @@ class ActiveSessionEngine(
         coordinator._latestFormViolations.value = emptyList()
         coordinator.formWarningLastEmitTimestamps.clear()
         coordinator._latestFormScore.value = null
+        // Reset ghost racing state for fresh workout
+        coordinator._ghostSession.value = null
+        coordinator._latestGhostVerdict.value = null
+        coordinator.ghostRepComparisons.clear()
     }
 
     fun recaptureLoadBaseline() {
@@ -1356,6 +1398,43 @@ class ActiveSessionEngine(
             Logger.d { "  - Duration: ${exerciseDuration}s" }
             Logger.d { "  - isBodyweight: $isBodyweight" }
             Logger.d { "  - isTimedCableExercise: $isTimedCableExercise" }
+
+            // Pre-load ghost session for real-time comparison (Phase 22)
+            // Only when exercise is known (not Just Lift mode) -- no DB reads during active set
+            val exerciseId = params.selectedExerciseId
+            if (exerciseId != null && exerciseId.isNotBlank() && !isBodyweight) {
+                scope.launch {
+                    try {
+                        val candidate = workoutRepository.findBestGhostSession(
+                            exerciseId = exerciseId,
+                            mode = params.programMode.displayName,
+                            weightPerCableKg = params.weightPerCableKg,
+                            weightToleranceKg = 5f
+                        )
+                        if (candidate != null) {
+                            val repBio = biomechanicsRepository.getRepBiomechanics(candidate.id)
+                            coordinator._ghostSession.value = GhostSession(
+                                sessionId = candidate.id,
+                                exerciseName = candidate.exerciseName ?: "",
+                                weightPerCableKg = candidate.weightPerCableKg,
+                                workingReps = candidate.workingReps,
+                                avgMcvMmS = candidate.avgMcvMmS,
+                                repVelocities = repBio.map { it.velocity.meanConcentricVelocityMmS },
+                                repPeakPositions = repBio.map { it.velocity.peakVelocityMmS }
+                            )
+                            Logger.d { "Ghost session loaded: ${candidate.id}, ${repBio.size} reps, avgMcv=${candidate.avgMcvMmS}" }
+                        } else {
+                            coordinator._ghostSession.value = null
+                            Logger.d { "No ghost session found for exerciseId=$exerciseId, mode=${params.programMode.displayName}, weight=${params.weightPerCableKg}kg" }
+                        }
+                    } catch (e: Exception) {
+                        Logger.e(e) { "Failed to load ghost session" }
+                        coordinator._ghostSession.value = null
+                    }
+                }
+            } else {
+                coordinator._ghostSession.value = null
+            }
 
             // Issue #222: For ALL bodyweight exercises, skip machine commands
             if (isBodyweight) {
@@ -2066,11 +2145,21 @@ class ActiveSessionEngine(
                 baselineLoadB = coordinator._loadBaselineB.value
             )
 
-            // Attach quality, biomechanics, and form check summaries to the set summary
+            // Compute ghost set delta BEFORE resetting ghost state
+            val ghostSetSummary = if (coordinator.ghostRepComparisons.isNotEmpty()) {
+                GhostRacingEngine.computeSetDelta(coordinator.ghostRepComparisons.toList())
+            } else null
+
+            // Reset ghost comparison state for next set (keep ghostSession loaded for multi-set workouts)
+            coordinator.ghostRepComparisons.clear()
+            coordinator._latestGhostVerdict.value = null
+
+            // Attach quality, biomechanics, form check, and ghost summaries to the set summary
             val summary = baseSummary.copy(
                 qualitySummary = qualitySummary,
                 biomechanicsSummary = biomechanicsSummary,
-                formScore = formScore
+                formScore = formScore,
+                ghostSetSummary = ghostSetSummary
             )
 
             // Process quality event for Form Master badge tracking
