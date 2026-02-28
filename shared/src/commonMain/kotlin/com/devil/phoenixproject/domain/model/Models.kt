@@ -85,7 +85,9 @@ sealed class WorkoutState {
         // Rep Quality Summary (null for Free tier or if scorer wasn't active)
         val qualitySummary: SetQualitySummary? = null,
         // Biomechanics Set Summary (null for Free tier or if no reps processed by engine)
-        val biomechanicsSummary: BiomechanicsSetSummary? = null
+        val biomechanicsSummary: BiomechanicsSetSummary? = null,
+        // Form Check score (null if form check was not enabled, 0-100)
+        val formScore: Int? = null
     ) : WorkoutState()
     object Paused : WorkoutState()
     object Completed : WorkoutState()
@@ -367,6 +369,9 @@ sealed class HapticEvent {
 
     /** Strong haptic + random PR celebration sound */
     data object PERSONAL_RECORD : HapticEvent()
+
+    /** Warning tone for form violations during CV form check */
+    data object FORM_WARNING : HapticEvent()
 }
 
 /**
@@ -421,7 +426,9 @@ data class WorkoutSession(
     val avgAsymmetryPercent: Float? = null,
     val totalVelocityLossPercent: Float? = null,
     val dominantSide: String? = null,
-    val strengthProfile: String? = null
+    val strengthProfile: String? = null,
+    // Form Check score (added in v0.5.1 Phase 19 CV-06)
+    val formScore: Int? = null
 ) {
     /** True if this session has detailed summary metrics (v0.2.1+) */
     val hasSummaryMetrics: Boolean
@@ -430,6 +437,10 @@ data class WorkoutSession(
     /** True if this session has biomechanics data (v0.5.0+) */
     val hasBiomechanicsData: Boolean
         get() = avgMcvMmS != null
+
+    /** True if this session has form check data (v0.5.1+) */
+    val hasFormCheckData: Boolean
+        get() = formScore != null
 }
 
 /**
@@ -463,7 +474,8 @@ fun WorkoutSession.toSetSummary(): WorkoutState.SetSummary? {
         warmupAvgWeightKg = warmupAvgWeightKg ?: 0f,
         workingAvgWeightKg = workingAvgWeightKg ?: 0f,
         burnoutAvgWeightKg = burnoutAvgWeightKg ?: 0f,
-        peakWeightKg = peakWeightKg ?: 0f
+        peakWeightKg = peakWeightKg ?: 0f,
+        formScore = formScore
     )
 }
 

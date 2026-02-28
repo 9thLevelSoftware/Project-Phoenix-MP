@@ -67,7 +67,9 @@ data class WorkoutSessionBackup(
     val avgAsymmetryPercent: Float? = null,
     val totalVelocityLossPercent: Float? = null,
     val dominantSide: String? = null,
-    val strengthProfile: String? = null
+    val strengthProfile: String? = null,
+    // Form Check score (added in v0.5.1 Phase 19 CV-06)
+    val formScore: Long? = null
 )
 
 /**

@@ -73,6 +73,8 @@ actual fun HapticFeedbackEffect(
                 loadSoundByName(context, soundPool, "chirpchirp")?.let { put(HapticEvent.WORKOUT_END, it) }
                 loadSoundByName(context, soundPool, "restover")?.let { put(HapticEvent.REST_ENDING, it) }
                 loadSoundByName(context, soundPool, "discomode")?.let { put(HapticEvent.DISCO_MODE_UNLOCKED, it) }
+                // Form warning: reuse restover sound as interim warning tone (distinct from rep beep)
+                loadSoundByName(context, soundPool, "restover")?.let { put(HapticEvent.FORM_WARNING, it) }
             } catch (e: Exception) {
                 Logger.e(e) { "Failed to load sounds" }
             }
@@ -234,6 +236,7 @@ private fun playWithMediaPlayer(event: HapticEvent, context: Context) {
         is HapticEvent.BADGE_EARNED -> getRandomBadgeSound()
         is HapticEvent.PERSONAL_RECORD -> getRandomPRSound()
         is HapticEvent.REP_COUNT_ANNOUNCED -> "rep_%02d".format(event.repNumber)
+        is HapticEvent.FORM_WARNING -> "restover"
         is HapticEvent.ERROR -> return
     }
 
@@ -368,6 +371,10 @@ private fun playHapticFeedback(
                     -1
                 )
             }
+            is HapticEvent.FORM_WARNING -> {
+                // Light click for form warning (paired with warning sound)
+                VibrationEffect.createOneShot(50, VibrationEffect.DEFAULT_AMPLITUDE)
+            }
             is HapticEvent.REP_COUNT_ANNOUNCED -> {
                 // Already handled above, but needed for exhaustive when
                 return
@@ -401,6 +408,10 @@ private fun playHapticFeedback(
             }
             is HapticEvent.BADGE_EARNED, is HapticEvent.PERSONAL_RECORD -> {
                 vibrator.vibrate(longArrayOf(0, 100, 60, 120, 60, 150), -1)
+            }
+            is HapticEvent.FORM_WARNING -> {
+                // Light click for form warning
+                vibrator.vibrate(50)
             }
             is HapticEvent.REP_COUNT_ANNOUNCED -> {
                 // No haptic for rep count announcement - audio only

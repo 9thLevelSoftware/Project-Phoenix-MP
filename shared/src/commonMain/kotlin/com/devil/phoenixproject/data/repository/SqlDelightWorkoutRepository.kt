@@ -82,6 +82,8 @@ class SqlDelightWorkoutRepository(
         totalVelocityLossPercent: Double?,
         dominantSide: String?,
         strengthProfile: String?,
+        // Form Check score (migration 16 - Phase 19 CV-06)
+        formScore: Long?,
         // Sync fields (migration 6)
         updatedAt: Long?,
         serverId: String?,
@@ -132,7 +134,9 @@ class SqlDelightWorkoutRepository(
             avgAsymmetryPercent = avgAsymmetryPercent?.toFloat(),
             totalVelocityLossPercent = totalVelocityLossPercent?.toFloat(),
             dominantSide = dominantSide,
-            strengthProfile = strengthProfile
+            strengthProfile = strengthProfile,
+            // Form Check score
+            formScore = formScore?.toInt()
         )
     }
 
@@ -402,7 +406,9 @@ class SqlDelightWorkoutRepository(
                 avgAsymmetryPercent = session.avgAsymmetryPercent?.toDouble(),
                 totalVelocityLossPercent = session.totalVelocityLossPercent?.toDouble(),
                 dominantSide = session.dominantSide,
-                strengthProfile = session.strengthProfile
+                strengthProfile = session.strengthProfile,
+                // Form Check score
+                formScore = session.formScore?.toLong()
             )
         }
     }

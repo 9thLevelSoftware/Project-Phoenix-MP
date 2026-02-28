@@ -54,6 +54,8 @@ fun HapticFeedbackEffect(
                 put(HapticEvent.WORKOUT_END, soundPool.load(context, R.raw.chirpchirp, 1))
                 put(HapticEvent.REST_ENDING, soundPool.load(context, R.raw.restover, 1))
                 put(HapticEvent.DISCO_MODE_UNLOCKED, soundPool.load(context, R.raw.discomode, 1))
+                // Form warning: reuse restover sound as interim warning tone (distinct from rep beep)
+                put(HapticEvent.FORM_WARNING, soundPool.load(context, R.raw.restover, 1))
                 // BADGE_EARNED, PERSONAL_RECORD use random sounds from lists below
                 // REP_COUNT_ANNOUNCED uses indexed sounds from repCountSoundIds list
                 // ERROR has no sound
@@ -188,6 +190,8 @@ private fun playHapticFeedback(event: HapticEvent, hapticFeedback: HapticFeedbac
         is HapticEvent.DISCO_MODE_UNLOCKED,
         is HapticEvent.BADGE_EARNED,
         is HapticEvent.PERSONAL_RECORD -> HapticFeedbackType.LongPress // Strong vibration
+
+        is HapticEvent.FORM_WARNING -> HapticFeedbackType.TextHandleMove // Light click for form warning
 
         is HapticEvent.REP_COUNT_ANNOUNCED -> return // Already handled above
     }

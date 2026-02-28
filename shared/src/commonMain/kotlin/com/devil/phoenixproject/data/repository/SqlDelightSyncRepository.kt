@@ -228,6 +228,7 @@ class SqlDelightSyncRepository(
                         totalVelocityLossPercent = null,
                         dominantSide = null,
                         strengthProfile = null,
+                        formScore = null,
                         updatedAt = dto.updatedAt,
                         serverId = dto.serverId,
                         deletedAt = dto.deletedAt

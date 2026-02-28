@@ -3,6 +3,7 @@ package com.devil.phoenixproject.presentation.screen
 import com.devil.phoenixproject.data.repository.AutoStopUiState
 import com.devil.phoenixproject.domain.model.*
 import com.devil.phoenixproject.domain.model.BiomechanicsRepResult
+import com.devil.phoenixproject.domain.model.FormViolation
 import com.devil.phoenixproject.domain.usecase.RepRanges
 import com.devil.phoenixproject.presentation.manager.DetectionState
 
@@ -71,7 +72,11 @@ data class WorkoutUiState(
     val latestRepQualityScore: Int? = null,
     val latestBiomechanicsResult: BiomechanicsRepResult? = null,
     val detectionState: DetectionState = DetectionState(),
-    val hudPreset: String = "full"  // HUD page preset: "essential", "biomechanics", or "full"
+    val hudPreset: String = "full",  // HUD page preset: "essential", "biomechanics", or "full"
+    // Form Check state (Phase 19 CV-05/CV-06)
+    val isFormCheckEnabled: Boolean = false,
+    val latestFormViolations: List<FormViolation> = emptyList(),
+    val latestFormScore: Int? = null
 )
 
 /**

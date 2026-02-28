@@ -93,6 +93,8 @@ CREATE TABLE WorkoutSession (
     totalVelocityLossPercent REAL,
     dominantSide TEXT,
     strengthProfile TEXT,
+    -- Form Check score (added in migration 16 - Phase 19 CV-06)
+    formScore INTEGER,
     -- Sync fields (added in migration 6)
     updatedAt INTEGER,
     serverId TEXT,
@@ -512,13 +514,14 @@ INSERT INTO WorkoutSession (
     avgForceConcentricA, avgForceConcentricB, avgForceEccentricA, avgForceEccentricB,
     heaviestLiftKg, totalVolumeKg, estimatedCalories,
     warmupAvgWeightKg, workingAvgWeightKg, burnoutAvgWeightKg, peakWeightKg, rpe,
-    avgMcvMmS, avgAsymmetryPercent, totalVelocityLossPercent, dominantSide, strengthProfile
+    avgMcvMmS, avgAsymmetryPercent, totalVelocityLossPercent, dominantSide, strengthProfile,
+    formScore
 )
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 updateSession:
-UPDATE WorkoutSession 
-SET duration = ?, totalReps = ?, workingReps = ? 
+UPDATE WorkoutSession
+SET duration = ?, totalReps = ?, workingReps = ?, formScore = ?
 WHERE id = ?;
 
 -- Metric Queries
@@ -1533,9 +1536,10 @@ INSERT OR REPLACE INTO WorkoutSession (
     heaviestLiftKg, totalVolumeKg, estimatedCalories,
     warmupAvgWeightKg, workingAvgWeightKg, burnoutAvgWeightKg, peakWeightKg, rpe,
     avgMcvMmS, avgAsymmetryPercent, totalVelocityLossPercent, dominantSide, strengthProfile,
+    formScore,
     updatedAt, serverId, deletedAt
 )
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 -- Get PRs modified since last sync
 selectPRsModifiedSince:

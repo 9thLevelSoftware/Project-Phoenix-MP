@@ -167,7 +167,8 @@ abstract class BaseDataBackupManager(
                         avgAsymmetryPercent = session.avgAsymmetryPercent?.toFloat(),
                         totalVelocityLossPercent = session.totalVelocityLossPercent?.toFloat(),
                         dominantSide = session.dominantSide,
-                        strengthProfile = session.strengthProfile
+                        strengthProfile = session.strengthProfile,
+                        formScore = session.formScore
                     )
                 },
                 metricSamples = metrics.map { metric ->
@@ -459,7 +460,8 @@ abstract class BaseDataBackupManager(
                             avgAsymmetryPercent = session.avgAsymmetryPercent?.toDouble(),
                             totalVelocityLossPercent = session.totalVelocityLossPercent?.toDouble(),
                             dominantSide = session.dominantSide,
-                            strengthProfile = session.strengthProfile
+                            strengthProfile = session.strengthProfile,
+                            formScore = session.formScore
                         )
                         sessionsImported++
                     } else {
