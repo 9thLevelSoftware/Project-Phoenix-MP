@@ -1,5 +1,6 @@
 package com.devil.phoenixproject.data.repository
 
+import com.devil.phoenixproject.domain.model.GhostSessionCandidate
 import com.devil.phoenixproject.domain.model.PersonalRecord
 import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.domain.model.WorkoutSession
@@ -72,6 +73,18 @@ interface WorkoutRepository {
      * Get recent workout sessions synchronously (for export)
      */
     suspend fun getRecentSessionsSync(limit: Int = 10): List<WorkoutSession>
+
+    // Ghost Racing (Phase 22)
+    /**
+     * Find the best ghost session candidate for real-time rep comparison.
+     * Returns the session with highest avgMcvMmS within weight tolerance.
+     */
+    suspend fun findBestGhostSession(
+        exerciseId: String,
+        mode: String,
+        weightPerCableKg: Float,
+        weightToleranceKg: Float
+    ): GhostSessionCandidate?
 
     // Phase Statistics (heuristic data from machine)
     /**

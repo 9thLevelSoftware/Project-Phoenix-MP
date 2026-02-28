@@ -87,7 +87,9 @@ sealed class WorkoutState {
         // Biomechanics Set Summary (null for Free tier or if no reps processed by engine)
         val biomechanicsSummary: BiomechanicsSetSummary? = null,
         // Form Check score (null if form check was not enabled, 0-100)
-        val formScore: Int? = null
+        val formScore: Int? = null,
+        // Ghost Racing summary (null if ghost racing was not active for this set)
+        val ghostSetSummary: GhostSetSummary? = null
     ) : WorkoutState()
     object Paused : WorkoutState()
     object Completed : WorkoutState()
