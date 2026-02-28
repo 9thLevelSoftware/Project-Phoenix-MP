@@ -98,6 +98,13 @@ fun WorkoutHud(
     val visiblePages = remember(hudPreset) {
         HudPreset.fromKey(hudPreset).pages
     }
+    // Resolve current exercise's form type for FormCheckOverlay (CV-04 gap closure)
+    val currentExerciseName = remember(loadedRoutine, currentExerciseIndex) {
+        loadedRoutine?.exercises?.getOrNull(currentExerciseIndex)?.exercise?.name
+    }
+    val exerciseFormType = remember(currentExerciseName) {
+        ExerciseFormType.fromExerciseName(currentExerciseName)
+    }
     val pagerState = rememberPagerState(pageCount = { visiblePages.size })
     val topBarModeLabel = if (isCurrentExerciseBodyweight) "Bodyweight" else workoutParameters.programMode.displayName
 
@@ -340,7 +347,7 @@ fun WorkoutHud(
             if (isFormCheckEnabled) {
                 FormCheckOverlay(
                     isEnabled = true,
-                    exerciseType = null, // Exercise-to-form-type mapping deferred to follow-up
+                    exerciseType = exerciseFormType,
                     onFormAssessment = onFormAssessment,
                     modifier = Modifier
                         .size(width = 160.dp, height = 120.dp)

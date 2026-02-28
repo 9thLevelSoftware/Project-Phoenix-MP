@@ -64,7 +64,31 @@ enum class ExerciseFormType {
     DEADLIFT_RDL,
     OVERHEAD_PRESS,
     CURL,
-    ROW
+    ROW;
+
+    companion object {
+        /**
+         * Maps an exercise name to its form type using keyword matching.
+         * Returns null for exercises without form rules (form check camera
+         * still works but no exercise-specific evaluation occurs).
+         *
+         * Keyword matching is case-insensitive and checks for substring presence.
+         * Order matters: more specific patterns (e.g., "deadlift") are checked
+         * before broader ones to avoid false matches.
+         */
+        fun fromExerciseName(name: String?): ExerciseFormType? {
+            if (name == null) return null
+            val lower = name.lowercase()
+            return when {
+                lower.contains("squat") -> SQUAT
+                lower.contains("deadlift") || lower.contains("rdl") || lower.contains("romanian") -> DEADLIFT_RDL
+                lower.contains("overhead") || (lower.contains("press") && !lower.contains("bench") && !lower.contains("chest")) -> OVERHEAD_PRESS
+                lower.contains("curl") -> CURL
+                lower.contains("row") -> ROW
+                else -> null
+            }
+        }
+    }
 }
 
 /**
