@@ -18,5 +18,6 @@ data class UserPreferences(
     val colorBlindModeEnabled: Boolean = false,  // Deuteranopia-safe palette (off by default)
     // Countdown settings
     val summaryCountdownSeconds: Int = 10,  // -1 = Off (skip summary), 0 = Unlimited (no auto-advance), 5-30 = auto-advance
-    val autoStartCountdownSeconds: Int = 5  // 2-10 in 1s intervals, default 5
+    val autoStartCountdownSeconds: Int = 5,  // 2-10 in 1s intervals, default 5
+    val hudPreset: String = HudPreset.FULL.key  // HUD page preset: "essential", "biomechanics", or "full"
 )

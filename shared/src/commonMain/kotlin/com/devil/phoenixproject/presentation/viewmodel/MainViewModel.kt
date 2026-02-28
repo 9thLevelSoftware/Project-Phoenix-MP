@@ -205,6 +205,8 @@ class MainViewModel constructor(
     fun setLedFeedbackEnabled(enabled: Boolean) = settingsManager.setLedFeedbackEnabled(enabled)
     val colorBlindModeEnabled: StateFlow<Boolean> get() = settingsManager.colorBlindModeEnabled
     fun setColorBlindModeEnabled(enabled: Boolean) = settingsManager.setColorBlindModeEnabled(enabled)
+    val hudPreset: StateFlow<String> get() = settingsManager.hudPreset
+    fun setHudPreset(preset: String) = settingsManager.setHudPreset(preset)
     fun setSummaryCountdownSeconds(seconds: Int) = settingsManager.setSummaryCountdownSeconds(seconds)
     fun setAutoStartCountdownSeconds(seconds: Int) = settingsManager.setAutoStartCountdownSeconds(seconds)
     fun setColorScheme(schemeIndex: Int) = settingsManager.setColorScheme(schemeIndex)

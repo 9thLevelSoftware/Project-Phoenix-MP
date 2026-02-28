@@ -4,6 +4,7 @@ import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.data.preferences.PreferencesManager
 import com.devil.phoenixproject.data.repository.BleRepository
 import com.devil.phoenixproject.data.repository.KableBleRepository
+import com.devil.phoenixproject.domain.model.HudPreset
 import com.devil.phoenixproject.domain.model.UserPreferences
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.util.format
@@ -79,6 +80,14 @@ class SettingsManager(
 
     fun setColorBlindModeEnabled(enabled: Boolean) {
         scope.launch { preferencesManager.setColorBlindModeEnabled(enabled) }
+    }
+
+    val hudPreset: StateFlow<String> = userPreferences
+        .map { it.hudPreset }
+        .stateIn(scope, SharingStarted.Eagerly, HudPreset.FULL.key)
+
+    fun setHudPreset(preset: String) {
+        scope.launch { preferencesManager.setHudPreset(preset) }
     }
 
     fun setSummaryCountdownSeconds(seconds: Int) {
