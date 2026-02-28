@@ -6,6 +6,8 @@ import com.devil.phoenixproject.data.repository.GamificationRepository
 import com.devil.phoenixproject.domain.model.Badge
 import com.devil.phoenixproject.domain.model.EarnedBadge
 import com.devil.phoenixproject.domain.model.GamificationStats
+import com.devil.phoenixproject.domain.model.RpgInput
+import com.devil.phoenixproject.domain.model.RpgProfile
 import com.devil.phoenixproject.domain.model.StreakInfo
 import com.devil.phoenixproject.domain.model.currentTimeMillis
 import kotlinx.coroutines.flow.Flow
@@ -114,6 +116,17 @@ class FakeGamificationRepository : GamificationRepository {
             }
         }
         updateFlows()
+    }
+
+    override suspend fun getRpgInput(): RpgInput = RpgInput(
+        maxWeightLiftedKg = 0.0, totalVolumeKg = 0.0, totalWorkouts = 0,
+        totalReps = 0, uniqueExercises = 0, personalRecords = 0,
+        peakPowerWatts = 0.0, avgWorkingWeightKg = 0.0,
+        currentStreak = 0, longestStreak = 0, trainingDays = 0, badgesEarned = 0
+    )
+
+    override suspend fun saveRpgProfile(profile: RpgProfile) {
+        // No-op in fake
     }
 
     override suspend fun updateStats() {
