@@ -1,33 +1,17 @@
 ---
 gsd_state_version: 1.0
-milestone: v0.4
-milestone_name: milestone
-current_phase: Phase 20 of 22 (Readiness Briefing)
-current_plan: Not started
-status: completed
-last_updated: "2026-02-28T16:43:02.758Z"
-last_activity: 2026-02-28 -- Phase 20 Plan 02 executed (ReadinessBriefingCard composable, ActiveWorkoutScreen Elite gating)
-progress:
-  total_phases: 20
-  completed_phases: 19
-  total_plans: 48
-  completed_plans: 52
----
-
----
-gsd_state_version: 1.0
 milestone: v0.5.1
 milestone_name: Board Polish & Premium UI
 current_phase: Phase 21 of 22 (RPG Attributes)
-current_plan: Plan 1 of 2
-status: in-progress
-last_updated: "2026-02-28T17:25:22Z"
-last_activity: 2026-02-28 -- Phase 21 Plan 01 executed (RpgAttributeEngine TDD, schema v17 migration, 13 tests)
+current_plan: Plan 2 of 2
+status: completed
+last_updated: "2026-02-28T17:37:46Z"
+last_activity: 2026-02-28 -- Phase 21 Plan 02 executed (RpgAttributeCard composable, BadgesScreen Phoenix+ tier gate, repository RPG methods)
 progress:
   total_phases: 22
-  completed_phases: 20
+  completed_phases: 21
   total_plans: 46
-  completed_plans: 53
+  completed_plans: 54
 ---
 
 # Session State
@@ -43,17 +27,17 @@ See: .planning/PROJECT.md (updated 2026-02-27)
 
 **Milestone:** v0.5.1 Board Polish & Premium UI
 **Current phase:** Phase 21 of 22 (RPG Attributes)
-**Current Plan:** Plan 1 of 2
-**Status:** In progress
-**Last activity:** 2026-02-28 -- Phase 21 Plan 01 executed (RpgAttributeEngine TDD, schema v17 migration, 13 tests)
+**Current Plan:** Plan 2 of 2
+**Status:** completed
+**Last activity:** 2026-02-28 -- Phase 21 Plan 02 executed (RpgAttributeCard composable, BadgesScreen Phoenix+ tier gate, repository RPG methods)
 
-Progress: [=========░] 42%
+Progress: [==========] 95%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 53 (across v0.4.1 through v0.5.1)
-- v0.5.1 plans completed: 12
+- Total plans completed: 54 (across v0.4.1 through v0.5.1)
+- v0.5.1 plans completed: 13
 
 **By Milestone:**
 
@@ -71,6 +55,7 @@ Progress: [=========░] 42%
 **Phase 20 P01:** 6min, 2 tasks (TDD), 5 files
 **Phase 20 P02:** 6min, 2 tasks, 2 files
 **Phase 21 P01:** 9min, 2 tasks (TDD), 7 files
+**Phase 21 P02:** 7min, 2 tasks, 7 files
 
 ## Accumulated Context
 
@@ -106,6 +91,7 @@ Progress: [=========░] 42%
 - (v0.5.1) RpgAttributeEngine follows ReadinessEngine pattern: stateless object, pure functions, no DI
 - (v0.5.1) Ceiling constants tuned for Vitruvian Trainer (200kg max weight, 2000W power, 500k volume)
 - (v0.5.1) Mastery-dominant attribute maps to PHOENIX class (well-rounded achiever)
+- [Phase 21]: On-demand RPG computation via LaunchedEffect (not init) avoids unnecessary DB queries for non-BadgesScreen users
 
 ### Blockers/Concerns
 
@@ -132,3 +118,4 @@ Progress: [=========░] 42%
 - 2026-02-28: Phase 20 Plan 01 executed (ReadinessEngine ACWR computation engine, 13 TDD tests, pure stateless object)
 - 2026-02-28: Phase 20 Plan 02 executed (ReadinessBriefingCard composable, ActiveWorkoutScreen Elite gating, WCAG colors)
 - 2026-02-28: Phase 21 Plan 01 executed (RpgAttributeEngine TDD, schema v17 migration, 13 tests, 7 files)
+- 2026-02-28: Phase 21 Plan 02 executed (RpgAttributeCard composable, BadgesScreen Phoenix+ tier gate, repository RPG methods)
