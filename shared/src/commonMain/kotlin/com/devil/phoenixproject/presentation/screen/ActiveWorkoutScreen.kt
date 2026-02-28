@@ -1,16 +1,21 @@
 package com.devil.phoenixproject.presentation.screen
 
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import com.devil.phoenixproject.data.repository.ExerciseRepository
+import com.devil.phoenixproject.data.repository.SmartSuggestionsRepository
 import com.devil.phoenixproject.domain.model.*
+import com.devil.phoenixproject.domain.premium.ReadinessEngine
 import com.devil.phoenixproject.presentation.components.BatchedBadgeCelebrationDialog
 import com.devil.phoenixproject.presentation.components.ConnectionErrorDialog
 import com.devil.phoenixproject.presentation.components.HapticFeedbackEffect
 import com.devil.phoenixproject.presentation.components.PRCelebrationDialog
+import com.devil.phoenixproject.presentation.components.ReadinessBriefingCard
 import org.koin.compose.koinInject
 import com.devil.phoenixproject.data.repository.GamificationRepository
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
@@ -91,6 +96,22 @@ fun ActiveWorkoutScreen(
 
     // Form check - gated to Phoenix+ tier (CV-01)
     val hasFormCheckAccess = hasProAccess
+
+    // Readiness briefing - gated to Elite tier (BRIEF-02)
+    val hasEliteAccess by subscriptionManager.hasEliteAccess.collectAsState()
+    var readinessDismissed by remember { mutableStateOf(false) }
+    var readinessResult by remember { mutableStateOf<ReadinessResult?>(null) }
+
+    // Compute readiness once on screen open for Elite users
+    if (hasEliteAccess) {
+        val smartSuggestionsRepo: SmartSuggestionsRepository = koinInject()
+        LaunchedEffect(Unit) {
+            val twentyEightDaysMs = 28L * 24 * 60 * 60 * 1000
+            val nowMs = currentTimeMillis()
+            val summaries = smartSuggestionsRepo.getSessionSummariesSince(nowMs - twentyEightDaysMs)
+            readinessResult = ReadinessEngine.computeReadiness(summaries, nowMs)
+        }
+    }
 
     // iOS "coming soon" dialog state (CV-10)
     var showFormCheckComingSoonDialog by remember { mutableStateOf(false) }
@@ -376,16 +397,29 @@ fun ActiveWorkoutScreen(
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) }
     ) { paddingValues ->
-        WorkoutTab(
-            state = workoutUiState,
-            actions = workoutActions,
-            exerciseRepository = exerciseRepository,
-            hapticEvents = hapticEvents,
-            hasFormCheckAccess = hasFormCheckAccess,
-            onToggleFormCheck = onToggleFormCheck,
-            onFormAssessment = onFormAssessment,
-            modifier = Modifier.padding(paddingValues)
-        )
+        Column(modifier = Modifier.padding(paddingValues)) {
+            // Readiness briefing card -- shown in Idle state for Elite users (BRIEF-02)
+            // Card is purely informational, sits above workout controls, never blocks workout start
+            if (hasEliteAccess && !readinessDismissed && readinessResult != null && workoutState is WorkoutState.Idle) {
+                ReadinessBriefingCard(
+                    result = readinessResult!!,
+                    onDismiss = { readinessDismissed = true },
+                    onPortalLink = { /* Portal deep link -- placeholder for now */ },
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                )
+            }
+
+            WorkoutTab(
+                state = workoutUiState,
+                actions = workoutActions,
+                exerciseRepository = exerciseRepository,
+                hapticEvents = hapticEvents,
+                hasFormCheckAccess = hasFormCheckAccess,
+                onToggleFormCheck = onToggleFormCheck,
+                onFormAssessment = onFormAssessment,
+                modifier = Modifier
+            )
+        }
     }
 
     // Exit confirmation dialog
