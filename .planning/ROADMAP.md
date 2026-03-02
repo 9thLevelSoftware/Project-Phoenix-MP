@@ -73,8 +73,8 @@ See `.planning/milestones/v0.5.1-*` for archived phase details.
 **Cross-repo milestone.** Each phase lists the target repo(s): mobile (`Project-Phoenix-MP`) or portal (`phoenix-portal`) or both.
 
 - [x] **Phase 23: Portal DB Foundation + RLS** — Schema migrations and INSERT RLS policies that unblock every other phase *(portal)* (completed 2026-03-02)
-- [ ] **Phase 24: Supabase Auth Migration** — Replace custom JWT with GoTrue; mobile can now produce valid tokens for Edge Functions *(mobile)*
-- [ ] **Phase 25: Edge Functions** — Deploy mobile-sync-push and mobile-sync-pull; portal can now receive and serve workout data *(portal)*
+- [x] **Phase 24: Supabase Auth Migration** — Replace custom JWT with GoTrue; mobile can now produce valid tokens for Edge Functions *(mobile)* (completed 2026-03-02)
+- [x] **Phase 25: Edge Functions** — Deploy mobile-sync-push and mobile-sync-pull; portal can now receive and serve workout data *(portal)* (completed 2026-03-02)
 - [ ] **Phase 26: Mobile Push Wire-Up** — SyncManager wired to PortalSyncAdapter; workouts flow from mobile to portal *(mobile)*
 - [ ] **Phase 27: Mobile Pull Wire-Up** — PortalPullAdapter and merge strategy; portal-created routines and badges flow to mobile *(mobile)*
 - [ ] **Phase 28: Integration Validation** — End-to-end verification of bidirectional sync across both repos *(both)*
@@ -106,8 +106,12 @@ See `.planning/milestones/v0.5.1-*` for archived phase details.
   2. User can register a new account from mobile; the same credentials work to log in to the Phoenix Portal web UI without a separate sign-up step
   3. After 1 hour of inactivity (or simulated token expiry), the next sync attempt silently refreshes the token and completes without prompting the user to re-login
   4. App restart with a stored session resumes without a login prompt; stored access_token is valid for API calls
-  5. `PortalSyncAdapter.estimateRoutineDuration()` returns a value in seconds (not milliseconds) confirmed by inspecting the push payload in a debug build before sending
-**Plans:** TBD
+  5. `PortalSyncAdapter.estimateRoutineDuration()` returns a value in seconds (not minutes) confirmed by inspecting the push payload in a debug build before sending
+**Plans:**
+  3/3 plans complete
+  - Plan 01 (Wave 1): GoTrue Auth Foundation — config injection, DTOs, API client migration, token storage
+  - Plan 02 (Wave 2): Token Lifecycle & Session Persistence — Mutex refresh, 401 retry, app restart, UserProfile linking
+  - Plan 03 (Wave 1): FIX-01 Duration Unit Fix — remove / 60 from estimateRoutineDuration()
 
 ### Phase 25: Edge Functions
 **Repo:** phoenix-portal
@@ -119,7 +123,10 @@ See `.planning/milestones/v0.5.1-*` for archived phase details.
   2. A cURL POST to `mobile-sync-pull` with a valid Bearer token and a `lastSync` timestamp returns HTTP 200 with only records modified after that timestamp (no records from other users visible)
   3. Both Edge Functions return HTTP 200 when called with no Origin header (simulating a native mobile client) — not rejected with CORS error
   4. Portal workout history page displays "Old School", "Eccentric", "Concentric", and other human-readable mode names instead of raw SCREAMING_SNAKE_CASE strings
-**Plans:** TBD
+**Plans:**
+  2/2 plans complete
+  - Plan 01 (Wave 1): mobile-sync-push Edge Function — JWT auth, hierarchical INSERT, exercise_progress, personal_records
+  - Plan 02 (Wave 1): mobile-sync-pull Edge Function — JWT auth, delta queries, nested response assembly
 
 ### Phase 26: Mobile Push Wire-Up
 **Repo:** Project-Phoenix-MP (mobile)
@@ -168,13 +175,13 @@ See `.planning/milestones/v0.5.1-*` for archived phase details.
 | v0.4.7 Mobile Platform Features | 9-12 | 13 | Complete | 2026-02-15 |
 | v0.5.0 Premium Mobile | 13-15 | 7 | Complete | 2026-02-27 |
 | v0.5.1 Board Polish & Premium UI | 16-22 | 16 | Complete | 2026-02-28 |
-| v0.6.0 Portal Sync Compatibility | 23-28 | 3/TBD | In progress | — |
+| v0.6.0 Portal Sync Compatibility | 23-28 | 6/TBD | In progress | — |
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 23. Portal DB Foundation + RLS | 3/3 | Complete   | 2026-03-02 |
-| 24. Supabase Auth Migration | 0/TBD | Not started | - |
-| 25. Edge Functions | 0/TBD | Not started | - |
+| 24. Supabase Auth Migration | 3/3 | Complete | 2026-03-02 |
+| 25. Edge Functions | 2/2 | Complete | 2026-03-02 |
 | 26. Mobile Push Wire-Up | 0/TBD | Not started | - |
 | 27. Mobile Pull Wire-Up | 0/TBD | Not started | - |
 | 28. Integration Validation | 0/TBD | Not started | - |
@@ -182,4 +189,4 @@ See `.planning/milestones/v0.5.1-*` for archived phase details.
 **Last phase number:** 28
 
 ---
-*Last updated: 2026-03-02 after v0.6.0 roadmap creation*
+*Last updated: 2026-03-02 — Phase 25 complete*

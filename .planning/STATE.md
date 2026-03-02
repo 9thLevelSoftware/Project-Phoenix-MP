@@ -15,19 +15,19 @@ progress:
 
 ## Current Position
 
-Phase: 23 — Portal DB Foundation + RLS
-Plan: 03 of TBD — completed
-Status: Phase 23 in progress — plans 01, 02, and 03 complete
-Last activity: 2026-03-02 — Phase 23 Plan 03 (quality fixes migration: RLS perf + column types) complete
+Phase: 25 — Edge Functions
+Plan: 02 of 02 — all plans executed
+Status: Phase 25 complete — both Edge Functions created in phoenix-portal
+Last activity: 2026-03-02 — Phase 25 execution complete
 
-Progress: [..........] ~5% — Phase 23 of 28 (v0.6.0, plans 23-01, 23-02, 23-03 complete)
+Progress: [#####.....] ~50% — Phase 23-25 complete (v0.6.0)
 
 ## Project Reference
 
 See: .planning/PROJECT.md (updated 2026-03-02)
 
 **Core value:** Users can connect to their Vitruvian trainer and execute workouts with accurate rep counting, weight control, and progress tracking — reliably, on both platforms.
-**Current focus:** v0.6.0 Portal Sync Compatibility — Phase 23: Portal DB Foundation + RLS
+**Current focus:** v0.6.0 Portal Sync Compatibility — Phase 26: Mobile Push Wire-Up
 
 ## Performance Metrics
 
@@ -85,4 +85,4 @@ See: .planning/PROJECT.md (updated 2026-03-02)
 - Pre-commit hook blocks commits: daem0nmcp Python module not installed in pythoncore-3.14-64. Hook calls `python -m daem0nmcp.cli`. Install daem0nmcp in that Python env or fix hook Python path.
 
 ---
-*Last updated: 2026-03-02 — Phase 23 all 3 plans (01: exercises denorm + INSERT RLS, 02: mode wire format, 03: quality fixes) complete*
+*Last updated: 2026-03-02 — Phase 25 complete: mobile-sync-push + mobile-sync-pull Edge Functions created in phoenix-portal*
