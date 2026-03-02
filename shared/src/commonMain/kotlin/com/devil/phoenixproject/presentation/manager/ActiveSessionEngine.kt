@@ -175,9 +175,12 @@ class ActiveSessionEngine(
                     }
                 }
 
-                // Handle auto-STOP when Active in Just Lift mode and handles released
+                // Handle auto-STOP when Active in Just Lift mode and handles released.
+                // Warmup/ROM gate: auto-stop must remain disabled until warmup is complete.
                 if (params.isJustLift && currentState is WorkoutState.Active) {
-                    if (activityState == HandleState.Released) {
+                    if (!isWarmupGateOpenForAutoStop()) {
+                        resetAutoStopTimer()
+                    } else if (activityState == HandleState.Released) {
                         Logger.d("Just Lift: Handles RELEASED - starting auto-stop timer")
                         if (coordinator.autoStopStartTime == null) {
                             coordinator.autoStopStartTime = currentTimeMillis()
@@ -199,7 +202,12 @@ class ActiveSessionEngine(
                 val params = coordinator._workoutParameters.value
                 val currentState = coordinator._workoutState.value
 
-                if (params.stallDetectionEnabled && shouldEnableAutoStop(params) && currentState is WorkoutState.Active) {
+                if (params.stallDetectionEnabled && currentState is WorkoutState.Active) {
+                    if (!isWarmupGateOpenForAutoStop()) {
+                        Logger.d("DELOAD_OCCURRED ignored - warmup/ROM not established yet")
+                        return@collect
+                    }
+                    if (!shouldEnableAutoStop(params)) return@collect
                     Logger.d("DELOAD_OCCURRED: Machine detected cable release - starting auto-stop timer")
 
                     val hasMeaningfulRange = repCounter.hasMeaningfulRange(WorkoutCoordinator.MIN_RANGE_THRESHOLD)
@@ -496,10 +504,16 @@ class ActiveSessionEngine(
     }
 
     /**
+     * Auto-stop and stall detection are only active once warmup reps are complete.
+     */
+    private fun isWarmupGateOpenForAutoStop(): Boolean = coordinator._repCount.value.isWarmupComplete
+
+    /**
      * Whether 2.5s position-based auto-stop should run.
      */
     private fun shouldRunPositionBasedAutoStop(params: WorkoutParameters): Boolean {
-        val timedCableReadyForAutoStop = coordinator.isCurrentTimedCableExercise && coordinator._repCount.value.isWarmupComplete
+        if (!isWarmupGateOpenForAutoStop()) return false
+        val timedCableReadyForAutoStop = coordinator.isCurrentTimedCableExercise
         return params.isJustLift || params.isAMRAP || timedCableReadyForAutoStop
     }
 
@@ -509,6 +523,7 @@ class ActiveSessionEngine(
      * - 2.5s position path: Just Lift / AMRAP / timed cable (post-warmup).
      */
     private fun shouldEnableAutoStop(params: WorkoutParameters): Boolean {
+        if (!isWarmupGateOpenForAutoStop()) return false
         return params.stallDetectionEnabled || shouldRunPositionBasedAutoStop(params)
     }
 
@@ -637,7 +652,7 @@ class ActiveSessionEngine(
             return
         }
 
-        if (coordinator.isCurrentTimedCableExercise && !coordinator._repCount.value.isWarmupComplete) {
+        if (!isWarmupGateOpenForAutoStop()) {
             resetAutoStopTimer()
             resetStallTimer()
             return

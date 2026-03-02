@@ -1,6 +1,7 @@
 package com.devil.phoenixproject.presentation.manager
 
 import app.cash.turbine.test
+import com.devil.phoenixproject.data.repository.RepNotification
 import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.RepCount
 import com.devil.phoenixproject.domain.model.WorkoutParameters
@@ -270,7 +271,40 @@ class DWSMWorkoutLifecycleTest {
     }
 
     @Test
-    fun `deload starts stall timer for standard set when stall detection enabled`() = runTest {
+    fun `deload does not start stall timer before warmup is complete`() = runTest {
+        val harness = DWSMTestHarness(this)
+        harness.fakeBleRepo.simulateConnect("Vee_Test")
+
+        harness.dwsm.updateWorkoutParameters(
+            WorkoutParameters(
+                programMode = ProgramMode.OldSchool,
+                reps = 8,
+                warmupReps = 0,
+                weightPerCableKg = 35f,
+                stallDetectionEnabled = true,
+                isAMRAP = false,
+                isJustLift = false
+            )
+        )
+        harness.dwsm.startWorkout(skipCountdown = true)
+        advanceUntilIdle()
+        assertIs<WorkoutState.Active>(harness.dwsm.coordinator.workoutState.value)
+        assertFalse(harness.dwsm.coordinator.repCount.value.isWarmupComplete)
+
+        harness.fakeBleRepo.emitDeloadOccurred()
+        advanceUntilIdle()
+
+        assertEquals(
+            null,
+            harness.dwsm.coordinator.stallStartTime,
+            "DELOAD should be ignored until warmup reps are complete"
+        )
+        assertFalse(harness.dwsm.coordinator.isCurrentlyStalled)
+        harness.cleanup()
+    }
+
+    @Test
+    fun `deload starts stall timer after warmup is complete`() = runTest {
         val harness = DWSMTestHarness(this)
         harness.fakeBleRepo.simulateConnect("Vee_Test")
 
@@ -289,12 +323,16 @@ class DWSMWorkoutLifecycleTest {
         advanceUntilIdle()
         assertIs<WorkoutState.Active>(harness.dwsm.coordinator.workoutState.value)
 
+        completeWarmupReps(harness, warmupTarget = 3, workingTarget = 8)
+        advanceUntilIdle()
+        assertTrue(harness.dwsm.coordinator.repCount.value.isWarmupComplete)
+
         harness.fakeBleRepo.emitDeloadOccurred()
         advanceUntilIdle()
 
         assertNotNull(
             harness.dwsm.coordinator.stallStartTime,
-            "DELOAD should start the 5s stall timer even before meaningful ROM is established"
+            "DELOAD should start stall timer once warmup reps are complete"
         )
         assertTrue(harness.dwsm.coordinator.isCurrentlyStalled)
         harness.cleanup()
@@ -358,6 +396,10 @@ class DWSMWorkoutLifecycleTest {
         harness.dwsm.startWorkout(skipCountdown = true)
         advanceUntilIdle()
         assertIs<WorkoutState.Active>(harness.dwsm.coordinator.workoutState.value)
+
+        completeWarmupReps(harness, warmupTarget = 3, workingTarget = 8)
+        advanceUntilIdle()
+        assertTrue(harness.dwsm.coordinator.repCount.value.isWarmupComplete)
 
         harness.fakeBleRepo.emitDeloadOccurred()
         advanceUntilIdle()
@@ -472,5 +514,38 @@ class DWSMWorkoutLifecycleTest {
             "Single-exercise temp routines should not set routineName"
         )
         harness.cleanup()
+    }
+
+    private suspend fun completeWarmupReps(
+        harness: DWSMTestHarness,
+        warmupTarget: Int = 3,
+        workingTarget: Int = 8
+    ) {
+        val activeMetric = WorkoutMetric(
+            positionA = 120f,
+            positionB = 120f,
+            velocityA = 80.0,
+            velocityB = 80.0,
+            loadA = 10f,
+            loadB = 10f
+        )
+
+        for (warmupRep in 1..warmupTarget) {
+            harness.fakeBleRepo.emitMetric(activeMetric)
+            harness.fakeBleRepo.emitRepNotification(
+                RepNotification(
+                    topCounter = warmupRep,
+                    completeCounter = warmupRep,
+                    repsRomCount = warmupRep,
+                    repsRomTotal = warmupTarget,
+                    repsSetCount = 0,
+                    repsSetTotal = workingTarget,
+                    rangeTop = 800f,
+                    rangeBottom = 0f,
+                    rawData = ByteArray(24),
+                    timestamp = warmupRep.toLong()
+                )
+            )
+        }
     }
 }
