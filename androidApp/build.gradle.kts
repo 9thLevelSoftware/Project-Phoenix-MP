@@ -3,6 +3,19 @@ plugins {
     alias(libs.plugins.kotlin.compose)
 }
 
+// Read Supabase config from local.properties
+val localPropsFile = rootProject.file("local.properties")
+val localPropsMap: Map<String, String> = if (localPropsFile.exists()) {
+    localPropsFile.readLines()
+        .filter { it.contains("=") && !it.trimStart().startsWith("#") }
+        .associate { line ->
+            val (key, value) = line.split("=", limit = 2)
+            key.trim() to value.trim()
+        }
+} else emptyMap()
+val supabaseUrl: String = localPropsMap["supabase.url"] ?: ""
+val supabaseAnonKey: String = localPropsMap["supabase.anon.key"] ?: ""
+
 android {
     namespace = "com.devil.phoenixproject"
     compileSdk = 36
@@ -16,6 +29,10 @@ android {
         versionName = "0.5.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        // Supabase config injected from local.properties
+        buildConfigField("String", "SUPABASE_URL", "\"$supabaseUrl\"")
+        buildConfigField("String", "SUPABASE_ANON_KEY", "\"$supabaseAnonKey\"")
         vectorDrawables {
             useSupportLibrary = true
         }

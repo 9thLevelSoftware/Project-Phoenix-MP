@@ -8,15 +8,21 @@ import io.ktor.client.request.*
 import io.ktor.client.statement.*
 import io.ktor.http.*
 import io.ktor.serialization.kotlinx.json.*
+import co.touchlab.kermit.Logger
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.json.Json
 
 class PortalApiClient(
-    private val baseUrl: String = DEFAULT_PORTAL_URL,
-    private val tokenProvider: () -> String?
+    private val supabaseConfig: SupabaseConfig,
+    private val tokenStorage: PortalTokenStorage,
+    private val syncBaseUrl: String = DEFAULT_SYNC_URL
 ) {
     companion object {
-        const val DEFAULT_PORTAL_URL = "https://phoenix-portal-backend.up.railway.app"
+        const val DEFAULT_SYNC_URL = "https://phoenix-portal-backend.up.railway.app"
     }
+
+    private val refreshMutex = Mutex()
 
     private val json = Json {
         ignoreUnknownKeys = true
@@ -37,43 +43,109 @@ class PortalApiClient(
         }
     }
 
-    // === Auth Endpoints ===
+    // === GoTrue Auth Endpoints ===
 
-    suspend fun login(email: String, password: String): Result<PortalAuthResponse> {
+    suspend fun signIn(email: String, password: String): Result<GoTrueAuthResponse> {
         return try {
-            val response = httpClient.post("$baseUrl/api/auth/login") {
-                setBody(PortalLoginRequest(email, password))
+            val response = httpClient.post("${supabaseConfig.authUrl}/token?grant_type=password") {
+                header("apikey", supabaseConfig.anonKey)
+                contentType(ContentType.Application.Json)
+                setBody(GoTruePasswordRequest(email, password))
             }
-            handleResponse(response)
+            handleGoTrueResponse(response)
         } catch (e: Exception) {
-            Result.failure(PortalApiException("Login failed: ${e.message}", e))
+            Result.failure(PortalApiException("Sign-in failed: ${e.message}", e))
         }
     }
 
-    suspend fun signup(email: String, password: String, displayName: String): Result<PortalAuthResponse> {
+    suspend fun signUp(email: String, password: String, displayName: String?): Result<GoTrueAuthResponse> {
         return try {
-            val response = httpClient.post("$baseUrl/api/auth/signup") {
-                setBody(mapOf("email" to email, "password" to password, "displayName" to displayName))
+            val response = httpClient.post("${supabaseConfig.authUrl}/signup") {
+                header("apikey", supabaseConfig.anonKey)
+                contentType(ContentType.Application.Json)
+                setBody(GoTrueSignUpRequest(
+                    email = email,
+                    password = password,
+                    data = displayName?.let { GoTrueUserMetadata(displayName = it) }
+                ))
             }
-            handleResponse(response)
+            handleGoTrueResponse(response)
         } catch (e: Exception) {
-            Result.failure(PortalApiException("Signup failed: ${e.message}", e))
+            Result.failure(PortalApiException("Sign-up failed: ${e.message}", e))
         }
     }
 
-    suspend fun getMe(): Result<PortalUser> {
-        return authenticatedRequest {
-            httpClient.get("$baseUrl/api/auth/me") {
-                bearerAuth(it)
+    suspend fun refreshToken(refreshToken: String): Result<GoTrueAuthResponse> {
+        return try {
+            val response = httpClient.post("${supabaseConfig.authUrl}/token?grant_type=refresh_token") {
+                header("apikey", supabaseConfig.anonKey)
+                contentType(ContentType.Application.Json)
+                setBody(GoTrueRefreshRequest(refreshToken))
+            }
+            handleGoTrueResponse(response)
+        } catch (e: Exception) {
+            Result.failure(PortalApiException("Token refresh failed: ${e.message}", e))
+        }
+    }
+
+    suspend fun getUser(): Result<GoTrueUser> {
+        return try {
+            val token = tokenStorage.getToken() ?: return Result.failure(
+                PortalApiException("Not authenticated", null, 401)
+            )
+            val response = httpClient.get("${supabaseConfig.authUrl}/user") {
+                header("apikey", supabaseConfig.anonKey)
+                bearerAuth(token)
+            }
+            if (response.status.isSuccess()) {
+                Result.success(response.body<GoTrueUser>())
+            } else {
+                val error = try {
+                    response.body<GoTrueErrorResponse>()
+                } catch (e: Exception) {
+                    GoTrueErrorResponse(error = "unknown", errorDescription = "HTTP ${response.status.value}")
+                }
+                Result.failure(PortalApiException(error.resolvedMessage, null, response.status.value))
+            }
+        } catch (e: Exception) {
+            Result.failure(PortalApiException("Get user failed: ${e.message}", e))
+        }
+    }
+
+    suspend fun signOut(): Result<Unit> {
+        return try {
+            val token = tokenStorage.getToken()
+            if (token != null) {
+                httpClient.post("${supabaseConfig.authUrl}/logout") {
+                    header("apikey", supabaseConfig.anonKey)
+                    bearerAuth(token)
+                    contentType(ContentType.Application.Json)
+                }
+            }
+            Result.success(Unit)
+        } catch (e: Exception) {
+            // Sign-out failure is non-critical — we clear local state regardless
+            Result.success(Unit)
+        }
+    }
+
+    // === Portal Sync Endpoints (Supabase Edge Functions) ===
+
+    suspend fun pushPortalPayload(payload: PortalSyncPayload): Result<PortalSyncPushResponse> {
+        return authenticatedRequest { token ->
+            httpClient.post("${supabaseConfig.url}/functions/v1/mobile-sync-push") {
+                bearerAuth(token)
+                header("apikey", supabaseConfig.anonKey)
+                setBody(payload)
             }
         }
     }
 
-    // === Sync Endpoints ===
+    // === Legacy Sync Endpoints (Railway — kept temporarily) ===
 
     suspend fun getSyncStatus(): Result<SyncStatusResponse> {
         return authenticatedRequest {
-            httpClient.get("$baseUrl/api/sync/status") {
+            httpClient.get("$syncBaseUrl/api/sync/status") {
                 bearerAuth(it)
             }
         }
@@ -81,7 +153,7 @@ class PortalApiClient(
 
     suspend fun pushChanges(request: SyncPushRequest): Result<SyncPushResponse> {
         return authenticatedRequest {
-            httpClient.post("$baseUrl/api/sync/push") {
+            httpClient.post("$syncBaseUrl/api/sync/push") {
                 bearerAuth(it)
                 setBody(request)
             }
@@ -90,7 +162,7 @@ class PortalApiClient(
 
     suspend fun pullChanges(request: SyncPullRequest): Result<SyncPullResponse> {
         return authenticatedRequest {
-            httpClient.post("$baseUrl/api/sync/pull") {
+            httpClient.post("$syncBaseUrl/api/sync/pull") {
                 bearerAuth(it)
                 setBody(request)
             }
@@ -99,17 +171,99 @@ class PortalApiClient(
 
     // === Private Helpers ===
 
+    /**
+     * Ensures the access token is valid before making an authenticated request.
+     * If expired, attempts a single refresh (serialized by Mutex).
+     */
+    private suspend fun ensureValidToken(): String? {
+        val currentToken = tokenStorage.getToken() ?: return null
+
+        if (!tokenStorage.isTokenExpired()) return currentToken
+
+        // Token expired — attempt refresh (serialized)
+        return refreshMutex.withLock {
+            // Double-check after acquiring lock (another coroutine may have refreshed)
+            if (!tokenStorage.isTokenExpired()) {
+                return@withLock tokenStorage.getToken()
+            }
+
+            val storedRefreshToken = tokenStorage.getRefreshToken()
+                ?: run {
+                    tokenStorage.clearAuth()
+                    return@withLock null
+                }
+
+            val result = refreshToken(storedRefreshToken)
+            result.fold(
+                onSuccess = { response ->
+                    tokenStorage.saveGoTrueAuth(response)
+                    response.accessToken
+                },
+                onFailure = {
+                    Logger.w("PortalApiClient") { "Token refresh failed: ${it.message}" }
+                    tokenStorage.clearAuth()
+                    null
+                }
+            )
+        }
+    }
+
+    /**
+     * Force a token refresh regardless of local expiry state.
+     * Used when server returns 401 despite local token appearing valid.
+     */
+    private suspend fun forceRefresh(): String? {
+        return refreshMutex.withLock {
+            val storedRefreshToken = tokenStorage.getRefreshToken() ?: run {
+                tokenStorage.clearAuth()
+                return@withLock null
+            }
+            refreshToken(storedRefreshToken).fold(
+                onSuccess = { response ->
+                    tokenStorage.saveGoTrueAuth(response)
+                    response.accessToken
+                },
+                onFailure = {
+                    Logger.w("PortalApiClient") { "Force refresh failed: ${it.message}" }
+                    tokenStorage.clearAuth()
+                    null
+                }
+            )
+        }
+    }
+
     private suspend inline fun <reified T> authenticatedRequest(
         block: (token: String) -> HttpResponse
     ): Result<T> {
-        val token = tokenProvider() ?: return Result.failure(
-            PortalApiException("Not authenticated - no token available")
+        val token = ensureValidToken() ?: return Result.failure(
+            PortalApiException("Not authenticated - please log in again", null, 401)
         )
         return try {
             val response = block(token)
-            handleResponse(response)
+            if (response.status.value == 401) {
+                // Token was valid by our clock but server rejected — force one refresh
+                val retryToken = forceRefresh()
+                    ?: return Result.failure(PortalApiException("Session expired - please log in again", null, 401))
+                val retryResponse = block(retryToken)
+                handleResponse(retryResponse)
+            } else {
+                handleResponse(response)
+            }
         } catch (e: Exception) {
             Result.failure(PortalApiException("Request failed: ${e.message}", e))
+        }
+    }
+
+    private suspend inline fun <reified T> handleGoTrueResponse(response: HttpResponse): Result<T> {
+        return if (response.status.isSuccess()) {
+            Result.success(response.body<T>())
+        } else {
+            val errorBody = try {
+                response.body<GoTrueErrorResponse>()
+            } catch (e: Exception) {
+                GoTrueErrorResponse(error = "unknown", errorDescription = "HTTP ${response.status.value}")
+            }
+            Result.failure(PortalApiException(errorBody.resolvedMessage, null, response.status.value))
         }
     }
 

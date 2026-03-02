@@ -152,7 +152,7 @@ private fun ReadyCard(
 
                 // ACWR detail line
                 Text(
-                    text = "Load ratio: ${"%.1f".format(result.acwr)}",
+                    text = "Load ratio: ${kotlin.math.round(result.acwr.toDouble() * 10) / 10.0}",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )

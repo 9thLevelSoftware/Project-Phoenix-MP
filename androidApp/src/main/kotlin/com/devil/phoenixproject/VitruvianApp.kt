@@ -8,6 +8,7 @@ import coil3.network.ktor3.KtorNetworkFetcherFactory
 import coil3.request.crossfade
 import coil3.util.DebugLogger
 import com.devil.phoenixproject.data.migration.MigrationManager
+import com.devil.phoenixproject.data.sync.SupabaseConfig
 import com.devil.phoenixproject.di.initKoin
 import com.devil.phoenixproject.domain.subscription.RevenueCatInitializer
 import com.devil.phoenixproject.domain.subscription.SubscriptionManager
@@ -15,6 +16,7 @@ import com.devil.phoenixproject.util.DeviceInfo
 import org.koin.android.ext.android.inject
 import org.koin.android.ext.koin.androidContext
 import org.koin.android.ext.koin.androidLogger
+import org.koin.dsl.module
 
 class VitruvianApp : Application(), SingletonImageLoader.Factory {
 
@@ -37,6 +39,14 @@ class VitruvianApp : Application(), SingletonImageLoader.Factory {
         initKoin {
             androidLogger()
             androidContext(this@VitruvianApp)
+            modules(module {
+                single {
+                    SupabaseConfig(
+                        url = BuildConfig.SUPABASE_URL,
+                        anonKey = BuildConfig.SUPABASE_ANON_KEY
+                    )
+                }
+            })
         }
 
         // Run migrations after Koin is initialized

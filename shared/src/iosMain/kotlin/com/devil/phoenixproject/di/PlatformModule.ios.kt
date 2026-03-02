@@ -5,6 +5,7 @@ import com.devil.phoenixproject.data.preferences.PreferencesManager
 import com.devil.phoenixproject.data.repository.BleRepository
 import com.devil.phoenixproject.data.repository.KableBleRepository
 import com.devil.phoenixproject.data.repository.simulator.SimulatorBleRepository
+import com.devil.phoenixproject.data.sync.SupabaseConfig
 import com.devil.phoenixproject.util.ConnectivityChecker
 import com.devil.phoenixproject.util.CsvExporter
 import com.devil.phoenixproject.util.DataBackupManager
@@ -17,6 +18,12 @@ import org.koin.dsl.module
 import platform.Foundation.NSUserDefaults
 
 actual val platformModule: Module = module {
+    single {
+        SupabaseConfig(
+            url = "",       // TODO: Inject from iOS app (Info.plist or build config)
+            anonKey = ""    // TODO: Inject from iOS app
+        )
+    }
     single { DriverFactory() }
     single<Settings> {
         val defaults = NSUserDefaults.standardUserDefaults

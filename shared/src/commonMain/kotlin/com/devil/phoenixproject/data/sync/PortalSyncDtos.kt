@@ -199,6 +199,26 @@ data class PortalGamificationStatsSyncDto(
     @SerialName("total_time_seconds") val totalTimeSeconds: Int = 0
 )
 
+// ─── Push Response ──────────────────────────────────────────────────
+
+/**
+ * Response from the mobile-sync-push Edge Function.
+ * syncTime is ISO 8601 (not epoch millis like the legacy SyncPushResponse).
+ * No idMappings — portal uses client-provided UUIDs.
+ */
+@Serializable
+data class PortalSyncPushResponse(
+    @SerialName("syncTime") val syncTime: String,  // ISO 8601 from Edge Function
+    val sessionsInserted: Int = 0,
+    val exercisesInserted: Int = 0,
+    val setsInserted: Int = 0,
+    val repSummariesInserted: Int = 0,
+    val routinesUpserted: Int = 0,
+    val badgesUpserted: Int = 0,
+    val exerciseProgressInserted: Int = 0,
+    val personalRecordsInserted: Int = 0
+)
+
 // ─── Composite Sync Payload ─────────────────────────────────────────
 
 /**

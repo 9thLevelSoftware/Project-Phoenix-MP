@@ -34,7 +34,8 @@ object PortalSyncAdapter {
         val session: WorkoutSession,
         val repMetrics: List<RepMetricData> = emptyList(),
         val repBiomechanics: List<RepBiomechanicsData> = emptyList(),
-        val muscleGroup: String = "General"
+        val muscleGroup: String = "General",
+        val isPr: Boolean = false
     )
 
     /**
@@ -154,7 +155,7 @@ object PortalSyncAdapter {
             actualReps = session.totalReps,
             weightKg = session.weightPerCableKg,
             rpe = session.rpe,
-            isPr = false,
+            isPr = swr.isPr,
             workoutMode = PortalMappings.workoutModeToSync(session.mode),
             repSummaries = repSummaries
         )
@@ -369,13 +370,13 @@ object PortalSyncAdapter {
     }
 
     private fun estimateRoutineDuration(routine: Routine): Int {
-        // Rough estimate: 2 min per set + rest time
+        // Estimate in seconds: 2 min per set + rest time
         return routine.exercises.sumOf { ex ->
-            val setsTime = ex.sets * 120 // 2 min per set (in seconds)
+            val setsTime = ex.sets * 120 // 2 min per set in seconds
             val restTime = ex.setRestSeconds.sum().takeIf { it > 0 }
                 ?: (ex.sets * 60) // default 60s rest per set
             setsTime + restTime
-        } / 60 // convert to minutes
+        }
     }
 
     // ─── Utility ────────────────────────────────────────────────────

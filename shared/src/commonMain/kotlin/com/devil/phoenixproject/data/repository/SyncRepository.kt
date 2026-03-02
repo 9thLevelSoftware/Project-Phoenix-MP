@@ -7,6 +7,8 @@ import com.devil.phoenixproject.data.sync.IdMappings
 import com.devil.phoenixproject.data.sync.PersonalRecordSyncDto
 import com.devil.phoenixproject.data.sync.RoutineSyncDto
 import com.devil.phoenixproject.data.sync.WorkoutSessionSyncDto
+import com.devil.phoenixproject.domain.model.Routine
+import com.devil.phoenixproject.domain.model.WorkoutSession
 
 /**
  * Repository interface for sync operations.
@@ -45,6 +47,20 @@ interface SyncRepository {
      * Get current gamification stats for sync
      */
     suspend fun getGamificationStatsForSync(): GamificationStatsSyncDto?
+
+    // === Portal Push Operations (full domain objects) ===
+
+    /**
+     * Get full WorkoutSession domain objects modified since timestamp.
+     * Returns rich objects with routineSessionId, totalVolumeKg, etc. needed by PortalSyncAdapter.
+     */
+    suspend fun getWorkoutSessionsModifiedSince(timestamp: Long): List<WorkoutSession>
+
+    /**
+     * Get full Routine domain objects modified since timestamp.
+     * Returns rich objects with exercises, supersets, etc. needed by PortalSyncAdapter.toPortalRoutine().
+     */
+    suspend fun getFullRoutinesModifiedSince(timestamp: Long): List<Routine>
 
     // === ID Mapping (after push) ===
 
