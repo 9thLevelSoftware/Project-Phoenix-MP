@@ -156,6 +156,19 @@ sealed class ProgramMode(val modeValue: Int, val displayName: String) {
     object EccentricOnly : ProgramMode(6, "Eccentric Only")
     object Echo : ProgramMode(10, "Echo")
 
+    /**
+     * Convert to SCREAMING_SNAKE wire format for portal sync.
+     * This is the canonical format for mobile ↔ portal communication.
+     */
+    fun toSyncString(): String = when (this) {
+        OldSchool -> "OLD_SCHOOL"
+        Pump -> "PUMP"
+        TUT -> "TUT"
+        TUTBeast -> "TUT_BEAST"
+        EccentricOnly -> "ECCENTRIC_ONLY"
+        Echo -> "ECHO"
+    }
+
     companion object {
         @Suppress("unused")
         fun fromValue(value: Int): ProgramMode = when(value) {
@@ -166,6 +179,34 @@ sealed class ProgramMode(val modeValue: Int, val displayName: String) {
             6 -> EccentricOnly
             10 -> Echo
             else -> OldSchool
+        }
+
+        /**
+         * Parse SCREAMING_SNAKE wire format from portal sync.
+         * Returns null if the string doesn't match any known mode.
+         */
+        fun fromSyncString(syncString: String): ProgramMode? = when (syncString) {
+            "OLD_SCHOOL", "CLASSIC" -> OldSchool
+            "PUMP" -> Pump
+            "TUT" -> TUT
+            "TUT_BEAST" -> TUTBeast
+            "ECCENTRIC_ONLY" -> EccentricOnly
+            "ECHO" -> Echo
+            else -> null
+        }
+
+        /**
+         * Parse display name (as stored in mobile DB) to ProgramMode.
+         * Used for converting existing DB values during sync.
+         */
+        fun fromDisplayName(displayName: String): ProgramMode? = when (displayName) {
+            "Old School" -> OldSchool
+            "Pump" -> Pump
+            "TUT" -> TUT
+            "TUT Beast" -> TUTBeast
+            "Eccentric Only" -> EccentricOnly
+            "Echo" -> Echo
+            else -> null
         }
     }
 }
