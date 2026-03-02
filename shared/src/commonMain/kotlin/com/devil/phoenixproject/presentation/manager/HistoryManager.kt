@@ -62,11 +62,15 @@ class HistoryManager(
         val groupedByRoutine = sessions.filter { it.routineSessionId != null }
             .groupBy { it.routineSessionId!! }
             .map { (id, sessionList) ->
+                val sortedSessions = sessionList.sortedBy { it.timestamp }
+                val firstStart = sortedSessions.minOfOrNull { it.timestamp } ?: 0L
+                val lastEnd = sortedSessions.maxOfOrNull { it.timestamp + it.duration } ?: firstStart
                 GroupedRoutineHistoryItem(
                     routineSessionId = id,
                     routineName = sessionList.first().routineName ?: "Unnamed Routine",
-                    sessions = sessionList.sortedBy { it.timestamp },
-                    totalDuration = sessionList.sumOf { it.duration },
+                    sessions = sortedSessions,
+                    // Use elapsed span (first set start -> last set end) so inter-set rest is included.
+                    totalDuration = (lastEnd - firstStart).coerceAtLeast(0L),
                     totalReps = sessionList.sumOf { it.totalReps },
                     exerciseCount = sessionList.mapNotNull { it.exerciseId }.distinct().count(),
                     timestamp = sessionList.minOf { it.timestamp }

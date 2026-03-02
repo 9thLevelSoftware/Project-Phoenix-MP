@@ -204,6 +204,7 @@ class MainViewModel constructor(
         workoutSessionManager.startWorkout(skipCountdown, isJustLiftMode)
     fun stopWorkout(exitingWorkout: Boolean = false) = workoutSessionManager.stopWorkout(exitingWorkout)
     fun stopAndReturnToSetReady() = workoutSessionManager.stopAndReturnToSetReady()
+    fun stopAndSkipCurrentExercise() = workoutSessionManager.stopAndSkipCurrentExercise()
     fun pauseWorkout() = workoutSessionManager.pauseWorkout()
     fun resumeWorkout() = workoutSessionManager.resumeWorkout()
     fun skipCountdown() = workoutSessionManager.skipCountdown()

@@ -48,8 +48,8 @@ class WorkoutCoordinator(
         /** Minimum position to consider handles "in use" for stall detection (mm) */
         const val STALL_MIN_POSITION = 10.0
 
-        /** Position threshold to consider handle at rest */
-        const val HANDLE_REST_THRESHOLD = 2.5
+        /** Position threshold to consider handle at rest (aligned with BLE handle detector). */
+        const val HANDLE_REST_THRESHOLD = 5.0
 
         /** Minimum position range to consider "meaningful" for auto-stop detection (in mm) */
         const val MIN_RANGE_THRESHOLD = 50f

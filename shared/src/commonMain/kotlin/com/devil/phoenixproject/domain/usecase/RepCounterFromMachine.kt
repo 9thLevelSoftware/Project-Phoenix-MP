@@ -406,6 +406,33 @@ class RepCounterFromMachine {
                         workingCount = workingReps  // Still the old count, pending shows +1
                     )
                 )
+
+                // stopAtTop mode: Complete the set at concentric peak on the final rep.
+                // We treat the pending preview as the final rep confirmation in this mode.
+                if (stopAtTop &&
+                    !isJustLift &&
+                    !isAMRAP &&
+                    workingTarget > 0 &&
+                    (workingReps + 1) >= workingTarget
+                ) {
+                    workingReps = maxOf(workingReps, workingTarget)
+                    hasPendingRep = false
+                    pendingRepProgress = 1f
+                    activePhase = RepPhase.IDLE
+                    phaseProgress = 0f
+
+                    if (!shouldStop) {
+                        logDebug("🛑 STOP_AT_TOP: target reached at TOP, completing set")
+                        shouldStop = true
+                        onRepEvent?.invoke(
+                            RepEvent(
+                                type = RepType.WORKOUT_COMPLETE,
+                                warmupCount = warmupReps,
+                                workingCount = workingReps
+                            )
+                        )
+                    }
+                }
             }
         }
 

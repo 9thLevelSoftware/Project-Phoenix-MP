@@ -639,15 +639,47 @@ private fun formatSetRepsForCard(setReps: List<Int?>): String {
  * Estimate workout duration based on reps and rest times.
  */
 private fun formatEstimatedDuration(routine: Routine): String {
-    val totalReps = routine.exercises.sumOf { exercise ->
-        exercise.setReps.filterNotNull().sum()
-    }
-    val totalRestSeconds = routine.exercises.sumOf { exercise ->
-        val restCount = maxOf(0, exercise.setReps.size - 1)
-        exercise.setRestSeconds.take(restCount).sum()
+    if (routine.exercises.isEmpty()) return "0 min"
+
+    var totalWorkSeconds = 0
+    var totalRestSeconds = 0
+
+    var step: Pair<Int, Int>? = 0 to 0
+    while (step != null) {
+        val (exerciseIndex, setIndex) = step
+        val currentExercise = routine.exercises.getOrNull(exerciseIndex) ?: break
+
+        totalWorkSeconds += estimateSetWorkSeconds(currentExercise, setIndex)
+
+        val nextStep = getNextStepForEstimate(routine, exerciseIndex, setIndex)
+        if (nextStep != null) {
+            val nextExercise = routine.exercises.getOrNull(nextStep.first)
+            val sameSuperset = currentExercise.supersetId != null &&
+                currentExercise.supersetId == nextExercise?.supersetId
+
+            val restForTransition = if (sameSuperset) {
+                val supersetExercises = routine.exercises
+                    .filter { it.supersetId == currentExercise.supersetId }
+                    .sortedBy { it.orderInSuperset }
+                val isCurrentLastInSuperset = supersetExercises.lastOrNull()?.id == currentExercise.id
+
+                // End of superset round uses exercise rest; in-round transitions use superset quick rest.
+                if (isCurrentLastInSuperset) {
+                    currentExercise.getRestForSet(setIndex)
+                } else {
+                    routine.supersets.find { it.id == currentExercise.supersetId }?.restBetweenSeconds ?: 10
+                }
+            } else {
+                currentExercise.getRestForSet(setIndex)
+            }
+
+            totalRestSeconds += restForTransition.coerceAtLeast(0)
+        }
+
+        step = nextStep
     }
 
-    val estimatedSeconds = (totalReps * 3) + totalRestSeconds // 3 seconds per rep estimate
+    val estimatedSeconds = totalWorkSeconds + totalRestSeconds
     val minutes = estimatedSeconds / 60
 
     return if (minutes < 60) {
@@ -657,4 +689,62 @@ private fun formatEstimatedDuration(routine: Routine): String {
         val remainingMinutes = minutes % 60
         "${hours}h ${remainingMinutes}m"
     }
+}
+
+private fun estimateSetWorkSeconds(exercise: com.devil.phoenixproject.domain.model.RoutineExercise, setIndex: Int): Int {
+    val reps = exercise.setReps.getOrNull(setIndex)
+    return when {
+        !exercise.exercise.hasCableAccessory -> (exercise.duration ?: 30).coerceAtLeast(0)
+        reps == null -> 30 // AMRAP estimate
+        else -> (reps * 3).coerceAtLeast(0) // ~3s per rep estimate
+    }
+}
+
+private fun getNextStepForEstimate(
+    routine: Routine,
+    currentExIndex: Int,
+    currentSetIndex: Int
+): Pair<Int, Int>? {
+    val currentExercise = routine.exercises.getOrNull(currentExIndex) ?: return null
+
+    // Superset interleaving: A1 -> B1 -> A2 -> B2 ...
+    if (currentExercise.supersetId != null) {
+        val supersetExercises = routine.exercises
+            .filter { it.supersetId == currentExercise.supersetId }
+            .sortedBy { it.orderInSuperset }
+
+        val currentSupersetPos = supersetExercises.indexOf(currentExercise)
+
+        // Next exercise in the same set cycle
+        for (i in (currentSupersetPos + 1) until supersetExercises.size) {
+            val nextEx = supersetExercises[i]
+            if (currentSetIndex < nextEx.setReps.size) {
+                val nextExIndex = routine.exercises.indexOf(nextEx)
+                return nextExIndex to currentSetIndex
+            }
+        }
+
+        // First exercise in next cycle that still has a set
+        val nextSetIndex = currentSetIndex + 1
+        for (ex in supersetExercises) {
+            if (nextSetIndex < ex.setReps.size) {
+                val nextExIndex = routine.exercises.indexOf(ex)
+                return nextExIndex to nextSetIndex
+            }
+        }
+
+        // Superset complete -> next standalone exercise
+        val maxIndex = supersetExercises.maxOf { routine.exercises.indexOf(it) }
+        val nextExIndex = maxIndex + 1
+        return if (nextExIndex < routine.exercises.size) nextExIndex to 0 else null
+    }
+
+    // Standard linear progression
+    if (currentSetIndex < currentExercise.setReps.size - 1) {
+        return currentExIndex to (currentSetIndex + 1)
+    }
+    if (currentExIndex < routine.exercises.size - 1) {
+        return (currentExIndex + 1) to 0
+    }
+    return null
 }

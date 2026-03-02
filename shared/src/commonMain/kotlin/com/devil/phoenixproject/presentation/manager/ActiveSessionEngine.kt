@@ -66,6 +66,8 @@ class ActiveSessionEngine(
         fun loadRoutine(routine: Routine)
         /** Enter SetReady screen for a specific exercise/set */
         fun enterSetReady(exerciseIndex: Int, setIndex: Int)
+        /** Skip the current exercise and move to the next available routine step in SetReady */
+        fun skipCurrentExerciseAndEnterNextStep(): Boolean
         /** Show routine complete screen */
         fun showRoutineComplete()
         /** Get current exercise from loaded routine */
@@ -205,6 +207,15 @@ class ActiveSessionEngine(
                 if (params.stallDetectionEnabled && currentState is WorkoutState.Active) {
                     if (!isWarmupGateOpenForAutoStop()) {
                         Logger.d("DELOAD_OCCURRED ignored - warmup/ROM not established yet")
+                        return@collect
+                    }
+                    val repCount = coordinator._repCount.value
+                    if (shouldDeferStandardSetStall(params, repCount)) {
+                        Logger.d(
+                            "DELOAD_OCCURRED ignored - standard set stall guard " +
+                                "(workingReps=${repCount.workingReps}, pending=${repCount.hasPendingRep})"
+                        )
+                        resetStallTimer()
                         return@collect
                     }
                     if (!shouldEnableAutoStop(params)) return@collect
@@ -528,6 +539,17 @@ class ActiveSessionEngine(
     }
 
     /**
+     * Standard set stall guard:
+     * - Ignore fail/stall detection before first confirmed working rep.
+     * - Ignore fail/stall detection while a rep is pending at TOP (brief pauses are common).
+     */
+    private fun shouldDeferStandardSetStall(params: WorkoutParameters, repCount: RepCount): Boolean {
+        val isStandardSet = !params.isJustLift && !params.isAMRAP && !coordinator.isCurrentTimedCableExercise
+        if (!isStandardSet) return false
+        return repCount.workingReps == 0 || repCount.hasPendingRep
+    }
+
+    /**
      * Request auto-stop (thread-safe, only triggers once).
      */
     private fun requestAutoStop() {
@@ -660,9 +682,10 @@ class ActiveSessionEngine(
 
         val hasMeaningfulRange = repCounter.hasMeaningfulRange(WorkoutCoordinator.MIN_RANGE_THRESHOLD)
         val params = coordinator._workoutParameters.value
+        val repCount = coordinator._repCount.value
 
         // ===== 1. VELOCITY-BASED STALL DETECTION =====
-        if (params.stallDetectionEnabled) {
+        if (params.stallDetectionEnabled && !shouldDeferStandardSetStall(params, repCount)) {
             val maxVelocity = maxOf(kotlin.math.abs(metric.velocityA), kotlin.math.abs(metric.velocityB))
             val isDefinitelyStalled = maxVelocity < WorkoutCoordinator.STALL_VELOCITY_LOW
             val isDefinitelyMoving = maxVelocity > WorkoutCoordinator.STALL_VELOCITY_HIGH
@@ -1576,6 +1599,42 @@ class ActiveSessionEngine(
         }
     }
 
+    fun stopAndSkipCurrentExercise() {
+        val skippedExerciseIndex = coordinator._currentExerciseIndex.value
+        val skippedSetIndex = coordinator._currentSetIndex.value
+
+        coordinator.workoutJob?.cancel()
+        coordinator.workoutJob = null
+        coordinator.restTimerJob?.cancel()
+        coordinator.restTimerJob = null
+        coordinator.bodyweightTimerJob?.cancel()
+        coordinator.bodyweightTimerJob = null
+        coordinator._timedExerciseRemainingSeconds.value = null
+
+        scope.launch {
+            bleRepository.stopWorkout()
+
+            repCounter.reset()
+            coordinator._repCount.value = RepCount()
+            coordinator._repRanges.value = null
+            coordinator.warmupCompleteTimeMs = 0
+            resetAutoStopState()
+            coordinator._workoutState.value = WorkoutState.Idle
+
+            val routine = coordinator._loadedRoutine.value
+            if (routine != null) {
+                val movedToNextStep = flowDelegate?.skipCurrentExerciseAndEnterNextStep() == true
+                if (!movedToNextStep) {
+                    flowDelegate?.showRoutineComplete()
+                }
+            }
+
+            Logger.d {
+                "stopAndSkipCurrentExercise: Skipped exercise=$skippedExerciseIndex, set=$skippedSetIndex"
+            }
+        }
+    }
+
     fun pauseWorkout() {
         if (coordinator._workoutState.value is WorkoutState.Active) {
             coordinator.monitorDataCollectionJob?.cancel()
@@ -1929,16 +1988,7 @@ class ActiveSessionEngine(
         coordinator.restTimerJob = scope.launch {
             val routine = coordinator._loadedRoutine.value
             val currentExercise = routine?.exercises?.getOrNull(coordinator._currentExerciseIndex.value)
-
             val exerciseId = currentExercise?.exercise?.id ?: coordinator._workoutParameters.value.selectedExerciseId
-            if (exerciseId != null) {
-                val lastWeight = getLastWeightForExercise(exerciseId)
-                val prWeight = getPrWeightForExercise(exerciseId)
-                coordinator._workoutParameters.value = coordinator._workoutParameters.value.copy(
-                    lastUsedWeightKg = lastWeight,
-                    prWeightKg = prWeight
-                )
-            }
 
             val completedSetIndex = coordinator._currentSetIndex.value
 
@@ -1950,10 +2000,15 @@ class ActiveSessionEngine(
             } else null
             val nextSetIdxFromStep = nextStep?.second
 
-            val isInSupersetTransition = (flowDelegate?.isInSuperset() == true) && (flowDelegate?.isAtEndOfSupersetCycle() != true)
+            val isAtEndOfSupersetCycle = flowDelegate?.isAtEndOfSupersetCycle() == true
+            val isInSupersetTransition = (flowDelegate?.isInSuperset() == true) && !isAtEndOfSupersetCycle
             val isStillInSupersetWorkout = (flowDelegate?.isInSuperset() == true) && nextExerciseFromStep != null &&
                 nextExerciseFromStep.supersetId == currentExercise?.supersetId
-            val restDuration = if (isInSupersetTransition || isStillInSupersetWorkout) {
+            // Use quick superset rest only when moving to another exercise inside the same cycle.
+            // At the end of a superset cycle (last exercise of the group), use the current exercise's
+            // configured rest time so users can recover before starting the next round.
+            val useSupersetQuickRest = isInSupersetTransition || (isStillInSupersetWorkout && !isAtEndOfSupersetCycle)
+            val restDuration = if (useSupersetQuickRest) {
                 (flowDelegate?.getSupersetRestSeconds() ?: 5).coerceAtLeast(5)
             } else {
                 currentExercise?.getRestForSet(completedSetIndex) ?: 90
@@ -1973,7 +2028,7 @@ class ActiveSessionEngine(
                 return@launch
             }
 
-            val supersetLabel = if (isInSupersetTransition || isStillInSupersetWorkout) {
+            val supersetLabel = if (useSupersetQuickRest) {
                 val supersetIds = routine?.supersets?.map { it.id } ?: emptyList()
                 val groupIndex = supersetIds.indexOf(currentExercise?.supersetId)
                 if (groupIndex >= 0) "Superset ${('A' + groupIndex)}" else "Superset"
@@ -2019,6 +2074,29 @@ class ActiveSessionEngine(
 
             val displaySetIndex = nextSetIdxFromStep ?: (coordinator._currentSetIndex.value + 1)
             val displayTotalSets = nextExerciseFromStep?.setReps?.size ?: currentExercise?.setReps?.size ?: 0
+            val initialNextName = flowDelegate?.calculateNextExerciseName(isSingleExercise, currentExercise, routine) ?: ""
+
+            // Emit Resting immediately so the UI timer starts without waiting on repository lookups.
+            coordinator._workoutState.value = WorkoutState.Resting(
+                restSecondsRemaining = restDuration,
+                nextExerciseName = initialNextName,
+                isLastExercise = isLastExerciseOverall,
+                currentSet = displaySetIndex,
+                totalSets = displayTotalSets,
+                isSupersetTransition = useSupersetQuickRest,
+                supersetLabel = supersetLabel
+            )
+
+            if (exerciseId != null) {
+                launch {
+                    val lastWeight = getLastWeightForExercise(exerciseId)
+                    val prWeight = getPrWeightForExercise(exerciseId)
+                    coordinator._workoutParameters.value = coordinator._workoutParameters.value.copy(
+                        lastUsedWeightKg = lastWeight,
+                        prWeightKg = prWeight
+                    )
+                }
+            }
 
             val startTime = currentTimeMillis()
             val endTimeMs = startTime + (restDuration * 1000L)
@@ -2035,7 +2113,7 @@ class ActiveSessionEngine(
                     isLastExercise = isLastExerciseOverall,
                     currentSet = displaySetIndex,
                     totalSets = displayTotalSets,
-                    isSupersetTransition = isInSupersetTransition || isStillInSupersetWorkout,
+                    isSupersetTransition = useSupersetQuickRest,
                     supersetLabel = supersetLabel
                 )
 
@@ -2056,7 +2134,7 @@ class ActiveSessionEngine(
                     isLastExercise = isLastExerciseOverall,
                     currentSet = displaySetIndex,
                     totalSets = displayTotalSets,
-                    isSupersetTransition = isInSupersetTransition || isStillInSupersetWorkout,
+                    isSupersetTransition = useSupersetQuickRest,
                     supersetLabel = supersetLabel
                 )
             }

@@ -1,5 +1,6 @@
 package com.devil.phoenixproject.presentation.screen
 
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -60,6 +61,7 @@ fun ActiveWorkoutScreen(
 
     // State for confirmation dialog
     var showExitConfirmation by remember { mutableStateOf(false) }
+    val isRoutineFlow = routineFlowState != RoutineFlowState.NotInRoutine
 
     // PR Celebration state
     var prCelebrationEvent by remember { mutableStateOf<PRCelebrationEvent?>(null) }
@@ -325,38 +327,78 @@ fun ActiveWorkoutScreen(
 
     // Exit confirmation dialog
     if (showExitConfirmation) {
-        AlertDialog(
-            onDismissRequest = { showExitConfirmation = false },
-            title = { Text("Exit Workout?") },
-            text = { Text("The workout is currently active. Are you sure you want to exit?") },
-            containerColor = MaterialTheme.colorScheme.surface,
-            shape = MaterialTheme.shapes.medium,
-            confirmButton = {
-                Button(
-                    onClick = {
-                        // Use exitingWorkout=true to reset state to Idle and clear routine context
-                        // This prevents stale SetSummary state from blocking editing after exit
-                        viewModel.stopWorkout(exitingWorkout = true)
-                        showExitConfirmation = false
-
-                        // Smart navigation: if in routine flow, go back to DailyRoutines
-                        // to avoid blank RoutineOverviewScreen (which returns early when routine is null)
-                        if (routineFlowState != RoutineFlowState.NotInRoutine) {
-                            navController.popBackStack(NavigationRoutes.DailyRoutines.route, inclusive = false)
-                        } else {
-                            navController.navigateUp()
+        if (isRoutineFlow) {
+            AlertDialog(
+                onDismissRequest = { showExitConfirmation = false },
+                title = { Text("Stop Current Set?") },
+                text = { Text("Stop this set, skip this exercise, or end the entire workout.") },
+                containerColor = MaterialTheme.colorScheme.surface,
+                shape = MaterialTheme.shapes.medium,
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            viewModel.stopAndReturnToSetReady()
+                            showExitConfirmation = false
+                            navController.navigate(NavigationRoutes.SetReady.route) {
+                                popUpTo(NavigationRoutes.RoutineOverview.route) { inclusive = false }
+                            }
+                        }
+                    ) {
+                        Text("Stop Set")
+                    }
+                },
+                dismissButton = {
+                    Column {
+                        TextButton(onClick = { showExitConfirmation = false }) {
+                            Text("Cancel")
+                        }
+                        TextButton(
+                            onClick = {
+                                viewModel.stopAndSkipCurrentExercise()
+                                showExitConfirmation = false
+                            }
+                        ) {
+                            Text("Skip Exercise")
+                        }
+                        TextButton(
+                            onClick = {
+                                viewModel.stopWorkout(exitingWorkout = true)
+                                showExitConfirmation = false
+                                navController.popBackStack(NavigationRoutes.DailyRoutines.route, inclusive = false)
+                            }
+                        ) {
+                            Text("End Workout", color = MaterialTheme.colorScheme.error)
                         }
                     }
-                ) {
-                    Text("Exit")
                 }
-            },
-            dismissButton = {
-                TextButton(onClick = { showExitConfirmation = false }) {
-                    Text("Cancel")
+            )
+        } else {
+            AlertDialog(
+                onDismissRequest = { showExitConfirmation = false },
+                title = { Text("Exit Workout?") },
+                text = { Text("The workout is currently active. Are you sure you want to exit?") },
+                containerColor = MaterialTheme.colorScheme.surface,
+                shape = MaterialTheme.shapes.medium,
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            // Use exitingWorkout=true to reset state to Idle and clear routine context
+                            // This prevents stale SetSummary state from blocking editing after exit
+                            viewModel.stopWorkout(exitingWorkout = true)
+                            showExitConfirmation = false
+                            navController.navigateUp()
+                        }
+                    ) {
+                        Text("Exit")
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showExitConfirmation = false }) {
+                        Text("Cancel")
+                    }
                 }
-            }
-        )
+            )
+        }
     }
 
     // Connection error dialog (ConnectingOverlay removed - status shown in top bar button)

@@ -4,6 +4,7 @@ import app.cash.turbine.test
 import com.devil.phoenixproject.data.repository.RepNotification
 import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.RepCount
+import com.devil.phoenixproject.domain.model.RoutineFlowState
 import com.devil.phoenixproject.domain.model.WorkoutParameters
 import com.devil.phoenixproject.domain.model.WorkoutMetric
 import com.devil.phoenixproject.domain.model.WorkoutState
@@ -171,6 +172,36 @@ class DWSMWorkoutLifecycleTest {
         harness.cleanup()
     }
 
+    @Test
+    fun `stopAndSkipCurrentExercise advances routine without ending workout session`() = runTest {
+        val harness = DWSMTestHarness(this)
+        harness.fakeBleRepo.simulateConnect("Vee_Test")
+
+        val routine = createTestRoutine(exerciseCount = 3, setsPerExercise = 2)
+        routine.exercises.forEach { harness.fakeExerciseRepo.addExercise(it.exercise) }
+
+        harness.dwsm.loadRoutine(routine)
+        advanceUntilIdle()
+
+        harness.dwsm.startWorkout(skipCountdown = true)
+        advanceUntilIdle()
+        assertIs<WorkoutState.Active>(harness.dwsm.coordinator.workoutState.value)
+
+        harness.dwsm.stopAndSkipCurrentExercise()
+        advanceUntilIdle()
+
+        val flowState = harness.dwsm.coordinator.routineFlowState.value
+        assertIs<RoutineFlowState.SetReady>(
+            flowState,
+            "stopAndSkipCurrentExercise should return to SetReady instead of ending the routine"
+        )
+        assertEquals(1, flowState.exerciseIndex, "Should advance to the next exercise")
+        assertEquals(0, flowState.setIndex, "Next exercise should start at set 1")
+        assertTrue(0 in harness.dwsm.coordinator.skippedExercises.value)
+        assertIs<WorkoutState.Idle>(harness.dwsm.coordinator.workoutState.value)
+        harness.cleanup()
+    }
+
     // ===== C. resetForNewWorkout =====
 
     @Test
@@ -304,7 +335,7 @@ class DWSMWorkoutLifecycleTest {
     }
 
     @Test
-    fun `deload starts stall timer after warmup is complete`() = runTest {
+    fun `deload does not start stall timer before first working rep even after warmup`() = runTest {
         val harness = DWSMTestHarness(this)
         harness.fakeBleRepo.simulateConnect("Vee_Test")
 
@@ -330,9 +361,46 @@ class DWSMWorkoutLifecycleTest {
         harness.fakeBleRepo.emitDeloadOccurred()
         advanceUntilIdle()
 
+        assertEquals(
+            null,
+            harness.dwsm.coordinator.stallStartTime,
+            "DELOAD should be ignored until at least one working rep is confirmed"
+        )
+        assertFalse(harness.dwsm.coordinator.isCurrentlyStalled)
+        harness.cleanup()
+    }
+
+    @Test
+    fun `deload starts stall timer after first working rep`() = runTest {
+        val harness = DWSMTestHarness(this)
+        harness.fakeBleRepo.simulateConnect("Vee_Test")
+
+        harness.dwsm.updateWorkoutParameters(
+            WorkoutParameters(
+                programMode = ProgramMode.OldSchool,
+                reps = 8,
+                warmupReps = 0,
+                weightPerCableKg = 35f,
+                stallDetectionEnabled = true,
+                isAMRAP = false,
+                isJustLift = false
+            )
+        )
+        harness.dwsm.startWorkout(skipCountdown = true)
+        advanceUntilIdle()
+        assertIs<WorkoutState.Active>(harness.dwsm.coordinator.workoutState.value)
+
+        completeWarmupReps(harness, warmupTarget = 3, workingTarget = 8)
+        completeFirstWorkingRep(harness, warmupTarget = 3, workingTarget = 8)
+        advanceUntilIdle()
+        assertEquals(1, harness.dwsm.coordinator.repCount.value.workingReps)
+
+        harness.fakeBleRepo.emitDeloadOccurred()
+        advanceUntilIdle()
+
         assertNotNull(
             harness.dwsm.coordinator.stallStartTime,
-            "DELOAD should start stall timer once warmup reps are complete"
+            "DELOAD should start stall timer once working reps are in progress"
         )
         assertTrue(harness.dwsm.coordinator.isCurrentlyStalled)
         harness.cleanup()
@@ -398,6 +466,7 @@ class DWSMWorkoutLifecycleTest {
         assertIs<WorkoutState.Active>(harness.dwsm.coordinator.workoutState.value)
 
         completeWarmupReps(harness, warmupTarget = 3, workingTarget = 8)
+        completeFirstWorkingRep(harness, warmupTarget = 3, workingTarget = 8)
         advanceUntilIdle()
         assertTrue(harness.dwsm.coordinator.repCount.value.isWarmupComplete)
 
@@ -547,5 +616,36 @@ class DWSMWorkoutLifecycleTest {
                 )
             )
         }
+    }
+
+    private suspend fun completeFirstWorkingRep(
+        harness: DWSMTestHarness,
+        warmupTarget: Int = 3,
+        workingTarget: Int = 8
+    ) {
+        val activeMetric = WorkoutMetric(
+            positionA = 120f,
+            positionB = 120f,
+            velocityA = 80.0,
+            velocityB = 80.0,
+            loadA = 10f,
+            loadB = 10f
+        )
+
+        harness.fakeBleRepo.emitMetric(activeMetric)
+        harness.fakeBleRepo.emitRepNotification(
+            RepNotification(
+                topCounter = warmupTarget + 1,
+                completeCounter = warmupTarget + 1,
+                repsRomCount = warmupTarget,
+                repsRomTotal = warmupTarget,
+                repsSetCount = 1,
+                repsSetTotal = workingTarget,
+                rangeTop = 800f,
+                rangeBottom = 0f,
+                rawData = ByteArray(24),
+                timestamp = (warmupTarget + 1).toLong()
+            )
+        )
     }
 }

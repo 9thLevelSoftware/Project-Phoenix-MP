@@ -277,8 +277,11 @@ fun ExercisePickerDialog(
             }
         }
     } else {
+        val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+
         ModalBottomSheet(
             onDismissRequest = onDismiss,
+            sheetState = sheetState,
             modifier = modifier,
             containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
             shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)
@@ -392,6 +395,7 @@ fun ExercisePickerContent(
     Box(
         modifier = Modifier
             .fillMaxWidth()
+            .imePadding()
             .then(if (fullScreen) Modifier.fillMaxHeight() else Modifier.fillMaxHeight(0.9f))
     ) {
         Column(

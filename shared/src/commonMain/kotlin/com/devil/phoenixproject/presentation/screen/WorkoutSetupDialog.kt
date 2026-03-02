@@ -3,6 +3,8 @@ package com.devil.phoenixproject.presentation.screen
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -538,7 +540,7 @@ fun ExercisePickerDialog(
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(200.dp),
+                            .weight(1f, fill = true),
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
@@ -548,13 +550,16 @@ fun ExercisePickerDialog(
                         )
                     }
                 } else {
-                    Column(
+                    LazyColumn(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .verticalScroll(rememberScrollState()),
+                            .weight(1f, fill = true),
                         verticalArrangement = Arrangement.spacedBy(Spacing.extraSmall)
                     ) {
-                        filteredExercises.forEach { exercise ->
+                        items(
+                            items = filteredExercises,
+                            key = { exercise -> exercise.id ?: exercise.name }
+                        ) { exercise ->
                             Card(
                                 onClick = { onExerciseSelected(exercise) },
                                 modifier = Modifier.fillMaxWidth(),

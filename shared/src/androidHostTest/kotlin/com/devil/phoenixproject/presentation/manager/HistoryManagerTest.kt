@@ -94,7 +94,9 @@ class HistoryManagerTest {
             assertEquals("Push Day", grouped.routineName)
             assertEquals(2, grouped.sessions.size)
             assertEquals(18, grouped.totalReps)
-            assertEquals(150L, grouped.totalDuration)
+            // Total duration now reflects elapsed routine span (first set start -> last set end),
+            // so rest between sets is included.
+            assertEquals(1_090L, grouped.totalDuration)
             assertEquals(2, grouped.exerciseCount)
 
             collectJob.cancel()

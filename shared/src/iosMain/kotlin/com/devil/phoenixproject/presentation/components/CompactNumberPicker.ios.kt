@@ -54,13 +54,21 @@ actual fun CompactNumberPicker(
     suffix: String,
     step: Float
 ) {
-    // Generate array of values based on step
-    val values = remember(range, step) {
-        buildList {
-            var current = range.start
-            while (current <= range.endInclusive) {
-                add(current)
-                current += step
+    // Generate values deterministically to avoid floating-point drift on iOS.
+    val values = remember(range.start, range.endInclusive, step) {
+        if (step <= 0f || range.start > range.endInclusive) {
+            emptyList()
+        } else {
+            buildList {
+                val start = range.start
+                val end = range.endInclusive
+                val totalSteps = (((end - start) / step).toInt()).coerceAtLeast(0)
+                for (index in 0..totalSteps) {
+                    add((start + (index * step)).coerceIn(start, end))
+                }
+                if (isEmpty() || abs(last() - end) > 0.0001f) {
+                    add(end)
+                }
             }
         }
     }
@@ -71,6 +79,7 @@ actual fun CompactNumberPicker(
         if (values.isEmpty()) 0
         else values.indices.minByOrNull { abs(values[it] - value) } ?: 0
     }
+    val safeCurrentIndex = if (values.isEmpty()) 0 else currentIndex.coerceIn(values.indices)
 
     // Format a value for display
     fun formatValue(floatVal: Float): String {
@@ -85,7 +94,7 @@ actual fun CompactNumberPicker(
         return if (suffix.isNotEmpty()) "$formatted $suffix" else formatted
     }
 
-    val listState = rememberLazyListState(initialFirstVisibleItemIndex = currentIndex.coerceAtLeast(0))
+    val listState = rememberLazyListState(initialFirstVisibleItemIndex = safeCurrentIndex)
     val coroutineScope = rememberCoroutineScope()
     val flingBehavior = rememberSnapFlingBehavior(lazyListState = listState)
     val focusManager = LocalFocusManager.current
@@ -111,6 +120,19 @@ actual fun CompactNumberPicker(
     val currentValue by rememberUpdatedState(value)
     val currentOnValueChange by rememberUpdatedState(onValueChange)
 
+    // Keep list position valid and in sync when value/range changes.
+    LaunchedEffect(values.size, safeCurrentIndex) {
+        if (values.isNotEmpty()) {
+            val clampedIndex = listState.firstVisibleItemIndex.coerceIn(values.indices)
+            if (clampedIndex != listState.firstVisibleItemIndex) {
+                listState.scrollToItem(clampedIndex)
+            }
+            if (clampedIndex != safeCurrentIndex) {
+                listState.scrollToItem(safeCurrentIndex)
+            }
+        }
+    }
+
     // Format value for editing (without suffix)
     fun formatValueForEdit(floatVal: Float): String {
         return if (step >= 1.0f && floatVal % 1.0f == 0f) {
@@ -125,6 +147,12 @@ actual fun CompactNumberPicker(
     // Commit the edited value
     // Issue #4 Fix: Sanitize input and handle parse failure gracefully
     fun commitEdit() {
+        if (values.isEmpty()) {
+            isEditing = false
+            focusManager.clearFocus()
+            return
+        }
+
         // Sanitize input: remove non-numeric chars except decimal point and minus
         val sanitized = inputText.filter { it.isDigit() || it == '.' || it == '-' }
         val parsed = sanitized.toFloatOrNull()
@@ -141,11 +169,9 @@ actual fun CompactNumberPicker(
         } else {
             // Parse failed - keep current scroll position value instead of defaulting to max
             val currentScrollIndex = listState.firstVisibleItemIndex.coerceIn(values.indices)
-            if (values.isNotEmpty()) {
-                val currentValue = values[currentScrollIndex]
-                lastScrollSetValue = currentValue
-                onValueChange(currentValue)
-            }
+            val currentValue = values[currentScrollIndex]
+            lastScrollSetValue = currentValue
+            onValueChange(currentValue)
             Logger.w { "CompactNumberPicker: Failed to parse '$inputText', keeping current value" }
         }
         isEditing = false
@@ -176,8 +202,12 @@ actual fun CompactNumberPicker(
             hasFocusedOnce = false
             editSessionReady = false
             // Issue #166 Fix: Use the current scroll position value, not external value
-            val currentScrollIndex = listState.firstVisibleItemIndex.coerceIn(values.indices)
-            val currentScrollValue = if (values.isNotEmpty()) values[currentScrollIndex] else value
+            val currentScrollIndex = if (values.isNotEmpty()) {
+                listState.firstVisibleItemIndex.coerceIn(values.indices)
+            } else {
+                0
+            }
+            val currentScrollValue = values.getOrElse(currentScrollIndex) { value }
             inputText = formatValueForEdit(currentScrollValue)
             // Issue #166 Fix: iOS needs more time after clearFocus() before focus can be requested again.
             // Use retry loop with increasing delays to ensure keyboard appears reliably.
@@ -242,19 +272,26 @@ actual fun CompactNumberPicker(
             // Decrease button
             IconButton(
                 onClick = {
-                    val newIndex = (currentIndex - 1).coerceIn(values.indices)
-                    onValueChange(values[newIndex])
-                    coroutineScope.launch {
-                        listState.animateScrollToItem(newIndex)
+                    if (values.isNotEmpty()) {
+                        val baseIndex = listState.firstVisibleItemIndex.coerceIn(values.indices)
+                        val newIndex = (baseIndex - 1).coerceIn(values.indices)
+                        if (newIndex != baseIndex) {
+                            val newValue = values[newIndex]
+                            lastScrollSetValue = newValue
+                            currentOnValueChange(newValue)
+                            coroutineScope.launch {
+                                listState.animateScrollToItem(newIndex)
+                            }
+                        }
                     }
                 },
-                enabled = currentIndex > 0,
+                enabled = values.isNotEmpty() && safeCurrentIndex > 0,
                 modifier = Modifier.size(48.dp)
             ) {
                 Icon(
                     imageVector = Icons.Default.Remove,
                     contentDescription = "Decrease $label",
-                    tint = if (currentIndex > 0)
+                    tint = if (values.isNotEmpty() && safeCurrentIndex > 0)
                         MaterialTheme.colorScheme.primary
                     else
                         MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
@@ -367,6 +404,23 @@ actual fun CompactNumberPicker(
                     }
                 }
 
+                if (!isEditing) {
+                    val previewIndex = if (values.isNotEmpty() && (isUserInteracting || listState.isScrollInProgress)) {
+                        listState.firstVisibleItemIndex.coerceIn(values.indices)
+                    } else {
+                        safeCurrentIndex
+                    }
+                    val overlayText = if (values.isNotEmpty()) formatValue(values[previewIndex]) else "--"
+                    Text(
+                        text = overlayText,
+                        style = MaterialTheme.typography.headlineMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.align(Alignment.Center)
+                    )
+                }
+
                 // Selection indicator lines - positioned to frame center item
                 HorizontalDivider(
                     modifier = Modifier
@@ -385,19 +439,26 @@ actual fun CompactNumberPicker(
             // Increase button
             IconButton(
                 onClick = {
-                    val newIndex = (currentIndex + 1).coerceIn(values.indices)
-                    onValueChange(values[newIndex])
-                    coroutineScope.launch {
-                        listState.animateScrollToItem(newIndex)
+                    if (values.isNotEmpty()) {
+                        val baseIndex = listState.firstVisibleItemIndex.coerceIn(values.indices)
+                        val newIndex = (baseIndex + 1).coerceIn(values.indices)
+                        if (newIndex != baseIndex) {
+                            val newValue = values[newIndex]
+                            lastScrollSetValue = newValue
+                            currentOnValueChange(newValue)
+                            coroutineScope.launch {
+                                listState.animateScrollToItem(newIndex)
+                            }
+                        }
                     }
                 },
-                enabled = currentIndex < values.size - 1,
+                enabled = values.isNotEmpty() && safeCurrentIndex < values.size - 1,
                 modifier = Modifier.size(48.dp)
             ) {
                 Icon(
                     imageVector = Icons.Default.Add,
                     contentDescription = "Increase $label",
-                    tint = if (currentIndex < values.size - 1)
+                    tint = if (values.isNotEmpty() && safeCurrentIndex < values.size - 1)
                         MaterialTheme.colorScheme.primary
                     else
                         MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)

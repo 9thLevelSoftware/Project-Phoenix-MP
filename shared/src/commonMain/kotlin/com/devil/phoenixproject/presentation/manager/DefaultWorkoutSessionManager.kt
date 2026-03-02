@@ -1,6 +1,7 @@
 package com.devil.phoenixproject.presentation.manager
 
 import co.touchlab.kermit.Logger
+import com.devil.phoenixproject.getPlatform
 import com.devil.phoenixproject.data.preferences.PreferencesManager
 import com.devil.phoenixproject.data.repository.BleRepository
 import com.devil.phoenixproject.data.repository.ExerciseRepository
@@ -13,6 +14,9 @@ import com.devil.phoenixproject.domain.model.*
 import com.devil.phoenixproject.domain.usecase.RepCounterFromMachine
 import com.devil.phoenixproject.domain.usecase.ResolveRoutineWeightsUseCase
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.launch
 
@@ -127,6 +131,8 @@ class DefaultWorkoutSessionManager(
         onBufferOverflow = kotlinx.coroutines.channels.BufferOverflow.DROP_OLDEST
     )
 ) : WorkoutStateProvider {
+    private val isIosPlatform = getPlatform().name.startsWith("iOS")
+    private var summaryAutoAdvanceJob: Job? = null
 
     // ===== Coordinator: Shared state bus for all workout state =====
     val coordinator = WorkoutCoordinator(_hapticEvents)
@@ -184,6 +190,7 @@ class DefaultWorkoutSessionManager(
         activeSessionEngine.flowDelegate = object : ActiveSessionEngine.WorkoutFlowDelegate {
             override fun loadRoutine(routine: Routine) = routineFlowManager.loadRoutine(routine)
             override fun enterSetReady(exerciseIndex: Int, setIndex: Int) = routineFlowManager.enterSetReady(exerciseIndex, setIndex)
+            override fun skipCurrentExerciseAndEnterNextStep(): Boolean = routineFlowManager.skipCurrentExerciseAndEnterNextStep()
             override fun showRoutineComplete() = routineFlowManager.showRoutineComplete()
             override fun getCurrentExercise(): RoutineExercise? = routineFlowManager.getCurrentExercise()
             override fun getNextStep(routine: Routine, exerciseIndex: Int, setIndex: Int): Pair<Int, Int>? =
@@ -196,6 +203,34 @@ class DefaultWorkoutSessionManager(
             override fun calculateIsLastExercise(isSingleExercise: Boolean, currentExercise: RoutineExercise?, routine: Routine?): Boolean =
                 routineFlowManager.calculateIsLastExercise(isSingleExercise, currentExercise, routine)
             override fun clearCycleContext() = routineFlowManager.clearCycleContext()
+        }
+
+        // Manager-level summary auto-advance so countdown continues even when UI is backgrounded.
+        scope.launch {
+            coordinator.workoutState.collect { state ->
+                summaryAutoAdvanceJob?.cancel()
+                summaryAutoAdvanceJob = null
+
+                if (state !is WorkoutState.SetSummary) return@collect
+
+                val summaryCountdownSeconds = settingsManager.userPreferences.value.summaryCountdownSeconds
+                val params = coordinator._workoutParameters.value
+                val shouldAutoAdvanceInManager =
+                    isIosPlatform &&
+                    summaryCountdownSeconds > 0 &&
+                        !params.isJustLift &&
+                        !params.isAMRAP
+
+                if (!shouldAutoAdvanceInManager) return@collect
+
+                summaryAutoAdvanceJob = scope.launch {
+                    delay(summaryCountdownSeconds * 1000L)
+                    if (coordinator._workoutState.value is WorkoutState.SetSummary) {
+                        Logger.d { "Summary auto-advance fallback fired - proceeding from summary in manager scope" }
+                        proceedFromSummary()
+                    }
+                }
+            }
         }
     }
 
@@ -284,6 +319,7 @@ class DefaultWorkoutSessionManager(
     fun skipCountdown() = activeSessionEngine.skipCountdown()
     fun stopWorkout(exitingWorkout: Boolean = false) = activeSessionEngine.stopWorkout(exitingWorkout)
     fun stopAndReturnToSetReady() = activeSessionEngine.stopAndReturnToSetReady()
+    fun stopAndSkipCurrentExercise() = activeSessionEngine.stopAndSkipCurrentExercise()
     fun pauseWorkout() = activeSessionEngine.pauseWorkout()
     fun resumeWorkout() = activeSessionEngine.resumeWorkout()
 
@@ -325,6 +361,14 @@ class DefaultWorkoutSessionManager(
      */
     fun proceedFromSummary() {
         scope.launch {
+            if (coordinator._workoutState.value !is WorkoutState.SetSummary) {
+                Logger.d { "proceedFromSummary: ignored because current state is ${coordinator._workoutState.value}" }
+                return@launch
+            }
+
+            summaryAutoAdvanceJob?.cancel()
+            summaryAutoAdvanceJob = null
+
             val routine = coordinator._loadedRoutine.value
             val autoplay = settingsManager.autoplayEnabled.value
 
@@ -456,6 +500,7 @@ class DefaultWorkoutSessionManager(
     // ===== Cleanup =====
 
     fun cleanup() {
+        summaryAutoAdvanceJob?.cancel()
         activeSessionEngine.cleanup()
     }
 }
