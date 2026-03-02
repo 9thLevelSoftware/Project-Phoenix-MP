@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
@@ -25,7 +26,7 @@ import com.devil.phoenixproject.util.format
  * @param onWeightChange Callback when weight is changed
  * @param modifier Modifier for the composable
  * @param minWeight Minimum allowed weight (default 0)
- * @param maxWeight Maximum allowed weight (default 220kg)
+ * @param maxWeight Maximum allowed weight per cable (default 100kg)
  * @param step Weight increment/decrement step (default 2.5kg)
  * @param label Label text displayed above the control
  * @param prWeight Optional PR weight to show percentage indicator
@@ -36,7 +37,7 @@ fun WeightStepper(
     onWeightChange: (Float) -> Unit,
     modifier: Modifier = Modifier,
     minWeight: Float = 0f,
-    maxWeight: Float = 220f,
+    maxWeight: Float = 100f, // Per cable max (V-Form: 100kg, Trainer+: 110kg)
     step: Float = 2.5f,
     label: String = "Weight",
     prWeight: Float? = null
@@ -125,6 +126,40 @@ fun WeightStepper(
                 modifier = Modifier.size(44.dp)
             ) {
                 Icon(Icons.Default.Add, contentDescription = "Increase weight")
+            }
+        }
+
+        // Total weight for 2 cables indicator
+        Spacer(modifier = Modifier.height(Spacing.small))
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(Spacing.small),
+            color = MaterialTheme.colorScheme.surfaceContainerHigh
+        ) {
+            Row(
+                modifier = Modifier.padding(horizontal = Spacing.medium, vertical = Spacing.small),
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Info,
+                    contentDescription = null,
+                    modifier = Modifier.size(16.dp),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(modifier = Modifier.width(Spacing.small))
+                val totalWeight = weight * 2
+                Text(
+                    text = "Total weight for 2 cables: ${
+                        if (totalWeight == totalWeight.toLong().toFloat()) {
+                            totalWeight.toLong().toString()
+                        } else {
+                            totalWeight.format(1)
+                        }
+                    } kg",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
         }
     }

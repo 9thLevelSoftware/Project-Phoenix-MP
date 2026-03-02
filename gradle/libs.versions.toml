@@ -2,7 +2,10 @@
 # Kotlin and KMP
 kotlin = "2.3.0"
 agp = "9.0.1"
-compose-multiplatform = "1.10.0"
+compose-multiplatform = "1.10.1"
+# material3 and material-icons follow separate version tracks from CMP plugin
+cmp-material3 = "1.10.0-alpha05"
+cmp-material-icons = "1.7.3"
 
 # Premium Features
 revenuecat = "2.2.15+17.25.0"
@@ -23,8 +26,8 @@ espresso-androidx = "3.6.1"
 androidx-core = "1.17.0"
 androidx-lifecycle = "2.10.0"
 androidx-splashscreen = "1.2.0"
-androidx-lifecycle-viewmodel-compose = "2.10.0-alpha07"
-androidx-navigation-compose = "2.9.1"
+androidx-lifecycle-viewmodel-compose = "2.10.0-alpha08"
+androidx-navigation-compose = "2.9.2"
 androidx-savedstate = "1.4.0"
 
 # Dependency Injection - Koin (Multiplatform alternative to Hilt)
@@ -105,6 +108,15 @@ androidx-savedstate = { module = "org.jetbrains.androidx.savedstate:savedstate",
 androidx-activity-compose = { module = "androidx.activity:activity-compose", version.ref = "activity-compose" }
 androidx-splashscreen = { module = "androidx.core:core-splashscreen", version.ref = "androidx-splashscreen" }
 
+# Compose Multiplatform (explicit coordinates - migrated from deprecated plugin accessors)
+cmp-runtime = { module = "org.jetbrains.compose.runtime:runtime", version.ref = "compose-multiplatform" }
+cmp-foundation = { module = "org.jetbrains.compose.foundation:foundation", version.ref = "compose-multiplatform" }
+cmp-material3 = { module = "org.jetbrains.compose.material3:material3", version.ref = "cmp-material3" }
+cmp-material-icons-extended = { module = "org.jetbrains.compose.material:material-icons-extended", version.ref = "cmp-material-icons" }
+cmp-ui = { module = "org.jetbrains.compose.ui:ui", version.ref = "compose-multiplatform" }
+cmp-ui-tooling = { module = "org.jetbrains.compose.ui:ui-tooling", version.ref = "compose-multiplatform" }
+cmp-components-resources = { module = "org.jetbrains.compose.components:components-resources", version.ref = "compose-multiplatform" }
+
 # Compose (Android - via BOM)
 compose-ui = { module = "androidx.compose.ui:ui" }
 compose-ui-graphics = { module = "androidx.compose.ui:ui-graphics" }
@@ -181,10 +193,9 @@ camerax-view = { module = "androidx.camera:camera-view", version.ref = "camerax"
 [plugins]
 # Android
 android-application = { id = "com.android.application", version.ref = "agp" }
-android-library = { id = "com.android.library", version.ref = "agp" }
+android-kotlin-multiplatform-library = { id = "com.android.kotlin.multiplatform.library", version.ref = "agp" }
 
 # Kotlin
-kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
 kotlin-multiplatform = { id = "org.jetbrains.kotlin.multiplatform", version.ref = "kotlin" }
 kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
 kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }

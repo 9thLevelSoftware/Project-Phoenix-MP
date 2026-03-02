@@ -5,6 +5,7 @@ import com.devil.phoenixproject.data.preferences.PreferencesManager
 import com.devil.phoenixproject.data.repository.BleRepository
 import com.devil.phoenixproject.data.repository.KableBleRepository
 import com.devil.phoenixproject.domain.model.HudPreset
+import com.devil.phoenixproject.domain.model.RepCountTiming
 import com.devil.phoenixproject.domain.model.UserPreferences
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.util.format
@@ -31,13 +32,21 @@ class SettingsManager(
         .map { it.weightUnit }
         .stateIn(scope, SharingStarted.Eagerly, WeightUnit.KG)
 
-    val stopAtTop: StateFlow<Boolean> = userPreferences
-        .map { it.stopAtTop }
-        .stateIn(scope, SharingStarted.Eagerly, false)
-
     val enableVideoPlayback: StateFlow<Boolean> = userPreferences
         .map { it.enableVideoPlayback }
         .stateIn(scope, SharingStarted.Eagerly, true)
+
+    val gamificationEnabled: StateFlow<Boolean> = userPreferences
+        .map { it.gamificationEnabled }
+        .stateIn(scope, SharingStarted.Eagerly, true)
+
+    val simulatorModeUnlocked: StateFlow<Boolean> = userPreferences
+        .map { it.simulatorModeUnlocked }
+        .stateIn(scope, SharingStarted.Eagerly, false)
+
+    val simulatorModeEnabled: StateFlow<Boolean> = userPreferences
+        .map { it.simulatorModeEnabled }
+        .stateIn(scope, SharingStarted.Eagerly, false)
 
     // Issue #167: Autoplay is now derived from summaryCountdownSeconds
     // - summaryCountdownSeconds == 0 (Unlimited) = autoplay OFF (manual control)
@@ -90,6 +99,10 @@ class SettingsManager(
         scope.launch { preferencesManager.setHudPreset(preset) }
     }
 
+    fun setRepCountTiming(timing: RepCountTiming) {
+        scope.launch { preferencesManager.setRepCountTiming(timing) }
+    }
+
     fun setSummaryCountdownSeconds(seconds: Int) {
         Logger.d("setSummaryCountdownSeconds: Setting value to $seconds")
         scope.launch { preferencesManager.setSummaryCountdownSeconds(seconds) }
@@ -99,12 +112,24 @@ class SettingsManager(
         scope.launch { preferencesManager.setAutoStartCountdownSeconds(seconds) }
     }
 
+    fun setGamificationEnabled(enabled: Boolean) {
+        scope.launch { preferencesManager.setGamificationEnabled(enabled) }
+    }
+
+    fun setSimulatorModeUnlocked(unlocked: Boolean) {
+        scope.launch { preferencesManager.setSimulatorModeUnlocked(unlocked) }
+    }
+
+    fun setSimulatorModeEnabled(enabled: Boolean) {
+        scope.launch { preferencesManager.setSimulatorModeEnabled(enabled) }
+    }
+
     fun setColorScheme(schemeIndex: Int) {
         scope.launch {
             bleRepository.setColorScheme(schemeIndex)
             preferencesManager.setColorScheme(schemeIndex)
-            // Update disco mode's restore color index
-            (bleRepository as? KableBleRepository)?.setLastColorSchemeIndex(schemeIndex)
+            // Update disco mode's restore color index (Issue #144: via interface method)
+            bleRepository.setLastColorSchemeIndex(schemeIndex)
         }
     }
 

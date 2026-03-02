@@ -2,7 +2,7 @@ import org.jetbrains.kotlin.gradle.plugin.mpp.apple.XCFramework
 
 plugins {
     alias(libs.plugins.kotlin.multiplatform)
-    alias(libs.plugins.android.library)
+    alias(libs.plugins.android.kotlin.multiplatform.library)
     alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.compose.multiplatform)
     alias(libs.plugins.kotlin.compose)
@@ -12,7 +12,6 @@ plugins {
 kotlin {
     // Global opt-ins for experimental APIs
     sourceSets.all {
-        languageSettings.optIn("kotlin.time.ExperimentalTime")
         languageSettings.optIn("kotlinx.coroutines.ExperimentalCoroutinesApi")
     }
 
@@ -21,11 +20,21 @@ kotlin {
         freeCompilerArgs.add("-Xexpect-actual-classes")
     }
 
-    // Android target
-    androidTarget {
+    // Android target (AGP 9.0 new DSL)
+    androidLibrary {
+        namespace = "com.devil.phoenixproject.shared"
+        compileSdk = 36
+        minSdk = 26
+
         compilerOptions {
             jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
         }
+
+        androidResources {
+            enable = true
+        }
+
+        withHostTest {}
     }
 
     // iOS target (iosArm64 only - physical devices for distribution)
@@ -45,12 +54,12 @@ kotlin {
         val commonMain by getting {
             dependencies {
                 // Compose Multiplatform
-                implementation(compose.runtime)
-                implementation(compose.foundation)
-                implementation(compose.material3)
-                implementation(compose.materialIconsExtended)
-                implementation(compose.ui)
-                implementation(compose.components.resources)
+                implementation(libs.cmp.runtime)
+                implementation(libs.cmp.foundation)
+                implementation(libs.cmp.material3)
+                implementation(libs.cmp.material.icons.extended)
+                implementation(libs.cmp.ui)
+                implementation(libs.cmp.components.resources)
 
                 // Lifecycle ViewModel for Compose
                 implementation(libs.androidx.lifecycle.viewmodel.compose)
@@ -121,7 +130,7 @@ kotlin {
             }
         }
 
-        val androidUnitTest by getting {
+        getByName("androidHostTest") {
             dependencies {
                 implementation(libs.junit)
                 implementation(libs.truth)
@@ -154,7 +163,7 @@ kotlin {
                 implementation(libs.media3.ui)
 
                 // Compose Preview Tooling (for @Preview in shared module)
-                implementation(compose.uiTooling)
+                implementation(libs.cmp.ui.tooling)
 
                 // Activity Compose (for file picker Activity Result APIs)
                 implementation(libs.androidx.activity.compose)
@@ -197,26 +206,12 @@ kotlin {
     }
 }
 
-android {
-    namespace = "com.devil.phoenixproject.shared"
-    compileSdk = 36
-
-    defaultConfig {
-        minSdk = 26
-    }
-
-    compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_17
-        targetCompatibility = JavaVersion.VERSION_17
-    }
-}
-
 sqldelight {
     databases {
         create("VitruvianDatabase") {
             packageName.set("com.devil.phoenixproject.database")
-            // Version 17 = initial schema (1) + 16 migrations (1.sqm through 16.sqm) + migration 17 (RpgAttributes)
-            version = 17
+            // Version 18 = initial schema (1) + 17 migrations (1.sqm through 17.sqm)
+            version = 18
         }
     }
 }

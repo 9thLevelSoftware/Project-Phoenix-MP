@@ -5,6 +5,7 @@ import com.devil.phoenixproject.data.repository.PersonalRecordEntity
 import com.devil.phoenixproject.data.repository.WorkoutRepository
 import com.devil.phoenixproject.domain.model.PersonalRecord
 import com.devil.phoenixproject.domain.model.WorkoutSession
+import com.devil.phoenixproject.domain.model.effectiveTotalVolumeKg
 import com.devil.phoenixproject.util.KmpLocalDate
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -61,11 +62,15 @@ class HistoryManager(
         val groupedByRoutine = sessions.filter { it.routineSessionId != null }
             .groupBy { it.routineSessionId!! }
             .map { (id, sessionList) ->
+                val sortedSessions = sessionList.sortedBy { it.timestamp }
+                val firstStart = sortedSessions.minOfOrNull { it.timestamp } ?: 0L
+                val lastEnd = sortedSessions.maxOfOrNull { it.timestamp + it.duration } ?: firstStart
                 GroupedRoutineHistoryItem(
                     routineSessionId = id,
                     routineName = sessionList.first().routineName ?: "Unnamed Routine",
-                    sessions = sessionList.sortedBy { it.timestamp },
-                    totalDuration = sessionList.sumOf { it.duration },
+                    sessions = sortedSessions,
+                    // Use elapsed span (first set start -> last set end) so inter-set rest is included.
+                    totalDuration = (lastEnd - firstStart).coerceAtLeast(0L),
                     totalReps = sessionList.sumOf { it.totalReps },
                     exerciseCount = sessionList.mapNotNull { it.exerciseId }.distinct().count(),
                     timestamp = sessionList.minOf { it.timestamp }
@@ -138,8 +143,8 @@ class HistoryManager(
         if (sessions.size < 2) return@map null
         val latest = sessions[0]
         val previous = sessions[1]
-        val latestVol = (latest.weightPerCableKg * 2) * latest.totalReps
-        val prevVol = (previous.weightPerCableKg * 2) * previous.totalReps
+        val latestVol = latest.effectiveTotalVolumeKg()
+        val prevVol = previous.effectiveTotalVolumeKg()
         if (prevVol <= 0f) return@map null
         ((latestVol - prevVol) / prevVol * 100).toInt()
     }.stateIn(scope, SharingStarted.WhileSubscribed(5000), null)

@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <paths>
-    <!-- Cache directory for CSV exports -->
+    <!-- Cache directories for sharing exported files -->
     <cache-path name="exports" path="exports/" />
+    <cache-path name="backups" path="backups/" />
 </paths>

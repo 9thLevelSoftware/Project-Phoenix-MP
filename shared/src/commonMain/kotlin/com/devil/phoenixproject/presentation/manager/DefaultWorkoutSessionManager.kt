@@ -1,6 +1,7 @@
 package com.devil.phoenixproject.presentation.manager
 
 import co.touchlab.kermit.Logger
+import com.devil.phoenixproject.getPlatform
 import com.devil.phoenixproject.data.preferences.PreferencesManager
 import com.devil.phoenixproject.data.repository.BleRepository
 import com.devil.phoenixproject.data.repository.ExerciseRepository
@@ -15,6 +16,9 @@ import com.devil.phoenixproject.domain.model.*
 import com.devil.phoenixproject.domain.usecase.RepCounterFromMachine
 import com.devil.phoenixproject.domain.usecase.ResolveRoutineWeightsUseCase
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.launch
 
@@ -29,7 +33,8 @@ data class JustLiftDefaults(
     val workoutModeId: Int, // 0=OldSchool, 1=Pump, 10=Echo
     val eccentricLoadPercentage: Int = 100,
     val echoLevelValue: Int = 1, // 0=Hard, 1=Harder, 2=Hardest, 3=Epic
-    val stallDetectionEnabled: Boolean = true // Stall detection auto-stop toggle
+    val stallDetectionEnabled: Boolean = true, // Stall detection auto-stop toggle
+    val repCountTimingName: String = "TOP"  // RepCountTiming enum name for persistence
 ) {
     /**
      * Convert stored mode ID to ProgramMode
@@ -64,6 +69,15 @@ data class JustLiftDefaults(
      * Get EchoLevel from stored value
      */
     fun getEchoLevel(): EchoLevel = EchoLevel.entries.getOrElse(echoLevelValue) { EchoLevel.HARDER }
+
+    /**
+     * Get RepCountTiming from stored name
+     */
+    fun getRepCountTiming(): RepCountTiming = try {
+        RepCountTiming.valueOf(repCountTimingName)
+    } catch (_: Exception) {
+        RepCountTiming.TOP
+    }
 }
 
 /**
@@ -122,6 +136,8 @@ class DefaultWorkoutSessionManager(
         onBufferOverflow = kotlinx.coroutines.channels.BufferOverflow.DROP_OLDEST
     )
 ) : WorkoutStateProvider {
+    private val isIosPlatform = getPlatform().name.startsWith("iOS")
+    private var summaryAutoAdvanceJob: Job? = null
 
     // ===== Coordinator: Shared state bus for all workout state =====
     val coordinator = WorkoutCoordinator(_hapticEvents)
@@ -190,6 +206,7 @@ class DefaultWorkoutSessionManager(
         activeSessionEngine.flowDelegate = object : ActiveSessionEngine.WorkoutFlowDelegate {
             override fun loadRoutine(routine: Routine) = routineFlowManager.loadRoutine(routine)
             override fun enterSetReady(exerciseIndex: Int, setIndex: Int) = routineFlowManager.enterSetReady(exerciseIndex, setIndex)
+            override fun skipCurrentExerciseAndEnterNextStep(): Boolean = routineFlowManager.skipCurrentExerciseAndEnterNextStep()
             override fun showRoutineComplete() = routineFlowManager.showRoutineComplete()
             override fun getCurrentExercise(): RoutineExercise? = routineFlowManager.getCurrentExercise()
             override fun getNextStep(routine: Routine, exerciseIndex: Int, setIndex: Int): Pair<Int, Int>? =
@@ -202,6 +219,34 @@ class DefaultWorkoutSessionManager(
             override fun calculateIsLastExercise(isSingleExercise: Boolean, currentExercise: RoutineExercise?, routine: Routine?): Boolean =
                 routineFlowManager.calculateIsLastExercise(isSingleExercise, currentExercise, routine)
             override fun clearCycleContext() = routineFlowManager.clearCycleContext()
+        }
+
+        // Manager-level summary auto-advance so countdown continues even when UI is backgrounded.
+        scope.launch {
+            coordinator.workoutState.collect { state ->
+                summaryAutoAdvanceJob?.cancel()
+                summaryAutoAdvanceJob = null
+
+                if (state !is WorkoutState.SetSummary) return@collect
+
+                val summaryCountdownSeconds = settingsManager.userPreferences.value.summaryCountdownSeconds
+                val params = coordinator._workoutParameters.value
+                val shouldAutoAdvanceInManager =
+                    isIosPlatform &&
+                    summaryCountdownSeconds > 0 &&
+                        !params.isJustLift &&
+                        !params.isAMRAP
+
+                if (!shouldAutoAdvanceInManager) return@collect
+
+                summaryAutoAdvanceJob = scope.launch {
+                    delay(summaryCountdownSeconds * 1000L)
+                    if (coordinator._workoutState.value is WorkoutState.SetSummary) {
+                        Logger.d { "Summary auto-advance fallback fired - proceeding from summary in manager scope" }
+                        proceedFromSummary()
+                    }
+                }
+            }
         }
     }
 
@@ -225,6 +270,8 @@ class DefaultWorkoutSessionManager(
     fun deleteRoutine(routineId: String) = routineFlowManager.deleteRoutine(routineId)
     fun deleteRoutines(routineIds: Set<String>) = routineFlowManager.deleteRoutines(routineIds)
     fun loadRoutine(routine: Routine) = routineFlowManager.loadRoutine(routine)
+    /** Issue #2 Fix: Suspend version that completes after routine is fully loaded */
+    suspend fun loadRoutineAsync(routine: Routine) = routineFlowManager.loadRoutineAsync(routine)
     fun loadRoutineById(routineId: String) = routineFlowManager.loadRoutineById(routineId)
     fun enterRoutineOverview(routine: Routine) = routineFlowManager.enterRoutineOverview(routine)
 
@@ -288,6 +335,7 @@ class DefaultWorkoutSessionManager(
     fun skipCountdown() = activeSessionEngine.skipCountdown()
     fun stopWorkout(exitingWorkout: Boolean = false) = activeSessionEngine.stopWorkout(exitingWorkout)
     fun stopAndReturnToSetReady() = activeSessionEngine.stopAndReturnToSetReady()
+    fun stopAndSkipCurrentExercise() = activeSessionEngine.stopAndSkipCurrentExercise()
     fun pauseWorkout() = activeSessionEngine.pauseWorkout()
     fun resumeWorkout() = activeSessionEngine.resumeWorkout()
 
@@ -329,6 +377,14 @@ class DefaultWorkoutSessionManager(
      */
     fun proceedFromSummary() {
         scope.launch {
+            if (coordinator._workoutState.value !is WorkoutState.SetSummary) {
+                Logger.d { "proceedFromSummary: ignored because current state is ${coordinator._workoutState.value}" }
+                return@launch
+            }
+
+            summaryAutoAdvanceJob?.cancel()
+            summaryAutoAdvanceJob = null
+
             // Reset detection state for the new set
             detectionManager.resetForNewSet()
 
@@ -463,6 +519,7 @@ class DefaultWorkoutSessionManager(
     // ===== Cleanup =====
 
     fun cleanup() {
+        summaryAutoAdvanceJob?.cancel()
         activeSessionEngine.cleanup()
     }
 }

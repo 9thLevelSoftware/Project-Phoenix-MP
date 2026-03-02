@@ -53,8 +53,8 @@ class WorkoutCoordinator(
         /** Minimum position to consider handles "in use" for stall detection (mm) */
         const val STALL_MIN_POSITION = 10.0
 
-        /** Position threshold to consider handle at rest */
-        const val HANDLE_REST_THRESHOLD = 2.5
+        /** Position threshold to consider handle at rest (aligned with BLE handle detector). */
+        const val HANDLE_REST_THRESHOLD = 5.0
 
         /** Minimum position range to consider "meaningful" for auto-stop detection (in mm) */
         const val MIN_RANGE_THRESHOLD = 50f
@@ -195,12 +195,14 @@ class WorkoutCoordinator(
 
     internal var currentSessionId: String? = null
     internal var workoutStartTime: Long = 0
+    internal var warmupCompleteTimeMs: Long = 0  // Issue #252: Exclude warmup time from duration
     internal var routineStartTime: Long = 0  // Issue #195: Track routine start separately from per-set start
     internal val collectedMetrics = mutableListOf<WorkoutMetric>()
     internal val setRepMetrics = mutableListOf<RepMetricData>()
 
     internal var currentRoutineSessionId: String? = null
     internal var currentRoutineName: String? = null
+    internal var currentRoutineId: String? = null
 
     // Training Cycle context for tracking cycle progress when workout completes
     internal var activeCycleId: String? = null

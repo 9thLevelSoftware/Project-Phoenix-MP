@@ -41,6 +41,7 @@ data class WorkoutSessionBackup(
     val exerciseName: String? = null,
     val routineSessionId: String? = null,
     val routineName: String? = null,
+    val routineId: String? = null,
     val safetyFlags: Int = 0,
     val deloadWarningCount: Int = 0,
     val romViolationCount: Int = 0,
@@ -136,7 +137,11 @@ data class RoutineExerciseBackup(
     val usePercentOfPR: Boolean = false,
     val weightPercentOfPR: Int = 80,
     val prTypeForScaling: String = "MAX_WEIGHT",
-    val setWeightsPercentOfPR: String? = null  // JSON array as string
+    val setWeightsPercentOfPR: String? = null,  // JSON array as string
+    // Per-exercise behavior overrides (PR #245)
+    val stallDetectionEnabled: Boolean = true,
+    val stopAtTop: Boolean = false,
+    val repCountTiming: String = "TOP"
 )
 
 /**
@@ -319,6 +324,27 @@ data class GamificationStatsBackup(
     val streakStartDate: Long? = null,
     val lastUpdated: Long
 )
+
+/**
+ * Progress tracking for streaming backup export
+ */
+data class BackupProgress(
+    val phase: BackupPhase,
+    val current: Long,
+    val total: Long
+)
+
+/**
+ * Phases of the streaming backup export process
+ */
+enum class BackupPhase(val displayName: String) {
+    COUNTING("Calculating size..."),
+    SESSIONS("Exporting sessions"),
+    METRICS("Exporting metrics"),
+    ROUTINES("Exporting routines"),
+    OTHER("Exporting remaining data"),
+    FINALIZING("Finalizing backup")
+}
 
 /**
  * Root backup data structure containing all exportable data

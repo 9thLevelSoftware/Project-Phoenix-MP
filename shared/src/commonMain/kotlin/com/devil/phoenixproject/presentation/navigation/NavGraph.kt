@@ -295,21 +295,19 @@ fun NavGraph(
             val connectionError by viewModel.connectionError.collectAsState()
             val connectionState by viewModel.connectionState.collectAsState()
             val discoModeActive by viewModel.discoModeActive.collectAsState()
+            val simulatorModeUnlocked by viewModel.simulatorModeUnlocked.collectAsState()
+            val simulatorModeEnabled by viewModel.simulatorModeEnabled.collectAsState()
             SettingsTab(
                 weightUnit = weightUnit,
-                stopAtTop = userPreferences.stopAtTop,
                 enableVideoPlayback = userPreferences.enableVideoPlayback,
                 darkModeEnabled = themeMode == ThemeMode.DARK,
-                stallDetectionEnabled = userPreferences.stallDetectionEnabled,
                 audioRepCountEnabled = userPreferences.audioRepCountEnabled,
                 summaryCountdownSeconds = userPreferences.summaryCountdownSeconds,
                 autoStartCountdownSeconds = userPreferences.autoStartCountdownSeconds,
                 selectedColorSchemeIndex = userPreferences.colorScheme,
                 onWeightUnitChange = { viewModel.setWeightUnit(it) },
-                onStopAtTopChange = { viewModel.setStopAtTop(it) },
                 onEnableVideoPlaybackChange = { viewModel.setEnableVideoPlayback(it) },
                 onDarkModeChange = { enabled -> onThemeModeChange(if (enabled) ThemeMode.DARK else ThemeMode.LIGHT) },
-                onStallDetectionChange = { viewModel.setStallDetectionEnabled(it) },
                 onAudioRepCountChange = { viewModel.setAudioRepCountEnabled(it) },
                 onSummaryCountdownChange = { viewModel.setSummaryCountdownSeconds(it) },
                 onAutoStartCountdownChange = { viewModel.setAutoStartCountdownSeconds(it) },
@@ -340,9 +338,12 @@ fun NavGraph(
                 // HUD preset customization
                 hudPreset = userPreferences.hudPreset,
                 onHudPresetChange = { viewModel.setHudPreset(it) },
+                // Gamification toggle
+                gamificationEnabled = userPreferences.gamificationEnabled,
+                onGamificationEnabledChange = { viewModel.setGamificationEnabled(it) },
                 // Simulator mode Easter egg
-                simulatorModeUnlocked = viewModel.isSimulatorModeUnlocked(),
-                simulatorModeEnabled = viewModel.isSimulatorModeUnlocked(),
+                simulatorModeUnlocked = simulatorModeUnlocked,
+                simulatorModeEnabled = simulatorModeEnabled,
                 onSimulatorModeUnlocked = { viewModel.unlockSimulatorMode() },
                 onSimulatorModeToggle = { viewModel.toggleSimulatorMode(it) }
             )

@@ -1,11 +1,11 @@
 package com.devil.phoenixproject.util
 
 import com.devil.phoenixproject.database.VitruvianDatabase
+import kotlinx.cinterop.BetaInteropApi
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
 import kotlinx.coroutines.withContext
-import kotlinx.serialization.encodeToString
 import platform.Foundation.*
 import platform.darwin.NSObject
 import platform.UIKit.UIActivityViewController
@@ -20,7 +20,7 @@ import platform.darwin.dispatch_get_main_queue
  * iOS implementation of DataBackupManager.
  * Uses NSFileManager for file operations and Documents directory for storage.
  */
-@OptIn(ExperimentalForeignApi::class)
+@OptIn(ExperimentalForeignApi::class, BetaInteropApi::class)
 class IosDataBackupManager(
     database: VitruvianDatabase
 ) : BaseDataBackupManager(database) {
@@ -52,6 +52,36 @@ class IosDataBackupManager(
             return dir
         }
 
+    override fun createBackupWriter(): BackupJsonWriter {
+        val timestamp = KmpUtils.formatTimestamp(KmpUtils.currentTimeMillis(), "yyyy-MM-dd")
+            .replace("-", "") + "_" +
+            KmpUtils.formatTimestamp(KmpUtils.currentTimeMillis(), "HH:mm:ss")
+                .replace(":", "")
+        val fileName = "vitruvian_backup_$timestamp.json"
+        val tempDir = NSTemporaryDirectory()
+        return BackupJsonWriter("$tempDir$fileName")
+    }
+
+    override suspend fun finalizeExport(tempFilePath: String): Result<String> {
+        return try {
+            val fileName = tempFilePath.substringAfterLast('/')
+            val destPath = "$backupDirectory/$fileName"
+
+            // Remove existing file if present
+            if (fileManager.fileExistsAtPath(destPath)) {
+                fileManager.removeItemAtPath(destPath, error = null)
+            }
+
+            val success = fileManager.moveItemAtPath(tempFilePath, toPath = destPath, error = null)
+            if (!success) throw Exception("Failed to move backup to Documents")
+
+            Result.success(destPath)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    // Legacy save path (kept for backward compatibility)
     override suspend fun saveToFile(backup: BackupData): Result<String> = withContext(Dispatchers.IO) {
         try {
             val jsonString = json.encodeToString(backup)
@@ -62,7 +92,7 @@ class IosDataBackupManager(
             val fileName = "vitruvian_backup_$timestamp.json"
             val filePath = "$backupDirectory/$fileName"
 
-            val data = (jsonString as NSString).dataUsingEncoding(NSUTF8StringEncoding)
+            val data = NSString.create(string = jsonString).dataUsingEncoding(NSUTF8StringEncoding)
                 ?: throw Exception("Failed to encode backup data")
 
             val success = data.writeToFile(filePath, atomically = true)
@@ -81,7 +111,7 @@ class IosDataBackupManager(
             val data = NSData.dataWithContentsOfFile(filePath)
                 ?: throw Exception("Cannot read file")
 
-            val jsonString = NSString.create(data, NSUTF8StringEncoding) as? String
+            val jsonString = NSString.create(data, NSUTF8StringEncoding)?.toString()
                 ?: throw Exception("Cannot decode file contents")
 
             importFromJson(jsonString)
@@ -91,48 +121,11 @@ class IosDataBackupManager(
     }
 
     /**
-     * Get list of available backup files
-     */
-    fun getAvailableBackups(): List<String> {
-        return try {
-            val contents = fileManager.contentsOfDirectoryAtPath(backupDirectory, null)
-            (contents as? List<*>)
-                ?.filterIsInstance<String>()
-                ?.filter { it.endsWith(".json") }
-                ?.map { "$backupDirectory/$it" }
-                ?: emptyList()
-        } catch (e: Exception) {
-            emptyList()
-        }
-    }
-
-    /**
-     * Share backup via iOS share sheet (UIActivityViewController)
+     * Share backup via iOS share sheet (streaming path)
      */
     override suspend fun shareBackup() {
-        val backup = exportAllData()
-        val jsonString = json.encodeToString(backup)
-        val timestamp = KmpUtils.formatTimestamp(KmpUtils.currentTimeMillis(), "yyyy-MM-dd")
-            .replace("-", "") + "_" +
-            KmpUtils.formatTimestamp(KmpUtils.currentTimeMillis(), "HH:mm:ss")
-                .replace(":", "")
-        val fileName = "vitruvian_backup_$timestamp.json"
-
-        // Save to temp file
-        val tempDir = NSTemporaryDirectory()
-        val filePath = "$tempDir$fileName"
-
-        val nsContent = (jsonString as NSString)
-        val success = nsContent.writeToFile(
-            filePath,
-            atomically = true,
-            encoding = NSUTF8StringEncoding,
-            error = null
-        )
-
-        if (!success) return
-
-        val fileURL = NSURL.fileURLWithPath(filePath)
+        val cachePath = withContext(Dispatchers.IO) { exportToCache() }
+        val fileURL = NSURL.fileURLWithPath(cachePath)
 
         // Present share sheet on main thread
         dispatch_async(dispatch_get_main_queue()) {

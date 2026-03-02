@@ -5,6 +5,7 @@ import app.cash.sqldelight.coroutines.mapToList
 import com.devil.phoenixproject.database.VitruvianDatabase
 import com.devil.phoenixproject.domain.model.PRType
 import com.devil.phoenixproject.domain.model.PersonalRecord
+import com.devil.phoenixproject.util.OneRepMaxCalculator
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
 import kotlinx.coroutines.flow.Flow
@@ -192,6 +193,7 @@ class SqlDelightPersonalRecordRepository(
     ): List<PRType> {
         val brokenPRs = mutableListOf<PRType>()
         val newVolume = weightPerCableKg * reps
+        val estimatedOneRepMax = OneRepMaxCalculator.epley(weightPerCableKg, reps)
 
         // Check weight PR
         val currentWeightPR = getWeightPR(exerciseId, workoutMode)
@@ -203,26 +205,17 @@ class SqlDelightPersonalRecordRepository(
         val isNewVolumePR = newVolume > currentVolume
 
         if (isNewWeightPR) {
-            // Calculate Epley 1RM
-            val oneRepMax = if (reps == 1) weightPerCableKg else weightPerCableKg * (1 + reps / 30f)
-
             // Use upsertPR to handle both insert and update (fixes unique constraint crash)
             queries.upsertPR(
                 exerciseId = exerciseId,
                 exerciseName = "", // Will be resolved by join if needed
                 weight = weightPerCableKg.toDouble(),
                 reps = reps.toLong(),
-                oneRepMax = oneRepMax.toDouble(),
+                oneRepMax = estimatedOneRepMax.toDouble(),
                 achievedAt = timestamp,
                 workoutMode = workoutMode,
                 prType = PRType.MAX_WEIGHT.name,
                 volume = newVolume.toDouble()
-            )
-
-            // Sync 1RM to Exercise table for %-based training features
-            queries.updateOneRepMax(
-                one_rep_max_kg = oneRepMax.toDouble(),
-                id = exerciseId
             )
 
             brokenPRs.add(PRType.MAX_WEIGHT)
@@ -230,15 +223,12 @@ class SqlDelightPersonalRecordRepository(
 
         if (isNewVolumePR && !isNewWeightPR) {
             // Only insert volume PR if it's not also a weight PR (avoid duplicates)
-            val oneRepMax = if (reps == 1) weightPerCableKg else weightPerCableKg * (1 + reps / 30f)
-
-            // Use upsertPR to handle both insert and update (fixes unique constraint crash)
             queries.upsertPR(
                 exerciseId = exerciseId,
                 exerciseName = "",
                 weight = weightPerCableKg.toDouble(),
                 reps = reps.toLong(),
-                oneRepMax = oneRepMax.toDouble(),
+                oneRepMax = estimatedOneRepMax.toDouble(),
                 achievedAt = timestamp,
                 workoutMode = workoutMode,
                 prType = PRType.MAX_VOLUME.name,
@@ -247,6 +237,20 @@ class SqlDelightPersonalRecordRepository(
             brokenPRs.add(PRType.MAX_VOLUME)
         } else if (isNewVolumePR) {
             brokenPRs.add(PRType.MAX_VOLUME)
+        }
+
+        // Sync estimated 1RM to Exercise table for %-based training features.
+        // Update if this set's estimate exceeds the currently stored value,
+        // regardless of whether it was a weight PR or volume PR.
+        if (brokenPRs.isNotEmpty()) {
+            val currentExercise1RM = queries.selectExerciseById(exerciseId)
+                .executeAsOneOrNull()?.one_rep_max_kg?.toFloat() ?: 0f
+            if (estimatedOneRepMax > currentExercise1RM) {
+                queries.updateOneRepMax(
+                    one_rep_max_kg = estimatedOneRepMax.toDouble(),
+                    id = exerciseId
+                )
+            }
         }
 
         return brokenPRs

@@ -92,6 +92,10 @@ fun SetSummaryCard(
     val displayReps = summary.repCount
     val totalVolumeDisplay = kgToDisplay(summary.totalVolumeKg, weightUnit)
     val heaviestLiftDisplay = kgToDisplay(summary.heaviestLiftKgPerCable, weightUnit)
+    val setWeightDisplay = kgToDisplay(summary.configuredWeightKgPerCable, weightUnit)
+
+    // Debug logging for Issue #5 investigation
+    co.touchlab.kermit.Logger.i { "WEIGHT_DEBUG[Summary]: configuredWeightKgPerCable=${summary.configuredWeightKgPerCable} kg → kgToDisplay → $setWeightDisplay ($weightUnit)" }
     val durationSeconds = (summary.durationMs / 1000).toInt()
     val durationFormatted = "${durationSeconds / 60}:${(durationSeconds % 60).toString().padStart(2, '0')}"
 
@@ -178,7 +182,7 @@ fun SetSummaryCard(
                 )
                 SummaryStatCard(
                     label = "Set Weight",
-                    value = "${heaviestLiftDisplay.roundToInt()}",
+                    value = "${setWeightDisplay.roundToInt()}",
                     unit = "($unitLabel/cable)",
                     icon = Icons.Default.FitnessCenter,
                     modifier = Modifier.weight(1f)

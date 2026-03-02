@@ -75,6 +75,12 @@ class FakeTrainingCycleRepository : TrainingCycleRepository {
 
     override suspend fun setActiveCycle(cycleId: String) {
         activeCycleId = cycleId
+        // Reset progress on activation so deactivate/reactivate starts fresh
+        if (cycleProgress.containsKey(cycleId)) {
+            resetProgress(cycleId)
+        } else {
+            initializeProgress(cycleId)
+        }
         updateFlows()
     }
 
@@ -177,8 +183,7 @@ class FakeTrainingCycleRepository : TrainingCycleRepository {
 
     override suspend fun markDayCompleted(cycleId: String) {
         cycleProgress[cycleId]?.let { progress ->
-            val days = cycleDays[cycleId] ?: return
-            val newProgress = progress.markDayCompleted(progress.currentDayNumber, days.size)
+            val newProgress = progress.markDayCompleted(progress.currentDayNumber)
             cycleProgress[cycleId] = newProgress
         }
     }
@@ -197,7 +202,8 @@ class FakeTrainingCycleRepository : TrainingCycleRepository {
 
         var updated = progress
         repeat(daysToAdvance) {
-            updated = updated.advanceToNextDay(totalDays, markMissed = true)
+            val shouldMarkMissed = updated.currentDayNumber !in updated.completedDays
+            updated = updated.advanceToNextDay(totalDays, markMissed = shouldMarkMissed)
         }
         cycleProgress[cycleId] = updated
         return updated

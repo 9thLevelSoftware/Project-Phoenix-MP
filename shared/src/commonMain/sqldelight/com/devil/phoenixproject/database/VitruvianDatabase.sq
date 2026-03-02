@@ -65,6 +65,7 @@ CREATE TABLE WorkoutSession (
     exerciseName TEXT,
     routineSessionId TEXT,
     routineName TEXT,
+    routineId TEXT,
     -- Safety Tracking (added for parity with parent v23)
     safetyFlags INTEGER NOT NULL DEFAULT 0,
     deloadWarningCount INTEGER NOT NULL DEFAULT 0,
@@ -200,6 +201,10 @@ CREATE TABLE RoutineExercise (
     weightPercentOfPR INTEGER NOT NULL DEFAULT 80,
     prTypeForScaling TEXT NOT NULL DEFAULT 'MAX_WEIGHT',
     setWeightsPercentOfPR TEXT,
+    -- Per-exercise behavior overrides (PR #245)
+    stallDetectionEnabled INTEGER NOT NULL DEFAULT 1,
+    stopAtTop INTEGER NOT NULL DEFAULT 0,
+    repCountTiming TEXT NOT NULL DEFAULT 'TOP',
     FOREIGN KEY (routineId) REFERENCES Routine(id) ON DELETE CASCADE,
     FOREIGN KEY (exerciseId) REFERENCES Exercise(id) ON DELETE SET NULL,
     FOREIGN KEY (supersetId) REFERENCES Superset(id) ON DELETE SET NULL
@@ -508,7 +513,7 @@ INSERT INTO WorkoutSession (
     id, timestamp, mode, targetReps, weightPerCableKg, progressionKg,
     duration, totalReps, warmupReps, workingReps,
     isJustLift, stopAtTop, eccentricLoad, echoLevel,
-    exerciseId, exerciseName, routineSessionId, routineName,
+    exerciseId, exerciseName, routineSessionId, routineName, routineId,
     safetyFlags, deloadWarningCount, romViolationCount, spotterActivations,
     peakForceConcentricA, peakForceConcentricB, peakForceEccentricA, peakForceEccentricB,
     avgForceConcentricA, avgForceConcentricB, avgForceEccentricA, avgForceEccentricB,
@@ -517,11 +522,26 @@ INSERT INTO WorkoutSession (
     avgMcvMmS, avgAsymmetryPercent, totalVelocityLossPercent, dominantSide, strengthProfile,
     formScore
 )
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 updateSession:
 UPDATE WorkoutSession
 SET duration = ?, totalReps = ?, workingReps = ?, formScore = ?
+WHERE id = ?;
+
+updateSessionRoutineName:
+UPDATE WorkoutSession
+SET routineName = ?
+WHERE id = ?;
+
+updateSessionRoutineSessionId:
+UPDATE WorkoutSession
+SET routineSessionId = ?
+WHERE id = ?;
+
+updateSessionRoutineId:
+UPDATE WorkoutSession
+SET routineId = ?
 WHERE id = ?;
 
 -- Metric Queries
@@ -680,9 +700,10 @@ INSERT INTO RoutineExercise (
     exerciseId, cableConfig, orderIndex, setReps, weightPerCableKg, setWeights, mode,
     eccentricLoad, echoLevel, progressionKg, restSeconds, duration, setRestSeconds,
     perSetRestTime, isAMRAP, supersetId, orderInSuperset,
-    usePercentOfPR, weightPercentOfPR, prTypeForScaling, setWeightsPercentOfPR
+    usePercentOfPR, weightPercentOfPR, prTypeForScaling, setWeightsPercentOfPR,
+    stallDetectionEnabled, stopAtTop, repCountTiming
 )
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 -- Insert with IGNORE for import (won't overwrite existing)
 insertRoutineExerciseIgnore:
@@ -691,9 +712,10 @@ INSERT OR IGNORE INTO RoutineExercise (
     exerciseId, cableConfig, orderIndex, setReps, weightPerCableKg, setWeights, mode,
     eccentricLoad, echoLevel, progressionKg, restSeconds, duration, setRestSeconds,
     perSetRestTime, isAMRAP, supersetId, orderInSuperset,
-    usePercentOfPR, weightPercentOfPR, prTypeForScaling, setWeightsPercentOfPR
+    usePercentOfPR, weightPercentOfPR, prTypeForScaling, setWeightsPercentOfPR,
+    stallDetectionEnabled, stopAtTop, repCountTiming
 )
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 deleteRoutineExercises:
 DELETE FROM RoutineExercise WHERE routineId = ?;
@@ -1025,11 +1047,18 @@ VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 countTotalWorkouts:
 SELECT COUNT(*) FROM WorkoutSession;
 
+-- Count queries for streaming backup progress
+countAllMetricSamples:
+SELECT COUNT(*) FROM MetricSample;
+
+countAllRoutineExercises:
+SELECT COUNT(*) FROM RoutineExercise;
+
 countTotalReps:
 SELECT SUM(totalReps) FROM WorkoutSession;
 
 countTotalVolume:
-SELECT SUM(totalReps * weightPerCableKg * 2) FROM WorkoutSession;
+SELECT SUM(COALESCE(totalVolumeKg, totalReps * weightPerCableKg * 2)) FROM WorkoutSession;
 
 countUniqueExercises:
 SELECT COUNT(DISTINCT exerciseId) FROM WorkoutSession WHERE exerciseId IS NOT NULL;
@@ -1283,7 +1312,8 @@ WHERE cycle_id = ?;
 
 resetCycleProgress:
 UPDATE CycleProgress
-SET current_day_number = 1, cycle_start_date = ?
+SET current_day_number = 1, cycle_start_date = ?, last_completed_date = NULL,
+    last_advanced_at = NULL, completed_days = NULL, missed_days = NULL, rotation_count = 0
 WHERE cycle_id = ?;
 
 deleteCycleProgress:
@@ -1565,7 +1595,7 @@ INSERT OR REPLACE INTO WorkoutSession (
     id, timestamp, mode, targetReps, weightPerCableKg, progressionKg,
     duration, totalReps, warmupReps, workingReps,
     isJustLift, stopAtTop, eccentricLoad, echoLevel,
-    exerciseId, exerciseName, routineSessionId, routineName,
+    exerciseId, exerciseName, routineSessionId, routineName, routineId,
     safetyFlags, deloadWarningCount, romViolationCount, spotterActivations,
     peakForceConcentricA, peakForceConcentricB, peakForceEccentricA, peakForceEccentricB,
     avgForceConcentricA, avgForceConcentricB, avgForceEccentricA, avgForceEccentricB,
@@ -1575,7 +1605,7 @@ INSERT OR REPLACE INTO WorkoutSession (
     formScore,
     updatedAt, serverId, deletedAt
 )
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 -- Get PRs modified since last sync
 selectPRsModifiedSince:

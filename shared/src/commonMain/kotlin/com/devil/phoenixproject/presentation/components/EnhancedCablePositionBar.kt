@@ -91,7 +91,7 @@ fun EnhancedCablePositionBar(
             phase == MovementPhase.ECCENTRIC -> eccentricColor
             else -> staticColor
         },
-        animationSpec = tween(durationMillis = 150),
+        animationSpec = tween(durationMillis = 90),
         label = "Phase Color"
     )
 
@@ -122,7 +122,7 @@ fun EnhancedCablePositionBar(
             val wideRangeMax = 1000f  // Full validation range
             (currentPosition / wideRangeMax).coerceIn(0f, 1f)
         },
-        animationSpec = tween(durationMillis = 50),
+        animationSpec = tween(durationMillis = 25),
         label = "Position"
     )
 
@@ -190,7 +190,7 @@ fun EnhancedCablePositionBar(
                     barWidth = barWidth,
                     barHeight = barHeight,
                     progress = ghostMinProgress,
-                    color = activeColor.copy(alpha = 0.3f)
+                    color = activeColor.copy(alpha = 0.5f)
                 )
             }
             if (ghostMaxProgress != null) {
@@ -198,7 +198,7 @@ fun EnhancedCablePositionBar(
                     barWidth = barWidth,
                     barHeight = barHeight,
                     progress = ghostMaxProgress,
-                    color = activeColor.copy(alpha = 0.3f)
+                    color = activeColor.copy(alpha = 0.5f)
                 )
             }
 
@@ -209,14 +209,14 @@ fun EnhancedCablePositionBar(
                     barWidth = barWidth,
                     barHeight = barHeight,
                     progress = minProgress,
-                    color = activeColor.copy(alpha = 0.7f)
+                    color = activeColor.copy(alpha = 0.95f)
                 )
                 // Max marker (top of ROM)
                 drawRomMarker(
                     barWidth = barWidth,
                     barHeight = barHeight,
                     progress = maxProgress,
-                    color = activeColor.copy(alpha = 0.7f)
+                    color = activeColor.copy(alpha = 0.95f)
                 )
             }
 
@@ -265,7 +265,7 @@ private fun DrawScope.drawRomZone(
     val zoneHeight = bottomY - topY
 
     drawRoundRect(
-        color = color.copy(alpha = 0.15f),
+        color = color.copy(alpha = 0.28f),
         topLeft = Offset(0f, topY),
         size = Size(barWidth, zoneHeight),
         cornerRadius = CornerRadius(8f, 8f)
@@ -293,8 +293,8 @@ private fun DrawScope.drawGhostMarker(
     while (currentX < startX + markerWidth) {
         drawRect(
             color = color,
-            topLeft = Offset(currentX, y - 1f),
-            size = Size(dashWidth.coerceAtMost(startX + markerWidth - currentX), 2f)
+            topLeft = Offset(currentX, y - 1.5f),
+            size = Size(dashWidth.coerceAtMost(startX + markerWidth - currentX), 3f)
         )
         currentX += dashWidth + gapWidth
     }
@@ -313,9 +313,9 @@ private fun DrawScope.drawRomMarker(
 
     drawRoundRect(
         color = color,
-        topLeft = Offset(2f, y - 1.5f),
-        size = Size(barWidth - 4f, 3f),
-        cornerRadius = CornerRadius(1.5f, 1.5f)
+        topLeft = Offset(2f, y - 2f),
+        size = Size(barWidth - 4f, 4f),
+        cornerRadius = CornerRadius(2f, 2f)
     )
 }
 
@@ -331,8 +331,8 @@ private fun DrawScope.drawGlowEffect(
     drawCircle(
         brush = Brush.radialGradient(
             colors = listOf(
-                color.copy(alpha = 0.4f),
-                color.copy(alpha = 0.1f),
+                color.copy(alpha = 0.55f),
+                color.copy(alpha = 0.2f),
                 Color.Transparent
             ),
             center = Offset(centerX, centerY),

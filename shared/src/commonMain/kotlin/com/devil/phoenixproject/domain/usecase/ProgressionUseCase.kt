@@ -8,16 +8,18 @@ import com.devil.phoenixproject.domain.model.ProgressionEvent
 import com.devil.phoenixproject.domain.model.ProgressionReason
 import com.devil.phoenixproject.domain.model.ProgressionResponse
 import com.devil.phoenixproject.domain.model.SetType
+import com.devil.phoenixproject.domain.model.TrendPoint
 
 /**
- * Use case for calculating and managing weight progressions.
- * Analyzes workout history to suggest weight increases based on performance.
+ * Use case for calculating and managing weight progressions and deloads.
+ * Analyzes workout history to suggest weight increases or decreases based on performance.
  */
 class ProgressionUseCase(
     private val completedSetRepository: CompletedSetRepository,
     private val progressionRepository: ProgressionRepository
 ) {
     private val log = Logger.withTag("ProgressionUseCase")
+    private val trendAnalysis = TrendAnalysisUseCase()
 
     companion object {
         /** Number of consecutive sessions hitting target reps to trigger progression */
@@ -31,6 +33,15 @@ class ProgressionUseCase(
 
         /** Minimum sets in recent history to consider for progression */
         const val MIN_SETS_FOR_ANALYSIS = 3
+
+        /** Number of consecutive sessions missing target reps to trigger deload */
+        const val SESSIONS_FOR_MISSED_REPS_DELOAD = 2
+
+        /** RPE threshold at or above which a deload is suggested */
+        const val HIGH_RPE_THRESHOLD = 9
+
+        /** Minimum sets with high RPE to trigger deload */
+        const val MIN_HIGH_RPE_SETS = 3
     }
 
     /**
@@ -178,7 +189,130 @@ class ProgressionUseCase(
     }
 
     /**
-     * Create and save a progression event.
+     * Check if a deload should be suggested for an exercise.
+     * Deload conditions:
+     * 1. Missed target reps for 2+ consecutive sessions
+     * 2. RPE consistently >= 9 (weight is too heavy)
+     * 3. Plateau detected (no progress over extended period)
+     *
+     * @param exerciseId The exercise to check
+     * @param targetReps The target reps (for missed-rep detection)
+     * @return ProgressionEvent with deload suggestion, or null
+     */
+    suspend fun checkForDeload(
+        exerciseId: String,
+        targetReps: Int? = null
+    ): ProgressionEvent? {
+        if (progressionRepository.hasPendingProgression(exerciseId)) {
+            log.d { "Pending progression already exists for exercise $exerciseId" }
+            return null
+        }
+
+        val recentSets = completedSetRepository.getRecentCompletedSetsForExercise(
+            exerciseId = exerciseId,
+            limit = 30
+        ).filter { it.setType != SetType.WARMUP }
+
+        if (recentSets.size < MIN_SETS_FOR_ANALYSIS) {
+            return null
+        }
+
+        val currentWeight = recentSets.first().actualWeightKg
+
+        // Check missed reps (most actionable signal)
+        if (targetReps != null) {
+            if (checkMissedRepsDeload(recentSets, currentWeight, targetReps)) {
+                log.i { "Deload suggested for $exerciseId: missed reps $SESSIONS_FOR_MISSED_REPS_DELOAD+ sessions" }
+                return createDeloadEvent(exerciseId, currentWeight, ProgressionReason.MISSED_REPS)
+            }
+        }
+
+        // Check high RPE
+        if (checkHighRpeDeload(recentSets, currentWeight)) {
+            log.i { "Deload suggested for $exerciseId: RPE consistently >= $HIGH_RPE_THRESHOLD" }
+            return createDeloadEvent(exerciseId, currentWeight, ProgressionReason.HIGH_RPE)
+        }
+
+        // Check plateau (needs more data)
+        if (checkPlateauDeload(recentSets, exerciseId)) {
+            log.i { "Deload suggested for $exerciseId: plateau detected" }
+            return createDeloadEvent(exerciseId, currentWeight, ProgressionReason.PLATEAU_DETECTED)
+        }
+
+        return null
+    }
+
+    /**
+     * Check if user has missed target reps for consecutive sessions.
+     */
+    private fun checkMissedRepsDeload(
+        recentSets: List<CompletedSet>,
+        currentWeight: Float,
+        targetReps: Int
+    ): Boolean {
+        val setsAtWeight = recentSets
+            .filter { it.actualWeightKg == currentWeight }
+            .sortedByDescending { it.completedAt }
+
+        val sessionGroups = groupBySession(setsAtWeight)
+
+        if (sessionGroups.size < SESSIONS_FOR_MISSED_REPS_DELOAD) {
+            return false
+        }
+
+        // Check if last N sessions ALL failed to hit target reps
+        val recentSessions = sessionGroups.take(SESSIONS_FOR_MISSED_REPS_DELOAD)
+        return recentSessions.all { session ->
+            session.none { it.actualReps >= targetReps }
+        }
+    }
+
+    /**
+     * Check if RPE is consistently too high (>= 9), indicating the weight is too heavy.
+     */
+    private fun checkHighRpeDeload(
+        recentSets: List<CompletedSet>,
+        currentWeight: Float
+    ): Boolean {
+        val setsWithRpe = recentSets
+            .filter { it.actualWeightKg == currentWeight && it.loggedRpe != null }
+
+        if (setsWithRpe.size < MIN_HIGH_RPE_SETS) {
+            return false
+        }
+
+        val recentWithRpe = setsWithRpe.sortedByDescending { it.completedAt }
+            .take(MIN_HIGH_RPE_SETS)
+
+        return recentWithRpe.all { (it.loggedRpe ?: 0) >= HIGH_RPE_THRESHOLD }
+    }
+
+    /**
+     * Check if a plateau has been detected using trend analysis.
+     * Requires enough data points to form a meaningful trend.
+     */
+    private fun checkPlateauDeload(
+        recentSets: List<CompletedSet>,
+        exerciseId: String
+    ): Boolean {
+        // Convert sets to trend points (using estimated 1RM as the value)
+        val sessionGroups = groupBySession(recentSets.sortedByDescending { it.completedAt })
+        if (sessionGroups.size < 6) return false // Need decent history for plateau detection
+
+        val trendPoints = sessionGroups.reversed().map { session ->
+            val bestSet = session.maxByOrNull { it.estimatedOneRepMax() } ?: session.first()
+            TrendPoint(
+                timestamp = bestSet.completedAt,
+                value = bestSet.estimatedOneRepMax()
+            )
+        }
+
+        val plateau = trendAnalysis.detectPlateau(trendPoints, exerciseId, minDurationDays = 14)
+        return plateau != null
+    }
+
+    /**
+     * Create and save a progression event (weight increase).
      */
     private suspend fun createProgressionEvent(
         exerciseId: String,
@@ -186,6 +320,24 @@ class ProgressionUseCase(
         reason: ProgressionReason
     ): ProgressionEvent {
         val event = ProgressionEvent.create(
+            exerciseId = exerciseId,
+            previousWeightKg = currentWeight,
+            reason = reason
+        )
+
+        progressionRepository.createProgressionSuggestion(event)
+        return event
+    }
+
+    /**
+     * Create and save a deload event (weight decrease).
+     */
+    private suspend fun createDeloadEvent(
+        exerciseId: String,
+        currentWeight: Float,
+        reason: ProgressionReason
+    ): ProgressionEvent {
+        val event = ProgressionEvent.createDeload(
             exerciseId = exerciseId,
             previousWeightKg = currentWeight,
             reason = reason

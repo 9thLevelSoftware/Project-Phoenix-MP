@@ -186,6 +186,7 @@ class RoutineFlowManager(
      */
     internal fun getNextStep(routine: Routine, currentExIndex: Int, currentSetIndex: Int): Pair<Int, Int>? {
         val currentExercise = routine.exercises.getOrNull(currentExIndex) ?: return null
+        val skippedIndices = coordinator._skippedExercises.value
 
         // 1. Superset Logic - interleaved progression (A1 -> B1 -> A2 -> B2)
         if (currentExercise.supersetId != null) {
@@ -198,8 +199,8 @@ class RoutineFlowManager(
             // A. Check for next exercise in the SAME set cycle
             for (i in (currentSupersetPos + 1) until supersetExercises.size) {
                 val nextEx = supersetExercises[i]
-                if (currentSetIndex < nextEx.setReps.size) {
-                    val nextExIndex = routine.exercises.indexOf(nextEx)
+                val nextExIndex = routine.exercises.indexOf(nextEx)
+                if (nextExIndex !in skippedIndices && currentSetIndex < nextEx.setReps.size) {
                     return nextExIndex to currentSetIndex
                 }
             }
@@ -207,26 +208,31 @@ class RoutineFlowManager(
             // B. Check for the NEXT set cycle - loop back to first exercise with next set
             val nextSetIndex = currentSetIndex + 1
             for (ex in supersetExercises) {
-                if (nextSetIndex < ex.setReps.size) {
-                    val nextExIndex = routine.exercises.indexOf(ex)
+                val nextExIndex = routine.exercises.indexOf(ex)
+                if (nextExIndex !in skippedIndices && nextSetIndex < ex.setReps.size) {
                     return nextExIndex to nextSetIndex
                 }
             }
 
             // C. Superset Complete -> Move to next exercise after superset
             val maxIndex = supersetExercises.maxOf { routine.exercises.indexOf(it) }
-            val nextExIndex = maxIndex + 1
-            if (nextExIndex < routine.exercises.size) {
-                return nextExIndex to 0
+            for (nextExIndex in (maxIndex + 1) until routine.exercises.size) {
+                if (nextExIndex !in skippedIndices) {
+                    return nextExIndex to 0
+                }
             }
             return null
         }
 
         // 2. Standard Linear Logic
-        if (currentSetIndex < currentExercise.setReps.size - 1) {
+        if (currentExIndex !in skippedIndices && currentSetIndex < currentExercise.setReps.size - 1) {
             return currentExIndex to (currentSetIndex + 1)
-        } else if (currentExIndex < routine.exercises.size - 1) {
-            return (currentExIndex + 1) to 0
+        }
+
+        for (nextExIndex in (currentExIndex + 1) until routine.exercises.size) {
+            if (nextExIndex !in skippedIndices) {
+                return nextExIndex to 0
+            }
         }
 
         return null
@@ -237,6 +243,7 @@ class RoutineFlowManager(
      */
     internal fun getPreviousStep(routine: Routine, currentExIndex: Int, currentSetIndex: Int): Pair<Int, Int>? {
         val currentExercise = routine.exercises.getOrNull(currentExIndex) ?: return null
+        val skippedIndices = coordinator._skippedExercises.value
 
         // 1. Superset Logic - interleaved progression
         if (currentExercise.supersetId != null) {
@@ -249,8 +256,8 @@ class RoutineFlowManager(
             // A. Check for previous exercise in SAME set cycle
             for (i in (currentSupersetPos - 1) downTo 0) {
                 val prevEx = supersetExercises[i]
-                if (currentSetIndex < prevEx.setReps.size) {
-                    val prevExIndex = routine.exercises.indexOf(prevEx)
+                val prevExIndex = routine.exercises.indexOf(prevEx)
+                if (prevExIndex !in skippedIndices && currentSetIndex < prevEx.setReps.size) {
                     return prevExIndex to currentSetIndex
                 }
             }
@@ -260,8 +267,8 @@ class RoutineFlowManager(
             if (prevSetIndex >= 0) {
                 for (i in supersetExercises.indices.reversed()) {
                     val prevEx = supersetExercises[i]
-                    if (prevSetIndex < prevEx.setReps.size) {
-                        val prevExIndex = routine.exercises.indexOf(prevEx)
+                    val prevExIndex = routine.exercises.indexOf(prevEx)
+                    if (prevExIndex !in skippedIndices && prevSetIndex < prevEx.setReps.size) {
                         return prevExIndex to prevSetIndex
                     }
                 }
@@ -269,20 +276,25 @@ class RoutineFlowManager(
 
             // C. Start of Superset -> Go to previous exercise before superset
             val minIndex = supersetExercises.minOf { routine.exercises.indexOf(it) }
-            val prevExIndex = minIndex - 1
-            if (prevExIndex >= 0) {
-                val prevEx = routine.exercises[prevExIndex]
-                return prevExIndex to (prevEx.setReps.size - 1)
+            for (prevExIndex in (minIndex - 1) downTo 0) {
+                if (prevExIndex !in skippedIndices) {
+                    val prevEx = routine.exercises[prevExIndex]
+                    return prevExIndex to (prevEx.setReps.size - 1)
+                }
             }
             return null
         }
 
         // 2. Standard Linear Logic
-        if (currentSetIndex > 0) {
+        if (currentExIndex !in skippedIndices && currentSetIndex > 0) {
             return currentExIndex to (currentSetIndex - 1)
-        } else if (currentExIndex > 0) {
-            val prevEx = routine.exercises[currentExIndex - 1]
-            return (currentExIndex - 1) to (prevEx.setReps.size - 1)
+        }
+
+        for (prevExIndex in (currentExIndex - 1) downTo 0) {
+            if (prevExIndex !in skippedIndices) {
+                val prevEx = routine.exercises[prevExIndex]
+                return prevExIndex to (prevEx.setReps.size - 1)
+            }
         }
 
         return null
@@ -345,11 +357,12 @@ class RoutineFlowManager(
         if (isSingleExercise) {
             return coordinator._currentSetIndex.value >= (currentExercise?.setReps?.size ?: 1) - 1
         }
-
-        val isLastExerciseInRoutine = coordinator._currentExerciseIndex.value >= (routine?.exercises?.size ?: 1) - 1
-        val isLastSetInExercise = coordinator._currentSetIndex.value >= (currentExercise?.setReps?.size ?: 1) - 1
-
-        return isLastExerciseInRoutine && isLastSetInExercise
+        if (routine == null) return false
+        return getNextStep(
+            routine = routine,
+            currentExIndex = coordinator._currentExerciseIndex.value,
+            currentSetIndex = coordinator._currentSetIndex.value
+        ) == null
     }
 
     // ===== Routine CRUD =====
@@ -462,11 +475,12 @@ class RoutineFlowManager(
             progressionRegressionKg = firstExercise.progressionKg,
             isJustLift = false,  // CRITICAL: Routines are NOT just lift mode
             useAutoStart = false,
-            stopAtTop = settingsManager.stopAtTop.value,
+            stopAtTop = firstExercise.stopAtTop,
             warmupReps = if (isFirstBodyweight) 0 else Constants.DEFAULT_WARMUP_REPS,
             isAMRAP = firstIsAMRAP, // Issue #203: Check both per-set (null reps) and exercise-level flag
             selectedExerciseId = firstExercise.exercise.id,
-            stallDetectionEnabled = firstExercise.stallDetectionEnabled
+            stallDetectionEnabled = firstExercise.stallDetectionEnabled,
+            repCountTiming = firstExercise.repCountTiming
         )
 
         // Issue #188: Log computed params
@@ -487,6 +501,24 @@ class RoutineFlowManager(
             val resolvedRoutine = resolveRoutineWeights(routine)
             loadRoutineInternal(resolvedRoutine)
         }
+    }
+
+    /**
+     * Issue #2 Fix: Suspend version of loadRoutine that completes only after routine
+     * is fully loaded, including PR-based weight resolution.
+     *
+     * Use this when you need to ensure the routine is loaded before starting a workout,
+     * e.g., in SingleExerciseScreen where ensureConnection might fire immediately.
+     */
+    suspend fun loadRoutineAsync(routine: Routine): Boolean {
+        if (routine.exercises.isEmpty()) {
+            Logger.w { "Cannot load routine with no exercises" }
+            return false
+        }
+
+        val resolvedRoutine = resolveRoutineWeights(routine)
+        loadRoutineInternal(resolvedRoutine)
+        return true
     }
 
     fun loadRoutineById(routineId: String) {
@@ -558,6 +590,8 @@ class RoutineFlowManager(
             eccentricLoad = exercise.eccentricLoad,
             selectedExerciseId = exercise.exercise.id,
             stallDetectionEnabled = exercise.stallDetectionEnabled,
+            repCountTiming = exercise.repCountTiming,
+            stopAtTop = exercise.stopAtTop,
             isAMRAP = isSetAmrap,
             progressionRegressionKg = exercise.progressionKg,
             isJustLift = false,
@@ -599,6 +633,8 @@ class RoutineFlowManager(
             eccentricLoad = exercise.eccentricLoad,
             selectedExerciseId = exercise.exercise.id,
             stallDetectionEnabled = exercise.stallDetectionEnabled,
+            repCountTiming = exercise.repCountTiming,
+            stopAtTop = exercise.stopAtTop,
             isAMRAP = isSetAmrap,
             progressionRegressionKg = exercise.progressionKg,
             isJustLift = false,
@@ -758,7 +794,10 @@ class RoutineFlowManager(
                 weightPerCableKg = setWeight,
                 progressionRegressionKg = exercise.progressionKg,
                 warmupReps = 3,
-                selectedExerciseId = exercise.exercise.id
+                selectedExerciseId = exercise.exercise.id,
+                stallDetectionEnabled = exercise.stallDetectionEnabled,
+                repCountTiming = exercise.repCountTiming,
+                stopAtTop = exercise.stopAtTop
             )
         }
 
@@ -842,6 +881,23 @@ class RoutineFlowManager(
             coordinator._skippedExercises.update { it + coordinator._currentExerciseIndex.value }
             jumpToExercise(nextIndex)
         }
+    }
+
+    /**
+     * Mark current exercise as skipped and move to the next routine step in SetReady.
+     * Returns true when a next step exists, false when routine is complete.
+     */
+    fun skipCurrentExerciseAndEnterNextStep(): Boolean {
+        val routine = coordinator._loadedRoutine.value ?: return false
+        val currentExIndex = coordinator._currentExerciseIndex.value
+        val currentSetIndex = coordinator._currentSetIndex.value
+
+        coordinator._skippedExercises.update { it + currentExIndex }
+
+        val nextStep = getNextStep(routine, currentExIndex, currentSetIndex) ?: return false
+        val (nextExIdx, nextSetIdx) = nextStep
+        enterSetReady(nextExIdx, nextSetIdx)
+        return true
     }
 
     /**

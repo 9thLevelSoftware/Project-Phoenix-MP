@@ -74,7 +74,7 @@ class AndroidCsvExporter(private val context: Context) : CsvExporter {
 
             FileWriter(file).use { writer ->
                 // Header
-                writer.appendLine("Date,Exercise,Mode,Target Reps,Warmup Reps,Working Reps,Total Reps,Weight,Duration (s),Just Lift,Eccentric Load")
+                writer.appendLine("Date,Exercise,Mode,Target Reps,Warmup Reps,Working Reps,Total Reps,Weight,Progression,Duration (s),Just Lift,Eccentric Load")
 
                 // Data rows
                 workoutSessions.sortedByDescending { it.timestamp }.forEach { session ->
@@ -92,10 +92,16 @@ class AndroidCsvExporter(private val context: Context) : CsvExporter {
                     val weight = formatWeight(effectiveWeight, weightUnit)
                     val justLift = if (session.isJustLift) "Yes" else "No"
 
+                    val progression = when {
+                        session.progressionKg > 0f -> "+${formatWeight(session.progressionKg, weightUnit)}"
+                        session.progressionKg < 0f -> formatWeight(session.progressionKg, weightUnit)
+                        else -> "0"
+                    }
+
                     writer.appendLine(
                         "$date,${escapeCsv(exerciseName)},${session.mode},${session.reps}," +
                         "${session.warmupReps},${session.workingReps},${session.totalReps}," +
-                        "$weight,${session.duration},$justLift,${session.eccentricLoad}"
+                        "$weight,$progression,${session.duration},$justLift,${session.eccentricLoad}"
                     )
                 }
             }

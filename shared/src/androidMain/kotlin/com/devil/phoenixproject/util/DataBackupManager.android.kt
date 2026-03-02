@@ -3,15 +3,15 @@ package com.devil.phoenixproject.util
 import android.content.ContentValues
 import android.content.Context
 import android.content.Intent
-import android.net.Uri
 import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
 import androidx.core.content.FileProvider
+import androidx.core.net.toUri
+import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.database.VitruvianDatabase
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import kotlinx.serialization.encodeToString
 import java.io.File
 import java.io.InputStream
 
@@ -31,6 +31,59 @@ class AndroidDataBackupManager(
             return dir
         }
 
+    override fun createBackupWriter(): BackupJsonWriter {
+        val timestamp = KmpUtils.formatTimestamp(KmpUtils.currentTimeMillis(), "yyyy-MM-dd")
+            .replace("-", "") + "_" +
+            KmpUtils.formatTimestamp(KmpUtils.currentTimeMillis(), "HH:mm:ss")
+                .replace(":", "")
+        val fileName = "vitruvian_backup_$timestamp.json"
+        return BackupJsonWriter(File(cacheDir, fileName).absolutePath)
+    }
+
+    override suspend fun finalizeExport(tempFilePath: String): Result<String> {
+        val file = File(tempFilePath)
+        val fileName = file.name
+
+        return try {
+            val destPath = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                val contentValues = ContentValues().apply {
+                    put(MediaStore.Downloads.DISPLAY_NAME, fileName)
+                    put(MediaStore.Downloads.MIME_TYPE, "application/json")
+                    put(MediaStore.Downloads.RELATIVE_PATH, "Download/VitruvianPhoenix")
+                }
+
+                val resolver = context.contentResolver
+                val destUri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, contentValues)
+                    ?: throw Exception("Failed to create file in Downloads")
+
+                resolver.openOutputStream(destUri)?.use { outputStream ->
+                    file.inputStream().use { inputStream ->
+                        inputStream.copyTo(outputStream)
+                    }
+                }
+
+                destUri.toString()
+            } else {
+                @Suppress("DEPRECATION")
+                val downloadsDir = File(
+                    Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
+                    "VitruvianPhoenix"
+                )
+                downloadsDir.mkdirs()
+                val destFile = File(downloadsDir, fileName)
+                file.copyTo(destFile, overwrite = true)
+                destFile.absolutePath
+            }
+
+            // Clean up cache file
+            file.delete()
+            Result.success(destPath)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    // Legacy save path (kept for backward compatibility)
     override suspend fun saveToFile(backup: BackupData): Result<String> = withContext(Dispatchers.IO) {
         try {
             val jsonString = json.encodeToString(backup)
@@ -82,7 +135,7 @@ class AndroidDataBackupManager(
         try {
             val jsonString = if (filePath.startsWith("content://")) {
                 // Content URI
-                val uri = Uri.parse(filePath)
+                val uri = filePath.toUri()
                 val inputStream: InputStream = context.contentResolver.openInputStream(uri)
                     ?: throw Exception("Cannot open file")
                 inputStream.bufferedReader().use { it.readText() }
@@ -98,40 +151,23 @@ class AndroidDataBackupManager(
     }
 
     /**
-     * Save backup to cache for sharing
+     * Share backup via Android share sheet (streaming path)
      */
-    suspend fun saveToCache(backup: BackupData): Result<Uri> = withContext(Dispatchers.IO) {
+    override suspend fun shareBackup() {
+        val cachePath = withContext(Dispatchers.IO) { exportToCache() }
+        val file = File(cachePath)
+
+        if (!file.exists()) {
+            throw Exception("Backup file was not created")
+        }
+
         try {
-            val jsonString = json.encodeToString(backup)
-            val timestamp = KmpUtils.formatTimestamp(KmpUtils.currentTimeMillis(), "yyyy-MM-dd")
-                .replace("-", "") + "_" +
-                KmpUtils.formatTimestamp(KmpUtils.currentTimeMillis(), "HH:mm:ss")
-                    .replace(":", "")
-            val fileName = "vitruvian_backup_$timestamp.json"
-
-            val file = File(cacheDir, fileName)
-            file.writeText(jsonString)
-
             val uri = FileProvider.getUriForFile(
                 context,
                 "${context.packageName}.fileprovider",
                 file
             )
 
-            Result.success(uri)
-        } catch (e: Exception) {
-            Result.failure(e)
-        }
-    }
-
-    /**
-     * Share backup via Android share sheet
-     */
-    override suspend fun shareBackup() {
-        val backup = exportAllData()
-        val cacheResult = saveToCache(backup)
-
-        cacheResult.onSuccess { uri ->
             val shareIntent = Intent(Intent.ACTION_SEND).apply {
                 type = "application/json"
                 putExtra(Intent.EXTRA_STREAM, uri)
@@ -144,21 +180,12 @@ class AndroidDataBackupManager(
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
             context.startActivity(chooser)
-        }
-    }
-
-    /**
-     * Import from Android content URI (e.g., from file picker)
-     */
-    suspend fun importFromUri(uri: Uri): Result<ImportResult> = withContext(Dispatchers.IO) {
-        try {
-            val inputStream: InputStream = context.contentResolver.openInputStream(uri)
-                ?: throw Exception("Cannot open file")
-
-            val jsonString = inputStream.bufferedReader().use { it.readText() }
-            importFromJson(jsonString)
         } catch (e: Exception) {
-            Result.failure(e)
+            Logger.e(e) { "Failed to share backup file: ${file.absolutePath}" }
+            // Clean up cache file on sharing error
+            file.delete()
+            throw e
         }
     }
+
 }

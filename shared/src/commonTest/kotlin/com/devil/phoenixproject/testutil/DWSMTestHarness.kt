@@ -54,7 +54,8 @@ class DWSMTestHarness(val testScope: TestScope) {
     val settingsManager = SettingsManager(fakePrefsManager, fakeBleRepo, dwsmScope)
     val gamificationManager = GamificationManager(
         fakeGamificationRepo, fakePRRepo, fakeExerciseRepo,
-        MutableSharedFlow<HapticEvent>(extraBufferCapacity = 10), dwsmScope
+        MutableSharedFlow<HapticEvent>(extraBufferCapacity = 10), dwsmScope,
+        settingsManager.gamificationEnabled
     )
 
     private val fakeSignatureRepo = object : ExerciseSignatureRepository {

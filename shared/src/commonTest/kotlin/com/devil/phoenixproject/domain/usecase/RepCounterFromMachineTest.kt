@@ -248,6 +248,30 @@ class RepCounterFromMachineTest {
     }
 
     @Test
+    fun `stopAtTop true completes final rep at TOP before repsSetCount increments`() {
+        repCounter.configure(warmupTarget = 0, workingTarget = 3, isJustLift = false, stopAtTop = true)
+
+        // Baseline
+        repCounter.process(repsRomCount = 0, repsSetCount = 0, up = 0, down = 0)
+
+        // Rep 1 confirmed at bottom
+        repCounter.process(repsRomCount = 0, repsSetCount = 1, up = 1, down = 1)
+        // Rep 2 confirmed at bottom
+        repCounter.process(repsRomCount = 0, repsSetCount = 2, up = 2, down = 2)
+
+        assertFalse(repCounter.shouldStopWorkout())
+        assertEquals(2, repCounter.getRepCount().workingReps)
+
+        // Final rep reaches TOP: up increments, repsSetCount still 2 (not yet bottom-confirmed)
+        repCounter.process(repsRomCount = 0, repsSetCount = 2, up = 3, down = 2)
+
+        val count = repCounter.getRepCount()
+        assertEquals(3, count.workingReps, "Final rep should be counted at TOP in stopAtTop mode")
+        assertTrue(repCounter.shouldStopWorkout(), "Workout should complete at TOP when target rep is reached")
+        assertTrue(capturedEvents.any { it.type == RepType.WORKOUT_COMPLETE })
+    }
+
+    @Test
     fun `stopAtTop false counts reps from down counter`() {
         // Issue #210: With stopAtTop=false, working reps come from down counter
         repCounter.configure(warmupTarget = 0, workingTarget = 3, isJustLift = false, stopAtTop = false)

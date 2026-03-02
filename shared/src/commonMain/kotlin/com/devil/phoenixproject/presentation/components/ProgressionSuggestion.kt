@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.automirrored.filled.TrendingDown
 import androidx.compose.material.icons.automirrored.filled.TrendingUp
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -47,6 +48,11 @@ fun ProgressionSuggestionBanner(
         enter = fadeIn() + expandVertically(),
         exit = fadeOut() + shrinkVertically()
     ) {
+        val isDeload = event.reason.isDeload
+        val accentColor = if (isDeload) Color(0xFFF57C00) else Color(0xFF4CAF50)
+        val accentColorDark = if (isDeload) Color(0xFFE65100) else Color(0xFF2E7D32)
+        val accentColorMid = if (isDeload) Color(0xFFEF6C00) else Color(0xFF388E3C)
+
         Card(
             modifier = modifier.fillMaxWidth(),
             colors = CardDefaults.cardColors(
@@ -64,7 +70,7 @@ fun ProgressionSuggestionBanner(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Icon(
-                        Icons.AutoMirrored.Filled.TrendingUp,
+                        if (isDeload) Icons.AutoMirrored.Filled.TrendingDown else Icons.AutoMirrored.Filled.TrendingUp,
                         contentDescription = null,
                         tint = AccessibilityTheme.colors.success,
                         modifier = Modifier.size(24.dp)
@@ -72,7 +78,7 @@ fun ProgressionSuggestionBanner(
                     Spacer(Modifier.width(8.dp))
                     Column {
                         Text(
-                            "Weight Increase Suggested",
+                            if (isDeload) "Deload Suggested" else "Weight Increase Suggested",
                             style = MaterialTheme.typography.titleSmall,
                             fontWeight = FontWeight.Bold,
                             color = AccessibilityTheme.colors.success
@@ -81,6 +87,9 @@ fun ProgressionSuggestionBanner(
                             when (event.reason) {
                                 ProgressionReason.REPS_ACHIEVED -> "You've hit your target reps consistently"
                                 ProgressionReason.LOW_RPE -> "Your recent sets felt easier than target"
+                                ProgressionReason.MISSED_REPS -> "You've missed your target reps recently"
+                                ProgressionReason.HIGH_RPE -> "Your recent sets have been very difficult"
+                                ProgressionReason.PLATEAU_DETECTED -> "A plateau has been detected in your progress"
                             },
                             style = MaterialTheme.typography.bodySmall,
                             color = AccessibilityTheme.colors.success
@@ -104,7 +113,7 @@ fun ProgressionSuggestionBanner(
                 ) {
                     Column {
                         Text(
-                            "Previous",
+                            "Current",
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -140,8 +149,13 @@ fun ProgressionSuggestionBanner(
                                 color = AccessibilityTheme.colors.success,
                                 shape = RoundedCornerShape(4.dp)
                             ) {
+                                val incrementText = if (isDeload) {
+                                    formatWeight(-event.increment(), weightUnit).let { "-$it" }
+                                } else {
+                                    "+${formatWeight(event.increment(), weightUnit)}"
+                                }
                                 Text(
-                                    "+${formatWeight(event.increment(), weightUnit)}",
+                                    incrementText,
                                     modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
                                     style = MaterialTheme.typography.labelSmall,
                                     color = Color.White

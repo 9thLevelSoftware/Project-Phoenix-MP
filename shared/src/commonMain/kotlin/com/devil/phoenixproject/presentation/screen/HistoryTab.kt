@@ -29,6 +29,7 @@ import com.devil.phoenixproject.domain.model.CompletedSet
 import com.devil.phoenixproject.domain.model.RepMetricData
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.domain.model.WorkoutSession
+import com.devil.phoenixproject.domain.model.effectiveHeaviestKgPerCable
 import com.devil.phoenixproject.domain.model.toSetSummary
 import com.devil.phoenixproject.domain.subscription.SubscriptionManager
 import com.devil.phoenixproject.presentation.manager.HistoryItem
@@ -37,8 +38,11 @@ import com.devil.phoenixproject.presentation.components.EmptyState
 import com.devil.phoenixproject.presentation.components.PremiumBiomechanicsUpsell
 import com.devil.phoenixproject.presentation.components.RepBiomechanicsDetail
 import com.devil.phoenixproject.presentation.components.RepReplayCard
+import com.devil.phoenixproject.presentation.components.charts.HistoryTimePeriod
+import com.devil.phoenixproject.domain.model.currentTimeMillis
 import com.devil.phoenixproject.ui.theme.*
 import com.devil.phoenixproject.util.KmpUtils
+import kotlinx.datetime.*
 import org.koin.compose.koinInject
 
 @Composable
@@ -55,69 +59,73 @@ fun HistoryTab(
     @Suppress("UNUSED_VARIABLE")  // Kept for future pull-to-refresh implementation
     var isRefreshing by remember { mutableStateOf(false) }
 
+    var selectedPeriod by remember { mutableStateOf(HistoryTimePeriod.ALL) }
+
+    // Filter history items by selected time period
+    val filteredHistory = remember(groupedWorkoutHistory, selectedPeriod) {
+        if (selectedPeriod == HistoryTimePeriod.ALL) {
+            groupedWorkoutHistory
+        } else {
+            val now = Instant.fromEpochMilliseconds(currentTimeMillis())
+            val cutoff = now.toLocalDateTime(TimeZone.currentSystemDefault()).date
+                .let { today ->
+                    when (selectedPeriod) {
+                        HistoryTimePeriod.DAYS_7 -> today.minus(7, DateTimeUnit.DAY)
+                        HistoryTimePeriod.DAYS_14 -> today.minus(14, DateTimeUnit.DAY)
+                        HistoryTimePeriod.DAYS_30 -> today.minus(30, DateTimeUnit.DAY)
+                        HistoryTimePeriod.ALL -> today // unreachable
+                    }
+                }
+            val cutoffEpoch = cutoff.atStartOfDayIn(TimeZone.currentSystemDefault()).toEpochMilliseconds()
+            groupedWorkoutHistory.filter { it.timestamp >= cutoffEpoch }
+        }
+    }
+
     Column(
         modifier = modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
             .padding(Spacing.medium)
     ) {
-        // Header removed for global scaffold integration
-        // Refresh functionality should be handled automatically or via pull-to-refresh if needed
-
-        /*
+        // Time period filter chips
         Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
+            modifier = Modifier.fillMaxWidth().padding(bottom = Spacing.small),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            Text(
-                "Workout History",
-                style = MaterialTheme.typography.headlineLarge,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurface
-            )
-            IconButton(
-                onClick = {
-                    isRefreshing = true
-                    onRefresh()
-                    kotlinx.coroutines.MainScope().launch {
-                        kotlinx.coroutines.delay(1000)
-                        isRefreshing = false
-                    }
-                }
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Refresh,
-                    contentDescription = "Refresh workout history",
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = if (isRefreshing) {
-                        Modifier.rotate(360f)
-                    } else {
-                        Modifier
+            HistoryTimePeriod.entries.forEach { period ->
+                FilterChip(
+                    selected = selectedPeriod == period,
+                    onClick = { selectedPeriod = period },
+                    label = {
+                        Text(
+                            period.label,
+                            style = MaterialTheme.typography.labelMedium
+                        )
                     }
                 )
             }
         }
-        Spacer(modifier = Modifier.height(Spacing.medium))
-        */
 
-        if (groupedWorkoutHistory.isEmpty()) {
+        if (filteredHistory.isEmpty()) {
             EmptyState(
                 icon = Icons.Default.History,
                 title = "No Workout History Yet",
-                message = "Complete your first workout to see it here"
+                message = if (selectedPeriod == HistoryTimePeriod.ALL)
+                    "Complete your first workout to see it here"
+                else
+                    "No workouts in the last ${selectedPeriod.label.lowercase()}"
             )
         } else {
             LazyColumn(
                 verticalArrangement = Arrangement.spacedBy(Spacing.small)
             ) {
-                items(groupedWorkoutHistory.size, key = { index ->
-                    when (val item = groupedWorkoutHistory[index]) {
+                items(filteredHistory.size, key = { index ->
+                    when (val item = filteredHistory[index]) {
                         is com.devil.phoenixproject.presentation.manager.SingleSessionHistoryItem -> item.session.id
                         is com.devil.phoenixproject.presentation.manager.GroupedRoutineHistoryItem -> item.routineSessionId
                     }
                 }) { index ->
-                    when (val item = groupedWorkoutHistory[index]) {
+                    when (val item = filteredHistory[index]) {
                         is com.devil.phoenixproject.presentation.manager.SingleSessionHistoryItem -> {
                             WorkoutHistoryCard(
                                 session = item.session,
@@ -268,18 +276,18 @@ fun WorkoutHistoryCard(
 
             Spacer(modifier = Modifier.height(Spacing.small))
 
-            // Highest Weight Per Cable | Workout Mode
+            // Measured Peak Per Cable | Workout Mode
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 Text(
-                    "Highest Weight Per Cable",
+                    "Measured Peak Per Cable",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Text(
-                    if (session.mode.contains("Echo", ignoreCase = true)) "Adaptive" else formatWeight(session.weightPerCableKg, weightUnit),
+                    if (session.mode.contains("Echo", ignoreCase = true)) "Adaptive" else formatWeight(session.effectiveHeaviestKgPerCable(), weightUnit),
                     style = MaterialTheme.typography.bodyLarge,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurface
@@ -610,7 +618,7 @@ private data class ExerciseGroup(
     val exerciseName: String,
     val totalReps: Int,
     val totalSets: Int,
-    val weightPerCableKg: Float,
+    val highestWeightPerCableKg: Float,
     val mode: String
 )
 
@@ -643,7 +651,7 @@ fun GroupedRoutineCard(
             .map { (exerciseId, sessions) ->
                 val totalReps = sessions.sumOf { it.totalReps }
                 val totalSets = sessions.size
-                val weightPerCableKg = sessions.firstOrNull()?.weightPerCableKg ?: 0f
+                val highestWeightPerCableKg = sessions.maxOfOrNull { it.effectiveHeaviestKgPerCable() } ?: 0f
                 val mode = sessions.firstOrNull()?.mode ?: "Unknown"
                 // Use exerciseName from the session (stored when workout was saved)
                 val exerciseName = sessions.firstOrNull()?.exerciseName ?: "Unknown Exercise"
@@ -653,7 +661,7 @@ fun GroupedRoutineCard(
                     exerciseName = exerciseName,
                     totalReps = totalReps,
                     totalSets = totalSets,
-                    weightPerCableKg = weightPerCableKg,
+                    highestWeightPerCableKg = highestWeightPerCableKg,
                     mode = mode
                 )
             }
@@ -776,18 +784,18 @@ fun GroupedRoutineCard(
 
                 Spacer(modifier = Modifier.height(Spacing.small))
 
-                // Highest Weight Per Cable | Workout Mode
+                // Measured Peak Per Cable | Workout Mode
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     Text(
-                        "Highest Weight Per Cable",
+                        "Measured Peak Per Cable",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Text(
-                        if (exerciseGroup.mode.contains("Echo", ignoreCase = true)) "Adaptive" else formatWeight(exerciseGroup.weightPerCableKg, weightUnit),
+                        if (exerciseGroup.mode.contains("Echo", ignoreCase = true)) "Adaptive" else formatWeight(exerciseGroup.highestWeightPerCableKg, weightUnit),
                         style = MaterialTheme.typography.bodyLarge,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurface

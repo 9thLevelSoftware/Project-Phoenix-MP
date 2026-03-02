@@ -28,7 +28,7 @@ import com.devil.phoenixproject.ui.theme.screenBackgroundBrush
  * Users can specify:
  * - Exercise name (required)
  * - Muscle group (required)
- * - Equipment (optional)
+ * - Resistance type (Cables or Bodyweight)
  * - Cable configuration (defaults to DOUBLE)
  */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -48,7 +48,9 @@ fun CreateExerciseDialog(
             } ?: ExerciseCategory.CHEST
         )
     }
-    var equipment by remember { mutableStateOf(existingExercise?.equipment ?: "") }
+    var usesCables by remember(existingExercise?.equipment) {
+        mutableStateOf(existingExercise?.hasCableAccessory ?: true)
+    }
 
     var showMuscleGroupDropdown by remember { mutableStateOf(false) }
     var showError by remember { mutableStateOf(false) }
@@ -172,19 +174,32 @@ fun CreateExerciseDialog(
 
                     Spacer(modifier = Modifier.height(Spacing.medium))
 
-                    // Equipment (Optional)
-                    OutlinedTextField(
-                        value = equipment,
-                        onValueChange = { equipment = it },
-                        label = { Text("Equipment (optional)") },
-                        placeholder = { Text("e.g., Barbell, Cable Handle") },
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true,
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = MaterialTheme.colorScheme.primary,
-                            unfocusedBorderColor = MaterialTheme.colorScheme.outline
-                        )
+                    // Resistance Type
+                    Text(
+                        "Resistance Type",
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Medium,
+                        color = MaterialTheme.colorScheme.onSurface
                     )
+                    Spacer(modifier = Modifier.height(Spacing.extraSmall))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(Spacing.small)
+                    ) {
+                        FilterChip(
+                            selected = usesCables,
+                            onClick = { usesCables = true },
+                            label = { Text("Cables") },
+                            modifier = Modifier.weight(1f)
+                        )
+                        FilterChip(
+                            selected = !usesCables,
+                            onClick = { usesCables = false },
+                            label = { Text("Bodyweight") },
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
 
                     Spacer(modifier = Modifier.height(Spacing.large))
 
@@ -225,12 +240,13 @@ fun CreateExerciseDialog(
                                 if (name.isBlank()) {
                                     showError = true
                                 } else {
+                                    val equipmentValue = if (usesCables) "HANDLES" else "BODYWEIGHT"
                                     val exercise = Exercise(
                                         id = existingExercise?.id,
                                         name = name.trim(),
                                         muscleGroup = selectedMuscleGroup.displayName,
                                         muscleGroups = selectedMuscleGroup.displayName,
-                                        equipment = equipment.trim(),
+                                        equipment = equipmentValue,
                                         isFavorite = existingExercise?.isFavorite ?: false,
                                         isCustom = true
                                     )

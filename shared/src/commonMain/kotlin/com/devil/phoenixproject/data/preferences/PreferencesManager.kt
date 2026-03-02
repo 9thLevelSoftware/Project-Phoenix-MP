@@ -1,6 +1,7 @@
 package com.devil.phoenixproject.data.preferences
 
 import com.devil.phoenixproject.domain.model.HudPreset
+import com.devil.phoenixproject.domain.model.RepCountTiming
 import com.devil.phoenixproject.domain.model.UserPreferences
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.russhwolf.settings.Settings
@@ -64,7 +65,8 @@ data class JustLiftDefaults(
     val weightChangePerRep: Float = 0f,
     val eccentricLoadPercentage: Int = 100,
     val echoLevelValue: Int = 2,
-    val stallDetectionEnabled: Boolean = true  // Stall detection auto-stop toggle
+    val stallDetectionEnabled: Boolean = true,  // Stall detection auto-stop toggle
+    val repCountTimingName: String = "TOP"  // RepCountTiming enum name
 ) {
     fun getEccentricLoad(): com.devil.phoenixproject.domain.model.EccentricLoad {
         // Handle legacy 125% -> fall back to 120%
@@ -110,10 +112,14 @@ interface PreferencesManager {
     suspend fun setLedFeedbackEnabled(enabled: Boolean)
     suspend fun setColorBlindModeEnabled(enabled: Boolean)
     suspend fun setHudPreset(preset: String)
+    suspend fun setRepCountTiming(timing: RepCountTiming)
     suspend fun setSummaryCountdownSeconds(seconds: Int)
     suspend fun setAutoStartCountdownSeconds(seconds: Int)
+    suspend fun setGamificationEnabled(enabled: Boolean)
     suspend fun setSimulatorModeUnlocked(unlocked: Boolean)
     fun isSimulatorModeUnlocked(): Boolean
+    suspend fun setSimulatorModeEnabled(enabled: Boolean)
+    fun isSimulatorModeEnabled(): Boolean
 
     suspend fun getSingleExerciseDefaults(exerciseId: String): SingleExerciseDefaults?
     suspend fun saveSingleExerciseDefaults(defaults: SingleExerciseDefaults)
@@ -155,9 +161,12 @@ class SettingsPreferencesManager(
         private const val KEY_HUD_PRESET = "hud_preset"
         private const val KEY_SUMMARY_COUNTDOWN_SECONDS = "summary_countdown_seconds"
         private const val KEY_AUTOSTART_COUNTDOWN_SECONDS = "autostart_countdown_seconds"
+        private const val KEY_REP_COUNT_TIMING = "rep_count_timing"
         private const val KEY_JUST_LIFT_DEFAULTS = "just_lift_defaults"
         private const val KEY_PREFIX_EXERCISE = "exercise_defaults_"
         private const val KEY_SIMULATOR_MODE_UNLOCKED = "simulator_mode_unlocked"
+        private const val KEY_SIMULATOR_MODE_ENABLED = "simulator_mode_enabled"
+        private const val KEY_GAMIFICATION_ENABLED = "gamification_enabled"
     }
 
     private val _preferencesFlow = MutableStateFlow(loadPreferences())
@@ -179,8 +188,14 @@ class SettingsPreferencesManager(
             ledFeedbackEnabled = settings.getBoolean(KEY_LED_FEEDBACK_ENABLED, false),
             colorBlindModeEnabled = settings.getBoolean(KEY_COLOR_BLIND_MODE, false),
             hudPreset = settings.getStringOrNull(KEY_HUD_PRESET) ?: HudPreset.FULL.key,
+            repCountTiming = settings.getStringOrNull(KEY_REP_COUNT_TIMING)?.let {
+                try { RepCountTiming.valueOf(it) } catch (_: Exception) { null }
+            } ?: RepCountTiming.TOP,
             summaryCountdownSeconds = settings.getInt(KEY_SUMMARY_COUNTDOWN_SECONDS, 10),
-            autoStartCountdownSeconds = settings.getInt(KEY_AUTOSTART_COUNTDOWN_SECONDS, 5)
+            autoStartCountdownSeconds = settings.getInt(KEY_AUTOSTART_COUNTDOWN_SECONDS, 5),
+            gamificationEnabled = settings.getBoolean(KEY_GAMIFICATION_ENABLED, true),
+            simulatorModeUnlocked = settings.getBoolean(KEY_SIMULATOR_MODE_UNLOCKED, false),
+            simulatorModeEnabled = settings.getBoolean(KEY_SIMULATOR_MODE_ENABLED, false)
         )
     }
 
@@ -242,6 +257,11 @@ class SettingsPreferencesManager(
     override suspend fun setHudPreset(preset: String) {
         settings.putString(KEY_HUD_PRESET, preset)
         updateAndEmit { copy(hudPreset = preset) }
+    }
+
+    override suspend fun setRepCountTiming(timing: RepCountTiming) {
+        settings.putString(KEY_REP_COUNT_TIMING, timing.name)
+        updateAndEmit { copy(repCountTiming = timing) }
     }
 
     override suspend fun setSummaryCountdownSeconds(seconds: Int) {
@@ -313,11 +333,26 @@ class SettingsPreferencesManager(
         settings.remove(KEY_JUST_LIFT_DEFAULTS)
     }
 
+    override suspend fun setGamificationEnabled(enabled: Boolean) {
+        settings.putBoolean(KEY_GAMIFICATION_ENABLED, enabled)
+        updateAndEmit { copy(gamificationEnabled = enabled) }
+    }
+
     override suspend fun setSimulatorModeUnlocked(unlocked: Boolean) {
         settings.putBoolean(KEY_SIMULATOR_MODE_UNLOCKED, unlocked)
+        updateAndEmit { copy(simulatorModeUnlocked = unlocked) }
     }
 
     override fun isSimulatorModeUnlocked(): Boolean {
         return settings.getBoolean(KEY_SIMULATOR_MODE_UNLOCKED, false)
+    }
+
+    override suspend fun setSimulatorModeEnabled(enabled: Boolean) {
+        settings.putBoolean(KEY_SIMULATOR_MODE_ENABLED, enabled)
+        updateAndEmit { copy(simulatorModeEnabled = enabled) }
+    }
+
+    override fun isSimulatorModeEnabled(): Boolean {
+        return settings.getBoolean(KEY_SIMULATOR_MODE_ENABLED, false)
     }
 }

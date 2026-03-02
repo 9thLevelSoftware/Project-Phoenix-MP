@@ -45,7 +45,7 @@ class TrainingCycleModelsTest {
     }
 
     @Test
-    fun `CycleProgress markDayCompleted tracks skipped days`() {
+    fun `CycleProgress markDayCompleted marks day without advancing`() {
         val progress = CycleProgress(
             id = "progress-2",
             cycleId = "cycle-1",
@@ -54,12 +54,13 @@ class TrainingCycleModelsTest {
             cycleStartDate = currentTimeMillis()
         )
 
-        val updated = progress.markDayCompleted(dayNumber = 3, totalDays = 4)
+        val updated = progress.markDayCompleted(dayNumber = 1)
 
-        assertEquals(4, updated.currentDayNumber)
-        assertTrue(updated.completedDays.contains(3))
-        assertTrue(updated.missedDays.containsAll(setOf(1, 2)))
+        // Should NOT advance day number (Issue #253 fix)
+        assertEquals(1, updated.currentDayNumber)
+        assertTrue(updated.completedDays.contains(1))
         assertNotNull(updated.lastCompletedDate)
+        assertNotNull(updated.lastAdvancedAt)
     }
 
     @Test

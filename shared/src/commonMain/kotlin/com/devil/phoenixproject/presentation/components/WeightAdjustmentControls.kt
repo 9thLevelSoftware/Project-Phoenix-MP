@@ -32,7 +32,7 @@ import com.devil.phoenixproject.ui.theme.Spacing
 // Conversion constants
 private const val KG_TO_LB = 2.20462f
 private const val LB_TO_KG = 0.453592f
-private const val MAX_WEIGHT_KG = 110f
+private const val MAX_WEIGHT_KG = 100f // Per cable max (V-Form: 100kg, Trainer+: 110kg)
 
 /**
  * Weight adjustment controls for modifying weight during a workout.
@@ -111,6 +111,31 @@ fun WeightAdjustmentControls(
                 enabled = enabled && currentWeightKg < MAX_WEIGHT_KG,
                 contentDescription = "Increase weight"
             )
+        }
+
+        // Total weight for 2 cables indicator
+        Surface(
+            shape = RoundedCornerShape(Spacing.small),
+            color = MaterialTheme.colorScheme.surfaceContainerHigh
+        ) {
+            Row(
+                modifier = Modifier.padding(horizontal = Spacing.medium, vertical = Spacing.small),
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Info,
+                    contentDescription = null,
+                    modifier = Modifier.size(16.dp),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(modifier = Modifier.width(Spacing.small))
+                Text(
+                    text = "Total weight for 2 cables: ${formatWeight(currentWeightKg * 2, weightUnit)}",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
         }
 
         // Quick preset buttons
@@ -275,8 +300,8 @@ private fun WeightPickerDialog(
 
     // Unit-aware configuration
     val isLbs = weightUnit == WeightUnit.LB
-    val maxWeightDisplay = if (isLbs) (MAX_WEIGHT_KG * KG_TO_LB).toInt() else MAX_WEIGHT_KG.toInt() // 242 lbs or 110 kg
-    val sliderSteps = if (isLbs) maxWeightDisplay - 1 else 219 // 1 lb steps or 0.5kg steps
+    val maxWeightDisplay = if (isLbs) (MAX_WEIGHT_KG * KG_TO_LB).toInt() else MAX_WEIGHT_KG.toInt() // 220 lbs or 100 kg
+    val sliderSteps = if (isLbs) maxWeightDisplay - 1 else (MAX_WEIGHT_KG * 2 - 1).toInt() // 1 lb steps or 0.5kg steps
 
     // Quick adjustment deltas (in display units)
     val quickAdjustments = if (isLbs) {
@@ -306,7 +331,34 @@ private fun WeightPickerDialog(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
 
-                Spacer(modifier = Modifier.height(Spacing.large))
+                Spacer(modifier = Modifier.height(Spacing.small))
+
+                // Total weight for 2 cables indicator
+                Surface(
+                    shape = RoundedCornerShape(Spacing.small),
+                    color = MaterialTheme.colorScheme.surfaceContainerHigh
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = Spacing.medium, vertical = Spacing.small),
+                        horizontalArrangement = Arrangement.Center,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Info,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(modifier = Modifier.width(Spacing.small))
+                        Text(
+                            text = "Total weight for 2 cables: ${formatWeight(selectedWeightKg * 2, weightUnit)}",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(Spacing.medium))
 
                 // Slider for weight selection (operates in display units for better UX)
                 val displayWeight = if (isLbs) selectedWeightKg * KG_TO_LB else selectedWeightKg

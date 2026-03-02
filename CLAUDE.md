@@ -103,12 +103,12 @@ Located in `shared/src/commonMain/kotlin/com/example/vitruvianredux/domain/model
 - One-rep max formulas (Brzycki, Epley)
 
 ## Tech Stack Versions
-- Kotlin 2.0.21
-- Compose Multiplatform 1.7.1
-- AGP 8.5.2
-- SQLDelight 2.0.2
-- Koin 4.0.0
-- Coroutines 1.9.0
+- Kotlin 2.3.0
+- Compose Multiplatform 1.10.1
+- AGP 9.0.1
+- SQLDelight 2.2.1
+- Koin 4.1.1
+- Coroutines 1.10.2
 
 ## Hardware Support
 - **Vitruvian V-Form Trainer** (VIT-200): 200kg max, device name `Vee_*`

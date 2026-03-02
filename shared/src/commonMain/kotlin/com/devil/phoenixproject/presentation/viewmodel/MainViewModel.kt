@@ -85,7 +85,7 @@ class MainViewModel constructor(
     // === Phase 2b: GamificationManager (extracted from this class) ===
     val gamificationManager = GamificationManager(
         gamificationRepository, personalRecordRepository, exerciseRepository,
-        _hapticEvents, viewModelScope
+        _hapticEvents, viewModelScope, settingsManager.gamificationEnabled
     )
 
     // === Phase 3: WorkoutSessionManager (extracted from this class) ===
@@ -224,7 +224,6 @@ class MainViewModel constructor(
 
     val userPreferences: StateFlow<UserPreferences> get() = settingsManager.userPreferences
     val weightUnit: StateFlow<WeightUnit> get() = settingsManager.weightUnit
-    val stopAtTop: StateFlow<Boolean> get() = settingsManager.stopAtTop
     val enableVideoPlayback: StateFlow<Boolean> get() = settingsManager.enableVideoPlayback
     val autoplayEnabled: StateFlow<Boolean> get() = settingsManager.autoplayEnabled
 
@@ -238,9 +237,11 @@ class MainViewModel constructor(
     fun setColorBlindModeEnabled(enabled: Boolean) = settingsManager.setColorBlindModeEnabled(enabled)
     val hudPreset: StateFlow<String> get() = settingsManager.hudPreset
     fun setHudPreset(preset: String) = settingsManager.setHudPreset(preset)
+    fun setRepCountTiming(timing: RepCountTiming) = settingsManager.setRepCountTiming(timing)
     fun setSummaryCountdownSeconds(seconds: Int) = settingsManager.setSummaryCountdownSeconds(seconds)
     fun setAutoStartCountdownSeconds(seconds: Int) = settingsManager.setAutoStartCountdownSeconds(seconds)
     fun setColorScheme(schemeIndex: Int) = settingsManager.setColorScheme(schemeIndex)
+    fun setGamificationEnabled(enabled: Boolean) = settingsManager.setGamificationEnabled(enabled)
     fun kgToDisplay(kg: Float, unit: WeightUnit) = settingsManager.kgToDisplay(kg, unit)
     fun displayToKg(display: Float, unit: WeightUnit) = settingsManager.displayToKg(display, unit)
     fun formatWeight(kg: Float, unit: WeightUnit) = settingsManager.formatWeight(kg, unit)
@@ -259,6 +260,7 @@ class MainViewModel constructor(
         workoutSessionManager.startWorkout(skipCountdown, isJustLiftMode)
     fun stopWorkout(exitingWorkout: Boolean = false) = workoutSessionManager.stopWorkout(exitingWorkout)
     fun stopAndReturnToSetReady() = workoutSessionManager.stopAndReturnToSetReady()
+    fun stopAndSkipCurrentExercise() = workoutSessionManager.stopAndSkipCurrentExercise()
     fun pauseWorkout() = workoutSessionManager.pauseWorkout()
     fun resumeWorkout() = workoutSessionManager.resumeWorkout()
     fun skipCountdown() = workoutSessionManager.skipCountdown()
@@ -278,6 +280,8 @@ class MainViewModel constructor(
     fun deleteRoutine(routineId: String) = workoutSessionManager.deleteRoutine(routineId)
     fun deleteRoutines(routineIds: Set<String>) = workoutSessionManager.deleteRoutines(routineIds)
     fun loadRoutine(routine: Routine) = workoutSessionManager.loadRoutine(routine)
+    /** Issue #2 Fix: Suspend version that completes after routine is fully loaded (including PR weight resolution) */
+    suspend fun loadRoutineAsync(routine: Routine) = workoutSessionManager.loadRoutineAsync(routine)
     fun loadRoutineById(routineId: String) = workoutSessionManager.loadRoutineById(routineId)
     fun enterRoutineOverview(routine: Routine) = workoutSessionManager.enterRoutineOverview(routine)
     fun selectExerciseInOverview(index: Int) = workoutSessionManager.selectExerciseInOverview(index)
@@ -434,21 +438,16 @@ class MainViewModel constructor(
 
     // ===== Simulator Mode (Easter Egg - stays here) =====
 
+    val simulatorModeUnlocked: StateFlow<Boolean> get() = settingsManager.simulatorModeUnlocked
+    val simulatorModeEnabled: StateFlow<Boolean> get() = settingsManager.simulatorModeEnabled
+
     fun unlockSimulatorMode() {
-        viewModelScope.launch {
-            preferencesManager.setSimulatorModeUnlocked(true)
-            Logger.i { "SIMULATOR MODE UNLOCKED!" }
-        }
+        settingsManager.setSimulatorModeUnlocked(true)
+        Logger.i { "SIMULATOR MODE UNLOCKED!" }
     }
 
     fun toggleSimulatorMode(enabled: Boolean) {
-        viewModelScope.launch {
-            preferencesManager.setSimulatorModeUnlocked(enabled)
-        }
-    }
-
-    fun isSimulatorModeUnlocked(): Boolean {
-        return preferencesManager.isSimulatorModeUnlocked()
+        settingsManager.setSimulatorModeEnabled(enabled)
     }
 
     // ===== Cleanup =====

@@ -15,6 +15,7 @@ import com.devil.phoenixproject.domain.model.currentTimeMillis
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.launch
 
@@ -27,7 +28,8 @@ class GamificationManager(
     private val personalRecordRepository: PersonalRecordRepository,
     private val exerciseRepository: ExerciseRepository,
     private val hapticEvents: MutableSharedFlow<HapticEvent>,
-    private val scope: CoroutineScope
+    private val scope: CoroutineScope,
+    private val gamificationEnabled: StateFlow<Boolean>
 ) {
     private val _prCelebrationEvent = MutableSharedFlow<PRCelebrationEvent>()
     val prCelebrationEvent: SharedFlow<PRCelebrationEvent> = _prCelebrationEvent.asSharedFlow()
@@ -53,7 +55,7 @@ class GamificationManager(
     ): Boolean {
         var hasCelebrationSound = false
 
-        // Check for personal record (skip for Just Lift and Echo modes)
+        // Always track PRs (skip for Just Lift and Echo modes)
         // Uses mode-specific PR lookup to track PRs separately per workout mode (#111)
         exerciseId?.let { exId ->
             if (workingReps > 0 && !isJustLift && !isEchoMode) {
@@ -61,8 +63,6 @@ class GamificationManager(
                     val workoutMode = programMode.displayName
                     val timestamp = currentTimeMillis()
 
-                    // Use personalRecordRepository for mode-specific PR tracking
-                    // This returns which PR types were actually broken (weight, volume, or both)
                     val result = personalRecordRepository.updatePRsIfBetter(
                         exerciseId = exId,
                         weightPerCableKg = measuredWeightKg,
@@ -71,36 +71,41 @@ class GamificationManager(
                         timestamp = timestamp
                     )
 
-                    // Only celebrate if an actual PR was broken
-                    result.onSuccess { brokenPRs ->
-                        if (brokenPRs.isNotEmpty()) {
-                            hasCelebrationSound = true // PR dialog will play sound via callback
-                            val exercise = exerciseRepository.getExerciseById(exId)
-                            val prTypeDescription = when {
-                                brokenPRs.contains(PRType.MAX_WEIGHT) && brokenPRs.contains(PRType.MAX_VOLUME) -> "Weight & Volume"
-                                brokenPRs.contains(PRType.MAX_WEIGHT) -> "Weight"
-                                brokenPRs.contains(PRType.MAX_VOLUME) -> "Volume"
-                                else -> ""
-                            }
-                            _prCelebrationEvent.emit(
-                                PRCelebrationEvent(
-                                    exerciseName = exercise?.name ?: "Unknown Exercise",
-                                    weightPerCableKg = measuredWeightKg,
-                                    reps = workingReps,
-                                    workoutMode = workoutMode,
-                                    brokenPRTypes = brokenPRs
+                    // Only celebrate if gamification is enabled and an actual PR was broken
+                    if (gamificationEnabled.value) {
+                        result.onSuccess { brokenPRs ->
+                            if (brokenPRs.isNotEmpty()) {
+                                hasCelebrationSound = true // PR dialog will play sound via callback
+                                val exercise = exerciseRepository.getExerciseById(exId)
+                                val prTypeDescription = when {
+                                    brokenPRs.contains(PRType.MAX_WEIGHT) && brokenPRs.contains(PRType.MAX_VOLUME) -> "Weight & Volume"
+                                    brokenPRs.contains(PRType.MAX_WEIGHT) -> "Weight"
+                                    brokenPRs.contains(PRType.MAX_VOLUME) -> "Volume"
+                                    else -> ""
+                                }
+                                _prCelebrationEvent.emit(
+                                    PRCelebrationEvent(
+                                        exerciseName = exercise?.name ?: "Unknown Exercise",
+                                        weightPerCableKg = measuredWeightKg,
+                                        reps = workingReps,
+                                        workoutMode = workoutMode,
+                                        brokenPRTypes = brokenPRs
+                                    )
                                 )
-                            )
-                            Logger.d("NEW PR ($prTypeDescription): ${exercise?.name} - $measuredWeightKg kg x $workingReps reps in $workoutMode mode")
+                                Logger.d("NEW PR ($prTypeDescription): ${exercise?.name} - $measuredWeightKg kg x $workingReps reps in $workoutMode mode")
+                            }
+                        }.onFailure { e ->
+                            Logger.e(e) { "Error updating PR: ${e.message}" }
                         }
-                    }.onFailure { e ->
-                        Logger.e(e) { "Error updating PR: ${e.message}" }
                     }
                 } catch (e: Exception) {
                     Logger.e(e) { "Error checking PR: ${e.message}" }
                 }
             }
         }
+
+        // Skip badge checking/awarding when gamification is disabled
+        if (!gamificationEnabled.value) return false
 
         // Update gamification stats and check for badges
         try {
@@ -176,10 +181,12 @@ class GamificationManager(
     }
 
     fun emitBadgeSound() {
+        if (!gamificationEnabled.value) return
         scope.launch { hapticEvents.emit(HapticEvent.BADGE_EARNED) }
     }
 
     fun emitPRSound() {
+        if (!gamificationEnabled.value) return
         scope.launch { hapticEvents.emit(HapticEvent.PERSONAL_RECORD) }
     }
 }

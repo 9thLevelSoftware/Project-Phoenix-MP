@@ -31,5 +31,5 @@ val domainModule = module {
     single { ExerciseClassifier() }
 
     // Migration
-    single { MigrationManager() }
+    single { MigrationManager(get()) }
 }

@@ -203,6 +203,7 @@ class SqlDelightSyncRepository(
                         exerciseName = dto.exerciseName,
                         routineSessionId = null,
                         routineName = null,
+                        routineId = null,
                         safetyFlags = 0L,
                         deloadWarningCount = 0L,
                         romViolationCount = 0L,

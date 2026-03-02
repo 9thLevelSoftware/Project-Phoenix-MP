@@ -267,6 +267,18 @@ fun TrainingCyclesScreen(
                                     }
                                 }
                             },
+                            onJumpToDay = { dayNumber ->
+                                scope.launch {
+                                    val activeId = activeCycle!!.id
+                                    cycleRepository.jumpToDay(activeId, dayNumber)
+                                    cycleRepository.getCycleProgress(activeId)?.let { updated ->
+                                        cycleProgress = cycleProgress.toMutableMap().apply {
+                                            this[activeId] = updated
+                                        }
+                                        selectedDayNumber = updated.currentDayNumber
+                                    }
+                                }
+                            },
                             onEditCycle = {
                                 navController.navigate(NavigationRoutes.CycleEditor.createRoute(activeCycle!!.id))
                             }
@@ -669,6 +681,7 @@ private fun ActiveCycleCard(
     onDaySelected: (Int) -> Unit,
     onStartWorkout: (routineId: String?, cycleId: String, dayNumber: Int) -> Unit,
     onAdvanceDay: () -> Unit,
+    onJumpToDay: (Int) -> Unit,
     onEditCycle: () -> Unit
 ) {
     val currentDay = progress?.currentDayNumber ?: 1
@@ -834,15 +847,15 @@ private fun ActiveCycleCard(
                             Text("Skip Rest Day")
                         }
                     } else {
-                        // Viewing a different rest day - show "Go to today" button
+                        // Viewing a different rest day - offer jump or return to today
                         OutlinedButton(
-                            onClick = { onDaySelected(currentDay) },
+                            onClick = { onJumpToDay(displayedDayNumber) },
                             modifier = Modifier.weight(1f),
                             shape = RoundedCornerShape(12.dp)
                         ) {
-                            Icon(Icons.Default.Today, contentDescription = null)
+                            Icon(Icons.Default.SkipNext, contentDescription = null)
                             Spacer(Modifier.width(8.dp))
-                            Text("Go to Today")
+                            Text("Jump to Day $displayedDayNumber")
                         }
                     }
                 } else {
@@ -869,15 +882,36 @@ private fun ActiveCycleCard(
                             }
                         }
                     } else {
-                        // Viewing a different day - show "Go to today" button
-                        OutlinedButton(
-                            onClick = { onDaySelected(currentDay) },
-                            modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(12.dp)
-                        ) {
-                            Icon(Icons.Default.Today, contentDescription = null)
-                            Spacer(Modifier.width(8.dp))
-                            Text("Go to Today")
+                        // Viewing a different workout day - offer jump and start workout
+                        if (hasRoutine) {
+                            OutlinedButton(
+                                onClick = { onJumpToDay(displayedDayNumber) },
+                                modifier = Modifier.weight(1f),
+                                shape = RoundedCornerShape(12.dp)
+                            ) {
+                                Icon(Icons.Default.SkipNext, contentDescription = null)
+                                Spacer(Modifier.width(8.dp))
+                                Text("Jump to Day $displayedDayNumber")
+                            }
+                            Button(
+                                onClick = { onStartWorkout(displayedCycleDay?.routineId, cycle.id, displayedDayNumber) },
+                                modifier = Modifier.weight(1f),
+                                shape = RoundedCornerShape(12.dp)
+                            ) {
+                                Icon(Icons.Default.PlayArrow, contentDescription = null)
+                                Spacer(Modifier.width(8.dp))
+                                Text("Start Workout")
+                            }
+                        } else {
+                            OutlinedButton(
+                                onClick = { onJumpToDay(displayedDayNumber) },
+                                modifier = Modifier.weight(1f),
+                                shape = RoundedCornerShape(12.dp)
+                            ) {
+                                Icon(Icons.Default.SkipNext, contentDescription = null)
+                                Spacer(Modifier.width(8.dp))
+                                Text("Jump to Day $displayedDayNumber")
+                            }
                         }
                     }
                 }

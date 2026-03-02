@@ -85,6 +85,8 @@ fun ExerciseEditBottomSheet(
     val eccentricLoad by viewModel.eccentricLoad.collectAsState()
     val echoLevel by viewModel.echoLevel.collectAsState()
     val stallDetectionEnabled by viewModel.stallDetectionEnabled.collectAsState()
+    val repCountTiming by viewModel.repCountTiming.collectAsState()
+    val stopAtTop by viewModel.stopAtTop.collectAsState()
 
     // PR weight from ViewModel - automatically updates when mode changes
     val currentExercisePR by viewModel.currentExercisePR.collectAsState()
@@ -366,9 +368,85 @@ fun ExerciseEditBottomSheet(
                     }
                 }
 
-                // Stall Detection toggle - show when any set is AMRAP
-                val hasAMRAPSets = sets.any { it.reps == null }
-                if (hasAMRAPSets) {
+                // Stall Detection toggle - visible for all exercises
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp),
+                    color = MaterialTheme.colorScheme.surface,
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.surfaceVariant),
+                    shadowElevation = 2.dp
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(Spacing.small),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Stall Detection",
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = if (stallDetectionEnabled) FontWeight.Bold else FontWeight.Normal,
+                                color = if (stallDetectionEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                            )
+                            Text(
+                                text = "Auto-stop set when movement pauses for 5 seconds",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Switch(
+                            checked = stallDetectionEnabled,
+                            onCheckedChange = viewModel::onStallDetectionEnabledChange
+                        )
+                    }
+                }
+
+                // Rep Count Timing toggle
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp),
+                    color = MaterialTheme.colorScheme.surface,
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.surfaceVariant),
+                    shadowElevation = 2.dp
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(Spacing.small),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Rep Count Timing",
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = if (repCountTiming == RepCountTiming.TOP) FontWeight.Bold else FontWeight.Normal,
+                                color = if (repCountTiming == RepCountTiming.TOP) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                            )
+                            Text(
+                                text = if (repCountTiming == RepCountTiming.TOP)
+                                    "Count at top of lift (concentric peak)"
+                                else
+                                    "Count at bottom (eccentric valley)",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Switch(
+                            checked = repCountTiming == RepCountTiming.TOP,
+                            onCheckedChange = { isTop ->
+                                viewModel.onRepCountTimingChange(
+                                    if (isTop) RepCountTiming.TOP else RepCountTiming.BOTTOM
+                                )
+                            }
+                        )
+                    }
+                }
+
+                // Stop at Top toggle — hidden for fully AMRAP exercises
+                if (!sets.all { it.reps == null }) {
                     Surface(
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(12.dp),
@@ -385,20 +463,23 @@ fun ExerciseEditBottomSheet(
                         ) {
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(
-                                    text = "Stall Detection",
+                                    text = "Stop at Top",
                                     style = MaterialTheme.typography.bodyMedium,
-                                    fontWeight = if (stallDetectionEnabled) FontWeight.Bold else FontWeight.Normal,
-                                    color = if (stallDetectionEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                                    fontWeight = if (stopAtTop) FontWeight.Bold else FontWeight.Normal,
+                                    color = if (stopAtTop) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
                                 )
                                 Text(
-                                    text = "Auto-stop set when movement pauses for 5 seconds",
+                                    text = if (stopAtTop)
+                                        "Final rep stops at contracted position (top of lift)"
+                                    else
+                                        "Final rep stops at extended position (bottom)",
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
                             Switch(
-                                checked = stallDetectionEnabled,
-                                onCheckedChange = viewModel::onStallDetectionEnabledChange
+                                checked = stopAtTop,
+                                onCheckedChange = viewModel::onStopAtTopChange
                             )
                         }
                     }

@@ -7,6 +7,7 @@ import com.devil.phoenixproject.domain.model.PersonalRecord
 import com.devil.phoenixproject.domain.model.EccentricLoad
 import com.devil.phoenixproject.domain.model.EchoLevel
 import com.devil.phoenixproject.domain.model.PRType
+import com.devil.phoenixproject.domain.model.RepCountTiming
 import com.devil.phoenixproject.domain.model.RoutineExercise
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.domain.model.WorkoutMode
@@ -92,6 +93,12 @@ class ExerciseConfigViewModel constructor(
 
     private val _stallDetectionEnabled = MutableStateFlow(true)
     val stallDetectionEnabled: StateFlow<Boolean> = _stallDetectionEnabled.asStateFlow()
+
+    private val _repCountTiming = MutableStateFlow(RepCountTiming.TOP)
+    val repCountTiming: StateFlow<RepCountTiming> = _repCountTiming.asStateFlow()
+
+    private val _stopAtTop = MutableStateFlow(false)
+    val stopAtTop: StateFlow<Boolean> = _stopAtTop.asStateFlow()
 
     // PR percentage scaling state (Issue #57)
     private val _usePercentOfPR = MutableStateFlow(false)
@@ -195,6 +202,8 @@ class ExerciseConfigViewModel constructor(
         _eccentricLoad.value = exercise.eccentricLoad
         _echoLevel.value = exercise.echoLevel
         _stallDetectionEnabled.value = exercise.stallDetectionEnabled
+        _repCountTiming.value = exercise.repCountTiming
+        _stopAtTop.value = exercise.stopAtTop
 
         // PR percentage scaling fields (Issue #57)
         _usePercentOfPR.value = exercise.usePercentOfPR
@@ -281,6 +290,14 @@ class ExerciseConfigViewModel constructor(
 
     fun onStallDetectionEnabledChange(enabled: Boolean) {
         _stallDetectionEnabled.value = enabled
+    }
+
+    fun onRepCountTimingChange(timing: RepCountTiming) {
+        _repCountTiming.value = timing
+    }
+
+    fun onStopAtTopChange(enabled: Boolean) {
+        _stopAtTop.value = enabled
     }
 
     // PR percentage scaling handlers (Issue #57)
@@ -411,6 +428,8 @@ class ExerciseConfigViewModel constructor(
             perSetRestTime = _perSetRestTime.value,
             isAMRAP = isAMRAP,
             stallDetectionEnabled = _stallDetectionEnabled.value,
+            repCountTiming = _repCountTiming.value,
+            stopAtTop = _stopAtTop.value,
             // PR percentage scaling fields (Issue #57)
             usePercentOfPR = _usePercentOfPR.value,
             weightPercentOfPR = _weightPercentOfPR.value,

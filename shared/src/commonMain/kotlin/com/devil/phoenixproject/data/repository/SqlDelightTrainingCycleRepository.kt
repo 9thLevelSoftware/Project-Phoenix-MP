@@ -299,6 +299,12 @@ class SqlDelightTrainingCycleRepository(
                     missed_days = null,
                     rotation_count = 0L
                 )
+
+                // Always reset progress on activation so deactivate/reactivate starts fresh
+                queries.resetCycleProgress(
+                    cycle_start_date = now,
+                    cycle_id = cycleId
+                )
             }
         }
     }
@@ -546,7 +552,9 @@ class SqlDelightTrainingCycleRepository(
             if (daysToAdvance > 0) {
                 var updated = progress
                 repeat(daysToAdvance) {
-                    updated = updated.advanceToNextDay(cycle.days.size, markMissed = true)
+                    // Only mark as missed if the current day wasn't already completed
+                    val shouldMarkMissed = updated.currentDayNumber !in updated.completedDays
+                    updated = updated.advanceToNextDay(cycle.days.size, markMissed = shouldMarkMissed)
                 }
 
                 queries.updateCycleProgress(

@@ -64,6 +64,7 @@ sealed class WorkoutState {
         val durationMs: Long = 0L,
         val totalVolumeKg: Float = 0f,
         val heaviestLiftKgPerCable: Float = 0f,
+        val configuredWeightKgPerCable: Float = 0f,
         val peakForceConcentricA: Float = 0f,  // Peak during lifting (velocity > 0)
         val peakForceConcentricB: Float = 0f,
         val peakForceEccentricA: Float = 0f,   // Peak during lowering (velocity < 0)
@@ -240,6 +241,14 @@ enum class WeightUnit {
 }
 
 /**
+ * Rep count timing mode - controls when the working rep number increments
+ */
+enum class RepCountTiming {
+    TOP,    // Count rep at concentric peak (top of lift) - what users expect
+    BOTTOM  // Count rep at eccentric valley (bottom) - legacy machine behavior
+}
+
+/**
  * Workout parameters
  */
 data class WorkoutParameters(
@@ -255,7 +264,8 @@ data class WorkoutParameters(
     val isAMRAP: Boolean = false,  // AMRAP (As Many Reps As Possible) - disables auto-stop
     val lastUsedWeightKg: Float? = null,  // Last used weight for this exercise (for quick preset)
     val prWeightKg: Float? = null,  // Personal record weight for this exercise (for quick preset)
-    val stallDetectionEnabled: Boolean = true,  // Enable stall detection auto-stop for Just Lift/AMRAP modes
+    val stallDetectionEnabled: Boolean = true,  // Enable 5s stall/de-load auto-stop during active sets
+    val repCountTiming: RepCountTiming = RepCountTiming.TOP,  // When to count working reps (TOP=concentric peak, BOTTOM=eccentric valley)
     // Echo-specific settings (only used when programMode == ProgramMode.Echo)
     val echoLevel: EchoLevel = EchoLevel.HARD,
     val eccentricLoad: EccentricLoad = EccentricLoad.LOAD_100
@@ -401,6 +411,7 @@ data class WorkoutSession(
     // Routine tracking (for grouping sets from the same routine)
     val routineSessionId: String? = null,  // Unique ID for this routine session
     val routineName: String? = null,  // Name of the routine being performed
+    val routineId: String? = null,  // ID of the originating routine (direct FK, added in migration 12)
     // Safety tracking (parity with parent repo v23)
     val safetyFlags: Int = 0,
     val deloadWarningCount: Int = 0,
@@ -446,6 +457,24 @@ data class WorkoutSession(
 }
 
 /**
+ * Effective heaviest weight per cable for analytics/display.
+ *
+ * Uses measured summary data when available (v0.2.1+), otherwise falls back to
+ * configured set weight for legacy sessions.
+ */
+fun WorkoutSession.effectiveHeaviestKgPerCable(): Float =
+    heaviestLiftKg ?: weightPerCableKg
+
+/**
+ * Effective total volume (kg) for analytics/display.
+ *
+ * Uses measured summary volume when available (v0.2.1+), otherwise falls back to
+ * legacy approximation: configuredWeightPerCable * 2 cables * reps.
+ */
+fun WorkoutSession.effectiveTotalVolumeKg(): Float =
+    totalVolumeKg ?: (weightPerCableKg * 2f * totalReps)
+
+/**
  * Convert WorkoutSession to SetSummary for display in history.
  * Returns null if session doesn't have summary metrics (pre-v0.2.1).
  */
@@ -458,8 +487,9 @@ fun WorkoutSession.toSetSummary(): WorkoutState.SetSummary? {
         averagePower = 0f,
         repCount = totalReps,
         durationMs = duration,
-        totalVolumeKg = totalVolumeKg ?: 0f,
-        heaviestLiftKgPerCable = heaviestLiftKg ?: 0f,
+        totalVolumeKg = effectiveTotalVolumeKg(),
+        heaviestLiftKgPerCable = effectiveHeaviestKgPerCable(),
+        configuredWeightKgPerCable = weightPerCableKg,
         peakForceConcentricA = peakForceConcentricA ?: 0f,
         peakForceConcentricB = peakForceConcentricB ?: 0f,
         peakForceEccentricA = peakForceEccentricA ?: 0f,

@@ -15,9 +15,12 @@ import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.domain.model.PersonalRecord
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.domain.model.WorkoutSession
+import com.devil.phoenixproject.presentation.components.charts.HistoryTimePeriod
+import com.devil.phoenixproject.domain.model.currentTimeMillis
 import com.devil.phoenixproject.ui.theme.Spacing
 import com.devil.phoenixproject.presentation.components.*
 import com.devil.phoenixproject.presentation.util.ResponsiveDimensions
+import kotlinx.datetime.*
 
 /**
  * Wrapper composable that constrains card width on tablets to prevent over-stretching.
@@ -57,6 +60,28 @@ fun InsightsTab(
     weightUnit: WeightUnit = WeightUnit.KG,
     formatWeight: (Float, WeightUnit) -> String = { w, u -> "${w.toInt()} ${u.name.lowercase()}" }
 ) {
+    var selectedPeriod by remember { mutableStateOf(HistoryTimePeriod.ALL) }
+
+    // Filter sessions by selected time period
+    val filteredSessions = remember(workoutSessions, selectedPeriod) {
+        if (selectedPeriod == HistoryTimePeriod.ALL) {
+            workoutSessions
+        } else {
+            val now = Instant.fromEpochMilliseconds(currentTimeMillis())
+            val cutoff = now.toLocalDateTime(TimeZone.currentSystemDefault()).date
+                .let { today ->
+                    when (selectedPeriod) {
+                        HistoryTimePeriod.DAYS_7 -> today.minus(7, DateTimeUnit.DAY)
+                        HistoryTimePeriod.DAYS_14 -> today.minus(14, DateTimeUnit.DAY)
+                        HistoryTimePeriod.DAYS_30 -> today.minus(30, DateTimeUnit.DAY)
+                        HistoryTimePeriod.ALL -> today // unreachable
+                    }
+                }
+            val cutoffEpoch = cutoff.atStartOfDayIn(TimeZone.currentSystemDefault()).toEpochMilliseconds()
+            workoutSessions.filter { it.timestamp >= cutoffEpoch }
+        }
+    }
+
     LazyColumn(
         modifier = modifier
             .fillMaxSize()
@@ -79,11 +104,32 @@ fun InsightsTab(
             )
         }
 
+        // Time period filter chips
+        item {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                HistoryTimePeriod.entries.forEach { period ->
+                    FilterChip(
+                        selected = selectedPeriod == period,
+                        onClick = { selectedPeriod = period },
+                        label = {
+                            Text(
+                                period.label,
+                                style = MaterialTheme.typography.labelMedium
+                            )
+                        }
+                    )
+                }
+            }
+        }
+
         // This Week Summary Card - week-over-week comparison
         item {
             ResponsiveCardWrapper {
                 ThisWeekSummaryCard(
-                    workoutSessions = workoutSessions,
+                    workoutSessions = filteredSessions,
                     personalRecords = prs,
                     weightUnit = weightUnit,
                     modifier = Modifier.fillMaxWidth()
@@ -108,18 +154,18 @@ fun InsightsTab(
         item {
             ResponsiveCardWrapper {
                 ConsistencyGaugeCard(
-                    workoutSessions = workoutSessions,
+                    workoutSessions = filteredSessions,
                     modifier = Modifier.fillMaxWidth()
                 )
             }
         }
 
         // 3. Volume vs Intensity Combo Chart (New Metric)
-        if (workoutSessions.isNotEmpty()) {
+        if (filteredSessions.isNotEmpty()) {
             item {
                 ResponsiveCardWrapper {
                     VolumeVsIntensityCard(
-                        workoutSessions = workoutSessions,
+                        workoutSessions = filteredSessions,
                         weightUnit = weightUnit,
                         modifier = Modifier.fillMaxWidth()
                     )
@@ -128,11 +174,11 @@ fun InsightsTab(
         }
 
         // 4. Total Volume Trend (User Request)
-        if (workoutSessions.isNotEmpty()) {
+        if (filteredSessions.isNotEmpty()) {
             item {
                 ResponsiveCardWrapper {
                     TotalVolumeCard(
-                        workoutSessions = workoutSessions,
+                        workoutSessions = filteredSessions,
                         weightUnit = weightUnit,
                         formatWeight = formatWeight,
                         modifier = Modifier.fillMaxWidth()
@@ -140,13 +186,13 @@ fun InsightsTab(
                 }
             }
         }
-        
+
         // 5. Mode Distribution Donut Chart (New Metric)
-        if (workoutSessions.isNotEmpty()) {
+        if (filteredSessions.isNotEmpty()) {
             item {
                 ResponsiveCardWrapper {
                     WorkoutModeDistributionCard(
-                        workoutSessions = workoutSessions,
+                        workoutSessions = filteredSessions,
                         modifier = Modifier.fillMaxWidth()
                     )
                 }

@@ -27,6 +27,7 @@ import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.domain.model.HudPreset
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.util.ColorSchemes
+import com.devil.phoenixproject.util.BackupProgress
 import com.devil.phoenixproject.util.DataBackupManager
 import com.devil.phoenixproject.util.ImportResult
 import com.devil.phoenixproject.util.rememberFilePicker
@@ -42,19 +43,15 @@ import com.devil.phoenixproject.util.KmpUtils
 @Composable
 fun SettingsTab(
     weightUnit: WeightUnit,
-    stopAtTop: Boolean,
     enableVideoPlayback: Boolean,
     darkModeEnabled: Boolean,
-    stallDetectionEnabled: Boolean = true,
     audioRepCountEnabled: Boolean = false,
     summaryCountdownSeconds: Int = 10,
     autoStartCountdownSeconds: Int = 5,
     selectedColorSchemeIndex: Int = 0,
     onWeightUnitChange: (WeightUnit) -> Unit,
-    onStopAtTopChange: (Boolean) -> Unit,
     onEnableVideoPlaybackChange: (Boolean) -> Unit,
     onDarkModeChange: (Boolean) -> Unit,
-    onStallDetectionChange: (Boolean) -> Unit,
     onAudioRepCountChange: (Boolean) -> Unit,
     onSummaryCountdownChange: (Int) -> Unit = {},
     onAutoStartCountdownChange: (Int) -> Unit = {},
@@ -86,6 +83,9 @@ fun SettingsTab(
     // HUD preset customization
     hudPreset: String = HudPreset.FULL.key,
     onHudPresetChange: (String) -> Unit = {},
+    // Gamification toggle
+    gamificationEnabled: Boolean = true,
+    onGamificationEnabledChange: (Boolean) -> Unit = {},
     // Simulator mode Easter egg
     simulatorModeUnlocked: Boolean = false,
     simulatorModeEnabled: Boolean = false,
@@ -99,7 +99,9 @@ fun SettingsTab(
     var showRestoreDialog by remember { mutableStateOf(false) }
     var backupInProgress by remember { mutableStateOf(false) }
     var restoreInProgress by remember { mutableStateOf(false) }
+    var backupProgress by remember { mutableStateOf<BackupProgress?>(null) }
     var backupResult by remember { mutableStateOf<String?>(null) }
+    var backupError by remember { mutableStateOf<String?>(null) }
     var restoreResult by remember { mutableStateOf<ImportResult?>(null) }
     var showResultDialog by remember { mutableStateOf(false) }
     var launchFilePicker by remember { mutableStateOf(false) }
@@ -487,36 +489,6 @@ fun SettingsTab(
 
                 Spacer(modifier = Modifier.height(Spacing.medium))
 
-                // Stop At Top toggle
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Text(
-                            "Stop At Top",
-                            style = MaterialTheme.typography.bodyLarge,
-                            fontWeight = FontWeight.Medium,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            "Release tension at contracted position instead of extended position",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                    Switch(
-                        checked = stopAtTop,
-                        onCheckedChange = onStopAtTopChange
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(Spacing.medium))
-
                 // Enable Video Playback toggle
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -547,36 +519,6 @@ fun SettingsTab(
 
                 Spacer(modifier = Modifier.height(Spacing.medium))
 
-                // Stall Detection toggle
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Text(
-                            "Stall Detection",
-                            style = MaterialTheme.typography.bodyLarge,
-                            fontWeight = FontWeight.Medium,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            "Auto-stop set when movement pauses for 5 seconds (Just Lift/AMRAP)",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                    Switch(
-                        checked = stallDetectionEnabled,
-                        onCheckedChange = onStallDetectionChange
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(Spacing.medium))
-
                 // Audio Rep Counter toggle
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -602,6 +544,36 @@ fun SettingsTab(
                     Switch(
                         checked = audioRepCountEnabled,
                         onCheckedChange = onAudioRepCountChange
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(Spacing.medium))
+
+                // Gamification toggle
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text(
+                            "Gamification",
+                            style = MaterialTheme.typography.bodyLarge,
+                            fontWeight = FontWeight.Medium,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            "Show PR celebrations and award badges after workouts",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Switch(
+                        checked = gamificationEnabled,
+                        onCheckedChange = onGamificationEnabledChange
                     )
                 }
             }
@@ -1154,7 +1126,8 @@ fun SettingsTab(
             }
         }
 
-    // Achievements Section - Material 3 Expressive
+    // Achievements Section - Material 3 Expressive (hidden when gamification is disabled)
+    if (gamificationEnabled) {
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -1230,6 +1203,7 @@ fun SettingsTab(
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
+    }
     }
 
     // TODO: Uncomment when Cloud Sync / Portal features are ready for public release
@@ -1664,45 +1638,49 @@ fun SettingsTab(
             },
             confirmButton = {
                 Row(horizontalArrangement = Arrangement.spacedBy(Spacing.small)) {
-                    // Save to Files button
+                    // Save to Files button (streaming export)
                     Button(
                         onClick = {
                             showBackupDialog = false
                             backupInProgress = true
                             scope.launch {
                                 try {
-                                    val backup = backupManager.exportAllData()
-                                    val result = backupManager.saveToFile(backup)
+                                    val result = backupManager.exportToFile { progress ->
+                                        backupProgress = progress
+                                    }
                                     result.onSuccess { path ->
                                         backupResult = path
                                         showResultDialog = true
                                     }.onFailure { error ->
-                                        backupResult = "Error: ${error.message}"
+                                        backupError = error.message ?: "Unknown error"
                                         showResultDialog = true
                                     }
                                 } catch (e: Exception) {
-                                    // Handle SQLite exceptions and other errors gracefully
-                                    // instead of crashing the app
-                                    backupResult = "Export failed: ${e.message ?: "Unknown database error"}"
+                                    backupError = e.message ?: "Unknown database error"
                                     showResultDialog = true
                                 } finally {
                                     backupInProgress = false
+                                    backupProgress = null
                                 }
                             }
                         }
                     ) {
                         Text("Save")
                     }
-                    // Share button
+                    // Share button (streaming export)
                     OutlinedButton(
                         onClick = {
                             showBackupDialog = false
+                            backupInProgress = true
                             scope.launch {
                                 try {
                                     backupManager.shareBackup()
                                 } catch (e: Exception) {
-                                    backupResult = "Share failed: ${e.message ?: "Unknown error"}"
+                                    backupError = e.message ?: "Unknown error"
                                     showResultDialog = true
+                                } finally {
+                                    backupInProgress = false
+                                    backupProgress = null
                                 }
                             }
                         }
@@ -1753,19 +1731,36 @@ fun SettingsTab(
 
     // Result dialog
     if (showResultDialog) {
+        val isError = backupError != null
         AlertDialog(
             onDismissRequest = { showResultDialog = false },
-            title = { Text(if (backupResult != null) "Backup Complete" else "Restore Complete", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold) },
+            title = {
+                Text(
+                    when {
+                        isError -> "Error"
+                        backupResult != null -> "Backup Complete"
+                        else -> "Restore Complete"
+                    },
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.Bold
+                )
+            },
             text = {
-                if (backupResult != null) {
-                    Text("Backup saved successfully to:\n$backupResult")
-                } else {
-                    restoreResult?.let { result ->
-                        Column {
-                            Text("Import completed!")
-                            Spacer(modifier = Modifier.height(Spacing.small))
-                            Text("Records imported: ${result.totalImported}")
-                            Text("Records skipped (duplicates): ${result.totalSkipped}")
+                when {
+                    isError -> {
+                        Text(backupError ?: "Unknown error")
+                    }
+                    backupResult != null -> {
+                        Text("Backup saved successfully to:\n$backupResult")
+                    }
+                    else -> {
+                        restoreResult?.let { result ->
+                            Column {
+                                Text("Import completed!")
+                                Spacer(modifier = Modifier.height(Spacing.small))
+                                Text("Records imported: ${result.totalImported}")
+                                Text("Records skipped (duplicates): ${result.totalSkipped}")
+                            }
                         }
                     }
                 }
@@ -1774,6 +1769,7 @@ fun SettingsTab(
                 Button(onClick = {
                     showResultDialog = false
                     backupResult = null
+                    backupError = null
                     restoreResult = null
                 }) {
                     Text("OK")
@@ -1782,18 +1778,41 @@ fun SettingsTab(
         )
     }
 
-    // Loading indicator dialog
+    // Loading indicator dialog with streaming progress
     if (backupInProgress || restoreInProgress) {
         AlertDialog(
             onDismissRequest = { },
             title = { Text(if (backupInProgress) "Creating Backup..." else "Restoring Data...", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold) },
             text = {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(Spacing.medium)
-                ) {
-                    CircularProgressIndicator()
-                    Text("Please wait...")
+                Column {
+                    backupProgress?.let { progress ->
+                        Text(
+                            progress.phase.displayName,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(modifier = Modifier.height(Spacing.small))
+                        if (progress.total > 0) {
+                            LinearProgressIndicator(
+                                progress = { (progress.current.toFloat() / progress.total.toFloat()).coerceIn(0f, 1f) },
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            Spacer(modifier = Modifier.height(Spacing.small))
+                            Text(
+                                "${formatCount(progress.current)} / ${formatCount(progress.total)}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        } else {
+                            LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                        }
+                    } ?: Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(Spacing.medium)
+                    ) {
+                        CircularProgressIndicator()
+                        Text("Please wait...")
+                    }
                 }
             },
             confirmButton = { }
@@ -1814,7 +1833,7 @@ fun SettingsTab(
                             restoreResult = importResult
                             showResultDialog = true
                         }.onFailure { error ->
-                            backupResult = "Import failed: ${error.message}"
+                            backupError = "Import failed: ${error.message ?: "Unknown error"}"
                             showResultDialog = true
                         }
                     } finally {
@@ -1824,6 +1843,13 @@ fun SettingsTab(
             }
         }
     }
+}
+
+private fun formatCount(count: Long): String = when {
+    count >= 1_000_000 -> "${count / 1_000_000}.${(count % 1_000_000) / 100_000}M"
+    count >= 10_000 -> "${count / 1_000}K"
+    count >= 1_000 -> "${count / 1_000}.${(count % 1_000) / 100}K"
+    else -> count.toString()
 }
 
 /**

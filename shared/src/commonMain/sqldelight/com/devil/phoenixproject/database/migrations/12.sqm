@@ -1,5 +1,6 @@
--- Migration 12: Per-Rep Metrics for Premium Analytics
+-- Migration 12: Per-Rep Metrics for Premium Analytics + routineId column
 -- Stores per-rep force curve and summary data for premium analytics
+-- Also adds direct routine linkage to WorkoutSession
 
 CREATE TABLE RepMetric (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -40,3 +41,6 @@ CREATE TABLE RepMetric (
 
 CREATE INDEX idx_rep_metric_session ON RepMetric(sessionId);
 CREATE INDEX idx_rep_metric_session_rep ON RepMetric(sessionId, repNumber);
+
+-- Add routineId column to WorkoutSession
+ALTER TABLE WorkoutSession ADD COLUMN routineId TEXT;

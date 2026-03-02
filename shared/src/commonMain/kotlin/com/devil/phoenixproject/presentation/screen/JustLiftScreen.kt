@@ -88,6 +88,8 @@ fun JustLiftScreen(
     var weightChangePerRep by remember { mutableStateOf(0) } // Progression/Regression value
     var eccentricLoad by remember { mutableStateOf(EccentricLoad.LOAD_100) }
     var echoLevel by remember { mutableStateOf(EchoLevel.HARDER) }
+    var repCountTiming by remember { mutableStateOf(RepCountTiming.TOP) }
+    var stallDetectionEnabled by remember { mutableStateOf(true) }
     var defaultsLoaded by remember { mutableStateOf(false) }
     // Profile management
     val scope = rememberCoroutineScope()
@@ -120,7 +122,13 @@ fun JustLiftScreen(
                 eccentricLoad = defaults.getEccentricLoad()
                 echoLevel = defaults.getEchoLevel()
 
-                Logger.d("Loaded Just Lift defaults: modeId=${defaults.workoutModeId}, weight=${defaults.weightPerCableKg}kg, progression=${defaults.weightChangePerRep}")
+                // Restore rep count timing
+                repCountTiming = defaults.getRepCountTiming()
+
+                // Restore stall detection
+                stallDetectionEnabled = defaults.stallDetectionEnabled
+
+                Logger.d("Loaded Just Lift defaults: modeId=${defaults.workoutModeId}, weight=${defaults.weightPerCableKg}kg, progression=${defaults.weightChangePerRep}, repTiming=${defaults.repCountTimingName}")
             }
             defaultsLoaded = true
         }
@@ -165,7 +173,7 @@ fun JustLiftScreen(
     // BUG FIX: Added eccentricLoad and echoLevel to dependencies - without these,
     // changing eccentric load percentage (e.g., from 100% to 150%) would NOT update
     // workoutParameters, causing the machine to receive wrong eccentric load value
-    LaunchedEffect(selectedMode, weightPerCable, weightChangePerRep, userPreferences.stallDetectionEnabled, eccentricLoad, echoLevel) {
+    LaunchedEffect(selectedMode, weightPerCable, weightChangePerRep, stallDetectionEnabled, eccentricLoad, echoLevel, repCountTiming) {
         val weightChangeKg = if (weightUnit == WeightUnit.LB) {
             weightChangePerRep / 2.20462f
         } else {
@@ -181,9 +189,11 @@ fun JustLiftScreen(
             progressionRegressionKg = weightChangeKg,
             isJustLift = true,
             useAutoStart = true, // Enable auto-start for Just Lift
-            stallDetectionEnabled = userPreferences.stallDetectionEnabled,
+            stallDetectionEnabled = stallDetectionEnabled,
+            repCountTiming = repCountTiming,
             selectedExerciseId = null // Issue #97: Clear exercise ID for Just Lift sessions
         )
+        Logger.i { "WEIGHT_DEBUG[Params]: weightPerCable=$weightPerCable kg → updatedParameters.weightPerCableKg=${updatedParameters.weightPerCableKg} kg" }
         Logger.d { "JustLift: Updating params - eccentricLoad=${eccentricLoad.percentage}%, echoLevel=${newEchoLevel.displayName}" }
         viewModel.updateWorkoutParameters(updatedParameters)
     }
@@ -300,7 +310,9 @@ fun JustLiftScreen(
                             CompactNumberPicker(
                                 value = displayWeight,
                                 onValueChange = { newValue ->
-                                    weightPerCable = viewModel.displayToKg(newValue, weightUnit)
+                                    val kg = viewModel.displayToKg(newValue, weightUnit)
+                                    Logger.i { "WEIGHT_DEBUG[JustLift]: Picker value=$newValue ($weightUnit) → displayToKg → $kg kg" }
+                                    weightPerCable = kg
                                 },
                                 range = 1f..maxWeight,
                                 step = weightStep,
@@ -458,6 +470,79 @@ fun JustLiftScreen(
                                 }
                             }
                         }
+                    }
+                }
+
+                // Rep Count Timing toggle
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp),
+                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    shadowElevation = 2.dp
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(Spacing.medium),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Rep Count Timing",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Text(
+                                text = if (repCountTiming == RepCountTiming.TOP)
+                                    "Count at top of lift (concentric peak)"
+                                else
+                                    "Count at bottom (eccentric valley)",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Switch(
+                            checked = repCountTiming == RepCountTiming.TOP,
+                            onCheckedChange = {
+                                repCountTiming = if (it) RepCountTiming.TOP else RepCountTiming.BOTTOM
+                            }
+                        )
+                    }
+                }
+
+                // Stall Detection toggle
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp),
+                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    shadowElevation = 2.dp
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(Spacing.medium),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Stall Detection",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Text(
+                                text = "Auto-stop when movement pauses for 5 seconds",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Switch(
+                            checked = stallDetectionEnabled,
+                            onCheckedChange = { stallDetectionEnabled = it }
+                        )
                     }
                 }
 
