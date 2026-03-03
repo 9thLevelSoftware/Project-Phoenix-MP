@@ -3,7 +3,7 @@ gsd_state_version: 1.0
 milestone: v0.6.0
 milestone_name: Portal Sync Compatibility
 status: in_progress
-last_updated: "2026-03-02T23:56:11Z"
+last_updated: "2026-03-02T23:58:56Z"
 progress:
   total_phases: 6
   completed_phases: 0
@@ -16,9 +16,9 @@ progress:
 ## Current Position
 
 Phase: 28 — Integration Validation
-Plan: 03 of 03 — executing
-Status: Phase 28-03 complete — deployment runbook created, legacy dead code removed
-Last activity: 2026-03-02 — Phase 28-03 execution complete
+Plan: 03 of 03 — all plans executed
+Status: Phase 28-02 complete — SyncManager + PortalTokenStorage integration tests added (27 cases)
+Last activity: 2026-03-02 — Phase 28-02 execution complete
 
 Progress: [########..] ~80% — Phase 23-28 executing (v0.6.0)
 
@@ -38,6 +38,7 @@ See: .planning/PROJECT.md (updated 2026-03-02)
 | Phase 23-portal-db-foundation-rls P03 | 2 | 1 tasks | 1 files |
 | Phase 23-portal-db-foundation-rls P01 | 2 | 1 tasks | 1 files |
 | Phase 28-integration-validation P03 | 3 | 2 tasks | 4 files |
+| Phase 28-integration-validation P02 | 5 | 27 tests | 6 files |
 
 ## Accumulated Context
 
@@ -86,4 +87,4 @@ See: .planning/PROJECT.md (updated 2026-03-02)
 - Pre-commit hook blocks commits: daem0nmcp Python module not installed in pythoncore-3.14-64. Hook calls `python -m daem0nmcp.cli`. Install daem0nmcp in that Python env or fix hook Python path.
 
 ---
-*Last updated: 2026-03-02 — Phase 28-03 complete: deployment runbook + legacy dead code cleanup*
+*Last updated: 2026-03-02 — Phase 28-02 complete: SyncManager + PortalTokenStorage integration tests (27 cases)*

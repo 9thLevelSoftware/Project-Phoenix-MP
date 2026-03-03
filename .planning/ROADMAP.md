@@ -169,7 +169,7 @@ Plans:
   2. Pull sync round-trip verified: create a routine in portal web UI, trigger pull on mobile, routine is usable in the mobile app with all advanced fields preserved
   3. Auth edge cases pass: token expiry during sync triggers silent refresh and sync completes; bad credentials show a clear error rather than a silent failure or crash
   4. Deployment runbook executed in correct order (schema migrations → Edge Functions → mobile release) with no rollback required
-**Plans:** 1/3 plans executed
+**Plans:** 2/3 plans executed
 Plans:
 - [ ] 28-01-PLAN.md — Push/pull adapter unit tests + mapping tests (PortalSyncAdapter, PortalPullAdapter, PortalMappings)
 - [ ] 28-02-PLAN.md — SyncManager integration tests + PortalTokenStorage auth edge case tests
@@ -194,7 +194,7 @@ Plans:
 | 25. Edge Functions | 2/2 | Complete | 2026-03-02 |
 | 26. Mobile Push Wire-Up | 0/2 | Planned | - |
 | 27. Mobile Pull Wire-Up | 2/2 | Complete | 2026-03-02 |
-| 28. Integration Validation | 1/3 | In Progress|  |
+| 28. Integration Validation | 2/3 | In Progress|  |
 
 **Last phase number:** 28
 
