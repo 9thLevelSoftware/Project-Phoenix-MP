@@ -490,6 +490,132 @@ class DWSMWorkoutLifecycleTest {
         harness.cleanup()
     }
 
+    @Test
+    fun `Issue 256 - deload starts stall timer even with pending rep`() = runTest {
+        val harness = DWSMTestHarness(this)
+        harness.fakeBleRepo.simulateConnect("Vee_Test")
+
+        harness.dwsm.updateWorkoutParameters(
+            WorkoutParameters(
+                programMode = ProgramMode.OldSchool,
+                reps = 8,
+                warmupReps = 0,
+                weightPerCableKg = 35f,
+                stallDetectionEnabled = true,
+                isAMRAP = false,
+                isJustLift = false
+            )
+        )
+        harness.dwsm.startWorkout(skipCountdown = true)
+        advanceUntilIdle()
+        assertIs<WorkoutState.Active>(harness.dwsm.coordinator.workoutState.value)
+
+        // Complete warmup and first working rep
+        completeWarmupReps(harness, warmupTarget = 3, workingTarget = 8)
+        completeFirstWorkingRep(harness, warmupTarget = 3, workingTarget = 8)
+        advanceUntilIdle()
+        assertTrue(harness.dwsm.coordinator.repCount.value.isWarmupComplete)
+        assertEquals(1, harness.dwsm.coordinator.repCount.value.workingReps)
+
+        // Simulate starting a second rep (pending at TOP = failed bench press scenario)
+        harness.fakeBleRepo.emitRepNotification(
+            RepNotification(
+                topCounter = 5,       // warmup(3) + working(2) = 5th up counter
+                completeCounter = 4,  // Only 4 downs (second working rep not completed)
+                repsRomCount = 3,
+                repsRomTotal = 3,
+                repsSetCount = 1,     // Still 1 completed working rep
+                repsSetTotal = 8,
+                rangeTop = 800f,
+                rangeBottom = 0f,
+                rawData = ByteArray(24),
+                timestamp = 100L
+            )
+        )
+        advanceUntilIdle()
+        assertTrue(
+            harness.dwsm.coordinator.repCount.value.hasPendingRep,
+            "Rep should be pending at TOP (failed lift scenario)"
+        )
+
+        // Emit DELOAD_OCCURRED while pending - previously this was ignored (Issue #256)
+        harness.fakeBleRepo.emitDeloadOccurred()
+        advanceUntilIdle()
+
+        assertNotNull(
+            harness.dwsm.coordinator.stallStartTime,
+            "Issue #256: DELOAD should start stall timer even with a pending rep"
+        )
+        assertTrue(harness.dwsm.coordinator.isCurrentlyStalled)
+        harness.cleanup()
+    }
+
+    @Test
+    fun `Issue 256 - velocity stall auto-stops with pending rep after timer expires`() = runTest {
+        val harness = DWSMTestHarness(this)
+        harness.fakeBleRepo.simulateConnect("Vee_Test")
+
+        harness.dwsm.updateWorkoutParameters(
+            WorkoutParameters(
+                programMode = ProgramMode.OldSchool,
+                reps = 8,
+                warmupReps = 0,
+                weightPerCableKg = 35f,
+                stallDetectionEnabled = true,
+                isAMRAP = false,
+                isJustLift = false
+            )
+        )
+        harness.dwsm.startWorkout(skipCountdown = true)
+        advanceUntilIdle()
+        assertIs<WorkoutState.Active>(harness.dwsm.coordinator.workoutState.value)
+
+        completeWarmupReps(harness, warmupTarget = 3, workingTarget = 8)
+        completeFirstWorkingRep(harness, warmupTarget = 3, workingTarget = 8)
+        advanceUntilIdle()
+
+        // Simulate pending rep (stalled mid-concentric)
+        harness.fakeBleRepo.emitRepNotification(
+            RepNotification(
+                topCounter = 5,
+                completeCounter = 4,
+                repsRomCount = 3,
+                repsRomTotal = 3,
+                repsSetCount = 1,
+                repsSetTotal = 8,
+                rangeTop = 800f,
+                rangeBottom = 0f,
+                rawData = ByteArray(24),
+                timestamp = 100L
+            )
+        )
+        advanceUntilIdle()
+        assertTrue(harness.dwsm.coordinator.repCount.value.hasPendingRep)
+
+        // Backdate stall timer to simulate 6 seconds elapsed
+        harness.dwsm.coordinator.stallStartTime = currentTimeMillis() - 6_000L
+        harness.dwsm.coordinator.isCurrentlyStalled = true
+
+        // Emit a stalled metric (near-zero velocity, position elevated = mid-rep)
+        harness.fakeBleRepo.emitMetric(
+            WorkoutMetric(
+                positionA = 120f,
+                positionB = 120f,
+                velocityA = 0.0,
+                velocityB = 0.0,
+                loadA = 10f,
+                loadB = 10f
+            )
+        )
+        advanceUntilIdle()
+
+        assertIs<WorkoutState.SetSummary>(
+            harness.dwsm.coordinator.workoutState.value,
+            "Issue #256: Velocity stall should auto-stop even with a pending rep"
+        )
+        harness.cleanup()
+    }
+
     // ===== F. saveWorkoutSession side effects =====
 
     @Test
