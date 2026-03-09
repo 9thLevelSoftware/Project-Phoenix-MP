@@ -123,6 +123,11 @@ object BlePacketFactory {
     /**
      * Build the 96-byte program parameters frame.
      * CRITICAL: Working web app uses command 0x04 (verified from console logs)
+     *
+     * Issue #262: Firmware reads softMax (weight ceiling) at 0x48 and increment
+     * (per-rep progression) at 0x4C. These offsets fall within the mode profile
+     * block (0x30-0x4F), so we overwrite the last 8 bytes of the eccentric phase
+     * with the correct force config values after copying the profile.
      */
     fun createProgramParams(params: WorkoutParameters): ByteArray {
         val frame = ByteArray(96)
@@ -168,9 +173,8 @@ object BlePacketFactory {
         frame[0x2f] = 0x00
 
         // Get the mode profile block (32 bytes for offsets 0x30-0x4F)
-        // For Echo mode, use OldSchool profile since Echo uses a different BLE command (0x4E)
         val profileMode = if (params.isJustLift || params.isEchoMode) ProgramMode.OldSchool else params.programMode
-        val profile = getModeProfile(profileMode)
+        val profile = getActivationPhases(profileMode)
         profile.copyInto(frame, 0x30)
 
         // Calculate weights
@@ -183,18 +187,25 @@ object BlePacketFactory {
         val totalWeightKg = adjustedWeightPerCable
         val effectiveKg = adjustedWeightPerCable + 10.0f
 
-        println("Issue188-BLE: === WORKOUT MODE: ${params.programMode}, Weight: ${params.weightPerCableKg}kg ===")
-        println("Issue188-BLE: progressionRegressionKg=${params.progressionRegressionKg}kg (sending at offset 0x5c)")
-        println("Issue188-BLE: adjustedWeightPerCable=${adjustedWeightPerCable}kg (compensated for rep 0 quirk)")
-
         putFloatLE(frame, 0x54, effectiveKg)
         putFloatLE(frame, 0x58, totalWeightKg)
         putFloatLE(frame, 0x5c, params.progressionRegressionKg)
 
-        // Issue #188: Log exact bytes at critical offsets
+        // Issue #262: Firmware reads softMax at 0x48 and increment at 0x4C.
+        // These overlap the last 8 bytes of the mode profile, but the firmware
+        // interprets them as force config, not mode data. Write them AFTER the
+        // profile copy so they take priority.
+        val softMax = if (params.isAMRAP || params.isJustLift) 100.0f else params.weightPerCableKg
+        putFloatLE(frame, BleConstants.ActivationPacket.OFFSET_SOFT_MAX, softMax)
+        putFloatLE(frame, BleConstants.ActivationPacket.OFFSET_INCREMENT, params.progressionRegressionKg)
+
+        // Diagnostic logging
+        println("BLE-ACTIVATION: === MODE: ${params.programMode}, Weight: ${params.weightPerCableKg}kg ===")
+        println("BLE-ACTIVATION: adjustedWeight=${adjustedWeightPerCable}kg, effectiveKg=$effectiveKg")
+        println("BLE-ACTIVATION: softMax[0x48]=${readFloatLE(frame, 0x48)}kg, increment[0x4C]=${readFloatLE(frame, 0x4C)}kg/rep")
+        println("BLE-ACTIVATION: weight[0x58]=${readFloatLE(frame, 0x58)}kg, progression[0x5C]=${readFloatLE(frame, 0x5C)}kg/rep")
         val repsHex = frame[0x04].toUByte().toString(16).padStart(2, '0').uppercase()
-        val prog5c = frame.slice(0x5c..0x5f).joinToString(" ") { it.toUByte().toString(16).padStart(2, '0').uppercase() }
-        println("Issue188-BLE: reps[0x04]=0x$repsHex, progression[0x5c-5f]=$prog5c (isAMRAP=${params.isAMRAP})")
+        println("BLE-ACTIVATION: reps[0x04]=0x$repsHex (isAMRAP=${params.isAMRAP}, isJustLift=${params.isJustLift})")
 
         return frame
     }
@@ -295,9 +306,23 @@ object BlePacketFactory {
         return createColorScheme(scheme.brightness, scheme.colors)
     }
 
-    // ========== Mode Profiles ==========
+    // ========== Read Helpers (for diagnostic logging) ==========
 
-    private fun getModeProfile(mode: ProgramMode): ByteArray {
+    private fun readFloatLE(buffer: ByteArray, offset: Int): Float {
+        val bits = (buffer[offset].toInt() and 0xFF) or
+                ((buffer[offset + 1].toInt() and 0xFF) shl 8) or
+                ((buffer[offset + 2].toInt() and 0xFF) shl 16) or
+                ((buffer[offset + 3].toInt() and 0xFF) shl 24)
+        return Float.fromBits(bits)
+    }
+
+    // ========== Activation Phases (Mode Profiles) ==========
+
+    /**
+     * Returns 32 bytes: 16 bytes concentric phase + 16 bytes eccentric phase.
+     * Each phase contains velocity ramp shorts and smoothing floats matching the official app.
+     */
+    private fun getActivationPhases(mode: ProgramMode): ByteArray {
         val buffer = ByteArray(32)
 
         when (mode) {

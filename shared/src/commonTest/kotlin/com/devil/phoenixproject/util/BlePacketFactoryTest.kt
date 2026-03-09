@@ -14,6 +14,17 @@ import kotlin.test.assertTrue
  */
 class BlePacketFactoryTest {
 
+    // ========== Helpers ==========
+
+    /** Read a little-endian float from a byte array at the given offset. */
+    private fun readFloatLE(buffer: ByteArray, offset: Int): Float {
+        val bits = (buffer[offset].toInt() and 0xFF) or
+                ((buffer[offset + 1].toInt() and 0xFF) shl 8) or
+                ((buffer[offset + 2].toInt() and 0xFF) shl 16) or
+                ((buffer[offset + 3].toInt() and 0xFF) shl 24)
+        return Float.fromBits(bits)
+    }
+
     // ========== Init Command Tests ==========
 
     @Test
@@ -71,7 +82,6 @@ class BlePacketFactoryTest {
 
         assertEquals(4, packet.size)
         assertEquals(0x0A.toByte(), packet[0])
-        // Reset is same as init
         assertContentEquals(BlePacketFactory.createInitCommand(), packet)
     }
 
@@ -95,11 +105,10 @@ class BlePacketFactoryTest {
     fun `createWorkoutCommand encodes weight in little-endian format`() {
         val packet = BlePacketFactory.createWorkoutCommand(
             programMode = ProgramMode.Pump,
-            weightPerCableKg = 25.5f, // 2550 when scaled by 100
+            weightPerCableKg = 25.5f,
             targetReps = 12
         )
 
-        // Weight 25.5kg * 100 = 2550 = 0x09F6 in LE: [0xF6, 0x09]
         val weightScaled = (25.5f * 100).toInt()
         assertEquals((weightScaled and 0xFF).toByte(), packet[2])
         assertEquals(((weightScaled shr 8) and 0xFF).toByte(), packet[3])
@@ -147,7 +156,6 @@ class BlePacketFactoryTest {
 
         val packet = BlePacketFactory.createProgramParams(params)
 
-        // Total reps = working reps + warmup reps = 12 + 3 = 15
         assertEquals(15.toByte(), packet[0x04])
     }
 
@@ -190,8 +198,128 @@ class BlePacketFactoryTest {
         val packet = BlePacketFactory.createProgramParams(params)
 
         // Pump mode profile has non-zero values at offset 0x30
-        // Mode profile is 32 bytes from 0x30 to 0x4F
         assertTrue(packet[0x30] != 0.toByte() || packet[0x31] != 0.toByte())
+    }
+
+    // ========== Issue #262: softMax and increment at correct offsets ==========
+
+    @Test
+    fun `createProgramParams writes softMax at offset 0x48`() {
+        val weight = 50f
+        val params = WorkoutParameters(
+            programMode = ProgramMode.OldSchool,
+            reps = 10,
+            weightPerCableKg = weight
+        )
+
+        val packet = BlePacketFactory.createProgramParams(params)
+
+        assertEquals(weight, readFloatLE(packet, BleConstants.ActivationPacket.OFFSET_SOFT_MAX))
+    }
+
+    @Test
+    fun `createProgramParams writes increment at offset 0x4C`() {
+        val progression = 2.5f
+        val params = WorkoutParameters(
+            programMode = ProgramMode.OldSchool,
+            reps = 10,
+            weightPerCableKg = 20f,
+            progressionRegressionKg = progression
+        )
+
+        val packet = BlePacketFactory.createProgramParams(params)
+
+        assertEquals(progression, readFloatLE(packet, BleConstants.ActivationPacket.OFFSET_INCREMENT))
+        // Verify LE encoding: 2.5f = 0x40200000 → LE bytes [0x00, 0x00, 0x20, 0x40]
+        assertEquals(0x00.toByte(), packet[0x4C])
+        assertEquals(0x00.toByte(), packet[0x4D])
+        assertEquals(0x20.toByte(), packet[0x4E])
+        assertEquals(0x40.toByte(), packet[0x4F])
+    }
+
+    @Test
+    fun `createProgramParams softMax and increment overwrite mode profile tail`() {
+        // Verify that softMax/increment are written AFTER the mode profile copy,
+        // overwriting the eccentric phase's last 8 bytes (0x48-0x4F)
+        val weight = 35f
+        val progression = 1.5f
+        val params = WorkoutParameters(
+            programMode = ProgramMode.OldSchool,
+            reps = 10,
+            weightPerCableKg = weight,
+            progressionRegressionKg = progression
+        )
+
+        val packet = BlePacketFactory.createProgramParams(params)
+
+        // softMax should be the target weight, NOT the OldSchool eccentric shorts (-260, -110)
+        assertEquals(weight, readFloatLE(packet, 0x48))
+        // increment should be progression, NOT the OldSchool eccentric smoothing (0.0f)
+        assertEquals(progression, readFloatLE(packet, 0x4C))
+    }
+
+    @Test
+    fun `createProgramParams AMRAP sets softMax to machine max`() {
+        val params = WorkoutParameters(
+            programMode = ProgramMode.OldSchool,
+            reps = 10,
+            weightPerCableKg = 30f,
+            isAMRAP = true
+        )
+
+        val packet = BlePacketFactory.createProgramParams(params)
+
+        assertEquals(100.0f, readFloatLE(packet, BleConstants.ActivationPacket.OFFSET_SOFT_MAX))
+    }
+
+    @Test
+    fun `createProgramParams Just Lift sets softMax to machine max`() {
+        val params = WorkoutParameters(
+            programMode = ProgramMode.OldSchool,
+            reps = 10,
+            weightPerCableKg = 25f,
+            isJustLift = true
+        )
+
+        val packet = BlePacketFactory.createProgramParams(params)
+
+        assertEquals(100.0f, readFloatLE(packet, BleConstants.ActivationPacket.OFFSET_SOFT_MAX))
+    }
+
+    @Test
+    fun `createProgramParams zero progression writes zero increment`() {
+        val params = WorkoutParameters(
+            programMode = ProgramMode.OldSchool,
+            reps = 10,
+            weightPerCableKg = 20f,
+            progressionRegressionKg = 0f
+        )
+
+        val packet = BlePacketFactory.createProgramParams(params)
+
+        assertEquals(0.0f, readFloatLE(packet, BleConstants.ActivationPacket.OFFSET_INCREMENT))
+    }
+
+    @Test
+    fun `createProgramParams still writes weight at legacy offsets`() {
+        val weight = 40f
+        val progression = 3f
+        val params = WorkoutParameters(
+            programMode = ProgramMode.OldSchool,
+            reps = 10,
+            weightPerCableKg = weight,
+            progressionRegressionKg = progression
+        )
+
+        val packet = BlePacketFactory.createProgramParams(params)
+
+        val adjustedWeight = weight - progression
+        // effectiveKg at 0x54
+        assertEquals(adjustedWeight + 10.0f, readFloatLE(packet, 0x54))
+        // totalWeightKg at 0x58
+        assertEquals(adjustedWeight, readFloatLE(packet, 0x58))
+        // progression at 0x5C
+        assertEquals(progression, readFloatLE(packet, 0x5C))
     }
 
     // ========== Echo Mode Tests ==========
@@ -207,7 +335,6 @@ class BlePacketFactoryTest {
     fun `createEchoControl has command 0x4E at header`() {
         val packet = BlePacketFactory.createEchoControl(EchoLevel.HARD)
 
-        // Command ID is stored as u32 LE = 0x0000004E
         assertEquals(0x4E.toByte(), packet[0])
         assertEquals(0x00.toByte(), packet[1])
         assertEquals(0x00.toByte(), packet[2])
@@ -258,7 +385,6 @@ class BlePacketFactoryTest {
 
     @Test
     fun `createEchoCommand delegates to createEchoControl`() {
-        // Legacy API test
         val packet = BlePacketFactory.createEchoCommand(
             level = EchoLevel.HARDER.levelValue,
             eccentricLoad = 75
@@ -293,7 +419,6 @@ class BlePacketFactoryTest {
 
         val packet = BlePacketFactory.createColorScheme(0.4f, colors)
 
-        // Command ID stored as u32 LE = 0x00000011
         assertEquals(0x11.toByte(), packet[0])
         assertEquals(0x00.toByte(), packet[1])
         assertEquals(0x00.toByte(), packet[2])
@@ -310,8 +435,6 @@ class BlePacketFactoryTest {
 
         val packet = BlePacketFactory.createColorScheme(0.4f, colors)
 
-        // Colors start at offset 16, each color is 3 bytes (RGB)
-        // First set of 3 colors
         assertEquals(0xAA.toByte(), packet[16])
         assertEquals(0xBB.toByte(), packet[17])
         assertEquals(0xCC.toByte(), packet[18])
@@ -335,30 +458,8 @@ class BlePacketFactoryTest {
     fun `createColorSchemeCommand uses fallback for invalid index`() {
         val packet = BlePacketFactory.createColorSchemeCommand(999)
 
-        // Should fall back to first scheme
         assertEquals(34, packet.size)
         assertEquals(0x11.toByte(), packet[0])
-    }
-
-    // ========== Little-Endian Encoding Tests ==========
-
-    @Test
-    fun `program params encodes floats in little-endian format`() {
-        val params = WorkoutParameters(
-            programMode = ProgramMode.OldSchool,
-            reps = 10,
-            weightPerCableKg = 20f,
-            progressionRegressionKg = 2.5f
-        )
-
-        val packet = BlePacketFactory.createProgramParams(params)
-
-        // Progression/regression is at offset 0x5c
-        // 2.5f as IEEE 754 = 0x40200000, in LE: [0x00, 0x00, 0x20, 0x40]
-        assertEquals(0x00.toByte(), packet[0x5c])
-        assertEquals(0x00.toByte(), packet[0x5d])
-        assertEquals(0x20.toByte(), packet[0x5e])
-        assertEquals(0x40.toByte(), packet[0x5f])
     }
 
     // ========== Workout Mode Tests ==========
