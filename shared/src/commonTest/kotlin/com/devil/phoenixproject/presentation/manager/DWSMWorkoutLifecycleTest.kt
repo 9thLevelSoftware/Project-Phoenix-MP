@@ -510,21 +510,20 @@ class DWSMWorkoutLifecycleTest {
         advanceUntilIdle()
         assertIs<WorkoutState.Active>(harness.dwsm.coordinator.workoutState.value)
 
-        // Complete warmup and first working rep
+        // Complete warmup
         completeWarmupReps(harness, warmupTarget = 3, workingTarget = 8)
-        completeFirstWorkingRep(harness, warmupTarget = 3, workingTarget = 8)
         advanceUntilIdle()
         assertTrue(harness.dwsm.coordinator.repCount.value.isWarmupComplete)
-        assertEquals(1, harness.dwsm.coordinator.repCount.value.workingReps)
+        assertEquals(0, harness.dwsm.coordinator.repCount.value.workingReps)
 
-        // Simulate starting a second rep (pending at TOP = failed bench press scenario)
+        // Simulate starting the first rep (pending at TOP = failed bench press scenario)
         harness.fakeBleRepo.emitRepNotification(
             RepNotification(
-                topCounter = 5,       // warmup(3) + working(2) = 5th up counter
-                completeCounter = 4,  // Only 4 downs (second working rep not completed)
+                topCounter = 4,       // warmup(3) + working(1) = 4th up counter
+                completeCounter = 3,  // Only 3 downs (first working rep not completed)
                 repsRomCount = 3,
                 repsRomTotal = 3,
-                repsSetCount = 1,     // Still 1 completed working rep
+                repsSetCount = 0,     // Still 0 completed working reps
                 repsSetTotal = 8,
                 rangeTop = 800f,
                 rangeBottom = 0f,
@@ -571,17 +570,16 @@ class DWSMWorkoutLifecycleTest {
         assertIs<WorkoutState.Active>(harness.dwsm.coordinator.workoutState.value)
 
         completeWarmupReps(harness, warmupTarget = 3, workingTarget = 8)
-        completeFirstWorkingRep(harness, warmupTarget = 3, workingTarget = 8)
         advanceUntilIdle()
 
-        // Simulate pending rep (stalled mid-concentric)
+        // Simulate pending first rep (stalled mid-concentric)
         harness.fakeBleRepo.emitRepNotification(
             RepNotification(
-                topCounter = 5,
-                completeCounter = 4,
+                topCounter = 4,
+                completeCounter = 3,
                 repsRomCount = 3,
                 repsRomTotal = 3,
-                repsSetCount = 1,
+                repsSetCount = 0,
                 repsSetTotal = 8,
                 rangeTop = 800f,
                 rangeBottom = 0f,

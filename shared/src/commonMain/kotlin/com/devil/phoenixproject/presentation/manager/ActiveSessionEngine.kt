@@ -540,18 +540,18 @@ class ActiveSessionEngine(
 
     /**
      * Standard set stall guard:
-     * - Ignore fail/stall detection before first confirmed working rep.
+     * - Defer stall detection only when no working reps are confirmed AND no rep is pending.
      *
-     * Issue #256: Removed hasPendingRep guard. Previously, stall detection was deferred
-     * while a rep was pending at TOP (to avoid false triggers during brief lockout pauses).
-     * However, a stalled pending rep IS the failure scenario (e.g., failed bench press).
-     * The velocity hysteresis band (STALL_VELOCITY_LOW=2.5, STALL_VELOCITY_HIGH=10.0 mm/s)
-     * already provides adequate protection against false triggers during brief pauses.
+     * Issue #256: Removed hasPendingRep guard from deferral. A stalled pending rep IS the
+     * failure scenario (e.g., failed bench press at TOP of first rep). The velocity hysteresis
+     * band (STALL_VELOCITY_LOW=2.5, STALL_VELOCITY_HIGH=10.0 mm/s) already provides adequate
+     * protection against false triggers during brief pauses. When workingReps == 0 but
+     * hasPendingRep is true, the user is mid-first-rep and must be protected.
      */
     private fun shouldDeferStandardSetStall(params: WorkoutParameters, repCount: RepCount): Boolean {
         val isStandardSet = !params.isJustLift && !params.isAMRAP && !coordinator.isCurrentTimedCableExercise
         if (!isStandardSet) return false
-        return repCount.workingReps == 0
+        return repCount.workingReps == 0 && !repCount.hasPendingRep
     }
 
     /**
