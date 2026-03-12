@@ -164,6 +164,20 @@ This is a proprietary project. Contributions are not currently accepted.
 
 Please contact the project maintainers if you have suggestions or would like to collaborate.
 
+### Architecture Planning Workflow (OpenSpec)
+
+For major architecture work (module changes, plugin contracts, migrations, and release governance), use the OpenSpec workflow:
+
+1. Start with `openspec/AGENTS.md` for process and templates.
+2. Follow `openspec/proposal-lifecycle.md` for proposal states and migration phases.
+3. Align all proposals with canonical specs in `openspec/specs/`:
+   - `module-split.md`
+   - `plugin-spi.md`
+   - `migration-strategy.md`
+   - `release-strategy.md`
+
+This keeps planning requests and implementation decisions consistent over time.
+
 ---
 
 ## Support & Community
