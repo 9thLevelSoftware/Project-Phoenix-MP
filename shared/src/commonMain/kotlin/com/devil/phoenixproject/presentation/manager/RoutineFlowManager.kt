@@ -7,6 +7,7 @@ import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.data.repository.WorkoutRepository
 import com.devil.phoenixproject.domain.model.*
 import com.devil.phoenixproject.domain.usecase.ResolveRoutineWeightsUseCase
+import com.devil.phoenixproject.framework.core.WorkoutLifecycleDelegate as FrameworkWorkoutLifecycleDelegate
 import com.devil.phoenixproject.util.Constants
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
@@ -41,18 +42,7 @@ class RoutineFlowManager(
      * Implemented by DefaultWorkoutSessionManager to bridge RoutineFlowManager back to DWSM
      * without creating a direct reference.
      */
-    interface WorkoutLifecycleDelegate {
-        /** Reset the rep counter state */
-        fun resetRepCounter()
-        /** Start a workout with optional countdown skip */
-        fun startWorkout(skipCountdown: Boolean = false)
-        /** Send BLE stop command to clear fault state */
-        suspend fun sendStopCommand()
-        /** Send BLE stop/reset to put machine in BASELINE mode */
-        suspend fun stopMachineWorkout()
-        /** Update workout parameters (includes side-effect tracking) */
-        fun updateWorkoutParameters(params: WorkoutParameters)
-    }
+    interface WorkoutLifecycleDelegate : FrameworkWorkoutLifecycleDelegate
 
     /**
      * Lifecycle delegate for operations that need BLE/workout control.

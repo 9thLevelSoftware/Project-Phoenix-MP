@@ -4,6 +4,7 @@ import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.data.repository.BleRepository
 import com.devil.phoenixproject.data.repository.ScannedDevice
 import com.devil.phoenixproject.domain.model.ConnectionState
+import com.devil.phoenixproject.framework.core.WorkoutStateProvider
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -15,15 +16,6 @@ import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
-
-/**
- * Narrow interface for checking workout state from BleConnectionManager.
- * Breaks circular dependency: BleConnectionManager needs to know if a workout
- * is active for connection-loss alerting, but doesn't need the full workout API.
- */
-interface WorkoutStateProvider {
-    val isWorkoutActiveForConnectionAlert: Boolean
-}
 
 /**
  * Manages BLE device scanning, connection lifecycle, and connection-loss detection.
