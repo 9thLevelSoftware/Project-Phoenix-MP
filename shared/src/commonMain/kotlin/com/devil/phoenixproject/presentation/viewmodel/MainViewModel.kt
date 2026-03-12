@@ -200,6 +200,7 @@ class MainViewModel constructor(
     // ===== Workout Lifecycle Delegation =====
 
     fun updateWorkoutParameters(params: WorkoutParameters) = workoutSessionManager.updateWorkoutParameters(params)
+    fun updateWorkoutIntent(intent: WorkoutIntent) = workoutSessionManager.updateWorkoutIntent(intent)
     fun startWorkout(skipCountdown: Boolean = false, isJustLiftMode: Boolean = false) =
         workoutSessionManager.startWorkout(skipCountdown, isJustLiftMode)
     fun stopWorkout(exitingWorkout: Boolean = false) = workoutSessionManager.stopWorkout(exitingWorkout)

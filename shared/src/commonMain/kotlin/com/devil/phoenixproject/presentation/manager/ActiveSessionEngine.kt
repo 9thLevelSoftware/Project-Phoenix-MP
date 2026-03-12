@@ -12,6 +12,8 @@ import com.devil.phoenixproject.data.repository.CompletedSetRepository
 import com.devil.phoenixproject.data.repository.TrainingCycleRepository
 import com.devil.phoenixproject.data.repository.WorkoutRepository
 import com.devil.phoenixproject.data.sync.SyncTriggerManager
+import com.devil.phoenixproject.adapter.vitruvian.VitruvianProtocolCapabilities
+import com.devil.phoenixproject.adapter.vitruvian.VitruvianWorkoutIntentMapper
 import com.devil.phoenixproject.domain.model.*
 import com.devil.phoenixproject.domain.usecase.RepCounterFromMachine
 import com.devil.phoenixproject.util.BlePacketFactory
@@ -1149,6 +1151,20 @@ class ActiveSessionEngine(
         Logger.d("ActiveSessionEngine") { "LOAD BASELINE: Reset to 0 (disabled)" }
     }
 
+    fun updateWorkoutIntent(intent: WorkoutIntent) {
+        val current = coordinator._workoutParameters.value
+        val mapped = VitruvianWorkoutIntentMapper.map(intent)
+        val updated = current.copy(
+            workoutIntent = intent,
+            programMode = mapped.programMode,
+            reps = if (mapped.targetReps > 0) mapped.targetReps else current.reps,
+            echoLevel = mapped.echoLevel,
+            eccentricLoad = mapped.eccentricLoad,
+            isAMRAP = mapped.isAmrap
+        )
+        updateWorkoutParameters(updated)
+    }
+
     fun updateWorkoutParameters(params: WorkoutParameters) {
         val currentState = coordinator._workoutState.value
         if (currentState is WorkoutState.Idle ||
@@ -1280,11 +1296,33 @@ class ActiveSessionEngine(
             println("Issue188: stopAtTop: ${effectiveParams.stopAtTop}")
             println("Issue188: stallDetection: ${effectiveParams.stallDetectionEnabled}")
 
+            val resolvedIntent = effectiveParams.resolvedWorkoutIntent()
+            val validationErrors = WorkoutIntentValidator.validate(
+                resolvedIntent,
+                VitruvianProtocolCapabilities.descriptor
+            )
+            if (validationErrors.isNotEmpty()) {
+                val message = "Unsupported workout intent: ${validationErrors.joinToString()}"
+                Logger.e { message }
+                coordinator._bleErrorEvents.tryEmit(message)
+                return@launch
+            }
+
+            val mappedPayload = VitruvianWorkoutIntentMapper.map(resolvedIntent)
+            val mappedParams = effectiveParams.copy(
+                workoutIntent = resolvedIntent,
+                programMode = mappedPayload.programMode,
+                reps = if (mappedPayload.targetReps > 0) mappedPayload.targetReps else effectiveParams.reps,
+                echoLevel = mappedPayload.echoLevel,
+                eccentricLoad = mappedPayload.eccentricLoad,
+                isAMRAP = mappedPayload.isAmrap
+            )
+
             val bleParams = if (isTimedCableExercise) {
                 Logger.d { "Duration cable: overriding isAMRAP=true for BLE command (prevents machine rep limit)" }
-                effectiveParams.copy(isAMRAP = true)
+                mappedParams.copy(isAMRAP = true)
             } else {
-                effectiveParams
+                mappedParams
             }
 
             val command = if (bleParams.isEchoMode) {

@@ -315,6 +315,7 @@ class DefaultWorkoutSessionManager(
     fun recaptureLoadBaseline() = activeSessionEngine.recaptureLoadBaseline()
     fun resetLoadBaseline() = activeSessionEngine.resetLoadBaseline()
     fun updateWorkoutParameters(params: WorkoutParameters) = activeSessionEngine.updateWorkoutParameters(params)
+    fun updateWorkoutIntent(intent: WorkoutIntent) = activeSessionEngine.updateWorkoutIntent(intent)
     fun startWorkout(skipCountdown: Boolean = false, isJustLiftMode: Boolean = false) = activeSessionEngine.startWorkout(skipCountdown, isJustLiftMode)
     fun skipCountdown() = activeSessionEngine.skipCountdown()
     fun stopWorkout(exitingWorkout: Boolean = false) = activeSessionEngine.stopWorkout(exitingWorkout)

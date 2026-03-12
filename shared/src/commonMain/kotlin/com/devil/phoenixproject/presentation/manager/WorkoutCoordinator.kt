@@ -135,6 +135,7 @@ class WorkoutCoordinator(
         )
     )
     val workoutParameters: StateFlow<WorkoutParameters> = _workoutParameters.asStateFlow()
+    val currentWorkoutIntent: WorkoutIntent get() = _workoutParameters.value.resolvedWorkoutIntent()
 
     // Issue #108: Track if user manually adjusted weight during rest period
     // When true, preserve user's weight instead of reloading from exercise preset

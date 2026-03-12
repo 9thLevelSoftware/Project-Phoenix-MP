@@ -134,8 +134,9 @@ sealed class RoutineFlowState {
 }
 
 /**
- * Program modes used by Phoenix workout setup.
+ * Vitruvian-specific compatibility model for Phoenix workout setup.
  *
+ * Kept for backwards compatibility while the domain layer moves toward generic [WorkoutIntent].
  * Non-Echo modes start with the 96-byte activation/config frame (command 0x04),
  * followed by a START command (0x03). Echo uses its dedicated 0x4E packet.
  */
@@ -259,8 +260,19 @@ data class WorkoutParameters(
     val repCountTiming: RepCountTiming = RepCountTiming.TOP,  // When to count working reps (TOP=concentric peak, BOTTOM=eccentric valley)
     // Echo-specific settings (only used when programMode == ProgramMode.Echo)
     val echoLevel: EchoLevel = EchoLevel.HARD,
-    val eccentricLoad: EccentricLoad = EccentricLoad.LOAD_100
+    val eccentricLoad: EccentricLoad = EccentricLoad.LOAD_100,
+    // Generic domain intent (preferred). When null, callers are using legacy ProgramMode fields.
+    val workoutIntent: WorkoutIntent? = null
 ) {
+    /** Resolve generic intent from either explicit intent or legacy mode fields. */
+    fun resolvedWorkoutIntent(): WorkoutIntent = workoutIntent
+        ?: programMode.toWorkoutIntent(
+            echoLevel = echoLevel,
+            eccentricLoad = eccentricLoad,
+            isAmrap = isAMRAP,
+            reps = reps
+        )
+
     /** True if this is an Echo workout */
     val isEchoMode: Boolean get() = programMode == ProgramMode.Echo
 }
