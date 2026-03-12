@@ -32,6 +32,11 @@ class BlePacketFactoryTest {
         return value.toShort()
     }
 
+    private fun ByteArray.toHexSnapshot(): String = joinToString(" ") { b ->
+        val v = b.toInt() and 0xFF
+        v.toString(16).padStart(2, '0').uppercase()
+    }
+
     // ========== Init Command Tests ==========
 
     @Test
@@ -541,4 +546,23 @@ class BlePacketFactoryTest {
             assertEquals(0x4E.toByte(), packet[0], "Command should be 0x4E for level $level")
         }
     }
+
+    @Test
+    fun `golden snapshot createInitPreset is stable`() {
+        val packet = BlePacketFactory.createInitPreset()
+        val golden = "11 00 00 00 00 00 00 00 00 00 00 00 CD CC CC 3E FF 00 4C FF 23 8C FF 8C 8C FF 00 4C FF 23 8C FF 8C 8C"
+        assertEquals(golden, packet.toHexSnapshot())
+    }
+
+    @Test
+    fun `golden snapshot createColorScheme with known palette is stable`() {
+        val packet = BlePacketFactory.createColorScheme(
+            brightness = 0.4f,
+            colors = listOf(RGBColor(0xAA, 0xBB, 0xCC), RGBColor(0x11, 0x22, 0x33), RGBColor(0x44, 0x55, 0x66))
+        )
+
+        val golden = "11 00 00 00 00 00 00 00 00 00 00 00 CD CC CC 3E AA BB CC 11 22 33 44 55 66 AA BB CC 11 22 33 44 55 66"
+        assertEquals(golden, packet.toHexSnapshot())
+    }
+
 }

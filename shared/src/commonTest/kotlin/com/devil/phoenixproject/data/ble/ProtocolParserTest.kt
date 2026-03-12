@@ -15,6 +15,8 @@ import kotlin.test.assertFalse
  */
 class ProtocolParserTest {
 
+    private fun ByteArray.toHexSnapshot(): String = joinToString(" ") { it.toVitruvianHex() }
+
     // ========== getUInt16LE Tests ==========
 
     @Test
@@ -513,4 +515,49 @@ class ProtocolParserTest {
 
         assertNotNull(result)
     }
+
+    @Test
+    fun `golden snapshot parseRepPacket modern format output is stable`() {
+        val data = byteArrayOf(
+            0x0A, 0x00, 0x00, 0x00,
+            0x08, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x96.toByte(), 0x43,
+            0x00, 0x00, 0x00, 0x00,
+            0x03, 0x00,
+            0x05, 0x00,
+            0x07, 0x00,
+            0x0A, 0x00
+        )
+
+        val parsed = parseRepPacket(data, hasOpcodePrefix = false, timestamp = 2000L)
+        assertNotNull(parsed)
+
+        val snapshot = "top=${parsed.topCounter}|complete=${parsed.completeCounter}|rom=${parsed.repsRomCount}/${parsed.repsRomTotal}|set=${parsed.repsSetCount}/${parsed.repsSetTotal}|range=${parsed.rangeTop}/${parsed.rangeBottom}|legacy=${parsed.isLegacyFormat}|raw=${parsed.rawData.toHexSnapshot()}"
+        val golden = "top=10|complete=8|rom=3/5|set=7/10|range=300.0/0.0|legacy=false|raw=0A 00 00 00 08 00 00 00 00 00 96 43 00 00 00 00 03 00 05 00 07 00 0A 00"
+        assertEquals(golden, snapshot)
+    }
+
+    @Test
+    fun `golden snapshot parseDiagnosticPacket output is stable`() {
+        val data = ByteArray(20)
+        data[0] = 0x10
+        data[1] = 0x0E
+        data[6] = 0x01
+        data[12] = 25
+        data[13] = 30
+        data[14] = 35
+        data[15] = 40
+        data[16] = 45
+        data[17] = 50
+        data[18] = 55
+        data[19] = 60
+
+        val parsed = parseDiagnosticPacket(data)
+        assertNotNull(parsed)
+
+        val snapshot = "seconds=${parsed.seconds}|faults=${parsed.faults.joinToString(",")}|temps=${parsed.temps.joinToString(",")}|hasFaults=${parsed.hasFaults}"
+        val golden = "seconds=3600|faults=0,1,0,0|temps=25,30,35,40,45,50,55,60|hasFaults=true"
+        assertEquals(golden, snapshot)
+    }
+
 }

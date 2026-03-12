@@ -2,7 +2,6 @@ package com.devil.phoenixproject.data.repository
 
 import com.devil.phoenixproject.domain.model.ConnectionState
 import com.devil.phoenixproject.domain.model.WorkoutMetric
-import com.devil.phoenixproject.util.BlePacketFactory
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -24,8 +23,12 @@ import com.devil.phoenixproject.data.ble.MonitorDataProcessor
 import com.devil.phoenixproject.data.ble.BleOperationQueue
 import com.devil.phoenixproject.data.ble.MetricPollingEngine
 import com.devil.phoenixproject.data.ble.KableBleConnectionManager
-import com.devil.phoenixproject.data.ble.parseRepPacket
-import com.devil.phoenixproject.data.ble.getUInt16BE
+import com.devil.phoenixproject.data.ble.CommandEncoder
+import com.devil.phoenixproject.data.ble.ProtocolCapabilityDescriptor
+import com.devil.phoenixproject.data.ble.TelemetryDecoder
+import com.devil.phoenixproject.data.ble.VitruvianCommandEncoderAdapter
+import com.devil.phoenixproject.data.ble.VitruvianProtocolCapabilityDescriptor
+import com.devil.phoenixproject.data.ble.VitruvianTelemetryDecoderAdapter
 import com.devil.phoenixproject.data.ble.toVitruvianHex
 
 import com.devil.phoenixproject.domain.model.HeuristicStatistics
@@ -35,10 +38,18 @@ import com.devil.phoenixproject.domain.model.WorkoutParameters
  * Thin facade delegating to 6 extracted modules (BleOperationQueue, DiscoMode,
  * HandleStateDetector, MonitorDataProcessor, MetricPollingEngine, KableBleConnectionManager).
  */
-class KableBleRepository : BleRepository {
+class KableBleRepository(
+    private val commandEncoder: CommandEncoder = VitruvianCommandEncoderAdapter(),
+    private val telemetryDecoder: TelemetryDecoder = VitruvianTelemetryDecoderAdapter(),
+    private val protocolCapabilityDescriptor: ProtocolCapabilityDescriptor = VitruvianProtocolCapabilityDescriptor
+) : BleRepository {
 
     private val log = Logger.withTag("KableBleRepository")
     private val logRepo = ConnectionLogRepository.instance
+
+    init {
+        log.i { "Protocol capabilities: init=${protocolCapabilityDescriptor.supportsInitCommands}, startStop=${protocolCapabilityDescriptor.supportsStartStopCommands}, config=${protocolCapabilityDescriptor.supportsConfigurationCommands}, monitor=${protocolCapabilityDescriptor.supportsMonitorStream}, reps=${protocolCapabilityDescriptor.supportsRepStream}, diagnostic=${protocolCapabilityDescriptor.supportsDiagnosticStream}" }
+    }
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
     // ===== State flows =====
@@ -144,7 +155,7 @@ class KableBleRepository : BleRepository {
     override suspend fun setColorScheme(schemeIndex: Int): Result<Unit> {
         log.d { "Setting color scheme: $schemeIndex" }
         return try {
-            val command = BlePacketFactory.createColorSchemeCommand(schemeIndex)
+            val command = commandEncoder.createColorSchemeCommand(schemeIndex)
             connectionManager.sendWorkoutCommand(command)
         } catch (e: Exception) {
             log.e { "Failed to set color scheme: ${e.message}" }
@@ -191,7 +202,7 @@ class KableBleRepository : BleRepository {
     override suspend fun stopWorkout(): Result<Unit> {
         log.i { "Stopping workout" }
         return try {
-            val resetCmd = BlePacketFactory.createResetCommand()
+            val resetCmd = commandEncoder.createResetCommand()
             log.d { "Sending RESET command (0x0A)..." }
             sendWorkoutCommand(resetCmd)
             delay(50)
@@ -209,7 +220,7 @@ class KableBleRepository : BleRepository {
     override suspend fun sendStopCommand(): Result<Unit> {
         log.i { "Sending stop command (polling continues)" }
         return try {
-            val stopPacket = BlePacketFactory.createOfficialStopPacket()
+            val stopPacket = commandEncoder.createOfficialStopPacket()
             log.d { "Sending StopPacket (0x50)..." }
             sendWorkoutCommand(stopPacket)
         } catch (e: Exception) {
@@ -275,12 +286,12 @@ class KableBleRepository : BleRepository {
         if (data.size < 16) return
 
         try {
-            val positionARaw = getUInt16BE(data, 2)
-            val positionBRaw = getUInt16BE(data, 4)
-            val loadA = getUInt16BE(data, 6)
-            val loadB = getUInt16BE(data, 8)
-            val velocityA = getUInt16BE(data, 10)
-            val velocityB = getUInt16BE(data, 12)
+            val positionARaw = telemetryDecoder.getUInt16BE(data, 2)
+            val positionBRaw = telemetryDecoder.getUInt16BE(data, 4)
+            val loadA = telemetryDecoder.getUInt16BE(data, 6)
+            val loadB = telemetryDecoder.getUInt16BE(data, 8)
+            val velocityA = telemetryDecoder.getUInt16BE(data, 10)
+            val velocityB = telemetryDecoder.getUInt16BE(data, 12)
 
             val positionA = positionARaw / 10.0f
             val positionB = positionBRaw / 10.0f
@@ -307,7 +318,7 @@ class KableBleRepository : BleRepository {
     private fun parseRepNotification(data: ByteArray) {
         try {
             val currentTime = currentTimeMillis()
-            val notification = parseRepPacket(data, hasOpcodePrefix = true, timestamp = currentTime)
+            val notification = telemetryDecoder.parseRepPacket(data, hasOpcodePrefix = true, timestamp = currentTime)
 
             if (notification == null) {
                 log.w { "Rep notification too short: ${data.size} bytes (minimum 7)" }
@@ -343,7 +354,7 @@ class KableBleRepository : BleRepository {
     private fun parseRepsCharacteristicData(data: ByteArray) {
         try {
             val currentTime = currentTimeMillis()
-            val notification = parseRepPacket(data, hasOpcodePrefix = false, timestamp = currentTime)
+            val notification = telemetryDecoder.parseRepPacket(data, hasOpcodePrefix = false, timestamp = currentTime)
 
             if (notification == null) {
                 log.w { "REPS characteristic data too short: ${data.size} bytes (minimum 6)" }
