@@ -7,6 +7,8 @@ import androidx.compose.ui.Modifier
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import com.devil.phoenixproject.config.AssetOverrideConfig
+import com.devil.phoenixproject.config.BrandingConfig
 import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.data.sync.SyncTriggerManager
 import com.devil.phoenixproject.presentation.screen.EnhancedMainScreen
@@ -18,8 +20,8 @@ import com.devil.phoenixproject.presentation.viewmodel.ThemeViewModel
 import com.devil.phoenixproject.ui.theme.VitruvianTheme
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import org.koin.compose.viewmodel.koinViewModel
 import org.koin.compose.koinInject
+import org.koin.compose.viewmodel.koinViewModel
 
 /**
  * Observes app lifecycle and triggers sync on foreground.
@@ -46,24 +48,27 @@ private fun AppLifecycleObserver(syncTriggerManager: SyncTriggerManager) {
 
 @Composable
 fun App() {
-    co.touchlab.kermit.Logger.i { "iOS App: App() composable starting..." }
+    val brandingConfig = koinInject<BrandingConfig>()
+    val assetOverrideConfig = koinInject<AssetOverrideConfig>()
 
-    co.touchlab.kermit.Logger.i { "iOS App: Creating MainViewModel..." }
+    co.touchlab.kermit.Logger.i { "${brandingConfig.appDisplayName}: App() composable starting..." }
+
+    co.touchlab.kermit.Logger.i { "${brandingConfig.appDisplayName}: Creating MainViewModel..." }
     val viewModel = koinViewModel<MainViewModel>()
-    co.touchlab.kermit.Logger.i { "iOS App: MainViewModel created" }
+    co.touchlab.kermit.Logger.i { "${brandingConfig.appDisplayName}: MainViewModel created" }
 
-    co.touchlab.kermit.Logger.i { "iOS App: Creating ThemeViewModel..." }
+    co.touchlab.kermit.Logger.i { "${brandingConfig.appDisplayName}: Creating ThemeViewModel..." }
     val themeViewModel = koinViewModel<ThemeViewModel>()
-    co.touchlab.kermit.Logger.i { "iOS App: ThemeViewModel created" }
+    co.touchlab.kermit.Logger.i { "${brandingConfig.appDisplayName}: ThemeViewModel created" }
 
-    co.touchlab.kermit.Logger.i { "iOS App: Creating EulaViewModel..." }
+    co.touchlab.kermit.Logger.i { "${brandingConfig.appDisplayName}: Creating EulaViewModel..." }
     val eulaViewModel = koinViewModel<EulaViewModel>()
-    co.touchlab.kermit.Logger.i { "iOS App: EulaViewModel created" }
+    co.touchlab.kermit.Logger.i { "${brandingConfig.appDisplayName}: EulaViewModel created" }
 
-    co.touchlab.kermit.Logger.i { "iOS App: Injecting repositories..." }
+    co.touchlab.kermit.Logger.i { "${brandingConfig.appDisplayName}: Injecting repositories..." }
     val exerciseRepository = koinInject<ExerciseRepository>()
     val syncTriggerManager = koinInject<SyncTriggerManager>()
-    co.touchlab.kermit.Logger.i { "iOS App: All dependencies injected successfully" }
+    co.touchlab.kermit.Logger.i { "${brandingConfig.appDisplayName}: All dependencies injected successfully" }
 
     // Theme state - persisted via ThemeViewModel
     val themeMode by themeViewModel.themeMode.collectAsState()
@@ -87,7 +92,10 @@ fun App() {
     // Lifecycle observer for foreground sync
     AppLifecycleObserver(syncTriggerManager)
 
-    VitruvianTheme(themeMode = themeMode) {
+    VitruvianTheme(
+        themeMode = themeMode,
+        assetOverrideConfig = assetOverrideConfig
+    ) {
         Box(modifier = Modifier.fillMaxSize()) {
             // EULA acceptance screen - shown first if not accepted
             if (!eulaAccepted) {

@@ -10,6 +10,7 @@ import android.os.IBinder
 import androidx.core.app.NotificationCompat
 import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.MainActivity
+import com.devil.phoenixproject.R
 
 /**
  * Foreground service to keep the app alive during workouts.
@@ -81,10 +82,10 @@ class WorkoutForegroundService : Service() {
         // minSdk=26 (Android 8.0) always has NotificationChannel
         val channel = NotificationChannel(
             CHANNEL_ID,
-            "Phoenix Workout",
+            getString(R.string.workout_notification_channel_name),
             NotificationManager.IMPORTANCE_LOW // Low importance = no sound/vibration
         ).apply {
-            description = "Shows ongoing workout status"
+            description = getString(R.string.workout_notification_channel_description)
             setShowBadge(false)
         }
 
@@ -93,7 +94,7 @@ class WorkoutForegroundService : Service() {
     }
 
     private fun createNotification() = NotificationCompat.Builder(this, CHANNEL_ID)
-        .setContentTitle("Phoenix Workout Active")
+        .setContentTitle(getString(R.string.workout_notification_title))
         .setContentText("$workoutMode - $currentReps/$targetReps reps")
         .setSmallIcon(android.R.drawable.ic_media_play)
         .setOngoing(true) // Cannot be dismissed

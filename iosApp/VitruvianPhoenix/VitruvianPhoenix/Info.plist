@@ -5,7 +5,7 @@
     <key>CFBundleDevelopmentRegion</key>
     <string>$(DEVELOPMENT_LANGUAGE)</string>
     <key>CFBundleDisplayName</key>
-    <string>Project Phoenix</string>
+    <string>$(PRODUCT_NAME)</string>
     <key>CFBundleExecutable</key>
     <string>$(EXECUTABLE_NAME)</string>
     <key>CFBundleIdentifier</key>
@@ -23,9 +23,9 @@
     <key>LSRequiresIPhoneOS</key>
     <true/>
     <key>NSBluetoothAlwaysUsageDescription</key>
-    <string>Project Phoenix needs Bluetooth to connect to your Vitruvian Trainer machine.</string>
+    <string>$(PRODUCT_NAME) needs Bluetooth to connect to your trainer machine.</string>
     <key>NSBluetoothPeripheralUsageDescription</key>
-    <string>Project Phoenix needs Bluetooth to connect to your Vitruvian Trainer machine.</string>
+    <string>$(PRODUCT_NAME) needs Bluetooth to connect to your trainer machine.</string>
     <key>UIApplicationSceneManifest</key>
     <dict>
         <key>UIApplicationSupportsMultipleScenes</key>

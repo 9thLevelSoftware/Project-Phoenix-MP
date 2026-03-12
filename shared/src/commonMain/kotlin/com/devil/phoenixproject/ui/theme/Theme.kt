@@ -6,6 +6,7 @@ import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
+import com.devil.phoenixproject.config.AssetOverrideConfig
 
 enum class ThemeMode { SYSTEM, LIGHT, DARK }
 
@@ -99,9 +100,20 @@ private val LightColorScheme = lightColorScheme(
     outlineVariant = Slate200
 )
 
+private fun String.toColorOrNull(): Color? {
+    val hex = removePrefix("#")
+    val value = when (hex.length) {
+        6 -> (0xFF000000 or hex.toLongOrNull(16)?.toLong() ?: return null)
+        8 -> (hex.toLongOrNull(16) ?: return null)
+        else -> return null
+    }
+    return Color(value)
+}
+
 @Composable
 fun VitruvianTheme(
     themeMode: ThemeMode = ThemeMode.SYSTEM,
+    assetOverrideConfig: AssetOverrideConfig? = null,
     content: @Composable () -> Unit
 ) {
     val useDarkColors = when (themeMode) {
@@ -110,8 +122,17 @@ fun VitruvianTheme(
         ThemeMode.DARK -> true
     }
 
+    val baseScheme = if (useDarkColors) DarkColorScheme else LightColorScheme
+    val colorScheme = if (assetOverrideConfig?.overrideThemeColors == true) {
+        val primary = assetOverrideConfig.primaryColorHex?.toColorOrNull() ?: baseScheme.primary
+        val secondary = assetOverrideConfig.secondaryColorHex?.toColorOrNull() ?: baseScheme.secondary
+        baseScheme.copy(primary = primary, secondary = secondary)
+    } else {
+        baseScheme
+    }
+
     MaterialTheme(
-        colorScheme = if (useDarkColors) DarkColorScheme else LightColorScheme,
+        colorScheme = colorScheme,
         typography = Typography,
         shapes = ExpressiveShapes, // Material 3 Expressive: More rounded shapes
         content = content
