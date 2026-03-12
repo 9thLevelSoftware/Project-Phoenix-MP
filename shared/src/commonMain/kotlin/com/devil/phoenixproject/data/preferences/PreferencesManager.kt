@@ -3,6 +3,7 @@ package com.devil.phoenixproject.data.preferences
 import com.devil.phoenixproject.domain.model.RepCountTiming
 import com.devil.phoenixproject.domain.model.UserPreferences
 import com.devil.phoenixproject.domain.model.WeightUnit
+import com.devil.phoenixproject.di.VendorPluginRegistry
 import com.russhwolf.settings.Settings
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -116,6 +117,8 @@ interface PreferencesManager {
     fun isSimulatorModeUnlocked(): Boolean
     suspend fun setSimulatorModeEnabled(enabled: Boolean)
     fun isSimulatorModeEnabled(): Boolean
+    suspend fun setSelectedVendorId(vendorId: String)
+    fun getSelectedVendorId(): String
 
     suspend fun getSingleExerciseDefaults(exerciseId: String): SingleExerciseDefaults?
     suspend fun saveSingleExerciseDefaults(defaults: SingleExerciseDefaults)
@@ -160,6 +163,7 @@ class SettingsPreferencesManager(
         private const val KEY_SIMULATOR_MODE_UNLOCKED = "simulator_mode_unlocked"
         private const val KEY_SIMULATOR_MODE_ENABLED = "simulator_mode_enabled"
         private const val KEY_GAMIFICATION_ENABLED = "gamification_enabled"
+        private const val KEY_SELECTED_VENDOR_ID = "selected_vendor_id"
     }
 
     private val _preferencesFlow = MutableStateFlow(loadPreferences())
@@ -185,7 +189,11 @@ class SettingsPreferencesManager(
             autoStartCountdownSeconds = settings.getInt(KEY_AUTOSTART_COUNTDOWN_SECONDS, 5),
             gamificationEnabled = settings.getBoolean(KEY_GAMIFICATION_ENABLED, true),
             simulatorModeUnlocked = settings.getBoolean(KEY_SIMULATOR_MODE_UNLOCKED, false),
-            simulatorModeEnabled = settings.getBoolean(KEY_SIMULATOR_MODE_ENABLED, false)
+            simulatorModeEnabled = settings.getBoolean(KEY_SIMULATOR_MODE_ENABLED, false),
+            selectedVendorId = settings.getString(
+                KEY_SELECTED_VENDOR_ID,
+                VendorPluginRegistry.defaultPlugin.id
+            )
         )
     }
 
@@ -329,5 +337,14 @@ class SettingsPreferencesManager(
 
     override fun isSimulatorModeEnabled(): Boolean {
         return settings.getBoolean(KEY_SIMULATOR_MODE_ENABLED, false)
+    }
+
+    override suspend fun setSelectedVendorId(vendorId: String) {
+        settings.putString(KEY_SELECTED_VENDOR_ID, vendorId)
+        updateAndEmit { copy(selectedVendorId = vendorId) }
+    }
+
+    override fun getSelectedVendorId(): String {
+        return settings.getString(KEY_SELECTED_VENDOR_ID, VendorPluginRegistry.defaultPlugin.id)
     }
 }

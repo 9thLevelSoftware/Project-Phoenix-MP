@@ -2,6 +2,7 @@ package com.devil.phoenixproject.di
 
 import com.devil.phoenixproject.data.local.DatabaseFactory
 import com.devil.phoenixproject.data.local.ExerciseImporter
+import com.devil.phoenixproject.data.preferences.PreferencesManager
 import com.devil.phoenixproject.data.repository.*
 import org.koin.dsl.module
 
@@ -12,6 +13,12 @@ val dataModule = module {
 
     // Data Import
     single { ExerciseImporter(get()) }
+
+    // Vendor plugin selection context (persisted, with fallback migration behavior)
+    single {
+        val preferencesManager: PreferencesManager = get()
+        VendorPluginRegistry.resolve(preferencesManager.getSelectedVendorId())
+    }
 
     // Repositories
     // BleRepository is provided by platformModule

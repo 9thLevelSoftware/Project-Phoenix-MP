@@ -46,6 +46,10 @@ class SettingsManager(
         .map { it.simulatorModeEnabled }
         .stateIn(scope, SharingStarted.Eagerly, false)
 
+    val selectedVendorId: StateFlow<String> = userPreferences
+        .map { it.selectedVendorId }
+        .stateIn(scope, SharingStarted.Eagerly, "vitruvian")
+
     // Issue #167: Autoplay is now derived from summaryCountdownSeconds
     // - summaryCountdownSeconds == 0 (Unlimited) = autoplay OFF (manual control)
     // - summaryCountdownSeconds != 0 (-1 or 5-30) = autoplay ON (auto-advance)
@@ -96,6 +100,10 @@ class SettingsManager(
 
     fun setSimulatorModeEnabled(enabled: Boolean) {
         scope.launch { preferencesManager.setSimulatorModeEnabled(enabled) }
+    }
+
+    fun setSelectedVendorId(vendorId: String) {
+        scope.launch { preferencesManager.setSelectedVendorId(vendorId) }
     }
 
     fun setColorScheme(schemeIndex: Int) {

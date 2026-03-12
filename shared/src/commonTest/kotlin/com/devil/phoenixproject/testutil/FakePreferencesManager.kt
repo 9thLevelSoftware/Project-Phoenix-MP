@@ -5,6 +5,7 @@ import com.devil.phoenixproject.data.preferences.PreferencesManager
 import com.devil.phoenixproject.data.preferences.SingleExerciseDefaults
 import com.devil.phoenixproject.domain.model.UserPreferences
 import com.devil.phoenixproject.domain.model.WeightUnit
+import com.devil.phoenixproject.di.VendorPluginRegistry
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -20,14 +21,17 @@ class FakePreferencesManager : PreferencesManager {
 
     private val exerciseDefaults = mutableMapOf<String, SingleExerciseDefaults>()
     private var justLiftDefaults = JustLiftDefaults()
+    private var selectedVendorId = VendorPluginRegistry.defaultPlugin.id
 
     fun reset() {
         _preferencesFlow.value = UserPreferences()
         exerciseDefaults.clear()
         justLiftDefaults = JustLiftDefaults()
+        selectedVendorId = VendorPluginRegistry.defaultPlugin.id
     }
 
     fun setPreferences(preferences: UserPreferences) {
+        selectedVendorId = preferences.selectedVendorId
         _preferencesFlow.value = preferences
     }
 
@@ -117,5 +121,14 @@ class FakePreferencesManager : PreferencesManager {
 
     override fun isSimulatorModeEnabled(): Boolean {
         return _preferencesFlow.value.simulatorModeEnabled
+    }
+
+    override suspend fun setSelectedVendorId(vendorId: String) {
+        selectedVendorId = vendorId
+        _preferencesFlow.value = _preferencesFlow.value.copy(selectedVendorId = vendorId)
+    }
+
+    override fun getSelectedVendorId(): String {
+        return selectedVendorId
     }
 }
