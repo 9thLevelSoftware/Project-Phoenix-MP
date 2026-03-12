@@ -166,6 +166,16 @@ Project-Phoenix-MP/
 
 ---
 
+
+## Framework Governance
+
+- [Framework Template Distribution Target](framework-template/README.md)
+- [Framework API Versioning, Stability, and Deprecation Policy](docs/framework/versioning-and-compatibility.md)
+- [Plugin Author Upgrade Guide](docs/framework/plugin-upgrade-guide.md)
+- [Framework Release Checklist](.github/release-checklist-framework.md)
+
+---
+
 ## Contributing
 
 This is a proprietary project. Contributions are not currently accepted.
