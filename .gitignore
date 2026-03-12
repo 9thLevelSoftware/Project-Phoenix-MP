@@ -68,6 +68,9 @@ CHANGELOG.md
 /reference/
 /vitruvian-decompiled/
 /scripts/
+!/scripts/
+!/scripts/new_vendor_template.sh
+!/scripts/new_vendor_template.ps1
 /apktool.jar
 /vitruvian-official.apk
 /parent repo/

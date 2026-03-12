@@ -10,8 +10,10 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.R
+import com.devil.phoenixproject.config.AssetOverrideConfig
 import com.devil.phoenixproject.domain.model.HapticEvent
 import kotlinx.coroutines.flow.SharedFlow
+import org.koin.compose.koinInject
 import kotlin.random.Random
 
 /**
@@ -26,6 +28,8 @@ fun HapticFeedbackEffect(
 ) {
     val context = LocalContext.current
     val hapticFeedback = LocalHapticFeedback.current
+    val assetOverrideConfig = koinInject<AssetOverrideConfig>()
+    val useDefaultSoundPack = !assetOverrideConfig.overrideSoundPack || assetOverrideConfig.soundPackId == null || assetOverrideConfig.soundPackId == "phoenix-default"
 
     // Create and manage SoundPool
     // Uses USAGE_ASSISTANCE_SONIFICATION to mix with music without interrupting it
@@ -44,8 +48,11 @@ fun HapticFeedbackEffect(
 
     // Load sounds
     // Note: Using sealed class data objects as map keys (they have proper equals/hashCode)
-    val soundIds = remember(soundPool) {
-        mutableMapOf<HapticEvent, Int>().apply {
+    val soundIds = remember(soundPool, useDefaultSoundPack) {
+        if (!useDefaultSoundPack) {
+            Logger.w { "Custom sound pack id=${assetOverrideConfig.soundPackId} requested but not bundled yet; default sounds disabled." }
+            mutableMapOf()
+        } else mutableMapOf<HapticEvent, Int>().apply {
             try {
                 put(HapticEvent.REP_COMPLETED, soundPool.load(context, R.raw.beep, 1))
                 put(HapticEvent.WARMUP_COMPLETE, soundPool.load(context, R.raw.beepboop, 1))
@@ -64,8 +71,8 @@ fun HapticFeedbackEffect(
     }
 
     // Load badge celebration sounds (excludes PR-specific sounds)
-    val badgeSoundIds = remember(soundPool) {
-        mutableListOf<Int>().apply {
+    val badgeSoundIds = remember(soundPool, useDefaultSoundPack) {
+        if (!useDefaultSoundPack) mutableListOf() else mutableListOf<Int>().apply {
             try {
                 add(soundPool.load(context, R.raw.absolute_domination, 1))
                 add(soundPool.load(context, R.raw.absolute_unit, 1))
@@ -107,8 +114,8 @@ fun HapticFeedbackEffect(
     }
 
     // Load PR-specific sounds
-    val prSoundIds = remember(soundPool) {
-        mutableListOf<Int>().apply {
+    val prSoundIds = remember(soundPool, useDefaultSoundPack) {
+        if (!useDefaultSoundPack) mutableListOf() else mutableListOf<Int>().apply {
             try {
                 add(soundPool.load(context, R.raw.new_personal_record, 1))
                 add(soundPool.load(context, R.raw.new_personal_record_2, 1))
@@ -119,8 +126,8 @@ fun HapticFeedbackEffect(
     }
 
     // Load rep count announcement sounds (1-25)
-    val repCountSoundIds = remember(soundPool) {
-        mutableListOf<Int>().apply {
+    val repCountSoundIds = remember(soundPool, useDefaultSoundPack) {
+        if (!useDefaultSoundPack) mutableListOf() else mutableListOf<Int>().apply {
             try {
                 add(soundPool.load(context, R.raw.rep_01, 1))
                 add(soundPool.load(context, R.raw.rep_02, 1))

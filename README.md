@@ -107,6 +107,14 @@ See [Release Notes](https://github.com/DasBluEyedDevil/Project-Phoenix-MP/releas
 
 ---
 
+## Documentation
+
+- [Android Installation Guide](ANDROID_INSTALL.md)
+- [iOS Installation Guide](iOS_INSTALL.md)
+- [Third-Party Integration Guide](docs/integration-guide.md)
+
+---
+
 ## Building from Source
 
 ### Prerequisites
@@ -125,6 +133,15 @@ See [Release Notes](https://github.com/DasBluEyedDevil/Project-Phoenix-MP/releas
 ./gradlew :shared:assembleXCFramework
 open iosApp/VitruvianPhoenix/VitruvianPhoenix.xcodeproj
 ```
+
+
+### Vendor adapter conformance tests
+```bash
+./gradlew :shared:testAndroidHostTest --tests "com.devil.phoenixproject.conformance.*"
+```
+
+Use `VENDOR_ADAPTER=<id>` (for example `phoenix` or `demo`) to run adapter-specific conformance checks.
+See [Vendor Adapter Conformance Suite](docs/vendor-adapter-conformance.md) for the full workflow.
 
 ---
 
@@ -158,11 +175,35 @@ Project-Phoenix-MP/
 
 ---
 
+
+## Framework Governance
+
+- [Framework Template Distribution Target](framework-template/README.md)
+- [Framework API Versioning, Stability, and Deprecation Policy](docs/framework/versioning-and-compatibility.md)
+- [Plugin Author Upgrade Guide](docs/framework/plugin-upgrade-guide.md)
+- [Framework Release Checklist](.github/release-checklist-framework.md)
+
+---
+
 ## Contributing
 
 This is a proprietary project. Contributions are not currently accepted.
 
 Please contact the project maintainers if you have suggestions or would like to collaborate.
+
+### Architecture Planning Workflow (OpenSpec)
+
+For major architecture work (module changes, plugin contracts, migrations, and release governance), use the OpenSpec workflow:
+
+1. Start with `openspec/AGENTS.md` for process and templates.
+2. Follow `openspec/proposal-lifecycle.md` for proposal states and migration phases.
+3. Align all proposals with canonical specs in `openspec/specs/`:
+   - `module-split.md`
+   - `plugin-spi.md`
+   - `migration-strategy.md`
+   - `release-strategy.md`
+
+This keeps planning requests and implementation decisions consistent over time.
 
 ---
 

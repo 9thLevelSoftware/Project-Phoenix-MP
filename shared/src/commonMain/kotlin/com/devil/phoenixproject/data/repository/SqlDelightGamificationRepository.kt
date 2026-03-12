@@ -6,6 +6,7 @@ import app.cash.sqldelight.coroutines.mapToOneOrNull
 import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.data.local.BadgeDefinitions
 import com.devil.phoenixproject.database.VitruvianDatabase
+import com.devil.phoenixproject.data.context.VendorContextProvider
 import com.devil.phoenixproject.domain.model.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
@@ -276,7 +277,7 @@ class SqlDelightGamificationRepository(
         val weekStartMs = weekStart.atStartOfDayIn(TimeZone.currentSystemDefault()).toEpochMilliseconds()
 
         // Count sessions with timestamp >= weekStartMs
-        val sessions = queries.selectAllSessions().executeAsList()
+        val sessions = queries.selectAllSessions(VendorContextProvider.DEFAULT_CONTEXT.vendorId, VendorContextProvider.DEFAULT_CONTEXT.protocolVersion).executeAsList()
         return sessions.count { it.timestamp >= weekStartMs }
     }
 
@@ -285,7 +286,7 @@ class SqlDelightGamificationRepository(
      * Prefer measured totalVolumeKg when available (v0.2.1+), fallback to legacy approximation.
      */
     private fun getMaxSingleSessionVolume(): Int {
-        val sessions = queries.selectAllSessions().executeAsList()
+        val sessions = queries.selectAllSessions(VendorContextProvider.DEFAULT_CONTEXT.vendorId, VendorContextProvider.DEFAULT_CONTEXT.protocolVersion).executeAsList()
         if (sessions.isEmpty()) return 0
 
         return sessions.maxOfOrNull { session ->
@@ -299,7 +300,7 @@ class SqlDelightGamificationRepository(
      * @param hourEnd End hour (0-23, inclusive)
      */
     private fun hasWorkoutAtTime(hourStart: Int, hourEnd: Int): Boolean {
-        val sessions = queries.selectAllSessions().executeAsList()
+        val sessions = queries.selectAllSessions(VendorContextProvider.DEFAULT_CONTEXT.vendorId, VendorContextProvider.DEFAULT_CONTEXT.protocolVersion).executeAsList()
 
         return sessions.any { session ->
             val sessionTime = Instant.fromEpochMilliseconds(session.timestamp)
@@ -320,7 +321,7 @@ class SqlDelightGamificationRepository(
      * Count workouts completed within a specific time range
      */
     private fun countWorkoutsAtTime(hourStart: Int, hourEnd: Int): Int {
-        val sessions = queries.selectAllSessions().executeAsList()
+        val sessions = queries.selectAllSessions(VendorContextProvider.DEFAULT_CONTEXT.vendorId, VendorContextProvider.DEFAULT_CONTEXT.protocolVersion).executeAsList()
 
         return sessions.count { session ->
             val sessionTime = Instant.fromEpochMilliseconds(session.timestamp)
@@ -424,7 +425,7 @@ class SqlDelightGamificationRepository(
      * This is tracked by checking if there was a gap >= breakDays between any two workouts
      */
     private fun hasComebackAfterBreak(breakDays: Int): Boolean {
-        val sessions = queries.selectAllSessions().executeAsList()
+        val sessions = queries.selectAllSessions(VendorContextProvider.DEFAULT_CONTEXT.vendorId, VendorContextProvider.DEFAULT_CONTEXT.protocolVersion).executeAsList()
         if (sessions.size < 2) return false
 
         val sortedSessions = sessions.sortedBy { it.timestamp }

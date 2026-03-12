@@ -20,6 +20,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import com.devil.phoenixproject.config.BrandingConfig
+import org.koin.compose.koinInject
 
 /**
  * BLE and notification permissions required for the app.
@@ -78,6 +80,7 @@ sealed class BlePermissionState {
 fun RequireBlePermissions(
     content: @Composable () -> Unit
 ) {
+    val brandingConfig = koinInject<BrandingConfig>()
     val context = LocalContext.current
     var permissionState by remember {
         mutableStateOf(
@@ -108,6 +111,7 @@ fun RequireBlePermissions(
             // Wrap permission screens in a basic theme
             PermissionScreenTheme {
                 BlePermissionRequestScreen(
+                    brandingConfig = brandingConfig,
                     onRequestPermission = {
                         permissionLauncher.launch(BlePermissions.getRequiredPermissions().toTypedArray())
                     }
@@ -117,6 +121,7 @@ fun RequireBlePermissions(
         is BlePermissionState.Denied -> {
             PermissionScreenTheme {
                 BlePermissionDeniedScreen(
+                    brandingConfig = brandingConfig,
                     onRetry = {
                         permissionLauncher.launch(BlePermissions.getRequiredPermissions().toTypedArray())
                     }
@@ -141,6 +146,7 @@ private fun PermissionScreenTheme(content: @Composable () -> Unit) {
  */
 @Composable
 private fun BlePermissionRequestScreen(
+    brandingConfig: BrandingConfig,
     onRequestPermission: () -> Unit
 ) {
     Surface(
@@ -164,7 +170,7 @@ private fun BlePermissionRequestScreen(
             Spacer(modifier = Modifier.height(24.dp))
 
             Text(
-                text = "Bluetooth Permission Required",
+                text = brandingConfig.blePermissionTitle,
                 style = MaterialTheme.typography.headlineSmall,
                 fontWeight = FontWeight.Bold,
                 textAlign = TextAlign.Center
@@ -173,7 +179,7 @@ private fun BlePermissionRequestScreen(
             Spacer(modifier = Modifier.height(16.dp))
 
             Text(
-                text = "Project Phoenix needs Bluetooth permission to scan for and connect to your Vitruvian Trainer machine.",
+                text = brandingConfig.blePermissionBody,
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center
@@ -202,6 +208,7 @@ private fun BlePermissionRequestScreen(
  */
 @Composable
 private fun BlePermissionDeniedScreen(
+    brandingConfig: BrandingConfig,
     onRetry: () -> Unit
 ) {
     Surface(
@@ -234,7 +241,7 @@ private fun BlePermissionDeniedScreen(
             Spacer(modifier = Modifier.height(16.dp))
 
             Text(
-                text = "Bluetooth permission is required to connect to your Vitruvian Trainer. Please grant the permission to continue, or enable it in your device's Settings app.",
+                text = brandingConfig.blePermissionDeniedBody,
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center
@@ -258,7 +265,7 @@ private fun BlePermissionDeniedScreen(
             Spacer(modifier = Modifier.height(16.dp))
 
             Text(
-                text = "If the permission dialog doesn't appear, you may need to enable Bluetooth permissions in your device's Settings > Apps > Project Phoenix > Permissions.",
+                text = brandingConfig.blePermissionSettingsHint,
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center

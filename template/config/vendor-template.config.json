@@ -1,0 +1,15 @@
+{
+  "vendorId": "vendor-template",
+  "packageId": "com.phoenix.vendor.template",
+  "displayName": "Vendor Template",
+  "defaultModel": "Template-Rack-1",
+  "assets": {
+    "logo": "../assets/brand-logo-placeholder.svg"
+  },
+  "transport": {
+    "type": "ble",
+    "serviceUuid": "0000FFFF-0000-1000-8000-00805F9B34FB",
+    "txCharacteristicUuid": "0000FF01-0000-1000-8000-00805F9B34FB",
+    "rxCharacteristicUuid": "0000FF02-0000-1000-8000-00805F9B34FB"
+  }
+}

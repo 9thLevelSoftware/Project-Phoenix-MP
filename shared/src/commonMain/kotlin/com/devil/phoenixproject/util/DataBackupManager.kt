@@ -2,6 +2,7 @@ package com.devil.phoenixproject.util
 
 import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.database.*
+import com.devil.phoenixproject.data.context.VendorContextProvider
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
 import kotlinx.coroutines.withContext
@@ -371,7 +372,10 @@ abstract class BaseDataBackupManager(
             }
 
             // Get existing IDs for duplicate detection (before transaction)
-            val existingSessionIds = queries.selectAllSessionIds().executeAsList().toSet()
+            val existingSessionIds = queries.selectAllSessionIds(
+                VendorContextProvider.DEFAULT_CONTEXT.vendorId,
+                VendorContextProvider.DEFAULT_CONTEXT.protocolVersion
+            ).executeAsList().toSet()
             val existingRoutineIds = queries.selectAllRoutineIds().executeAsList().toSet()
             val existingSupersetIds = queries.selectAllSupersetIds().executeAsList().toSet()
             val existingPRIds = queries.selectAllPRIds().executeAsList().toSet()
@@ -465,7 +469,9 @@ abstract class BaseDataBackupManager(
                             workingAvgWeightKg = session.workingAvgWeightKg?.toDouble(),
                             burnoutAvgWeightKg = session.burnoutAvgWeightKg?.toDouble(),
                             peakWeightKg = session.peakWeightKg?.toDouble(),
-                            rpe = session.rpe?.toLong()
+                            rpe = session.rpe?.toLong(),
+                            vendorId = VendorContextProvider.DEFAULT_CONTEXT.vendorId,
+                            protocolVersion = VendorContextProvider.DEFAULT_CONTEXT.protocolVersion
                         )
                         sessionsImported++
                     } else {
@@ -506,7 +512,9 @@ abstract class BaseDataBackupManager(
                             description = routine.description,
                             createdAt = routine.createdAt,
                             lastUsed = routine.lastUsed,
-                            useCount = routine.useCount.toLong()
+                            useCount = routine.useCount.toLong(),
+                            vendorId = VendorContextProvider.DEFAULT_CONTEXT.vendorId,
+                            protocolVersion = VendorContextProvider.DEFAULT_CONTEXT.protocolVersion
                         )
                         routinesImported++
                     } else {

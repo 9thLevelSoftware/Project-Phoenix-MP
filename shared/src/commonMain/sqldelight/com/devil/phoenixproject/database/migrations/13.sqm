@@ -1,0 +1,27 @@
+-- Migration 13: Add vendor/protocol metadata for multi-vendor data isolation
+-- Default/fallback for legacy Phoenix records uses vendorId='phoenix', protocolVersion='v1'.
+
+ALTER TABLE WorkoutSession ADD COLUMN vendorId TEXT NOT NULL DEFAULT 'phoenix';
+ALTER TABLE WorkoutSession ADD COLUMN protocolVersion TEXT NOT NULL DEFAULT 'v1';
+
+ALTER TABLE Routine ADD COLUMN vendorId TEXT NOT NULL DEFAULT 'phoenix';
+ALTER TABLE Routine ADD COLUMN protocolVersion TEXT NOT NULL DEFAULT 'v1';
+
+ALTER TABLE ConnectionLog ADD COLUMN vendorId TEXT NOT NULL DEFAULT 'phoenix';
+ALTER TABLE ConnectionLog ADD COLUMN protocolVersion TEXT NOT NULL DEFAULT 'v1';
+
+-- Explicit fallback assignment for any pre-existing null/empty values.
+UPDATE WorkoutSession
+SET vendorId = COALESCE(NULLIF(vendorId, ''), 'phoenix'),
+    protocolVersion = COALESCE(NULLIF(protocolVersion, ''), 'v1');
+
+UPDATE Routine
+SET vendorId = COALESCE(NULLIF(vendorId, ''), 'phoenix'),
+    protocolVersion = COALESCE(NULLIF(protocolVersion, ''), 'v1');
+
+UPDATE ConnectionLog
+SET vendorId = COALESCE(NULLIF(vendorId, ''), 'phoenix'),
+    protocolVersion = COALESCE(NULLIF(protocolVersion, ''), 'v1');
+
+CREATE INDEX IF NOT EXISTS idx_connection_log_vendor_protocol
+ON ConnectionLog(vendorId, protocolVersion, timestamp DESC);

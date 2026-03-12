@@ -81,6 +81,14 @@ class WorkoutCoordinator(
     )
     val userFeedbackEvents: SharedFlow<String> = _userFeedbackEvents.asSharedFlow()
 
+    // ===== Safety Audit Events =====
+
+    internal val _safetyAuditEvents = MutableSharedFlow<SafetyAuditEvent>(
+        extraBufferCapacity = 50,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST
+    )
+    val safetyAuditEvents: SharedFlow<SafetyAuditEvent> = _safetyAuditEvents.asSharedFlow()
+
     // ===== Workout State =====
 
     internal val _workoutState = MutableStateFlow<WorkoutState>(WorkoutState.Idle)

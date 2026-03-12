@@ -54,7 +54,8 @@ class ActiveSessionEngine(
     private val completedSetRepository: CompletedSetRepository,
     private val syncTriggerManager: SyncTriggerManager?,
     private val settingsManager: SettingsManager,
-    private val scope: CoroutineScope
+    private val scope: CoroutineScope,
+    private val safetyPolicy: SafetyPolicy = DefaultSafetyPolicy()
 ) {
 
     /**
@@ -93,6 +94,30 @@ class ActiveSessionEngine(
      * Set by DWSM after construction.
      */
     var flowDelegate: WorkoutFlowDelegate? = null
+
+    private fun auditDispatch(operation: String, outcome: String, details: String? = null) {
+        coordinator._safetyAuditEvents.tryEmit(
+            SafetyAuditEvent(
+                timestampMs = currentTimeMillis(),
+                type = SafetyAuditEventType.COMMAND_DISPATCH,
+                operation = operation,
+                outcome = outcome,
+                details = details
+            )
+        )
+    }
+
+    private fun auditIntervention(operation: String, outcome: String, details: String) {
+        coordinator._safetyAuditEvents.tryEmit(
+            SafetyAuditEvent(
+                timestampMs = currentTimeMillis(),
+                type = SafetyAuditEventType.SAFETY_INTERVENTION,
+                operation = operation,
+                outcome = outcome,
+                details = details
+            )
+        )
+    }
 
     // ===== Init Block: Workout-Related Collectors (moved from DWSM) =====
 
@@ -854,6 +879,7 @@ class ActiveSessionEngine(
             }
 
             bleRepository.sendWorkoutCommand(command)
+            auditDispatch("adjust", "sent", "weightKg=$weightKg")
             Logger.d("Weight update sent to machine: $weightKg kg")
         } catch (e: Exception) {
             Logger.e(e) { "Failed to send weight update: ${e.message}" }
@@ -864,11 +890,23 @@ class ActiveSessionEngine(
      * Adjust the weight during an active workout or rest period.
      */
     fun adjustWeight(newWeightKg: Float, sendToMachine: Boolean = true) {
-        val clampedWeight = newWeightKg.coerceIn(0f, 110f)
-
-        Logger.d("ActiveSessionEngine: Adjusting weight to $clampedWeight kg (sendToMachine=$sendToMachine)")
-
         val currentState = coordinator._workoutState.value
+        val currentParams = coordinator._workoutParameters.value
+        val decision = safetyPolicy.evaluateAdjust(currentParams, newWeightKg, currentState)
+        if (!decision.allowed) {
+            val reason = decision.reason ?: "Policy rejected weight adjustment"
+            auditIntervention("adjust", "blocked", reason)
+            Logger.w { "ActiveSessionEngine: adjustWeight blocked by policy - $reason" }
+            return
+        }
+
+        val approvedWeight = decision.approvedWeightKg ?: newWeightKg.coerceIn(
+            safetyPolicy.minLoadKgPerCable,
+            safetyPolicy.maxLoadKgPerCable
+        )
+
+        Logger.d("ActiveSessionEngine: Adjusting weight to $approvedWeight kg (sendToMachine=$sendToMachine)")
+
         if (currentState is WorkoutState.Idle ||
             currentState is WorkoutState.Resting ||
             currentState is WorkoutState.SetSummary) {
@@ -876,14 +914,20 @@ class ActiveSessionEngine(
             Logger.d("ActiveSessionEngine: User adjusted weight in ${currentState::class.simpleName} - will preserve on next set")
         }
 
+        if (approvedWeight != newWeightKg) {
+            auditIntervention("adjust", "clamped", "requested=$newWeightKg approved=$approvedWeight")
+        }
+
         coordinator._workoutParameters.update { params ->
-            params.copy(weightPerCableKg = clampedWeight)
+            params.copy(weightPerCableKg = approvedWeight)
         }
 
         if (sendToMachine && coordinator._workoutState.value is WorkoutState.Active) {
             scope.launch {
-                sendWeightUpdateToMachine(clampedWeight)
+                sendWeightUpdateToMachine(approvedWeight)
             }
+        } else {
+            auditDispatch("adjust", "accepted_local", "weightKg=$approvedWeight")
         }
     }
 
@@ -1164,6 +1208,15 @@ class ActiveSessionEngine(
         Logger.d { "startWorkout called: skipCountdown=$skipCountdown, isJustLiftMode=$isJustLiftMode" }
         Logger.d { "startWorkout: loadedRoutine=${coordinator._loadedRoutine.value?.name}, params=${coordinator._workoutParameters.value}" }
 
+        val startDecision = safetyPolicy.evaluateStart(coordinator._workoutParameters.value, coordinator._workoutState.value)
+        if (!startDecision.allowed) {
+            val reason = startDecision.reason ?: "Policy rejected start"
+            auditIntervention("start", "blocked", reason)
+            coordinator._bleErrorEvents.tryEmit(reason)
+            Logger.w { "ActiveSessionEngine: startWorkout blocked by safety policy - $reason" }
+            return
+        }
+
         coordinator.stopWorkoutInProgress = false
         coordinator.setCompletionInProgress = false
         resetAutoStopState()
@@ -1332,6 +1385,7 @@ class ActiveSessionEngine(
 
             try {
                 bleRepository.sendWorkoutCommand(command)
+                auditDispatch("start", "config_sent", "bytes=${command.size},mode=${effectiveParams.programMode}")
                 Logger.i { "CONFIG command sent: ${command.size} bytes for ${effectiveParams.programMode}" }
                 val preview = command.take(16).joinToString(" ") { it.toUByte().toString(16).padStart(2, '0').uppercase() }
                 Logger.d { "Config preview: $preview ..." }
@@ -1346,6 +1400,7 @@ class ActiveSessionEngine(
                 try {
                     val startCommand = BlePacketFactory.createStartCommand()
                     bleRepository.sendWorkoutCommand(startCommand)
+                    auditDispatch("start", "start_sent", "bytes=${startCommand.size}")
                     Logger.i { "START command sent (0x03)" }
                 } catch (e: Exception) {
                     Logger.e(e) { "Failed to send START command" }
@@ -1425,6 +1480,12 @@ class ActiveSessionEngine(
     }
 
     fun stopWorkout(exitingWorkout: Boolean = false) {
+        val stopDecision = safetyPolicy.evaluateStop(coordinator._workoutState.value, emergency = false)
+        if (!stopDecision.allowed) {
+            auditIntervention("stop", "blocked", stopDecision.reason ?: "Policy rejected stop")
+            return
+        }
+
         if (coordinator.stopWorkoutInProgress) return
         coordinator.stopWorkoutInProgress = true
 
@@ -1451,6 +1512,7 @@ class ActiveSessionEngine(
              if (!isBodyweight) {
                  println("Issue222 TRACE: manual stop -> calling bleRepository.stopWorkout()")
                  bleRepository.stopWorkout()
+                 auditDispatch("stop", "sent", "exitingWorkout=$shouldExitToIdle")
              } else {
                  println("Issue222 TRACE: manual stop -> skipping BLE stop (bodyweight)")
                  Logger.d("Manual stop: bodyweight exercise - skipping BLE stop (parent-aligned)")
@@ -1577,6 +1639,12 @@ class ActiveSessionEngine(
     }
 
     fun stopAndReturnToSetReady() {
+        val stopDecision = safetyPolicy.evaluateStop(coordinator._workoutState.value, emergency = false)
+        if (!stopDecision.allowed) {
+            auditIntervention("stop_return_to_ready", "blocked", stopDecision.reason ?: "Policy rejected stop")
+            return
+        }
+
         coordinator.workoutJob?.cancel()
         coordinator.workoutJob = null
         coordinator.restTimerJob?.cancel()
@@ -1587,6 +1655,7 @@ class ActiveSessionEngine(
 
         scope.launch {
             bleRepository.stopWorkout()
+            auditDispatch("stop_return_to_ready", "sent")
 
             repCounter.reset()
             coordinator._repCount.value = RepCount()
@@ -1605,6 +1674,12 @@ class ActiveSessionEngine(
     }
 
     fun stopAndSkipCurrentExercise() {
+        val stopDecision = safetyPolicy.evaluateStop(coordinator._workoutState.value, emergency = false)
+        if (!stopDecision.allowed) {
+            auditIntervention("stop_skip_exercise", "blocked", stopDecision.reason ?: "Policy rejected stop")
+            return
+        }
+
         val skippedExerciseIndex = coordinator._currentExerciseIndex.value
         val skippedSetIndex = coordinator._currentSetIndex.value
 
@@ -1618,6 +1693,7 @@ class ActiveSessionEngine(
 
         scope.launch {
             bleRepository.stopWorkout()
+            auditDispatch("stop_skip_exercise", "sent")
 
             repCounter.reset()
             coordinator._repCount.value = RepCount()

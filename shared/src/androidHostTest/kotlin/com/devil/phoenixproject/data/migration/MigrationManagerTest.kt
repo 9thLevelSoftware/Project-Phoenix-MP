@@ -32,7 +32,7 @@ class MigrationManagerTest {
         migrationManager.checkAndRunMigrations()
         Thread.sleep(500) // migrations run async
 
-        val session = queries.selectSessionById("session-1").executeAsOneOrNull()
+        val session = queries.selectSessionById("session-1", "phoenix", "v1").executeAsOneOrNull()
         assertNotNull(session)
         assertNull(session.routineSessionId, "Exact-match legacy_session_<id> should be stripped")
         assertEquals("Upper Day", session.routineName, "Routine name should be preserved")
@@ -50,7 +50,7 @@ class MigrationManagerTest {
         migrationManager.checkAndRunMigrations()
         Thread.sleep(500)
 
-        val session = queries.selectSessionById("session-2").executeAsOneOrNull()
+        val session = queries.selectSessionById("session-2", "phoenix", "v1").executeAsOneOrNull()
         assertNotNull(session)
         assertEquals("real-routine-session-uuid-123", session.routineSessionId, "Legitimate routineSessionId should be preserved")
     }
@@ -68,7 +68,7 @@ class MigrationManagerTest {
         migrationManager.checkAndRunMigrations()
         Thread.sleep(500)
 
-        val session = queries.selectSessionById("session-3").executeAsOneOrNull()
+        val session = queries.selectSessionById("session-3", "phoenix", "v1").executeAsOneOrNull()
         assertNotNull(session)
         // Migration uses exact match: legacy_session_${session.id}
         // "legacy_session_some-other-session" != "legacy_session_session-3"
@@ -94,7 +94,7 @@ class MigrationManagerTest {
         migrationManager.checkAndRunMigrations()
         Thread.sleep(500)
 
-        val session = queries.selectSessionById("session-garbage").executeAsOneOrNull()
+        val session = queries.selectSessionById("session-garbage", "phoenix", "v1").executeAsOneOrNull()
         assertNotNull(session)
         assertNull(session.routineName, "Garbage routine name should be cleared to null when inference fails")
     }
@@ -128,7 +128,7 @@ class MigrationManagerTest {
         migrationManager.checkAndRunMigrations()
         Thread.sleep(500)
 
-        val session = queries.selectSessionById("session-garbage-infer").executeAsOneOrNull()
+        val session = queries.selectSessionById("session-garbage-infer", "phoenix", "v1").executeAsOneOrNull()
         assertNotNull(session)
         assertEquals("Upper Day", session.routineName, "Garbage name should be replaced with inferred routine name")
     }
@@ -162,7 +162,7 @@ class MigrationManagerTest {
         migrationManager.checkAndRunMigrations()
         Thread.sleep(500)
 
-        val session = queries.selectSessionById("session-placeholder").executeAsOneOrNull()
+        val session = queries.selectSessionById("session-placeholder", "phoenix", "v1").executeAsOneOrNull()
         assertNotNull(session)
         assertEquals("Upper Day", session.routineName, "Exercise-placeholder name should be replaced with actual routine name")
     }
@@ -179,7 +179,7 @@ class MigrationManagerTest {
         migrationManager.checkAndRunMigrations()
         Thread.sleep(500)
 
-        val session = queries.selectSessionById("session-legit").executeAsOneOrNull()
+        val session = queries.selectSessionById("session-legit", "phoenix", "v1").executeAsOneOrNull()
         assertNotNull(session)
         assertEquals("My Custom Routine", session.routineName, "Legitimate routine name should be preserved")
     }
@@ -273,6 +273,8 @@ class MigrationManagerTest {
             burnoutAvgWeightKg = null,
             peakWeightKg = null,
             rpe = null,
+            vendorId = "phoenix",
+            protocolVersion = "v1",
         )
     }
 }

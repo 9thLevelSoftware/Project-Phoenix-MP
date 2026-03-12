@@ -1,6 +1,7 @@
 package com.devil.phoenixproject.data.repository
 
 import com.devil.phoenixproject.data.local.ConnectionLogEntity
+import com.devil.phoenixproject.data.context.VendorContextProvider
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -92,7 +93,9 @@ class ConnectionLogRepository {
             deviceName = deviceName,
             message = message,
             details = details,
-            metadata = null
+            metadata = null,
+            vendorId = vendorContextProvider.current().vendorId,
+            protocolVersion = vendorContextProvider.current().protocolVersion
         )
 
         _logs.update { currentLogs ->
@@ -158,6 +161,10 @@ class ConnectionLogRepository {
         sb.appendLine()
 
         _logs.value.forEach { log ->
+            val context = vendorContextProvider.current()
+            if (log.vendorId != context.vendorId || log.protocolVersion != context.protocolVersion) {
+                return@forEach
+            }
             sb.appendLine("[${formatTimestamp(log.timestamp)}] [${log.level}] ${log.eventType}")
             sb.appendLine("  ${log.message}")
             if (log.deviceName != null || log.deviceAddress != null) {
@@ -179,7 +186,11 @@ class ConnectionLogRepository {
         val sb = StringBuilder()
         sb.appendLine("timestamp,level,event_type,message,device_name,device_address,details")
 
+        val context = vendorContextProvider.current()
         _logs.value.forEach { log ->
+            if (log.vendorId != context.vendorId || log.protocolVersion != context.protocolVersion) {
+                return@forEach
+            }
             sb.appendLine(
                 "${log.timestamp},${log.level},${log.eventType}," +
                 "\"${log.message.replace("\"", "\"\"")}\","+
@@ -195,21 +206,36 @@ class ConnectionLogRepository {
      * Get logs filtered by level.
      */
     fun getLogsByLevel(level: LogLevel): List<ConnectionLogEntity> {
-        return _logs.value.filter { it.level == level.name }
+        val context = vendorContextProvider.current()
+        return _logs.value.filter {
+            it.level == level.name &&
+                it.vendorId == context.vendorId &&
+                it.protocolVersion == context.protocolVersion
+        }
     }
 
     /**
      * Get logs filtered by event type.
      */
     fun getLogsByEventType(eventType: String): List<ConnectionLogEntity> {
-        return _logs.value.filter { it.eventType == eventType }
+        val context = vendorContextProvider.current()
+        return _logs.value.filter {
+            it.eventType == eventType &&
+                it.vendorId == context.vendorId &&
+                it.protocolVersion == context.protocolVersion
+        }
     }
 
     /**
      * Get logs for a specific device.
      */
     fun getLogsForDevice(deviceAddress: String): List<ConnectionLogEntity> {
-        return _logs.value.filter { it.deviceAddress == deviceAddress }
+        val context = vendorContextProvider.current()
+        return _logs.value.filter {
+            it.deviceAddress == deviceAddress &&
+                it.vendorId == context.vendorId &&
+                it.protocolVersion == context.protocolVersion
+        }
     }
 
     private fun formatTimestamp(timestamp: Long): String {
@@ -223,3 +249,4 @@ class ConnectionLogRepository {
 
     private fun currentTimeMillis(): Long = Clock.System.now().toEpochMilliseconds()
 }
+    private val vendorContextProvider = VendorContextProvider()
