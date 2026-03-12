@@ -4,6 +4,7 @@ import app.cash.sqldelight.coroutines.asFlow
 import app.cash.sqldelight.coroutines.mapToList
 import app.cash.sqldelight.coroutines.mapToOneOrNull
 import co.touchlab.kermit.Logger
+import com.devil.phoenixproject.data.context.VendorContextProvider
 import com.devil.phoenixproject.database.VitruvianDatabase
 import com.devil.phoenixproject.domain.model.EccentricLoad
 import com.devil.phoenixproject.domain.model.EchoLevel
@@ -27,7 +28,8 @@ import kotlinx.serialization.json.Json
 
 class SqlDelightWorkoutRepository(
     private val db: VitruvianDatabase,
-    private val exerciseRepository: ExerciseRepository
+    private val exerciseRepository: ExerciseRepository,
+    private val vendorContextProvider: VendorContextProvider = VendorContextProvider()
 ) : WorkoutRepository {
 
     private val queries = db.vitruvianDatabaseQueries
@@ -78,6 +80,8 @@ class SqlDelightWorkoutRepository(
         burnoutAvgWeightKg: Double?,
         peakWeightKg: Double?,
         rpe: Long?,
+        vendorId: String,
+        protocolVersion: String,
         // Sync fields (migration 6)
         updatedAt: Long?,
         serverId: String?,
@@ -134,6 +138,8 @@ class SqlDelightWorkoutRepository(
         createdAt: Long,
         lastUsed: Long?,
         useCount: Long,
+        vendorId: String,
+        protocolVersion: String,
         // Sync fields (migration 6)
         updatedAt: Long?,
         serverId: String?,
@@ -351,7 +357,8 @@ class SqlDelightWorkoutRepository(
     }
 
     override fun getAllSessions(): Flow<List<WorkoutSession>> {
-        return queries.selectAllSessions(::mapToSession)
+        val context = vendorContextProvider.current()
+        return queries.selectAllSessions(context.vendorId, context.protocolVersion, ::mapToSession)
             .asFlow()
             .mapToList(Dispatchers.IO)
     }
@@ -398,25 +405,30 @@ class SqlDelightWorkoutRepository(
                 workingAvgWeightKg = session.workingAvgWeightKg?.toDouble(),
                 burnoutAvgWeightKg = session.burnoutAvgWeightKg?.toDouble(),
                 peakWeightKg = session.peakWeightKg?.toDouble(),
-                rpe = session.rpe?.toLong()
+                rpe = session.rpe?.toLong(),
+                vendorId = vendorContextProvider.current().vendorId,
+                protocolVersion = vendorContextProvider.current().protocolVersion
             )
         }
     }
 
     override suspend fun deleteSession(sessionId: String) {
         withContext(Dispatchers.IO) {
-            queries.deleteSession(sessionId)
+            val context = vendorContextProvider.current()
+            queries.deleteSession(sessionId, context.vendorId, context.protocolVersion)
         }
     }
 
     override suspend fun deleteAllSessions() {
         withContext(Dispatchers.IO) {
-            queries.deleteAllSessions()
+            val context = vendorContextProvider.current()
+            queries.deleteAllSessions(context.vendorId, context.protocolVersion)
         }
     }
 
     override fun getAllRoutines(): Flow<List<Routine>> {
-        return queries.selectAllRoutines(::mapToRoutineBasic)
+        val context = vendorContextProvider.current()
+        return queries.selectAllRoutines(context.vendorId, context.protocolVersion, ::mapToRoutineBasic)
             .asFlow()
             .mapToList(Dispatchers.IO)
             .map { basicRoutines ->
@@ -451,7 +463,9 @@ class SqlDelightWorkoutRepository(
                     description = "", // Default empty description
                     createdAt = routine.createdAt,
                     lastUsed = routine.lastUsed,
-                    useCount = routine.useCount.toLong()
+                    useCount = routine.useCount.toLong(),
+                    vendorId = vendorContextProvider.current().vendorId,
+                    protocolVersion = vendorContextProvider.current().protocolVersion
                 )
 
                 // Delete existing supersets and exercises before re-inserting
@@ -533,7 +547,9 @@ class SqlDelightWorkoutRepository(
                 queries.updateRoutineById(
                     name = routine.name,
                     description = "", // Keep description empty for now
-                    id = routineId
+                    id = routineId,
+                    vendorId = vendorContextProvider.current().vendorId,
+                    protocolVersion = vendorContextProvider.current().protocolVersion
                 )
 
                 // Delete existing supersets and exercises, then re-insert
@@ -563,7 +579,7 @@ class SqlDelightWorkoutRepository(
                 // Delete exercises and supersets first (foreign key cascade should handle this, but be explicit)
                 queries.deleteRoutineExercises(routineId)
                 queries.deleteSupersetsByRoutine(routineId)
-                queries.deleteRoutineById(routineId)
+                queries.deleteRoutineById(routineId, vendorContextProvider.current().vendorId, vendorContextProvider.current().protocolVersion)
             }
 
             Logger.d { "Deleted routine $routineId" }
@@ -573,7 +589,7 @@ class SqlDelightWorkoutRepository(
     override suspend fun getRoutineById(routineId: String): Routine? {
         return withContext(Dispatchers.IO) {
             if (routineId.isBlank()) return@withContext null
-            val basicRoutine = queries.selectRoutineById(routineId, ::mapToRoutineBasic).executeAsOneOrNull()
+            val basicRoutine = queries.selectRoutineById(routineId, vendorContextProvider.current().vendorId, vendorContextProvider.current().protocolVersion, ::mapToRoutineBasic).executeAsOneOrNull()
                 ?: return@withContext null
 
             loadRoutineWithExercises(
@@ -694,21 +710,21 @@ class SqlDelightWorkoutRepository(
     // ========== New methods for full parity ==========
 
     override fun getRecentSessions(limit: Int): Flow<List<WorkoutSession>> {
-        return queries.selectRecentSessions(limit.toLong(), ::mapToSession)
+        return queries.selectRecentSessions(vendorContextProvider.current().vendorId, vendorContextProvider.current().protocolVersion, limit.toLong(), ::mapToSession)
             .asFlow()
             .mapToList(Dispatchers.IO)
     }
 
     override suspend fun getSession(sessionId: String): WorkoutSession? {
         return withContext(Dispatchers.IO) {
-            queries.selectSessionById(sessionId, ::mapToSession).executeAsOneOrNull()
+            queries.selectSessionById(sessionId, vendorContextProvider.current().vendorId, vendorContextProvider.current().protocolVersion, ::mapToSession).executeAsOneOrNull()
         }
     }
 
     override suspend fun markRoutineUsed(routineId: String) {
         withContext(Dispatchers.IO) {
             if (routineId.isBlank()) return@withContext
-            queries.updateRoutineLastUsed(currentTimeMillis(), routineId)
+            queries.updateRoutineLastUsed(currentTimeMillis(), routineId, vendorContextProvider.current().vendorId, vendorContextProvider.current().protocolVersion)
             Logger.d { "Marked routine used: $routineId" }
         }
     }
@@ -747,7 +763,7 @@ class SqlDelightWorkoutRepository(
 
     override suspend fun getRecentSessionsSync(limit: Int): List<WorkoutSession> {
         return withContext(Dispatchers.IO) {
-            queries.selectRecentSessions(limit.toLong(), ::mapToSession).executeAsList()
+            queries.selectRecentSessions(vendorContextProvider.current().vendorId, vendorContextProvider.current().protocolVersion, limit.toLong(), ::mapToSession).executeAsList()
         }
     }
 

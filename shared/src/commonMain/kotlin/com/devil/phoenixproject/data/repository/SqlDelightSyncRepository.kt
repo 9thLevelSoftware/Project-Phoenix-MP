@@ -2,6 +2,7 @@ package com.devil.phoenixproject.data.repository
 
 import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.database.VitruvianDatabase
+import com.devil.phoenixproject.data.context.VendorContextProvider
 import com.devil.phoenixproject.data.sync.CustomExerciseSyncDto
 import com.devil.phoenixproject.data.sync.EarnedBadgeSyncDto
 import com.devil.phoenixproject.data.sync.GamificationStatsSyncDto
@@ -268,7 +269,7 @@ class SqlDelightSyncRepository(
                     val localId = existingByServer?.id ?: dto.clientId
 
                     // Preserve local usage stats that the server doesn't track
-                    val existing = queries.selectRoutineById(localId).executeAsOneOrNull()
+                    val existing = queries.selectRoutineById(localId, VendorContextProvider.DEFAULT_CONTEXT.vendorId, VendorContextProvider.DEFAULT_CONTEXT.protocolVersion).executeAsOneOrNull()
 
                     queries.upsertRoutine(
                         id = localId,
@@ -276,7 +277,9 @@ class SqlDelightSyncRepository(
                         description = dto.description,
                         createdAt = dto.createdAt,
                         lastUsed = existing?.lastUsed,
-                        useCount = existing?.useCount ?: 0L
+                        useCount = existing?.useCount ?: 0L,
+                        vendorId = VendorContextProvider.DEFAULT_CONTEXT.vendorId,
+                        protocolVersion = VendorContextProvider.DEFAULT_CONTEXT.protocolVersion
                     )
 
                     // Update sync fields
