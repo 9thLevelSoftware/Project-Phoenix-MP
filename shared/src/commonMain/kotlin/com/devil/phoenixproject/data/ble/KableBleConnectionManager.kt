@@ -6,6 +6,9 @@ import com.devil.phoenixproject.data.repository.LogEventType
 import com.devil.phoenixproject.data.repository.ReconnectionRequest
 import com.devil.phoenixproject.data.repository.ScannedDevice
 import com.devil.phoenixproject.domain.model.ConnectionState
+import com.devil.phoenixproject.framework.protocol.AdvertisedMachineData
+import com.devil.phoenixproject.framework.protocol.MachineProfile
+import com.devil.phoenixproject.framework.protocol.VitruvianMachineProfile
 import com.devil.phoenixproject.util.BleConstants
 import com.devil.phoenixproject.util.HardwareDetection
 import com.juul.kable.Advertisement
@@ -32,7 +35,6 @@ import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.concurrent.Volatile
 import kotlin.time.Clock
 import kotlin.uuid.ExperimentalUuidApi
-import kotlin.uuid.Uuid
 
 /**
  * Manages the BLE connection lifecycle for Vitruvian machines.
@@ -66,6 +68,7 @@ class KableBleConnectionManager(
     private val pollingEngine: MetricPollingEngine,
     private val discoMode: DiscoMode,
     private val handleDetector: HandleStateDetector,
+    private val machineProfile: MachineProfile = VitruvianMachineProfile,
     // Callbacks for event routing to facade flows
     private val onConnectionStateChanged: (ConnectionState) -> Unit,
     private val onScannedDevicesChanged: (List<ScannedDevice>) -> Unit,
@@ -164,8 +167,8 @@ class KableBleConnectionManager(
     // -------------------------------------------------------------------------
 
     suspend fun startScanning(): Result<Unit> {
-        log.i { "Starting BLE scan for Vitruvian devices" }
-        logRepo.info(LogEventType.SCAN_START, "Starting BLE scan for Vitruvian devices")
+        log.i { "Starting BLE scan for ${machineProfile.displayName} devices" }
+        logRepo.info(LogEventType.SCAN_START, "Starting BLE scan for ${machineProfile.displayName} devices")
 
         return try {
             // Cancel any existing scan job to prevent duplicates
@@ -188,75 +191,28 @@ class KableBleConnectionManager(
                     log.d { "RAW ADV: name=${advertisement.name}, id=${advertisement.identifier}, uuids=${advertisement.uuids}, rssi=${advertisement.rssi}" }
                 }
                 .filter { advertisement ->
-                    // Filter by name if available
-                    val name = advertisement.name
-                    if (name != null) {
-                        val isVitruvian = name.startsWith("Vee_", ignoreCase = true) ||
-                                          name.startsWith("VIT", ignoreCase = true) ||
-                                          name.startsWith("Vitruvian", ignoreCase = true)
-                        if (isVitruvian) {
-                            log.i { "Found Vitruvian by name: $name" }
-                        } else {
-                            log.d { "Ignoring device: $name (not Vitruvian)" }
-                        }
-                        return@filter isVitruvian
-                    }
-
-                    // Check for Vitruvian service UUIDs (mServiceUuids)
-                    val serviceUuids = advertisement.uuids
-                    val hasVitruvianServiceUuid = serviceUuids.any { uuid ->
-                        val uuidStr = uuid.toString().lowercase()
-                        uuidStr.startsWith("0000fef3") ||
-                        uuidStr == BleConstants.NUS_SERVICE_UUID_STRING
-                    }
-
-                    if (hasVitruvianServiceUuid) {
-                        log.i { "Found Vitruvian by service UUID: ${advertisement.identifier}" }
-                        return@filter true
-                    }
-
-                    // CRITICAL: Check for FEF3 service data
-                    // The Vitruvian device advertises FEF3 in serviceData, not serviceUuids!
-                    // In Kable, serviceData is accessed differently - try to get FEF3 directly
-                    val fef3Uuid = try {
-                        Uuid.parse("0000fef3-0000-1000-8000-00805f9b34fb")
-                    } catch (_: Exception) {
-                        null
-                    }
-
-                    val hasVitruvianServiceData = if (fef3Uuid != null) {
-                        // Try to get data for FEF3 service UUID
-                        val fef3Data = advertisement.serviceData(fef3Uuid)
-                        if (fef3Data != null && fef3Data.isNotEmpty()) {
-                            log.i { "Found Vitruvian by FEF3 serviceData: ${advertisement.identifier}, data size: ${fef3Data.size}" }
-                            true
-                        } else {
-                            false
-                        }
+                    val machineData = advertisement.toAdvertisedMachineData()
+                    val match = machineProfile.match(machineData)
+                    if (match.matches) {
+                        log.i { "Found ${machineProfile.displayName} by ${match.reason ?: "profile"}: ${machineProfile.labelFor(machineData)}" }
                     } else {
-                        false
+                        log.d { "Ignoring device: ${machineProfile.labelFor(machineData)} (not ${machineProfile.displayName})" }
                     }
-
-                    hasVitruvianServiceData
+                    match.matches
                 }
                 .onEach { advertisement ->
-                    val identifier = advertisement.identifier.toString()
-                    val advertisedName = advertisement.name
-                    val hasRealName = advertisedName != null &&
-                        (advertisedName.startsWith("Vee_", ignoreCase = true) ||
-                         advertisedName.startsWith("VIT", ignoreCase = true))
+                    val machineData = advertisement.toAdvertisedMachineData()
+                    val identifier = machineData.identifier
+                    val hasRealName = machineProfile.hasPreferredName(machineData.name)
+                    val name = machineProfile.labelFor(machineData)
 
-                    // Use name if available, otherwise use identifier as placeholder
-                    val name = advertisedName ?: "Vitruvian ($identifier)"
-
-                    // Skip devices without a real Vitruvian name if we already have one
+                    // Skip devices without a preferred profile name if we already have one
                     if (!hasRealName) {
                         val alreadyHaveRealDevice = currentScannedDevices.any { existing ->
-                            existing.name.startsWith("Vee_", ignoreCase = true) ||
-                            existing.name.startsWith("VIT", ignoreCase = true)
+                            machineProfile.hasPreferredName(existing.name)
                         }
                         if (alreadyHaveRealDevice) {
-                            log.d { "Skipping nameless device $identifier - already have named Vitruvian device" }
+                            log.d { "Skipping nameless device $identifier - already have named ${machineProfile.displayName} device" }
                             return@onEach
                         }
                     }
@@ -266,7 +222,7 @@ class KableBleConnectionManager(
                         log.d { "Discovered device: $name ($identifier) RSSI: ${advertisement.rssi}" }
                         logRepo.info(
                             LogEventType.DEVICE_FOUND,
-                            "Found Vitruvian device",
+                            "Found ${machineProfile.displayName} device",
                             name,
                             identifier,
                             "RSSI: ${advertisement.rssi} dBm"
@@ -288,8 +244,7 @@ class KableBleConnectionManager(
                     // (same physical device can advertise with different identifiers)
                     if (hasRealName) {
                         devices = devices.filter { existing ->
-                            existing.name.startsWith("Vee_", ignoreCase = true) ||
-                            existing.name.startsWith("VIT", ignoreCase = true) ||
+                            machineProfile.hasPreferredName(existing.name) ||
                             existing.address == identifier  // Keep if same address (will update below)
                         }.toMutableList()
                     }
@@ -329,7 +284,7 @@ class KableBleConnectionManager(
         logRepo.info(
             LogEventType.SCAN_STOP,
             "BLE scan stopped",
-            details = "Found ${discoveredAdvertisements.size} Vitruvian device(s)"
+            details = "Found ${discoveredAdvertisements.size} ${machineProfile.displayName} device(s)"
         )
         scanJob?.cancel()
         scanJob = null
@@ -343,7 +298,7 @@ class KableBleConnectionManager(
     // -------------------------------------------------------------------------
 
     /**
-     * Scan for first Vitruvian device and connect immediately.
+     * Scan for first profile-matching device and connect immediately.
      * This is the simple flow matching parent repo behavior.
      */
     suspend fun scanAndConnect(timeoutMs: Long = 30000L): Result<Unit> {
@@ -356,29 +311,27 @@ class KableBleConnectionManager(
         discoveredAdvertisements.clear()
 
         return try {
-            // Find first Vitruvian device with a real name
+            // Find first matching device with a preferred name
             val advertisement = withTimeoutOrNull(timeoutMs) {
                 Scanner {}
                     .advertisements
                     .filter { adv ->
-                        val name = adv.name
-                        name != null && (
-                            name.startsWith("Vee_", ignoreCase = true) ||
-                            name.startsWith("VIT", ignoreCase = true)
-                        )
+                        val machineData = adv.toAdvertisedMachineData()
+                        machineProfile.match(machineData).matches && machineProfile.hasPreferredName(machineData.name)
                     }
                     .first()
             }
 
             if (advertisement == null) {
-                log.w { "scanAndConnect: No Vitruvian device found within timeout" }
+                log.w { "scanAndConnect: No ${machineProfile.displayName} device found within timeout" }
                 logRepo.error(LogEventType.SCAN_STOP, "No device found", details = "Timeout after ${timeoutMs}ms")
                 reportConnectionState(ConnectionState.Disconnected)
-                return Result.failure(Exception("No Vitruvian device found"))
+                return Result.failure(Exception("No ${machineProfile.displayName} device found"))
             }
 
-            val identifier = advertisement.identifier.toString()
-            val name = advertisement.name ?: "Vitruvian"
+            val machineData = advertisement.toAdvertisedMachineData()
+            val identifier = machineData.identifier
+            val name = machineProfile.labelFor(machineData)
             log.i { "scanAndConnect: Found device $name ($identifier), connecting..." }
 
             // Store for connection
@@ -1101,5 +1054,18 @@ class KableBleConnectionManager(
      */
     private fun currentTimeMillis(): Long {
         return Clock.System.now().toEpochMilliseconds()
+    }
+
+    private fun Advertisement.toAdvertisedMachineData(): AdvertisedMachineData {
+        val serviceData = machineProfile.advertisedDataHints.serviceDataUuids.associateWith { uuid ->
+            serviceData(uuid) ?: byteArrayOf()
+        }
+        return AdvertisedMachineData(
+            name = name,
+            identifier = identifier.toString(),
+            rssi = rssi,
+            serviceUuids = uuids,
+            serviceData = serviceData
+        )
     }
 }
