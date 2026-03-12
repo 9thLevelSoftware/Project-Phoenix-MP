@@ -4,6 +4,7 @@ import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.database.Routine
 import com.devil.phoenixproject.database.RoutineExercise
 import com.devil.phoenixproject.database.VitruvianDatabase
+import com.devil.phoenixproject.data.context.VendorContextProvider
 import com.devil.phoenixproject.database.WorkoutSession
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -70,7 +71,9 @@ class MigrationManager(
                 if (rawId.equals("legacy_session_${session.id}", ignoreCase = true)) {
                     queries.updateSessionRoutineSessionId(
                         routineSessionId = null,
-                        id = session.id
+                        id = session.id,
+                        vendorId = VendorContextProvider.DEFAULT_CONTEXT.vendorId,
+                        protocolVersion = VendorContextProvider.DEFAULT_CONTEXT.protocolVersion
                     )
                     cleaned++
                 }
@@ -112,7 +115,9 @@ class MigrationManager(
                     if (resolvedRoutineId != null) {
                         queries.updateSessionRoutineId(
                             routineId = resolvedRoutineId,
-                            id = session.id
+                            id = session.id,
+                            vendorId = VendorContextProvider.DEFAULT_CONTEXT.vendorId,
+                            protocolVersion = VendorContextProvider.DEFAULT_CONTEXT.protocolVersion
                         )
                         updatedIdRows++
                     }
@@ -125,7 +130,9 @@ class MigrationManager(
                 if (updatedRoutineName == null && session.routineName == null) return@forEach
                 queries.updateSessionRoutineName(
                     routineName = updatedRoutineName,
-                    id = session.id
+                    id = session.id,
+                    vendorId = VendorContextProvider.DEFAULT_CONTEXT.vendorId,
+                    protocolVersion = VendorContextProvider.DEFAULT_CONTEXT.protocolVersion
                 )
                 updatedNameRows++
             }

@@ -3,6 +3,7 @@ package com.devil.phoenixproject.data.repository
 import app.cash.sqldelight.coroutines.asFlow
 import app.cash.sqldelight.coroutines.mapToList
 import app.cash.sqldelight.coroutines.mapToOneOrNull
+import com.devil.phoenixproject.data.context.VendorContextProvider
 import com.devil.phoenixproject.database.VitruvianDatabase
 import com.devil.phoenixproject.domain.model.CycleDay
 import com.devil.phoenixproject.domain.model.CycleItem
@@ -19,7 +20,8 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
 
 class SqlDelightTrainingCycleRepository(
-    private val db: VitruvianDatabase
+    private val db: VitruvianDatabase,
+    private val vendorContextProvider: VendorContextProvider = VendorContextProvider()
 ) : TrainingCycleRepository {
 
     private val queries = db.vitruvianDatabaseQueries
@@ -618,7 +620,8 @@ class SqlDelightTrainingCycleRepository(
             // Triple: name, exerciseCount, exerciseNames
             val routineInfo = mutableMapOf<String, Triple<String, Int, List<String>>>()
             routineIds.forEach { routineId ->
-                queries.selectRoutineById(routineId).executeAsOneOrNull()?.let { routine ->
+                val context = vendorContextProvider.current()
+                queries.selectRoutineById(routineId, context.vendorId, context.protocolVersion).executeAsOneOrNull()?.let { routine ->
                     val exercises = queries.selectExercisesByRoutine(routineId).executeAsList()
                     routineInfo[routineId] = Triple(
                         routine.name,

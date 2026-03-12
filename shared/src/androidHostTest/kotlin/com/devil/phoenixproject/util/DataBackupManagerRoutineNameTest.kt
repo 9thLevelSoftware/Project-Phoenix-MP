@@ -136,7 +136,7 @@ class DataBackupManagerRoutineNameTest {
         assertTrue(importResult.isSuccess)
 
         val imported = database.vitruvianDatabaseQueries
-            .selectSessionById("session-import-1")
+            .selectSessionById("session-import-1", "phoenix", "v1")
             .executeAsOneOrNull()
         assertNotNull(imported)
         assertEquals("Tuesday Upper", imported.routineName)
@@ -199,7 +199,7 @@ class DataBackupManagerRoutineNameTest {
         assertTrue(importResult.isSuccess)
 
         val imported = database.vitruvianDatabaseQueries
-            .selectSessionById("session-import-2")
+            .selectSessionById("session-import-2", "phoenix", "v1")
             .executeAsOneOrNull()
         assertNotNull(imported)
         assertEquals("Arms Day", imported.routineName)
@@ -296,6 +296,8 @@ class DataBackupManagerRoutineNameTest {
             burnoutAvgWeightKg = null,
             peakWeightKg = null,
             rpe = null,
+            vendorId = "phoenix",
+            protocolVersion = "v1",
         )
 
         val backup = backupManager.exportAllData()
@@ -339,7 +341,7 @@ class DataBackupManagerRoutineNameTest {
         assertTrue(importResult.isSuccess)
 
         val imported = database.vitruvianDatabaseQueries
-            .selectSessionById("session-import-fabricated")
+            .selectSessionById("session-import-fabricated", "phoenix", "v1")
             .executeAsOneOrNull()
         assertNotNull(imported)
         assertNull(imported.routineSessionId, "Fabricated legacy_session_* ID should be stripped on import")
@@ -381,7 +383,7 @@ class DataBackupManagerRoutineNameTest {
         assertTrue(importResult.isSuccess)
 
         val imported = database.vitruvianDatabaseQueries
-            .selectSessionById("session-import-garbage")
+            .selectSessionById("session-import-garbage", "phoenix", "v1")
             .executeAsOneOrNull()
         assertNotNull(imported)
         assertNull(imported.routineName, "Garbage routine name should be filtered out on import")

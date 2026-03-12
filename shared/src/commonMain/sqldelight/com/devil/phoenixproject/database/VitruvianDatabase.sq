@@ -88,6 +88,8 @@ CREATE TABLE WorkoutSession (
     burnoutAvgWeightKg REAL,
     peakWeightKg REAL,
     rpe INTEGER,
+    vendorId TEXT NOT NULL DEFAULT 'phoenix',
+    protocolVersion TEXT NOT NULL DEFAULT 'v1',
     -- Sync fields (added in migration 6)
     updatedAt INTEGER,
     serverId TEXT,
@@ -139,6 +141,8 @@ CREATE TABLE Routine (
     createdAt INTEGER NOT NULL,
     lastUsed INTEGER,
     useCount INTEGER NOT NULL DEFAULT 0,
+    vendorId TEXT NOT NULL DEFAULT 'phoenix',
+    protocolVersion TEXT NOT NULL DEFAULT 'v1',
     -- Sync fields (added in migration 6)
     updatedAt INTEGER,
     serverId TEXT,
@@ -215,11 +219,14 @@ CREATE TABLE ConnectionLog (
     deviceName TEXT,
     message TEXT NOT NULL,
     details TEXT,
-    metadata TEXT
+    metadata TEXT,
+    vendorId TEXT NOT NULL DEFAULT 'phoenix',
+    protocolVersion TEXT NOT NULL DEFAULT 'v1'
 );
 
 CREATE INDEX idx_connection_log_timestamp ON ConnectionLog(timestamp);
 CREATE INDEX idx_connection_log_device ON ConnectionLog(deviceAddress);
+CREATE INDEX idx_connection_log_vendor_protocol ON ConnectionLog(vendorId, protocolVersion, timestamp DESC);
 
 -- ==================== DIAGNOSTICS HISTORY ====================
 -- Machine diagnostics snapshots for fault tracking
@@ -346,10 +353,12 @@ deleteCustomExercise:
 DELETE FROM Exercise WHERE id = ? AND isCustom = 1;
 
 deleteSession:
-DELETE FROM WorkoutSession WHERE id = ?;
+DELETE FROM WorkoutSession
+WHERE id = ? AND vendorId = :vendorId AND protocolVersion = :protocolVersion;
 
 deleteAllSessions:
-DELETE FROM WorkoutSession;
+DELETE FROM WorkoutSession
+WHERE vendorId = :vendorId AND protocolVersion = :protocolVersion;
 
 -- Exercise Video Queries
 selectVideosByExercise:
@@ -370,10 +379,13 @@ DELETE FROM ExerciseVideo;
 
 -- Workout Session Queries
 selectAllSessions:
-SELECT * FROM WorkoutSession ORDER BY timestamp DESC;
+SELECT * FROM WorkoutSession
+WHERE vendorId = :vendorId AND protocolVersion = :protocolVersion
+ORDER BY timestamp DESC;
 
 selectSessionById:
-SELECT * FROM WorkoutSession WHERE id = ?;
+SELECT * FROM WorkoutSession
+WHERE id = ? AND vendorId = :vendorId AND protocolVersion = :protocolVersion;
 
 -- Sync version for backup
 selectAllSessionsSync:
@@ -381,10 +393,13 @@ SELECT * FROM WorkoutSession;
 
 -- Get all session IDs for duplicate checking during import
 selectAllSessionIds:
-SELECT id FROM WorkoutSession;
+SELECT id FROM WorkoutSession
+WHERE vendorId = :vendorId AND protocolVersion = :protocolVersion;
 
 selectRecentSessions:
-SELECT * FROM WorkoutSession ORDER BY timestamp DESC LIMIT ?;
+SELECT * FROM WorkoutSession
+WHERE vendorId = :vendorId AND protocolVersion = :protocolVersion
+ORDER BY timestamp DESC LIMIT ?;
 
 insertSession:
 INSERT INTO WorkoutSession (
@@ -396,29 +411,30 @@ INSERT INTO WorkoutSession (
     peakForceConcentricA, peakForceConcentricB, peakForceEccentricA, peakForceEccentricB,
     avgForceConcentricA, avgForceConcentricB, avgForceEccentricA, avgForceEccentricB,
     heaviestLiftKg, totalVolumeKg, estimatedCalories,
-    warmupAvgWeightKg, workingAvgWeightKg, burnoutAvgWeightKg, peakWeightKg, rpe
+    warmupAvgWeightKg, workingAvgWeightKg, burnoutAvgWeightKg, peakWeightKg, rpe,
+    vendorId, protocolVersion
 )
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 updateSession:
 UPDATE WorkoutSession 
 SET duration = ?, totalReps = ?, workingReps = ? 
-WHERE id = ?;
+WHERE id = ? AND vendorId = :vendorId AND protocolVersion = :protocolVersion;
 
 updateSessionRoutineName:
 UPDATE WorkoutSession
 SET routineName = ?
-WHERE id = ?;
+WHERE id = ? AND vendorId = :vendorId AND protocolVersion = :protocolVersion;
 
 updateSessionRoutineSessionId:
 UPDATE WorkoutSession
 SET routineSessionId = ?
-WHERE id = ?;
+WHERE id = ? AND vendorId = :vendorId AND protocolVersion = :protocolVersion;
 
 updateSessionRoutineId:
 UPDATE WorkoutSession
 SET routineId = ?
-WHERE id = ?;
+WHERE id = ? AND vendorId = :vendorId AND protocolVersion = :protocolVersion;
 
 -- Metric Queries
 selectMetricsBySession:
@@ -539,21 +555,26 @@ SELECT id FROM PersonalRecord;
 
 -- Routine Queries
 selectAllRoutines:
-SELECT * FROM Routine ORDER BY name ASC;
+SELECT * FROM Routine
+WHERE vendorId = :vendorId AND protocolVersion = :protocolVersion
+ORDER BY name ASC;
 
 selectRoutineById:
-SELECT * FROM Routine WHERE id = ?;
+SELECT * FROM Routine
+WHERE id = ? AND vendorId = :vendorId AND protocolVersion = :protocolVersion;
 
 insertRoutine:
-INSERT INTO Routine (id, name, description, createdAt, lastUsed, useCount) VALUES (?, ?, ?, ?, ?, ?);
+INSERT INTO Routine (id, name, description, createdAt, lastUsed, useCount, vendorId, protocolVersion)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?);
 
 -- Upsert routine (insert or replace) - handles both new and existing routines
 upsertRoutine:
-INSERT OR REPLACE INTO Routine (id, name, description, createdAt, lastUsed, useCount)
-VALUES (?, ?, ?, ?, ?, ?);
+INSERT OR REPLACE INTO Routine (id, name, description, createdAt, lastUsed, useCount, vendorId, protocolVersion)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?);
 
 updateRoutineLastUsed:
-UPDATE Routine SET lastUsed = ?, useCount = useCount + 1 WHERE id = ?;
+UPDATE Routine SET lastUsed = ?, useCount = useCount + 1
+WHERE id = ? AND vendorId = :vendorId AND protocolVersion = :protocolVersion;
 
 -- Sync versions for backup
 selectAllRoutinesSync:
@@ -597,10 +618,12 @@ deleteRoutineExercises:
 DELETE FROM RoutineExercise WHERE routineId = ?;
 
 deleteRoutineById:
-DELETE FROM Routine WHERE id = ?;
+DELETE FROM Routine
+WHERE id = ? AND vendorId = :vendorId AND protocolVersion = :protocolVersion;
 
 updateRoutineById:
-UPDATE Routine SET name = ?, description = ? WHERE id = ?;
+UPDATE Routine SET name = ?, description = ?
+WHERE id = ? AND vendorId = :vendorId AND protocolVersion = :protocolVersion;
 
 -- ==================== SUPERSET QUERIES ====================
 
@@ -652,38 +675,55 @@ SELECT timestamp, totalReps, weightPerCableKg FROM WorkoutSession ORDER BY times
 -- ==================== CONNECTION LOG QUERIES ====================
 
 insertConnectionLog:
-INSERT INTO ConnectionLog (timestamp, eventType, level, deviceAddress, deviceName, message, details, metadata)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?);
+INSERT INTO ConnectionLog (timestamp, eventType, level, deviceAddress, deviceName, message, details, metadata, vendorId, protocolVersion)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 selectAllConnectionLogs:
-SELECT * FROM ConnectionLog ORDER BY timestamp DESC;
+SELECT * FROM ConnectionLog
+WHERE vendorId = :vendorId AND protocolVersion = :protocolVersion
+ORDER BY timestamp DESC;
 
 selectRecentConnectionLogs:
-SELECT * FROM ConnectionLog ORDER BY timestamp DESC LIMIT ?;
+SELECT * FROM ConnectionLog
+WHERE vendorId = :vendorId AND protocolVersion = :protocolVersion
+ORDER BY timestamp DESC LIMIT ?;
 
 selectConnectionLogsByDevice:
-SELECT * FROM ConnectionLog WHERE deviceAddress = ? ORDER BY timestamp DESC;
+SELECT * FROM ConnectionLog
+WHERE deviceAddress = ? AND vendorId = :vendorId AND protocolVersion = :protocolVersion
+ORDER BY timestamp DESC;
 
 selectConnectionLogsByEventType:
-SELECT * FROM ConnectionLog WHERE eventType = ? ORDER BY timestamp DESC;
+SELECT * FROM ConnectionLog
+WHERE eventType = ? AND vendorId = :vendorId AND protocolVersion = :protocolVersion
+ORDER BY timestamp DESC;
 
 selectConnectionLogsByLevel:
-SELECT * FROM ConnectionLog WHERE level = ? ORDER BY timestamp DESC;
+SELECT * FROM ConnectionLog
+WHERE level = ? AND vendorId = :vendorId AND protocolVersion = :protocolVersion
+ORDER BY timestamp DESC;
 
 selectConnectionLogsBetween:
-SELECT * FROM ConnectionLog WHERE timestamp BETWEEN ? AND ? ORDER BY timestamp DESC;
+SELECT * FROM ConnectionLog
+WHERE timestamp BETWEEN ? AND ? AND vendorId = :vendorId AND protocolVersion = :protocolVersion
+ORDER BY timestamp DESC;
 
 countConnectionLogsByLevel:
-SELECT COUNT(*) FROM ConnectionLog WHERE level = ?;
+SELECT COUNT(*) FROM ConnectionLog
+WHERE level = ? AND vendorId = :vendorId AND protocolVersion = :protocolVersion;
 
 deleteConnectionLogsOlderThan:
-DELETE FROM ConnectionLog WHERE timestamp < ?;
+DELETE FROM ConnectionLog
+WHERE timestamp < ? AND vendorId = :vendorId AND protocolVersion = :protocolVersion;
 
 deleteAllConnectionLogs:
-DELETE FROM ConnectionLog;
+DELETE FROM ConnectionLog
+WHERE vendorId = :vendorId AND protocolVersion = :protocolVersion;
 
 selectConnectionLogsForExport:
-SELECT * FROM ConnectionLog ORDER BY timestamp ASC;
+SELECT * FROM ConnectionLog
+WHERE vendorId = :vendorId AND protocolVersion = :protocolVersion
+ORDER BY timestamp ASC;
 
 -- ==================== DIAGNOSTICS HISTORY QUERIES ====================
 
