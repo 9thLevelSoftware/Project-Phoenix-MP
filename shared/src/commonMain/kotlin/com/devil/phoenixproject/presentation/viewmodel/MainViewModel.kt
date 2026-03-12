@@ -123,6 +123,7 @@ class MainViewModel constructor(
     val autoStartCountdown: StateFlow<Int?> get() = workoutSessionManager.coordinator.autoStartCountdown
     val hapticEvents: SharedFlow<HapticEvent> get() = workoutSessionManager.coordinator.hapticEvents
     val userFeedbackEvents: SharedFlow<String> get() = workoutSessionManager.coordinator.userFeedbackEvents
+    val safetyAuditEvents: SharedFlow<com.devil.phoenixproject.domain.model.SafetyAuditEvent> get() = workoutSessionManager.coordinator.safetyAuditEvents
     val routines: StateFlow<List<Routine>> get() = workoutSessionManager.coordinator.routines
     val loadedRoutine: StateFlow<Routine?> get() = workoutSessionManager.coordinator.loadedRoutine
     val currentExerciseIndex: StateFlow<Int> get() = workoutSessionManager.coordinator.currentExerciseIndex
