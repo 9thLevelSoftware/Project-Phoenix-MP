@@ -71,6 +71,52 @@ jobs:
           check_name: 'Unit Test Results'
           fail_on_failure: true
 
+
+  vendor-conformance:
+    name: Vendor Conformance (${{ matrix.vendor_adapter }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        vendor_adapter: [phoenix, demo]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Cache Gradle packages
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-
+
+      - name: Run vendor conformance suite
+        env:
+          VENDOR_ADAPTER: ${{ matrix.vendor_adapter }}
+        run: ./gradlew :shared:testAndroidHostTest --tests "com.devil.phoenixproject.conformance.*" --continue
+
+      - name: Publish vendor conformance report
+        uses: mikepenz/action-junit-report@v4
+        if: always()
+        with:
+          report_paths: 'shared/build/test-results/testAndroidHostTest/TEST-*.xml'
+          check_name: 'Vendor Conformance (${{ matrix.vendor_adapter }})'
+          fail_on_failure: true
+
   build-android:
     name: Build Android
     runs-on: ubuntu-latest
