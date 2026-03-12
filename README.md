@@ -107,6 +107,14 @@ See [Release Notes](https://github.com/DasBluEyedDevil/Project-Phoenix-MP/releas
 
 ---
 
+## Documentation
+
+- [Android Installation Guide](ANDROID_INSTALL.md)
+- [iOS Installation Guide](iOS_INSTALL.md)
+- [Third-Party Integration Guide](docs/integration-guide.md)
+
+---
+
 ## Building from Source
 
 ### Prerequisites

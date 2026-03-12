@@ -126,6 +126,7 @@ class DefaultWorkoutSessionManager(
     private val resolveWeightsUseCase: ResolveRoutineWeightsUseCase,
     private val settingsManager: SettingsManager,
     private val scope: CoroutineScope,
+    private val safetyPolicy: SafetyPolicy = DefaultSafetyPolicy(),
     private val _hapticEvents: MutableSharedFlow<HapticEvent> = MutableSharedFlow(
         extraBufferCapacity = 10,
         onBufferOverflow = kotlinx.coroutines.channels.BufferOverflow.DROP_OLDEST
@@ -170,7 +171,8 @@ class DefaultWorkoutSessionManager(
         completedSetRepository = completedSetRepository,
         syncTriggerManager = syncTriggerManager,
         settingsManager = settingsManager,
-        scope = scope
+        scope = scope,
+        safetyPolicy = safetyPolicy
     )
 
     companion object {
