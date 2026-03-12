@@ -134,6 +134,15 @@ See [Release Notes](https://github.com/DasBluEyedDevil/Project-Phoenix-MP/releas
 open iosApp/VitruvianPhoenix/VitruvianPhoenix.xcodeproj
 ```
 
+
+### Vendor adapter conformance tests
+```bash
+./gradlew :shared:testAndroidHostTest --tests "com.devil.phoenixproject.conformance.*"
+```
+
+Use `VENDOR_ADAPTER=<id>` (for example `phoenix` or `demo`) to run adapter-specific conformance checks.
+See [Vendor Adapter Conformance Suite](docs/vendor-adapter-conformance.md) for the full workflow.
+
 ---
 
 ## Technology Stack
