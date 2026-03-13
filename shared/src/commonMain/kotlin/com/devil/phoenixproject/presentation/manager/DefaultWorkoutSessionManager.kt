@@ -152,7 +152,7 @@ class DefaultWorkoutSessionManager(
             override fun startWorkout(skipCountdown: Boolean) { this@DefaultWorkoutSessionManager.startWorkout(skipCountdown = skipCountdown) }
             override suspend fun sendStopCommand() { bleRepository.sendStopCommand() }
             override suspend fun stopMachineWorkout() { bleRepository.stopWorkout() }
-            override fun updateWorkoutParameters(params: WorkoutParameters) { this@DefaultWorkoutSessionManager.updateWorkoutParameters(params) }
+            override fun setWorkoutParametersInternal(params: WorkoutParameters) { this@DefaultWorkoutSessionManager.setWorkoutParametersInternal(params) }
         }
     }
 
@@ -315,6 +315,7 @@ class DefaultWorkoutSessionManager(
     fun recaptureLoadBaseline() = activeSessionEngine.recaptureLoadBaseline()
     fun resetLoadBaseline() = activeSessionEngine.resetLoadBaseline()
     fun updateWorkoutParameters(params: WorkoutParameters) = activeSessionEngine.updateWorkoutParameters(params)
+    fun setWorkoutParametersInternal(params: WorkoutParameters) = activeSessionEngine.setWorkoutParametersInternal(params)
     fun startWorkout(skipCountdown: Boolean = false, isJustLiftMode: Boolean = false) = activeSessionEngine.startWorkout(skipCountdown, isJustLiftMode)
     fun skipCountdown() = activeSessionEngine.skipCountdown()
     fun stopWorkout(exitingWorkout: Boolean = false) = activeSessionEngine.stopWorkout(exitingWorkout)

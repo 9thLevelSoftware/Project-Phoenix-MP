@@ -50,8 +50,8 @@ class RoutineFlowManager(
         suspend fun sendStopCommand()
         /** Send BLE stop/reset to put machine in BASELINE mode */
         suspend fun stopMachineWorkout()
-        /** Update workout parameters (includes side-effect tracking) */
-        fun updateWorkoutParameters(params: WorkoutParameters)
+        /** Update workout parameters for internal manager transitions (no user-adjusted side-effects) */
+        fun setWorkoutParametersInternal(params: WorkoutParameters)
     }
 
     /**
@@ -488,7 +488,7 @@ class RoutineFlowManager(
         println("Issue188-Load: ║   isAMRAP=${params.isAMRAP} (from firstSetReps == null || exercise.isAMRAP)")
         println("Issue188-Load: ║   reps=${params.reps}")
         println("Issue188-Load: ║   progressionRegressionKg=${params.progressionRegressionKg}kg")
-        lifecycleDelegate.updateWorkoutParameters(params)
+        lifecycleDelegate.setWorkoutParametersInternal(params)
     }
 
     fun loadRoutine(routine: Routine) {

@@ -1165,6 +1165,16 @@ class ActiveSessionEngine(
         coordinator._workoutParameters.value = params
     }
 
+    /**
+     * Internal parameter updates used by manager-driven transitions.
+     *
+     * Unlike [updateWorkoutParameters], this intentionally does NOT mark the
+     * parameters as user-adjusted during rest.
+     */
+    fun setWorkoutParametersInternal(params: WorkoutParameters) {
+        coordinator._workoutParameters.value = params
+    }
+
     fun startWorkout(skipCountdown: Boolean = false, isJustLiftMode: Boolean = false) {
         Logger.d { "startWorkout called: skipCountdown=$skipCountdown, isJustLiftMode=$isJustLiftMode" }
         Logger.d { "startWorkout: loadedRoutine=${coordinator._loadedRoutine.value?.name}, params=${coordinator._workoutParameters.value}" }

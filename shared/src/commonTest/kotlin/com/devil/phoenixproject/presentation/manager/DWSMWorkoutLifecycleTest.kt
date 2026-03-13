@@ -304,6 +304,122 @@ class DWSMWorkoutLifecycleTest {
         harness.cleanup()
     }
 
+
+    @Test
+    fun `routine next-set weight applies when user did not manually edit`() = runTest {
+        val harness = DWSMTestHarness(this)
+        val base = createTestRoutine(exerciseCount = 1, setsPerExercise = 2)
+        val routine = base.copy(
+            exercises = listOf(
+                base.exercises.first().copy(
+                    setReps = listOf(8, 6),
+                    setWeightsPerCableKg = listOf(20f, 30f),
+                    weightPerCableKg = 20f
+                )
+            )
+        )
+        routine.exercises.forEach { harness.fakeExerciseRepo.addExercise(it.exercise) }
+
+        harness.dwsm.loadRoutine(routine)
+        advanceUntilIdle()
+
+        harness.dwsm.coordinator._workoutState.value = WorkoutState.Resting(
+            restSecondsRemaining = 0,
+            nextExerciseName = "",
+            isLastExercise = true,
+            currentSet = 1,
+            totalSets = 2
+        )
+        harness.dwsm.startNextSet()
+        advanceUntilIdle()
+
+        val params = harness.dwsm.coordinator.workoutParameters.value
+        assertEquals(30f, params.weightPerCableKg)
+        assertEquals(6, params.reps)
+        harness.cleanup()
+    }
+
+    @Test
+    fun `manual rest-screen edits are preserved across transition`() = runTest {
+        val harness = DWSMTestHarness(this)
+        val base = createTestRoutine(exerciseCount = 1, setsPerExercise = 2)
+        val routine = base.copy(
+            exercises = listOf(
+                base.exercises.first().copy(
+                    setReps = listOf(8, 6),
+                    setWeightsPerCableKg = listOf(20f, 30f),
+                    weightPerCableKg = 20f
+                )
+            )
+        )
+        routine.exercises.forEach { harness.fakeExerciseRepo.addExercise(it.exercise) }
+
+        harness.dwsm.loadRoutine(routine)
+        advanceUntilIdle()
+
+        harness.dwsm.coordinator._workoutState.value = WorkoutState.Resting(
+            restSecondsRemaining = 0,
+            nextExerciseName = "",
+            isLastExercise = true,
+            currentSet = 1,
+            totalSets = 2
+        )
+        harness.dwsm.updateWorkoutParameters(
+            harness.dwsm.coordinator.workoutParameters.value.copy(
+                weightPerCableKg = 42f,
+                reps = 11
+            )
+        )
+
+        harness.dwsm.startNextSet()
+        advanceUntilIdle()
+
+        val params = harness.dwsm.coordinator.workoutParameters.value
+        assertEquals(42f, params.weightPerCableKg)
+        assertEquals(11, params.reps)
+        harness.cleanup()
+    }
+
+    @Test
+    fun `previous exercise weight does not leak into next exercise`() = runTest {
+        val harness = DWSMTestHarness(this)
+        val base = createTestRoutine(exerciseCount = 2, setsPerExercise = 1)
+        val routine = base.copy(
+            exercises = listOf(
+                base.exercises[0].copy(
+                    setReps = listOf(8),
+                    setWeightsPerCableKg = listOf(20f),
+                    weightPerCableKg = 20f
+                ),
+                base.exercises[1].copy(
+                    setReps = listOf(10),
+                    setWeightsPerCableKg = listOf(55f),
+                    weightPerCableKg = 55f
+                )
+            )
+        )
+        routine.exercises.forEach { harness.fakeExerciseRepo.addExercise(it.exercise) }
+
+        harness.dwsm.loadRoutine(routine)
+        advanceUntilIdle()
+
+        harness.dwsm.coordinator._workoutState.value = WorkoutState.Resting(
+            restSecondsRemaining = 0,
+            nextExerciseName = routine.exercises[1].exercise.displayName,
+            isLastExercise = false,
+            currentSet = 1,
+            totalSets = 1
+        )
+        harness.dwsm.startNextSet()
+        advanceUntilIdle()
+
+        val params = harness.dwsm.coordinator.workoutParameters.value
+        assertEquals(55f, params.weightPerCableKg)
+        assertEquals(10, params.reps)
+        assertEquals(routine.exercises[1].exercise.id, params.selectedExerciseId)
+        harness.cleanup()
+    }
+
     // ===== E. Auto-stop behavior (indirect) =====
 
     @Test
