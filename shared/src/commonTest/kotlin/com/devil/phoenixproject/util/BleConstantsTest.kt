@@ -60,11 +60,15 @@ class BleConstantsTest {
     }
 
     @Test
-    fun `activation packet force config offsets match official layout`() {
+    fun `activation packet force config offsets match firmware layout`() {
+        // Firmware force config (overlaps eccentric phase tail)
+        assertEquals(0x48, BleConstants.ActivationPacket.OFFSET_SOFT_MAX)
+        assertEquals(0x4C, BleConstants.ActivationPacket.OFFSET_INCREMENT)
+        // Protocol force config block
         assertEquals(0x50, BleConstants.ActivationPacket.OFFSET_FORCE_MIN)
         assertEquals(0x54, BleConstants.ActivationPacket.OFFSET_FORCE_MAX)
-        assertEquals(0x58, BleConstants.ActivationPacket.OFFSET_SOFT_MAX)
-        assertEquals(0x5C, BleConstants.ActivationPacket.OFFSET_INCREMENT)
+        assertEquals(0x58, BleConstants.ActivationPacket.OFFSET_TARGET_WEIGHT)
+        assertEquals(0x5C, BleConstants.ActivationPacket.OFFSET_PROGRESSION)
     }
 
     // ========== Data Protocol Tests ==========
