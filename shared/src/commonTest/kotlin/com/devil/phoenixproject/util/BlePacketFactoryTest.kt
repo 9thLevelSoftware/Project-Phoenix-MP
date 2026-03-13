@@ -339,6 +339,38 @@ class BlePacketFactoryTest {
     }
 
     @Test
+    fun `Issue #267 Just Lift packet preserves target and activation tail contract`() {
+        val targetWeight = 42.5f
+        val progression = 2.0f
+        val params = WorkoutParameters(
+            programMode = ProgramMode.Pump,
+            reps = 8,
+            warmupReps = 3,
+            weightPerCableKg = targetWeight,
+            progressionRegressionKg = progression,
+            isJustLift = true
+        )
+
+        val packet = BlePacketFactory.createProgramParams(params)
+
+        // Just Lift must carry the actual operating target at 0x58.
+        assertEquals(targetWeight - progression, readFloatLE(packet, 0x58))
+
+        // Protocol force/progression block must remain fully populated.
+        assertEquals(0.0f, readFloatLE(packet, 0x50))
+        assertEquals(targetWeight - progression + 10.0f, readFloatLE(packet, 0x54))
+        assertEquals(targetWeight - progression, readFloatLE(packet, 0x58))
+        assertEquals(progression, readFloatLE(packet, 0x5C))
+
+        // For Just Lift, profile contract is OldSchool and tail bytes 0x48..0x4F are firmware force config.
+        assertEquals(100.0f, readFloatLE(packet, 0x48))
+        assertEquals(progression, readFloatLE(packet, 0x4C))
+        assertEquals((-1300).toShort(), readShortLE(packet, 0x40))
+        assertEquals((-1200).toShort(), readShortLE(packet, 0x42))
+        assertEquals(100.0f, readFloatLE(packet, 0x44))
+    }
+
+    @Test
     fun `createProgramParams zero progression writes zero increment`() {
         val params = WorkoutParameters(
             programMode = ProgramMode.OldSchool,
