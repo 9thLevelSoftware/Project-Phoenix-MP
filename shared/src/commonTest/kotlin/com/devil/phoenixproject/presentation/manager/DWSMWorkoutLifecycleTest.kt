@@ -645,6 +645,46 @@ class DWSMWorkoutLifecycleTest {
     }
 
     @Test
+    fun `Issue #267 Just Lift warmup to working rep transitions without failed stall state`() = runTest {
+        val harness = DWSMTestHarness(this)
+        harness.fakeBleRepo.simulateConnect("Vee_Test")
+
+        harness.dwsm.updateWorkoutParameters(
+            WorkoutParameters(
+                programMode = ProgramMode.OldSchool,
+                reps = 8,
+                warmupReps = 0,
+                weightPerCableKg = 20f,
+                progressionRegressionKg = 0f,
+                stallDetectionEnabled = true,
+                isAMRAP = false,
+                isJustLift = true
+            )
+        )
+        harness.dwsm.startWorkout(skipCountdown = true)
+        advanceUntilIdle()
+        assertIs<WorkoutState.Active>(harness.dwsm.coordinator.workoutState.value)
+
+        completeWarmupReps(harness, warmupTarget = 3, workingTarget = 8)
+        advanceUntilIdle()
+
+        val afterWarmup = harness.dwsm.coordinator.repCount.value
+        assertTrue(afterWarmup.isWarmupComplete)
+        assertEquals(0, afterWarmup.workingReps)
+
+        completeFirstWorkingRep(harness, warmupTarget = 3, workingTarget = 8)
+        advanceUntilIdle()
+
+        val afterWorkingRep = harness.dwsm.coordinator.repCount.value
+        assertEquals(1, afterWorkingRep.workingReps)
+        assertFalse(afterWorkingRep.hasPendingRep)
+        assertEquals(null, harness.dwsm.coordinator.stallStartTime)
+        assertFalse(harness.dwsm.coordinator.isCurrentlyStalled)
+        assertIs<WorkoutState.Active>(harness.dwsm.coordinator.workoutState.value)
+        harness.cleanup()
+    }
+
+    @Test
     fun `set summary volume uses configured load for fixed weight workouts`() = runTest {
         val harness = DWSMTestHarness(this)
 
