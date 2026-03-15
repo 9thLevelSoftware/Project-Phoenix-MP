@@ -538,6 +538,7 @@ private fun HudBottomBar(
     }
 }
 
+@Suppress("SENSELESS_COMPARISON") // Smart-cast helper: null check needed for non-null usage below
 @Composable
 private fun ExecutionPage(
     metric: WorkoutMetric?,
@@ -612,8 +613,9 @@ private fun ExecutionPage(
                     MaterialTheme.colorScheme.primary
             )
         } else if (isTimedExercise && timedExerciseRemainingSeconds != null) {
-            // Timed exercise - show countdown timer
-            val remainingSeconds = timedExerciseRemainingSeconds // Smart cast to non-null
+            // timedExerciseRemainingSeconds != null is logically redundant (implied by isTimedExercise)
+            // but required for Kotlin smart-cast so timedExerciseRemainingSeconds can be used as non-null below
+            val remainingSeconds = timedExerciseRemainingSeconds
             Text(
                 "TIME",
                 style = MaterialTheme.typography.labelLarge,

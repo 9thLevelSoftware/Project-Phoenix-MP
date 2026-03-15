@@ -29,6 +29,7 @@ import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.domain.model.effectiveTotalVolumeKg
 import com.devil.phoenixproject.ui.theme.DataColors
 import com.devil.phoenixproject.domain.model.currentTimeMillis
+import kotlin.time.Instant
 import kotlinx.datetime.*
 
 /**
@@ -344,7 +345,7 @@ private fun groupByDay(sessions: List<WorkoutSession>): List<Pair<String, List<W
     return (0..6).map { offset ->
         val date = startDate.plus(offset, DateTimeUnit.DAY)
         val monthName = date.month.name.take(3).lowercase().replaceFirstChar { it.uppercase() }
-        val label = "$monthName ${date.dayOfMonth}"
+        val label = "$monthName ${date.day}"
         val daySessions = sessionsByDay[date] ?: emptyList()
         label to daySessions
     }.filter { it.second.isNotEmpty() }
@@ -376,7 +377,7 @@ private fun groupByWeek(sessions: List<WorkoutSession>): List<Pair<String, List<
         .entries.sortedBy { it.key }
         .map { (monday, weekSessions) ->
             val monthName = monday.month.name.take(3).lowercase().replaceFirstChar { it.uppercase() }
-            val label = "$monthName ${monday.dayOfMonth}"
+            val label = "$monthName ${monday.day}"
             label to weekSessions
         }
 }
@@ -398,7 +399,7 @@ private fun groupByMonth(sessions: List<WorkoutSession>): List<Pair<String, List
         .groupBy { session ->
             val instant = Instant.fromEpochMilliseconds(session.timestamp)
             val date = instant.toLocalDateTime(TimeZone.currentSystemDefault()).date
-            "${date.year}-${date.monthNumber.toString().padStart(2, '0')}"
+            "${date.year}-${date.month.number.toString().padStart(2, '0')}"
         }
         .entries.sortedBy { it.key }
         .map { (_, monthSessions) ->

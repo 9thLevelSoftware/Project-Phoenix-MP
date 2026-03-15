@@ -121,6 +121,16 @@ interface PreferencesManager {
     suspend fun setSimulatorModeEnabled(enabled: Boolean)
     fun isSimulatorModeEnabled(): Boolean
 
+    // Issue #266: Configurable weight increment
+    suspend fun setWeightIncrement(increment: Float)
+    // Issue #190: Auto-start routine
+    suspend fun setAutoStartRoutine(enabled: Boolean)
+    // Issue #229: Body weight for bodyweight exercise volume
+    suspend fun setBodyWeightKg(weightKg: Float)
+    // Issue #100: Per-sound toggles
+    suspend fun setCountdownBeepsEnabled(enabled: Boolean)
+    suspend fun setRepSoundEnabled(enabled: Boolean)
+
     suspend fun getSingleExerciseDefaults(exerciseId: String): SingleExerciseDefaults?
     suspend fun saveSingleExerciseDefaults(defaults: SingleExerciseDefaults)
     suspend fun clearAllSingleExerciseDefaults()
@@ -167,6 +177,11 @@ class SettingsPreferencesManager(
         private const val KEY_SIMULATOR_MODE_UNLOCKED = "simulator_mode_unlocked"
         private const val KEY_SIMULATOR_MODE_ENABLED = "simulator_mode_enabled"
         private const val KEY_GAMIFICATION_ENABLED = "gamification_enabled"
+        private const val KEY_WEIGHT_INCREMENT = "weight_increment"
+        private const val KEY_AUTO_START_ROUTINE = "auto_start_routine"
+        private const val KEY_BODY_WEIGHT_KG = "body_weight_kg"
+        private const val KEY_COUNTDOWN_BEEPS_ENABLED = "countdown_beeps_enabled"
+        private const val KEY_REP_SOUND_ENABLED = "rep_sound_enabled"
     }
 
     private val _preferencesFlow = MutableStateFlow(loadPreferences())
@@ -195,7 +210,12 @@ class SettingsPreferencesManager(
             autoStartCountdownSeconds = settings.getInt(KEY_AUTOSTART_COUNTDOWN_SECONDS, 5),
             gamificationEnabled = settings.getBoolean(KEY_GAMIFICATION_ENABLED, true),
             simulatorModeUnlocked = settings.getBoolean(KEY_SIMULATOR_MODE_UNLOCKED, false),
-            simulatorModeEnabled = settings.getBoolean(KEY_SIMULATOR_MODE_ENABLED, false)
+            simulatorModeEnabled = settings.getBoolean(KEY_SIMULATOR_MODE_ENABLED, false),
+            weightIncrement = settings.getFloat(KEY_WEIGHT_INCREMENT, -1f),
+            autoStartRoutine = settings.getBoolean(KEY_AUTO_START_ROUTINE, false),
+            bodyWeightKg = settings.getFloat(KEY_BODY_WEIGHT_KG, 0f),
+            countdownBeepsEnabled = settings.getBoolean(KEY_COUNTDOWN_BEEPS_ENABLED, true),
+            repSoundEnabled = settings.getBoolean(KEY_REP_SOUND_ENABLED, true)
         )
     }
 
@@ -354,5 +374,30 @@ class SettingsPreferencesManager(
 
     override fun isSimulatorModeEnabled(): Boolean {
         return settings.getBoolean(KEY_SIMULATOR_MODE_ENABLED, false)
+    }
+
+    override suspend fun setWeightIncrement(increment: Float) {
+        settings.putFloat(KEY_WEIGHT_INCREMENT, increment)
+        updateAndEmit { copy(weightIncrement = increment) }
+    }
+
+    override suspend fun setAutoStartRoutine(enabled: Boolean) {
+        settings.putBoolean(KEY_AUTO_START_ROUTINE, enabled)
+        updateAndEmit { copy(autoStartRoutine = enabled) }
+    }
+
+    override suspend fun setBodyWeightKg(weightKg: Float) {
+        settings.putFloat(KEY_BODY_WEIGHT_KG, weightKg)
+        updateAndEmit { copy(bodyWeightKg = weightKg) }
+    }
+
+    override suspend fun setCountdownBeepsEnabled(enabled: Boolean) {
+        settings.putBoolean(KEY_COUNTDOWN_BEEPS_ENABLED, enabled)
+        updateAndEmit { copy(countdownBeepsEnabled = enabled) }
+    }
+
+    override suspend fun setRepSoundEnabled(enabled: Boolean) {
+        settings.putBoolean(KEY_REP_SOUND_ENABLED, enabled)
+        updateAndEmit { copy(repSoundEnabled = enabled) }
     }
 }

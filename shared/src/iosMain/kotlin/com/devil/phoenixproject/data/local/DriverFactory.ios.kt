@@ -54,7 +54,7 @@ actual class DriverFactory {
 
     companion object {
         /** Current schema version - must match SQLDelight (1 + number of .sqm files) */
-        private const val CURRENT_SCHEMA_VERSION = 18L
+        private const val CURRENT_SCHEMA_VERSION = 20L
     }
 
     /**
@@ -964,6 +964,7 @@ actual class DriverFactory {
         safeAddColumn(driver, "PersonalRecord", "updatedAt", "INTEGER")
         safeAddColumn(driver, "PersonalRecord", "serverId", "TEXT")
         safeAddColumn(driver, "PersonalRecord", "deletedAt", "INTEGER")
+        safeAddColumn(driver, "PersonalRecord", "phase", "TEXT NOT NULL DEFAULT 'COMBINED'")
 
         // UserProfile columns
         safeAddColumn(driver, "UserProfile", "supabase_user_id", "TEXT")
@@ -1013,7 +1014,7 @@ actual class DriverFactory {
             "CREATE INDEX IF NOT EXISTS idx_metric_sample_session ON MetricSample(sessionId)",
             // PersonalRecord indexes
             "CREATE INDEX IF NOT EXISTS idx_personal_record_exercise ON PersonalRecord(exerciseId)",
-            "CREATE UNIQUE INDEX IF NOT EXISTS idx_pr_unique ON PersonalRecord(exerciseId, workoutMode, prType)",
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_pr_unique ON PersonalRecord(exerciseId, workoutMode, prType, phase)",
             // Superset indexes
             "CREATE INDEX IF NOT EXISTS idx_superset_routine ON Superset(routineId)",
             // ConnectionLog indexes

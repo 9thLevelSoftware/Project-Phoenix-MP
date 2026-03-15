@@ -158,7 +158,8 @@ data class PersonalRecordBackup(
     val achievedAt: Long,
     val workoutMode: String,
     val prType: String = "MAX_WEIGHT",
-    val volume: Float = 0f
+    val volume: Float = 0f,
+    val phase: String? = "COMBINED"  // Nullable for backward compat with pre-v0.7.0 backups
 )
 
 /**

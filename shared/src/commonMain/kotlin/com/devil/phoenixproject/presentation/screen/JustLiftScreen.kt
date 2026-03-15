@@ -102,34 +102,32 @@ fun JustLiftScreen(
     LaunchedEffect(Unit) {
         if (!defaultsLoaded) {
             val defaults = viewModel.getJustLiftDefaults()
-            if (defaults != null) {
-                // Apply saved defaults
-                weightPerCable = defaults.weightPerCableKg
+            // Apply saved defaults
+            weightPerCable = defaults.weightPerCableKg
 
-                // Convert stored weight change (KG) to display unit if needed
-                // weightChangePerRep is already Int in viewmodel format
-                weightChangePerRep = if (weightUnit == WeightUnit.LB) {
-                    kotlin.math.round(defaults.weightChangePerRep * 2.20462f).toInt()
-                } else {
-                    defaults.weightChangePerRep
-                }
-
-                // Set mode from saved defaults
-                val savedProgramMode = defaults.toProgramMode()
-                selectedMode = savedProgramMode.toWorkoutMode(defaults.getEchoLevel())
-
-                // Restore eccentric load and echo level for Echo mode
-                eccentricLoad = defaults.getEccentricLoad()
-                echoLevel = defaults.getEchoLevel()
-
-                // Restore rep count timing
-                repCountTiming = defaults.getRepCountTiming()
-
-                // Restore stall detection
-                stallDetectionEnabled = defaults.stallDetectionEnabled
-
-                Logger.d("Loaded Just Lift defaults: modeId=${defaults.workoutModeId}, weight=${defaults.weightPerCableKg}kg, progression=${defaults.weightChangePerRep}, repTiming=${defaults.repCountTimingName}")
+            // Convert stored weight change (KG) to display unit if needed
+            // weightChangePerRep is already Int in viewmodel format
+            weightChangePerRep = if (weightUnit == WeightUnit.LB) {
+                kotlin.math.round(defaults.weightChangePerRep * 2.20462f).toInt()
+            } else {
+                defaults.weightChangePerRep
             }
+
+            // Set mode from saved defaults
+            val savedProgramMode = defaults.toProgramMode()
+            selectedMode = savedProgramMode.toWorkoutMode(defaults.getEchoLevel())
+
+            // Restore eccentric load and echo level for Echo mode
+            eccentricLoad = defaults.getEccentricLoad()
+            echoLevel = defaults.getEchoLevel()
+
+            // Restore rep count timing
+            repCountTiming = defaults.getRepCountTiming()
+
+            // Restore stall detection
+            stallDetectionEnabled = defaults.stallDetectionEnabled
+
+            Logger.d("Loaded Just Lift defaults: modeId=${defaults.workoutModeId}, weight=${defaults.weightPerCableKg}kg, progression=${defaults.weightChangePerRep}, repTiming=${defaults.repCountTimingName}")
             defaultsLoaded = true
         }
     }
@@ -400,7 +398,7 @@ fun JustLiftScreen(
                                     readOnly = true,
                                     trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
                                     modifier = Modifier
-                                        .menuAnchor()
+                                        .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable)
                                         .fillMaxWidth(),
                                     colors = ExposedDropdownMenuDefaults.outlinedTextFieldColors()
                                 )

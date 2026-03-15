@@ -260,7 +260,7 @@ fun ExerciseEditBottomSheet(
                         readOnly = true,
                         trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = eccentricLoadExpanded) },
                         modifier = Modifier
-                            .menuAnchor()
+                            .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable)
                             .fillMaxWidth(),
                         colors = ExposedDropdownMenuDefaults.outlinedTextFieldColors()
                     )

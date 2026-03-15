@@ -130,4 +130,24 @@ class FakePreferencesManager : PreferencesManager {
     override fun isSimulatorModeEnabled(): Boolean {
         return _preferencesFlow.value.simulatorModeEnabled
     }
+
+    override suspend fun setWeightIncrement(increment: Float) {
+        _preferencesFlow.value = _preferencesFlow.value.copy(weightIncrement = increment)
+    }
+
+    override suspend fun setAutoStartRoutine(enabled: Boolean) {
+        _preferencesFlow.value = _preferencesFlow.value.copy(autoStartRoutine = enabled)
+    }
+
+    override suspend fun setBodyWeightKg(weightKg: Float) {
+        _preferencesFlow.value = _preferencesFlow.value.copy(bodyWeightKg = weightKg)
+    }
+
+    override suspend fun setCountdownBeepsEnabled(enabled: Boolean) {
+        _preferencesFlow.value = _preferencesFlow.value.copy(countdownBeepsEnabled = enabled)
+    }
+
+    override suspend fun setRepSoundEnabled(enabled: Boolean) {
+        _preferencesFlow.value = _preferencesFlow.value.copy(repSoundEnabled = enabled)
+    }
 }

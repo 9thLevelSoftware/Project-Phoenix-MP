@@ -43,6 +43,9 @@ class GamificationManager(
     /**
      * Check for PRs and badges after a workout session is saved.
      * Extracted from MainViewModel.saveWorkoutSession() L3494-3564.
+     *
+     * @param peakConcentricForceKg Peak concentric force per cable (max of A/B), 0 if unavailable
+     * @param peakEccentricForceKg Peak eccentric force per cable (max of A/B), 0 if unavailable
      * @return true if a celebration sound will play (to avoid sound stacking)
      */
     suspend fun processPostSaveEvents(
@@ -51,7 +54,9 @@ class GamificationManager(
         measuredWeightKg: Float,
         programMode: ProgramMode,
         isJustLift: Boolean,
-        isEchoMode: Boolean
+        isEchoMode: Boolean,
+        peakConcentricForceKg: Float = 0f,
+        peakEccentricForceKg: Float = 0f
     ): Boolean {
         var hasCelebrationSound = false
 
@@ -63,6 +68,7 @@ class GamificationManager(
                     val workoutMode = programMode.displayName
                     val timestamp = currentTimeMillis()
 
+                    // Check COMBINED (traditional) PRs
                     val result = personalRecordRepository.updatePRsIfBetter(
                         exerciseId = exId,
                         weightPerCableKg = measuredWeightKg,
@@ -70,6 +76,20 @@ class GamificationManager(
                         workoutMode = workoutMode,
                         timestamp = timestamp
                     )
+
+                    // Check phase-specific PRs (Issue #111)
+                    if (peakConcentricForceKg > 0f || peakEccentricForceKg > 0f) {
+                        personalRecordRepository.updatePhaseSpecificPRs(
+                            exerciseId = exId,
+                            workoutMode = workoutMode,
+                            timestamp = timestamp,
+                            reps = workingReps,
+                            peakConcentricForceKg = peakConcentricForceKg,
+                            peakEccentricForceKg = peakEccentricForceKg
+                        ).onFailure { e ->
+                            Logger.e(e) { "Error updating phase-specific PRs: ${e.message}" }
+                        }
+                    }
 
                     // Only celebrate if gamification is enabled and an actual PR was broken
                     if (gamificationEnabled.value) {

@@ -16,8 +16,14 @@ object Constants {
     // Trainer+: 110kg max per cable (220kg total) - use 100kg as safe default
     const val MIN_WEIGHT_KG = 0f
     const val MAX_WEIGHT_KG = 100f
-    const val WEIGHT_INCREMENT_KG = 0.5f
+    const val WEIGHT_INCREMENT_KG = 0.5f      // Machine minimum step (BLE constraint)
     const val MAX_PROGRESSION_KG = 3f
+
+    // Configurable weight increment options per unit system (Issue #266)
+    val WEIGHT_INCREMENT_OPTIONS_KG = listOf(0.5f, 1.0f, 2.5f, 5.0f)
+    val WEIGHT_INCREMENT_OPTIONS_LB = listOf(0.1f, 0.5f, 1.0f, 2.5f, 5.0f)
+    const val DEFAULT_WEIGHT_INCREMENT_KG = 0.5f
+    const val DEFAULT_WEIGHT_INCREMENT_LB = 1.0f
 
     // Reps limits
     const val MIN_REPS = 1
@@ -65,10 +71,45 @@ object UnitConverter {
      */
     fun formatWeight(kg: Float, useLb: Boolean): String {
         return if (useLb) {
-            "${kgToLb(kg).toInt()} lbs"
+            val lbs = kgToLb(kg)
+            "${formatDecimal(lbs)} lbs"
         } else {
-            "${kg.toInt()} kg"
+            "${formatDecimal(kg)} kg"
         }
+    }
+
+    /**
+     * Format a decimal value: shows as integer if whole, 1 decimal place otherwise.
+     * Issue #266: Supports sub-1lb increments with proper decimal display.
+     */
+    fun formatDecimal(value: Float): String {
+        return if (value % 1.0f == 0f) {
+            value.toInt().toString()
+        } else {
+            val rounded = (value * 10).toInt() / 10f
+            if (rounded % 1.0f == 0f) {
+                rounded.toInt().toString()
+            } else {
+                val intPart = rounded.toInt()
+                val decPart = kotlin.math.abs(((rounded - intPart) * 10).toInt())
+                "$intPart.$decPart"
+            }
+        }
+    }
+
+    /**
+     * Round a value to the nearest given increment.
+     */
+    fun roundToIncrement(value: Float, increment: Float): Float {
+        if (increment <= 0f) return value
+        return (kotlin.math.round(value / increment) * increment)
+    }
+
+    /**
+     * Round to nearest 0.5kg — the machine's physical minimum step.
+     */
+    fun roundToMachineIncrement(kg: Float): Float {
+        return roundToIncrement(kg, 0.5f)
     }
 }
 

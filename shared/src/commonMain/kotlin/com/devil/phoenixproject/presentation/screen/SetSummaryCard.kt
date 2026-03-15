@@ -7,6 +7,10 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.CompareArrows
+import androidx.compose.material.icons.automirrored.filled.TrendingDown
+import androidx.compose.material.icons.automirrored.filled.TrendingFlat
+import androidx.compose.material.icons.automirrored.filled.TrendingUp
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -1253,7 +1257,7 @@ private fun AsymmetrySummaryCard(biomechanics: BiomechanicsSetSummary) {
                 horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
                 Icon(
-                    Icons.Default.CompareArrows,
+                    Icons.AutoMirrored.Filled.CompareArrows,
                     contentDescription = "Balance",
                     modifier = Modifier.size(18.dp),
                     tint = MaterialTheme.colorScheme.primary
@@ -1315,9 +1319,9 @@ private fun AsymmetrySummaryCard(biomechanics: BiomechanicsSetSummary) {
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     val trendIcon = when (trend) {
-                        AsymmetryTrend.WORSENING -> Icons.Default.TrendingUp
-                        AsymmetryTrend.IMPROVING -> Icons.Default.TrendingDown
-                        AsymmetryTrend.STABLE -> Icons.Default.TrendingFlat
+                        AsymmetryTrend.WORSENING -> Icons.AutoMirrored.Filled.TrendingUp
+                        AsymmetryTrend.IMPROVING -> Icons.AutoMirrored.Filled.TrendingDown
+                        AsymmetryTrend.STABLE -> Icons.AutoMirrored.Filled.TrendingFlat
                     }
                     val trendColor = when (trend) {
                         AsymmetryTrend.WORSENING -> AccessibilityTheme.colors.error
@@ -1483,9 +1487,9 @@ private fun QualityStatsSection(quality: SetQualitySummary) {
                         color = MaterialTheme.colorScheme.primary
                     )
                     val trendIcon = when (quality.trend) {
-                        QualityTrend.IMPROVING -> Icons.Default.TrendingUp
-                        QualityTrend.STABLE -> Icons.Default.TrendingFlat
-                        QualityTrend.DECLINING -> Icons.Default.TrendingDown
+                        QualityTrend.IMPROVING -> Icons.AutoMirrored.Filled.TrendingUp
+                        QualityTrend.STABLE -> Icons.AutoMirrored.Filled.TrendingFlat
+                        QualityTrend.DECLINING -> Icons.AutoMirrored.Filled.TrendingDown
                     }
                     val trendColor = when (quality.trend) {
                         QualityTrend.IMPROVING -> AccessibilityTheme.colors.success

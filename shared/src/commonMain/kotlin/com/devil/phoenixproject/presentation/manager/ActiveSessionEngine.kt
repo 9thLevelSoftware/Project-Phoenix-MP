@@ -144,7 +144,11 @@ class ActiveSessionEngine(
                          // TOP timing: already announced on PENDING, no double-announce
                      }
                      RepType.WARMUP_COMPLETED -> coordinator._hapticEvents.emit(HapticEvent.REP_COMPLETED)
-                     RepType.WARMUP_COMPLETE -> coordinator._hapticEvents.emit(HapticEvent.WARMUP_COMPLETE)
+                     RepType.WARMUP_COMPLETE -> {
+                         coordinator._hapticEvents.emit(HapticEvent.WARMUP_COMPLETE)
+                         // Issue #100: Distinct transition sound from warmup to working sets
+                         coordinator._hapticEvents.emit(HapticEvent.WARMUP_TO_WORKING)
+                     }
                      RepType.WORKOUT_COMPLETE -> {
                          // Note: WORKOUT_COMPLETE sound removed - WORKOUT_END in handleSetCompletion
                          // provides sufficient feedback, and celebration sounds (PR/badge) may also play.
@@ -155,7 +159,6 @@ class ActiveSessionEngine(
                              handleSetCompletion()
                          }
                      }
-                     else -> {}
                  }
              }
         }
@@ -647,8 +650,7 @@ class ActiveSessionEngine(
             if (repCount.isWarmupComplete) {
                 val params = coordinator._workoutParameters.value
                 // Check if exercise already assigned (routine mode has selectedExerciseId)
-                val hasExerciseAssigned = params.selectedExerciseId != null &&
-                    params.selectedExerciseId!!.isNotBlank()
+                val hasExerciseAssigned = !params.selectedExerciseId.isNullOrBlank()
 
                 detectionManager?.onRepCompleted(
                     repNumber = repCount.workingReps,
@@ -1693,7 +1695,7 @@ class ActiveSessionEngine(
             )
 
             if (isTimedCableExercise) {
-                Logger.d { "Starting TIMED cable exercise: ${currentExercise?.exercise?.name} for ${exerciseDuration}s (no ROM calibration)" }
+                Logger.d { "Starting TIMED cable exercise: ${currentExercise.exercise.name} for ${exerciseDuration}s" }
             }
 
             if (!coordinator.skipCountdownRequested && !isJustLiftMode) {
@@ -1744,6 +1746,9 @@ class ActiveSessionEngine(
                 led.setUserColorScheme(settingsManager.userPreferences.value.colorScheme)
             }
 
+            // exerciseDuration != null is logically redundant (implied by isTimedCableExercise)
+            // but required for Kotlin smart-cast so exerciseDuration can be used as non-null below
+            @Suppress("SENSELESS_COMPARISON")
             if (isTimedCableExercise && exerciseDuration != null) {
                 coordinator.bodyweightTimerJob?.cancel()
                 coordinator.bodyweightTimerJob = scope.launch {
@@ -1927,7 +1932,9 @@ class ActiveSessionEngine(
                  measuredWeightKg = params.weightPerCableKg,
                  programMode = params.programMode,
                  isJustLift = isJustLift,
-                 isEchoMode = params.isEchoMode
+                 isEchoMode = params.isEchoMode,
+                 peakConcentricForceKg = maxOf(summary.peakForceConcentricA, summary.peakForceConcentricB),
+                 peakEccentricForceKg = maxOf(summary.peakForceEccentricA, summary.peakForceEccentricB)
              )
 
              if (hasPR && completedSetId != null) {
@@ -2213,7 +2220,9 @@ class ActiveSessionEngine(
             measuredWeightKg = measuredPerCableKg,
             programMode = params.programMode,
             isJustLift = params.isJustLift,
-            isEchoMode = params.isEchoMode
+            isEchoMode = params.isEchoMode,
+            peakConcentricForceKg = maxOf(summary.peakForceConcentricA, summary.peakForceConcentricB),
+            peakEccentricForceKg = maxOf(summary.peakForceEccentricA, summary.peakForceEccentricB)
         )
 
         if (hasPR && completedSetId != null) {
@@ -2590,10 +2599,20 @@ class ActiveSessionEngine(
 
             val startTime = currentTimeMillis()
             val endTimeMs = startTime + (restDuration * 1000L)
+            var lastTickedSecond = -1  // Issue #100: track emitted ticks to fire once per second
 
             while (currentTimeMillis() < endTimeMs && isActive) {
                 val remainingMs = endTimeMs - currentTimeMillis()
                 val remainingSeconds = (remainingMs / 1000L).toInt().coerceAtLeast(0)
+
+                // Issue #100: Emit countdown tick during last 10 seconds of rest
+                if (remainingSeconds in 1..10 && remainingSeconds != lastTickedSecond) {
+                    lastTickedSecond = remainingSeconds
+                    val prefs = settingsManager.userPreferences.value
+                    if (prefs.beepsEnabled && prefs.countdownBeepsEnabled) {
+                        coordinator._hapticEvents.emit(HapticEvent.COUNTDOWN_TICK(remainingSeconds))
+                    }
+                }
 
                 val nextName = flowDelegate?.calculateNextExerciseName(isSingleExercise, currentExercise, routine) ?: ""
 

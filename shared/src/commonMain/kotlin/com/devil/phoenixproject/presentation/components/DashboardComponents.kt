@@ -540,7 +540,7 @@ private fun calculateStrengthScore(
     val volumeScore = if (workoutSessions.isNotEmpty()) {
         workoutSessions
             .filter { it.timestamp >= thirtyDaysAgo }
-            .sumOf { (it.weightPerCableKg * it.totalReps * 0.5).toDouble() }
+            .sumOf { it.weightPerCableKg * it.totalReps * 0.5 }
     } else {
         0.0
     }

@@ -46,6 +46,11 @@ fun SettingsTab(
     enableVideoPlayback: Boolean,
     darkModeEnabled: Boolean,
     audioRepCountEnabled: Boolean = false,
+    // Issue #100: Per-sound toggles
+    countdownBeepsEnabled: Boolean = true,
+    repSoundEnabled: Boolean = true,
+    onCountdownBeepsChange: (Boolean) -> Unit = {},
+    onRepSoundChange: (Boolean) -> Unit = {},
     summaryCountdownSeconds: Int = 10,
     autoStartCountdownSeconds: Int = 5,
     selectedColorSchemeIndex: Int = 0,
@@ -544,6 +549,66 @@ fun SettingsTab(
                     Switch(
                         checked = audioRepCountEnabled,
                         onCheckedChange = onAudioRepCountChange
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(Spacing.medium))
+
+                // Issue #100: Countdown beeps toggle
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text(
+                            "Countdown Beeps",
+                            style = MaterialTheme.typography.bodyLarge,
+                            fontWeight = FontWeight.Medium,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            "Beep during last 10 seconds of rest timer",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Switch(
+                        checked = countdownBeepsEnabled,
+                        onCheckedChange = onCountdownBeepsChange
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(Spacing.medium))
+
+                // Issue #100: Rep completion sound toggle
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text(
+                            "Rep Completion Sound",
+                            style = MaterialTheme.typography.bodyLarge,
+                            fontWeight = FontWeight.Medium,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            "Play sound when a rep is completed",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Switch(
+                        checked = repSoundEnabled,
+                        onCheckedChange = onRepSoundChange
                     )
                 }
 

@@ -387,7 +387,7 @@ object PortalSyncAdapter {
      */
     private fun epochToIso8601(epochMs: Long): String {
         // Use kotlinx-datetime for proper formatting
-        val instant = kotlinx.datetime.Instant.fromEpochMilliseconds(epochMs)
+        val instant = kotlin.time.Instant.fromEpochMilliseconds(epochMs)
         return instant.toString() // ISO 8601 format
     }
 }

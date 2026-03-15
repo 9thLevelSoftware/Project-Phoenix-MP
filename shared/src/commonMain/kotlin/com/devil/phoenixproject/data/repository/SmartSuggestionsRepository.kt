@@ -50,7 +50,7 @@ class SqlDelightSmartSuggestionsRepository(
         withContext(Dispatchers.IO) {
             queries.selectSessionSummariesSince(sinceTimestamp).executeAsList().map { row ->
                 SessionSummary(
-                    exerciseId = row.exerciseId ?: "",
+                    exerciseId = row.exerciseId,
                     exerciseName = row.exerciseName ?: "Unknown",
                     muscleGroup = row.muscleGroup ?: row.exerciseName ?: "Unknown",
                     timestamp = row.timestamp,
@@ -80,7 +80,7 @@ class SqlDelightSmartSuggestionsRepository(
         withContext(Dispatchers.IO) {
             queries.selectExerciseWeightHistory().executeAsList().map { row ->
                 SessionSummary(
-                    exerciseId = row.exerciseId ?: "",
+                    exerciseId = row.exerciseId,
                     exerciseName = row.exerciseName ?: "Unknown",
                     muscleGroup = row.exerciseName ?: "Unknown",
                     timestamp = row.timestamp,

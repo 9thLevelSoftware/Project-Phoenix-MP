@@ -56,6 +56,13 @@ interface WorkoutRepository {
     fun getAllPersonalRecords(): Flow<List<PersonalRecordEntity>>
     suspend fun updatePRIfBetter(exerciseId: String, weightKg: Float, reps: Int, mode: String)
 
+    /**
+     * Get average set duration in milliseconds for a specific exercise.
+     * Returns null if no historical data is available.
+     * Issue #225: Used by RoutineTimeEstimator.
+     */
+    suspend fun getAverageSetDurationMs(exerciseId: String): Long?
+
     // Metrics storage
     suspend fun saveMetrics(sessionId: String, metrics: List<com.devil.phoenixproject.domain.model.WorkoutMetric>)
 

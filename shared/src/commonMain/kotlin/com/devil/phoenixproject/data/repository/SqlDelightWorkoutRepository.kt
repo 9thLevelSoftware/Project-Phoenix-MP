@@ -611,8 +611,17 @@ class SqlDelightWorkoutRepository(
         }
     }
 
+    override suspend fun getAverageSetDurationMs(exerciseId: String): Long? {
+        return withContext(Dispatchers.IO) {
+            queries.selectAverageSetDurationMs(exerciseId)
+                .executeAsOneOrNull()
+                ?.avgDurationMs
+                ?.toLong()
+        }
+    }
+
     override fun getAllPersonalRecords(): Flow<List<PersonalRecordEntity>> {
-        return queries.selectAllRecords { id, exerciseId, exerciseName, weight, reps, oneRepMax, achievedAt, workoutMode, prType, volume, updatedAt, serverId, deletedAt ->
+        return queries.selectAllRecords { id, exerciseId, exerciseName, weight, reps, oneRepMax, achievedAt, workoutMode, prType, volume, phase, updatedAt, serverId, deletedAt ->
             PersonalRecordEntity(
                 id = id,
                 exerciseId = exerciseId,
@@ -632,16 +641,20 @@ class SqlDelightWorkoutRepository(
             val newVolume = weightKg * reps
             val exerciseName = exerciseRepository.getExerciseById(exerciseId)?.name ?: ""
 
+            val combinedPhase = "COMBINED"
+
             val currentWeightPR = queries.selectPR(
                 exerciseId,
                 mode,
-                PRType.MAX_WEIGHT.name
+                PRType.MAX_WEIGHT.name,
+                combinedPhase
             ).executeAsOneOrNull()
 
             val currentVolumePR = queries.selectPR(
                 exerciseId,
                 mode,
-                PRType.MAX_VOLUME.name
+                PRType.MAX_VOLUME.name,
+                combinedPhase
             ).executeAsOneOrNull()
 
             val isNewWeightPR = currentWeightPR == null || weightKg > currentWeightPR.weight.toFloat()
@@ -662,7 +675,8 @@ class SqlDelightWorkoutRepository(
                     achievedAt = timestamp,
                     workoutMode = mode,
                     prType = PRType.MAX_WEIGHT.name,
-                    volume = newVolume.toDouble()
+                    volume = newVolume.toDouble(),
+                    phase = combinedPhase
                 )
             }
 
@@ -676,7 +690,8 @@ class SqlDelightWorkoutRepository(
                     achievedAt = timestamp,
                     workoutMode = mode,
                     prType = PRType.MAX_VOLUME.name,
-                    volume = newVolume.toDouble()
+                    volume = newVolume.toDouble(),
+                    phase = combinedPhase
                 )
             }
 
@@ -748,7 +763,7 @@ class SqlDelightWorkoutRepository(
                 positionB = positionB?.toFloat() ?: 0f,
                 velocityA = velocity ?: 0.0,
                 velocityB = velocityB ?: 0.0,
-                status = status?.toInt() ?: 0
+                status = status.toInt()
             )
         }.asFlow().mapToList(Dispatchers.IO)
     }
@@ -764,7 +779,7 @@ class SqlDelightWorkoutRepository(
                     positionB = positionB?.toFloat() ?: 0f,
                     velocityA = velocity ?: 0.0,
                     velocityB = velocityB ?: 0.0,
-                    status = status?.toInt() ?: 0
+                    status = status.toInt()
                 )
             }.executeAsList()
         }

@@ -85,7 +85,7 @@ class SyncManager(
 
         // Parse syncTime from ISO 8601 to epoch millis
         val pushResponse = pushResult.getOrThrow()
-        val syncTimeEpoch = kotlinx.datetime.Instant.parse(pushResponse.syncTime).toEpochMilliseconds()
+        val syncTimeEpoch = kotlin.time.Instant.parse(pushResponse.syncTime).toEpochMilliseconds()
 
         // Pull remote changes (non-fatal — if pull fails, push syncTime is used)
         val pullSyncTime = pullRemoteChanges(lastSync = tokenStorage.getLastSyncTimestamp())
@@ -153,7 +153,7 @@ class SyncManager(
                 badgeName = badgeDef?.name ?: earned.badgeId,
                 badgeDescription = badgeDef?.description,
                 badgeTier = badgeDef?.tier?.name?.lowercase() ?: "bronze",
-                earnedAt = kotlinx.datetime.Instant.fromEpochMilliseconds(earned.earnedAt).toString()
+                earnedAt = kotlin.time.Instant.fromEpochMilliseconds(earned.earnedAt).toString()
             )
         }
 

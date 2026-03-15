@@ -133,6 +133,7 @@ fun WorkoutTab(
  * Workout Tab - displays workout controls during active workout
  * Full implementation matching parent project
  */
+@Suppress("SENSELESS_COMPARISON") // Smart-cast helpers: null checks needed for non-null usage below
 @Composable
 fun WorkoutTab(
     connectionState: ConnectionState,
@@ -263,7 +264,7 @@ fun WorkoutTab(
 
         // Left edge bar (Cable A / Left hand) - Enhanced with phase-reactive coloring
         // Uses safeGestures inset to avoid overlap with system back gesture areas
-        if (showPositionBars && currentMetric != null) {
+        if (showPositionBars && currentMetric != null) { // null check for smart-cast
             // Calculate danger zone status
             val isDanger = repRanges?.isInDangerZone(currentMetric.positionA, currentMetric.positionB) ?: false
 
@@ -289,7 +290,7 @@ fun WorkoutTab(
 
         // Right edge bar (Cable B / Right hand) - Enhanced with phase-reactive coloring
         // Uses safeGestures inset to avoid overlap with system back gesture areas
-        if (showPositionBars && currentMetric != null) {
+        if (showPositionBars && currentMetric != null) { // null check for smart-cast
             // Calculate danger zone status
             val isDanger = repRanges?.isInDangerZone(currentMetric.positionA, currentMetric.positionB) ?: false
 
@@ -773,6 +774,7 @@ private fun WorkoutPausedCard(
 /**
  * Completed Card - shown when workout/exercise is complete
  */
+@Suppress("SENSELESS_COMPARISON") // Smart-cast helper: null check needed for non-null usage below
 @Composable
 private fun CompletedCard(
     loadedRoutine: Routine?,
@@ -812,7 +814,7 @@ private fun CompletedCard(
             val hasMoreExercises = loadedRoutine != null &&
                 currentExerciseIndex < (loadedRoutine.exercises.size - 1)
 
-            if (hasMoreExercises && loadedRoutine != null) {
+            if (hasMoreExercises && loadedRoutine != null) { // null check for smart-cast
                 // Show next exercise preview
                 val nextExercise = loadedRoutine.exercises[currentExerciseIndex + 1]
 

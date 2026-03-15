@@ -76,6 +76,7 @@ actual fun FormCheckOverlay(
     if (!isEnabled) return
 
     val context = LocalContext.current
+    @Suppress("DEPRECATION")
     val lifecycleOwner = LocalLifecycleOwner.current
 
     // Permission state
@@ -267,6 +268,7 @@ private fun CameraPreviewWithAnalysis(
                     .also { it.surfaceProvider = previewView.surfaceProvider }
 
                 // ImageAnalysis use case with backpressure (CV-09)
+                @Suppress("DEPRECATION")
                 val imageAnalysis = ImageAnalysis.Builder()
                     .setTargetResolution(Size(640, 480))
                     .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)

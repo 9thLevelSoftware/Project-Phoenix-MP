@@ -113,9 +113,7 @@ class KableBleRepository : BleRepository {
     )
 
     // ConnectionManager declared LAST (depends on all above modules for init-order safety)
-    private lateinit var connectionManager: KableBleConnectionManager
-    init {
-        connectionManager = KableBleConnectionManager(
+    private val connectionManager: KableBleConnectionManager = KableBleConnectionManager(
             scope = scope,
             logRepo = logRepo,
             bleQueue = bleQueue,
@@ -130,7 +128,6 @@ class KableBleRepository : BleRepository {
             onRepEventFromRx = { data -> parseRepNotification(data) },
             onMetricFromRx = { data -> parseMetricsPacket(data) },
         )
-    }
 
     // ===== Connection lifecycle delegations =====
     override suspend fun startScanning(): Result<Unit> = connectionManager.startScanning()

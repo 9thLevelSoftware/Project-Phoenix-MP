@@ -194,7 +194,7 @@ private fun LoginSignupForm(
             modifier = Modifier.padding(16.dp)
         ) {
             // Tab row for Login/Signup
-            TabRow(
+            PrimaryTabRow(
                 selectedTabIndex = if (isSignupMode) 1 else 0
             ) {
                 Tab(

@@ -4,6 +4,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNull
+import kotlin.test.assertNotEquals
 import kotlin.test.assertTrue
 
 class WorkoutMetricTest {
@@ -340,6 +341,13 @@ class HapticEventTest {
         assertEquals(HapticEvent.DISCO_MODE_UNLOCKED, HapticEvent.DISCO_MODE_UNLOCKED)
         assertEquals(HapticEvent.BADGE_EARNED, HapticEvent.BADGE_EARNED)
         assertEquals(HapticEvent.PERSONAL_RECORD, HapticEvent.PERSONAL_RECORD)
+        assertEquals(HapticEvent.WARMUP_TO_WORKING, HapticEvent.WARMUP_TO_WORKING)
+    }
+
+    @Test
+    fun `COUNTDOWN_TICK equality by seconds remaining`() {
+        assertEquals(HapticEvent.COUNTDOWN_TICK(5), HapticEvent.COUNTDOWN_TICK(5))
+        assertNotEquals(HapticEvent.COUNTDOWN_TICK(5), HapticEvent.COUNTDOWN_TICK(3))
     }
 }
 

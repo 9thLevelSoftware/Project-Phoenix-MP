@@ -122,6 +122,7 @@ CREATE INDEX idx_metric_sample_session ON MetricSample(sessionId);
 
 -- Personal records
 -- Supports two PR types: MAX_WEIGHT (heaviest lift) and MAX_VOLUME (weight × reps)
+-- Phase field (Issue #111): tracks concentric vs eccentric vs combined PRs separately
 CREATE TABLE PersonalRecord (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     exerciseId TEXT NOT NULL,
@@ -133,13 +134,14 @@ CREATE TABLE PersonalRecord (
     workoutMode TEXT NOT NULL,
     prType TEXT NOT NULL DEFAULT 'MAX_WEIGHT',
     volume REAL NOT NULL DEFAULT 0.0,
+    phase TEXT NOT NULL DEFAULT 'COMBINED',
     -- Sync fields (added in migration 6)
     updatedAt INTEGER,
     serverId TEXT,
     deletedAt INTEGER
 );
 
-CREATE UNIQUE INDEX idx_pr_unique ON PersonalRecord(exerciseId, workoutMode, prType);
+CREATE UNIQUE INDEX idx_pr_unique ON PersonalRecord(exerciseId, workoutMode, prType, phase);
 
 -- Custom routines
 CREATE TABLE Routine (
@@ -559,6 +561,12 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 deleteMetricsBySession:
 DELETE FROM MetricSample WHERE sessionId = ?;
 
+-- Average set duration for a specific exercise (Issue #225: routine time estimation)
+selectAverageSetDurationMs:
+SELECT AVG(duration) AS avgDurationMs
+FROM WorkoutSession
+WHERE exerciseId = ? AND duration > 0;
+
 -- Personal Record Queries
 
 -- Get all PRs ordered by timestamp
@@ -569,13 +577,13 @@ SELECT * FROM PersonalRecord ORDER BY achievedAt DESC;
 selectRecordsByExercise:
 SELECT * FROM PersonalRecord WHERE exerciseId = ? ORDER BY oneRepMax DESC;
 
--- Get PR by exercise, workout mode, and PR type
+-- Get PR by exercise, workout mode, PR type, and phase
 selectPR:
 SELECT * FROM PersonalRecord
-WHERE exerciseId = ? AND workoutMode = ? AND prType = ?
+WHERE exerciseId = ? AND workoutMode = ? AND prType = ? AND phase = ?
 LIMIT 1;
 
--- Get both PRs (MAX_WEIGHT and MAX_VOLUME) for an exercise in a specific mode
+-- Get both PRs (MAX_WEIGHT and MAX_VOLUME) for an exercise in a specific mode (COMBINED phase)
 selectPRsForExerciseAndMode:
 SELECT * FROM PersonalRecord
 WHERE exerciseId = ? AND workoutMode = ?
@@ -636,26 +644,26 @@ LIMIT 1;
 selectAllPRsGrouped:
 SELECT * FROM PersonalRecord ORDER BY exerciseId, workoutMode, prType, achievedAt DESC;
 
--- Insert a new PR (with prType and volume support)
+-- Insert a new PR (with prType, volume, and phase support)
 insertRecord:
-INSERT INTO PersonalRecord (exerciseId, exerciseName, weight, reps, oneRepMax, achievedAt, workoutMode, prType, volume)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
+INSERT INTO PersonalRecord (exerciseId, exerciseName, weight, reps, oneRepMax, achievedAt, workoutMode, prType, volume, phase)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 -- Upsert PR (insert or replace) - requires ID
 upsertRecord:
-INSERT OR REPLACE INTO PersonalRecord (id, exerciseId, exerciseName, weight, reps, oneRepMax, achievedAt, workoutMode, prType, volume)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+INSERT OR REPLACE INTO PersonalRecord (id, exerciseId, exerciseName, weight, reps, oneRepMax, achievedAt, workoutMode, prType, volume, phase)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
--- Upsert PR by unique key (exerciseId, workoutMode, prType) - no ID required
+-- Upsert PR by unique key (exerciseId, workoutMode, prType, phase) - no ID required
 -- Uses INSERT OR REPLACE which replaces on unique index conflict (idx_pr_unique)
 upsertPR:
-INSERT OR REPLACE INTO PersonalRecord (exerciseId, exerciseName, weight, reps, oneRepMax, achievedAt, workoutMode, prType, volume)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
+INSERT OR REPLACE INTO PersonalRecord (exerciseId, exerciseName, weight, reps, oneRepMax, achievedAt, workoutMode, prType, volume, phase)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 -- Delete PR by unique key (for upsert fallback)
 deletePRByKey:
 DELETE FROM PersonalRecord
-WHERE exerciseId = ? AND workoutMode = ? AND prType = ?;
+WHERE exerciseId = ? AND workoutMode = ? AND prType = ? AND phase = ?;
 
 -- Get all PR IDs for duplicate checking during import
 selectAllPRIds:

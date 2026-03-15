@@ -40,7 +40,7 @@ object PortalPullAdapter {
      */
     fun toBadgeSyncDto(badge: PullBadgeDto): EarnedBadgeSyncDto {
         val earnedAtEpoch = try {
-            kotlinx.datetime.Instant.parse(badge.earnedAt).toEpochMilliseconds()
+            kotlin.time.Instant.parse(badge.earnedAt).toEpochMilliseconds()
         } catch (_: Exception) {
             currentTimeMillis()
         }

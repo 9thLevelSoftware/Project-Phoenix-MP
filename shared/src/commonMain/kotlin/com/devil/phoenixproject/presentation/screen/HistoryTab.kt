@@ -42,6 +42,7 @@ import com.devil.phoenixproject.presentation.components.charts.HistoryTimePeriod
 import com.devil.phoenixproject.domain.model.currentTimeMillis
 import com.devil.phoenixproject.ui.theme.*
 import com.devil.phoenixproject.util.KmpUtils
+import kotlin.time.Instant
 import kotlinx.datetime.*
 import org.koin.compose.koinInject
 
@@ -222,7 +223,7 @@ fun WorkoutHistoryCard(
 
             // Exercise Name (or "Just Lift" if Just Lift mode)
             Text(
-                exerciseName ?: "Just Lift",
+                exerciseName,
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onSurface

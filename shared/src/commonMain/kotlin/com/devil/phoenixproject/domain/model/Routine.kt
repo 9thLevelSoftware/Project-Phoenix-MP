@@ -152,6 +152,15 @@ private fun Float.roundToHalfKg(): Float {
     return (this * 2).roundToInt() / 2f
 }
 
+/**
+ * Round to nearest given increment.
+ * Issue #266: Configurable weight rounding for user-facing values.
+ */
+fun Float.roundToIncrement(increment: Float): Float {
+    if (increment <= 0f) return this
+    return (kotlin.math.round(this / increment) * increment)
+}
+
 // ==================== SUPERSET SUPPORT ====================
 
 /**

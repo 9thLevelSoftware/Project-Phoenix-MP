@@ -1014,7 +1014,7 @@ fun EccentricLoadSelector(
                     readOnly = true,
                     trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
                     modifier = Modifier
-                        .menuAnchor()
+                        .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable)
                         .fillMaxWidth(),
                     colors = ExposedDropdownMenuDefaults.outlinedTextFieldColors()
                 )

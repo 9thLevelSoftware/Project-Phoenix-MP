@@ -22,6 +22,9 @@ import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
 import com.devil.phoenixproject.ui.theme.Spacing
 import com.devil.phoenixproject.presentation.components.*
 import com.devil.phoenixproject.util.CsvExporter
+import com.devil.phoenixproject.util.CsvImporter
+import com.devil.phoenixproject.util.CsvImportResult
+import com.devil.phoenixproject.util.rememberFilePicker
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import org.koin.compose.koinInject
@@ -248,9 +251,16 @@ fun AnalyticsScreen(
     var exportMessage by remember { mutableStateOf<String?>(null) }
     var isExporting by remember { mutableStateOf(false) }
 
-    // CsvExporter from DI
+    // CsvExporter and CsvImporter from DI
     val csvExporter: CsvExporter = koinInject()
+    val csvImporter: CsvImporter = koinInject()
     val scope = rememberCoroutineScope()
+
+    // Import state
+    var launchCsvFilePicker by remember { mutableStateOf(false) }
+    var isImporting by remember { mutableStateOf(false) }
+    var importResult by remember { mutableStateOf<CsvImportResult?>(null) }
+    var showImportResultDialog by remember { mutableStateOf(false) }
 
     // Build exercise names map for export
     val exerciseNames = remember { mutableStateMapOf<String, String>() }
@@ -436,11 +446,11 @@ fun AnalyticsScreen(
         }
     }
 
-    // Export options dialog
+    // Export / Import options dialog
     if (showExportMenu) {
         AlertDialog(
-            onDismissRequest = { if (!isExporting) showExportMenu = false },
-            title = { Text("Export Data") },
+            onDismissRequest = { if (!isExporting && !isImporting) showExportMenu = false },
+            title = { Text("Export / Import Data") },
             text = {
                 Column(
                     verticalArrangement = Arrangement.spacedBy(Spacing.medium),
@@ -526,7 +536,25 @@ fun AnalyticsScreen(
                         Text("PR Progression")
                     }
 
-                    if (isExporting) {
+                    HorizontalDivider(modifier = Modifier.padding(vertical = Spacing.small))
+
+                    Text("Import:", style = MaterialTheme.typography.bodyMedium)
+
+                    // Import Workout History from CSV
+                    OutlinedButton(
+                        onClick = {
+                            showExportMenu = false
+                            launchCsvFilePicker = true
+                        },
+                        enabled = !isExporting && !isImporting,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(Icons.Default.FileUpload, contentDescription = null)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Import Workout History (CSV)")
+                    }
+
+                    if (isExporting || isImporting) {
                         LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
                     }
                 }
@@ -534,7 +562,7 @@ fun AnalyticsScreen(
             confirmButton = {
                 TextButton(
                     onClick = { showExportMenu = false },
-                    enabled = !isExporting,
+                    enabled = !isExporting && !isImporting,
                     modifier = Modifier.height(56.dp),
                     shape = RoundedCornerShape(20.dp)
                 ) {
@@ -602,5 +630,84 @@ fun AnalyticsScreen(
         ) {
             Text(message)
         }
+    }
+
+    // CSV file picker for import
+    if (launchCsvFilePicker) {
+        val filePicker = rememberFilePicker()
+        filePicker.LaunchCsvFilePicker { selectedFile ->
+            launchCsvFilePicker = false
+            if (selectedFile != null) {
+                isImporting = true
+                scope.launch(Dispatchers.Default) {
+                    try {
+                        val result = csvImporter.importFromCsv(selectedFile)
+                        importResult = result
+                        showImportResultDialog = true
+                    } catch (e: Exception) {
+                        importResult = CsvImportResult(
+                            imported = 0, skipped = 0, failed = 0,
+                            errors = listOf("Import failed: ${e.message}")
+                        )
+                        showImportResultDialog = true
+                    } finally {
+                        isImporting = false
+                    }
+                }
+            }
+        }
+    }
+
+    // Import result dialog
+    if (showImportResultDialog) {
+        val result = importResult
+        AlertDialog(
+            onDismissRequest = { showImportResultDialog = false },
+            title = {
+                Text(
+                    if (result != null && result.hasImports) "Import Complete"
+                    else "Import Result"
+                )
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(Spacing.small)) {
+                    if (result != null) {
+                        Text(result.summary(), style = MaterialTheme.typography.bodyLarge)
+
+                        if (result.errors.isNotEmpty()) {
+                            Spacer(modifier = Modifier.height(Spacing.small))
+                            Text(
+                                "Issues:",
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.Bold
+                            )
+                            result.errors.take(5).forEach { error ->
+                                Text(
+                                    error,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.error
+                                )
+                            }
+                            if (result.errors.size > 5) {
+                                Text(
+                                    "... and ${result.errors.size - 5} more",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    } else {
+                        Text("No result available.")
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showImportResultDialog = false }) {
+                    Text("OK")
+                }
+            },
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+            shape = RoundedCornerShape(28.dp)
+        )
     }
 }

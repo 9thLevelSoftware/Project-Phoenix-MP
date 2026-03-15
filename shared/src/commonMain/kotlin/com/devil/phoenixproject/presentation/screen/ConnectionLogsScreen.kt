@@ -51,6 +51,7 @@ fun ConnectionLogsScreen(
     val isLoggingEnabled by logsViewModel.isLoggingEnabled.collectAsState()
 
     val listState = rememberLazyListState()
+    @Suppress("DEPRECATION")
     val clipboardManager = LocalClipboardManager.current
 
     var showExportDialog by remember { mutableStateOf(false) }

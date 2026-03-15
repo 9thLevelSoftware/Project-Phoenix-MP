@@ -70,6 +70,7 @@ actual fun VideoPlayer(
         modifier = modifier.background(MaterialTheme.colorScheme.surfaceVariant),
         contentAlignment = Alignment.Center
     ) {
+        @Suppress("DEPRECATION")
         UIKitView(
             factory = {
                 LoopingPlayerView().apply {

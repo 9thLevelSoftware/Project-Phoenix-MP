@@ -18,6 +18,16 @@ enum class PRType {
 }
 
 /**
+ * Workout phase for phase-specific PR tracking (Issue #111).
+ * Allows tracking separate PRs for concentric (lifting) vs eccentric (lowering) phases.
+ */
+enum class WorkoutPhase {
+    COMBINED,     // Traditional: overall peak (backward compatible default)
+    CONCENTRIC,   // Peak during lifting (velocity > 0)
+    ECCENTRIC     // Peak during lowering (velocity < 0)
+}
+
+/**
  * Personal record for an exercise
  */
 data class PersonalRecord(
@@ -30,7 +40,8 @@ data class PersonalRecord(
     val timestamp: Long,
     val workoutMode: String,
     val prType: PRType = PRType.MAX_WEIGHT,
-    val volume: Float
+    val volume: Float,
+    val phase: WorkoutPhase = WorkoutPhase.COMBINED
 )
 
 /**
@@ -425,6 +436,12 @@ sealed class HapticEvent {
 
     /** Warning tone for form violations during CV form check */
     data object FORM_WARNING : HapticEvent()
+
+    /** Issue #100: Distinct transition sound from warmup to working sets */
+    data object WARMUP_TO_WORKING : HapticEvent()
+
+    /** Issue #100: Countdown tick during last 10 seconds of rest timer */
+    data class COUNTDOWN_TICK(val secondsRemaining: Int) : HapticEvent()
 }
 
 /**

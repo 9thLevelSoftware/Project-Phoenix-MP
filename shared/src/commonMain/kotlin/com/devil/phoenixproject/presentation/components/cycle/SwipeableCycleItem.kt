@@ -26,6 +26,7 @@ fun SwipeableCycleItem(
     dragModifier: Modifier = Modifier,
     modifier: Modifier = Modifier
 ) {
+    @Suppress("DEPRECATION")
     val dismissState = rememberSwipeToDismissBoxState(
         confirmValueChange = { value ->
             when (value) {

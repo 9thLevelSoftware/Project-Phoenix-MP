@@ -112,6 +112,18 @@ class SettingsManager(
         scope.launch { preferencesManager.setAutoStartCountdownSeconds(seconds) }
     }
 
+    fun setWeightIncrement(increment: Float) {
+        scope.launch { preferencesManager.setWeightIncrement(increment) }
+    }
+
+    fun setAutoStartRoutine(enabled: Boolean) {
+        scope.launch { preferencesManager.setAutoStartRoutine(enabled) }
+    }
+
+    fun setBodyWeightKg(weightKg: Float) {
+        scope.launch { preferencesManager.setBodyWeightKg(weightKg) }
+    }
+
     fun setGamificationEnabled(enabled: Boolean) {
         scope.launch { preferencesManager.setGamificationEnabled(enabled) }
     }
@@ -122,6 +134,14 @@ class SettingsManager(
 
     fun setSimulatorModeEnabled(enabled: Boolean) {
         scope.launch { preferencesManager.setSimulatorModeEnabled(enabled) }
+    }
+
+    fun setCountdownBeepsEnabled(enabled: Boolean) {
+        scope.launch { preferencesManager.setCountdownBeepsEnabled(enabled) }
+    }
+
+    fun setRepSoundEnabled(enabled: Boolean) {
+        scope.launch { preferencesManager.setRepSoundEnabled(enabled) }
     }
 
     fun setColorScheme(schemeIndex: Int) {

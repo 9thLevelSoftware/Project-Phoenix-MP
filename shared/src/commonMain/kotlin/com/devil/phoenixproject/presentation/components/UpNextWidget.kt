@@ -337,7 +337,7 @@ private fun ActiveCycleWidget(
                         // Start button
                         if (currentCycleDay?.isRestDay != true && currentCycleDay?.routineId != null) {
                             Button(
-                                onClick = { currentCycleDay.routineId?.let { onStartWorkout(it, cycle.id, currentDay) } },
+                                onClick = { onStartWorkout(currentCycleDay.routineId, cycle.id, currentDay) },
                                 modifier = Modifier.fillMaxWidth(),
                                 shape = RoundedCornerShape(12.dp)
                             ) {
@@ -408,7 +408,7 @@ fun UpNextCompactWidget(
         shape = RoundedCornerShape(16.dp),
         onClick = {
             if (currentCycleDay?.routineId != null) {
-                onStartWorkout(currentCycleDay.routineId!!, cycle.id, currentDay)
+                onStartWorkout(currentCycleDay.routineId, cycle.id, currentDay)
             } else {
                 onViewCycles()
             }

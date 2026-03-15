@@ -40,7 +40,7 @@ class TrendAnalysisUseCase {
         val ssTotal = yValues.sumOf { (it - yMean).pow(2).toDouble() }.toFloat()
         val ssResidual = xValues.zip(yValues).sumOf { (x, y) ->
             val predicted = slope * x + intercept
-            (y - predicted).pow(2).toDouble()
+            (y - predicted).pow(2)
         }.toFloat()
         val rSquared = if (ssTotal.compareTo(0f) > 0) {
             1f - (ssResidual / ssTotal)

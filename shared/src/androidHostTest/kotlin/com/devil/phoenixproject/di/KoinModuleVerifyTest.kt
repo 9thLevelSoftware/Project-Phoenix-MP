@@ -5,6 +5,7 @@ import com.devil.phoenixproject.data.repository.BleRepository
 import com.devil.phoenixproject.data.sync.SupabaseConfig
 import com.devil.phoenixproject.util.ConnectivityChecker
 import com.devil.phoenixproject.util.CsvExporter
+import com.devil.phoenixproject.util.CsvImporter
 import com.devil.phoenixproject.util.DataBackupManager
 import com.russhwolf.settings.Settings
 import org.junit.Test
@@ -23,6 +24,7 @@ class KoinModuleVerifyTest {
                 Settings::class,
                 BleRepository::class,
                 CsvExporter::class,
+                CsvImporter::class,
                 DataBackupManager::class,
                 ConnectivityChecker::class,
                 SupabaseConfig::class,

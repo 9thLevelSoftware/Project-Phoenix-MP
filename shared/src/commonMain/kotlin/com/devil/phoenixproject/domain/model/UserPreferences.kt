@@ -23,5 +23,35 @@ data class UserPreferences(
     val hudPreset: String = HudPreset.FULL.key,  // HUD page preset: "essential", "biomechanics", or "full"
     val gamificationEnabled: Boolean = true,  // Show PR celebrations, award badges, play celebration sounds
     val simulatorModeUnlocked: Boolean = false,  // Easter egg - unlocked via settings tap
-    val simulatorModeEnabled: Boolean = false  // Active simulator mode toggle
-)
+    val simulatorModeEnabled: Boolean = false,  // Active simulator mode toggle
+    // Issue #266: Configurable weight increment (in user's selected unit)
+    val weightIncrement: Float = -1f,  // -1 = use default for unit (0.5kg / 1.0lb)
+    // Issue #190: Skip RoutineOverviewScreen and jump straight to SetReady for exercise 0
+    val autoStartRoutine: Boolean = false,
+    // Issue #229: Body weight for volume calculations on bodyweight exercises
+    val bodyWeightKg: Float = 0f,  // 0 = not set
+    // Issue #100: Per-sound toggles
+    val countdownBeepsEnabled: Boolean = true,  // Beeps during last 10s of rest timer
+    val repSoundEnabled: Boolean = true  // Sound on rep completion
+) {
+    /**
+     * Get the effective weight increment in the user's display unit.
+     * Returns the configured increment, or the default for the current unit system.
+     */
+    val effectiveWeightIncrement: Float
+        get() = if (weightIncrement > 0f) weightIncrement
+                else if (weightUnit == WeightUnit.KG) 0.5f else 1.0f
+
+    /**
+     * Get the effective weight increment converted to kg (for internal calculations).
+     */
+    val effectiveWeightIncrementKg: Float
+        get() {
+            val displayIncrement = effectiveWeightIncrement
+            return if (weightUnit == WeightUnit.LB) {
+                com.devil.phoenixproject.util.UnitConverter.lbToKg(displayIncrement)
+            } else {
+                displayIncrement
+            }
+        }
+}

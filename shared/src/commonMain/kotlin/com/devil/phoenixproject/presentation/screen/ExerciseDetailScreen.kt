@@ -1,17 +1,21 @@
 package com.devil.phoenixproject.presentation.screen
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.TrendingDown
 import androidx.compose.material.icons.automirrored.filled.TrendingUp
+import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.EmojiEvents
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.TableChart
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -20,12 +24,15 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.domain.model.ConnectionState
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.domain.model.WorkoutSession
+import com.devil.phoenixproject.domain.model.effectiveTotalVolumeKg
 import com.devil.phoenixproject.presentation.navigation.NavigationRoutes
 import com.devil.phoenixproject.presentation.components.charts.ProgressionLineChart
 import com.devil.phoenixproject.presentation.components.charts.VolumeTrendChart
@@ -38,7 +45,8 @@ import com.devil.phoenixproject.ui.theme.screenBackgroundBrush
 
 /**
  * Detail screen for a single exercise.
- * Shows 1RM progression, trend chart, and workout history.
+ * Shows 1RM progression, weight trend, volume chart, and workout history.
+ * Supports toggling between Charts view and tabular Table view.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -79,8 +87,25 @@ fun ExerciseDetailScreen(
         }.reversed() // Chronological order for chart
     }
 
+    // Weight-over-time trend data (actual weight used per session)
+    val weightTrendData = remember(exerciseSessions) {
+        exerciseSessions.mapNotNull { session ->
+            if (session.weightPerCableKg > 0) {
+                session.timestamp to session.weightPerCableKg
+            } else null
+        }.reversed()
+    }
+
+    // Chronological sessions for volume chart
+    val chronologicalSessions = remember(exerciseSessions) {
+        exerciseSessions.reversed()
+    }
+
     val currentOneRepMax = oneRepMaxData.lastOrNull()?.second
     val previousOneRepMax = if (oneRepMaxData.size >= 2) oneRepMaxData[oneRepMaxData.size - 2].second else null
+
+    // View mode toggle: "charts" or "table"
+    var viewMode by remember { mutableStateOf("charts") }
 
     val backgroundGradient = screenBackgroundBrush()
 
@@ -126,41 +151,82 @@ fun ExerciseDetailScreen(
                     }
                 }
 
-                // Progression Chart
-                if (oneRepMaxData.size >= 2) {
-                    item {
-                        ProgressionChartCard(
-                            data = oneRepMaxData,
-                            weightUnit = weightUnit,
-                            formatWeight = viewModel::formatWeight
-                        )
-                    }
-                }
-
-                // History Header
+                // View mode toggle
                 item {
-                    Text(
-                        "HISTORY",
-                        style = MaterialTheme.typography.labelMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.padding(top = Spacing.medium)
+                    ViewModeToggle(
+                        viewMode = viewMode,
+                        onViewModeChange = { viewMode = it }
                     )
                 }
 
-                // History List
-                if (exerciseSessions.isEmpty()) {
+                if (viewMode == "charts") {
+                    // 1RM Progression Chart
+                    if (oneRepMaxData.size >= 2) {
+                        item {
+                            ProgressionChartCard(
+                                data = oneRepMaxData,
+                                weightUnit = weightUnit,
+                                formatWeight = viewModel::formatWeight
+                            )
+                        }
+                    }
+
+                    // Weight Trend Chart
+                    if (weightTrendData.size >= 2) {
+                        item {
+                            WeightTrendChartCard(
+                                data = weightTrendData,
+                                weightUnit = weightUnit,
+                                formatWeight = viewModel::formatWeight
+                            )
+                        }
+                    }
+
+                    // Volume Progression Chart
+                    if (chronologicalSessions.isNotEmpty()) {
+                        item {
+                            VolumeChartCard(
+                                sessions = chronologicalSessions,
+                                weightUnit = weightUnit,
+                                formatWeight = viewModel::formatWeight
+                            )
+                        }
+                    }
+
+                    // History Header
                     item {
                         Text(
-                            "No workout history for this exercise.",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            "HISTORY",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.padding(top = Spacing.medium)
                         )
                     }
+
+                    // History List
+                    if (exerciseSessions.isEmpty()) {
+                        item {
+                            Text(
+                                "No workout history for this exercise.",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    } else {
+                        items(exerciseSessions, key = { it.id }) { session ->
+                            SessionHistoryRow(
+                                session = session,
+                                weightUnit = weightUnit,
+                                formatWeight = viewModel::formatWeight
+                            )
+                        }
+                    }
                 } else {
-                    items(exerciseSessions, key = { it.id }) { session ->
-                        SessionHistoryRow(
-                            session = session,
+                    // Table view
+                    item {
+                        ExerciseHistoryTable(
+                            sessions = exerciseSessions,
                             weightUnit = weightUnit,
                             formatWeight = viewModel::formatWeight
                         )
@@ -281,7 +347,7 @@ private fun ProgressionChartCard(
             modifier = Modifier.padding(16.dp)
         ) {
             Text(
-                "PROGRESSION",
+                "1RM PROGRESSION",
                 style = MaterialTheme.typography.labelMedium,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.primary
@@ -335,6 +401,271 @@ private fun ProgressionChartCard(
             }
         }
     }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ViewModeToggle(
+    viewMode: String,
+    onViewModeChange: (String) -> Unit
+) {
+    SingleChoiceSegmentedButtonRow(
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        SegmentedButton(
+            selected = viewMode == "charts",
+            onClick = { onViewModeChange("charts") },
+            shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2),
+            icon = {
+                SegmentedButtonDefaults.Icon(active = viewMode == "charts") {
+                    Icon(
+                        Icons.Default.BarChart,
+                        contentDescription = null,
+                        modifier = Modifier.size(SegmentedButtonDefaults.IconSize)
+                    )
+                }
+            }
+        ) {
+            Text("Charts")
+        }
+        SegmentedButton(
+            selected = viewMode == "table",
+            onClick = { onViewModeChange("table") },
+            shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2),
+            icon = {
+                SegmentedButtonDefaults.Icon(active = viewMode == "table") {
+                    Icon(
+                        Icons.Default.TableChart,
+                        contentDescription = null,
+                        modifier = Modifier.size(SegmentedButtonDefaults.IconSize)
+                    )
+                }
+            }
+        ) {
+            Text("Table")
+        }
+    }
+}
+
+@Composable
+private fun WeightTrendChartCard(
+    data: List<Pair<Long, Float>>,
+    weightUnit: WeightUnit,
+    formatWeight: (Float, WeightUnit) -> String
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHighest
+        ),
+        shape = RoundedCornerShape(16.dp)
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text(
+                "WEIGHT TREND",
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.primary
+            )
+
+            Spacer(Modifier.height(16.dp))
+
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(150.dp)
+                    .background(
+                        MaterialTheme.colorScheme.surface,
+                        RoundedCornerShape(8.dp)
+                    ),
+                contentAlignment = Alignment.Center
+            ) {
+                ProgressionLineChart(
+                    data = data,
+                    weightUnit = weightUnit,
+                    formatWeight = formatWeight,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(150.dp),
+                    lineColor = MaterialTheme.colorScheme.tertiary,
+                    fillColor = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.2f)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun VolumeChartCard(
+    sessions: List<WorkoutSession>,
+    weightUnit: WeightUnit,
+    formatWeight: (Float, WeightUnit) -> String
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHighest
+        ),
+        shape = RoundedCornerShape(16.dp)
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text(
+                "VOLUME",
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.primary
+            )
+
+            Spacer(Modifier.height(16.dp))
+
+            VolumeTrendChart(
+                workoutSessions = sessions,
+                weightUnit = weightUnit,
+                formatWeight = formatWeight,
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
+    }
+}
+
+@Composable
+private fun ExerciseHistoryTable(
+    sessions: List<WorkoutSession>,
+    weightUnit: WeightUnit,
+    formatWeight: (Float, WeightUnit) -> String
+) {
+    if (sessions.isEmpty()) {
+        Text(
+            "No workout history for this exercise.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        return
+    }
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHighest
+        ),
+        shape = RoundedCornerShape(16.dp)
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text(
+                "SESSION DATA",
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.primary
+            )
+
+            Spacer(Modifier.height(12.dp))
+
+            // Horizontally scrollable to handle narrow screens
+            val scrollState = rememberScrollState()
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(scrollState)
+            ) {
+                // Header row
+                Row(
+                    modifier = Modifier
+                        .widthIn(min = 500.dp)
+                        .background(
+                            MaterialTheme.colorScheme.surfaceContainerHigh,
+                            RoundedCornerShape(topStart = 8.dp, topEnd = 8.dp)
+                        )
+                        .padding(horizontal = 12.dp, vertical = 10.dp)
+                ) {
+                    TableHeaderCell("Date", Modifier.weight(1.5f))
+                    TableHeaderCell("Weight", Modifier.weight(1f))
+                    TableHeaderCell("Reps", Modifier.weight(0.7f))
+                    TableHeaderCell("Volume", Modifier.weight(1f))
+                    TableHeaderCell("1RM", Modifier.weight(1f))
+                    TableHeaderCell("Mode", Modifier.weight(1f))
+                }
+
+                // Data rows
+                sessions.forEachIndexed { index, session ->
+                    val bgColor = if (index % 2 == 0) {
+                        MaterialTheme.colorScheme.surface
+                    } else {
+                        MaterialTheme.colorScheme.surfaceContainerLow
+                    }
+                    val bottomShape = if (index == sessions.lastIndex) {
+                        RoundedCornerShape(bottomStart = 8.dp, bottomEnd = 8.dp)
+                    } else {
+                        RoundedCornerShape(0.dp)
+                    }
+
+                    Row(
+                        modifier = Modifier
+                            .widthIn(min = 500.dp)
+                            .background(bgColor, bottomShape)
+                            .padding(horizontal = 12.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        TableCell(
+                            KmpUtils.formatTimestamp(session.timestamp, "MMM dd, yyyy"),
+                            Modifier.weight(1.5f)
+                        )
+                        TableCell(
+                            formatWeight(session.weightPerCableKg, weightUnit),
+                            Modifier.weight(1f)
+                        )
+                        TableCell(
+                            session.workingReps.toString(),
+                            Modifier.weight(0.7f)
+                        )
+                        TableCell(
+                            formatWeight(session.effectiveTotalVolumeKg(), weightUnit),
+                            Modifier.weight(1f)
+                        )
+                        TableCell(
+                            if (session.workingReps > 0)
+                                formatWeight(
+                                    calculateOneRepMax(session.weightPerCableKg, session.workingReps),
+                                    weightUnit
+                                )
+                            else "-",
+                            Modifier.weight(1f)
+                        )
+                        TableCell(
+                            session.mode,
+                            Modifier.weight(1f)
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun TableHeaderCell(text: String, modifier: Modifier = Modifier) {
+    Text(
+        text = text,
+        style = MaterialTheme.typography.labelSmall,
+        fontWeight = FontWeight.Bold,
+        color = MaterialTheme.colorScheme.onSurface,
+        textAlign = TextAlign.Start,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+        modifier = modifier
+    )
+}
+
+@Composable
+private fun TableCell(text: String, modifier: Modifier = Modifier) {
+    Text(
+        text = text,
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        textAlign = TextAlign.Start,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+        modifier = modifier
+    )
 }
 
 @Composable

@@ -56,6 +56,8 @@ fun HapticFeedbackEffect(
                 put(HapticEvent.DISCO_MODE_UNLOCKED, soundPool.load(context, R.raw.discomode, 1))
                 // Form warning: reuse restover sound as interim warning tone (distinct from rep beep)
                 put(HapticEvent.FORM_WARNING, soundPool.load(context, R.raw.restover, 1))
+                // Issue #100: Warmup-to-working transition (ascending tone)
+                put(HapticEvent.WARMUP_TO_WORKING, soundPool.load(context, R.raw.beepboop, 1))
                 // BADGE_EARNED, PERSONAL_RECORD use random sounds from lists below
                 // REP_COUNT_ANNOUNCED uses indexed sounds from repCountSoundIds list
                 // ERROR has no sound
@@ -155,11 +157,16 @@ fun HapticFeedbackEffect(
         }
     }
 
+    // Issue #100: Load countdown tick sound (reuses beep)
+    val countdownTickSoundId = remember(soundPool) {
+        try { soundPool.load(context, R.raw.beep, 1) } catch (_: Exception) { null }
+    }
+
     // Collect haptic events and play feedback
     LaunchedEffect(hapticEvents) {
         hapticEvents.collect { event ->
             playHapticFeedback(event, hapticFeedback)
-            playSound(event, soundPool, soundIds, badgeSoundIds, prSoundIds, repCountSoundIds)
+            playSound(event, soundPool, soundIds, badgeSoundIds, prSoundIds, repCountSoundIds, countdownTickSoundId)
         }
     }
 
@@ -193,6 +200,9 @@ private fun playHapticFeedback(event: HapticEvent, hapticFeedback: HapticFeedbac
 
         is HapticEvent.FORM_WARNING -> HapticFeedbackType.TextHandleMove // Light click for form warning
 
+        is HapticEvent.COUNTDOWN_TICK -> HapticFeedbackType.TextHandleMove // Issue #100: Light tick for countdown
+        is HapticEvent.WARMUP_TO_WORKING -> HapticFeedbackType.LongPress // Issue #100: Distinct transition feedback
+
         is HapticEvent.REP_COUNT_ANNOUNCED -> return // Already handled above
     }
 
@@ -212,7 +222,8 @@ private fun playSound(
     soundIds: Map<HapticEvent, Int>,
     badgeSoundIds: List<Int>,
     prSoundIds: List<Int>,
-    repCountSoundIds: List<Int>
+    repCountSoundIds: List<Int>,
+    countdownTickSoundId: Int?
 ) {
     // ERROR event has no sound
     if (event is HapticEvent.ERROR) return
@@ -234,6 +245,7 @@ private fun playSound(
                 repCountSoundIds[index]
             } else null
         }
+        is HapticEvent.COUNTDOWN_TICK -> countdownTickSoundId
         else -> soundIds[event]
     } ?: return
 

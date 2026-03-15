@@ -240,6 +240,7 @@ class KableBleConnectionManager(
                     hasVitruvianServiceData
                 }
                 .onEach { advertisement ->
+                    @Suppress("REDUNDANT_CALL_OF_CONVERSION_METHOD") // Needed for iOS where identifier is Uuid
                     val identifier = advertisement.identifier.toString()
                     val advertisedName = advertisement.name
                     val hasRealName = advertisedName != null &&
@@ -377,6 +378,7 @@ class KableBleConnectionManager(
                 return Result.failure(Exception("No Vitruvian device found"))
             }
 
+            @Suppress("REDUNDANT_CALL_OF_CONVERSION_METHOD") // Needed for iOS where identifier is Uuid
             val identifier = advertisement.identifier.toString()
             val name = advertisement.name ?: "Vitruvian"
             log.i { "scanAndConnect: Found device $name ($identifier), connecting..." }

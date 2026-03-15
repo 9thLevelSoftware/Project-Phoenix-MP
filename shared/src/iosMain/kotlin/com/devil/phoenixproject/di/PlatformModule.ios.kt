@@ -8,8 +8,10 @@ import com.devil.phoenixproject.data.repository.simulator.SimulatorBleRepository
 import com.devil.phoenixproject.data.sync.SupabaseConfig
 import com.devil.phoenixproject.util.ConnectivityChecker
 import com.devil.phoenixproject.util.CsvExporter
+import com.devil.phoenixproject.util.CsvImporter
 import com.devil.phoenixproject.util.DataBackupManager
 import com.devil.phoenixproject.util.IosCsvExporter
+import com.devil.phoenixproject.util.IosCsvImporter
 import com.devil.phoenixproject.util.IosDataBackupManager
 import com.russhwolf.settings.NSUserDefaultsSettings
 import com.russhwolf.settings.Settings
@@ -39,6 +41,7 @@ actual val platformModule: Module = module {
         }
     }
     single<CsvExporter> { IosCsvExporter() }
+    single<CsvImporter> { IosCsvImporter() }
     single<DataBackupManager> { IosDataBackupManager(get()) }
     single { ConnectivityChecker() }
 }

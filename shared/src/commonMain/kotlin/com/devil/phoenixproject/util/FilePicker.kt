@@ -36,6 +36,17 @@ expect class FilePicker {
     )
 
     /**
+     * Composable that launches a file picker to select a CSV file for import.
+     * The picker UI is platform-specific.
+     *
+     * @param onFilePicked Callback with file URI/path as string, or null if cancelled
+     */
+    @Composable
+    fun LaunchCsvFilePicker(
+        onFilePicked: (String?) -> Unit
+    )
+
+    /**
      * Composable that launches a save file dialog to export backup.
      * The save UI is platform-specific.
      *

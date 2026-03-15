@@ -2,6 +2,7 @@ package com.devil.phoenixproject.data.repository
 
 import com.devil.phoenixproject.domain.model.PRType
 import com.devil.phoenixproject.domain.model.PersonalRecord
+import com.devil.phoenixproject.domain.model.WorkoutPhase
 import kotlinx.coroutines.flow.Flow
 
 /**
@@ -140,4 +141,27 @@ interface PersonalRecordRepository {
         workoutMode: String,
         timestamp: Long
     ): Result<List<PRType>>
+
+    // ========== Phase-specific PR Methods (Issue #111) ==========
+
+    /**
+     * Update phase-specific PRs (concentric and eccentric) if the new peak forces are better.
+     * Called alongside the COMBINED PR check after each set completion.
+     *
+     * @param exerciseId Exercise ID
+     * @param workoutMode Workout mode
+     * @param timestamp Timestamp of the performance
+     * @param reps Number of reps completed
+     * @param peakConcentricForceKg Peak force during concentric phase (per cable, kg)
+     * @param peakEccentricForceKg Peak force during eccentric phase (per cable, kg)
+     * @return List of phases where PRs were broken (can be empty, one, or both)
+     */
+    suspend fun updatePhaseSpecificPRs(
+        exerciseId: String,
+        workoutMode: String,
+        timestamp: Long,
+        reps: Int,
+        peakConcentricForceKg: Float,
+        peakEccentricForceKg: Float
+    ): Result<List<WorkoutPhase>>
 }

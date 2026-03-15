@@ -22,9 +22,6 @@ import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.util.KmpUtils
-import kotlinx.datetime.Instant
-import kotlinx.datetime.TimeZone
-import kotlinx.datetime.toLocalDateTime
 
 @Composable
 fun ProgressionLineChart(

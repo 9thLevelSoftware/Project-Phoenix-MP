@@ -129,9 +129,9 @@ fun RoutineOverviewScreen(
                 var adjustedReps by remember(exercise) { mutableStateOf(initialReps) }
 
                 // Echo mode state
-                var echoLevel by remember(exercise) { mutableStateOf(exercise.echoLevel ?: EchoLevel.HARD) }
+                var echoLevel by remember(exercise) { mutableStateOf(exercise.echoLevel) }
                 var eccentricLoadPercent by remember(exercise) {
-                    mutableStateOf(exercise.eccentricLoad?.percentage ?: 100)
+                    mutableStateOf(exercise.eccentricLoad.percentage)
                 }
 
                 // Load video for this exercise

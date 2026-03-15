@@ -142,7 +142,7 @@ abstract class BaseDataBackupManager(
         val routineNameResolutionContext = buildRoutineNameResolutionContext(routines, routineExercises)
         // Supersets table might not exist on older databases
         val supersets = runCatching { queries.selectAllSupersetsSync().executeAsList() }.getOrElse { emptyList() }
-        val personalRecords = queries.selectAllRecords { id, exerciseId, exerciseName, weight, reps, oneRepMax, achievedAt, workoutMode, prType, volume, _, _, _ ->
+        val personalRecords = queries.selectAllRecords { id, exerciseId, exerciseName, weight, reps, oneRepMax, achievedAt, workoutMode, prType, volume, phase, _, _, _ ->
             PersonalRecordBackup(
                 id = id,
                 exerciseId = exerciseId,
@@ -153,7 +153,8 @@ abstract class BaseDataBackupManager(
                 achievedAt = achievedAt,
                 workoutMode = workoutMode,
                 prType = prType,
-                volume = volume.toFloat()
+                volume = volume.toFloat(),
+                phase = phase
             )
         }.executeAsList()
         // Training cycles tables might not exist on older databases
@@ -602,7 +603,8 @@ abstract class BaseDataBackupManager(
                             achievedAt = pr.achievedAt,
                             workoutMode = pr.workoutMode,
                             prType = pr.prType,
-                            volume = pr.volume.toDouble()
+                            volume = pr.volume.toDouble(),
+                            phase = pr.phase ?: "COMBINED"
                         )
                         personalRecordsImported++
                     } else {
@@ -1375,7 +1377,8 @@ abstract class BaseDataBackupManager(
             achievedAt = pr.achievedAt,
             workoutMode = pr.workoutMode,
             prType = pr.prType,
-            volume = pr.volume.toFloat()
+            volume = pr.volume.toFloat(),
+            phase = pr.phase
         )
 
     private fun mapTrainingCycleToBackup(cycle: TrainingCycle): TrainingCycleBackup =

@@ -126,6 +126,8 @@ class FakeWorkoutRepository : WorkoutRepository {
         }
     }
 
+    override suspend fun getAverageSetDurationMs(exerciseId: String): Long? = null
+
     override fun getAllPersonalRecords(): Flow<List<PersonalRecordEntity>> = _personalRecordsFlow
 
     override suspend fun updatePRIfBetter(exerciseId: String, weightKg: Float, reps: Int, mode: String) {

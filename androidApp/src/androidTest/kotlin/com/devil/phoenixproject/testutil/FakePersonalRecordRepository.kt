@@ -3,6 +3,7 @@ package com.devil.phoenixproject.testutil
 import com.devil.phoenixproject.data.repository.PersonalRecordRepository
 import com.devil.phoenixproject.domain.model.PRType
 import com.devil.phoenixproject.domain.model.PersonalRecord
+import com.devil.phoenixproject.domain.model.WorkoutPhase
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.map
@@ -206,5 +207,17 @@ class FakePersonalRecordRepository : PersonalRecordRepository {
 
         updateRecordsFlow()
         return Result.success(brokenPRs)
+    }
+
+    override suspend fun updatePhaseSpecificPRs(
+        exerciseId: String,
+        workoutMode: String,
+        timestamp: Long,
+        reps: Int,
+        peakConcentricForceKg: Float,
+        peakEccentricForceKg: Float
+    ): Result<List<WorkoutPhase>> {
+        // Simplified fake: just return empty (no phase-specific PR tracking in E2E tests)
+        return Result.success(emptyList())
     }
 }

@@ -484,7 +484,7 @@ class SqlDelightGamificationRepository(
             // Peak power: try RepMetric first, fall back to MetricSample
             val peakRepPower = queries.selectPeakRepPower().executeAsOneOrNull()?.MAX
             val peakPowerWatts = peakRepPower
-                ?: queries.selectPeakPower().executeAsOneOrNull()?.peakPower?.toDouble()
+                ?: queries.selectPeakPower().executeAsOneOrNull()?.peakPower
                 ?: 0.0
 
             val trainingDays = queries.countTrainingDays().executeAsOne().toInt()

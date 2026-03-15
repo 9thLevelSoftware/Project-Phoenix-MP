@@ -1,0 +1,6 @@
+-- Migration 18: Phase 4 Routine Programming (Issues #29, #30)
+-- Per-set echo levels for routine exercises
+ALTER TABLE RoutineExercise ADD COLUMN setEchoLevels TEXT NOT NULL DEFAULT '';
+
+-- Variable warm-up sets for routine exercises
+ALTER TABLE RoutineExercise ADD COLUMN warmupSets TEXT NOT NULL DEFAULT '';

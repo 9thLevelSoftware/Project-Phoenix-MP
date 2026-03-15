@@ -75,6 +75,8 @@ actual fun HapticFeedbackEffect(
                 loadSoundByName(context, soundPool, "discomode")?.let { put(HapticEvent.DISCO_MODE_UNLOCKED, it) }
                 // Form warning: reuse restover sound as interim warning tone (distinct from rep beep)
                 loadSoundByName(context, soundPool, "restover")?.let { put(HapticEvent.FORM_WARNING, it) }
+                // Issue #100: Warmup-to-working transition (ascending tone)
+                loadSoundByName(context, soundPool, "beepboop")?.let { put(HapticEvent.WARMUP_TO_WORKING, it) }
             } catch (e: Exception) {
                 Logger.e(e) { "Failed to load sounds" }
             }
@@ -111,10 +113,15 @@ actual fun HapticFeedbackEffect(
         }
     }
 
+    // Issue #100: Load countdown tick sound (reuses beep for short tick)
+    val countdownTickSoundId = remember(soundPool) {
+        loadSoundByName(context, soundPool, "beep")
+    }
+
     LaunchedEffect(hapticEvents) {
         hapticEvents.collect { event ->
             playHapticFeedback(vibrator, event)
-            playSound(event, soundPool, soundIds, badgeSoundIds, prSoundIds, repCountSoundIds, loadedSounds, context)
+            playSound(event, soundPool, soundIds, badgeSoundIds, prSoundIds, repCountSoundIds, countdownTickSoundId, loadedSounds, context)
         }
     }
 
@@ -163,6 +170,7 @@ private fun playSound(
     badgeSoundIds: List<Int>,
     prSoundIds: List<Int>,
     repCountSoundIds: List<Int>,
+    countdownTickSoundId: Int?,
     loadedSounds: Set<Int>,
     context: Context
 ) {
@@ -192,6 +200,7 @@ private fun playSound(
                 repCountSoundIds[index]
             } else null
         }
+        is HapticEvent.COUNTDOWN_TICK -> countdownTickSoundId
         else -> soundIds[event]
     }
 
@@ -237,6 +246,8 @@ private fun playWithMediaPlayer(event: HapticEvent, context: Context) {
         is HapticEvent.PERSONAL_RECORD -> getRandomPRSound()
         is HapticEvent.REP_COUNT_ANNOUNCED -> "rep_%02d".format(event.repNumber)
         is HapticEvent.FORM_WARNING -> "restover"
+        is HapticEvent.COUNTDOWN_TICK -> "beep"
+        is HapticEvent.WARMUP_TO_WORKING -> "beepboop"
         is HapticEvent.ERROR -> return
     }
 
@@ -375,6 +386,18 @@ private fun playHapticFeedback(
                 // Light click for form warning (paired with warning sound)
                 VibrationEffect.createOneShot(50, VibrationEffect.DEFAULT_AMPLITUDE)
             }
+            is HapticEvent.COUNTDOWN_TICK -> {
+                // Issue #100: Very light tick for rest countdown (last 10 seconds)
+                VibrationEffect.createOneShot(30, 80)
+            }
+            is HapticEvent.WARMUP_TO_WORKING -> {
+                // Issue #100: Ascending double pulse for warmup-to-working transition
+                VibrationEffect.createWaveform(
+                    longArrayOf(0, 80, 60, 120),
+                    intArrayOf(0, 150, 0, 220),
+                    -1
+                )
+            }
             is HapticEvent.REP_COUNT_ANNOUNCED -> {
                 // Already handled above, but needed for exhaustive when
                 return
@@ -412,6 +435,14 @@ private fun playHapticFeedback(
             is HapticEvent.FORM_WARNING -> {
                 // Light click for form warning
                 vibrator.vibrate(50)
+            }
+            is HapticEvent.COUNTDOWN_TICK -> {
+                // Issue #100: Light tick for countdown
+                vibrator.vibrate(30)
+            }
+            is HapticEvent.WARMUP_TO_WORKING -> {
+                // Issue #100: Double pulse for transition
+                vibrator.vibrate(longArrayOf(0, 80, 60, 120), -1)
             }
             is HapticEvent.REP_COUNT_ANNOUNCED -> {
                 // No haptic for rep count announcement - audio only

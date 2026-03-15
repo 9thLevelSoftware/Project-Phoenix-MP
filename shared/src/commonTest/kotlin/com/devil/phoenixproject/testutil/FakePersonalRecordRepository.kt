@@ -3,6 +3,7 @@ package com.devil.phoenixproject.testutil
 import com.devil.phoenixproject.data.repository.PersonalRecordRepository
 import com.devil.phoenixproject.domain.model.PRType
 import com.devil.phoenixproject.domain.model.PersonalRecord
+import com.devil.phoenixproject.domain.model.WorkoutPhase
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.map
@@ -205,5 +206,61 @@ class FakePersonalRecordRepository : PersonalRecordRepository {
 
         updateRecordsFlow()
         return Result.success(brokenPRs)
+    }
+
+    override suspend fun updatePhaseSpecificPRs(
+        exerciseId: String,
+        workoutMode: String,
+        timestamp: Long,
+        reps: Int,
+        peakConcentricForceKg: Float,
+        peakEccentricForceKg: Float
+    ): Result<List<WorkoutPhase>> {
+        val brokenPhases = mutableListOf<WorkoutPhase>()
+
+        if (peakConcentricForceKg > 0f) {
+            val key = "$exerciseId-$workoutMode-${PRType.MAX_WEIGHT}-CONCENTRIC"
+            val existing = records[key]
+            if (existing == null || peakConcentricForceKg > existing.weightPerCableKg) {
+                records[key] = PersonalRecord(
+                    id = records.size.toLong(),
+                    exerciseId = exerciseId,
+                    exerciseName = exerciseId,
+                    weightPerCableKg = peakConcentricForceKg,
+                    reps = reps,
+                    oneRepMax = calculateOneRepMax(peakConcentricForceKg * 2, reps),
+                    timestamp = timestamp,
+                    workoutMode = workoutMode,
+                    prType = PRType.MAX_WEIGHT,
+                    volume = peakConcentricForceKg * reps,
+                    phase = WorkoutPhase.CONCENTRIC
+                )
+                brokenPhases.add(WorkoutPhase.CONCENTRIC)
+            }
+        }
+
+        if (peakEccentricForceKg > 0f) {
+            val key = "$exerciseId-$workoutMode-${PRType.MAX_WEIGHT}-ECCENTRIC"
+            val existing = records[key]
+            if (existing == null || peakEccentricForceKg > existing.weightPerCableKg) {
+                records[key] = PersonalRecord(
+                    id = records.size.toLong(),
+                    exerciseId = exerciseId,
+                    exerciseName = exerciseId,
+                    weightPerCableKg = peakEccentricForceKg,
+                    reps = reps,
+                    oneRepMax = calculateOneRepMax(peakEccentricForceKg * 2, reps),
+                    timestamp = timestamp,
+                    workoutMode = workoutMode,
+                    prType = PRType.MAX_WEIGHT,
+                    volume = peakEccentricForceKg * reps,
+                    phase = WorkoutPhase.ECCENTRIC
+                )
+                brokenPhases.add(WorkoutPhase.ECCENTRIC)
+            }
+        }
+
+        updateRecordsFlow()
+        return Result.success(brokenPhases)
     }
 }

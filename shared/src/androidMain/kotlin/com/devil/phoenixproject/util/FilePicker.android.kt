@@ -27,6 +27,19 @@ actual class FilePicker {
     }
 
     @Composable
+    actual fun LaunchCsvFilePicker(onFilePicked: (String?) -> Unit) {
+        val launcher = rememberLauncherForActivityResult(
+            contract = ActivityResultContracts.OpenDocument()
+        ) { uri: Uri? ->
+            onFilePicked(uri?.toString())
+        }
+
+        LaunchedEffect(Unit) {
+            launcher.launch(arrayOf("text/csv", "text/comma-separated-values", "*/*"))
+        }
+    }
+
+    @Composable
     actual fun LaunchFileSaver(
         fileName: String,
         content: String,

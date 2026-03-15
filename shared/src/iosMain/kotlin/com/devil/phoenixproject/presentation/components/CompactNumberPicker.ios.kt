@@ -324,7 +324,9 @@ actual fun CompactNumberPicker(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .height(itemHeight)
-                                .alpha(if (isSelected) 1f else 0.5f)
+                                // Issue #265 Fix: Selected item invisible when not editing —
+                                // overlay Text renders the value. Show item only when editing (TextField).
+                                .alpha(if (isSelected) { if (isEditing) 1f else 0f } else 0.5f)
                                 .then(
                                     if (isSelected && !isEditing) {
                                         Modifier.clickable { isEditing = true }

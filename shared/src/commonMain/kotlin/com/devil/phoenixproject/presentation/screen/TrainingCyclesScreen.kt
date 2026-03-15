@@ -175,7 +175,7 @@ fun TrainingCyclesScreen(
                     !day.isRestDay &&
                         day.routineId == null &&
                         !day.name.isNullOrBlank() &&
-                        !day.name!!.trim().matches(Regex("^Day\\s+\\d+$", RegexOption.IGNORE_CASE))
+                        !day.name.trim().matches(Regex("^Day\\s+\\d+$", RegexOption.IGNORE_CASE))
                 }
                 .forEach { day ->
                     val matches = routines.filter { it.name.equals(day.name, ignoreCase = true) }
@@ -862,7 +862,7 @@ private fun ActiveCycleCard(
                     if (isViewingCurrentDay) {
                         if (hasRoutine) {
                             Button(
-                                onClick = { onStartWorkout(displayedCycleDay?.routineId, cycle.id, displayedDayNumber) },
+                                onClick = { onStartWorkout(displayedCycleDay.routineId, cycle.id, displayedDayNumber) },
                                 modifier = Modifier.weight(1f),
                                 shape = RoundedCornerShape(12.dp)
                             ) {
@@ -894,7 +894,7 @@ private fun ActiveCycleCard(
                                 Text("Jump to Day $displayedDayNumber")
                             }
                             Button(
-                                onClick = { onStartWorkout(displayedCycleDay?.routineId, cycle.id, displayedDayNumber) },
+                                onClick = { onStartWorkout(displayedCycleDay.routineId, cycle.id, displayedDayNumber) },
                                 modifier = Modifier.weight(1f),
                                 shape = RoundedCornerShape(12.dp)
                             ) {

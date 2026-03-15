@@ -269,7 +269,8 @@ class SqlDelightSyncRepository(
                         achievedAt = dto.achievedAt,
                         workoutMode = dto.workoutMode,
                         prType = "MAX_WEIGHT",
-                        volume = (dto.weight * dto.reps).toDouble()
+                        volume = (dto.weight * dto.reps).toDouble(),
+                        phase = "COMBINED"
                     )
                 }
             }

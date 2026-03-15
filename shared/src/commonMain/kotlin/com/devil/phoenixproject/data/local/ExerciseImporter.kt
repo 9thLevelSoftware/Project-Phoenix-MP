@@ -139,7 +139,7 @@ class ExerciseImporter(
                         val isArchived = exerciseJson.archived != null
 
                         // Parse min rep range from JSON range object
-                        val minRepRange = exerciseJson.range?.minimum?.toDouble()
+                        val minRepRange = exerciseJson.range?.minimum
 
                         // Join muscles and aliases
                         val musclesStr = exerciseJson.muscles?.joinToString(",")
@@ -290,7 +290,7 @@ class ExerciseImporter(
                         gripWidth = exercise.gripWidth,
                         minRepRange = exercise.range?.minimum,
                         popularity = exercise.popularity ?: 0.0,
-                        archived = if (exercise.archived != null) 1L else 0L,
+                        archived = 0L, // Always 0 here since archived exercises are skipped above
                         isFavorite = 0L,
                         isCustom = 0L,
                         timesPerformed = 0L,

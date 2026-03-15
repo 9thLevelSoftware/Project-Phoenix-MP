@@ -79,6 +79,51 @@ actual class FilePicker {
     }
 
     @Composable
+    actual fun LaunchCsvFilePicker(onFilePicked: (String?) -> Unit) {
+        val scope = rememberCoroutineScope()
+
+        val delegate = remember {
+            DocumentPickerDelegate(
+                onDocumentPicked = { url ->
+                    scope.launch(Dispatchers.Main) {
+                        if (url != null) {
+                            val accessing = url.startAccessingSecurityScopedResource()
+                            try {
+                                val tempPath = copyToTempDirectory(url)
+                                onFilePicked(tempPath)
+                            } finally {
+                                if (accessing) {
+                                    url.stopAccessingSecurityScopedResource()
+                                }
+                            }
+                        } else {
+                            onFilePicked(null)
+                        }
+                    }
+                },
+                onCancelled = {
+                    scope.launch(Dispatchers.Main) {
+                        onFilePicked(null)
+                    }
+                },
+                log = log
+            )
+        }
+
+        LaunchedEffect(Unit) {
+            dispatch_async(dispatch_get_main_queue()) {
+                presentCsvImportPicker(delegate)
+            }
+        }
+
+        DisposableEffect(Unit) {
+            onDispose {
+                delegate.cleanup()
+            }
+        }
+    }
+
+    @Composable
     actual fun LaunchFileSaver(
         fileName: String,
         content: String,
@@ -141,6 +186,33 @@ actual class FilePicker {
         val picker = UIDocumentPickerViewController(
             forOpeningContentTypes = listOf(UTTypeJSON),
             asCopy = true  // Copy to app sandbox for security
+        )
+
+        picker.delegate = delegate
+        picker.allowsMultipleSelection = false
+
+        rootViewController.presentViewController(
+            picker,
+            animated = true,
+            completion = null
+        )
+    }
+
+    /**
+     * Present document picker for importing a CSV file.
+     */
+    private fun presentCsvImportPicker(delegate: DocumentPickerDelegate) {
+        val rootViewController = getRootViewController() ?: run {
+            log.e { "Could not get root view controller" }
+            delegate.onCancelled()
+            return
+        }
+
+        val picker = UIDocumentPickerViewController(
+            forOpeningContentTypes = listOf(
+                platform.UniformTypeIdentifiers.UTTypeCommaSeparatedText
+            ),
+            asCopy = true
         )
 
         picker.delegate = delegate
