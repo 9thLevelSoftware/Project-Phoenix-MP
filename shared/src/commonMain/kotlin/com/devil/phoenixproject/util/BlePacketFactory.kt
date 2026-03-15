@@ -4,6 +4,7 @@ import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.domain.model.EchoLevel
 import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.WorkoutParameters
+import kotlin.concurrent.Volatile
 
 /**
  * BLE Packet Factory - Builds binary protocol frames for Vitruvian device communication
