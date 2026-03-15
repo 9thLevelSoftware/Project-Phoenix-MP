@@ -9,6 +9,7 @@
 - ✅ **v0.5.0 Premium Mobile** — Phases 13-15 (shipped 2026-02-27)
 - ✅ **v0.5.1 Board Polish & Premium UI** — Phases 16-22 (shipped 2026-02-28)
 - ✅ **v0.6.0 Portal Sync Compatibility** — Phases 23-28 (shipped 2026-03-02)
+- 🔄 **v0.7.0 MVP Cloud Sync** — Phases 29-31 (in progress)
 
 ## Phases
 
@@ -82,6 +83,50 @@ See `.planning/milestones/v0.6.0-*` for archived phase details.
 
 </details>
 
+### v0.7.0 MVP Cloud Sync (Phases 29-31)
+
+**Branch:** `MVP` — https://github.com/9thLevelSoftware/Project-Phoenix-MP/tree/MVP
+**Scope:** Mobile-only. Portal planned separately in phoenix-portal repo.
+**Source:** `.planning/exploration-mvp-cloud-sync.md`, `docs/plans/mvp-cloud-sync-mobile.md`
+
+- [ ] Phase 29: Core Sync UI (2 plans) — Enable sync UI on both platforms, ProGuard fix
+- [ ] Phase 30: iOS Sync Launch (2 plans) — Credential injection, Darwin engine verification, TestFlight
+- [ ] Phase 31: Polish & Validation (3 plans) — Error indicator, version bump, release builds, E2E test
+
+### Phase 29: Core Sync UI
+**Goal**: Enable the user-facing sync experience that's been built but commented out since v0.6.0
+**Requirements**: SYNC-UI-01, SYNC-UI-02
+**Recommended Agents**: Senior Developer, Frontend Developer
+**Success Criteria**:
+- LinkAccount route is navigable from Settings → "Link Portal Account"
+- LinkAccountScreen shows login/signup/sync controls
+- Release build (Android) does not crash on sync due to ProGuard stripping
+- Debug build compiles cleanly on both Android and iOS
+**Plans**: 2
+
+### Phase 30: iOS Sync Launch
+**Goal**: Make cloud sync functional on iOS by injecting Supabase credentials and verifying the Ktor Darwin HTTP engine
+**Requirements**: SYNC-IOS-01, SYNC-IOS-02, SYNC-IOS-03
+**Recommended Agents**: Mobile App Builder, Senior Developer
+**Success Criteria**:
+- PlatformModule.ios.kt reads SupabaseConfig from Info.plist (not hardcoded)
+- iOS app can authenticate with Supabase GoTrue (login + signup)
+- iOS app can push a workout session and pull routines via Edge Functions
+- TestFlight build uploaded and accessible to beta testers
+**Plans**: 2
+
+### Phase 31: Polish & Validation
+**Goal**: Add sync status visibility, bump version, build releases for both platforms, and validate end-to-end sync
+**Requirements**: SYNC-POLISH-01, SYNC-POLISH-02, SYNC-POLISH-03
+**Recommended Agents**: Senior Developer, Frontend Developer, Evidence Collector
+**Success Criteria**:
+- Sync error indicator visible in SettingsTab when hasPersistentError is true
+- versionName = "0.7.0", versionCode incremented
+- Signed release APK/AAB builds successfully
+- TestFlight build submitted
+- E2E test: sign up on portal → sign in on mobile → complete workout → sync → verify data on portal dashboard
+**Plans**: 3
+
 ## Progress
 
 | Milestone | Phases | Plans | Status | Shipped |
@@ -93,8 +138,9 @@ See `.planning/milestones/v0.6.0-*` for archived phase details.
 | v0.5.0 Premium Mobile | 13-15 | 7 | Complete | 2026-02-27 |
 | v0.5.1 Board Polish & Premium UI | 16-22 | 16 | Complete | 2026-02-28 |
 | v0.6.0 Portal Sync Compatibility | 23-28 | 13 | Complete | 2026-03-02 |
+| v0.7.0 MVP Cloud Sync | 29-31 | 7 | In Progress | — |
 
-**Last phase number:** 28
+**Last phase number:** 31
 
 ---
-*Last updated: 2026-03-02 — v0.6.0 archived*
+*Last updated: 2026-03-15 — v0.7.0 initialized*
