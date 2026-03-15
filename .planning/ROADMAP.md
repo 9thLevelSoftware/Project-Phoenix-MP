@@ -90,7 +90,7 @@ See `.planning/milestones/v0.6.0-*` for archived phase details.
 **Source:** `.planning/exploration-mvp-cloud-sync.md`, `docs/plans/mvp-cloud-sync-mobile.md`
 
 - [x] Phase 29: Core Sync UI (2/2 plans) — Enable sync UI on both platforms, ProGuard fix (completed 2026-03-15)
-- [ ] Phase 30: iOS Sync Launch (2 plans) — Credential injection, Darwin engine verification, TestFlight
+- [x] Phase 30: iOS Sync Launch (2/2 plans) — Credential injection, Darwin engine verification, TestFlight (completed 2026-03-15)
 - [ ] Phase 31: Polish & Validation (3 plans) — Error indicator, version bump, release builds, E2E test
 
 ### Phase 29: Core Sync UI

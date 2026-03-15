@@ -15,14 +15,14 @@ progress:
 
 ## Current Position
 
-Phase: 30 of 31 (planned)
+Phase: 30 of 31 (complete)
 Plan: —
-Status: Phase 30 planned — 2 plans across 2 waves
-Last activity: 2026-03-15 — Phase 30 planning complete
+Status: Phase 30 complete — review passed (1 cycle with fixes)
+Last activity: 2026-03-15 — Phase 30 review passed
 
 ## Progress
 ```
-[######..............] 28% — 2/7 plans complete
+[###########.........] 57% — 4/7 plans complete
 ```
 
 ## Project Reference
@@ -58,7 +58,7 @@ See: .planning/PROJECT.md (updated 2026-03-15)
 
 ## Next Action
 
-Run `/legion:build` to execute Phase 30: iOS Sync Launch
+Run `/legion:plan 31` to plan Phase 31: Polish & Validation
 
 ---
 *Last updated: 2026-03-15 — v0.7.0 initialized, awaiting Phase 29 planning*
