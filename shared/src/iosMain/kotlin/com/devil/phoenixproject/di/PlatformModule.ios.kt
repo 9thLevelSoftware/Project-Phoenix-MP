@@ -17,11 +17,12 @@ import com.russhwolf.settings.NSUserDefaultsSettings
 import com.russhwolf.settings.Settings
 import org.koin.core.module.Module
 import org.koin.dsl.module
+import platform.Foundation.NSBundle
 import platform.Foundation.NSUserDefaults
 
 actual val platformModule: Module = module {
     single {
-        val bundle = platform.Foundation.NSBundle.mainBundle
+        val bundle = NSBundle.mainBundle
         SupabaseConfig(
             url = bundle.objectForInfoDictionaryKey("SUPABASE_URL") as? String ?: "",
             anonKey = bundle.objectForInfoDictionaryKey("SUPABASE_ANON_KEY") as? String ?: ""

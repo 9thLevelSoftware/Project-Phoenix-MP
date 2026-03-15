@@ -13,6 +13,7 @@ build/
 # Local configuration
 local.properties
 *.local.properties
+iosApp/VitruvianPhoenix/Config/Supabase.xcconfig
 
 # Kotlin
 .kotlin/

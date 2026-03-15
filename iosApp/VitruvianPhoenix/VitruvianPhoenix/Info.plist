@@ -69,8 +69,8 @@
     <key>LSSupportsOpeningDocumentsInPlace</key>
     <true/>
     <key>SUPABASE_URL</key>
-    <string>https://ilzlswmatadlnsuxatcv.supabase.co</string>
+    <string>$(SUPABASE_URL)</string>
     <key>SUPABASE_ANON_KEY</key>
-    <string>sb_publishable_UDrjasV6UJLm_IdIzGljoQ_YaRes4dQ</string>
+    <string>$(SUPABASE_ANON_KEY)</string>
 </dict>
 </plist>
