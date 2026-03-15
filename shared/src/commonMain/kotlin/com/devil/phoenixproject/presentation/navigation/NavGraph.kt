@@ -645,29 +645,28 @@ fun NavGraph(
         //     )
         // }
 
-        // TODO: Uncomment when online account features are ready for public release
         // Link Account screen - cloud sync with Phoenix Portal
-        // composable(
-        //     route = NavigationRoutes.LinkAccount.route,
-        //     enterTransition = {
-        //         slideIntoContainer(
-        //             towards = AnimatedContentTransitionScope.SlideDirection.Left,
-        //             animationSpec = tween(300)
-        //         )
-        //     },
-        //     exitTransition = { fadeOut(animationSpec = tween(200)) },
-        //     popEnterTransition = { fadeIn(animationSpec = tween(200)) },
-        //     popExitTransition = {
-        //         slideOutOfContainer(
-        //             towards = AnimatedContentTransitionScope.SlideDirection.Right,
-        //             animationSpec = tween(300)
-        //         )
-        //     }
-        // ) {
-        //     LinkAccountScreen(
-        //         onNavigateBack = { navController.popBackStack() }
-        //     )
-        // }
+        composable(
+            route = NavigationRoutes.LinkAccount.route,
+            enterTransition = {
+                slideIntoContainer(
+                    towards = AnimatedContentTransitionScope.SlideDirection.Left,
+                    animationSpec = tween(300)
+                )
+            },
+            exitTransition = { fadeOut(animationSpec = tween(200)) },
+            popEnterTransition = { fadeIn(animationSpec = tween(200)) },
+            popExitTransition = {
+                slideOutOfContainer(
+                    towards = AnimatedContentTransitionScope.SlideDirection.Right,
+                    animationSpec = tween(300)
+                )
+            }
+        ) {
+            LinkAccountScreen(
+                onNavigateBack = { navController.popBackStack() }
+            )
+        }
     }
 }
 }

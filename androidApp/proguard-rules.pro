@@ -36,6 +36,15 @@
 }
 -dontwarn kotlinx.coroutines.flow.**
 
+# ==================== Ktor HTTP Client (sync layer) ====================
+-keep class io.ktor.** { *; }
+-keep class io.ktor.client.** { *; }
+-keep class io.ktor.client.engine.** { *; }
+-keep class io.ktor.client.plugins.** { *; }
+-keep class io.ktor.serialization.** { *; }
+-keep class io.ktor.utils.** { *; }
+-dontwarn io.ktor.**
+
 # ==================== SQLDelight ====================
 -keep class com.devil.phoenixproject.database.** { *; }
 -keep class app.cash.sqldelight.** { *; }
