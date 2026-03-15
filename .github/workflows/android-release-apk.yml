@@ -56,7 +56,8 @@ jobs:
       - name: Generate version code
         id: version
         run: |
-          VERSION_CODE=$(date +%Y%m%d)${{ github.run_number }}
+          # Generate version code from date and run number (must fit in a 32-bit signed int)
+          VERSION_CODE=$(( $(date +%y%m%d) * 1000 + ${{ github.run_number }} % 1000 ))
           echo "version_code=$VERSION_CODE" >> $GITHUB_OUTPUT
           echo "Version code: $VERSION_CODE"
 
