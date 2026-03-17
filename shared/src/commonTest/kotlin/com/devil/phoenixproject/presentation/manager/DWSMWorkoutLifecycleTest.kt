@@ -403,6 +403,11 @@ class DWSMWorkoutLifecycleTest {
         harness.dwsm.loadRoutine(routine)
         advanceUntilIdle()
 
+        // Disable autoplay so startNextSet() enters SetReady instead of launching
+        // startWorkout() which creates infinite delay loops (rest timer, metrics, etc.)
+        harness.fakePrefsManager.setSummaryCountdownSeconds(0)
+        advanceUntilIdle()
+
         harness.dwsm.coordinator._workoutState.value = WorkoutState.Resting(
             restSecondsRemaining = 0,
             nextExerciseName = routine.exercises[1].exercise.displayName,
