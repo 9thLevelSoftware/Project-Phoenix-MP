@@ -1,6 +1,5 @@
 package com.devil.phoenixproject.data.sync
 
-import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
 /**
@@ -9,6 +8,10 @@ import kotlinx.serialization.Serializable
  *
  * These represent the wire format for mobile → portal sync.
  * The portal stores per-cable weight; the ×2 display multiplier is handled in the portal UI.
+ *
+ * IMPORTANT: These DTOs serialize as camelCase JSON to match the Edge Function's
+ * TypeScript interfaces. The Edge Function handles camelCase→snake_case mapping
+ * when inserting into the database.
  */
 
 // ─── Top Level: Workout Session ─────────────────────────────────────
@@ -23,17 +26,17 @@ import kotlinx.serialization.Serializable
 @Serializable
 data class PortalWorkoutSessionDto(
     val id: String,
-    @SerialName("user_id") val userId: String,
+    val userId: String,
     val name: String? = null,
-    @SerialName("started_at") val startedAt: String, // ISO 8601
-    @SerialName("duration_seconds") val durationSeconds: Int = 0,
-    @SerialName("total_volume") val totalVolume: Float = 0f, // per-cable kg
-    @SerialName("set_count") val setCount: Int = 0,
-    @SerialName("exercise_count") val exerciseCount: Int = 0,
-    @SerialName("pr_count") val prCount: Int = 0,
-    @SerialName("routine_name") val routineName: String? = null,
-    @SerialName("workout_mode") val workoutMode: String? = null, // SCREAMING_SNAKE
-    @SerialName("routine_session_id") val routineSessionId: String? = null,
+    val startedAt: String, // ISO 8601
+    val durationSeconds: Int = 0,
+    val totalVolume: Float = 0f, // per-cable kg
+    val setCount: Int = 0,
+    val exerciseCount: Int = 0,
+    val prCount: Int = 0,
+    val routineName: String? = null,
+    val workoutMode: String? = null, // SCREAMING_SNAKE
+    val routineSessionId: String? = null,
     val exercises: List<PortalExerciseDto> = emptyList()
 )
 
@@ -46,10 +49,10 @@ data class PortalWorkoutSessionDto(
 @Serializable
 data class PortalExerciseDto(
     val id: String,
-    @SerialName("session_id") val sessionId: String,
+    val sessionId: String,
     val name: String,
-    @SerialName("muscle_group") val muscleGroup: String = "General",
-    @SerialName("order_index") val orderIndex: Int = 0,
+    val muscleGroup: String = "General",
+    val orderIndex: Int = 0,
     val sets: List<PortalSetDto> = emptyList()
 )
 
@@ -63,16 +66,16 @@ data class PortalExerciseDto(
 @Serializable
 data class PortalSetDto(
     val id: String,
-    @SerialName("exercise_id") val exerciseId: String,
-    @SerialName("set_number") val setNumber: Int,
-    @SerialName("target_reps") val targetReps: Int? = null,
-    @SerialName("actual_reps") val actualReps: Int = 0,
-    @SerialName("weight_kg") val weightKg: Float = 0f, // per-cable
+    val exerciseId: String,
+    val setNumber: Int,
+    val targetReps: Int? = null,
+    val actualReps: Int = 0,
+    val weightKg: Float = 0f, // per-cable
     val rpe: Int? = null,
-    @SerialName("is_pr") val isPr: Boolean = false,
+    val isPr: Boolean = false,
     val notes: String? = null,
-    @SerialName("workout_mode") val workoutMode: String? = null, // SCREAMING_SNAKE
-    @SerialName("rep_summaries") val repSummaries: List<PortalRepSummaryDto> = emptyList()
+    val workoutMode: String? = null, // SCREAMING_SNAKE
+    val repSummaries: List<PortalRepSummaryDto> = emptyList()
 )
 
 // ─── Level 4: Rep Summary ───────────────────────────────────────────
@@ -84,19 +87,19 @@ data class PortalSetDto(
 @Serializable
 data class PortalRepSummaryDto(
     val id: String,
-    @SerialName("set_id") val setId: String,
-    @SerialName("rep_number") val repNumber: Int,
-    @SerialName("mean_velocity_mps") val meanVelocityMps: Float? = null,
-    @SerialName("peak_velocity_mps") val peakVelocityMps: Float? = null,
-    @SerialName("mean_force_n") val meanForceN: Float? = null,
-    @SerialName("peak_force_n") val peakForceN: Float? = null,
-    @SerialName("power_watts") val powerWatts: Float? = null,
-    @SerialName("rom_mm") val romMm: Float? = null,
-    @SerialName("tut_ms") val tutMs: Int? = null, // concentric + eccentric duration
-    @SerialName("left_force_avg") val leftForceAvg: Float? = null, // cable A → left
-    @SerialName("right_force_avg") val rightForceAvg: Float? = null, // cable B → right
-    @SerialName("asymmetry_pct") val asymmetryPct: Float? = null,
-    @SerialName("vbt_zone") val vbtZone: String? = null // e.g., "EXPLOSIVE", "STRENGTH"
+    val setId: String,
+    val repNumber: Int,
+    val meanVelocityMps: Float? = null,
+    val peakVelocityMps: Float? = null,
+    val meanForceN: Float? = null,
+    val peakForceN: Float? = null,
+    val powerWatts: Float? = null,
+    val romMm: Float? = null,
+    val tutMs: Int? = null, // concentric + eccentric duration
+    val leftForceAvg: Float? = null, // cable A → left
+    val rightForceAvg: Float? = null, // cable B → right
+    val asymmetryPct: Float? = null,
+    val vbtZone: String? = null // e.g., "EXPLOSIVE", "STRENGTH"
 )
 
 // ─── Level 4b: Rep Telemetry (raw force curves) ────────────────────
@@ -108,11 +111,11 @@ data class PortalRepSummaryDto(
 @Serializable
 data class PortalRepTelemetryDto(
     val id: String,
-    @SerialName("set_id") val setId: String,
-    @SerialName("timestamp_ms") val timestampMs: Long,
-    @SerialName("force_n") val forceN: Float? = null,
-    @SerialName("velocity_mps") val velocityMps: Float? = null,
-    @SerialName("position_mm") val positionMm: Float? = null,
+    val setId: String,
+    val timestampMs: Long,
+    val forceN: Float? = null,
+    val velocityMps: Float? = null,
+    val positionMm: Float? = null,
     val cable: String? = null // "left" or "right"
 )
 
@@ -125,78 +128,78 @@ data class PortalRepTelemetryDto(
 @Serializable
 data class PortalRoutineSyncDto(
     val id: String,
-    @SerialName("user_id") val userId: String,
+    val userId: String,
     val name: String,
     val description: String = "",
-    @SerialName("exercise_count") val exerciseCount: Int = 0,
-    @SerialName("estimated_duration") val estimatedDuration: Int = 0,
-    @SerialName("times_completed") val timesCompleted: Int = 0,
-    @SerialName("is_favorite") val isFavorite: Boolean = false,
+    val exerciseCount: Int = 0,
+    val estimatedDuration: Int = 0,
+    val timesCompleted: Int = 0,
+    val isFavorite: Boolean = false,
     val exercises: List<PortalRoutineExerciseSyncDto> = emptyList()
 )
 
 @Serializable
 data class PortalRoutineExerciseSyncDto(
     val id: String,
-    @SerialName("routine_id") val routineId: String,
+    val routineId: String,
     val name: String,
-    @SerialName("muscle_group") val muscleGroup: String = "General",
+    val muscleGroup: String = "General",
     val sets: Int = 3,
     val reps: Int = 10,
     val weight: Float = 0f, // per-cable kg
-    @SerialName("rest_seconds") val restSeconds: Int = 90,
+    val restSeconds: Int = 90,
     val mode: String = "OLD_SCHOOL", // SCREAMING_SNAKE
-    @SerialName("order_index") val orderIndex: Int = 0,
+    val orderIndex: Int = 0,
     // Superset support (new portal columns)
-    @SerialName("superset_id") val supersetId: String? = null,
-    @SerialName("superset_color") val supersetColor: String? = null,
-    @SerialName("superset_order") val supersetOrder: Int? = null,
+    val supersetId: String? = null,
+    val supersetColor: String? = null,
+    val supersetOrder: Int? = null,
     // Per-set configuration (new portal columns)
-    @SerialName("per_set_weights") val perSetWeights: String? = null, // JSON array
-    @SerialName("per_set_rest") val perSetRest: String? = null, // JSON array
-    @SerialName("is_amrap") val isAmrap: Boolean = false,
-    @SerialName("pr_percentage") val prPercentage: Float? = null,
-    @SerialName("rep_count_timing") val repCountTiming: String? = null, // "TOP" or "BOTTOM"
-    @SerialName("stop_at_position") val stopAtPosition: String? = null, // "TOP" or "BOTTOM"
-    @SerialName("stall_detection") val stallDetection: Boolean = true,
-    @SerialName("eccentric_load") val eccentricLoad: String? = null,
-    @SerialName("echo_level") val echoLevel: String? = null
+    val perSetWeights: String? = null, // JSON array
+    val perSetRest: String? = null, // JSON array
+    val isAmrap: Boolean = false,
+    val prPercentage: Float? = null,
+    val repCountTiming: String? = null, // "TOP" or "BOTTOM"
+    val stopAtPosition: String? = null, // "TOP" or "BOTTOM"
+    val stallDetection: Boolean = true,
+    val eccentricLoad: String? = null,
+    val echoLevel: String? = null
 )
 
 // ─── RPG/Gamification Sync DTOs ─────────────────────────────────────
 
 @Serializable
 data class PortalRpgAttributesSyncDto(
-    @SerialName("user_id") val userId: String,
+    val userId: String,
     val strength: Int = 0,
     val power: Int = 0,
     val stamina: Int = 0,
     val consistency: Int = 0,
     val mastery: Int = 0,
-    @SerialName("character_class") val characterClass: String? = null,
+    val characterClass: String? = null,
     val level: Int = 1,
-    @SerialName("experience_points") val experiencePoints: Int = 0
+    val experiencePoints: Int = 0
 )
 
 @Serializable
 data class PortalEarnedBadgeSyncDto(
-    @SerialName("user_id") val userId: String,
-    @SerialName("badge_id") val badgeId: String,
-    @SerialName("badge_name") val badgeName: String,
-    @SerialName("badge_description") val badgeDescription: String? = null,
-    @SerialName("badge_tier") val badgeTier: String = "bronze",
-    @SerialName("earned_at") val earnedAt: String // ISO 8601
+    val userId: String,
+    val badgeId: String,
+    val badgeName: String,
+    val badgeDescription: String? = null,
+    val badgeTier: String = "bronze",
+    val earnedAt: String // ISO 8601
 )
 
 @Serializable
 data class PortalGamificationStatsSyncDto(
-    @SerialName("user_id") val userId: String,
-    @SerialName("total_workouts") val totalWorkouts: Int = 0,
-    @SerialName("total_reps") val totalReps: Int = 0,
-    @SerialName("total_volume_kg") val totalVolumeKg: Float = 0f,
-    @SerialName("longest_streak") val longestStreak: Int = 0,
-    @SerialName("current_streak") val currentStreak: Int = 0,
-    @SerialName("total_time_seconds") val totalTimeSeconds: Int = 0
+    val userId: String,
+    val totalWorkouts: Int = 0,
+    val totalReps: Int = 0,
+    val totalVolumeKg: Float = 0f,
+    val longestStreak: Int = 0,
+    val currentStreak: Int = 0,
+    val totalTimeSeconds: Int = 0
 )
 
 // ─── Push Response ──────────────────────────────────────────────────
@@ -208,7 +211,7 @@ data class PortalGamificationStatsSyncDto(
  */
 @Serializable
 data class PortalSyncPushResponse(
-    @SerialName("syncTime") val syncTime: String,  // ISO 8601 from Edge Function
+    val syncTime: String,  // ISO 8601 from Edge Function
     val sessionsInserted: Int = 0,
     val exercisesInserted: Int = 0,
     val setsInserted: Int = 0,
@@ -227,20 +230,19 @@ data class PortalSyncPushResponse(
  */
 @Serializable
 data class PortalSyncPayload(
-    @SerialName("device_id") val deviceId: String,
+    val deviceId: String,
     val platform: String = "android",
-    @SerialName("last_sync") val lastSync: Long,
+    val lastSync: Long,
     val sessions: List<PortalWorkoutSessionDto> = emptyList(),
     val routines: List<PortalRoutineSyncDto> = emptyList(),
-    @SerialName("rpg_attributes") val rpgAttributes: PortalRpgAttributesSyncDto? = null,
+    val rpgAttributes: PortalRpgAttributesSyncDto? = null,
     val badges: List<PortalEarnedBadgeSyncDto> = emptyList(),
-    @SerialName("gamification_stats") val gamificationStats: PortalGamificationStatsSyncDto? = null
+    val gamificationStats: PortalGamificationStatsSyncDto? = null
 )
 
 // ─── Pull Response DTOs (camelCase — NO @SerialName) ──────────────────
 //
 // The pull Edge Function returns camelCase JSON keys (e.g., "userId", "startedAt").
-// Push DTOs use @SerialName("user_id") for snake_case and CANNOT be reused.
 // These DTOs have property names matching the camelCase JSON directly.
 
 /**

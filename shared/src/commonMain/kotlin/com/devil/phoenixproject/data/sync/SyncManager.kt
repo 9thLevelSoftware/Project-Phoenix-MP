@@ -126,8 +126,9 @@ class SyncManager(
             )
         }
 
-        // 4. Gather routines as full domain objects
+        // 4. Gather routines as full domain objects (exclude internal cycle_routine_ entries)
         val routines = syncRepository.getFullRoutinesModifiedSince(lastSync)
+            .filterNot { it.id.startsWith("cycle_routine_") }
 
         // 5. Gather gamification data
         val rpgInput = gamificationRepository.getRpgInput()
