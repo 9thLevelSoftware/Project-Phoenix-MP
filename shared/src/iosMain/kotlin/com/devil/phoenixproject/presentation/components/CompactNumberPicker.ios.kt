@@ -48,7 +48,8 @@ private data class PickerSizing(
     val containerHeight: Dp,
     val selectedTextStyle: TextStyle,
     val unselectedTextStyle: TextStyle,
-    val buttonSize: Dp
+    val buttonSize: Dp,
+    val compactOverlayTextStyle: TextStyle
 )
 
 @Composable
@@ -63,6 +64,7 @@ private fun rememberPickerSizing(): PickerSizing {
     val itemHeight: Dp
     val selectedTextStyle: TextStyle
     val buttonSize: Dp
+    val compactOverlayTextStyle: TextStyle
 
     when {
         compactHeightMode -> {
@@ -70,18 +72,21 @@ private fun rememberPickerSizing(): PickerSizing {
             itemHeight = 30.dp
             selectedTextStyle = typography.titleMedium.copy(fontSize = 18.sp, lineHeight = 22.sp)
             buttonSize = 40.dp
+            compactOverlayTextStyle = selectedTextStyle
         }
         isCompactWidth -> {
             // Compact width + normal height (e.g. iPhone portrait)
             itemHeight = 36.dp
             selectedTextStyle = typography.titleLarge
             buttonSize = 40.dp
+            compactOverlayTextStyle = typography.titleMedium.copy(fontSize = 18.sp, lineHeight = 22.sp)
         }
         else -> {
             // Medium+ width (iPad, large phones landscape)
             itemHeight = 40.dp
             selectedTextStyle = if (fontScale > 1.15f) typography.titleLarge else typography.headlineMedium
             buttonSize = 48.dp
+            compactOverlayTextStyle = typography.titleMedium
         }
     }
 
@@ -90,7 +95,8 @@ private fun rememberPickerSizing(): PickerSizing {
         containerHeight = itemHeight * 3,
         selectedTextStyle = selectedTextStyle,
         unselectedTextStyle = if (compactHeightMode) typography.bodyMedium else typography.bodyLarge,
-        buttonSize = buttonSize
+        buttonSize = buttonSize,
+        compactOverlayTextStyle = compactOverlayTextStyle
     )
 }
 
@@ -216,6 +222,10 @@ actual fun CompactNumberPicker(
             val decPart = ((floatVal - intPart) * 10).toInt().let { if (floatVal < 0 && it < 0) -it else abs(it) }
             "$intPart.$decPart"
         }
+    }
+
+    fun formatOverlayValue(floatVal: Float, useCompactOverlay: Boolean): String {
+        return if (useCompactOverlay) formatValueForEdit(floatVal) else formatValue(floatVal)
     }
 
     // Commit the edited value
@@ -384,13 +394,20 @@ actual fun CompactNumberPicker(
             // Center padding pushes first item to middle of container
             val centerPadding = (containerHeight - itemHeight) / 2
 
-            Box(
+            BoxWithConstraints(
                 modifier = Modifier
                     .weight(1f)
                     .height(containerHeight),
                 contentAlignment = Alignment.Center
             ) {
                 val showCenteredOverlay = !isEditing && values.isNotEmpty()
+                // Side-by-side pickers on narrow iPhone layouts do not have enough space
+                // for the full suffixed string at the large overlay style.
+                val useCompactOverlay = maxWidth < 110.dp
+                val overlayTextStyle =
+                    if (useCompactOverlay) pickerSizing.compactOverlayTextStyle else pickerSizing.selectedTextStyle
+                val editButtonSize = if (useCompactOverlay) 20.dp else 24.dp
+                val editIconSize = if (useCompactOverlay) 14.dp else 16.dp
 
                 LazyColumn(
                     state = listState,
@@ -493,8 +510,8 @@ actual fun CompactNumberPicker(
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
-                            text = formatValue(values[previewIndex]),
-                            style = pickerSizing.selectedTextStyle,
+                            text = formatOverlayValue(values[previewIndex], useCompactOverlay),
+                            style = overlayTextStyle,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onSurface,
                             textAlign = TextAlign.Center,
@@ -506,13 +523,13 @@ actual fun CompactNumberPicker(
                             onClick = { isEditing = true },
                             modifier = Modifier
                                 .align(Alignment.CenterEnd)
-                                .size(24.dp)
+                                .size(editButtonSize)
                         ) {
                             Icon(
                                 imageVector = Icons.Default.Edit,
                                 contentDescription = "Edit $label",
                                 tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
-                                modifier = Modifier.size(16.dp)
+                                modifier = Modifier.size(editIconSize)
                             )
                         }
                     }
