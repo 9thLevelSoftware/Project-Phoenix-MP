@@ -5,7 +5,9 @@ import com.devil.phoenixproject.data.sync.EarnedBadgeSyncDto
 import com.devil.phoenixproject.data.sync.GamificationStatsSyncDto
 import com.devil.phoenixproject.data.sync.IdMappings
 import com.devil.phoenixproject.data.sync.PersonalRecordSyncDto
+import com.devil.phoenixproject.data.sync.PortalSyncAdapter.CycleWithContext
 import com.devil.phoenixproject.data.sync.PullRoutineDto
+import com.devil.phoenixproject.data.sync.PullTrainingCycleDto
 import com.devil.phoenixproject.data.sync.RoutineSyncDto
 import com.devil.phoenixproject.data.sync.WorkoutSessionSyncDto
 import com.devil.phoenixproject.domain.model.Routine
@@ -63,6 +65,12 @@ interface SyncRepository {
      */
     suspend fun getFullRoutinesModifiedSince(timestamp: Long): List<Routine>
 
+    /**
+     * Get all training cycles with their progress and progression context for push.
+     * Returns all cycles (no delta — cycles lack updatedAt timestamps).
+     */
+    suspend fun getFullCyclesForSync(): List<CycleWithContext>
+
     // === ID Mapping (after push) ===
 
     /**
@@ -110,4 +118,11 @@ interface SyncRepository {
      * @param lastSync The lastSync timestamp — routines modified locally after this are preserved
      */
     suspend fun mergePortalRoutines(routines: List<PullRoutineDto>, lastSync: Long)
+
+    /**
+     * Merge portal training cycles with days into local database.
+     * Server wins: portal cycles overwrite local versions.
+     * Uses delete-then-reinsert for cycle days (same pattern as portal edge function).
+     */
+    suspend fun mergePortalCycles(cycles: List<PullTrainingCycleDto>)
 }

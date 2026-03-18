@@ -8,9 +8,14 @@ import com.devil.phoenixproject.data.sync.GamificationStatsSyncDto
 import com.devil.phoenixproject.data.sync.IdMappings
 import com.devil.phoenixproject.data.sync.PersonalRecordSyncDto
 import com.devil.phoenixproject.data.sync.PortalPullAdapter
+import com.devil.phoenixproject.data.sync.PortalSyncAdapter.CycleWithContext
 import com.devil.phoenixproject.data.sync.PullRoutineDto
+import com.devil.phoenixproject.data.sync.PullTrainingCycleDto
 import com.devil.phoenixproject.data.sync.RoutineSyncDto
 import com.devil.phoenixproject.data.sync.WorkoutSessionSyncDto
+import com.devil.phoenixproject.domain.model.CycleDay
+import com.devil.phoenixproject.domain.model.CycleProgress
+import com.devil.phoenixproject.domain.model.CycleProgression
 import com.devil.phoenixproject.domain.model.EccentricLoad
 import com.devil.phoenixproject.domain.model.EchoLevel
 import com.devil.phoenixproject.domain.model.Exercise
@@ -20,6 +25,7 @@ import com.devil.phoenixproject.domain.model.RepCountTiming
 import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.domain.model.RoutineExercise
 import com.devil.phoenixproject.domain.model.Superset
+import com.devil.phoenixproject.domain.model.TrainingCycle
 import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.domain.model.currentTimeMillis
 import kotlinx.coroutines.Dispatchers
@@ -475,6 +481,56 @@ class SqlDelightSyncRepository(
         }
     }
 
+    override suspend fun mergePortalCycles(cycles: List<PullTrainingCycleDto>) {
+        withContext(Dispatchers.IO) {
+            db.transaction {
+                for (portalCycle in cycles) {
+                    // Upsert cycle (INSERT OR IGNORE — keeps local if exists)
+                    queries.insertTrainingCycleIgnore(
+                        id = portalCycle.id,
+                        name = portalCycle.name,
+                        description = portalCycle.description,
+                        created_at = currentTimeMillis(),
+                        is_active = if (portalCycle.status == "active") 1L else 0L
+                    )
+
+                    // For existing cycles, update metadata (updateTrainingCycle takes 4 params: name, description, is_active, id)
+                    // NOTE: Do NOT use setActiveTrainingCycle here — it deactivates ALL other cycles,
+                    // which would clobber the user's local active cycle during a merge.
+                    val existing = queries.selectTrainingCycleById(portalCycle.id).executeAsOneOrNull()
+                    if (existing != null) {
+                        queries.updateTrainingCycle(
+                            name = portalCycle.name,
+                            description = portalCycle.description,
+                            is_active = if (portalCycle.status == "active") 1L else 0L,
+                            id = portalCycle.id
+                        )
+                    }
+
+                    // Bulk delete existing days, reinsert from portal (same pattern as edge function)
+                    queries.deleteCycleDaysByCycle(portalCycle.id)
+
+                    for (day in portalCycle.days) {
+                        queries.insertCycleDayIgnore(
+                            id = day.id,
+                            cycle_id = day.cycleId.ifEmpty { portalCycle.id },
+                            day_number = day.dayNumber.toLong(),
+                            name = day.notes,
+                            routine_id = day.routineId,
+                            is_rest_day = if (day.dayType == "rest") 1L else 0L,
+                            echo_level = null,
+                            eccentric_load_percent = null,
+                            weight_progression_percent = day.weightAdjustment.toDouble(),
+                            rep_modifier = day.repModifier.toLong(),
+                            rest_time_override_seconds = day.restOverride?.toLong()
+                        )
+                    }
+                }
+            }
+            Logger.d { "Merged ${cycles.size} portal training cycles with days" }
+        }
+    }
+
     // === Portal Push Operations (full domain objects) ===
 
     override suspend fun getWorkoutSessionsModifiedSince(timestamp: Long): List<WorkoutSession> {
@@ -580,6 +636,73 @@ class SqlDelightSyncRepository(
                     createdAt = row.createdAt,
                     lastUsed = row.lastUsed,
                     useCount = row.useCount.toInt()
+                )
+            }
+        }
+    }
+
+    override suspend fun getFullCyclesForSync(): List<CycleWithContext> {
+        return withContext(Dispatchers.IO) {
+            val cycles = queries.selectAllTrainingCyclesSync().executeAsList()
+            val allDays = queries.selectAllCycleDaysSync().executeAsList()
+            val allProgress = queries.selectAllCycleProgressSync().executeAsList()
+            val allProgressions = queries.selectAllCycleProgressionsSync().executeAsList()
+
+            val daysByCycle = allDays.groupBy { it.cycle_id }
+            val progressByCycle = allProgress.associateBy { it.cycle_id }
+            val progressionByCycle = allProgressions.associateBy { it.cycle_id }
+
+            cycles.map { row ->
+                val days = (daysByCycle[row.id] ?: emptyList()).map { d ->
+                    CycleDay(
+                        id = d.id,
+                        cycleId = d.cycle_id,
+                        dayNumber = d.day_number.toInt(),
+                        name = d.name,
+                        routineId = d.routine_id,
+                        isRestDay = d.is_rest_day == 1L,
+                        echoLevel = d.echo_level?.let { lvl ->
+                            try { EchoLevel.valueOf(lvl) } catch (_: Exception) { null }
+                        },
+                        eccentricLoadPercent = d.eccentric_load_percent?.toInt(),
+                        weightProgressionPercent = d.weight_progression_percent?.toFloat(),
+                        repModifier = d.rep_modifier?.toInt(),
+                        restTimeOverrideSeconds = d.rest_time_override_seconds?.toInt()
+                    )
+                }
+
+                val progress = progressByCycle[row.id]?.let { p ->
+                    CycleProgress(
+                        id = p.id,
+                        cycleId = p.cycle_id,
+                        currentDayNumber = p.current_day_number.toInt(),
+                        lastCompletedDate = p.last_completed_date,
+                        cycleStartDate = p.cycle_start_date,
+                        lastAdvancedAt = p.last_advanced_at
+                    )
+                }
+
+                val progression = progressionByCycle[row.id]?.let { pg ->
+                    CycleProgression(
+                        cycleId = pg.cycle_id,
+                        frequencyCycles = pg.frequency_cycles.toInt(),
+                        weightIncreasePercent = pg.weight_increase_percent?.toFloat(),
+                        echoLevelIncrease = pg.echo_level_increase != 0L,
+                        eccentricLoadIncreasePercent = pg.eccentric_load_increase_percent?.toInt()
+                    )
+                }
+
+                CycleWithContext(
+                    cycle = TrainingCycle(
+                        id = row.id,
+                        name = row.name,
+                        description = row.description,
+                        days = days,
+                        createdAt = row.created_at,
+                        isActive = row.is_active == 1L
+                    ),
+                    progress = progress,
+                    progression = progression
                 )
             }
         }
