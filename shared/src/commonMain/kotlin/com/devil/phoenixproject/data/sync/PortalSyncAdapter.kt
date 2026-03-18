@@ -1,13 +1,18 @@
 package com.devil.phoenixproject.data.sync
 
+import com.devil.phoenixproject.domain.model.CycleDay
+import com.devil.phoenixproject.domain.model.CycleProgress
+import com.devil.phoenixproject.domain.model.CycleProgression
 import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.RepMetricData
 import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.domain.model.SupersetColors
+import com.devil.phoenixproject.domain.model.TrainingCycle
 import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.domain.model.generateUUID
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.builtins.ListSerializer
+import kotlinx.serialization.builtins.MapSerializer
 import kotlinx.serialization.builtins.serializer
 
 /**
@@ -377,6 +382,90 @@ object PortalSyncAdapter {
                 ?: (ex.sets * 60) // default 60s rest per set
             setsTime + restTime
         }
+    }
+
+    // ─── Training Cycle Mapping ─────────────────────────────────────────
+
+    /**
+     * Data bundle for a cycle with its optional progress + progression.
+     * SyncRepository gathers these for push.
+     */
+    data class CycleWithContext(
+        val cycle: TrainingCycle,
+        val progress: CycleProgress? = null,
+        val progression: CycleProgression? = null
+    )
+
+    /**
+     * Convert a mobile TrainingCycle (with context) to portal-format DTO.
+     *
+     * Schema translation:
+     *  - is_active → status ("active" / "draft")
+     *  - days.count(!rest) → workoutDays, days.count(rest) → restDays
+     *  - ceil(days.size / 7) → durationWeeks
+     *  - CycleProgress.cycleStartDate → startedAt
+     *  - CycleProgress.lastCompletedDate → lastUsedAt
+     *  - CycleProgression → progressionSettings (JSON)
+     *
+     * Note: weekNumber defaults to 1 since mobile DB has no week_number column.
+     * The portal's current_week is set to 1 unless CycleProgress tracks it.
+     */
+    fun toPortalTrainingCycle(
+        ctx: CycleWithContext,
+        userId: String
+    ): PortalTrainingCycleSyncDto {
+        val cycle = ctx.cycle
+        val progress = ctx.progress
+        val progression = ctx.progression
+
+        val workoutDays = cycle.days.count { !it.isRestDay }
+        val restDays = cycle.days.count { it.isRestDay }
+        val durationWeeks = if (cycle.days.isEmpty()) 1
+            else ((cycle.days.size + 6) / 7) // ceil division
+
+        val progressionJson = progression?.let {
+            Json.encodeToString(
+                MapSerializer(String.serializer(), String.serializer()),
+                buildMap {
+                    put("frequencyCycles", it.frequencyCycles.toString())
+                    it.weightIncreasePercent?.let { w -> put("weightIncreasePercent", w.toString()) }
+                    if (it.echoLevelIncrease) put("echoLevelIncrease", "true")
+                    it.eccentricLoadIncreasePercent?.let { e -> put("eccentricLoadIncreasePercent", e.toString()) }
+                }
+            )
+        }
+
+        val days = cycle.days.map { day ->
+            PortalCycleDaySyncDto(
+                id = day.id,
+                cycleId = cycle.id,
+                dayNumber = day.dayNumber,
+                dayType = if (day.isRestDay) "rest" else "workout",
+                routineId = day.routineId,
+                weightAdjustment = day.weightProgressionPercent ?: 0f,
+                repModifier = day.repModifier ?: 0,
+                restOverride = day.restTimeOverrideSeconds,
+                restType = null,
+                notes = day.name
+            )
+        }
+
+        return PortalTrainingCycleSyncDto(
+            id = cycle.id,
+            userId = userId,
+            name = cycle.name,
+            description = cycle.description,
+            durationWeeks = durationWeeks,
+            workoutDays = workoutDays,
+            restDays = restDays,
+            currentWeek = cycle.weekNumber,
+            status = if (cycle.isActive) "active" else "draft",
+            startedAt = progress?.cycleStartDate?.let { epochToIso8601(it) },
+            lastUsedAt = progress?.lastCompletedDate?.let { epochToIso8601(it) },
+            progressionSettings = progressionJson,
+            deloadSettings = null,
+            days = days
+        )
     }
 
     // ─── Utility ────────────────────────────────────────────────────
