@@ -208,6 +208,9 @@ CREATE TABLE RoutineExercise (
     stallDetectionEnabled INTEGER NOT NULL DEFAULT 1,
     stopAtTop INTEGER NOT NULL DEFAULT 0,
     repCountTiming TEXT NOT NULL DEFAULT 'TOP',
+    -- Phase 4 Routine Programming (migration 18)
+    setEchoLevels TEXT NOT NULL DEFAULT '',
+    warmupSets TEXT NOT NULL DEFAULT '',
     FOREIGN KEY (routineId) REFERENCES Routine(id) ON DELETE CASCADE,
     FOREIGN KEY (exerciseId) REFERENCES Exercise(id) ON DELETE SET NULL,
     FOREIGN KEY (supersetId) REFERENCES Superset(id) ON DELETE SET NULL
