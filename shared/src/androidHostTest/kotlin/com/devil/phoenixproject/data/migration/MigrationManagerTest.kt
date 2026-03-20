@@ -1,6 +1,8 @@
 package com.devil.phoenixproject.data.migration
 
+import com.devil.phoenixproject.domain.model.PRType
 import com.devil.phoenixproject.testutil.createTestDatabase
+import com.devil.phoenixproject.util.OneRepMaxCalculator
 import org.junit.Before
 import org.junit.Test
 import kotlin.test.assertEquals
@@ -184,7 +186,140 @@ class MigrationManagerTest {
         assertEquals("My Custom Routine", session.routineName, "Legitimate routine name should be preserved")
     }
 
+    @Test
+    fun `normalize legacy workout session modes to canonical keys`() {
+        val queries = database.vitruvianDatabaseQueries
+        insertMinimalSession(
+            id = "session-mode",
+            routineSessionId = null,
+            routineName = "Pull Day",
+            mode = "OldSchool"
+        )
+
+        migrationManager.checkAndRunMigrations()
+        Thread.sleep(500)
+
+        val session = queries.selectSessionById("session-mode").executeAsOneOrNull()
+        assertNotNull(session)
+        assertEquals("Old School", session.mode)
+    }
+
+    @Test
+    fun `normalize legacy personal record modes merges duplicates into canonical bucket`() {
+        val queries = database.vitruvianDatabaseQueries
+        insertMinimalExercise(id = "deadlift", name = "Conventional Deadlift")
+        queries.insertRecord(
+            exerciseId = "deadlift",
+            exerciseName = "Conventional Deadlift",
+            weight = 60.0,
+            reps = 10,
+            oneRepMax = OneRepMaxCalculator.epley(60f, 10).toDouble(),
+            achievedAt = 1_700_000_000_000,
+            workoutMode = "OldSchool",
+            prType = PRType.MAX_WEIGHT.name,
+            volume = 500.0
+        )
+        queries.insertRecord(
+            exerciseId = "deadlift",
+            exerciseName = "Conventional Deadlift",
+            weight = 55.0,
+            reps = 10,
+            oneRepMax = OneRepMaxCalculator.epley(55f, 10).toDouble(),
+            achievedAt = 1_700_000_100_000,
+            workoutMode = "Old School",
+            prType = PRType.MAX_WEIGHT.name,
+            volume = 500.0
+        )
+
+        migrationManager.checkAndRunMigrations()
+        Thread.sleep(500)
+
+        val canonical = queries.selectPR("deadlift", "Old School", PRType.MAX_WEIGHT.name).executeAsOneOrNull()
+        val records = queries.selectAllRecords().executeAsList()
+            .filter { it.exerciseId == "deadlift" && it.prType == PRType.MAX_WEIGHT.name }
+
+        assertNotNull(canonical)
+        assertEquals(1, records.size)
+        assertEquals("Old School", canonical.workoutMode)
+        assertEquals(60.0, canonical.weight)
+        assertNull(queries.selectPR("deadlift", "OldSchool", PRType.MAX_WEIGHT.name).executeAsOneOrNull())
+    }
+
+    @Test
+    fun `repair personal records from workout history backfills achieved load and stays idempotent`() {
+        val queries = database.vitruvianDatabaseQueries
+        insertMinimalExercise(id = "deadlift", name = "Conventional Deadlift")
+        insertMinimalSession(
+            id = "session-pr-repair",
+            routineSessionId = null,
+            routineName = "Pull 2",
+            exerciseId = "deadlift",
+            exerciseName = "Conventional Deadlift",
+            mode = "OldSchool",
+            weightPerCableKg = 50.0,
+            totalReps = 10,
+            workingReps = 10,
+            heaviestLiftKg = 60.0
+        )
+
+        migrationManager.checkAndRunMigrations()
+        Thread.sleep(500)
+        migrationManager.checkAndRunMigrations()
+        Thread.sleep(500)
+
+        val session = queries.selectSessionById("session-pr-repair").executeAsOneOrNull()
+        val weightPr = queries.selectPR("deadlift", "Old School", PRType.MAX_WEIGHT.name).executeAsOneOrNull()
+        val volumePr = queries.selectPR("deadlift", "Old School", PRType.MAX_VOLUME.name).executeAsOneOrNull()
+        val exercise = queries.selectExerciseById("deadlift").executeAsOneOrNull()
+        val repairedRecords = queries.selectAllRecords().executeAsList()
+            .filter { it.exerciseId == "deadlift" }
+
+        assertNotNull(session)
+        assertNotNull(weightPr)
+        assertNotNull(volumePr)
+        assertEquals("Old School", session.mode)
+        assertEquals(60.0, weightPr.weight)
+        assertEquals(50.0, volumePr.weight)
+        assertEquals(500.0, volumePr.volume)
+        assertEquals(2, repairedRecords.size)
+        assertEquals(
+            OneRepMaxCalculator.epley(60f, 10).toDouble(),
+            exercise?.one_rep_max_kg
+        )
+    }
+
     // -- Helper --
+
+    private fun insertMinimalExercise(
+        id: String,
+        name: String,
+        oneRepMaxKg: Double? = null
+    ) {
+        database.vitruvianDatabaseQueries.insertExercise(
+            id = id,
+            name = name,
+            description = null,
+            created = 0L,
+            muscleGroup = "Back",
+            muscleGroups = "Back",
+            muscles = null,
+            equipment = "BAR",
+            movement = null,
+            sidedness = null,
+            grip = null,
+            gripWidth = null,
+            minRepRange = null,
+            popularity = 0.0,
+            archived = 0L,
+            isFavorite = 0L,
+            isCustom = 0L,
+            timesPerformed = 0L,
+            lastPerformed = null,
+            aliases = null,
+            defaultCableConfig = "DOUBLE",
+            one_rep_max_kg = oneRepMaxKg
+        )
+    }
 
     private fun insertMinimalRoutineExercise(
         id: String,
@@ -231,19 +366,24 @@ class MigrationManagerTest {
         routineSessionId: String?,
         routineName: String?,
         exerciseId: String = "exercise-default",
-        exerciseName: String = "Default Exercise"
+        exerciseName: String = "Default Exercise",
+        mode: String = "Old School",
+        weightPerCableKg: Double = 10.0,
+        totalReps: Long = 10L,
+        workingReps: Long = 10L,
+        heaviestLiftKg: Double? = null
     ) {
         database.vitruvianDatabaseQueries.insertSession(
             id = id,
             timestamp = 1_700_000_000_000,
-            mode = "Old School",
+            mode = mode,
             targetReps = 10,
-            weightPerCableKg = 10.0,
+            weightPerCableKg = weightPerCableKg,
             progressionKg = 0.0,
             duration = 0L,
-            totalReps = 10,
+            totalReps = totalReps,
             warmupReps = 0,
-            workingReps = 10,
+            workingReps = workingReps,
             isJustLift = 0,
             stopAtTop = 0,
             eccentricLoad = 100,
@@ -265,7 +405,7 @@ class MigrationManagerTest {
             avgForceConcentricB = null,
             avgForceEccentricA = null,
             avgForceEccentricB = null,
-            heaviestLiftKg = null,
+            heaviestLiftKg = heaviestLiftKg,
             totalVolumeKg = null,
             cableCount = null,
             estimatedCalories = null,

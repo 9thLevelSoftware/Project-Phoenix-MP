@@ -1571,7 +1571,8 @@ class ActiveSessionEngine(
               val hasPR = gamificationManager.processPostSaveEvents(
                   exerciseId = params.selectedExerciseId,
                   workingReps = repCount.workingReps,
-                  recordedWeightKg = params.weightPerCableKg,
+                  achievedWeightKg = summary.heaviestLiftKgPerCable,
+                  volumeWeightKg = params.weightPerCableKg,
                   programMode = params.programMode,
                   isJustLift = isJustLift,
                   isEchoMode = params.isEchoMode
@@ -1819,7 +1820,8 @@ class ActiveSessionEngine(
         val hasPR = gamificationManager.processPostSaveEvents(
             exerciseId = params.selectedExerciseId,
             workingReps = working,
-            recordedWeightKg = params.weightPerCableKg,
+            achievedWeightKg = summary.heaviestLiftKgPerCable,
+            volumeWeightKg = params.weightPerCableKg,
             programMode = params.programMode,
             isJustLift = params.isJustLift,
             isEchoMode = params.isEchoMode

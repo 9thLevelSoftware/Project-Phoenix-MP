@@ -1,6 +1,9 @@
 package com.devil.phoenixproject.data.migration
 
 import co.touchlab.kermit.Logger
+import com.devil.phoenixproject.data.repository.SqlDelightPersonalRecordRepository
+import com.devil.phoenixproject.data.repository.normalizeWorkoutModeKey
+import com.devil.phoenixproject.domain.model.PRType
 import com.devil.phoenixproject.database.Routine
 import com.devil.phoenixproject.database.RoutineExercise
 import com.devil.phoenixproject.database.VitruvianDatabase
@@ -47,7 +50,9 @@ class MigrationManager(
 
     private suspend fun runMigrations() {
         cleanupFabricatedRoutineSessionIds()
+        normalizeLegacyWorkoutModes()
         backfillLegacyWorkoutRoutineNames()
+        repairPersonalRecordsFromWorkoutHistory()
     }
 
     /**
@@ -133,6 +138,160 @@ class MigrationManager(
 
         if (updatedNameRows > 0 || updatedIdRows > 0) {
             log.i { "Legacy routine backfill: updated $updatedNameRows names, $updatedIdRows routineIds" }
+        }
+    }
+
+    private fun normalizeLegacyWorkoutModes() {
+        normalizeLegacySessionModes()
+        normalizeLegacyPersonalRecordModes()
+    }
+
+    private fun normalizeLegacySessionModes() {
+        val sessions = runCatching { queries.selectAllSessionsSync().executeAsList() }
+            .getOrElse { error ->
+                log.e(error) { "Failed to load workout sessions for mode normalization" }
+                return
+            }
+
+        var updated = 0
+        database.transaction {
+            sessions.forEach { session ->
+                val normalizedMode = normalizeWorkoutModeKey(session.mode)
+                if (normalizedMode == session.mode) return@forEach
+
+                queries.updateSessionMode(
+                    mode = normalizedMode,
+                    id = session.id
+                )
+                updated++
+            }
+        }
+
+        if (updated > 0) {
+            log.i { "Normalized workout mode keys for $updated workout sessions" }
+        }
+    }
+
+    private fun normalizeLegacyPersonalRecordModes() {
+        val records = runCatching { queries.selectAllRecords().executeAsList() }
+            .getOrElse { error ->
+                log.e(error) { "Failed to load personal records for mode normalization" }
+                return
+            }
+
+        var updated = 0
+        var merged = 0
+        database.transaction {
+            records.forEach { record ->
+                val normalizedMode = normalizeWorkoutModeKey(record.workoutMode)
+                if (normalizedMode == record.workoutMode) return@forEach
+
+                val canonicalRecord = queries.selectPR(
+                    exerciseId = record.exerciseId,
+                    workoutMode = normalizedMode,
+                    prType = record.prType
+                ).executeAsOneOrNull()
+
+                if (canonicalRecord == null || shouldReplacePersonalRecord(record, canonicalRecord)) {
+                    queries.upsertPR(
+                        exerciseId = record.exerciseId,
+                        exerciseName = record.exerciseName,
+                        weight = record.weight,
+                        reps = record.reps,
+                        oneRepMax = record.oneRepMax,
+                        achievedAt = record.achievedAt,
+                        workoutMode = normalizedMode,
+                        prType = record.prType,
+                        volume = record.volume
+                    )
+                    updated++
+                } else {
+                    merged++
+                }
+
+                queries.deletePRByKey(
+                    exerciseId = record.exerciseId,
+                    workoutMode = record.workoutMode,
+                    prType = record.prType
+                )
+            }
+        }
+
+        if (updated > 0 || merged > 0) {
+            log.i { "Normalized personal record mode keys: updated $updated rows, merged $merged legacy duplicates" }
+        }
+    }
+
+    private suspend fun repairPersonalRecordsFromWorkoutHistory() {
+        val sessions = runCatching { queries.selectAllSessionsSync().executeAsList() }
+            .getOrElse { error ->
+                log.e(error) { "Failed to load workout sessions for PR repair" }
+                return
+            }
+            .sortedBy { it.timestamp }
+
+        if (sessions.isEmpty()) return
+
+        val personalRecordRepository = SqlDelightPersonalRecordRepository(database)
+        var repairedSessions = 0
+        var repairedRecords = 0
+
+        sessions.forEach { session ->
+            val exerciseId = sanitizeLegacyLabel(session.exerciseId) ?: return@forEach
+            if (session.isJustLift != 0L) return@forEach
+
+            val normalizedMode = normalizeWorkoutModeKey(session.mode)
+            if (normalizedMode == "Echo") return@forEach
+
+            val reps = session.workingReps.toInt()
+            if (reps <= 0) return@forEach
+
+            val achievedWeightKg = session.heaviestLiftKg?.toFloat() ?: session.weightPerCableKg.toFloat()
+            val configuredWeightKg = session.weightPerCableKg.toFloat()
+            if (achievedWeightKg <= 0f || configuredWeightKg <= 0f) return@forEach
+
+            val brokenPRs = runCatching {
+                personalRecordRepository.updatePRsIfBetter(
+                    exerciseId = exerciseId,
+                    weightPRWeightPerCableKg = achievedWeightKg,
+                    volumePRWeightPerCableKg = configuredWeightKg,
+                    reps = reps,
+                    workoutMode = normalizedMode,
+                    timestamp = session.timestamp
+                ).getOrThrow()
+            }.getOrElse { error ->
+                log.e(error) { "Failed to repair PRs for session ${session.id}" }
+                return@forEach
+            }
+
+            if (brokenPRs.isNotEmpty()) {
+                repairedSessions++
+                repairedRecords += brokenPRs.size
+            }
+        }
+
+        if (repairedRecords > 0) {
+            log.i { "Repaired $repairedRecords PR records from $repairedSessions workout sessions" }
+        }
+    }
+
+    private fun shouldReplacePersonalRecord(
+        candidate: com.devil.phoenixproject.database.PersonalRecord,
+        current: com.devil.phoenixproject.database.PersonalRecord
+    ): Boolean {
+        return when (candidate.prType) {
+            PRType.MAX_VOLUME.name -> when {
+                candidate.volume > current.volume -> true
+                candidate.volume < current.volume -> false
+                else -> candidate.achievedAt > current.achievedAt
+            }
+            else -> when {
+                candidate.weight > current.weight -> true
+                candidate.weight < current.weight -> false
+                candidate.oneRepMax > current.oneRepMax -> true
+                candidate.oneRepMax < current.oneRepMax -> false
+                else -> candidate.achievedAt > current.achievedAt
+            }
         }
     }
 

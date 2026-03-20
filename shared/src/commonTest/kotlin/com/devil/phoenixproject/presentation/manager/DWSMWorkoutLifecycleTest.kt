@@ -2,6 +2,8 @@ package com.devil.phoenixproject.presentation.manager
 
 import app.cash.turbine.test
 import com.devil.phoenixproject.data.repository.RepNotification
+import com.devil.phoenixproject.domain.model.PRType
+import com.devil.phoenixproject.domain.model.PersonalRecord
 import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.RepCount
 import com.devil.phoenixproject.domain.model.RoutineFlowState
@@ -845,7 +847,7 @@ class DWSMWorkoutLifecycleTest {
     // ===== F. saveWorkoutSession side effects =====
 
     @Test
-    fun `auto completed fixed weight session records PR and volume from configured load`() = runTest {
+    fun `auto completed fixed weight session records achieved load for weight PR and configured load for volume PR`() = runTest {
         val harness = DWSMTestHarness(this)
         harness.fakeBleRepo.simulateConnect("Vee_Test")
         harness.fakeExerciseRepo.addExercise(TestFixtures.benchPress)
@@ -894,12 +896,92 @@ class DWSMWorkoutLifecycleTest {
         harness.activeSessionEngine.handleSetCompletion()
         advanceUntilIdle()
 
-        assertEquals(12f, harness.fakePRRepo.updateCalls.single().weightPerCableKg)
+        val prUpdate = harness.fakePRRepo.updateCalls.single()
+        assertEquals(24f, prUpdate.weightPRWeightPerCableKg)
+        assertEquals(12f, prUpdate.volumePRWeightPerCableKg)
 
         val session = harness.fakeWorkoutRepo.getAllSessions().first().first()
         assertEquals(24f, session.heaviestLiftKg)
         assertEquals(192f, session.totalVolumeKg)
         assertEquals(2, session.cableCount)
+        harness.cleanup()
+    }
+
+    @Test
+    fun `fixed weight session uses measured peak to beat existing weight PR in normalized mode bucket`() = runTest {
+        val harness = DWSMTestHarness(this)
+        val deadliftId = requireNotNull(TestFixtures.deadlift.id)
+        harness.fakeBleRepo.simulateConnect("Vee_Test")
+        harness.fakeExerciseRepo.addExercise(TestFixtures.deadlift)
+        harness.fakePRRepo.addRecord(
+            PersonalRecord(
+                id = 1L,
+                exerciseId = deadliftId,
+                exerciseName = "Conventional Deadlift",
+                weightPerCableKg = 55.73f,
+                reps = 10,
+                oneRepMax = 74.31f,
+                timestamp = currentTimeMillis() - 10_000L,
+                workoutMode = "OldSchool",
+                prType = PRType.MAX_WEIGHT,
+                volume = 557.3f
+            )
+        )
+
+        harness.dwsm.updateWorkoutParameters(
+            WorkoutParameters(
+                programMode = ProgramMode.OldSchool,
+                reps = 10,
+                warmupReps = 0,
+                weightPerCableKg = 50f,
+                selectedExerciseId = deadliftId
+            )
+        )
+        harness.dwsm.startWorkout(skipCountdown = true)
+        advanceUntilIdle()
+
+        harness.dwsm.coordinator._repCount.value = RepCount(
+            warmupReps = 0,
+            workingReps = 10,
+            totalReps = 10,
+            isWarmupComplete = true
+        )
+        harness.dwsm.coordinator.collectedMetrics.addAll(
+            listOf(
+                WorkoutMetric(
+                    timestamp = 100L,
+                    loadA = 60f,
+                    loadB = 60f,
+                    positionA = 120f,
+                    positionB = 120f,
+                    velocityA = 80.0,
+                    velocityB = 80.0
+                ),
+                WorkoutMetric(
+                    timestamp = 200L,
+                    loadA = 54f,
+                    loadB = 56f,
+                    positionA = 90f,
+                    positionB = 90f,
+                    velocityA = -60.0,
+                    velocityB = -60.0
+                )
+            )
+        )
+
+        harness.activeSessionEngine.handleSetCompletion()
+        advanceUntilIdle()
+
+        val prUpdate = harness.fakePRRepo.updateCalls.single()
+        assertEquals(60f, prUpdate.weightPRWeightPerCableKg)
+        assertEquals(50f, prUpdate.volumePRWeightPerCableKg)
+
+        val updatedPr = harness.fakePRRepo.getWeightPR(deadliftId, "Old School")
+        assertEquals(60f, updatedPr?.weightPerCableKg)
+        assertEquals(updatedPr?.id, harness.fakePRRepo.getWeightPR(deadliftId, "OldSchool")?.id)
+
+        val session = harness.fakeWorkoutRepo.getAllSessions().first().first()
+        assertEquals(60f, session.heaviestLiftKg)
         harness.cleanup()
     }
 

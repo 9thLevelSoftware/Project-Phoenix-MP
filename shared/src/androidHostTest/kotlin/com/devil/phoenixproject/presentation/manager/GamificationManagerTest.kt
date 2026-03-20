@@ -80,7 +80,8 @@ class GamificationManagerTest {
             val hasCelebrationSound = manager.processPostSaveEvents(
                 exerciseId = "bench-1",
                 workingReps = 8,
-                recordedWeightKg = 20f,
+                achievedWeightKg = 24f,
+                volumeWeightKg = 20f,
                 programMode = ProgramMode.OldSchool,
                 isJustLift = false,
                 isEchoMode = false
@@ -136,7 +137,8 @@ class GamificationManagerTest {
             val hasCelebrationSound = manager.processPostSaveEvents(
                 exerciseId = "bench-1",
                 workingReps = 8,
-                recordedWeightKg = 20f,
+                achievedWeightKg = 20f,
+                volumeWeightKg = 20f,
                 programMode = ProgramMode.OldSchool,
                 isJustLift = true,
                 isEchoMode = false

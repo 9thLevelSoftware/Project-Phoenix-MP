@@ -65,7 +65,19 @@ interface PersonalRecordRepository {
         reps: Int,
         workoutMode: String,
         timestamp: Long
-    ): Result<Boolean>
+    ): Result<Boolean> {
+        return updatePRsIfBetter(
+            exerciseId = exerciseId,
+            weightPRWeightPerCableKg = weightPerCableKg,
+            volumePRWeightPerCableKg = weightPerCableKg,
+            reps = reps,
+            workoutMode = workoutMode,
+            timestamp = timestamp
+        ).fold(
+            onSuccess = { Result.success(it.isNotEmpty()) },
+            onFailure = { Result.failure(it) }
+        )
+    }
 
     // ========== Volume/Weight PR Methods (parity with parent) ==========
 
@@ -139,5 +151,52 @@ interface PersonalRecordRepository {
         reps: Int,
         workoutMode: String,
         timestamp: Long
+    ): Result<List<PRType>> {
+        return updatePRsIfBetter(
+            exerciseId = exerciseId,
+            weightPRWeightPerCableKg = weightPerCableKg,
+            volumePRWeightPerCableKg = weightPerCableKg,
+            reps = reps,
+            workoutMode = workoutMode,
+            timestamp = timestamp
+        )
+    }
+
+    /**
+     * Update PRs if the new performance is better.
+     * Uses separate weight inputs so weight PRs can reflect achieved load while
+     * volume PRs continue to use the conservative programmed load.
+     *
+     * @param exerciseId Exercise ID
+     * @param weightPRWeightPerCableKg Achieved load used for MAX_WEIGHT comparisons and 1RM sync
+     * @param volumePRWeightPerCableKg Conservative load used for MAX_VOLUME comparisons
+     * @param reps Number of reps completed
+     * @param workoutMode Workout mode
+     * @param timestamp Timestamp of the performance
+     * @return List of PR types that were broken (can be empty, one, or both)
+     */
+    suspend fun updatePRsIfBetter(
+        exerciseId: String,
+        weightPRWeightPerCableKg: Float,
+        volumePRWeightPerCableKg: Float,
+        reps: Int,
+        workoutMode: String,
+        timestamp: Long
     ): Result<List<PRType>>
+}
+
+fun normalizeWorkoutModeKey(workoutMode: String): String {
+    val trimmed = workoutMode.trim()
+    return when {
+        trimmed.equals("OldSchool", ignoreCase = true) -> "Old School"
+        trimmed.equals("TUTBeast", ignoreCase = true) -> "TUT Beast"
+        trimmed.equals("EccentricOnly", ignoreCase = true) -> "Eccentric Only"
+        trimmed.equals("Echo", ignoreCase = true) -> "Echo"
+        trimmed.equals("Pump", ignoreCase = true) -> "Pump"
+        trimmed.equals("TUT", ignoreCase = true) -> "TUT"
+        trimmed.equals("Old School", ignoreCase = true) -> "Old School"
+        trimmed.equals("TUT Beast", ignoreCase = true) -> "TUT Beast"
+        trimmed.equals("Eccentric Only", ignoreCase = true) -> "Eccentric Only"
+        else -> trimmed
+    }
 }
