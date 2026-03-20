@@ -75,6 +75,12 @@ class SyncTriggerManager(
             return
         }
 
+        // Check premium status -- skip auto-sync for free users
+        if (syncManager.currentUser.value?.isPremium != true) {
+            Logger.d { "SyncTrigger: Skipping sync - not premium" }
+            return
+        }
+
         // Check connectivity
         if (!connectivityChecker.isOnline()) {
             Logger.d { "SyncTrigger: Skipping sync - offline" }
