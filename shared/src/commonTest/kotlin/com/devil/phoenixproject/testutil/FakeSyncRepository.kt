@@ -6,9 +6,15 @@ import com.devil.phoenixproject.data.sync.EarnedBadgeSyncDto
 import com.devil.phoenixproject.data.sync.GamificationStatsSyncDto
 import com.devil.phoenixproject.data.sync.IdMappings
 import com.devil.phoenixproject.data.sync.PersonalRecordSyncDto
+import com.devil.phoenixproject.data.sync.PortalSyncAdapter.CycleWithContext
 import com.devil.phoenixproject.data.sync.PullRoutineDto
+import com.devil.phoenixproject.data.sync.PullTrainingCycleDto
 import com.devil.phoenixproject.data.sync.RoutineSyncDto
 import com.devil.phoenixproject.data.sync.WorkoutSessionSyncDto
+import com.devil.phoenixproject.database.AssessmentResult
+import com.devil.phoenixproject.database.ExerciseSignature
+import com.devil.phoenixproject.database.PhaseStatistics
+import com.devil.phoenixproject.domain.model.PersonalRecord
 import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.domain.model.WorkoutSession
 
@@ -123,5 +129,21 @@ class FakeSyncRepository : SyncRepository {
         mergePortalRoutinesCallCount++
         mergedPortalRoutines = routines
         mergedPortalRoutinesLastSync = lastSync
+    }
+
+    // === Stubs for new sync interface methods (added for cycle/PR/phase/signature/assessment sync) ===
+
+    override suspend fun getFullCyclesForSync(): List<CycleWithContext> = emptyList()
+
+    override suspend fun getFullPRsModifiedSince(timestamp: Long): List<PersonalRecord> = emptyList()
+
+    override suspend fun getPhaseStatisticsForSessions(sessionIds: List<String>): List<PhaseStatistics> = emptyList()
+
+    override suspend fun getAllExerciseSignatures(): List<ExerciseSignature> = emptyList()
+
+    override suspend fun getAllAssessments(): List<AssessmentResult> = emptyList()
+
+    override suspend fun mergePortalCycles(cycles: List<PullTrainingCycleDto>) {
+        // no-op for tests
     }
 }
