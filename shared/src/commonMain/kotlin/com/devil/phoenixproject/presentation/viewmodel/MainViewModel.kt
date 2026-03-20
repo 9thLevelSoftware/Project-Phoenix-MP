@@ -27,6 +27,7 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import androidx.compose.ui.graphics.vector.ImageVector
 import com.devil.phoenixproject.presentation.manager.HistoryManager
@@ -184,11 +185,12 @@ class MainViewModel constructor(
         // Populate exercise attribution on workout parameters so subsequent
         // session saves (e.g. Just Lift) include the confirmed exercise
         val coordinator = workoutSessionManager.coordinator
-        val params = coordinator.workoutParameters.value
-        if (params.isJustLift && params.selectedExerciseId == null) {
-            coordinator._workoutParameters.value = params.copy(
-                selectedExerciseId = exerciseId
-            )
+        coordinator._workoutParameters.update { params ->
+            if (params.isJustLift && params.selectedExerciseId == null) {
+                params.copy(selectedExerciseId = exerciseId)
+            } else {
+                params
+            }
         }
     }
 

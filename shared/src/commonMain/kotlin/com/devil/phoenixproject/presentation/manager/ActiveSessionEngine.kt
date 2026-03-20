@@ -1288,6 +1288,24 @@ class ActiveSessionEngine(
         }
     }
 
+    /**
+     * Applies an auto-accepted exercise detection (if any) to the workout parameters.
+     * Called before saving a session so the detected exerciseId is persisted.
+     * Returns true if an auto-accepted detection was applied.
+     */
+    private suspend fun applyAutoAcceptedDetection(): Boolean {
+        val detection = detectionManager?.detectionState?.value ?: return false
+        if (!detection.isAutoAccepted || detection.classification == null) return false
+        val cls = detection.classification
+        val confirmedId = cls.exerciseId
+        if (confirmedId.isNullOrBlank()) return false
+        detectionManager.onExerciseConfirmed(confirmedId, cls.exerciseName)
+        coordinator._workoutParameters.update { p -> p.copy(selectedExerciseId = confirmedId) }
+        coordinator._userFeedbackEvents.emit("Exercise detected: ${cls.exerciseName}")
+        Logger.d("Just Lift: Auto-accepted exercise '${cls.exerciseName}' (id=$confirmedId)")
+        return true
+    }
+
     private suspend fun saveJustLiftDefaultsFromWorkout() {
         val params = coordinator._workoutParameters.value
         if (!params.isJustLift) return
@@ -1873,34 +1891,17 @@ class ActiveSessionEngine(
              }
              coordinator._hapticEvents.emit(HapticEvent.WORKOUT_END)
 
-             var params = coordinator._workoutParameters.value
              val repCount = coordinator._repCount.value
-             val isJustLift = params.isJustLift
+             val isJustLift = coordinator._workoutParameters.value.isJustLift
 
              if (isJustLift) {
                  Logger.d("Just Lift: Restarting monitor polling to clear machine fault state")
                  bleRepository.restartMonitorPolling()
+                 applyAutoAcceptedDetection()
              }
 
-             // Just Lift: apply auto-accepted detection before saving session
-             if (isJustLift) {
-                 val detection = detectionManager?.detectionState?.value
-                 if (detection != null && detection.isAutoAccepted && detection.classification != null) {
-                     val cls = detection.classification
-                     val confirmedId = cls.exerciseId
-                     if (!confirmedId.isNullOrBlank()) {
-                         detectionManager.onExerciseConfirmed(confirmedId, cls.exerciseName)
-                         coordinator._workoutParameters.update { p ->
-                             p.copy(selectedExerciseId = confirmedId)
-                         }
-                         params = coordinator._workoutParameters.value
-                         coordinator._userFeedbackEvents.emit(
-                             "Exercise detected: ${cls.exerciseName}"
-                         )
-                         Logger.d("Just Lift (manual stop): Auto-accepted exercise '${cls.exerciseName}' (id=$confirmedId)")
-                     }
-                 }
-             }
+             // Re-read params after potential auto-accept update
+             val params = coordinator._workoutParameters.value
 
              val exerciseName = params.selectedExerciseId?.let { exerciseId ->
                  exerciseRepository.getExerciseById(exerciseId)?.name
@@ -2327,24 +2328,10 @@ class ActiveSessionEngine(
             }
             coordinator._hapticEvents.emit(HapticEvent.WORKOUT_END)
 
-            // Just Lift: handle auto-accepted exercise detection before saving session
+            // Just Lift: apply auto-accepted exercise detection before saving session
             // so the exerciseId is populated in the persisted WorkoutSession
             if (isJustLift) {
-                val detection = detectionManager?.detectionState?.value
-                if (detection != null && detection.isAutoAccepted && detection.classification != null) {
-                    val cls = detection.classification
-                    val confirmedId = cls.exerciseId
-                    if (!confirmedId.isNullOrBlank()) {
-                        detectionManager.onExerciseConfirmed(confirmedId, cls.exerciseName)
-                        coordinator._workoutParameters.update { p ->
-                            p.copy(selectedExerciseId = confirmedId)
-                        }
-                        coordinator._userFeedbackEvents.emit(
-                            "Exercise detected: ${cls.exerciseName}"
-                        )
-                        Logger.d("Just Lift: Auto-accepted exercise '${cls.exerciseName}' (id=$confirmedId)")
-                    }
-                }
+                applyAutoAcceptedDetection()
             }
 
             saveWorkoutSession()
