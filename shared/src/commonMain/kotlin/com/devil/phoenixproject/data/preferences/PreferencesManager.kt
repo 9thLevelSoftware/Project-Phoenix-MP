@@ -137,6 +137,9 @@ interface PreferencesManager {
     suspend fun setAutoBackupEnabled(enabled: Boolean)
     // Issue #238: Language/locale preference
     suspend fun setLanguage(language: String)
+    // Issue #141: Voice-activated emergency stop
+    suspend fun setVoiceStopEnabled(enabled: Boolean)
+    suspend fun setSafeWord(word: String?)
 
     suspend fun getSingleExerciseDefaults(exerciseId: String): SingleExerciseDefaults?
     suspend fun saveSingleExerciseDefaults(defaults: SingleExerciseDefaults)
@@ -192,6 +195,8 @@ class SettingsPreferencesManager(
         private const val KEY_MOTION_START = "motion_start_enabled"
         private const val KEY_AUTO_BACKUP_ENABLED = "auto_backup_enabled"
         private const val KEY_LANGUAGE = "language"
+        private const val KEY_VOICE_STOP_ENABLED = "voice_stop_enabled"
+        private const val KEY_SAFE_WORD = "safe_word"
     }
 
     private val _preferencesFlow = MutableStateFlow(loadPreferences())
@@ -228,7 +233,9 @@ class SettingsPreferencesManager(
             repSoundEnabled = settings.getBoolean(KEY_REP_SOUND_ENABLED, true),
             motionStartEnabled = settings.getBoolean(KEY_MOTION_START, false),
             autoBackupEnabled = settings.getBoolean(KEY_AUTO_BACKUP_ENABLED, false),
-            language = settings.getStringOrNull(KEY_LANGUAGE) ?: "en"
+            language = settings.getStringOrNull(KEY_LANGUAGE) ?: "en",
+            voiceStopEnabled = settings.getBoolean(KEY_VOICE_STOP_ENABLED, false),
+            safeWord = settings.getStringOrNull(KEY_SAFE_WORD)
         )
     }
 
@@ -427,5 +434,19 @@ class SettingsPreferencesManager(
     override suspend fun setLanguage(language: String) {
         settings.putString(KEY_LANGUAGE, language)
         updateAndEmit { copy(language = language) }
+    }
+
+    override suspend fun setVoiceStopEnabled(enabled: Boolean) {
+        settings.putBoolean(KEY_VOICE_STOP_ENABLED, enabled)
+        updateAndEmit { copy(voiceStopEnabled = enabled) }
+    }
+
+    override suspend fun setSafeWord(word: String?) {
+        if (word != null) {
+            settings.putString(KEY_SAFE_WORD, word)
+        } else {
+            settings.remove(KEY_SAFE_WORD)
+        }
+        updateAndEmit { copy(safeWord = word) }
     }
 }

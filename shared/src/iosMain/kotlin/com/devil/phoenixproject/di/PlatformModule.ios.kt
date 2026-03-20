@@ -6,6 +6,8 @@ import com.devil.phoenixproject.data.repository.BleRepository
 import com.devil.phoenixproject.data.repository.KableBleRepository
 import com.devil.phoenixproject.data.repository.simulator.SimulatorBleRepository
 import com.devil.phoenixproject.data.sync.SupabaseConfig
+import com.devil.phoenixproject.domain.voice.IosSafeWordListenerFactory
+import com.devil.phoenixproject.domain.voice.SafeWordListenerFactory
 import com.devil.phoenixproject.util.ConnectivityChecker
 import com.devil.phoenixproject.util.CsvExporter
 import com.devil.phoenixproject.util.CsvImporter
@@ -46,4 +48,5 @@ actual val platformModule: Module = module {
     single<CsvImporter> { IosCsvImporter() }
     single<DataBackupManager> { IosDataBackupManager(get()) }
     single { ConnectivityChecker() }
+    single<SafeWordListenerFactory> { IosSafeWordListenerFactory() }
 }

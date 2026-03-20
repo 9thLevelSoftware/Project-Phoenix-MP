@@ -9,6 +9,8 @@ import com.devil.phoenixproject.data.repository.simulator.SimulatorBleRepository
 import com.devil.phoenixproject.util.AndroidCsvExporter
 import com.devil.phoenixproject.util.AndroidCsvImporter
 import com.devil.phoenixproject.util.AndroidDataBackupManager
+import com.devil.phoenixproject.domain.voice.AndroidSafeWordListenerFactory
+import com.devil.phoenixproject.domain.voice.SafeWordListenerFactory
 import com.devil.phoenixproject.util.ConnectivityChecker
 import com.devil.phoenixproject.util.CsvExporter
 import com.devil.phoenixproject.util.CsvImporter
@@ -38,4 +40,5 @@ actual val platformModule: Module = module {
     single<CsvImporter> { AndroidCsvImporter(androidContext(), get()) }
     single<DataBackupManager> { AndroidDataBackupManager(androidContext(), get()) }
     single { ConnectivityChecker(androidContext()) }
+    single<SafeWordListenerFactory> { AndroidSafeWordListenerFactory(androidContext()) }
 }

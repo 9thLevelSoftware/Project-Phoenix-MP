@@ -163,4 +163,12 @@ class FakePreferencesManager : PreferencesManager {
     override suspend fun setLanguage(language: String) {
         _preferencesFlow.value = _preferencesFlow.value.copy(language = language)
     }
+
+    override suspend fun setVoiceStopEnabled(enabled: Boolean) {
+        _preferencesFlow.value = _preferencesFlow.value.copy(voiceStopEnabled = enabled)
+    }
+
+    override suspend fun setSafeWord(word: String?) {
+        _preferencesFlow.value = _preferencesFlow.value.copy(safeWord = word)
+    }
 }

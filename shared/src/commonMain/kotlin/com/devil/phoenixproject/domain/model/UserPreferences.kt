@@ -38,7 +38,10 @@ data class UserPreferences(
     // Issue #293: Per-session auto-backup to device filesystem
     val autoBackupEnabled: Boolean = false,  // Automatically save each workout to a local backup file
     // Issue #238: Language/locale preference for i18n
-    val language: String = "en"  // Language code: "en", "nl", "de", "es", "fr"
+    val language: String = "en",  // Language code: "en", "nl", "de", "es", "fr"
+    // Issue #141: Voice-activated emergency stop
+    val voiceStopEnabled: Boolean = false,  // Whether safe word detection is active during workouts
+    val safeWord: String? = null  // The configured safe word (null = not yet calibrated)
 ) {
     /**
      * Get the effective weight increment in the user's display unit.

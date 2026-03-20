@@ -159,6 +159,21 @@ fun ActiveWorkoutScreen(
         }
     }
 
+    // Issue #141: Voice-activated emergency stop via safe word detection
+    val safeWordManager: com.devil.phoenixproject.domain.voice.SafeWordDetectionManager = koinInject()
+    LaunchedEffect(Unit) {
+        safeWordManager.startForWorkout()
+        safeWordManager.detectedWord.collect {
+            Logger.i { "Safe word detected — stopping current set" }
+            viewModel.stopAndReturnToSetReady()
+        }
+    }
+    DisposableEffect(Unit) {
+        onDispose {
+            safeWordManager.stop()
+        }
+    }
+
     // Issue #172: Snackbar for user feedback messages (e.g., navigation blocked)
     val snackbarHostState = remember { SnackbarHostState() }
     val snackbarScope = rememberCoroutineScope()

@@ -10,6 +10,7 @@ import com.devil.phoenixproject.domain.usecase.ProgressionUseCase
 import com.devil.phoenixproject.domain.usecase.RepCounterFromMachine
 import com.devil.phoenixproject.domain.usecase.ResolveRoutineWeightsUseCase
 import com.devil.phoenixproject.domain.usecase.TemplateConverter
+import com.devil.phoenixproject.domain.voice.SafeWordDetectionManager
 import org.koin.dsl.module
 
 val domainModule = module {
@@ -32,4 +33,8 @@ val domainModule = module {
 
     // Migration
     single { MigrationManager(get()) }
+
+    // Voice / Safe Word (Issue #141)
+    // SafeWordListenerFactory is provided by platformModule
+    single { SafeWordDetectionManager(get(), get()) }
 }
