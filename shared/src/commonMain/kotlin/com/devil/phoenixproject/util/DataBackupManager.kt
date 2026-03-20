@@ -1568,6 +1568,9 @@ abstract class BaseDataBackupManager(
                         KmpUtils.formatTimestamp(sessionBackupNowMs, "HH:mm:ss") + "Z",
                 appVersion = Constants.APP_VERSION,
                 data = BackupContent(
+                    // Note: mapSessionToBackup called without routineNameResolutionContext.
+                    // This means legacy sessions (pre-migration 12) won't get enriched routine names.
+                    // Acceptable trade-off: avoids loading all routines for a single-session backup.
                     workoutSessions = listOf(mapSessionToBackup(session)),
                     metricSamples = metrics.map { mapMetricToBackup(it) },
                     completedSets = completedSets.map { mapCompletedSetToBackup(it) }
