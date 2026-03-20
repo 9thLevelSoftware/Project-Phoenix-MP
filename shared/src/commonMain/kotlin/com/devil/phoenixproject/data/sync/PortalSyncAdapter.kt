@@ -47,6 +47,15 @@ object PortalSyncAdapter {
     )
 
     /**
+     * Bundle returned by buildPortalExercise, pairing the exercise DTO
+     * with telemetry that references the correct generated setId.
+     */
+    data class ExerciseWithTelemetry(
+        val exercise: PortalExerciseDto,
+        val telemetry: List<PortalRepTelemetryDto>
+    )
+
+    /**
      * Lightweight representation of RepBiomechanics DB row for sync.
      */
     data class RepBiomechanicsData(
@@ -61,46 +70,60 @@ object PortalSyncAdapter {
     )
 
     /**
-     * Convert a list of mobile WorkoutSessions (with rep data) into portal workout session DTOs.
-     *
-     * Sessions are grouped by routineSessionId:
-     *  - Sessions sharing a routineSessionId → one portal workout with multiple exercises
-     *  - Standalone sessions (null routineSessionId) → one portal workout per session
-     *
-     * @param sessionsWithReps Mobile sessions with their associated rep metric data
-     * @param userId The portal user ID (Supabase auth.uid)
-     * @return List of portal-format workout session DTOs
+     * Result of building portal sessions -- includes both session DTOs and
+     * correctly-keyed telemetry data where setIds match the generated exercise set IDs.
      */
+    data class PortalSessionBuildResult(
+        val sessions: List<PortalWorkoutSessionDto>,
+        val telemetry: List<PortalRepTelemetryDto>
+    )
+
     fun toPortalWorkoutSessions(
         sessionsWithReps: List<SessionWithReps>,
         userId: String
     ): List<PortalWorkoutSessionDto> {
+        return toPortalWorkoutSessionsWithTelemetry(sessionsWithReps, userId).sessions
+    }
+
+    /**
+     * Build portal workout sessions AND correctly-keyed telemetry in one pass.
+     * Telemetry setIds are guaranteed to match the generated set IDs in the exercises.
+     */
+    fun toPortalWorkoutSessionsWithTelemetry(
+        sessionsWithReps: List<SessionWithReps>,
+        userId: String
+    ): PortalSessionBuildResult {
         // Group: null routineSessionId = standalone, non-null = routine group
         val standalone = sessionsWithReps.filter { it.session.routineSessionId == null }
         val routineGroups = sessionsWithReps
             .filter { it.session.routineSessionId != null }
             .groupBy { it.session.routineSessionId!! }
 
-        val result = mutableListOf<PortalWorkoutSessionDto>()
+        val resultSessions = mutableListOf<PortalWorkoutSessionDto>()
+        val resultTelemetry = mutableListOf<PortalRepTelemetryDto>()
 
         // Standalone sessions: each becomes its own portal workout
         for (swr in standalone) {
-            result.add(buildPortalSession(listOf(swr), userId, routineSessionId = null))
+            val (session, telemetry) = buildPortalSession(listOf(swr), userId, routineSessionId = null)
+            resultSessions.add(session)
+            resultTelemetry.addAll(telemetry)
         }
 
         // Routine groups: each group becomes one portal workout
         for ((routineSessionId, group) in routineGroups) {
-            result.add(buildPortalSession(group, userId, routineSessionId))
+            val (session, telemetry) = buildPortalSession(group, userId, routineSessionId)
+            resultSessions.add(session)
+            resultTelemetry.addAll(telemetry)
         }
 
-        return result
+        return PortalSessionBuildResult(resultSessions, resultTelemetry)
     }
 
     private fun buildPortalSession(
         sessionsWithReps: List<SessionWithReps>,
         userId: String,
         routineSessionId: String?
-    ): PortalWorkoutSessionDto {
+    ): Pair<PortalWorkoutSessionDto, List<PortalRepTelemetryDto>> {
         val sorted = sessionsWithReps.sortedBy { it.session.timestamp }
         val first = sorted.first().session
         val portalSessionId = routineSessionId ?: first.id
@@ -111,12 +134,14 @@ object PortalSyncAdapter {
             (it.session.totalVolumeKg ?: (it.session.weightPerCableKg * it.session.totalReps)).toDouble()
         }.toFloat()
         val totalSets = sorted.size // Each mobile session = one set in portal terms
-        val totalPrs = 0 // PR detection happens separately
+        val totalPrs = sorted.count { it.isPr }
 
-        // Build exercise entries
-        val exercises = sorted.mapIndexed { index, swr ->
-            buildPortalExercise(swr, portalSessionId, index)
+        // Build exercise entries with telemetry (setIds are generated inside)
+        val exerciseBundles = sorted.mapIndexed { index, swr ->
+            buildPortalExerciseWithTelemetry(swr, portalSessionId, index)
         }
+        val exercises = exerciseBundles.map { it.exercise }
+        val telemetry = exerciseBundles.flatMap { it.telemetry }
 
         // Determine the dominant workout mode (most common among exercises)
         val primaryMode = sorted
@@ -166,7 +191,7 @@ object PortalSyncAdapter {
         val warmup = first.warmupReps.takeIf { it > 0 }
         val working = first.workingReps.takeIf { it > 0 }
 
-        return PortalWorkoutSessionDto(
+        val sessionDto = PortalWorkoutSessionDto(
             id = portalSessionId,
             userId = userId,
             name = first.routineName ?: first.exerciseName,
@@ -198,19 +223,33 @@ object PortalSyncAdapter {
             warmupReps = warmup,
             workingReps = working
         )
+        return Pair(sessionDto, telemetry)
     }
 
-    private fun buildPortalExercise(
+    /**
+     * Build a portal exercise DTO with correctly-keyed telemetry.
+     * The generated setId is shared between the set DTO and the telemetry points,
+     * ensuring FK consistency when inserted into the portal database.
+     */
+    private fun buildPortalExerciseWithTelemetry(
         swr: SessionWithReps,
         portalSessionId: String,
         orderIndex: Int
-    ): PortalExerciseDto {
+    ): ExerciseWithTelemetry {
         val session = swr.session
         val exerciseId = generateUUID()
         val setId = generateUUID()
 
         // Build rep summaries from RepMetricData + RepBiomechanics
         val repSummaries = buildRepSummaries(swr, setId)
+
+        // Build telemetry using the SAME setId
+        val telemetry = mutableListOf<PortalRepTelemetryDto>()
+        for (rep in swr.repMetrics) {
+            if (rep.concentricTimestamps.isNotEmpty() || rep.eccentricTimestamps.isNotEmpty()) {
+                telemetry.addAll(toRepTelemetry(rep, setId))
+            }
+        }
 
         // One mobile session = one "set" in portal (the entire exercise execution)
         val pr = swr.prRecord
@@ -230,7 +269,7 @@ object PortalSyncAdapter {
             repSummaries = repSummaries
         )
 
-        return PortalExerciseDto(
+        val exercise = PortalExerciseDto(
             id = exerciseId,
             sessionId = portalSessionId,
             name = session.exerciseName ?: "Unknown Exercise",
@@ -238,6 +277,7 @@ object PortalSyncAdapter {
             orderIndex = orderIndex,
             sets = listOf(set)
         )
+        return ExerciseWithTelemetry(exercise, telemetry)
     }
 
     // ─── Rep Data Mapping ───────────────────────────────────────────
@@ -600,7 +640,7 @@ object PortalSyncAdapter {
         result: com.devil.phoenixproject.database.AssessmentResult
     ): PortalAssessmentResultDto {
         return PortalAssessmentResultDto(
-            id = generateUUID(),
+            id = result.id.toString(),
             exerciseId = result.exerciseId,
             estimatedOneRepMaxKg = result.estimatedOneRepMaxKg.toFloat(),
             loadVelocityData = result.loadVelocityData,

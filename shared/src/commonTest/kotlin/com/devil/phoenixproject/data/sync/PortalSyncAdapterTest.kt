@@ -676,6 +676,123 @@ class PortalSyncAdapterTest {
         assertEquals("uid-abc-123", result[0].userId)
     }
 
+    // ========== Telemetry setId consistency (Task 1.2) ==========
+
+    @Test
+    fun `telemetry setIds match generated exercise set IDs`() {
+        val repMetric = makeRepMetricData(repNumber = 1)
+        val swr = makeSessionWithReps(repMetrics = listOf(repMetric))
+
+        val buildResult = PortalSyncAdapter.toPortalWorkoutSessionsWithTelemetry(listOf(swr), "user-1")
+
+        // The exercise's set ID
+        val setId = buildResult.sessions[0].exercises[0].sets[0].id
+        // All telemetry points should reference this same setId
+        assertTrue(buildResult.telemetry.isNotEmpty(), "Should have telemetry points")
+        for (point in buildResult.telemetry) {
+            assertEquals(setId, point.setId, "Telemetry setId should match exercise set ID")
+        }
+    }
+
+    @Test
+    fun `toPortalWorkoutSessionsWithTelemetry produces both sessions and telemetry`() {
+        val repMetric = makeRepMetricData(repNumber = 1)
+        val swr = makeSessionWithReps(repMetrics = listOf(repMetric))
+
+        val buildResult = PortalSyncAdapter.toPortalWorkoutSessionsWithTelemetry(listOf(swr), "user-1")
+
+        assertEquals(1, buildResult.sessions.size)
+        assertTrue(buildResult.telemetry.isNotEmpty())
+    }
+
+    @Test
+    fun `toPortalWorkoutSessionsWithTelemetry returns empty telemetry when no force curves`() {
+        // Rep metric with empty concentric/eccentric timestamps
+        val swr = makeSessionWithReps(repMetrics = emptyList())
+
+        val buildResult = PortalSyncAdapter.toPortalWorkoutSessionsWithTelemetry(listOf(swr), "user-1")
+
+        assertEquals(1, buildResult.sessions.size)
+        assertTrue(buildResult.telemetry.isEmpty())
+    }
+
+    // ========== PR count computation (Task 1.4) ==========
+
+    @Test
+    fun `portal session prCount counts sessions with isPr true`() {
+        val sessions = listOf(
+            makeSessionWithReps(routineSessionId = "g1", isPr = true),
+            makeSessionWithReps(routineSessionId = "g1", isPr = false),
+            makeSessionWithReps(routineSessionId = "g1", isPr = true)
+        )
+
+        val result = PortalSyncAdapter.toPortalWorkoutSessions(sessions, "user-1")
+
+        assertEquals(2, result[0].prCount)
+    }
+
+    @Test
+    fun `portal session prCount is zero when no PRs`() {
+        val sessions = listOf(
+            makeSessionWithReps(routineSessionId = "g1", isPr = false),
+            makeSessionWithReps(routineSessionId = "g1", isPr = false)
+        )
+
+        val result = PortalSyncAdapter.toPortalWorkoutSessions(sessions, "user-1")
+
+        assertEquals(0, result[0].prCount)
+    }
+
+    // ========== Assessment stable ID (Task 1.3) ==========
+
+    @Test
+    fun `toPortalAssessmentResult uses stable result id`() {
+        val result1 = com.devil.phoenixproject.database.AssessmentResult(
+            id = 42,
+            exerciseId = "ex-1",
+            estimatedOneRepMaxKg = 100.0,
+            loadVelocityData = "[]",
+            assessmentSessionId = "sess-1",
+            userOverrideKg = null,
+            createdAt = 1700000000000L
+        )
+
+        val dto1 = PortalSyncAdapter.toPortalAssessmentResult(result1)
+        val dto2 = PortalSyncAdapter.toPortalAssessmentResult(result1)
+
+        assertEquals("42", dto1.id, "Should use result.id as string")
+        assertEquals(dto1.id, dto2.id, "Same result should produce same portal ID")
+    }
+
+    // ========== DB-stored mode names in session (Task 1.1 integration) ==========
+
+    @Test
+    fun `set workoutMode handles DB-stored OldSchool class name`() {
+        val swr = makeSessionWithReps(mode = "OldSchool")
+
+        val result = PortalSyncAdapter.toPortalWorkoutSessions(listOf(swr), "user-1")
+
+        assertEquals("OLD_SCHOOL", result[0].exercises[0].sets[0].workoutMode)
+    }
+
+    @Test
+    fun `set workoutMode handles DB-stored TUTBeast class name`() {
+        val swr = makeSessionWithReps(mode = "TUTBeast")
+
+        val result = PortalSyncAdapter.toPortalWorkoutSessions(listOf(swr), "user-1")
+
+        assertEquals("TUT_BEAST", result[0].exercises[0].sets[0].workoutMode)
+    }
+
+    @Test
+    fun `set workoutMode handles DB-stored EccentricOnly class name`() {
+        val swr = makeSessionWithReps(mode = "EccentricOnly")
+
+        val result = PortalSyncAdapter.toPortalWorkoutSessions(listOf(swr), "user-1")
+
+        assertEquals("ECCENTRIC_ONLY", result[0].exercises[0].sets[0].workoutMode)
+    }
+
     // ========== Factory Helpers ==========
 
     private fun makeSessionWithReps(

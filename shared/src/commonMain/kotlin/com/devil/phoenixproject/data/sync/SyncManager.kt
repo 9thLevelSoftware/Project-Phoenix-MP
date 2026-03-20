@@ -14,6 +14,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 sealed class SyncState {
     object Idle : SyncState()
@@ -31,6 +33,7 @@ class SyncManager(
     private val gamificationRepository: GamificationRepository,
     private val repMetricRepository: RepMetricRepository
 ) {
+    private val syncMutex = Mutex()
     private val _syncState = MutableStateFlow<SyncState>(SyncState.Idle)
     val syncState: StateFlow<SyncState> = _syncState.asStateFlow()
 
@@ -63,10 +66,10 @@ class SyncManager(
 
     // === Sync Operations ===
 
-    suspend fun sync(): Result<Long> {
+    suspend fun sync(): Result<Long> = syncMutex.withLock {
         if (!tokenStorage.hasToken()) {
             _syncState.value = SyncState.NotAuthenticated
-            return Result.failure(PortalApiException("Not authenticated"))
+            return@withLock Result.failure(PortalApiException("Not authenticated"))
         }
 
         _syncState.value = SyncState.Syncing
@@ -80,22 +83,22 @@ class SyncManager(
             } else {
                 _syncState.value = SyncState.Error(error?.message ?: "Push failed")
             }
-            return Result.failure(error ?: Exception("Push failed"))
+            return@withLock Result.failure(error ?: Exception("Push failed"))
         }
 
         // Parse syncTime from ISO 8601 to epoch millis
         val pushResponse = pushResult.getOrThrow()
         val syncTimeEpoch = kotlin.time.Instant.parse(pushResponse.syncTime).toEpochMilliseconds()
 
-        // Pull remote changes (non-fatal — if pull fails, push syncTime is used)
-        val pullSyncTime = pullRemoteChanges(lastSync = tokenStorage.getLastSyncTimestamp())
+        // Pull remote changes using push response timestamp (not stale lastSync)
+        val pullSyncTime = pullRemoteChanges(lastSync = syncTimeEpoch)
         val finalSyncTime = pullSyncTime ?: syncTimeEpoch
 
         tokenStorage.setLastSyncTimestamp(finalSyncTime)
         _lastSyncTime.value = finalSyncTime
         _syncState.value = SyncState.Success(finalSyncTime)
 
-        return Result.success(finalSyncTime)
+        Result.success(finalSyncTime)
     }
 
     // === Private Helpers ===
@@ -115,21 +118,10 @@ class SyncManager(
         val prBySessionKey = recentPRs.associateBy { pr -> "${pr.exerciseId}:${pr.timestamp}" }
 
         // 3. Build SessionWithReps (fetch rep metrics per session, detect PRs, attach PR metadata)
-        val allTelemetry = mutableListOf<PortalRepTelemetryDto>()
-
         val sessionsWithReps = sessions.map { session ->
             val repMetrics = repMetricRepository.getRepMetrics(session.id)
             val sessionKey = "${session.exerciseId}:${session.timestamp}"
             val prRecord = prBySessionKey[sessionKey]
-
-            // GAP 1: Collect telemetry from rep force curves
-            // Generate a deterministic setId for this session's single set
-            val setId = session.id // Will be replaced with actual setId during buildPortalExercise
-            for (rep in repMetrics) {
-                if (rep.concentricTimestamps.isNotEmpty() || rep.eccentricTimestamps.isNotEmpty()) {
-                    allTelemetry.addAll(PortalSyncAdapter.toRepTelemetry(rep, setId))
-                }
-            }
 
             PortalSyncAdapter.SessionWithReps(
                 session = session,
@@ -181,7 +173,7 @@ class SyncManager(
                 userId = userId,
                 totalWorkouts = stats.totalWorkouts,
                 totalReps = stats.totalReps,
-                totalVolumeKg = stats.totalVolumeKg.toFloat(),
+                totalVolumeKg = stats.totalVolumeKg,
                 longestStreak = stats.longestStreak,
                 currentStreak = stats.currentStreak,
                 totalTimeSeconds = 0
@@ -197,13 +189,14 @@ class SyncManager(
         val assessmentDtos = syncRepository.getAllAssessments()
             .map { PortalSyncAdapter.toPortalAssessmentResult(it) }
 
-        // 7. Build portal payload
+        // 7. Build portal payload (telemetry setIds match generated exercise set IDs)
+        val buildResult = PortalSyncAdapter.toPortalWorkoutSessionsWithTelemetry(sessionsWithReps, userId)
         val payload = PortalSyncPayload(
             deviceId = deviceId,
             platform = platform,
             lastSync = lastSync,
-            sessions = PortalSyncAdapter.toPortalWorkoutSessions(sessionsWithReps, userId),
-            telemetry = allTelemetry,
+            sessions = buildResult.sessions,
+            telemetry = buildResult.telemetry,
             routines = routines.map { PortalSyncAdapter.toPortalRoutine(it, userId) },
             cycles = cyclesWithContext.map { PortalSyncAdapter.toPortalTrainingCycle(it, userId) },
             rpgAttributes = rpgDto,

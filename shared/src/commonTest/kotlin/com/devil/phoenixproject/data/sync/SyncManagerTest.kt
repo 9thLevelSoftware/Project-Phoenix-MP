@@ -5,6 +5,7 @@ import com.devil.phoenixproject.testutil.FakePortalApiClient
 import com.devil.phoenixproject.testutil.FakeRepMetricRepository
 import com.devil.phoenixproject.testutil.FakeSyncRepository
 import com.russhwolf.settings.MapSettings
+import kotlinx.coroutines.async
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.JsonObject
 import kotlin.test.Test
@@ -505,5 +506,54 @@ class SyncManagerTest {
 
         setupAuthenticated()
         assertTrue(manager.isAuthenticated.value, "Should be authenticated after setup")
+    }
+
+    // ===== Mutex Concurrency Guard (Task 1.5) =====
+
+    @Test
+    fun concurrentSyncCallsAreSerializedByMutex() = runTest {
+        setupAuthenticated()
+        fakeApi.pushResult = Result.success(
+            PortalSyncPushResponse(syncTime = "2026-03-02T12:00:00Z")
+        )
+        val manager = createManager()
+
+        // Launch two syncs concurrently
+        val deferred1 = async { manager.sync() }
+        val deferred2 = async { manager.sync() }
+
+        val result1 = deferred1.await()
+        val result2 = deferred2.await()
+
+        // Both should succeed (serialized, not rejected)
+        assertTrue(result1.isSuccess, "First sync should succeed")
+        assertTrue(result2.isSuccess, "Second sync should succeed")
+        // Push should be called exactly twice (once per sync)
+        assertEquals(2, fakeApi.pushCallCount, "Push should be called twice (one per sync)")
+    }
+
+    // ===== Pull Uses Push Timestamp (Task 1.6) =====
+
+    @Test
+    fun pullReceivesPushTimestampNotStaleLastSync() = runTest {
+        setupAuthenticated()
+        // Set a stale lastSync
+        tokenStorage.setLastSyncTimestamp(1000L)
+        val pushSyncTimeIso = "2026-03-02T12:00:00Z"
+        val pushSyncTimeEpoch = kotlinx.datetime.Instant.parse(pushSyncTimeIso).toEpochMilliseconds()
+        fakeApi.pushResult = Result.success(
+            PortalSyncPushResponse(syncTime = pushSyncTimeIso)
+        )
+        val manager = createManager()
+
+        manager.sync()
+
+        // The pull should have been called with the push response timestamp, not the stale 1000L
+        assertNotNull(fakeApi.lastPullLastSync, "Pull should have been called")
+        assertEquals(
+            pushSyncTimeEpoch,
+            fakeApi.lastPullLastSync,
+            "Pull should receive push response timestamp, not stale lastSync"
+        )
     }
 }

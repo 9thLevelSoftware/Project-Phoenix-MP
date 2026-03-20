@@ -14,12 +14,30 @@ object PortalMappings {
     // -- Workout Mode --
 
     /**
-     * Convert a workout mode display name (as stored in mobile DB) to portal sync format.
-     * Falls back to the input string uppercased with spaces replaced by underscores.
+     * All ProgramMode instances, keyed by class simpleName.
+     * Used to resolve DB-stored object names (e.g., "OldSchool", "TUTBeast").
      */
-    fun workoutModeToSync(displayName: String): String {
-        return ProgramMode.fromDisplayName(displayName)?.toSyncString()
-            ?: displayName.uppercase().replace(" ", "_")
+    private val programModesByClassName: Map<String, ProgramMode> = listOf(
+        ProgramMode.OldSchool,
+        ProgramMode.Pump,
+        ProgramMode.TUT,
+        ProgramMode.TUTBeast,
+        ProgramMode.EccentricOnly,
+        ProgramMode.Echo
+    ).associateBy { it::class.simpleName ?: "" }
+
+    fun workoutModeToSync(modeString: String): String {
+        // Try class simpleName match first (DB stores "OldSchool", "TUTBeast", etc.)
+        programModesByClassName[modeString]?.let { return it.toSyncString() }
+
+        // Then try display name match ("Old School", "TUT Beast", etc.)
+        ProgramMode.fromDisplayName(modeString)?.let { return it.toSyncString() }
+
+        // Then try if it's already a sync string ("OLD_SCHOOL", "TUT_BEAST", etc.)
+        ProgramMode.fromSyncString(modeString)?.let { return it.toSyncString() }
+
+        // Final fallback: SCREAMING_SNAKE conversion
+        return modeString.uppercase().replace(" ", "_")
     }
 
     /**

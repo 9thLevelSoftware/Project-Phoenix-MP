@@ -149,7 +149,7 @@ data class GamificationStatsSyncDto(
     val clientId: String,
     val totalWorkouts: Int = 0,
     val totalReps: Int = 0,
-    val totalVolumeKg: Int = 0,
+    val totalVolumeKg: Float = 0f,
     val longestStreak: Int = 0,
     val currentStreak: Int = 0,
     val updatedAt: Long

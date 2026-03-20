@@ -240,21 +240,21 @@ class PortalPullAdapterTest {
     }
 
     @Test
-    fun `toGamificationStatsSyncDto converts Float totalVolumeKg to Int`() {
+    fun `toGamificationStatsSyncDto preserves Float totalVolumeKg`() {
         val stats = makePullGamificationStatsDto(totalVolumeKg = 12345.67f)
 
         val result = PortalPullAdapter.toGamificationStatsSyncDto(stats)
 
-        assertEquals(12345, result.totalVolumeKg)
+        assertEquals(12345.67f, result.totalVolumeKg)
     }
 
     @Test
-    fun `toGamificationStatsSyncDto truncates decimal in totalVolumeKg`() {
+    fun `toGamificationStatsSyncDto preserves decimal precision in totalVolumeKg`() {
         val stats = makePullGamificationStatsDto(totalVolumeKg = 99.99f)
 
         val result = PortalPullAdapter.toGamificationStatsSyncDto(stats)
 
-        assertEquals(99, result.totalVolumeKg)
+        assertEquals(99.99f, result.totalVolumeKg)
     }
 
     @Test

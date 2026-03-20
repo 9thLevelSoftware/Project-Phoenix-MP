@@ -115,6 +115,55 @@ class PortalMappingsTest {
         assertEquals("SOME_MODE", PortalMappings.workoutModeToSync("Some Mode"))
     }
 
+    // ========== workoutModeToSync — DB-stored class names ==========
+
+    @Test
+    fun `workoutModeToSync converts DB OldSchool to OLD_SCHOOL`() {
+        assertEquals("OLD_SCHOOL", PortalMappings.workoutModeToSync("OldSchool"))
+    }
+
+    @Test
+    fun `workoutModeToSync converts DB Pump to PUMP`() {
+        assertEquals("PUMP", PortalMappings.workoutModeToSync("Pump"))
+    }
+
+    @Test
+    fun `workoutModeToSync converts DB TUT to TUT`() {
+        assertEquals("TUT", PortalMappings.workoutModeToSync("TUT"))
+    }
+
+    @Test
+    fun `workoutModeToSync converts DB TUTBeast to TUT_BEAST`() {
+        assertEquals("TUT_BEAST", PortalMappings.workoutModeToSync("TUTBeast"))
+    }
+
+    @Test
+    fun `workoutModeToSync converts DB EccentricOnly to ECCENTRIC_ONLY`() {
+        assertEquals("ECCENTRIC_ONLY", PortalMappings.workoutModeToSync("EccentricOnly"))
+    }
+
+    @Test
+    fun `workoutModeToSync converts DB Echo to ECHO`() {
+        assertEquals("ECHO", PortalMappings.workoutModeToSync("Echo"))
+    }
+
+    // ========== workoutModeToSync — already sync strings (idempotent) ==========
+
+    @Test
+    fun `workoutModeToSync passes through OLD_SCHOOL sync string`() {
+        assertEquals("OLD_SCHOOL", PortalMappings.workoutModeToSync("OLD_SCHOOL"))
+    }
+
+    @Test
+    fun `workoutModeToSync passes through TUT_BEAST sync string`() {
+        assertEquals("TUT_BEAST", PortalMappings.workoutModeToSync("TUT_BEAST"))
+    }
+
+    @Test
+    fun `workoutModeToSync passes through ECCENTRIC_ONLY sync string`() {
+        assertEquals("ECCENTRIC_ONLY", PortalMappings.workoutModeToSync("ECCENTRIC_ONLY"))
+    }
+
     // ========== workoutModeFromSync ==========
 
     @Test

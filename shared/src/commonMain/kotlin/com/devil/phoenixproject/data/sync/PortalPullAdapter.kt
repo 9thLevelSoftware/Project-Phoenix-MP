@@ -65,7 +65,7 @@ object PortalPullAdapter {
             clientId = "gamification_stats_1", // Singleton row
             totalWorkouts = stats.totalWorkouts,
             totalReps = stats.totalReps,
-            totalVolumeKg = stats.totalVolumeKg.toInt(), // Legacy DTO uses Int
+            totalVolumeKg = stats.totalVolumeKg,
             longestStreak = stats.longestStreak,
             currentStreak = stats.currentStreak,
             updatedAt = now
