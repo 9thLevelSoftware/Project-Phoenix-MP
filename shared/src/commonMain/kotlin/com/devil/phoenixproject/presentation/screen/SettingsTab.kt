@@ -111,6 +111,13 @@ fun SettingsTab(
     // Issue #238: Language preference
     selectedLanguage: String = "en",
     onLanguageChange: (String) -> Unit = {},
+    // Issue #141: Voice emergency stop
+    voiceStopEnabled: Boolean = false,
+    onVoiceStopEnabledChange: (Boolean) -> Unit = {},
+    safeWord: String? = null,
+    onSafeWordChange: (String?) -> Unit = {},
+    safeWordCalibrated: Boolean = false,
+    onSafeWordCalibratedChange: (Boolean) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     var showDeleteAllDialog by remember { mutableStateOf(false) }
@@ -1503,6 +1510,16 @@ fun SettingsTab(
             }
         }
 
+    // Voice Emergency Stop Section - Issue #141
+    VoiceEmergencyStopSection(
+        voiceStopEnabled = voiceStopEnabled,
+        onVoiceStopEnabledChange = onVoiceStopEnabledChange,
+        safeWord = safeWord,
+        onSafeWordChange = onSafeWordChange,
+        safeWordCalibrated = safeWordCalibrated,
+        onSafeWordCalibratedChange = onSafeWordCalibratedChange
+    )
+
     // Achievements Section - Material 3 Expressive (hidden when gamification is disabled)
     if (gamificationEnabled) {
     Card(
@@ -2141,6 +2158,344 @@ fun SettingsTab(
             }
         }
     }
+}
+
+/**
+ * Voice Emergency Stop settings section with calibration flow.
+ * Issue #141: Safe word detection during workouts.
+ */
+@Composable
+private fun VoiceEmergencyStopSection(
+    voiceStopEnabled: Boolean,
+    onVoiceStopEnabledChange: (Boolean) -> Unit,
+    safeWord: String?,
+    onSafeWordChange: (String?) -> Unit,
+    safeWordCalibrated: Boolean,
+    onSafeWordCalibratedChange: (Boolean) -> Unit
+) {
+    var showCalibrationDialog by remember { mutableStateOf(false) }
+    var localSafeWord by remember(safeWord) { mutableStateOf(safeWord ?: "") }
+
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .shadow(8.dp, RoundedCornerShape(20.dp)),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest),
+        shape = RoundedCornerShape(20.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
+        border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f))
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(Spacing.medium)
+        ) {
+            // Section header
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    modifier = Modifier
+                        .size(48.dp)
+                        .shadow(8.dp, RoundedCornerShape(20.dp))
+                        .background(
+                            Brush.linearGradient(
+                                colors = listOf(Color(0xFFEF4444), Color(0xFFDC2626))
+                            ),
+                            RoundedCornerShape(20.dp)
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        Icons.Default.Mic,
+                        contentDescription = stringResource(Res.string.cd_voice_stop),
+                        tint = MaterialTheme.colorScheme.onPrimary,
+                        modifier = Modifier.size(24.dp)
+                    )
+                }
+                Spacer(modifier = Modifier.width(Spacing.medium))
+                Column {
+                    Text(
+                        stringResource(Res.string.settings_voice_stop_title),
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(
+                        stringResource(Res.string.settings_voice_stop_mic_required),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+            Spacer(modifier = Modifier.height(Spacing.small))
+
+            Text(
+                stringResource(Res.string.settings_voice_stop_description),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+
+            Spacer(modifier = Modifier.height(Spacing.medium))
+
+            // Enable toggle
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    stringResource(Res.string.settings_voice_stop_enable),
+                    modifier = Modifier.weight(1f),
+                    style = MaterialTheme.typography.bodyLarge
+                )
+                Switch(
+                    checked = voiceStopEnabled,
+                    onCheckedChange = onVoiceStopEnabledChange
+                )
+            }
+
+            // Show safe word configuration when enabled
+            if (voiceStopEnabled) {
+                Spacer(modifier = Modifier.height(Spacing.medium))
+
+                // Safe word text field
+                OutlinedTextField(
+                    value = localSafeWord,
+                    onValueChange = { newValue ->
+                        localSafeWord = newValue.uppercase().trim()
+                    },
+                    label = { Text(stringResource(Res.string.settings_safe_word_label)) },
+                    placeholder = { Text(stringResource(Res.string.settings_safe_word_hint)) },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp)
+                )
+
+                Spacer(modifier = Modifier.height(Spacing.small))
+
+                // Calibration status + button row
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    if (safeWordCalibrated && safeWord == localSafeWord) {
+                        // Show calibrated badge
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                Icons.Default.CheckCircle,
+                                contentDescription = stringResource(Res.string.cd_calibration_check),
+                                tint = Color(0xFF10B981),
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                stringResource(Res.string.settings_calibrated_badge),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = Color(0xFF10B981),
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    } else {
+                        // Show "calibrate first" message
+                        Text(
+                            stringResource(Res.string.settings_calibrate_first),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.width(Spacing.small))
+
+                    Button(
+                        onClick = {
+                            // Save the word before starting calibration
+                            if (localSafeWord.isNotBlank()) {
+                                onSafeWordChange(localSafeWord)
+                                showCalibrationDialog = true
+                            }
+                        },
+                        enabled = localSafeWord.isNotBlank(),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Text(stringResource(Res.string.settings_calibrate_button))
+                    }
+                }
+            }
+        }
+    }
+
+    // Calibration dialog
+    if (showCalibrationDialog && localSafeWord.isNotBlank()) {
+        SafeWordCalibrationDialog(
+            safeWord = localSafeWord,
+            onCalibrated = {
+                onSafeWordChange(localSafeWord)
+                onSafeWordCalibratedChange(true)
+                showCalibrationDialog = false
+            },
+            onDismiss = {
+                showCalibrationDialog = false
+            }
+        )
+    }
+}
+
+/**
+ * Calibration dialog: user must say the safe word 3 times successfully.
+ * Uses SafeWordListenerFactory via Koin to create a listener.
+ */
+@Composable
+private fun SafeWordCalibrationDialog(
+    safeWord: String,
+    onCalibrated: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    val listenerFactory: com.devil.phoenixproject.domain.voice.SafeWordListenerFactory = koinInject()
+    var detectionCount by remember { mutableStateOf(0) }
+    var calibrationFailed by remember { mutableStateOf(false) }
+    var micError by remember { mutableStateOf(false) }
+    var listener by remember { mutableStateOf<com.devil.phoenixproject.domain.voice.SafeWordListener?>(null) }
+    val scope = rememberCoroutineScope()
+
+    // Create and start listener
+    DisposableEffect(safeWord) {
+        val newListener = try {
+            listenerFactory.create(safeWord)
+        } catch (e: Exception) {
+            micError = true
+            null
+        }
+        listener = newListener
+        newListener?.startListening()
+
+        onDispose {
+            newListener?.stopListening()
+            listener = null
+        }
+    }
+
+    // Collect detected words
+    val currentListener = listener
+    if (currentListener != null) {
+        val isListening by currentListener.isListening.collectAsState()
+
+        LaunchedEffect(currentListener) {
+            currentListener.detectedWord.collect {
+                detectionCount++
+                if (detectionCount >= 3) {
+                    currentListener.stopListening()
+                    onCalibrated()
+                }
+            }
+        }
+
+        // Timeout: if not listening after initial start and we haven't completed, mark mic error
+        LaunchedEffect(isListening) {
+            if (!isListening && detectionCount == 0) {
+                // Give a brief moment for the listener to start
+                kotlinx.coroutines.delay(3000)
+                val stillNotListening = !currentListener.isListening.value
+                if (stillNotListening && detectionCount == 0) {
+                    micError = true
+                }
+            }
+        }
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        shape = RoundedCornerShape(20.dp),
+        title = {
+            Text(
+                stringResource(Res.string.settings_calibration_title),
+                fontWeight = FontWeight.Bold
+            )
+        },
+        text = {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(Spacing.medium)
+            ) {
+                when {
+                    micError -> {
+                        Text(
+                            stringResource(Res.string.settings_calibration_mic_error),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    }
+                    calibrationFailed -> {
+                        Text(
+                            stringResource(Res.string.settings_calibration_fail),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    }
+                    else -> {
+                        // Prompt
+                        Text(
+                            stringResource(Res.string.settings_calibration_prompt),
+                            style = MaterialTheme.typography.bodyLarge
+                        )
+                        Text(
+                            safeWord,
+                            style = MaterialTheme.typography.headlineMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+
+                        // 3 circles showing progress
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(Spacing.medium),
+                            modifier = Modifier.padding(vertical = Spacing.small)
+                        ) {
+                            repeat(3) { index ->
+                                val filled = index < detectionCount
+                                Box(
+                                    modifier = Modifier
+                                        .size(40.dp)
+                                        .background(
+                                            color = if (filled) Color(0xFF10B981) else MaterialTheme.colorScheme.surfaceVariant,
+                                            shape = RoundedCornerShape(50)
+                                        ),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    if (filled) {
+                                        Icon(
+                                            Icons.Default.Check,
+                                            contentDescription = stringResource(Res.string.cd_calibration_check),
+                                            tint = Color.White,
+                                            modifier = Modifier.size(24.dp)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
+                        // Progress text
+                        Text(
+                            stringResource(Res.string.settings_calibration_progress, detectionCount),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+
+                        // Listening indicator
+                        Text(
+                            stringResource(Res.string.settings_calibration_listening),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(Res.string.action_cancel))
+            }
+        }
+    )
 }
 
 private fun formatCount(count: Long): String = when {

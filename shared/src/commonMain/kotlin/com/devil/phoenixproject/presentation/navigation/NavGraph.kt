@@ -366,7 +366,14 @@ fun NavGraph(
                 onOpenBackupFolder = { viewModel.openBackupFolder() },
                 // Language preference
                 selectedLanguage = userPreferences.language,
-                onLanguageChange = { viewModel.setLanguage(it) }
+                onLanguageChange = { viewModel.setLanguage(it) },
+                // Issue #141: Voice emergency stop
+                voiceStopEnabled = userPreferences.voiceStopEnabled,
+                onVoiceStopEnabledChange = { viewModel.setVoiceStopEnabled(it) },
+                safeWord = userPreferences.safeWord,
+                onSafeWordChange = { viewModel.setSafeWord(it) },
+                safeWordCalibrated = userPreferences.safeWordCalibrated,
+                onSafeWordCalibratedChange = { viewModel.setSafeWordCalibrated(it) }
             )
         }
 

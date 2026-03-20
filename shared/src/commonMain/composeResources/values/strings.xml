@@ -558,4 +558,24 @@
     <string name="cd_toggle_theme">Toggle theme (current: %1$s)</string>
     <string name="cd_workouts">Workouts</string>
     <string name="cd_disconnect">Disconnect</string>
+
+    <!-- ==================== Voice Emergency Stop (Issue #141) ==================== -->
+    <string name="settings_voice_stop_title">Voice Emergency Stop</string>
+    <string name="settings_voice_stop_description">Say your safe word during a workout to immediately stop the set</string>
+    <string name="settings_voice_stop_enable">Enable Voice Stop</string>
+    <string name="settings_voice_stop_mic_required">Microphone permission is required</string>
+    <string name="settings_safe_word_label">Safe Word</string>
+    <string name="settings_safe_word_hint">Enter a safe word (e.g. PHOENIX)</string>
+    <string name="settings_calibrate_button">Calibrate</string>
+    <string name="settings_calibrate_first">Calibrate your safe word before it can be used during workouts</string>
+    <string name="settings_calibrated_badge">Calibrated</string>
+    <string name="settings_calibration_title">Calibrate Safe Word</string>
+    <string name="settings_calibration_prompt">Say your safe word:</string>
+    <string name="settings_calibration_listening">Listening…</string>
+    <string name="settings_calibration_success">Safe word calibrated successfully!</string>
+    <string name="settings_calibration_fail">Detection was unreliable. Try a different word.</string>
+    <string name="settings_calibration_progress">%1$d of 3 detections</string>
+    <string name="settings_calibration_mic_error">Could not access the microphone. Check permissions and try again.</string>
+    <string name="cd_voice_stop">Voice emergency stop</string>
+    <string name="cd_calibration_check">Calibration check</string>
 </resources>

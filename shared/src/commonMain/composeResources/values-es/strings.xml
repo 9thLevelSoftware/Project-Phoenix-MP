@@ -520,5 +520,25 @@
     <string name="cd_delete_workout">Delete workout</string>
     <string name="cd_toggle_theme">Toggle theme (current: %1$s)</string>
     <string name="cd_workouts">Workouts</string>
-    <string name="cd_disconnect">Disconnect</string>
+    <string name="cd_disconnect">Desconectar</string>
+
+    <!-- ==================== Voice Emergency Stop (Issue #141) ==================== -->
+    <string name="settings_voice_stop_title">Parada de emergencia por voz</string>
+    <string name="settings_voice_stop_description">Di tu palabra de seguridad durante un entrenamiento para detener la serie inmediatamente</string>
+    <string name="settings_voice_stop_enable">Activar parada por voz</string>
+    <string name="settings_voice_stop_mic_required">Se requiere permiso de micr\u00f3fono</string>
+    <string name="settings_safe_word_label">Palabra de seguridad</string>
+    <string name="settings_safe_word_hint">Ingresa una palabra de seguridad (ej. PHOENIX)</string>
+    <string name="settings_calibrate_button">Calibrar</string>
+    <string name="settings_calibrate_first">Calibra tu palabra de seguridad antes de que pueda usarse durante entrenamientos</string>
+    <string name="settings_calibrated_badge">Calibrado</string>
+    <string name="settings_calibration_title">Calibrar palabra de seguridad</string>
+    <string name="settings_calibration_prompt">Di tu palabra de seguridad:</string>
+    <string name="settings_calibration_listening">Escuchando…</string>
+    <string name="settings_calibration_success">\u00a1Palabra de seguridad calibrada exitosamente!</string>
+    <string name="settings_calibration_fail">La detecci\u00f3n no fue confiable. Prueba con otra palabra.</string>
+    <string name="settings_calibration_progress">%1$d de 3 detecciones</string>
+    <string name="settings_calibration_mic_error">No se pudo acceder al micr\u00f3fono. Verifica los permisos e int\u00e9ntalo de nuevo.</string>
+    <string name="cd_voice_stop">Parada de emergencia por voz</string>
+    <string name="cd_calibration_check">Verificaci\u00f3n de calibraci\u00f3n</string>
 </resources>

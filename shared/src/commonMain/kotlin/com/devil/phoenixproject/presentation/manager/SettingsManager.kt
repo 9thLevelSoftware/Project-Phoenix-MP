@@ -156,6 +156,19 @@ class SettingsManager(
         scope.launch { preferencesManager.setLanguage(language) }
     }
 
+    // Issue #141: Voice-activated emergency stop
+    fun setVoiceStopEnabled(enabled: Boolean) {
+        scope.launch { preferencesManager.setVoiceStopEnabled(enabled) }
+    }
+
+    fun setSafeWord(word: String?) {
+        scope.launch { preferencesManager.setSafeWord(word) }
+    }
+
+    fun setSafeWordCalibrated(calibrated: Boolean) {
+        scope.launch { preferencesManager.setSafeWordCalibrated(calibrated) }
+    }
+
     fun setColorScheme(schemeIndex: Int) {
         scope.launch {
             bleRepository.setColorScheme(schemeIndex)

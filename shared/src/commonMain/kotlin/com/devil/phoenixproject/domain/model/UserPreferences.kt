@@ -41,7 +41,8 @@ data class UserPreferences(
     val language: String = "en",  // Language code: "en", "nl", "de", "es", "fr"
     // Issue #141: Voice-activated emergency stop
     val voiceStopEnabled: Boolean = false,  // Whether safe word detection is active during workouts
-    val safeWord: String? = null  // The configured safe word (null = not yet calibrated)
+    val safeWord: String? = null,  // The configured safe word (null = not yet set)
+    val safeWordCalibrated: Boolean = false  // Whether the safe word passed 3-rep calibration
 ) {
     /**
      * Get the effective weight increment in the user's display unit.

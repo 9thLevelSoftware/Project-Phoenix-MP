@@ -171,4 +171,8 @@ class FakePreferencesManager : PreferencesManager {
     override suspend fun setSafeWord(word: String?) {
         _preferencesFlow.value = _preferencesFlow.value.copy(safeWord = word)
     }
+
+    override suspend fun setSafeWordCalibrated(calibrated: Boolean) {
+        _preferencesFlow.value = _preferencesFlow.value.copy(safeWordCalibrated = calibrated)
+    }
 }

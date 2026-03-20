@@ -520,5 +520,25 @@
     <string name="cd_delete_workout">Delete workout</string>
     <string name="cd_toggle_theme">Toggle theme (current: %1$s)</string>
     <string name="cd_workouts">Workouts</string>
-    <string name="cd_disconnect">Disconnect</string>
+    <string name="cd_disconnect">Trennen</string>
+
+    <!-- ==================== Voice Emergency Stop (Issue #141) ==================== -->
+    <string name="settings_voice_stop_title">Sprach-Notstopp</string>
+    <string name="settings_voice_stop_description">Sag dein Sicherheitswort w\u00e4hrend eines Trainings, um den Satz sofort zu stoppen</string>
+    <string name="settings_voice_stop_enable">Sprachstopp aktivieren</string>
+    <string name="settings_voice_stop_mic_required">Mikrofonberechtigung ist erforderlich</string>
+    <string name="settings_safe_word_label">Sicherheitswort</string>
+    <string name="settings_safe_word_hint">Sicherheitswort eingeben (z.B. PHOENIX)</string>
+    <string name="settings_calibrate_button">Kalibrieren</string>
+    <string name="settings_calibrate_first">Kalibriere dein Sicherheitswort, bevor es w\u00e4hrend des Trainings verwendet werden kann</string>
+    <string name="settings_calibrated_badge">Kalibriert</string>
+    <string name="settings_calibration_title">Sicherheitswort kalibrieren</string>
+    <string name="settings_calibration_prompt">Sag dein Sicherheitswort:</string>
+    <string name="settings_calibration_listening">H\u00f6rt zu…</string>
+    <string name="settings_calibration_success">Sicherheitswort erfolgreich kalibriert!</string>
+    <string name="settings_calibration_fail">Erkennung war unzuverl\u00e4ssig. Versuche ein anderes Wort.</string>
+    <string name="settings_calibration_progress">%1$d von 3 Erkennungen</string>
+    <string name="settings_calibration_mic_error">Zugriff auf das Mikrofon nicht m\u00f6glich. \u00dcberpr\u00fcfe die Berechtigungen und versuche es erneut.</string>
+    <string name="cd_voice_stop">Sprach-Notstopp</string>
+    <string name="cd_calibration_check">Kalibrierungspr\u00fcfung</string>
 </resources>

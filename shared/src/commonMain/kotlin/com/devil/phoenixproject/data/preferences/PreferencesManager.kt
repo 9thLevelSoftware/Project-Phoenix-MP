@@ -140,6 +140,7 @@ interface PreferencesManager {
     // Issue #141: Voice-activated emergency stop
     suspend fun setVoiceStopEnabled(enabled: Boolean)
     suspend fun setSafeWord(word: String?)
+    suspend fun setSafeWordCalibrated(calibrated: Boolean)
 
     suspend fun getSingleExerciseDefaults(exerciseId: String): SingleExerciseDefaults?
     suspend fun saveSingleExerciseDefaults(defaults: SingleExerciseDefaults)
@@ -197,6 +198,7 @@ class SettingsPreferencesManager(
         private const val KEY_LANGUAGE = "language"
         private const val KEY_VOICE_STOP_ENABLED = "voice_stop_enabled"
         private const val KEY_SAFE_WORD = "safe_word"
+        private const val KEY_SAFE_WORD_CALIBRATED = "safe_word_calibrated"
     }
 
     private val _preferencesFlow = MutableStateFlow(loadPreferences())
@@ -235,7 +237,8 @@ class SettingsPreferencesManager(
             autoBackupEnabled = settings.getBoolean(KEY_AUTO_BACKUP_ENABLED, false),
             language = settings.getStringOrNull(KEY_LANGUAGE) ?: "en",
             voiceStopEnabled = settings.getBoolean(KEY_VOICE_STOP_ENABLED, false),
-            safeWord = settings.getStringOrNull(KEY_SAFE_WORD)
+            safeWord = settings.getStringOrNull(KEY_SAFE_WORD),
+            safeWordCalibrated = settings.getBoolean(KEY_SAFE_WORD_CALIBRATED, false)
         )
     }
 
@@ -448,5 +451,10 @@ class SettingsPreferencesManager(
             settings.remove(KEY_SAFE_WORD)
         }
         updateAndEmit { copy(safeWord = word) }
+    }
+
+    override suspend fun setSafeWordCalibrated(calibrated: Boolean) {
+        settings.putBoolean(KEY_SAFE_WORD_CALIBRATED, calibrated)
+        updateAndEmit { copy(safeWordCalibrated = calibrated) }
     }
 }

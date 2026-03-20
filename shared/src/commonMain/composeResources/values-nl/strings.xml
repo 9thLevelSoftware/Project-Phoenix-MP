@@ -499,4 +499,25 @@
     <string name="cd_delete_workout">Training verwijderen</string>
     <string name="cd_toggle_theme">Thema wisselen (huidig: %1$s)</string>
     <string name="cd_workouts">Trainingen</string>
+    <string name="cd_disconnect">Verbinding verbreken</string>
+
+    <!-- ==================== Voice Emergency Stop (Issue #141) ==================== -->
+    <string name="settings_voice_stop_title">Spraak noodstop</string>
+    <string name="settings_voice_stop_description">Zeg je veiligheidswoord tijdens een training om de set onmiddellijk te stoppen</string>
+    <string name="settings_voice_stop_enable">Spraakstop inschakelen</string>
+    <string name="settings_voice_stop_mic_required">Microfoontoestemming is vereist</string>
+    <string name="settings_safe_word_label">Veiligheidswoord</string>
+    <string name="settings_safe_word_hint">Voer een veiligheidswoord in (bijv. PHOENIX)</string>
+    <string name="settings_calibrate_button">Kalibreren</string>
+    <string name="settings_calibrate_first">Kalibreer je veiligheidswoord voordat het tijdens trainingen kan worden gebruikt</string>
+    <string name="settings_calibrated_badge">Gekalibreerd</string>
+    <string name="settings_calibration_title">Veiligheidswoord kalibreren</string>
+    <string name="settings_calibration_prompt">Zeg je veiligheidswoord:</string>
+    <string name="settings_calibration_listening">Luisteren…</string>
+    <string name="settings_calibration_success">Veiligheidswoord succesvol gekalibreerd!</string>
+    <string name="settings_calibration_fail">Detectie was onbetrouwbaar. Probeer een ander woord.</string>
+    <string name="settings_calibration_progress">%1$d van 3 detecties</string>
+    <string name="settings_calibration_mic_error">Kon geen toegang krijgen tot de microfoon. Controleer toestemmingen en probeer opnieuw.</string>
+    <string name="cd_voice_stop">Spraak noodstop</string>
+    <string name="cd_calibration_check">Kalibratiecontrole</string>
 </resources>

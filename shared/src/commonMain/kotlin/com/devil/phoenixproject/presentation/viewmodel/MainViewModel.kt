@@ -275,6 +275,11 @@ class MainViewModel constructor(
         settingsManager.setLanguage(language)
     }
 
+    // Issue #141: Voice-activated emergency stop
+    fun setVoiceStopEnabled(enabled: Boolean) = settingsManager.setVoiceStopEnabled(enabled)
+    fun setSafeWord(word: String?) = settingsManager.setSafeWord(word)
+    fun setSafeWordCalibrated(calibrated: Boolean) = settingsManager.setSafeWordCalibrated(calibrated)
+
     // Backup stats for Settings UI
     private val _backupStats = kotlinx.coroutines.flow.MutableStateFlow<BackupStats?>(null)
     val backupStats: kotlinx.coroutines.flow.StateFlow<BackupStats?> = _backupStats

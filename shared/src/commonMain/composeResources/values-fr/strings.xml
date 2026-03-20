@@ -520,5 +520,25 @@
     <string name="cd_delete_workout">Delete workout</string>
     <string name="cd_toggle_theme">Toggle theme (current: %1$s)</string>
     <string name="cd_workouts">Workouts</string>
-    <string name="cd_disconnect">Disconnect</string>
+    <string name="cd_disconnect">D\u00e9connecter</string>
+
+    <!-- ==================== Voice Emergency Stop (Issue #141) ==================== -->
+    <string name="settings_voice_stop_title">Arr\u00eat d\'urgence vocal</string>
+    <string name="settings_voice_stop_description">Dites votre mot de s\u00e9curit\u00e9 pendant un entra\u00eenement pour arr\u00eater la s\u00e9rie imm\u00e9diatement</string>
+    <string name="settings_voice_stop_enable">Activer l\'arr\u00eat vocal</string>
+    <string name="settings_voice_stop_mic_required">L\'autorisation du microphone est requise</string>
+    <string name="settings_safe_word_label">Mot de s\u00e9curit\u00e9</string>
+    <string name="settings_safe_word_hint">Entrez un mot de s\u00e9curit\u00e9 (ex. PHOENIX)</string>
+    <string name="settings_calibrate_button">Calibrer</string>
+    <string name="settings_calibrate_first">Calibrez votre mot de s\u00e9curit\u00e9 avant de pouvoir l\'utiliser pendant les entra\u00eenements</string>
+    <string name="settings_calibrated_badge">Calibr\u00e9</string>
+    <string name="settings_calibration_title">Calibrer le mot de s\u00e9curit\u00e9</string>
+    <string name="settings_calibration_prompt">Dites votre mot de s\u00e9curit\u00e9 :</string>
+    <string name="settings_calibration_listening">\u00c9coute en cours…</string>
+    <string name="settings_calibration_success">Mot de s\u00e9curit\u00e9 calibr\u00e9 avec succ\u00e8s !</string>
+    <string name="settings_calibration_fail">La d\u00e9tection n\'\u00e9tait pas fiable. Essayez un autre mot.</string>
+    <string name="settings_calibration_progress">%1$d sur 3 d\u00e9tections</string>
+    <string name="settings_calibration_mic_error">Impossible d\'acc\u00e9der au microphone. V\u00e9rifiez les autorisations et r\u00e9essayez.</string>
+    <string name="cd_voice_stop">Arr\u00eat d\'urgence vocal</string>
+    <string name="cd_calibration_check">V\u00e9rification de calibration</string>
 </resources>

@@ -39,6 +39,10 @@ class SafeWordDetectionManager(
             Logger.w(TAG) { "Voice stop enabled but no safe word configured, skipping" }
             return
         }
+        if (!prefs.safeWordCalibrated) {
+            Logger.w(TAG) { "Voice stop enabled but safe word not calibrated, skipping" }
+            return
+        }
 
         // Stop any existing listener before starting a new one
         stop()
