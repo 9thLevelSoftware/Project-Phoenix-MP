@@ -7,9 +7,6 @@ compose-multiplatform = "1.10.1"
 cmp-material3 = "1.10.0-alpha05"
 cmp-material-icons = "1.7.3"
 
-# Premium Features
-revenuecat = "2.2.15+17.25.0"
-
 # Kotlinx
 kotlinx-coroutines = "1.10.2"
 kotlinx-serialization = "1.9.0"
@@ -172,9 +169,6 @@ reorderable = { module = "sh.calvin.reorderable:reorderable", version.ref = "reo
 # Compottie (Multiplatform Lottie)
 compottie = { module = "io.github.alexzhirkevich:compottie", version.ref = "compottie" }
 compottie-resources = { module = "io.github.alexzhirkevich:compottie-resources", version.ref = "compottie" }
-
-# RevenueCat (Premium KMP)
-revenuecat-purchases-core = { module = "com.revenuecat.purchases:purchases-kmp-core", version.ref = "revenuecat" }
 
 # Media3 (ExoPlayer - Android video with HLS support)
 media3-exoplayer = { module = "androidx.media3:media3-exoplayer", version.ref = "media3" }
