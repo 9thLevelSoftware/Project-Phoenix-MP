@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Phoenix</string>
+
+    <!-- Workout controls -->
+    <string name="start_workout">Start Workout</string>
+    <string name="stop_workout">Stop Workout</string>
+
+    <!-- Settings screen -->
+    <string name="settings_title">Settings</string>
+    <string name="settings_cloud_sync">Cloud Sync</string>
+    <string name="settings_weight_unit">Weight Unit</string>
+    <string name="settings_appearance">Appearance</string>
+    <string name="settings_dark_mode">Dark Mode</string>
+    <string name="settings_dark_mode_description">Use dark theme for the app interface</string>
+</resources>

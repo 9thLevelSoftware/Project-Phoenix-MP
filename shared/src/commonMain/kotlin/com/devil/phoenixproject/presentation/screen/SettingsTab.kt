@@ -39,6 +39,9 @@ import com.devil.phoenixproject.ui.theme.*
 import com.devil.phoenixproject.data.sync.SyncTriggerManager
 import com.devil.phoenixproject.util.DeviceInfo
 import com.devil.phoenixproject.util.KmpUtils
+import org.jetbrains.compose.resources.stringResource
+import vitruvianprojectphoenix.shared.generated.resources.Res
+import vitruvianprojectphoenix.shared.generated.resources.*
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -143,8 +146,9 @@ fun SettingsTab(
     val hasProAccess by subscriptionManager.hasProAccess.collectAsState()
 
     // Set global title
-    LaunchedEffect(Unit) {
-        onSetTitle("Settings")
+    val settingsTitle = stringResource(Res.string.settings_title)
+    LaunchedEffect(settingsTitle) {
+        onSetTitle(settingsTitle)
     }
 
     Column(
@@ -193,7 +197,7 @@ fun SettingsTab(
                     }
                     Spacer(modifier = Modifier.width(Spacing.medium))
                     Text(
-                        "Cloud Sync",
+                        stringResource(Res.string.settings_cloud_sync),
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurface
@@ -355,7 +359,7 @@ fun SettingsTab(
                 }
                 Spacer(modifier = Modifier.width(Spacing.medium))
                 Text(
-                    "Weight Unit",
+                    stringResource(Res.string.settings_weight_unit),
                     style = MaterialTheme.typography.titleLarge, // Material 3 Expressive: Larger (was titleMedium)
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurface
@@ -450,7 +454,7 @@ fun SettingsTab(
                 }
                 Spacer(modifier = Modifier.width(Spacing.medium))
                 Text(
-                    "Appearance",
+                    stringResource(Res.string.settings_appearance),
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurface
