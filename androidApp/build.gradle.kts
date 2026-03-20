@@ -16,6 +16,15 @@ val localPropsMap: Map<String, String> = if (localPropsFile.exists()) {
 val supabaseUrl: String = localPropsMap["supabase.url"] ?: ""
 val supabaseAnonKey: String = localPropsMap["supabase.anon.key"] ?: ""
 
+// Validate Supabase credentials unless explicitly skipped (e.g., CI builds that only run tests)
+val skipSupabaseCheck = providers.gradleProperty("skip.supabase.check").orNull?.toBoolean() ?: false
+if (!skipSupabaseCheck && (supabaseUrl.isBlank() || supabaseAnonKey.isBlank())) {
+    throw GradleException(
+        "Missing Supabase credentials in local.properties. " +
+        "Set supabase.url and supabase.anon.key, or pass -Pskip.supabase.check=true for test-only builds."
+    )
+}
+
 val injectedVersionCode = providers.gradleProperty("version.code").orNull?.let { raw ->
     val parsed = raw.toIntOrNull()
         ?: throw GradleException(
