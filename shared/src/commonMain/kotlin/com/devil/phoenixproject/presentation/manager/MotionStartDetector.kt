@@ -34,7 +34,7 @@ class MotionStartDetector(
     private val loadThresholdKg: Float = 5f,
     private val holdDurationMs: Long = 1500L
 ) {
-    private val _events = MutableSharedFlow<MotionStartEvent>()
+    private val _events = MutableSharedFlow<MotionStartEvent>(extraBufferCapacity = 1)
     val events: SharedFlow<MotionStartEvent> = _events
 
     private var holdStartMs: Long? = null
