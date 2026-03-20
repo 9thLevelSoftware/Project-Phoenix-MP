@@ -98,6 +98,9 @@ fun WorkoutTab(
         onStartWorkout = actions::onStartWorkout,
         onStopWorkout = actions::onStopWorkout,
         onSkipRest = actions::onSkipRest,
+        onExtendRest = actions::onExtendRest,
+        onToggleRestPause = actions::onToggleRestPause,
+        onResetRest = actions::onResetRest,
         onSkipCountdown = actions::onSkipCountdown,
         onProceedFromSummary = actions::onProceedFromSummary,
         onRpeLogged = actions::onRpeLogged,
@@ -126,7 +129,8 @@ fun WorkoutTab(
         onFormAssessment = onFormAssessment,
         ghostSession = state.ghostSession,
         latestGhostVerdict = state.latestGhostVerdict,
-        motionStartHoldProgress = state.motionStartHoldProgress
+        motionStartHoldProgress = state.motionStartHoldProgress,
+        isRestPaused = state.isRestPaused
     )
 }
 
@@ -170,6 +174,9 @@ fun WorkoutTab(
     onStartWorkout: () -> Unit,
     onStopWorkout: () -> Unit,
     onSkipRest: () -> Unit,
+    onExtendRest: (Int) -> Unit = {},
+    onToggleRestPause: () -> Unit = {},
+    onResetRest: () -> Unit = {},
     onSkipCountdown: () -> Unit,
     onProceedFromSummary: () -> Unit = {},
     onRpeLogged: ((Int) -> Unit)? = null,  // Optional RPE callback for set summary
@@ -201,7 +208,9 @@ fun WorkoutTab(
     ghostSession: GhostSession? = null,
     latestGhostVerdict: GhostRepComparison? = null,
     // Issue #237: Motion-triggered set start
-    motionStartHoldProgress: Float? = null
+    motionStartHoldProgress: Float? = null,
+    // Issue #297, #228: Rest timer pause state
+    isRestPaused: Boolean = false
 ) {
     // Note: HapticFeedbackEffect is now global in EnhancedMainScreen
     // No need for local haptic effect here
@@ -499,7 +508,11 @@ fun WorkoutTab(
                         formatWeightWithUnit = formatWeight,
                         isSupersetTransition = workoutState.isSupersetTransition,
                         supersetLabel = workoutState.supersetLabel,
+                        isRestPaused = isRestPaused,
                         onSkipRest = onSkipRest,
+                        onExtendRest = onExtendRest,
+                        onToggleRestPause = onToggleRestPause,
+                        onResetRest = onResetRest,
                         onEndWorkout = onStopWorkout,
                         onUpdateReps = { newReps ->
                             onUpdateParameters(workoutParameters.copy(reps = newReps))

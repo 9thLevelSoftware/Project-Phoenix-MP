@@ -288,6 +288,10 @@ class MainViewModel constructor(
     fun resetLoadBaseline() = workoutSessionManager.resetLoadBaseline()
     fun proceedFromSummary() = workoutSessionManager.proceedFromSummary()
     fun skipRest() = workoutSessionManager.skipRest()
+    fun extendRestTime(seconds: Int) = workoutSessionManager.extendRestTime(seconds)
+    fun toggleRestPause() = workoutSessionManager.toggleRestPause()
+    fun resetRestTimer() = workoutSessionManager.resetRestTimer()
+    val isRestPaused get() = workoutSessionManager.coordinator.isRestPaused
     fun startNextSet() = workoutSessionManager.startNextSet()
     fun logRpeForCurrentSet(rpe: Int) = workoutSessionManager.logRpeForCurrentSet(rpe)
 

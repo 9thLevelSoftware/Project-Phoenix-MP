@@ -367,6 +367,9 @@ class DefaultWorkoutSessionManager(
     // ===== Rest/Flow Control — delegated to ActiveSessionEngine =====
 
     fun skipRest() = activeSessionEngine.skipRest()
+    fun extendRestTime(seconds: Int) = activeSessionEngine.extendRestTime(seconds)
+    fun toggleRestPause() = activeSessionEngine.toggleRestPause()
+    fun resetRestTimer() = activeSessionEngine.resetRestTimer()
     fun startNextSet() = activeSessionEngine.startNextSet()
 
     // ===== Orchestration: proceedFromSummary (cross-cutting, stays in DWSM) =====

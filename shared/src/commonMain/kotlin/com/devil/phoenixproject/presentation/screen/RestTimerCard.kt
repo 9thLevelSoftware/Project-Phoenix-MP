@@ -53,7 +53,12 @@ fun RestTimerCard(
     formatWeightWithUnit: ((Float, WeightUnit) -> String)? = null,
     isSupersetTransition: Boolean = false,
     supersetLabel: String? = null,
+    // Issue #297, #228: Rest timer controls
+    isRestPaused: Boolean = false,
     onSkipRest: () -> Unit,
+    onExtendRest: (Int) -> Unit = {},
+    onToggleRestPause: () -> Unit = {},
+    onResetRest: () -> Unit = {},
     onEndWorkout: () -> Unit,
     onUpdateReps: ((Int) -> Unit)? = null,
     onUpdateWeight: ((Float) -> Unit)? = null,
@@ -142,30 +147,115 @@ fun RestTimerCard(
             }
 
             // Countdown timer - large centered text with pulsing animation
+            // Issue #297, #228: Pause stops the pulse animation
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(180.dp),
                 contentAlignment = Alignment.Center
             ) {
-                // Circular background with pulse effect
+                // Circular background with pulse effect (static when paused)
                 Box(
                     modifier = Modifier
                         .size(180.dp)
-                        .scale(pulse)
+                        .scale(if (isRestPaused) 1f else pulse)
                         .background(
-                            color = MaterialTheme.colorScheme.surfaceContainerHighest,
+                            color = if (isRestPaused)
+                                MaterialTheme.colorScheme.surfaceContainerHigh
+                            else
+                                MaterialTheme.colorScheme.surfaceContainerHighest,
                             shape = RoundedCornerShape(200.dp)
                         )
                 )
 
-                // Timer text
-                Text(
-                    text = formatRestTime(restSecondsRemaining),
-                    style = MaterialTheme.typography.displayLarge.copy(fontSize = 64.sp),
-                    fontWeight = FontWeight.ExtraBold,
-                    color = MaterialTheme.colorScheme.primary
-                )
+                // Timer text - dimmed when paused
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(
+                        text = formatRestTime(restSecondsRemaining),
+                        style = MaterialTheme.typography.displayLarge.copy(fontSize = 64.sp),
+                        fontWeight = FontWeight.ExtraBold,
+                        color = if (isRestPaused)
+                            MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)
+                        else
+                            MaterialTheme.colorScheme.primary
+                    )
+                    if (isRestPaused) {
+                        Text(
+                            text = "PAUSED",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.secondary,
+                            letterSpacing = 2.sp
+                        )
+                    }
+                }
+            }
+
+            // Issue #297, #228: Timer control buttons (+30s, Pause/Resume, Reset)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceEvenly,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // +30s button
+                FilledTonalButton(
+                    onClick = { onExtendRest(30) },
+                    shape = RoundedCornerShape(16.dp)
+                ) {
+                    Icon(
+                        Icons.Default.Add,
+                        contentDescription = "Add 30 seconds",
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(
+                        text = "30s",
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+
+                // Pause/Resume toggle
+                FilledTonalButton(
+                    onClick = onToggleRestPause,
+                    shape = RoundedCornerShape(16.dp),
+                    colors = if (isRestPaused)
+                        ButtonDefaults.filledTonalButtonColors(
+                            containerColor = MaterialTheme.colorScheme.secondaryContainer
+                        )
+                    else
+                        ButtonDefaults.filledTonalButtonColors()
+                ) {
+                    Icon(
+                        if (isRestPaused) Icons.Default.PlayArrow else Icons.Default.Pause,
+                        contentDescription = if (isRestPaused) "Resume timer" else "Pause timer",
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(
+                        text = if (isRestPaused) "Resume" else "Pause",
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+
+                // Reset button
+                FilledTonalButton(
+                    onClick = onResetRest,
+                    shape = RoundedCornerShape(16.dp)
+                ) {
+                    Icon(
+                        Icons.Default.Refresh,
+                        contentDescription = "Reset timer",
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(
+                        text = "Reset",
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
             }
 
             // UP NEXT section with exercise info

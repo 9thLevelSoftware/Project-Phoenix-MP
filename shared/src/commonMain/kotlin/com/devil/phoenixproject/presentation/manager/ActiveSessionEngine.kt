@@ -2690,6 +2690,11 @@ class ActiveSessionEngine(
             val displayTotalSets = nextExerciseFromStep?.setReps?.size ?: currentExercise?.setReps?.size ?: 0
             val initialNextName = flowDelegate?.calculateNextExerciseName(isSingleExercise, currentExercise, routine) ?: ""
 
+            // Issue #297, #228: Initialize rest timer control state
+            coordinator._restOriginalDuration.value = restDuration
+            coordinator._restSecondsRemaining.value = restDuration
+            coordinator._isRestPaused.value = false
+
             // Emit Resting immediately so the UI timer starts without waiting on repository lookups.
             coordinator._workoutState.value = WorkoutState.Resting(
                 restSecondsRemaining = restDuration,
@@ -2715,13 +2720,15 @@ class ActiveSessionEngine(
             // LED Biofeedback: show blue during rest
             coordinator.ledFeedbackController?.onRestPeriodStart()
 
-            val startTime = currentTimeMillis()
-            val endTimeMs = startTime + (restDuration * 1000L)
             var lastTickedSecond = -1  // Issue #100: track emitted ticks to fire once per second
+            var lastDecrementTime = currentTimeMillis()
 
-            while (currentTimeMillis() < endTimeMs && isActive) {
-                val remainingMs = endTimeMs - currentTimeMillis()
-                val remainingSeconds = (remainingMs / 1000L).toInt().coerceAtLeast(0)
+            // Issue #297, #228: Tick-based loop that respects pause/extend/reset via StateFlow.
+            // Each 100ms tick checks _isRestPaused; when paused, time does not decrement.
+            // _restSecondsRemaining is the source of truth — extendRestTime() and resetRestTimer()
+            // mutate it directly and the loop picks up the new value on the next tick.
+            while (coordinator._restSecondsRemaining.value > 0 && isActive) {
+                val remainingSeconds = coordinator._restSecondsRemaining.value
 
                 // Issue #100: Emit countdown tick during last 10 seconds of rest
                 if (remainingSeconds in 1..10 && remainingSeconds != lastTickedSecond) {
@@ -2745,7 +2752,24 @@ class ActiveSessionEngine(
                 )
 
                 delay(100)
+
+                // Decrement once per second, but only when not paused
+                if (!coordinator._isRestPaused.value) {
+                    val now = currentTimeMillis()
+                    if (now - lastDecrementTime >= 1000L) {
+                        coordinator._restSecondsRemaining.value =
+                            (coordinator._restSecondsRemaining.value - 1).coerceAtLeast(0)
+                        lastDecrementTime = now
+                    }
+                } else {
+                    // While paused, keep resetting the decrement anchor so we don't
+                    // get a burst of decrements when unpaused.
+                    lastDecrementTime = currentTimeMillis()
+                }
             }
+
+            // Clean up rest timer control state
+            coordinator._isRestPaused.value = false
 
             // LED Biofeedback: resume normal feedback after rest
             coordinator.ledFeedbackController?.onRestPeriodEnd()
@@ -2942,6 +2966,7 @@ class ActiveSessionEngine(
 
     fun skipRest() {
         if (coordinator._workoutState.value is WorkoutState.Resting) {
+            coordinator._isRestPaused.value = false
             coordinator.restTimerJob?.cancel()
             coordinator.restTimerJob = null
 
@@ -2953,6 +2978,41 @@ class ActiveSessionEngine(
                 startNextSetOrExercise()
             }
         }
+    }
+
+    // ===== Rest Timer Controls (Issue #297, #228) =====
+
+    /**
+     * Extend the rest timer by the given number of seconds.
+     * Updates both the original duration (for reset) and the current remaining time.
+     */
+    fun extendRestTime(seconds: Int) {
+        if (coordinator._workoutState.value !is WorkoutState.Resting) return
+        coordinator._restOriginalDuration.value += seconds
+        coordinator._restSecondsRemaining.value += seconds
+        Logger.d("ActiveSessionEngine") { "extendRestTime: +${seconds}s, remaining=${coordinator._restSecondsRemaining.value}, original=${coordinator._restOriginalDuration.value}" }
+    }
+
+    /**
+     * Toggle rest timer pause/resume.
+     * When paused, the countdown loop skips decrementing. Beeps also stop.
+     */
+    fun toggleRestPause() {
+        if (coordinator._workoutState.value !is WorkoutState.Resting) return
+        val newPaused = !coordinator._isRestPaused.value
+        coordinator._isRestPaused.value = newPaused
+        Logger.d("ActiveSessionEngine") { "toggleRestPause: paused=$newPaused" }
+    }
+
+    /**
+     * Reset the rest timer to its original duration (including any extensions).
+     * Also unpauses if currently paused.
+     */
+    fun resetRestTimer() {
+        if (coordinator._workoutState.value !is WorkoutState.Resting) return
+        coordinator._isRestPaused.value = false
+        coordinator._restSecondsRemaining.value = coordinator._restOriginalDuration.value
+        Logger.d("ActiveSessionEngine") { "resetRestTimer: reset to ${coordinator._restOriginalDuration.value}s" }
     }
 
     fun startNextSet() {

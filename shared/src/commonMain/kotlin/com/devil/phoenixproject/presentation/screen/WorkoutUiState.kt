@@ -83,7 +83,9 @@ data class WorkoutUiState(
     val ghostSession: GhostSession? = null,
     val latestGhostVerdict: GhostRepComparison? = null,
     // Issue #237: Motion-triggered set start hold progress (0.0-1.0, null = not active)
-    val motionStartHoldProgress: Float? = null
+    val motionStartHoldProgress: Float? = null,
+    // Issue #297, #228: Rest timer pause state for UI display
+    val isRestPaused: Boolean = false
 )
 
 /**
@@ -109,6 +111,15 @@ interface WorkoutActions {
 
     /** Skip rest timer and proceed immediately */
     fun onSkipRest()
+
+    /** Extend rest timer by given seconds (Issue #297, #228) */
+    fun onExtendRest(seconds: Int)
+
+    /** Toggle rest timer pause/resume (Issue #297, #228) */
+    fun onToggleRestPause()
+
+    /** Reset rest timer to original duration (Issue #297, #228) */
+    fun onResetRest()
 
     /** Skip countdown and start workout immediately */
     fun onSkipCountdown()
@@ -163,6 +174,9 @@ object PreviewWorkoutActions : WorkoutActions {
     override fun onStartWorkout() {}
     override fun onStopWorkout() {}
     override fun onSkipRest() {}
+    override fun onExtendRest(seconds: Int) {}
+    override fun onToggleRestPause() {}
+    override fun onResetRest() {}
     override fun onSkipCountdown() {}
     override fun onProceedFromSummary() {}
     override fun onRpeLogged(rpe: Int) {}
@@ -190,6 +204,9 @@ fun workoutActions(
     onStartWorkout: () -> Unit,
     onStopWorkout: () -> Unit,
     onSkipRest: () -> Unit,
+    onExtendRest: (Int) -> Unit = {},
+    onToggleRestPause: () -> Unit = {},
+    onResetRest: () -> Unit = {},
     onSkipCountdown: () -> Unit,
     onProceedFromSummary: () -> Unit,
     onRpeLogged: (Int) -> Unit,
@@ -211,6 +228,9 @@ fun workoutActions(
     override fun onStartWorkout() = onStartWorkout()
     override fun onStopWorkout() = onStopWorkout()
     override fun onSkipRest() = onSkipRest()
+    override fun onExtendRest(seconds: Int) = onExtendRest(seconds)
+    override fun onToggleRestPause() = onToggleRestPause()
+    override fun onResetRest() = onResetRest()
     override fun onSkipCountdown() = onSkipCountdown()
     override fun onProceedFromSummary() = onProceedFromSummary()
     override fun onRpeLogged(rpe: Int) = onRpeLogged(rpe)

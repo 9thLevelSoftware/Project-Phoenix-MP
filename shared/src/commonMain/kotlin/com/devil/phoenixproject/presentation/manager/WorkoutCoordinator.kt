@@ -235,6 +235,19 @@ class WorkoutCoordinator(
     internal var stallStartTime: Long? = null
     internal var isCurrentlyStalled = false
 
+    // ===== Rest Timer Control State (Issue #297, #228) =====
+
+    internal val _isRestPaused = MutableStateFlow(false)
+    val isRestPaused: StateFlow<Boolean> = _isRestPaused.asStateFlow()
+
+    // Original rest duration (including extensions) for reset functionality
+    internal val _restOriginalDuration = MutableStateFlow(0)
+    val restOriginalDuration: StateFlow<Int> = _restOriginalDuration.asStateFlow()
+
+    // Tracks remaining seconds for extend/reset manipulation by control methods.
+    // The coroutine loop reads this each tick instead of computing from wall-clock.
+    internal val _restSecondsRemaining = MutableStateFlow(0)
+
     // ===== Job Tracking =====
 
     internal var monitorDataCollectionJob: Job? = null

@@ -72,6 +72,8 @@ fun ActiveWorkoutScreen(
     val latestGhostVerdict by viewModel.latestGhostVerdict.collectAsState()
     // Issue #237: Motion-triggered set start
     val motionStartHoldProgress by viewModel.motionStartHoldProgress.collectAsState()
+    // Issue #297, #228: Rest timer pause state
+    val isRestPaused by viewModel.isRestPaused.collectAsState()
     @Suppress("UNUSED_VARIABLE") // Reserved for future connecting overlay
     val isAutoConnecting by viewModel.isAutoConnecting.collectAsState()
     val connectionError by viewModel.connectionError.collectAsState()
@@ -338,7 +340,7 @@ fun ActiveWorkoutScreen(
         gatedBiomechanicsResult, detectionState, hudPreset,
         isFormCheckEnabled, latestFormViolations, latestFormScore,
         gatedGhostSession, gatedGhostVerdict,
-        motionStartHoldProgress
+        motionStartHoldProgress, isRestPaused
     ) {
         WorkoutUiState(
             connectionState = connectionState,
@@ -374,7 +376,8 @@ fun ActiveWorkoutScreen(
             latestFormScore = latestFormScore,
             ghostSession = gatedGhostSession,
             latestGhostVerdict = gatedGhostVerdict,
-            motionStartHoldProgress = motionStartHoldProgress
+            motionStartHoldProgress = motionStartHoldProgress,
+            isRestPaused = isRestPaused
         )
     }
 
@@ -391,6 +394,9 @@ fun ActiveWorkoutScreen(
             },
             onStopWorkout = { showExitConfirmation = true },
             onSkipRest = { viewModel.skipRest() },
+            onExtendRest = { seconds -> viewModel.extendRestTime(seconds) },
+            onToggleRestPause = { viewModel.toggleRestPause() },
+            onResetRest = { viewModel.resetRestTimer() },
             onSkipCountdown = { viewModel.skipCountdown() },
             onProceedFromSummary = { viewModel.proceedFromSummary() },
             onRpeLogged = { rpe -> viewModel.logRpeForCurrentSet(rpe) },
