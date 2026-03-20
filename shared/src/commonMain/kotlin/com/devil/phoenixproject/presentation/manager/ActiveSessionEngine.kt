@@ -1173,6 +1173,10 @@ class ActiveSessionEngine(
      * machine can't receive new exercise packet until active one fully ends).
      */
     fun adjustWeight(newWeightKg: Float, sendToMachine: Boolean = true) {
+        // Upper bound is 110kg per cable to support both hardware variants:
+        //   V-Form (VIT-200): 100kg max per cable
+        //   Trainer+:         110kg max per cable
+        // Do NOT replace with Constants.MAX_WEIGHT_KG (100f) — that would regress Trainer+ users.
         val clampedWeight = newWeightKg.coerceIn(0f, 110f)
 
         Logger.d("ActiveSessionEngine: Adjusting weight to $clampedWeight kg (sendToMachine=$sendToMachine)")
@@ -1706,26 +1710,10 @@ class ActiveSessionEngine(
                 coordinator.pendingWeightChangeKg = null
             }
 
-            println("Issue222: CABLE WORKOUT STARTING - DIAGNOSTIC STATE")
-            println("Issue222: Bodyweight sets completed this routine: $coordinator.bodyweightSetsCompletedInRoutine")
-            println("Issue222: Current exercise index: ${coordinator._currentExerciseIndex.value}")
-            println("Issue222: Current set index: ${coordinator._currentSetIndex.value}")
-            println("Issue222: isEchoMode: ${effectiveParams.isEchoMode}")
-            println("Issue222: programMode: ${effectiveParams.programMode}")
-
-            println("Issue188: PRE-BLE WORKOUT PARAMETERS")
-            println("Issue188: Mode: ${effectiveParams.programMode.displayName}")
-            println("Issue188: Weight: ${effectiveParams.weightPerCableKg}kg per cable")
-            println("Issue188: Reps: ${effectiveParams.reps} (isAMRAP=${effectiveParams.isAMRAP})")
-            Logger.d { "Issue203 DEBUG: Starting workout - setReps=${currentExercise?.setReps}, currentSetIndex=${coordinator._currentSetIndex.value}, isAMRAP=${effectiveParams.isAMRAP}" }
-            println("Issue188: Warmup: ${effectiveParams.warmupReps}")
-            println("Issue188: Progression: ${effectiveParams.progressionRegressionKg}kg per rep")
-            println("Issue188: isJustLift: ${effectiveParams.isJustLift}")
-            println("Issue188: isEchoMode: ${effectiveParams.isEchoMode}")
-            println("Issue188: echoLevel: ${effectiveParams.echoLevel.displayName}")
-            println("Issue188: eccentricLoad: ${effectiveParams.eccentricLoad.percentage}%")
-            println("Issue188: stopAtTop: ${effectiveParams.stopAtTop}")
-            println("Issue188: stallDetection: ${effectiveParams.stallDetectionEnabled}")
+            Logger.d("ActiveSessionEngine") { "Cable workout starting - bodyweightSetsInRoutine=${coordinator.bodyweightSetsCompletedInRoutine}, exerciseIdx=${coordinator._currentExerciseIndex.value}, setIdx=${coordinator._currentSetIndex.value}, echo=${effectiveParams.isEchoMode}, mode=${effectiveParams.programMode}" }
+            Logger.d("ActiveSessionEngine") { "BLE params: mode=${effectiveParams.programMode.displayName}, weight=${effectiveParams.weightPerCableKg}kg, reps=${effectiveParams.reps} (AMRAP=${effectiveParams.isAMRAP}), warmup=${effectiveParams.warmupReps}, progression=${effectiveParams.progressionRegressionKg}kg/rep" }
+            Logger.d("ActiveSessionEngine") { "BLE params (cont): justLift=${effectiveParams.isJustLift}, echo=${effectiveParams.isEchoMode}, echoLevel=${effectiveParams.echoLevel.displayName}, eccentricLoad=${effectiveParams.eccentricLoad.percentage}%, stopAtTop=${effectiveParams.stopAtTop}, stallDetection=${effectiveParams.stallDetectionEnabled}" }
+            Logger.d("ActiveSessionEngine") { "Issue203: setReps=${currentExercise?.setReps}, currentSetIndex=${coordinator._currentSetIndex.value}, isAMRAP=${effectiveParams.isAMRAP}" }
 
             // ===== Variable Warm-up Sets (Phase 35C: Issue #30) =====
             // When the exercise has warmupSets defined, override weight/reps for warm-up phase.
@@ -1999,13 +1987,12 @@ class ActiveSessionEngine(
 
              val currentExercise = coordinator._loadedRoutine.value?.exercises?.getOrNull(coordinator._currentExerciseIndex.value)
              val isBodyweight = isBodyweightExercise(currentExercise)
-             println("Issue222 TRACE: manual stop -> isBodyweight=$isBodyweight, exitingWorkout=$shouldExitToIdle")
+             Logger.d("ActiveSessionEngine") { "Manual stop: isBodyweight=$isBodyweight, exitingWorkout=$shouldExitToIdle" }
              if (!isBodyweight) {
-                 println("Issue222 TRACE: manual stop -> calling bleRepository.stopWorkout()")
+                 Logger.d("ActiveSessionEngine") { "Manual stop: calling bleRepository.stopWorkout()" }
                  bleRepository.stopWorkout()
              } else {
-                 println("Issue222 TRACE: manual stop -> skipping BLE stop (bodyweight)")
-                 Logger.d("Manual stop: bodyweight exercise - skipping BLE stop (parent-aligned)")
+                 Logger.d("ActiveSessionEngine") { "Manual stop: bodyweight exercise - skipping BLE stop" }
              }
              coordinator._hapticEvents.emit(HapticEvent.WORKOUT_END)
 
@@ -2469,7 +2456,7 @@ class ActiveSessionEngine(
 
             if (wasBodyweight) {
                 coordinator.bodyweightSetsCompletedInRoutine++
-                println("Issue222: Bodyweight set #$coordinator.bodyweightSetsCompletedInRoutine completed (exercise=${currentExercise?.exercise?.name})")
+                Logger.d("ActiveSessionEngine") { "Bodyweight set #${coordinator.bodyweightSetsCompletedInRoutine} completed (exercise=${currentExercise?.exercise?.name})" }
             }
 
             coordinator.previousExerciseWasBodyweight = wasBodyweight
