@@ -19,6 +19,7 @@ import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.domain.detection.ExerciseClassification
 import com.devil.phoenixproject.domain.model.Exercise
 import com.devil.phoenixproject.ui.theme.AccessibilityTheme
+import kotlinx.coroutines.launch
 
 /**
  * Non-blocking bottom sheet for exercise auto-detection confirmation.
@@ -43,6 +44,7 @@ fun AutoDetectionSheet(
 ) {
     var showExercisePicker by remember { mutableStateOf(false) }
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = false)
+    val scope = rememberCoroutineScope()
 
     // Exercise picker dialog for "Select Different"
     ExercisePickerDialog(
@@ -155,9 +157,15 @@ fun AutoDetectionSheet(
                     classification.alternates.take(3).forEach { alternateName ->
                         SuggestionChip(
                             onClick = {
-                                // Alternates don't have IDs from classification
-                                // Use empty ID - the caller should handle lookup
-                                onConfirm("", alternateName)
+                                scope.launch {
+                                    val exercise = exerciseRepository.findByName(alternateName)
+                                    if (exercise != null) {
+                                        onConfirm(exercise.id ?: "", exercise.name)
+                                    } else {
+                                        // Fallback: pass name without ID (caller must handle)
+                                        onConfirm("", alternateName)
+                                    }
+                                }
                             },
                             label = { Text(alternateName, maxLines = 1) },
                             modifier = Modifier.padding(horizontal = 4.dp)
