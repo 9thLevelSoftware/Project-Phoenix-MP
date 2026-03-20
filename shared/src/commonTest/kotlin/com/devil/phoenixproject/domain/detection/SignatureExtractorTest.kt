@@ -271,6 +271,64 @@ class SignatureExtractorTest {
     }
 
     // =========================================================================
+    // Cable-agnostic position handling
+    // =========================================================================
+
+    @Test
+    fun `extractSignature uses positionB when positionA is zero for right-cable exercises`() {
+        // Single right cable: positionA=0 throughout, positionB has movement
+        val metrics = mutableListOf<WorkoutMetric>()
+        var timestamp = 0L
+
+        repeat(3) {
+            val halfRep = 10
+            val samplesPerRep = 20
+            // Concentric: valley->peak
+            for (i in 0..halfRep) {
+                val progress = i.toFloat() / halfRep
+                val posB = 100f + 200f * progress  // 100 -> 300
+                metrics.add(
+                    WorkoutMetric(
+                        timestamp = timestamp + i * 100L,
+                        loadA = 0f,         // Inactive cable
+                        loadB = 50f,
+                        positionA = 0f,     // Zero throughout
+                        positionB = posB,
+                        velocityA = 0.0,
+                        velocityB = 0.5
+                    )
+                )
+            }
+            // Eccentric: peak->valley
+            val eccentricSamples = samplesPerRep - halfRep - 1
+            for (i in 1..eccentricSamples) {
+                val progress = i.toFloat() / eccentricSamples
+                val posB = 300f - 200f * progress  // 300 -> 100
+                metrics.add(
+                    WorkoutMetric(
+                        timestamp = timestamp + (halfRep + i) * 100L,
+                        loadA = 0f,
+                        loadB = 50f,
+                        positionA = 0f,
+                        positionB = posB,
+                        velocityA = 0.0,
+                        velocityB = 0.5
+                    )
+                )
+            }
+            timestamp += samplesPerRep * 100L
+        }
+
+        val result = extractor.extractSignature(metrics)
+
+        assertNotNull(result, "Should extract signature from right-cable-only data")
+        assertTrue(result.romMm > 100f,
+            "ROM should reflect positionB movement, got ${result.romMm}mm (expected ~200mm)")
+        assertEquals(CableUsage.SINGLE_RIGHT, result.cableConfig,
+            "Should detect SINGLE_RIGHT cable usage")
+    }
+
+    // =========================================================================
     // Test helpers
     // =========================================================================
 

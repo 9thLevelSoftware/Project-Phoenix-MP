@@ -77,16 +77,18 @@ class SignatureExtractor {
 
     /**
      * Apply moving average smoothing to position data.
+     * Uses maxOf(positionA, positionB) so single-right-cable exercises
+     * (where positionA may be zero) still produce valid signatures.
      */
     private fun smoothPositions(metrics: List<WorkoutMetric>): List<Float> {
         if (metrics.size < SMOOTHING_WINDOW) {
-            return metrics.map { it.positionA }
+            return metrics.map { maxOf(it.positionA, it.positionB) }
         }
 
         return metrics.indices.map { i ->
             val start = maxOf(0, i - SMOOTHING_WINDOW / 2)
             val end = minOf(metrics.size - 1, i + SMOOTHING_WINDOW / 2)
-            (start..end).map { metrics[it].positionA }.average().toFloat()
+            (start..end).map { maxOf(metrics[it].positionA, metrics[it].positionB) }.average().toFloat()
         }
     }
 
@@ -158,10 +160,10 @@ class SignatureExtractor {
             val valleyStart = valleys[i]
             val valleyEnd = minOf(valleys[i + 1], metrics.size - 1)
 
-            // Find peak and valley positions using raw data
+            // Find peak and valley positions using raw data (cable-agnostic)
             val repMetrics = metrics.subList(valleyStart, valleyEnd + 1)
-            val peakPos = repMetrics.maxOfOrNull { it.positionA } ?: continue
-            val valleyPos = repMetrics.minOfOrNull { it.positionA } ?: continue
+            val peakPos = repMetrics.maxOfOrNull { maxOf(it.positionA, it.positionB) } ?: continue
+            val valleyPos = repMetrics.minOfOrNull { maxOf(it.positionA, it.positionB) } ?: continue
 
             roms.add(peakPos - valleyPos)
         }
