@@ -15,13 +15,16 @@ import platform.AVFAudio.AVAudioSessionCategoryPlayAndRecord
 import platform.AVFAudio.AVAudioSessionModeDefault
 import platform.AVFAudio.AVAudioSessionSetActiveOptionNotifyOthersOnDeactivation
 import platform.AVFAudio.setActive
+import platform.Foundation.NSDate
 import platform.Foundation.NSLog
+import platform.Foundation.timeIntervalSince1970
 import platform.Speech.SFSpeechAudioBufferRecognitionRequest
 import platform.Speech.SFSpeechRecognitionResult
 import platform.Speech.SFSpeechRecognitionTask
 import platform.Speech.SFSpeechRecognitionTaskStateCanceling
 import platform.Speech.SFSpeechRecognitionTaskStateCompleted
 import platform.Speech.SFSpeechRecognizer
+import platform.Speech.SFSpeechRecognizerAuthorizationStatusAuthorized
 import platform.darwin.dispatch_after
 import platform.darwin.dispatch_async
 import platform.darwin.dispatch_get_main_queue
@@ -43,6 +46,8 @@ actual class SafeWordListener(
     private companion object {
         const val TAG = "SafeWordListener"
         const val RESTART_DELAY_NS = 500_000_000L // 500ms in nanoseconds
+        /** Minimum interval between emissions to prevent partial+final double-counting. */
+        const val DEBOUNCE_MS = 1000L
     }
 
     private val speechRecognizer = SFSpeechRecognizer()
@@ -59,12 +64,22 @@ actual class SafeWordListener(
     /** Tracks whether we *want* to be listening (guards auto-restart). */
     private var shouldBeListening = false
 
+    /** Last time we emitted a detection — used to debounce partial+final duplicates. */
+    private var lastEmitTimeMs = 0L
+
     actual fun startListening() {
         if (shouldBeListening) return
 
         if (!speechRecognizer.isAvailable()) {
             NSLog("$TAG: Speech recognition not available on this device")
             return
+        }
+
+        val authStatus = SFSpeechRecognizer.authorizationStatus()
+        if (authStatus != SFSpeechRecognizerAuthorizationStatusAuthorized) {
+            NSLog("$TAG: Speech recognition not authorized (status=$authStatus)")
+            _isListening.value = false
+            return // Don't retry — authorization requires user action
         }
 
         shouldBeListening = true
@@ -154,8 +169,14 @@ actual class SafeWordListener(
         if (result != null) {
             val text = result.bestTranscription.formattedString
             if (matchesSafeWord(text)) {
-                NSLog("$TAG: Safe word detected in: \"$text\"")
-                _detectedWord.tryEmit(safeWord)
+                val now = (NSDate().timeIntervalSince1970 * 1000).toLong()
+                if (now - lastEmitTimeMs < DEBOUNCE_MS) {
+                    NSLog("$TAG: Safe word match suppressed (debounce): \"$text\"")
+                } else {
+                    lastEmitTimeMs = now
+                    NSLog("$TAG: Safe word detected in: \"$text\"")
+                    _detectedWord.tryEmit(safeWord)
+                }
             }
         }
 
