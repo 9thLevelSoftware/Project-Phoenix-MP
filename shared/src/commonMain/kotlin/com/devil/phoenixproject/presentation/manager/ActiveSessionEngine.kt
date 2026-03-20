@@ -2367,23 +2367,11 @@ class ActiveSessionEngine(
 
         workoutRepository.saveSession(session)
 
-        scope.launch {
-            syncTriggerManager?.onWorkoutCompleted()
-        }
-
         if (metricsSnapshot.isNotEmpty()) {
             workoutRepository.saveMetrics(sessionId, metricsSnapshot)
         }
 
         Logger.d("Saved workout session: $sessionId with ${metricsSnapshot.size} metrics")
-
-        // Per-session auto-backup (Phase 36): fire-and-forget, never blocks the save flow
-        if (preferencesManager.preferencesFlow.value.autoBackupEnabled && dataBackupManager != null) {
-            scope.launch {
-                dataBackupManager.exportSession(sessionId)
-                    .onFailure { e -> Logger.w(e) { "Auto-backup failed for session $sessionId" } }
-            }
-        }
 
         var completedSetId: String? = null
         if (params.selectedExerciseId != null && working > 0) {
@@ -2423,6 +2411,21 @@ class ActiveSessionEngine(
             Logger.d("Marked CompletedSet $completedSetId as PR")
             // LED Biofeedback: celebrate PR with rapid color flash
             coordinator.ledFeedbackController?.triggerPRCelebration()
+        }
+
+        // Sync trigger AFTER all persistence (session, metrics, CompletedSet, PR marking)
+        // so the push sends complete data. Previously fired before saveCompletedSet/markAsPr.
+        scope.launch {
+            syncTriggerManager?.onWorkoutCompleted()
+        }
+
+        // Per-session auto-backup AFTER all persistence (including CompletedSet and PR).
+        // Fire-and-forget, never blocks the save flow.
+        if (preferencesManager.preferencesFlow.value.autoBackupEnabled && dataBackupManager != null) {
+            scope.launch {
+                dataBackupManager.exportSession(sessionId)
+                    .onFailure { e -> Logger.w(e) { "Auto-backup failed for session $sessionId" } }
+            }
         }
 
         if (params.isJustLift) {
