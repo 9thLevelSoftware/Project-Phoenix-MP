@@ -25,6 +25,9 @@ import com.devil.phoenixproject.domain.model.ProgressionReason
 import com.devil.phoenixproject.domain.model.ProgressionResponse
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.ui.theme.AccessibilityTheme
+import org.jetbrains.compose.resources.stringResource
+import vitruvianprojectphoenix.shared.generated.resources.Res
+import vitruvianprojectphoenix.shared.generated.resources.*
 
 /**
  * Banner component that shows a weight progression suggestion.
@@ -183,7 +186,7 @@ fun ProgressionSuggestionBanner(
                             contentColor = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     ) {
-                        Text("Skip")
+                        Text(stringResource(Res.string.action_skip))
                     }
 
                     OutlinedButton(
@@ -197,7 +200,7 @@ fun ProgressionSuggestionBanner(
                             modifier = Modifier.size(16.dp)
                         )
                         Spacer(Modifier.width(4.dp))
-                        Text("Modify")
+                        Text(stringResource(Res.string.action_modify))
                     }
 
                     Button(
@@ -217,7 +220,7 @@ fun ProgressionSuggestionBanner(
                             modifier = Modifier.size(16.dp)
                         )
                         Spacer(Modifier.width(4.dp))
-                        Text("Accept")
+                        Text(stringResource(Res.string.action_accept))
                     }
                 }
             }
@@ -259,7 +262,7 @@ private fun ModifyWeightDialog(
     AlertDialog(
         onDismissRequest = onDismiss,
         title = {
-            Text("Adjust Weight", fontWeight = FontWeight.Bold)
+            Text(stringResource(Res.string.adjust_weight), fontWeight = FontWeight.Bold)
         },
         text = {
             Column(
@@ -331,12 +334,12 @@ private fun ModifyWeightDialog(
                 onClick = { onConfirm(weight) },
                 enabled = weight > 0f && weight != previousWeight
             ) {
-                Text("Use This Weight")
+                Text(stringResource(Res.string.use_this_weight))
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("Cancel")
+                Text(stringResource(Res.string.action_cancel))
             }
         }
     )

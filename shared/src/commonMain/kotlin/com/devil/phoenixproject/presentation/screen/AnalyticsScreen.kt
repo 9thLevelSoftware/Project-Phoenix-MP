@@ -35,6 +35,9 @@ import com.devil.phoenixproject.domain.model.PersonalRecord
 import androidx.compose.foundation.lazy.items
 import com.devil.phoenixproject.presentation.util.LocalWindowSizeClass
 import com.devil.phoenixproject.presentation.util.WindowWidthSizeClass
+import org.jetbrains.compose.resources.stringResource
+import vitruvianprojectphoenix.shared.generated.resources.Res
+import vitruvianprojectphoenix.shared.generated.resources.*
 
 // Helper function for timestamp formatting
 private fun formatTimestamp(timestamp: Long): String {
@@ -450,13 +453,13 @@ fun AnalyticsScreen(
     if (showExportMenu) {
         AlertDialog(
             onDismissRequest = { if (!isExporting && !isImporting) showExportMenu = false },
-            title = { Text("Export / Import Data") },
+            title = { Text(stringResource(Res.string.export_import_data)) },
             text = {
                 Column(
                     verticalArrangement = Arrangement.spacedBy(Spacing.medium),
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Text("Choose what to export:", style = MaterialTheme.typography.bodyMedium)
+                    Text(stringResource(Res.string.choose_export), style = MaterialTheme.typography.bodyMedium)
 
                     // Export Personal Records
                     OutlinedButton(
@@ -487,7 +490,7 @@ fun AnalyticsScreen(
                     ) {
                         Icon(Icons.Default.EmojiEvents, contentDescription = null)
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text("Personal Records (${personalRecords.size})")
+                        Text(stringResource(Res.string.personal_records_count, personalRecords.size))
                     }
 
                     // Export Workout History - Opens date range picker
@@ -501,7 +504,7 @@ fun AnalyticsScreen(
                     ) {
                         Icon(Icons.AutoMirrored.Filled.List, contentDescription = null)
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text("Workout History (${allWorkoutSessions.size})")
+                        Text(stringResource(Res.string.workout_history_count, allWorkoutSessions.size))
                     }
 
                     // Export PR Progression
@@ -533,12 +536,12 @@ fun AnalyticsScreen(
                     ) {
                         Icon(Icons.AutoMirrored.Filled.TrendingUp, contentDescription = null)
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text("PR Progression")
+                        Text(stringResource(Res.string.pr_progression))
                     }
 
                     HorizontalDivider(modifier = Modifier.padding(vertical = Spacing.small))
 
-                    Text("Import:", style = MaterialTheme.typography.bodyMedium)
+                    Text(stringResource(Res.string.import_label), style = MaterialTheme.typography.bodyMedium)
 
                     // Import Workout History from CSV
                     OutlinedButton(
@@ -551,7 +554,7 @@ fun AnalyticsScreen(
                     ) {
                         Icon(Icons.Default.FileUpload, contentDescription = null)
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text("Import Workout History (CSV)")
+                        Text(stringResource(Res.string.import_workout_csv))
                     }
 
                     if (isExporting || isImporting) {
@@ -624,7 +627,7 @@ fun AnalyticsScreen(
                 .padding(16.dp),
             action = {
                 TextButton(onClick = { exportMessage = null }) {
-                    Text("Dismiss")
+                    Text(stringResource(Res.string.action_dismiss))
                 }
             }
         ) {
@@ -697,13 +700,13 @@ fun AnalyticsScreen(
                             }
                         }
                     } else {
-                        Text("No result available.")
+                        Text(stringResource(Res.string.no_result_available))
                     }
                 }
             },
             confirmButton = {
                 TextButton(onClick = { showImportResultDialog = false }) {
-                    Text("OK")
+                    Text(stringResource(Res.string.action_ok))
                 }
             },
             containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,

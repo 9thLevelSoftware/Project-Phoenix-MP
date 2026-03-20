@@ -14,6 +14,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import org.jetbrains.compose.resources.stringResource
+import vitruvianprojectphoenix.shared.generated.resources.Res
+import vitruvianprojectphoenix.shared.generated.resources.*
 
 /**
  * Critical alert dialog shown when BLE connection is lost during an active workout.
@@ -64,7 +67,7 @@ fun ConnectionLostDialog(
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("Dismiss")
+                Text(stringResource(Res.string.action_dismiss))
             }
         }
     )

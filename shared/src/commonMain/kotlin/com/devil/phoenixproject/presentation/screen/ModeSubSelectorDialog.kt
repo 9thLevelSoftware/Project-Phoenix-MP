@@ -10,6 +10,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.domain.model.*
 import com.devil.phoenixproject.ui.theme.Spacing
+import org.jetbrains.compose.resources.stringResource
+import vitruvianprojectphoenix.shared.generated.resources.Res
+import vitruvianprojectphoenix.shared.generated.resources.*
 
 /**
  * Mode Sub-Selector Dialog for hierarchical workout modes (TUT and Echo)
@@ -26,7 +29,7 @@ fun ModeSubSelectorDialog(
         "TUT" -> {
             AlertDialog(
                 onDismissRequest = onDismiss,
-                title = { Text("Select TUT Variant", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold) },
+                title = { Text(stringResource(Res.string.select_tut_variant), style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold) },
                 containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
                 shape = RoundedCornerShape(28.dp),
                 text = {
@@ -37,19 +40,19 @@ fun ModeSubSelectorDialog(
                             onClick = { onSelect(WorkoutMode.TUT, null) },
                             modifier = Modifier.fillMaxWidth()
                         ) {
-                            Text("TUT")
+                            Text(stringResource(Res.string.mode_tut))
                         }
                         OutlinedButton(
                             onClick = { onSelect(WorkoutMode.TUTBeast, null) },
                             modifier = Modifier.fillMaxWidth()
                         ) {
-                            Text("TUT Beast")
+                            Text(stringResource(Res.string.mode_tut_beast))
                         }
                     }
                 },
                 confirmButton = {
                     TextButton(onClick = onDismiss) {
-                        Text("Cancel")
+                        Text(stringResource(Res.string.action_cancel))
                     }
                 }
             )
@@ -78,7 +81,7 @@ fun ModeSubSelectorDialog(
 
             AlertDialog(
                 onDismissRequest = onDismiss,
-                title = { Text("Echo Mode Configuration", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold) },
+                title = { Text(stringResource(Res.string.echo_mode_configuration), style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold) },
                 containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
                 shape = RoundedCornerShape(28.dp),
                 text = {
@@ -100,7 +103,7 @@ fun ModeSubSelectorDialog(
                                 value = selectedEchoLevel.displayName,
                                 onValueChange = {},
                                 readOnly = true,
-                                label = { Text("Echo Level") },
+                                label = { Text(stringResource(Res.string.echo_level)) },
                                 trailingIcon = {
                                     ExposedDropdownMenuDefaults.TrailingIcon(expanded = showEchoLevelMenu)
                                 },
@@ -133,7 +136,7 @@ fun ModeSubSelectorDialog(
                                 value = selectedEccentricLoad.displayName,
                                 onValueChange = {},
                                 readOnly = true,
-                                label = { Text("Eccentric Load") },
+                                label = { Text(stringResource(Res.string.eccentric_load)) },
                                 trailingIcon = {
                                     ExposedDropdownMenuDefaults.TrailingIcon(expanded = showEccentricMenu)
                                 },
@@ -171,12 +174,12 @@ fun ModeSubSelectorDialog(
                             onSelect(WorkoutMode.Echo(selectedEchoLevel), selectedEccentricLoad)
                         }
                     ) {
-                        Text("Select")
+                        Text(stringResource(Res.string.action_select))
                     }
                 },
                 dismissButton = {
                     TextButton(onClick = onDismiss) {
-                        Text("Cancel")
+                        Text(stringResource(Res.string.action_cancel))
                     }
                 }
             )

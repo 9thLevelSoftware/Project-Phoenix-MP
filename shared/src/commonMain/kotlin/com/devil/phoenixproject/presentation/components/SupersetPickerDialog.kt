@@ -28,6 +28,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.domain.model.Superset
 import com.devil.phoenixproject.ui.theme.SupersetTheme
+import org.jetbrains.compose.resources.stringResource
+import vitruvianprojectphoenix.shared.generated.resources.Res
+import vitruvianprojectphoenix.shared.generated.resources.*
 
 /**
  * Dialog for choosing which superset to add exercises to.
@@ -43,7 +46,7 @@ fun SupersetPickerDialog(
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Add to Superset") },
+        title = { Text(stringResource(Res.string.add_to_superset)) },
         text = {
             Column {
                 // Create New option (only when enough exercises are selected)
@@ -129,7 +132,7 @@ fun SupersetPickerDialog(
         confirmButton = {},
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("Cancel")
+                Text(stringResource(Res.string.action_cancel))
             }
         }
     )

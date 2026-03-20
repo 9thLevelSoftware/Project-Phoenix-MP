@@ -30,6 +30,9 @@ import com.devil.phoenixproject.ui.theme.Spacing
 import com.devil.phoenixproject.util.KmpUtils
 import com.devil.phoenixproject.ui.theme.ThemeMode
 import com.devil.phoenixproject.ui.theme.screenBackgroundBrush
+import org.jetbrains.compose.resources.stringResource
+import vitruvianprojectphoenix.shared.generated.resources.Res
+import vitruvianprojectphoenix.shared.generated.resources.*
 
 /**
  * Multi-step assessment wizard screen for guided VBT strength testing.
@@ -139,7 +142,7 @@ private fun ExerciseSelectionContent(
         OutlinedTextField(
             value = step.searchQuery,
             onValueChange = onSearchQueryChange,
-            placeholder = { Text("Search exercises...") },
+            placeholder = { Text(stringResource(Res.string.search_exercises)) },
             leadingIcon = { Icon(Icons.Default.Search, contentDescription = "Search") },
             modifier = Modifier.fillMaxWidth(),
             singleLine = true,
@@ -311,7 +314,7 @@ private fun InstructionContent(
             onClick = onBack,
             modifier = Modifier.fillMaxWidth()
         ) {
-            Text("Back")
+            Text(stringResource(Res.string.action_back))
         }
     }
 }
@@ -464,7 +467,7 @@ private fun ProgressiveLoadingContent(
             OutlinedTextField(
                 value = weightInput,
                 onValueChange = { weightInput = it },
-                label = { Text("Actual Weight Used (kg)") },
+                label = { Text(stringResource(Res.string.actual_weight_label)) },
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
@@ -476,7 +479,7 @@ private fun ProgressiveLoadingContent(
             OutlinedTextField(
                 value = velocityInput,
                 onValueChange = { velocityInput = it },
-                label = { Text("Mean Velocity (m/s)") },
+                label = { Text(stringResource(Res.string.mean_velocity_label)) },
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
@@ -515,7 +518,7 @@ private fun ProgressiveLoadingContent(
             onClick = onCancel,
             modifier = Modifier.fillMaxWidth()
         ) {
-            Text("Cancel Assessment")
+            Text(stringResource(Res.string.cancel_assessment))
         }
     }
 }
@@ -670,8 +673,8 @@ private fun ResultsContent(
         OutlinedTextField(
             value = overrideText,
             onValueChange = { overrideText = it },
-            label = { Text("Enter your own estimate (kg)") },
-            supportingText = { Text("Leave empty to use the calculated value") },
+            label = { Text(stringResource(Res.string.enter_estimate_label)) },
+            supportingText = { Text(stringResource(Res.string.leave_empty_hint)) },
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
             modifier = Modifier.fillMaxWidth(),
             singleLine = true,
@@ -705,7 +708,7 @@ private fun ResultsContent(
             onClick = onDiscard,
             modifier = Modifier.fillMaxWidth()
         ) {
-            Text("Discard")
+            Text(stringResource(Res.string.action_discard))
         }
     }
 }

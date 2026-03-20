@@ -22,6 +22,9 @@ import com.devil.phoenixproject.domain.model.ExerciseCategory
 import com.devil.phoenixproject.ui.theme.Spacing
 import com.devil.phoenixproject.ui.theme.ThemeMode
 import com.devil.phoenixproject.ui.theme.screenBackgroundBrush
+import org.jetbrains.compose.resources.stringResource
+import vitruvianprojectphoenix.shared.generated.resources.Res
+import vitruvianprojectphoenix.shared.generated.resources.*
 
 /**
  * Dialog for creating or editing custom exercises.
@@ -100,7 +103,7 @@ fun CreateExerciseDialog(
                     OutlinedTextField(
                         value = name,
                         onValueChange = { name = it; showError = false },
-                        label = { Text("Exercise Name *") },
+                        label = { Text(stringResource(Res.string.exercise_name_label)) },
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true,
                         isError = showError && name.isBlank(),
@@ -190,13 +193,13 @@ fun CreateExerciseDialog(
                         FilterChip(
                             selected = usesCables,
                             onClick = { usesCables = true },
-                            label = { Text("Cables") },
+                            label = { Text(stringResource(Res.string.label_cables)) },
                             modifier = Modifier.weight(1f)
                         )
                         FilterChip(
                             selected = !usesCables,
                             onClick = { usesCables = false },
-                            label = { Text("Bodyweight") },
+                            label = { Text(stringResource(Res.string.label_bodyweight)) },
                             modifier = Modifier.weight(1f)
                         )
                     }
@@ -221,7 +224,7 @@ fun CreateExerciseDialog(
                                     color = MaterialTheme.colorScheme.error
                                 )
                             ) {
-                                Text("Delete")
+                                Text(stringResource(Res.string.action_delete))
                             }
                         } else {
                             OutlinedButton(
@@ -231,7 +234,7 @@ fun CreateExerciseDialog(
                                     contentColor = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             ) {
-                                Text("Cancel")
+                                Text(stringResource(Res.string.action_cancel))
                             }
                         }
 
@@ -275,9 +278,9 @@ fun CreateExerciseDialog(
     if (showDeleteConfirmation) {
         AlertDialog(
             onDismissRequest = { showDeleteConfirmation = false },
-            title = { Text("Delete Exercise?") },
+            title = { Text(stringResource(Res.string.delete_exercise_title)) },
             text = {
-                Text("Are you sure you want to delete \"$name\"? This action cannot be undone.")
+                Text(stringResource(Res.string.delete_exercise_message, name))
             },
             confirmButton = {
                 Button(
@@ -289,12 +292,12 @@ fun CreateExerciseDialog(
                         containerColor = MaterialTheme.colorScheme.error
                     )
                 ) {
-                    Text("Delete")
+                    Text(stringResource(Res.string.action_delete))
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showDeleteConfirmation = false }) {
-                    Text("Cancel")
+                    Text(stringResource(Res.string.action_cancel))
                 }
             }
         )

@@ -27,6 +27,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
 import kotlinx.coroutines.withContext
 import org.koin.compose.koinInject
+import org.jetbrains.compose.resources.stringResource
+import vitruvianprojectphoenix.shared.generated.resources.Res
+import vitruvianprojectphoenix.shared.generated.resources.*
 
 /**
  * Smart Insights Tab - Elite-only training insights powered by SmartSuggestionsEngine.
@@ -165,7 +168,7 @@ private fun SmartInsightsContent(
 private fun WeeklyVolumeCard(report: WeeklyVolumeReport) {
     InsightCard(title = "This Week's Volume") {
         if (report.volumes.isEmpty()) {
-            PlaceholderText("No workouts this week")
+            PlaceholderText(stringResource(Res.string.no_workouts_this_week))
         } else {
             // Header row
             Row(
@@ -262,7 +265,7 @@ private fun BalanceAnalysisCard(analysis: BalanceAnalysis) {
         val total = analysis.pushVolume + analysis.pullVolume + analysis.legsVolume
 
         if (total <= 0f) {
-            PlaceholderText("Not enough data for balance analysis")
+            PlaceholderText(stringResource(Res.string.no_balance_data))
         } else {
             val pushPct = (analysis.pushVolume / total * 100).toInt()
             val pullPct = (analysis.pullVolume / total * 100).toInt()
@@ -354,7 +357,7 @@ private fun BalanceBar(label: String, percentage: Int, fraction: Float) {
 private fun NeglectedExercisesCard(neglected: List<NeglectedExercise>) {
     InsightCard(title = "Exercise Variety") {
         if (neglected.isEmpty()) {
-            PlaceholderText("Great variety! All exercises performed recently.")
+            PlaceholderText(stringResource(Res.string.great_variety))
         } else {
             neglected.take(5).forEach { exercise ->
                 val color = when {
@@ -399,7 +402,7 @@ private fun NeglectedExercisesCard(neglected: List<NeglectedExercise>) {
 private fun PlateauDetectionCard(plateaus: List<PlateauDetection>) {
     InsightCard(title = "Plateau Alert") {
         if (plateaus.isEmpty()) {
-            PlaceholderText("No plateaus detected. Keep progressing!")
+            PlaceholderText(stringResource(Res.string.no_plateaus))
         } else {
             plateaus.forEach { plateau ->
                 Row(

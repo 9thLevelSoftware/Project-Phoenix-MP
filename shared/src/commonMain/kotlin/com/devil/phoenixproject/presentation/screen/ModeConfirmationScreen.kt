@@ -18,6 +18,9 @@ import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.TemplateExercise
 import com.devil.phoenixproject.presentation.components.ExerciseConfigModal
 import com.devil.phoenixproject.ui.theme.Spacing
+import org.jetbrains.compose.resources.stringResource
+import vitruvianprojectphoenix.shared.generated.resources.Res
+import vitruvianprojectphoenix.shared.generated.resources.*
 
 /**
  * Mode Confirmation Screen
@@ -207,7 +210,7 @@ fun ModeConfirmationScreen(
                         contentColor = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 ) {
-                    Text("Cancel")
+                    Text(stringResource(Res.string.action_cancel))
                 }
 
                 Button(

@@ -20,6 +20,9 @@ import androidx.navigation.NavController
 import com.devil.phoenixproject.domain.model.RoutineFlowState
 import com.devil.phoenixproject.presentation.navigation.NavigationRoutes
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
+import org.jetbrains.compose.resources.stringResource
+import vitruvianprojectphoenix.shared.generated.resources.Res
+import vitruvianprojectphoenix.shared.generated.resources.*
 
 /**
  * Routine Complete Screen - Celebration after finishing entire routine.
@@ -161,7 +164,7 @@ fun RoutineCompleteScreen(
                     .height(56.dp),
                 shape = RoundedCornerShape(16.dp)
             ) {
-                Text("DONE", fontWeight = FontWeight.Bold)
+                Text(stringResource(Res.string.label_done), fontWeight = FontWeight.Bold)
             }
         }
     }

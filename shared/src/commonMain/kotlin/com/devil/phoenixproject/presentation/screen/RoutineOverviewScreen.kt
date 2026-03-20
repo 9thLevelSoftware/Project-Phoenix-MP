@@ -30,6 +30,9 @@ import com.devil.phoenixproject.presentation.components.VideoPlayer
 import com.devil.phoenixproject.presentation.navigation.NavigationRoutes
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
 import com.devil.phoenixproject.ui.theme.Spacing
+import org.jetbrains.compose.resources.stringResource
+import vitruvianprojectphoenix.shared.generated.resources.Res
+import vitruvianprojectphoenix.shared.generated.resources.*
 
 /**
  * Routine Overview Screen - Entry point when starting a routine.
@@ -93,7 +96,7 @@ fun RoutineOverviewScreen(
                 containerColor = MaterialTheme.colorScheme.errorContainer,
                 contentColor = MaterialTheme.colorScheme.onErrorContainer,
                 icon = { Icon(Icons.Default.Close, "Stop") },
-                text = { Text("Stop") }
+                text = { Text(stringResource(Res.string.action_stop)) }
             )
         }
     ) { padding ->
@@ -217,8 +220,8 @@ fun RoutineOverviewScreen(
     if (showStopConfirmation) {
         AlertDialog(
             onDismissRequest = { showStopConfirmation = false },
-            title = { Text("Exit Routine?") },
-            text = { Text("Progress will be saved.") },
+            title = { Text(stringResource(Res.string.exit_routine_title)) },
+            text = { Text(stringResource(Res.string.exit_routine_message)) },
             confirmButton = {
                 Button(
                     onClick = {
@@ -227,12 +230,12 @@ fun RoutineOverviewScreen(
                         navController.navigateUp()
                     }
                 ) {
-                    Text("Exit")
+                    Text(stringResource(Res.string.action_exit))
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showStopConfirmation = false }) {
-                    Text("Cancel")
+                    Text(stringResource(Res.string.action_cancel))
                 }
             }
         )
@@ -388,7 +391,7 @@ private fun ExerciseOverviewCard(
                                     horizontalArrangement = Arrangement.SpaceBetween,
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Text("Target Reps", style = MaterialTheme.typography.bodyLarge)
+                                    Text(stringResource(Res.string.target_reps), style = MaterialTheme.typography.bodyLarge)
                                     Text(
                                         "AMRAP",
                                         style = MaterialTheme.typography.titleMedium,
@@ -417,7 +420,7 @@ private fun ExerciseOverviewCard(
                                     horizontalArrangement = Arrangement.SpaceBetween,
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Text("Target Reps", style = MaterialTheme.typography.bodyLarge)
+                                    Text(stringResource(Res.string.target_reps), style = MaterialTheme.typography.bodyLarge)
                                     Text(
                                         "AMRAP",
                                         style = MaterialTheme.typography.titleMedium,
@@ -453,7 +456,7 @@ private fun ExerciseOverviewCard(
                 ) {
                     Icon(Icons.Default.PlayArrow, null)
                     Spacer(Modifier.width(8.dp))
-                    Text("START EXERCISE", fontWeight = FontWeight.Bold)
+                    Text(stringResource(Res.string.start_exercise), fontWeight = FontWeight.Bold)
                 }
             }
 

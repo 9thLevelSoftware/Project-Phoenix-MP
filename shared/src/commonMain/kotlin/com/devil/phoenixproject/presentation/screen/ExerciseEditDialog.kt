@@ -18,6 +18,9 @@ import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.data.repository.PersonalRecordRepository
 import com.devil.phoenixproject.domain.model.*
 import com.devil.phoenixproject.presentation.viewmodel.ExerciseConfigViewModel
+import org.jetbrains.compose.resources.stringResource
+import vitruvianprojectphoenix.shared.generated.resources.Res
+import vitruvianprojectphoenix.shared.generated.resources.*
 
 /**
  * Bottom sheet for editing exercise configuration in a routine.
@@ -87,7 +90,7 @@ fun ExerciseEditBottomSheet(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text("Sets:", modifier = Modifier.weight(0.3f))
+                Text(stringResource(Res.string.label_sets), modifier = Modifier.weight(0.3f))
                 Row(
                     modifier = Modifier.weight(0.7f),
                     verticalAlignment = Alignment.CenterVertically,
@@ -148,7 +151,7 @@ fun ExerciseEditBottomSheet(
                                     this[index] = newReps
                                 }
                             },
-                            label = { Text("Reps") },
+                            label = { Text(stringResource(Res.string.label_reps)) },
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                             modifier = Modifier.weight(0.7f),
                             singleLine = true
@@ -186,8 +189,8 @@ fun ExerciseEditBottomSheet(
                     newValue.toFloatOrNull()?.let { weightPerCable = it }
                 },
                 label = {
-                    val unitLabel = if (weightUnit == WeightUnit.KG) "kg" else "lbs"
-                    Text("Weight per cable ($unitLabel)")
+                    val unitLabel = if (weightUnit == WeightUnit.KG) stringResource(Res.string.label_kg) else stringResource(Res.string.label_lbs)
+                    Text(stringResource(Res.string.weight_per_cable, unitLabel))
                 },
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                 modifier = Modifier.fillMaxWidth(),
@@ -211,7 +214,7 @@ fun ExerciseEditBottomSheet(
                     onValueChange = { newValue ->
                         newValue.toIntOrNull()?.let { restSeconds = it.coerceIn(0, 300) }
                     },
-                    label = { Text("Seconds") },
+                    label = { Text(stringResource(Res.string.label_seconds)) },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     modifier = Modifier.weight(0.35f),
                     singleLine = true
@@ -228,7 +231,7 @@ fun ExerciseEditBottomSheet(
                         FilterChip(
                             selected = restSeconds == seconds,
                             onClick = { restSeconds = seconds },
-                            label = { Text("${seconds}s") }
+                            label = { Text(stringResource(Res.string.seconds_label, seconds)) }
                         )
                     }
                 }
@@ -313,7 +316,7 @@ fun ExerciseEditBottomSheet(
                     onClick = onDismiss,
                     modifier = Modifier.weight(1f)
                 ) {
-                    Text("Cancel")
+                    Text(stringResource(Res.string.action_cancel))
                 }
 
                 Button(

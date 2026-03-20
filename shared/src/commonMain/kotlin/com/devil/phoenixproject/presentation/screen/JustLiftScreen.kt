@@ -59,6 +59,9 @@ import com.devil.phoenixproject.ui.theme.Spacing
 import kotlinx.coroutines.launch
 import org.koin.compose.koinInject
 import com.devil.phoenixproject.ui.theme.ThemeMode
+import org.jetbrains.compose.resources.stringResource
+import vitruvianprojectphoenix.shared.generated.resources.Res
+import vitruvianprojectphoenix.shared.generated.resources.*
 
 /**
  * Just Lift screen - quick workout configuration.
@@ -704,7 +707,7 @@ fun ActiveStatusCard(
                             .background(Color.Green.copy(alpha = alpha), CircleShape)
                     )
                     Spacer(Modifier.width(4.dp))
-                    Text("LIVE", style = MaterialTheme.typography.labelSmall, color = Color.Green, fontWeight = FontWeight.Bold)
+                    Text(stringResource(Res.string.label_live), style = MaterialTheme.typography.labelSmall, color = Color.Green, fontWeight = FontWeight.Bold)
                 }
             }
 

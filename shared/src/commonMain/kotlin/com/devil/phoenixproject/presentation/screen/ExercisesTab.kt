@@ -20,6 +20,9 @@ import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.ui.theme.Spacing
 import com.devil.phoenixproject.util.KmpUtils
+import org.jetbrains.compose.resources.stringResource
+import vitruvianprojectphoenix.shared.generated.resources.Res
+import vitruvianprojectphoenix.shared.generated.resources.*
 
 /**
  * Summary of an exercise's performance history.
@@ -95,7 +98,7 @@ fun ExercisesTab(
                 value = searchQuery,
                 onValueChange = { searchQuery = it },
                 modifier = Modifier.fillMaxWidth(),
-                placeholder = { Text("Search exercises...") },
+                placeholder = { Text(stringResource(Res.string.search_exercises)) },
                 leadingIcon = {
                     Icon(Icons.Default.Search, contentDescription = null)
                 },

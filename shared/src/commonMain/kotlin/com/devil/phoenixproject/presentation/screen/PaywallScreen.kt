@@ -31,6 +31,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.domain.subscription.SubscriptionManager
+import org.jetbrains.compose.resources.stringResource
+import vitruvianprojectphoenix.shared.generated.resources.Res
+import vitruvianprojectphoenix.shared.generated.resources.*
 
 /**
  * Paywall screen for premium subscriptions.
@@ -56,7 +59,7 @@ fun PaywallScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Phoenix Pro") },
+                title = { Text(stringResource(Res.string.phoenix_pro)) },
                 navigationIcon = {
                     IconButton(onClick = onBackClick) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
@@ -130,7 +133,7 @@ fun PaywallScreen(
                     .fillMaxWidth()
                     .padding(horizontal = 24.dp)
             ) {
-                Text("Go Back")
+                Text(stringResource(Res.string.action_go_back))
             }
 
             Spacer(modifier = Modifier.height(24.dp))

@@ -32,6 +32,9 @@ import com.devil.phoenixproject.presentation.util.WindowWidthSizeClass
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
+import org.jetbrains.compose.resources.stringResource
+import vitruvianprojectphoenix.shared.generated.resources.Res
+import vitruvianprojectphoenix.shared.generated.resources.*
 private val HANDLE_WIDTH = 24.dp
 private val HANDLE_HEIGHT = 48.dp
 private val EDGE_SWIPE_THRESHOLD = 20.dp
@@ -177,7 +180,7 @@ fun ProfileSidePanel(
                                     onDismissRequest = { showContextMenu = null }
                                 ) {
                                     DropdownMenuItem(
-                                        text = { Text("Edit") },
+                                        text = { Text(stringResource(Res.string.action_edit)) },
                                         onClick = {
                                             showEditDialog = profile
                                             showContextMenu = null
@@ -189,7 +192,7 @@ fun ProfileSidePanel(
                                     // Don't show delete for default profile
                                     if (profile.id != "default") {
                                         DropdownMenuItem(
-                                            text = { Text("Delete") },
+                                            text = { Text(stringResource(Res.string.action_delete)) },
                                             onClick = {
                                                 showDeleteDialog = profile
                                                 showContextMenu = null

@@ -19,6 +19,9 @@ import com.devil.phoenixproject.domain.model.CycleProgress
 import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.domain.model.TrainingCycle
 import org.koin.compose.koinInject
+import org.jetbrains.compose.resources.stringResource
+import vitruvianprojectphoenix.shared.generated.resources.Res
+import vitruvianprojectphoenix.shared.generated.resources.*
 
 /**
  * "Up Next" dashboard widget that shows the current day in the active training cycle.
@@ -114,7 +117,7 @@ private fun NoActiveCycleWidget(
             ) {
                 Icon(Icons.Default.Add, contentDescription = null)
                 Spacer(Modifier.width(8.dp))
-                Text("Create Training Cycle")
+                Text(stringResource(Res.string.create_training_cycle))
             }
         }
     }
@@ -343,7 +346,7 @@ private fun ActiveCycleWidget(
                             ) {
                                 Icon(Icons.Default.PlayArrow, contentDescription = null)
                                 Spacer(Modifier.width(8.dp))
-                                Text("Start Workout")
+                                Text(stringResource(Res.string.start_workout))
                             }
                         } else if (currentCycleDay?.isRestDay == true) {
                             OutlinedButton(
@@ -351,7 +354,7 @@ private fun ActiveCycleWidget(
                                 modifier = Modifier.fillMaxWidth(),
                                 shape = RoundedCornerShape(12.dp)
                             ) {
-                                Text("View Cycle Details")
+                                Text(stringResource(Res.string.view_cycle_details))
                             }
                         } else {
                             OutlinedButton(
@@ -361,7 +364,7 @@ private fun ActiveCycleWidget(
                             ) {
                                 Icon(Icons.Default.Warning, contentDescription = null)
                                 Spacer(Modifier.width(8.dp))
-                                Text("No routine assigned")
+                                Text(stringResource(Res.string.no_routine_assigned))
                             }
                         }
                     }

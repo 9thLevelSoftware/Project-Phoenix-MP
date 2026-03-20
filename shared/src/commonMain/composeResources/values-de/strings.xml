@@ -1,0 +1,298 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- German (Deutsch) — Beta AI-generated translation -->
+<!-- Fitness terminology context:
+     "set" = Satz (eine Gruppe von Wiederholungen)
+     "rep" = Wiederholung (eine einzelne Bewegung)
+     "1RM" = 1RM (one-rep max, universell)
+     "AMRAP" = AMRAP (as many reps as possible, universell)
+     "TUT" = TUT (time under tension, universell)
+     "PR" = PR (persönlicher Rekord)
+     Technical terms like "Echo", "TUT", "AMRAP", "1RM" stay in English.
+-->
+<resources>
+    <string name="app_name">Phoenix</string>
+
+    <!-- Common actions -->
+    <string name="action_cancel">Abbrechen</string>
+    <string name="action_ok">OK</string>
+    <string name="action_save">Speichern</string>
+    <string name="action_delete">Löschen</string>
+    <string name="action_edit">Bearbeiten</string>
+    <string name="action_copy">Kopieren</string>
+    <string name="action_close">Schließen</string>
+    <string name="action_dismiss">Schließen</string>
+    <string name="action_apply">Anwenden</string>
+    <string name="action_confirm">Bestätigen</string>
+    <string name="action_select">Auswählen</string>
+    <string name="action_retry">Erneut versuchen</string>
+    <string name="action_back">Zurück</string>
+    <string name="action_exit">Beenden</string>
+    <string name="action_skip">Überspringen</string>
+    <string name="action_stop">Stopp</string>
+    <string name="action_start">Start</string>
+    <string name="action_share">Teilen</string>
+    <string name="action_add">Hinzufügen</string>
+    <string name="action_clear">Löschen</string>
+    <string name="action_preview">Vorschau</string>
+    <string name="action_login">Anmelden</string>
+    <string name="action_sign_up">Registrieren</string>
+    <string name="action_continue">Fortfahren</string>
+    <string name="action_discard">Verwerfen</string>
+    <string name="action_modify">Ändern</string>
+    <string name="action_accept">Akzeptieren</string>
+    <string name="action_rename">Umbenennen</string>
+    <string name="action_select_different">Andere auswählen</string>
+    <string name="action_go_back">Zurück</string>
+
+    <!-- Common labels -->
+    <string name="label_loading">Laden…</string>
+    <string name="label_please_wait">Bitte warten…</string>
+    <string name="label_name">Name</string>
+    <string name="label_email">E-Mail</string>
+    <string name="label_password">Passwort</string>
+    <string name="label_confirm_password">Passwort bestätigen</string>
+    <string name="label_display_name">Anzeigename</string>
+    <string name="label_error">Fehler</string>
+    <string name="label_premium">Premium</string>
+    <string name="label_favorites">Favoriten</string>
+    <string name="label_custom">Benutzerdefiniert</string>
+    <string name="label_all">Alle</string>
+    <string name="label_done">FERTIG</string>
+    <string name="label_reps">Wiederholungen</string>
+    <string name="label_duration">Dauer</string>
+    <string name="label_seconds">Sekunden</string>
+    <string name="label_kg">kg</string>
+    <string name="label_lbs">lbs</string>
+    <string name="label_per_cable">Pro Kabel</string>
+    <string name="label_sets">Sätze:</string>
+    <string name="label_set">Einstellen</string>
+    <string name="label_live">LIVE</string>
+    <string name="label_charts">Diagramme</string>
+    <string name="label_table">Tabelle</string>
+    <string name="label_description_optional">Beschreibung (optional)</string>
+
+    <!-- Workout controls -->
+    <string name="start_workout">Training starten</string>
+    <string name="stop_workout">Training stoppen</string>
+    <string name="start_exercise">ÜBUNG STARTEN</string>
+    <string name="stop_set">Satz stoppen</string>
+    <string name="end_workout">Training beenden</string>
+    <string name="skip_exercise">Übung überspringen</string>
+    <string name="just_lift">Einfach heben</string>
+    <string name="finish_at_top">Oben beenden</string>
+    <string name="amrap_mode">AMRAP-Modus</string>
+    <string name="target_reps">Ziel-Wiederholungen</string>
+    <string name="stop_label">STOPP</string>
+    <string name="waiting_for_data">Warte auf Daten…</string>
+    <string name="reconnect">Erneut verbinden</string>
+
+    <string name="stop_current_set_title">Aktuellen Satz stoppen?</string>
+    <string name="stop_current_set_message">Stoppe diesen Satz, überspringe diese Übung oder beende das gesamte Training.</string>
+    <string name="exit_workout_title">Training verlassen?</string>
+    <string name="exit_workout_message">Das Training läuft. Bist du sicher, dass du beenden möchtest?</string>
+    <string name="exit_routine_title">Routine verlassen?</string>
+    <string name="exit_routine_message">Fortschritt wird gespeichert.</string>
+
+    <!-- Connection -->
+    <string name="not_connected">Nicht verbunden</string>
+    <string name="scan">Scannen</string>
+    <string name="scanning_for_devices">Suche nach Geräten…</string>
+    <string name="connecting">Verbinde…</string>
+    <string name="connection_failed">Verbindung fehlgeschlagen</string>
+    <string name="disconnect">Trennen</string>
+    <string name="disconnect_title">Trennen?</string>
+    <string name="disconnect_message">Bist du sicher, dass du die Verbindung zum Vitruvian-Gerät trennen möchtest?</string>
+
+    <!-- Settings -->
+    <string name="settings_title">Einstellungen</string>
+    <string name="settings_cloud_sync">Cloud-Sync</string>
+    <string name="settings_weight_unit">Gewichtseinheit</string>
+    <string name="settings_appearance">Erscheinungsbild</string>
+    <string name="settings_dark_mode">Dunkler Modus</string>
+    <string name="settings_dark_mode_description">Dunkles Thema für die App verwenden</string>
+    <string name="settings_link_portal">Portal-Konto verknüpfen</string>
+    <string name="settings_sync_description">Synchronisiere deine Trainings mit dem Phoenix Portal für geräteübergreifenden Zugriff</string>
+    <string name="settings_version">Version: %1$s</string>
+    <string name="settings_language">Sprache</string>
+    <string name="settings_language_description">Wähle deine bevorzugte Sprache</string>
+    <string name="settings_language_help">Hilf, Übersetzungen zu verbessern</string>
+
+    <string name="language_english">English</string>
+    <string name="language_dutch">Nederlands (Beta)</string>
+    <string name="language_german">Deutsch (Beta)</string>
+    <string name="language_spanish">Español (Beta)</string>
+    <string name="language_french">Français (Beta)</string>
+
+    <!-- Backup -->
+    <string name="backup_all_data">Alle Daten sichern</string>
+    <string name="backup_description">Dies exportiert deine gesamte Trainingshistorie, Routinen, Trainingszyklen, Erfolge und Einstellungen als JSON-Datei.\n\nDu kannst diese Datei verwenden, um deine Daten später wiederherzustellen oder auf ein anderes Gerät zu übertragen.</string>
+    <string name="restore_from_backup">Aus Backup wiederherstellen</string>
+    <string name="restore_description">Wähle eine Backup-Datei, um deine Daten wiederherzustellen.\n\nVorhandene Daten werden NICHT überschrieben — nur neue Einträge werden importiert.</string>
+    <string name="select_file">Datei auswählen</string>
+    <string name="backup_success">Backup erfolgreich gespeichert unter:\n%1$s</string>
+    <string name="import_completed">Import abgeschlossen!</string>
+    <string name="import_records_imported">Einträge importiert: %1$d</string>
+    <string name="import_records_skipped">Einträge übersprungen (Duplikate): %1$d</string>
+
+    <!-- Account -->
+    <string name="account_title">Konto</string>
+    <string name="sign_in_create_account">Anmelden / Konto erstellen</string>
+    <string name="upgrade_to_pro">Auf Pro upgraden</string>
+    <string name="auth_google">Google</string>
+    <string name="auth_apple">Apple</string>
+
+    <!-- Sync -->
+    <string name="phoenix_portal">Phoenix Portal</string>
+    <string name="syncing">Synchronisiere…</string>
+    <string name="last_synced">Zuletzt synchronisiert: %1$s</string>
+    <string name="never_synced">Nie synchronisiert</string>
+    <string name="unlink_account">Konto trennen</string>
+    <string name="sync_now">Jetzt synchronisieren</string>
+    <string name="phoenix_pro">Phoenix Pro</string>
+
+    <!-- Training Cycles -->
+    <string name="create_cycle">Zyklus erstellen</string>
+    <string name="edit_cycle">Zyklus bearbeiten</string>
+    <string name="delete_cycle_title">Zyklus löschen?</string>
+    <string name="delete_cycle_message">Bist du sicher, dass du \"%1$s\" löschen möchtest? Dies kann nicht rückgängig gemacht werden.</string>
+    <string name="exercises_not_found">Übungen nicht gefunden</string>
+    <string name="skip_rest_day">Ruhetag überspringen</string>
+    <string name="jump_to_day">Springe zu Tag %1$d</string>
+    <string name="assign_routine">Routine zuweisen</string>
+    <string name="cycle_name">Zyklusname</string>
+    <string name="add_workout">+ Training hinzufügen</string>
+    <string name="add_rest">+ Ruhetag hinzufügen</string>
+
+    <!-- Routines -->
+    <string name="routine_name">Routinenname</string>
+    <string name="create_new_routine">Neue Routine erstellen</string>
+    <string name="add_exercise">Übung hinzufügen</string>
+    <string name="delete_routine">Routine löschen</string>
+    <string name="delete_routine_message">Bist du sicher, dass du \'%1$s\' löschen möchtest?</string>
+    <string name="delete_selected_routines">%1$d Routinen löschen?</string>
+    <string name="duplicate_selected_routines">%1$d Routinen duplizieren?</string>
+    <string name="duplicate_routines_message">Neue Kopien werden mit \'(Kopie)\' Suffix erstellt.</string>
+    <string name="cannot_be_undone">Dies kann nicht rückgängig gemacht werden.</string>
+    <string name="delete_all">Alle löschen</string>
+
+    <!-- Supersets -->
+    <string name="add_to_superset">Zum Supersatz hinzufügen</string>
+    <string name="rename_superset">Supersatz umbenennen</string>
+    <string name="choose_color">Farbe wählen</string>
+    <string name="change_color">Farbe ändern</string>
+    <string name="copy_superset">Supersatz kopieren</string>
+    <string name="delete_superset">Supersatz löschen</string>
+    <string name="delete_superset_title">Supersatz löschen?</string>
+    <string name="delete_selected_exercises">%1$d Übungen löschen?</string>
+
+    <!-- Exercise Picker -->
+    <string name="select_exercise">Übung auswählen</string>
+    <string name="search_exercises">Übungen suchen…</string>
+    <string name="search_exercises_short">Übungen suchen</string>
+    <string name="create_exercise">Übung erstellen</string>
+    <string name="clear_filters">Filter löschen</string>
+
+    <string name="exercise_name_label">Übungsname *</string>
+    <string name="label_cables">Kabel</string>
+    <string name="label_bodyweight">Körpergewicht</string>
+    <string name="delete_exercise_title">Übung löschen?</string>
+    <string name="delete_exercise_message">Bist du sicher, dass du \"%1$s\" löschen möchtest? Diese Aktion kann nicht rückgängig gemacht werden.</string>
+
+    <string name="exercise_edit_sets">Sätze:</string>
+    <string name="weight_per_cable">Gewicht pro Kabel (%1$s)</string>
+    <string name="seconds_label">%1$ds</string>
+
+    <!-- Workout Modes -->
+    <string name="mode_old_school">Old School</string>
+    <string name="mode_pump">Pump</string>
+    <string name="mode_tut">TUT</string>
+    <string name="mode_tut_beast">TUT Beast</string>
+    <string name="mode_eccentric_only">Eccentric Only</string>
+    <string name="mode_echo">Echo</string>
+    <string name="echo_mode">Echo-Modus</string>
+    <string name="echo_mode_configuration">Echo-Modus Konfiguration</string>
+    <string name="echo_level">Echo-Stufe</string>
+    <string name="eccentric_load">Exzentrische Last</string>
+    <string name="select_tut_variant">TUT-Variante wählen</string>
+    <string name="search_exercises_placeholder">Übungen suchen</string>
+
+    <!-- Profiles -->
+    <string name="add_profile">Profil hinzufügen</string>
+    <string name="edit_profile">Profil bearbeiten</string>
+    <string name="delete_profile">Profil löschen</string>
+    <string name="delete_profile_message">Bist du sicher, dass du \"%1$s\" löschen möchtest? Dies kann nicht rückgängig gemacht werden.</string>
+
+    <string name="adjust_weight">Gewicht anpassen</string>
+    <string name="use_this_weight">Dieses Gewicht verwenden</string>
+
+    <string name="resume_workout_title">Training fortsetzen?</string>
+    <string name="resume_workout_saved">Du hast gespeicherten Fortschritt:</string>
+    <string name="restart_from_set_1">Neustart ab Satz 1</string>
+    <string name="rest_between_exercises">Pause zwischen Übungen</string>
+    <string name="set_weight">Gewicht einstellen</string>
+
+    <!-- Connection Logs -->
+    <string name="search_logs">Logs durchsuchen…</string>
+    <string name="auto_scroll">Auto-Scroll</string>
+    <string name="export_logs">Logs exportieren</string>
+    <string name="logs_ready_to_export">%1$d Log-Einträge bereit zum Export.</string>
+    <string name="copy_to_clipboard">In Zwischenablage kopieren</string>
+    <string name="clear_logs_title">Logs löschen?</string>
+    <string name="clear_logs_message">Dies löscht dauerhaft alle %1$d Log-Einträge.</string>
+    <string name="clear_all">Alle löschen</string>
+    <string name="log_level_count">%1$s (%2$d)</string>
+
+    <!-- Analytics -->
+    <string name="export_import_data">Exportieren / Importieren</string>
+    <string name="choose_export">Was möchtest du exportieren:</string>
+    <string name="personal_records_count">Persönliche Rekorde (%1$d)</string>
+    <string name="workout_history_count">Trainingshistorie (%1$d)</string>
+    <string name="pr_progression">PR-Verlauf</string>
+    <string name="import_label">Importieren:</string>
+    <string name="import_workout_csv">Trainingshistorie importieren (CSV)</string>
+    <string name="no_result_available">Kein Ergebnis verfügbar.</string>
+
+    <!-- Assessment -->
+    <string name="actual_weight_label">Tatsächlich verwendetes Gewicht (kg)</string>
+    <string name="mean_velocity_label">Durchschnittsgeschwindigkeit (m/s)</string>
+    <string name="cancel_assessment">Bewertung abbrechen</string>
+    <string name="enter_estimate_label">Eigene Schätzung eingeben (kg)</string>
+    <string name="leave_empty_hint">Leer lassen, um den berechneten Wert zu verwenden</string>
+    <string name="enter_valid_number">Bitte gib eine gültige Zahl ein</string>
+
+    <!-- Smart Insights -->
+    <string name="no_workouts_this_week">Keine Trainings diese Woche</string>
+    <string name="no_balance_data">Nicht genug Daten für Balanceanalyse</string>
+    <string name="great_variety">Tolle Abwechslung! Alle Übungen kürzlich ausgeführt.</string>
+    <string name="no_plateaus">Keine Plateaus erkannt. Weiter so!</string>
+
+    <string name="form_check">Formkontrolle</string>
+    <string name="form_check_ios_soon">Formkontrolle kommt bald für iOS. Bleib dran!</string>
+    <string name="workout_in_progress">Training läuft</string>
+    <string name="stop_before_editing">Bitte stoppe das aktuelle Training, bevor du Routinen bearbeitest.</string>
+
+    <string name="create_training_cycle">Trainingszyklus erstellen</string>
+    <string name="view_cycle_details">Zyklusdetails anzeigen</string>
+    <string name="no_routine_assigned">Keine Routine zugewiesen</string>
+
+    <string name="starting_weight">Startgewicht</string>
+    <string name="eccentric_overload">Exzentrische Überlast</string>
+
+    <string name="chart_load_a">Last A</string>
+    <string name="chart_load_b">Last B</string>
+    <string name="chart_pos_a">Pos A</string>
+    <string name="chart_pos_b">Pos B</string>
+
+    <string name="nav_analytics">Analyse</string>
+    <string name="nav_workouts">Trainings</string>
+    <string name="nav_settings">Einstellungen</string>
+
+    <string name="workout_count_label">Trainings</string>
+    <string name="delete_confirm_count">%1$d</string>
+    <string name="orm_placeholder">z.B. 100</string>
+    <string name="percent_label">%1$d%%</string>
+    <string name="nav_previous">◄</string>
+    <string name="nav_next">►</string>
+    <string name="ghost_you">DU</string>
+    <string name="ghost_best">BEST</string>
+</resources>

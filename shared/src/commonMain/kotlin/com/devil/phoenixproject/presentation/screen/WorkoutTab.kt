@@ -42,6 +42,9 @@ import com.devil.phoenixproject.presentation.util.LocalWindowSizeClass
 import com.devil.phoenixproject.presentation.util.WindowWidthSizeClass
 import kotlinx.coroutines.flow.SharedFlow
 import com.devil.phoenixproject.ui.theme.screenBackgroundBrush
+import org.jetbrains.compose.resources.stringResource
+import vitruvianprojectphoenix.shared.generated.resources.Res
+import vitruvianprojectphoenix.shared.generated.resources.*
 
 /**
  * WorkoutTab with State Holder Pattern (2025 Material Expressive).
@@ -782,7 +785,7 @@ private fun WorkoutPausedCard(
                     modifier = Modifier.size(20.dp)
                 )
                 Spacer(modifier = Modifier.width(Spacing.small))
-                Text("Reconnect", fontWeight = FontWeight.Bold)
+                Text(stringResource(Res.string.reconnect), fontWeight = FontWeight.Bold)
             }
         }
     }
@@ -947,7 +950,7 @@ private fun ActiveWorkoutCard(
             ) {
                 Icon(Icons.Default.Close, contentDescription = "Stop workout")
                 Spacer(modifier = Modifier.width(Spacing.small))
-                Text("Stop Workout")
+                Text(stringResource(Res.string.stop_workout))
             }
         }
     }
@@ -971,9 +974,9 @@ fun ConnectionCard(
         AlertDialog(
             onDismissRequest = { showDisconnectDialog = false },
             icon = { Icon(Icons.Default.BluetoothDisabled, contentDescription = null) },
-            title = { Text("Disconnect?") },
+            title = { Text(stringResource(Res.string.disconnect_title)) },
             text = {
-                Text("Are you sure you want to disconnect from the Vitruvian machine?")
+                Text(stringResource(Res.string.disconnect_message))
             },
             confirmButton = {
                 TextButton(
@@ -982,12 +985,12 @@ fun ConnectionCard(
                         onDisconnect()
                     }
                 ) {
-                    Text("Disconnect", color = MaterialTheme.colorScheme.error)
+                    Text(stringResource(Res.string.disconnect), color = MaterialTheme.colorScheme.error)
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showDisconnectDialog = false }) {
-                    Text("Cancel")
+                    Text(stringResource(Res.string.action_cancel))
                 }
             }
         )
@@ -1020,11 +1023,11 @@ fun ConnectionCard(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text("Not connected", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(stringResource(Res.string.not_connected), color = MaterialTheme.colorScheme.onSurfaceVariant)
                         Button(onClick = onScan) {
                             Icon(Icons.Default.Search, contentDescription = "Scan for devices")
                             Spacer(modifier = Modifier.width(Spacing.small))
-                            Text("Scan")
+                            Text(stringResource(Res.string.scan))
                         }
                     }
                 }
@@ -1037,10 +1040,10 @@ fun ConnectionCard(
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             CircularProgressIndicator(modifier = Modifier.size(24.dp))
                             Spacer(modifier = Modifier.width(Spacing.small))
-                            Text("Scanning for devices...")
+                            Text(stringResource(Res.string.scanning_for_devices))
                         }
                         TextButton(onClick = onCancelScan) {
-                            Text("Cancel")
+                            Text(stringResource(Res.string.action_cancel))
                         }
                     }
                 }
@@ -1053,10 +1056,10 @@ fun ConnectionCard(
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             CircularProgressIndicator(modifier = Modifier.size(24.dp))
                             Spacer(modifier = Modifier.width(Spacing.small))
-                            Text("Connecting...")
+                            Text(stringResource(Res.string.connecting))
                         }
                         TextButton(onClick = onCancelScan) {
-                            Text("Cancel")
+                            Text(stringResource(Res.string.action_cancel))
                         }
                     }
                 }
@@ -1242,7 +1245,7 @@ fun LiveMetricsCard(
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.primary
             )
-            Text("Per Cable", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(stringResource(Res.string.label_per_cable), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
 
             Spacer(modifier = Modifier.height(Spacing.medium))
 

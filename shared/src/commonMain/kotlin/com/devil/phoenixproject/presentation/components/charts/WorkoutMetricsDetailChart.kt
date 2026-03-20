@@ -27,6 +27,9 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.domain.model.WorkoutMetric
 import com.devil.phoenixproject.ui.theme.DataColors
+import org.jetbrains.compose.resources.stringResource
+import vitruvianprojectphoenix.shared.generated.resources.Res
+import vitruvianprojectphoenix.shared.generated.resources.*
 
 /**
  * Material 3 Expressive Workout Metrics Detail Chart
@@ -96,7 +99,7 @@ fun WorkoutMetricsDetailChart(
             FilterChip(
                 selected = showLoadA,
                 onClick = { showLoadA = !showLoadA },
-                label = { Text("Load A") },
+                label = { Text(stringResource(Res.string.chart_load_a)) },
                 leadingIcon = {
                     Canvas(modifier = Modifier.size(8.dp)) {
                         drawCircle(color = loadAColor)
@@ -106,7 +109,7 @@ fun WorkoutMetricsDetailChart(
             FilterChip(
                 selected = showLoadB,
                 onClick = { showLoadB = !showLoadB },
-                label = { Text("Load B") },
+                label = { Text(stringResource(Res.string.chart_load_b)) },
                 leadingIcon = {
                     Canvas(modifier = Modifier.size(8.dp)) {
                         drawCircle(color = loadBColor)
@@ -116,7 +119,7 @@ fun WorkoutMetricsDetailChart(
             FilterChip(
                 selected = showPosA,
                 onClick = { showPosA = !showPosA },
-                label = { Text("Pos A") },
+                label = { Text(stringResource(Res.string.chart_pos_a)) },
                 leadingIcon = {
                     Canvas(modifier = Modifier.size(8.dp)) {
                         drawCircle(color = posAColor)
@@ -126,7 +129,7 @@ fun WorkoutMetricsDetailChart(
             FilterChip(
                 selected = showPosB,
                 onClick = { showPosB = !showPosB },
-                label = { Text("Pos B") },
+                label = { Text(stringResource(Res.string.chart_pos_b)) },
                 leadingIcon = {
                     Canvas(modifier = Modifier.size(8.dp)) {
                         drawCircle(color = posBColor)

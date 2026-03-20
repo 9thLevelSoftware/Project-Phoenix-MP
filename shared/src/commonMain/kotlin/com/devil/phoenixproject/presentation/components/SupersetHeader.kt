@@ -36,6 +36,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.domain.model.Superset
 import com.devil.phoenixproject.ui.theme.SupersetTheme
+import org.jetbrains.compose.resources.stringResource
+import vitruvianprojectphoenix.shared.generated.resources.Res
+import vitruvianprojectphoenix.shared.generated.resources.*
 
 /**
  * Header component for a superset showing name, exercise count, and rest time.
@@ -135,7 +138,7 @@ fun SupersetHeader(
                 onDismissRequest = { showMenu = false }
             ) {
                 DropdownMenuItem(
-                    text = { Text("Rename") },
+                    text = { Text(stringResource(Res.string.action_rename)) },
                     onClick = {
                         showMenu = false
                         onRename()
@@ -143,7 +146,7 @@ fun SupersetHeader(
                     leadingIcon = { Icon(Icons.Default.Edit, null) }
                 )
                 DropdownMenuItem(
-                    text = { Text("Change Color") },
+                    text = { Text(stringResource(Res.string.change_color)) },
                     onClick = {
                         showMenu = false
                         onChangeColor()
@@ -151,7 +154,7 @@ fun SupersetHeader(
                     leadingIcon = { Icon(Icons.Default.ColorLens, null) }
                 )
                 DropdownMenuItem(
-                    text = { Text("Add Exercise") },
+                    text = { Text(stringResource(Res.string.add_exercise)) },
                     onClick = {
                         showMenu = false
                         onAddExercise()
@@ -159,7 +162,7 @@ fun SupersetHeader(
                     leadingIcon = { Icon(Icons.Default.Add, null) }
                 )
                 DropdownMenuItem(
-                    text = { Text("Copy Superset") },
+                    text = { Text(stringResource(Res.string.copy_superset)) },
                     onClick = {
                         showMenu = false
                         onCopy()
@@ -167,7 +170,7 @@ fun SupersetHeader(
                     leadingIcon = { Icon(Icons.Default.ContentCopy, null) }
                 )
                 DropdownMenuItem(
-                    text = { Text("Delete Superset") },
+                    text = { Text(stringResource(Res.string.delete_superset)) },
                     onClick = {
                         showMenu = false
                         onDelete()

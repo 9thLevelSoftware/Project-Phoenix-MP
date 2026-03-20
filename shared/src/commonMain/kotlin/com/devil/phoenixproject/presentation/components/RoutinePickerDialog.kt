@@ -25,6 +25,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import com.devil.phoenixproject.domain.model.Routine
+import org.jetbrains.compose.resources.stringResource
+import vitruvianprojectphoenix.shared.generated.resources.Res
+import vitruvianprojectphoenix.shared.generated.resources.*
 
 @Composable
 fun RoutinePickerDialog(
@@ -126,7 +129,7 @@ fun RoutinePickerDialog(
                                 onClick = onCreateRoutine,
                                 modifier = Modifier.align(Alignment.CenterHorizontally)
                             ) {
-                                Text("Create New Routine")
+                                Text(stringResource(Res.string.create_new_routine))
                             }
                         }
                     }

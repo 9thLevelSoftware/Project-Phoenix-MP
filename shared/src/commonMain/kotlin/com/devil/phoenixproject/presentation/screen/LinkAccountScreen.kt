@@ -19,6 +19,9 @@ import com.devil.phoenixproject.ui.sync.LinkAccountUiState
 import com.devil.phoenixproject.ui.sync.LinkAccountViewModel
 import com.devil.phoenixproject.util.KmpUtils
 import org.koin.compose.koinInject
+import org.jetbrains.compose.resources.stringResource
+import vitruvianprojectphoenix.shared.generated.resources.Res
+import vitruvianprojectphoenix.shared.generated.resources.*
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -35,7 +38,7 @@ fun LinkAccountScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Phoenix Portal") },
+                title = { Text(stringResource(Res.string.phoenix_portal)) },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
                         Icon(
@@ -117,7 +120,7 @@ private fun LinkedAccountContent(
                 Spacer(modifier = Modifier.height(8.dp))
                 AssistChip(
                     onClick = {},
-                    label = { Text("Premium") }
+                    label = { Text(stringResource(Res.string.label_premium)) }
                 )
             }
 
@@ -127,10 +130,10 @@ private fun LinkedAccountContent(
             when (syncState) {
                 is SyncState.Syncing -> {
                     LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-                    Text("Syncing...")
+                    Text(stringResource(Res.string.syncing))
                 }
                 is SyncState.Success -> {
-                    Text("Last synced: ${formatSyncTimestamp(syncState.syncTime)}")
+                    Text(stringResource(Res.string.last_synced, formatSyncTimestamp(syncState.syncTime)))
                 }
                 is SyncState.Error -> {
                     Text(
@@ -152,9 +155,9 @@ private fun LinkedAccountContent(
                 }
                 is SyncState.Idle -> {
                     if (lastSyncTime > 0) {
-                        Text("Last synced: ${formatSyncTimestamp(lastSyncTime)}")
+                        Text(stringResource(Res.string.last_synced, formatSyncTimestamp(lastSyncTime)))
                     } else {
-                        Text("Never synced")
+                        Text(stringResource(Res.string.never_synced))
                     }
                 }
             }
@@ -166,14 +169,14 @@ private fun LinkedAccountContent(
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 OutlinedButton(onClick = onLogout) {
-                    Text("Unlink Account")
+                    Text(stringResource(Res.string.unlink_account))
                 }
 
                 Button(
                     onClick = onSync,
                     enabled = syncState !is SyncState.Syncing
                 ) {
-                    Text("Sync Now")
+                    Text(stringResource(Res.string.sync_now))
                 }
             }
         }
@@ -207,13 +210,13 @@ private fun LoginSignupForm(
                     selected = !isSignupMode,
                     onClick = { isSignupMode = false; onClearError() }
                 ) {
-                    Text("Login", modifier = Modifier.padding(16.dp))
+                    Text(stringResource(Res.string.action_login), modifier = Modifier.padding(16.dp))
                 }
                 Tab(
                     selected = isSignupMode,
                     onClick = { isSignupMode = true; onClearError() }
                 ) {
-                    Text("Sign Up", modifier = Modifier.padding(16.dp))
+                    Text(stringResource(Res.string.action_sign_up), modifier = Modifier.padding(16.dp))
                 }
             }
 
@@ -223,7 +226,7 @@ private fun LoginSignupForm(
                 OutlinedTextField(
                     value = displayName,
                     onValueChange = { displayName = it },
-                    label = { Text("Display Name") },
+                    label = { Text(stringResource(Res.string.label_display_name)) },
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true
                 )
@@ -233,7 +236,7 @@ private fun LoginSignupForm(
             OutlinedTextField(
                 value = email,
                 onValueChange = { email = it },
-                label = { Text("Email") },
+                label = { Text(stringResource(Res.string.label_email)) },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email)
@@ -244,7 +247,7 @@ private fun LoginSignupForm(
             OutlinedTextField(
                 value = password,
                 onValueChange = { password = it },
-                label = { Text("Password") },
+                label = { Text(stringResource(Res.string.label_password)) },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
                 visualTransformation = if (showPassword) VisualTransformation.None else PasswordVisualTransformation(),

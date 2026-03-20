@@ -17,6 +17,9 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.ui.theme.Spacing
+import org.jetbrains.compose.resources.stringResource
+import vitruvianprojectphoenix.shared.generated.resources.Res
+import vitruvianprojectphoenix.shared.generated.resources.*
 
 /**
  * One Rep Max Input Screen
@@ -239,7 +242,7 @@ fun OneRepMaxInputScreen(
                             contentColor = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     ) {
-                        Text("Cancel")
+                        Text(stringResource(Res.string.action_cancel))
                     }
 
                     Button(
@@ -310,7 +313,7 @@ private fun OneRepMaxInputField(
             OutlinedTextField(
                 value = value,
                 onValueChange = onValueChange,
-                placeholder = { Text("e.g., 100") },
+                placeholder = { Text(stringResource(Res.string.orm_placeholder)) },
                 modifier = Modifier.weight(1f),
                 keyboardOptions = KeyboardOptions(
                     keyboardType = KeyboardType.Decimal
@@ -318,7 +321,7 @@ private fun OneRepMaxInputField(
                 singleLine = true,
                 isError = isError,
                 supportingText = if (isError) {
-                    { Text("Please enter a valid number") }
+                    { Text(stringResource(Res.string.enter_valid_number)) }
                 } else null,
                 colors = OutlinedTextFieldDefaults.colors(
                     focusedBorderColor = MaterialTheme.colorScheme.primary,

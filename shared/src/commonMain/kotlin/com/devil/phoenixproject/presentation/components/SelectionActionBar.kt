@@ -32,6 +32,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import org.jetbrains.compose.resources.stringResource
+import vitruvianprojectphoenix.shared.generated.resources.Res
+import vitruvianprojectphoenix.shared.generated.resources.*
 
 /**
  * Bottom action bar shown during selection mode in RoutineEditorScreen.
@@ -115,7 +118,7 @@ fun SelectionActionBar(
                         ) {
                             Icon(Icons.Default.Link, contentDescription = null)
                             Spacer(Modifier.width(8.dp))
-                            Text("Add to Superset")
+                            Text(stringResource(Res.string.add_to_superset))
                         }
                     }
 

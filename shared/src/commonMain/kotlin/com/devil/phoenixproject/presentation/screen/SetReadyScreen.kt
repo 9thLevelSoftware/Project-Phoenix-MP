@@ -29,6 +29,9 @@ import com.devil.phoenixproject.presentation.components.VideoPlayer
 import com.devil.phoenixproject.presentation.navigation.NavigationRoutes
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
 import com.devil.phoenixproject.ui.theme.Spacing
+import org.jetbrains.compose.resources.stringResource
+import vitruvianprojectphoenix.shared.generated.resources.Res
+import vitruvianprojectphoenix.shared.generated.resources.*
 
 /**
  * Set Ready Screen - Focused view for a single exercise/set.
@@ -340,7 +343,7 @@ fun SetReadyScreen(
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Text("Target Reps", style = MaterialTheme.typography.bodyLarge)
+                                Text(stringResource(Res.string.target_reps), style = MaterialTheme.typography.bodyLarge)
                                 Text(
                                     "AMRAP",
                                     style = MaterialTheme.typography.titleMedium,
@@ -379,7 +382,7 @@ fun SetReadyScreen(
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Text("Target Reps", style = MaterialTheme.typography.bodyLarge)
+                                Text(stringResource(Res.string.target_reps), style = MaterialTheme.typography.bodyLarge)
                                 Text(
                                     "AMRAP",
                                     style = MaterialTheme.typography.titleMedium,
@@ -400,8 +403,8 @@ fun SetReadyScreen(
     if (showStopConfirmation) {
         AlertDialog(
             onDismissRequest = { showStopConfirmation = false },
-            title = { Text("Exit Routine?") },
-            text = { Text("Progress will be saved.") },
+            title = { Text(stringResource(Res.string.exit_routine_title)) },
+            text = { Text(stringResource(Res.string.exit_routine_message)) },
             confirmButton = {
                 Button(
                     onClick = {
@@ -410,12 +413,12 @@ fun SetReadyScreen(
                         navController.popBackStack(NavigationRoutes.DailyRoutines.route, false)
                     }
                 ) {
-                    Text("Exit")
+                    Text(stringResource(Res.string.action_exit))
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showStopConfirmation = false }) {
-                    Text("Cancel")
+                    Text(stringResource(Res.string.action_cancel))
                 }
             }
         )

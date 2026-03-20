@@ -8,6 +8,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import org.jetbrains.compose.resources.stringResource
+import vitruvianprojectphoenix.shared.generated.resources.Res
+import vitruvianprojectphoenix.shared.generated.resources.*
 
 /**
  * Error dialog shown when auto-connect fails
@@ -22,7 +25,7 @@ fun ConnectionErrorDialog(
     AlertDialog(
         onDismissRequest = onDismiss,
         icon = { Icon(Icons.Default.Warning, contentDescription = "Connection error") },
-        title = { Text("Connection Failed") },
+        title = { Text(stringResource(Res.string.connection_failed)) },
         text = {
             Column(
                 modifier = Modifier.fillMaxWidth(),
@@ -56,13 +59,13 @@ fun ConnectionErrorDialog(
                     onDismiss()
                     onRetry()
                 }) {
-                    Text("Retry")
+                    Text(stringResource(Res.string.action_retry))
                 }
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("OK")
+                Text(stringResource(Res.string.action_ok))
             }
         }
     )

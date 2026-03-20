@@ -24,6 +24,9 @@ import androidx.compose.ui.unit.sp
 import com.devil.phoenixproject.ui.theme.AccessibilityTheme
 import com.devil.phoenixproject.ui.theme.Spacing
 import kotlin.math.roundToInt
+import org.jetbrains.compose.resources.stringResource
+import vitruvianprojectphoenix.shared.generated.resources.Res
+import vitruvianprojectphoenix.shared.generated.resources.*
 
 /**
  * RPE (Rate of Perceived Exertion) data.
@@ -236,7 +239,7 @@ fun RpeSlider(
                     modifier = Modifier.weight(1f),
                     shape = RoundedCornerShape(12.dp)
                 ) {
-                    Text("Cancel")
+                    Text(stringResource(Res.string.action_cancel))
                 }
                 Button(
                     onClick = { onRpeSelected(sliderValue.roundToInt()) },
@@ -246,7 +249,7 @@ fun RpeSlider(
                         containerColor = getRpeColor(sliderValue.roundToInt())
                     )
                 ) {
-                    Text("Confirm")
+                    Text(stringResource(Res.string.action_confirm))
                 }
             }
         }

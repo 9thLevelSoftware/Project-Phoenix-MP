@@ -42,6 +42,9 @@ import com.devil.phoenixproject.ui.theme.Spacing
 import com.devil.phoenixproject.ui.theme.ThemeMode
 import com.devil.phoenixproject.util.KmpUtils
 import com.devil.phoenixproject.ui.theme.screenBackgroundBrush
+import org.jetbrains.compose.resources.stringResource
+import vitruvianprojectphoenix.shared.generated.resources.Res
+import vitruvianprojectphoenix.shared.generated.resources.*
 
 /**
  * Detail screen for a single exercise.
@@ -427,7 +430,7 @@ private fun ViewModeToggle(
                 }
             }
         ) {
-            Text("Charts")
+            Text(stringResource(Res.string.label_charts))
         }
         SegmentedButton(
             selected = viewMode == "table",
@@ -443,7 +446,7 @@ private fun ViewModeToggle(
                 }
             }
         ) {
-            Text("Table")
+            Text(stringResource(Res.string.label_table))
         }
     }
 }

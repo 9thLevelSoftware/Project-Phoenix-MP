@@ -26,6 +26,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.domain.subscription.SubscriptionManager
+import org.jetbrains.compose.resources.stringResource
+import vitruvianprojectphoenix.shared.generated.resources.Res
+import vitruvianprojectphoenix.shared.generated.resources.*
 
 @Composable
 fun PremiumFeatureGate(
@@ -96,7 +99,7 @@ fun LockedFeatureOverlay(
                     containerColor = MaterialTheme.colorScheme.primary
                 )
             ) {
-                Text("Upgrade to Pro")
+                Text(stringResource(Res.string.upgrade_to_pro))
             }
         }
     }

@@ -19,6 +19,9 @@ import com.devil.phoenixproject.domain.model.EchoLevel
 import com.devil.phoenixproject.domain.model.ExerciseConfig
 import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.ui.theme.Spacing
+import org.jetbrains.compose.resources.stringResource
+import vitruvianprojectphoenix.shared.generated.resources.Res
+import vitruvianprojectphoenix.shared.generated.resources.*
 
 /**
  * Modal dialog for configuring a single exercise's mode and mode-specific settings.
@@ -151,14 +154,14 @@ fun ExerciseConfigModal(
                         onClick = onDismiss,
                         modifier = Modifier.weight(1f)
                     ) {
-                        Text("Cancel")
+                        Text(stringResource(Res.string.action_cancel))
                     }
 
                     Button(
                         onClick = { onConfirm(config) },
                         modifier = Modifier.weight(1f)
                     ) {
-                        Text("Apply")
+                        Text(stringResource(Res.string.action_apply))
                     }
                 }
             }

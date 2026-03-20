@@ -21,6 +21,9 @@ import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.domain.model.*
 import com.devil.phoenixproject.ui.theme.Spacing
+import org.jetbrains.compose.resources.stringResource
+import vitruvianprojectphoenix.shared.generated.resources.Res
+import vitruvianprojectphoenix.shared.generated.resources.*
 
 /**
  * Workout Setup Dialog - Full configuration dialog for workout parameters
@@ -123,21 +126,21 @@ fun WorkoutSetupDialog(
                         onDismissRequest = { showModeMenu = false }
                     ) {
                         DropdownMenuItem(
-                            text = { Text("Old School") },
+                            text = { Text(stringResource(Res.string.mode_old_school)) },
                             onClick = {
                                 onUpdateParameters(workoutParameters.copy(programMode = ProgramMode.OldSchool))
                                 showModeMenu = false
                             }
                         )
                         DropdownMenuItem(
-                            text = { Text("Pump") },
+                            text = { Text(stringResource(Res.string.mode_pump)) },
                             onClick = {
                                 onUpdateParameters(workoutParameters.copy(programMode = ProgramMode.Pump))
                                 showModeMenu = false
                             }
                         )
                         DropdownMenuItem(
-                            text = { Text("Eccentric Only") },
+                            text = { Text(stringResource(Res.string.mode_eccentric_only)) },
                             onClick = {
                                 onUpdateParameters(workoutParameters.copy(programMode = ProgramMode.EccentricOnly))
                                 showModeMenu = false
@@ -149,7 +152,7 @@ fun WorkoutSetupDialog(
                                     horizontalArrangement = Arrangement.SpaceBetween,
                                     modifier = Modifier.fillMaxWidth()
                                 ) {
-                                    Text("Echo Mode")
+                                    Text(stringResource(Res.string.echo_mode))
                                     Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = "Navigate")
                                 }
                             },
@@ -165,7 +168,7 @@ fun WorkoutSetupDialog(
                                     horizontalArrangement = Arrangement.SpaceBetween,
                                     modifier = Modifier.fillMaxWidth()
                                 ) {
-                                    Text("TUT")
+                                    Text(stringResource(Res.string.mode_tut))
                                     Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = "Navigate")
                                 }
                             },
@@ -358,7 +361,7 @@ fun WorkoutSetupDialog(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("Just Lift")
+                    Text(stringResource(Res.string.just_lift))
                     Switch(
                         checked = workoutParameters.isJustLift,
                         onCheckedChange = { checked ->
@@ -373,7 +376,7 @@ fun WorkoutSetupDialog(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("Finish At Top")
+                    Text(stringResource(Res.string.finish_at_top))
                     Switch(
                         checked = workoutParameters.stopAtTop,
                         onCheckedChange = { checked ->
@@ -390,7 +393,7 @@ fun WorkoutSetupDialog(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Column {
-                        Text("AMRAP Mode")
+                        Text(stringResource(Res.string.amrap_mode))
                         Text(
                             "As Many Reps As Possible",
                             style = MaterialTheme.typography.bodySmall,
@@ -414,12 +417,12 @@ fun WorkoutSetupDialog(
             ) {
                 Icon(Icons.Default.PlayArrow, contentDescription = "Start workout")
                 Spacer(modifier = Modifier.width(Spacing.small))
-                Text("Start Workout")
+                Text(stringResource(Res.string.start_workout))
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("Cancel")
+                Text(stringResource(Res.string.action_cancel))
             }
         }
     )
@@ -504,7 +507,7 @@ fun ExercisePickerDialog(
                 OutlinedTextField(
                     value = searchQuery,
                     onValueChange = { searchQuery = it },
-                    label = { Text("Search exercises") },
+                    label = { Text(stringResource(Res.string.search_exercises_short)) },
                     leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true
@@ -522,7 +525,7 @@ fun ExercisePickerDialog(
                     FilterChip(
                         selected = selectedCategory == null,
                         onClick = { selectedCategory = null },
-                        label = { Text("All") }
+                        label = { Text(stringResource(Res.string.label_all)) }
                     )
                     ExerciseCategory.entries.forEach { category ->
                         FilterChip(
@@ -602,7 +605,7 @@ fun ExercisePickerDialog(
         confirmButton = {},
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("Cancel")
+                Text(stringResource(Res.string.action_cancel))
             }
         }
     )

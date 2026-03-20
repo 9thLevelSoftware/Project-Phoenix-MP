@@ -28,6 +28,9 @@ import com.devil.phoenixproject.presentation.manager.DetectionState
 import com.devil.phoenixproject.util.setKeepScreenOn
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import org.jetbrains.compose.resources.stringResource
+import vitruvianprojectphoenix.shared.generated.resources.Res
+import vitruvianprojectphoenix.shared.generated.resources.*
 
 /**
  * Active Workout screen - displays workout controls and metrics during an active workout.
@@ -463,8 +466,8 @@ fun ActiveWorkoutScreen(
         if (isRoutineFlow) {
             AlertDialog(
                 onDismissRequest = { showExitConfirmation = false },
-                title = { Text("Stop Current Set?") },
-                text = { Text("Stop this set, skip this exercise, or end the entire workout.") },
+                title = { Text(stringResource(Res.string.stop_current_set_title)) },
+                text = { Text(stringResource(Res.string.stop_current_set_message)) },
                 containerColor = MaterialTheme.colorScheme.surface,
                 shape = MaterialTheme.shapes.medium,
                 confirmButton = {
@@ -477,13 +480,13 @@ fun ActiveWorkoutScreen(
                             }
                         }
                     ) {
-                        Text("Stop Set")
+                        Text(stringResource(Res.string.stop_set))
                     }
                 },
                 dismissButton = {
                     Column {
                         TextButton(onClick = { showExitConfirmation = false }) {
-                            Text("Cancel")
+                            Text(stringResource(Res.string.action_cancel))
                         }
                         TextButton(
                             onClick = {
@@ -491,7 +494,7 @@ fun ActiveWorkoutScreen(
                                 showExitConfirmation = false
                             }
                         ) {
-                            Text("Skip Exercise")
+                            Text(stringResource(Res.string.skip_exercise))
                         }
                         TextButton(
                             onClick = {
@@ -500,7 +503,7 @@ fun ActiveWorkoutScreen(
                                 navController.popBackStack(NavigationRoutes.DailyRoutines.route, inclusive = false)
                             }
                         ) {
-                            Text("End Workout", color = MaterialTheme.colorScheme.error)
+                            Text(stringResource(Res.string.end_workout), color = MaterialTheme.colorScheme.error)
                         }
                     }
                 }
@@ -508,8 +511,8 @@ fun ActiveWorkoutScreen(
         } else {
             AlertDialog(
                 onDismissRequest = { showExitConfirmation = false },
-                title = { Text("Exit Workout?") },
-                text = { Text("The workout is currently active. Are you sure you want to exit?") },
+                title = { Text(stringResource(Res.string.exit_workout_title)) },
+                text = { Text(stringResource(Res.string.exit_workout_message)) },
                 containerColor = MaterialTheme.colorScheme.surface,
                 shape = MaterialTheme.shapes.medium,
                 confirmButton = {
@@ -522,12 +525,12 @@ fun ActiveWorkoutScreen(
                             navController.navigateUp()
                         }
                     ) {
-                        Text("Exit")
+                        Text(stringResource(Res.string.action_exit))
                     }
                 },
                 dismissButton = {
                     TextButton(onClick = { showExitConfirmation = false }) {
-                        Text("Cancel")
+                        Text(stringResource(Res.string.action_cancel))
                     }
                 }
             )
@@ -538,11 +541,11 @@ fun ActiveWorkoutScreen(
     if (showFormCheckComingSoonDialog) {
         AlertDialog(
             onDismissRequest = { showFormCheckComingSoonDialog = false },
-            title = { Text("Form Check") },
-            text = { Text("Form Check is coming soon to iOS. Stay tuned!") },
+            title = { Text(stringResource(Res.string.form_check)) },
+            text = { Text(stringResource(Res.string.form_check_ios_soon)) },
             confirmButton = {
                 TextButton(onClick = { showFormCheckComingSoonDialog = false }) {
-                    Text("OK")
+                    Text(stringResource(Res.string.action_ok))
                 }
             }
         )

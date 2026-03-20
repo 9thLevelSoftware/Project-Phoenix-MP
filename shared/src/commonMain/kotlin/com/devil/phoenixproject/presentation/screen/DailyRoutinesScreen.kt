@@ -17,6 +17,9 @@ import com.devil.phoenixproject.presentation.components.ResumeRoutineDialog
 import com.devil.phoenixproject.presentation.navigation.NavigationRoutes
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
 import com.devil.phoenixproject.ui.theme.screenBackgroundBrush
+import org.jetbrains.compose.resources.stringResource
+import vitruvianprojectphoenix.shared.generated.resources.Res
+import vitruvianprojectphoenix.shared.generated.resources.*
 
 /**
  * Daily Routines screen - view and manage pre-built routines.
@@ -141,11 +144,11 @@ fun DailyRoutinesScreen(
         if (showWorkoutActiveDialog) {
             AlertDialog(
                 onDismissRequest = { showWorkoutActiveDialog = false },
-                title = { Text("Workout in Progress") },
-                text = { Text("Please stop the current workout before editing routines.") },
+                title = { Text(stringResource(Res.string.workout_in_progress)) },
+                text = { Text(stringResource(Res.string.stop_before_editing)) },
                 confirmButton = {
                     TextButton(onClick = { showWorkoutActiveDialog = false }) {
-                        Text("OK")
+                        Text(stringResource(Res.string.action_ok))
                     }
                 }
             )

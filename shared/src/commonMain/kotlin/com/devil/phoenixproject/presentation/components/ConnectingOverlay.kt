@@ -13,6 +13,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import org.jetbrains.compose.resources.stringResource
+import vitruvianprojectphoenix.shared.generated.resources.Res
+import vitruvianprojectphoenix.shared.generated.resources.*
 
 /**
  * Full-screen overlay showing "Connecting..." with animation and cancel option
@@ -64,7 +67,7 @@ fun ConnectingOverlay(
                         },
                         modifier = Modifier.padding(top = 8.dp)
                     ) {
-                        Text("Cancel")
+                        Text(stringResource(Res.string.action_cancel))
                     }
                 }
             }

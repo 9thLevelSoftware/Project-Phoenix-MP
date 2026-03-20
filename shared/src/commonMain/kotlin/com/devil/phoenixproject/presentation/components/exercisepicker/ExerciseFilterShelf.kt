@@ -24,6 +24,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import org.jetbrains.compose.resources.stringResource
+import vitruvianprojectphoenix.shared.generated.resources.Res
+import vitruvianprojectphoenix.shared.generated.resources.*
 
 /**
  * Unified horizontal filter shelf combining favorites, custom, muscle, and equipment filters.
@@ -60,7 +63,7 @@ fun ExerciseFilterShelf(
                 InputChip(
                     selected = false,
                     onClick = onClearAll,
-                    label = { Text("Clear") },
+                    label = { Text(stringResource(Res.string.action_clear)) },
                     leadingIcon = {
                         Icon(
                             Icons.Default.Close,
@@ -81,7 +84,7 @@ fun ExerciseFilterShelf(
             FilterChip(
                 selected = showFavoritesOnly,
                 onClick = onToggleFavorites,
-                label = { Text("Favorites") },
+                label = { Text(stringResource(Res.string.label_favorites)) },
                 leadingIcon = {
                     Icon(
                         Icons.Default.Star,
@@ -101,7 +104,7 @@ fun ExerciseFilterShelf(
             FilterChip(
                 selected = showCustomOnly,
                 onClick = onToggleCustom,
-                label = { Text("Custom") },
+                label = { Text(stringResource(Res.string.label_custom)) },
                 leadingIcon = {
                     Icon(
                         Icons.Default.Person,

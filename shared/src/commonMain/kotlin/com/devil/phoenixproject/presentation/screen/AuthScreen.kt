@@ -59,6 +59,9 @@ import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.data.repository.AuthRepository
 import com.devil.phoenixproject.data.repository.AuthState
 import kotlinx.coroutines.launch
+import org.jetbrains.compose.resources.stringResource
+import vitruvianprojectphoenix.shared.generated.resources.Res
+import vitruvianprojectphoenix.shared.generated.resources.*
 
 enum class AuthMode {
     SIGN_IN,
@@ -130,7 +133,7 @@ fun AuthScreen(
             OutlinedTextField(
                 value = email,
                 onValueChange = { email = it; errorMessage = null },
-                label = { Text("Email") },
+                label = { Text(stringResource(Res.string.label_email)) },
                 leadingIcon = { Icon(Icons.Default.Email, contentDescription = null) },
                 keyboardOptions = KeyboardOptions(
                     keyboardType = KeyboardType.Email,
@@ -148,7 +151,7 @@ fun AuthScreen(
             OutlinedTextField(
                 value = password,
                 onValueChange = { password = it; errorMessage = null },
-                label = { Text("Password") },
+                label = { Text(stringResource(Res.string.label_password)) },
                 leadingIcon = { Icon(Icons.Default.Lock, contentDescription = null) },
                 trailingIcon = {
                     IconButton(onClick = { showPassword = !showPassword }) {
@@ -177,7 +180,7 @@ fun AuthScreen(
                 OutlinedTextField(
                     value = confirmPassword,
                     onValueChange = { confirmPassword = it; errorMessage = null },
-                    label = { Text("Confirm Password") },
+                    label = { Text(stringResource(Res.string.label_confirm_password)) },
                     leadingIcon = { Icon(Icons.Default.Lock, contentDescription = null) },
                     visualTransformation = if (showPassword) VisualTransformation.None else PasswordVisualTransformation(),
                     keyboardOptions = KeyboardOptions(
@@ -298,7 +301,7 @@ fun AuthScreen(
                 ) {
                     GoogleIcon(modifier = Modifier.size(18.dp))
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text("Google")
+                    Text(stringResource(Res.string.auth_google))
                 }
 
                 OutlinedButton(
@@ -316,7 +319,7 @@ fun AuthScreen(
                 ) {
                     AppleIcon(modifier = Modifier.size(18.dp))
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text("Apple")
+                    Text(stringResource(Res.string.auth_apple))
                 }
             }
 

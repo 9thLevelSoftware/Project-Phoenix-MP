@@ -32,6 +32,9 @@ import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.data.repository.ExerciseVideoEntity
 import com.devil.phoenixproject.domain.model.Exercise
 import kotlinx.coroutines.launch
+import org.jetbrains.compose.resources.stringResource
+import vitruvianprojectphoenix.shared.generated.resources.Res
+import vitruvianprojectphoenix.shared.generated.resources.*
 
 /**
  * Grouped exercise list with sticky alphabetical headers and alphabet strip navigation.
@@ -218,7 +221,7 @@ fun ExerciseListEmptyState(
                         Button(onClick = onCreateExercise) {
                             Icon(Icons.Default.Add, contentDescription = null)
                             Spacer(modifier = androidx.compose.ui.Modifier.padding(4.dp))
-                            Text("Create Exercise")
+                            Text(stringResource(Res.string.create_exercise))
                         }
                     }
                 }
@@ -234,7 +237,7 @@ fun ExerciseListEmptyState(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Button(onClick = onClearFilters) {
-                        Text("Clear filters")
+                        Text(stringResource(Res.string.clear_filters))
                     }
                 }
             }

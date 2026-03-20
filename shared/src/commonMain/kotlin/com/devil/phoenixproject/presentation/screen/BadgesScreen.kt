@@ -43,6 +43,9 @@ import com.devil.phoenixproject.presentation.util.WindowWidthSizeClass
 import com.devil.phoenixproject.ui.theme.AccessibilityTheme
 import com.devil.phoenixproject.ui.theme.Spacing
 import org.koin.compose.koinInject
+import org.jetbrains.compose.resources.stringResource
+import vitruvianprojectphoenix.shared.generated.resources.Res
+import vitruvianprojectphoenix.shared.generated.resources.*
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -363,7 +366,7 @@ private fun CategoryFilterRow(
         FilterChip(
             selected = selectedCategory == null,
             onClick = { onCategorySelected(null) },
-            label = { Text("All") },
+            label = { Text(stringResource(Res.string.label_all)) },
             leadingIcon = {
                 Icon(
                     imageVector = Icons.Default.GridView,
@@ -629,7 +632,7 @@ private fun BadgeDetailDialog(
         },
         confirmButton = {
             TextButton(onClick = onDismiss) {
-                Text("Close")
+                Text(stringResource(Res.string.action_close))
             }
         }
     )

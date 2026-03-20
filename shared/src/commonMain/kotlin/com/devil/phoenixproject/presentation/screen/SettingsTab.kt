@@ -377,7 +377,7 @@ fun SettingsTab(
                             localWeightUnit = WeightUnit.KG
                             onWeightUnitChange(WeightUnit.KG)
                         },
-                        label = { Text("kg") },
+                        label = { Text(stringResource(Res.string.label_kg)) },
                         modifier = Modifier.weight(1f),
                         colors = FilterChipDefaults.filterChipColors(
                             selectedContainerColor = MaterialTheme.colorScheme.primary,
@@ -398,7 +398,7 @@ fun SettingsTab(
                             localWeightUnit = WeightUnit.LB
                             onWeightUnitChange(WeightUnit.LB)
                         },
-                        label = { Text("lbs") },
+                        label = { Text(stringResource(Res.string.label_lbs)) },
                         modifier = Modifier.weight(1f),
                         colors = FilterChipDefaults.filterChipColors(
                             selectedContainerColor = MaterialTheme.colorScheme.primary,
@@ -472,14 +472,14 @@ fun SettingsTab(
                     modifier = Modifier.weight(1f)
                 ) {
                     Text(
-                        "Dark Mode",
+                        stringResource(Res.string.settings_dark_mode),
                         style = MaterialTheme.typography.bodyLarge,
                         fontWeight = FontWeight.Medium,
                         color = MaterialTheme.colorScheme.onSurface
                     )
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        "Use dark theme for the app interface",
+                        stringResource(Res.string.settings_dark_mode_description),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -489,6 +489,92 @@ fun SettingsTab(
                     onCheckedChange = onDarkModeChange
                 )
             }
+        }
+    }
+
+    // Language Section - Material 3 Expressive
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .shadow(8.dp, RoundedCornerShape(20.dp)),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest),
+        shape = RoundedCornerShape(20.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
+        border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f))
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(Spacing.medium)
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    modifier = Modifier
+                        .size(48.dp)
+                        .shadow(8.dp, RoundedCornerShape(20.dp))
+                        .background(
+                            Brush.linearGradient(
+                                colors = listOf(Color(0xFF10B981), Color(0xFF059669))
+                            ),
+                            RoundedCornerShape(20.dp)
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        Icons.Default.Language,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onPrimary,
+                        modifier = Modifier.size(24.dp)
+                    )
+                }
+                Spacer(modifier = Modifier.width(Spacing.medium))
+                Text(
+                    stringResource(Res.string.settings_language),
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            }
+            Spacer(modifier = Modifier.height(Spacing.small))
+
+            // Language selection chips
+            val languageOptions = listOf(
+                "en" to stringResource(Res.string.language_english),
+                "nl" to stringResource(Res.string.language_dutch),
+                "de" to stringResource(Res.string.language_german),
+                "es" to stringResource(Res.string.language_spanish),
+                "fr" to stringResource(Res.string.language_french)
+            )
+            // Current locale is always "en" for now (system default)
+            // Future: read from UserPreferences and apply via AppCompatDelegate
+            var selectedLanguage by remember { mutableStateOf("en") }
+
+            languageOptions.forEach { (code, label) ->
+                FilterChip(
+                    selected = selectedLanguage == code,
+                    onClick = { selectedLanguage = code },
+                    label = { Text(label) },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 2.dp),
+                    colors = FilterChipDefaults.filterChipColors(
+                        selectedContainerColor = MaterialTheme.colorScheme.primary,
+                        selectedLabelColor = MaterialTheme.colorScheme.onPrimary,
+                        containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+                        labelColor = MaterialTheme.colorScheme.onSurface
+                    )
+                )
+            }
+
+            Spacer(modifier = Modifier.height(Spacing.small))
+            Text(
+                stringResource(Res.string.settings_language_help),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.clickable {
+                    uriHandler.openUri("https://github.com/user/phoenix-translations")
+                }
+            )
         }
     }
 
@@ -1726,7 +1812,7 @@ fun SettingsTab(
                 )
             }
                 Spacer(modifier = Modifier.height(Spacing.small))
-                Text("Version: ${DeviceInfo.appVersionName}", color = MaterialTheme.colorScheme.onSurface)
+                Text(stringResource(Res.string.settings_version, DeviceInfo.appVersionName), color = MaterialTheme.colorScheme.onSurface)
                 Spacer(modifier = Modifier.height(Spacing.small))
                 Text(
                     "Open source community project to control Vitruvian Trainer machines locally.",
@@ -1845,9 +1931,9 @@ fun SettingsTab(
     if (showBackupDialog) {
         AlertDialog(
             onDismissRequest = { showBackupDialog = false },
-            title = { Text("Backup All Data", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold) },
+            title = { Text(stringResource(Res.string.backup_all_data), style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold) },
             text = {
-                Text("This will export all your workout history, routines, training cycles, achievements, and settings to a JSON file.\n\nYou can use this file to restore your data later or transfer to another device.")
+                Text(stringResource(Res.string.backup_description))
             },
             confirmButton = {
                 Row(horizontalArrangement = Arrangement.spacedBy(Spacing.small)) {
@@ -1878,7 +1964,7 @@ fun SettingsTab(
                             }
                         }
                     ) {
-                        Text("Save")
+                        Text(stringResource(Res.string.action_save))
                     }
                     // Share button (streaming export)
                     OutlinedButton(
@@ -1904,13 +1990,13 @@ fun SettingsTab(
                             modifier = Modifier.size(18.dp)
                         )
                         Spacer(modifier = Modifier.width(4.dp))
-                        Text("Share")
+                        Text(stringResource(Res.string.action_share))
                     }
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showBackupDialog = false }) {
-                    Text("Cancel")
+                    Text(stringResource(Res.string.action_cancel))
                 }
             }
         )
@@ -1920,9 +2006,9 @@ fun SettingsTab(
     if (showRestoreDialog) {
         AlertDialog(
             onDismissRequest = { showRestoreDialog = false },
-            title = { Text("Restore from Backup", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold) },
+            title = { Text(stringResource(Res.string.restore_from_backup), style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold) },
             text = {
-                Text("Select a backup file to restore your data.\n\nExisting data will NOT be overwritten - only new records will be imported.")
+                Text(stringResource(Res.string.restore_description))
             },
             confirmButton = {
                 Button(
@@ -1931,12 +2017,12 @@ fun SettingsTab(
                         launchFilePicker = true
                     }
                 ) {
-                    Text("Select File")
+                    Text(stringResource(Res.string.select_file))
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showRestoreDialog = false }) {
-                    Text("Cancel")
+                    Text(stringResource(Res.string.action_cancel))
                 }
             }
         )
@@ -1964,15 +2050,15 @@ fun SettingsTab(
                         Text(backupError ?: "Unknown error")
                     }
                     backupResult != null -> {
-                        Text("Backup saved successfully to:\n$backupResult")
+                        Text(stringResource(Res.string.backup_success, backupResult ?: ""))
                     }
                     else -> {
                         restoreResult?.let { result ->
                             Column {
-                                Text("Import completed!")
+                                Text(stringResource(Res.string.import_completed))
                                 Spacer(modifier = Modifier.height(Spacing.small))
-                                Text("Records imported: ${result.totalImported}")
-                                Text("Records skipped (duplicates): ${result.totalSkipped}")
+                                Text(stringResource(Res.string.import_records_imported, result.totalImported))
+                                Text(stringResource(Res.string.import_records_skipped, result.totalSkipped))
                             }
                         }
                     }
@@ -1985,7 +2071,7 @@ fun SettingsTab(
                     backupError = null
                     restoreResult = null
                 }) {
-                    Text("OK")
+                    Text(stringResource(Res.string.action_ok))
                 }
             }
         )
@@ -2024,7 +2110,7 @@ fun SettingsTab(
                         horizontalArrangement = Arrangement.spacedBy(Spacing.medium)
                     ) {
                         CircularProgressIndicator()
-                        Text("Please wait...")
+                        Text(stringResource(Res.string.label_please_wait))
                     }
                 }
             },

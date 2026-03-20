@@ -25,6 +25,9 @@ import kotlinx.coroutines.launch
 import org.koin.compose.koinInject
 import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.rememberReorderableLazyListState
+import org.jetbrains.compose.resources.stringResource
+import vitruvianprojectphoenix.shared.generated.resources.Res
+import vitruvianprojectphoenix.shared.generated.resources.*
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -103,12 +106,12 @@ fun CycleEditorScreen(
                     value = uiState.cycleName,
                     onValueChange = { cycleEditorViewModel.updateCycleName(it) },
                     modifier = Modifier.weight(1f),
-                    placeholder = { Text("Cycle Name") },
+                    placeholder = { Text(stringResource(Res.string.cycle_name)) },
                     textStyle = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
                     singleLine = true
                 )
                 Button(onClick = { saveCycle() }) {
-                    Text("Preview")
+                    Text(stringResource(Res.string.action_preview))
                 }
             }
 
@@ -116,7 +119,7 @@ fun CycleEditorScreen(
             OutlinedTextField(
                 value = uiState.description,
                 onValueChange = { cycleEditorViewModel.updateDescription(it) },
-                label = { Text("Description (optional)") },
+                label = { Text(stringResource(Res.string.label_description_optional)) },
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp, vertical = 8.dp),
@@ -168,10 +171,10 @@ fun CycleEditorScreen(
                             OutlinedButton(
                                 onClick = { cycleEditorViewModel.showAddDaySheet(true) }
                             ) {
-                                Text("+ Add Workout")
+                                Text(stringResource(Res.string.add_workout))
                             }
                             OutlinedButton(onClick = { cycleEditorViewModel.addRestDay() }) {
-                                Text("+ Add Rest")
+                                Text(stringResource(Res.string.add_rest))
                             }
                         }
                     }

@@ -44,6 +44,9 @@ import com.devil.phoenixproject.ui.theme.PhoenixOrangeDark
 import com.devil.phoenixproject.ui.theme.PhoenixOrangeLight
 import com.devil.phoenixproject.ui.theme.ThemeMode
 import kotlinx.coroutines.launch
+import org.jetbrains.compose.resources.stringResource
+import vitruvianprojectphoenix.shared.generated.resources.Res
+import vitruvianprojectphoenix.shared.generated.resources.*
 
 /**
  * Map display equipment names back to database values for filtering
@@ -213,7 +216,7 @@ fun ExercisePickerDialog(
             Scaffold(
                 topBar = {
                     TopAppBar(
-                        title = { Text("Select Exercise") },
+                        title = { Text(stringResource(Res.string.select_exercise)) },
                         navigationIcon = {
                             IconButton(onClick = onDismiss) {
                                 Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
@@ -426,7 +429,7 @@ fun ExercisePickerContent(
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp)
                     .padding(bottom = 8.dp),
-                placeholder = { Text("Search exercises...") },
+                placeholder = { Text(stringResource(Res.string.search_exercises)) },
                 leadingIcon = { Icon(Icons.Default.Search, contentDescription = "Search") },
                 trailingIcon = if (searchQuery.isNotEmpty()) {
                     {

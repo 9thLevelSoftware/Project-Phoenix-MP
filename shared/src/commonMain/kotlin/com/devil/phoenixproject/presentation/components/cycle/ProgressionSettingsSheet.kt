@@ -8,6 +8,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.domain.model.CycleProgression
+import org.jetbrains.compose.resources.stringResource
+import vitruvianprojectphoenix.shared.generated.resources.Res
+import vitruvianprojectphoenix.shared.generated.resources.*
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -61,7 +64,7 @@ fun ProgressionSettingsSheet(
                     onClick = { if (frequency > 1) frequency-- },
                     enabled = frequency > 1
                 ) {
-                    Text("◄", style = MaterialTheme.typography.titleLarge)
+                    Text(stringResource(Res.string.nav_previous), style = MaterialTheme.typography.titleLarge)
                 }
                 Text(
                     text = "$frequency cycle completions",
@@ -73,7 +76,7 @@ fun ProgressionSettingsSheet(
                     onClick = { if (frequency < 10) frequency++ },
                     enabled = frequency < 10
                 ) {
-                    Text("►", style = MaterialTheme.typography.titleLarge)
+                    Text(stringResource(Res.string.nav_next), style = MaterialTheme.typography.titleLarge)
                 }
             }
 
@@ -212,7 +215,7 @@ fun ProgressionSettingsSheet(
                 },
                 modifier = Modifier.align(Alignment.End)
             ) {
-                Text("Apply")
+                Text(stringResource(Res.string.action_apply))
             }
         }
     }

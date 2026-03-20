@@ -20,6 +20,9 @@ import com.devil.phoenixproject.domain.detection.ExerciseClassification
 import com.devil.phoenixproject.domain.model.Exercise
 import com.devil.phoenixproject.ui.theme.AccessibilityTheme
 import kotlinx.coroutines.launch
+import org.jetbrains.compose.resources.stringResource
+import vitruvianprojectphoenix.shared.generated.resources.Res
+import vitruvianprojectphoenix.shared.generated.resources.*
 
 /**
  * Non-blocking bottom sheet for exercise auto-detection confirmation.
@@ -193,7 +196,7 @@ fun AutoDetectionSheet(
                         modifier = Modifier.size(18.dp)
                     )
                     Spacer(modifier = Modifier.width(4.dp))
-                    Text("Select Different")
+                    Text(stringResource(Res.string.action_select_different))
                 }
 
                 // Confirm button
@@ -216,7 +219,7 @@ fun AutoDetectionSheet(
                         modifier = Modifier.size(18.dp)
                     )
                     Spacer(modifier = Modifier.width(4.dp))
-                    Text("Confirm")
+                    Text(stringResource(Res.string.action_confirm))
                 }
             }
         }

@@ -47,6 +47,9 @@ import com.devil.phoenixproject.presentation.navigation.NavigationRoutes
 import org.koin.compose.koinInject
 import com.devil.phoenixproject.ui.theme.screenBackgroundBrush
 import com.devil.phoenixproject.presentation.components.cycle.UnifiedCycleCreationSheet
+import org.jetbrains.compose.resources.stringResource
+import vitruvianprojectphoenix.shared.generated.resources.Res
+import vitruvianprojectphoenix.shared.generated.resources.*
 
 /**
  * State machine for cycle creation flow
@@ -306,7 +309,7 @@ fun TrainingCyclesScreen(
                                 modifier = Modifier.size(18.dp)
                             )
                             Spacer(Modifier.width(4.dp))
-                            Text("Create Cycle")
+                            Text(stringResource(Res.string.create_cycle))
                         }
                     }
                 }
@@ -540,8 +543,8 @@ fun TrainingCyclesScreen(
     showDeleteConfirmDialog?.let { cycle ->
         AlertDialog(
             onDismissRequest = { showDeleteConfirmDialog = null },
-            title = { Text("Delete Cycle?") },
-            text = { Text("Are you sure you want to delete \"${cycle.name}\"? This cannot be undone.") },
+            title = { Text(stringResource(Res.string.delete_cycle_title)) },
+            text = { Text(stringResource(Res.string.delete_cycle_message, cycle.name)) },
             confirmButton = {
                 TextButton(
                     onClick = {
@@ -554,12 +557,12 @@ fun TrainingCyclesScreen(
                         contentColor = MaterialTheme.colorScheme.error
                     )
                 ) {
-                    Text("Delete")
+                    Text(stringResource(Res.string.action_delete))
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showDeleteConfirmDialog = null }) {
-                    Text("Cancel")
+                    Text(stringResource(Res.string.action_cancel))
                 }
             }
         )
@@ -576,7 +579,7 @@ fun TrainingCyclesScreen(
                     tint = MaterialTheme.colorScheme.tertiary
                 )
             },
-            title = { Text("Exercises Not Found") },
+            title = { Text(stringResource(Res.string.exercises_not_found)) },
             text = {
                 Column {
                     Text(
@@ -601,7 +604,7 @@ fun TrainingCyclesScreen(
             },
             confirmButton = {
                 TextButton(onClick = { showWarningDialog = null }) {
-                    Text("OK")
+                    Text(stringResource(Res.string.action_ok))
                 }
             }
         )
@@ -618,7 +621,7 @@ fun TrainingCyclesScreen(
                     tint = MaterialTheme.colorScheme.error
                 )
             },
-            title = { Text("Error") },
+            title = { Text(stringResource(Res.string.label_error)) },
             text = {
                 Text(
                     "Failed to create training cycle: $errorMessage",
@@ -627,7 +630,7 @@ fun TrainingCyclesScreen(
             },
             confirmButton = {
                 TextButton(onClick = { showErrorDialog = null }) {
-                    Text("OK")
+                    Text(stringResource(Res.string.action_ok))
                 }
             }
         )
@@ -833,7 +836,7 @@ private fun ActiveCycleCard(
                     ) {
                         Icon(Icons.Default.Edit, contentDescription = null)
                         Spacer(Modifier.width(8.dp))
-                        Text("Edit Cycle")
+                        Text(stringResource(Res.string.edit_cycle))
                     }
                 } else if (isRestDay) {
                     if (isViewingCurrentDay) {
@@ -844,7 +847,7 @@ private fun ActiveCycleCard(
                         ) {
                             Icon(Icons.Default.SkipNext, contentDescription = null)
                             Spacer(Modifier.width(8.dp))
-                            Text("Skip Rest Day")
+                            Text(stringResource(Res.string.skip_rest_day))
                         }
                     } else {
                         // Viewing a different rest day - offer jump or return to today
@@ -855,7 +858,7 @@ private fun ActiveCycleCard(
                         ) {
                             Icon(Icons.Default.SkipNext, contentDescription = null)
                             Spacer(Modifier.width(8.dp))
-                            Text("Jump to Day $displayedDayNumber")
+                            Text(stringResource(Res.string.jump_to_day, displayedDayNumber))
                         }
                     }
                 } else {
@@ -868,7 +871,7 @@ private fun ActiveCycleCard(
                             ) {
                                 Icon(Icons.Default.PlayArrow, contentDescription = null)
                                 Spacer(Modifier.width(8.dp))
-                                Text("Start Workout")
+                                Text(stringResource(Res.string.start_workout))
                             }
                         } else {
                             OutlinedButton(
@@ -878,7 +881,7 @@ private fun ActiveCycleCard(
                             ) {
                                 Icon(Icons.Default.Edit, contentDescription = null)
                                 Spacer(Modifier.width(8.dp))
-                                Text("Assign Routine")
+                                Text(stringResource(Res.string.assign_routine))
                             }
                         }
                     } else {
@@ -891,7 +894,7 @@ private fun ActiveCycleCard(
                             ) {
                                 Icon(Icons.Default.SkipNext, contentDescription = null)
                                 Spacer(Modifier.width(8.dp))
-                                Text("Jump to Day $displayedDayNumber")
+                                Text(stringResource(Res.string.jump_to_day, displayedDayNumber))
                             }
                             Button(
                                 onClick = { onStartWorkout(displayedCycleDay.routineId, cycle.id, displayedDayNumber) },
@@ -900,7 +903,7 @@ private fun ActiveCycleCard(
                             ) {
                                 Icon(Icons.Default.PlayArrow, contentDescription = null)
                                 Spacer(Modifier.width(8.dp))
-                                Text("Start Workout")
+                                Text(stringResource(Res.string.start_workout))
                             }
                         } else {
                             OutlinedButton(
@@ -910,7 +913,7 @@ private fun ActiveCycleCard(
                             ) {
                                 Icon(Icons.Default.SkipNext, contentDescription = null)
                                 Spacer(Modifier.width(8.dp))
-                                Text("Jump to Day $displayedDayNumber")
+                                Text(stringResource(Res.string.jump_to_day, displayedDayNumber))
                             }
                         }
                     }
@@ -1108,7 +1111,7 @@ private fun CycleListItem(
                                 modifier = Modifier.size(16.dp)
                             )
                             Spacer(Modifier.width(4.dp))
-                            Text("Edit", maxLines = 1)
+                            Text(stringResource(Res.string.action_edit), maxLines = 1)
                         }
                         FilledTonalButton(
                             onClick = onDelete,
@@ -1126,7 +1129,7 @@ private fun CycleListItem(
                                 modifier = Modifier.size(16.dp)
                             )
                             Spacer(Modifier.width(4.dp))
-                            Text("Delete", maxLines = 1)
+                            Text(stringResource(Res.string.action_delete), maxLines = 1)
                         }
                     }
                 }

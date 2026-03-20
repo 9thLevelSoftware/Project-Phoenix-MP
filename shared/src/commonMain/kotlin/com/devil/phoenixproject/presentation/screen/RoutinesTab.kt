@@ -38,6 +38,9 @@ import com.devil.phoenixproject.presentation.components.EmptyState
 import com.devil.phoenixproject.ui.theme.*
 import com.devil.phoenixproject.util.KmpUtils
 import com.devil.phoenixproject.ui.theme.screenBackgroundBrush
+import org.jetbrains.compose.resources.stringResource
+import vitruvianprojectphoenix.shared.generated.resources.Res
+import vitruvianprojectphoenix.shared.generated.resources.*
 
 /**
  * Routines tab showing list of saved routines with create/edit/delete functionality.
@@ -281,8 +284,8 @@ fun RoutinesTab(
     if (showBatchDeleteDialog) {
         AlertDialog(
             onDismissRequest = { showBatchDeleteDialog = false },
-            title = { Text("Delete ${selectedIds.size} routines?") },
-            text = { Text("This cannot be undone.") },
+            title = { Text(stringResource(Res.string.delete_selected_routines, selectedIds.size)) },
+            text = { Text(stringResource(Res.string.cannot_be_undone)) },
             confirmButton = {
                 TextButton(
                     onClick = {
@@ -291,12 +294,12 @@ fun RoutinesTab(
                         clearSelection()
                     }
                 ) {
-                    Text("Delete", color = MaterialTheme.colorScheme.error)
+                    Text(stringResource(Res.string.action_delete), color = MaterialTheme.colorScheme.error)
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showBatchDeleteDialog = false }) {
-                    Text("Cancel")
+                    Text(stringResource(Res.string.action_cancel))
                 }
             }
         )
@@ -306,8 +309,8 @@ fun RoutinesTab(
     if (showBatchCopyDialog) {
         AlertDialog(
             onDismissRequest = { showBatchCopyDialog = false },
-            title = { Text("Duplicate ${selectedIds.size} routines?") },
-            text = { Text("New copies will be created with '(Copy)' suffix.") },
+            title = { Text(stringResource(Res.string.duplicate_selected_routines, selectedIds.size)) },
+            text = { Text(stringResource(Res.string.duplicate_routines_message)) },
             confirmButton = {
                 TextButton(
                     onClick = {
@@ -368,12 +371,12 @@ fun RoutinesTab(
                         clearSelection()
                     }
                 ) {
-                    Text("Copy")
+                    Text(stringResource(Res.string.action_copy))
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showBatchCopyDialog = false }) {
-                    Text("Cancel")
+                    Text(stringResource(Res.string.action_cancel))
                 }
             }
         )
@@ -551,7 +554,7 @@ fun RoutineCard(
                                 modifier = Modifier.size(16.dp)
                             )
                             Spacer(Modifier.width(4.dp))
-                            Text("Edit", maxLines = 1)
+                            Text(stringResource(Res.string.action_edit), maxLines = 1)
                         }
                         Spacer(Modifier.width(6.dp))
                         OutlinedButton(
@@ -566,7 +569,7 @@ fun RoutineCard(
                                 modifier = Modifier.size(16.dp)
                             )
                             Spacer(Modifier.width(4.dp))
-                            Text("Copy", maxLines = 1)
+                            Text(stringResource(Res.string.action_copy), maxLines = 1)
                         }
                         Spacer(Modifier.width(6.dp))
                         OutlinedButton(
@@ -582,7 +585,7 @@ fun RoutineCard(
                                 modifier = Modifier.size(16.dp)
                             )
                             Spacer(Modifier.width(4.dp))
-                            Text("Delete", maxLines = 1)
+                            Text(stringResource(Res.string.action_delete), maxLines = 1)
                         }
                     }
                 }
@@ -593,16 +596,16 @@ fun RoutineCard(
     if (showDeleteDialog) {
         AlertDialog(
             onDismissRequest = { showDeleteDialog = false },
-            title = { Text("Delete Routine") },
-            text = { Text("Are you sure you want to delete '${routine.name}'?") },
+            title = { Text(stringResource(Res.string.delete_routine)) },
+            text = { Text(stringResource(Res.string.delete_routine_message, routine.name)) },
             confirmButton = {
                 TextButton(onClick = { onDelete(); showDeleteDialog = false }) {
-                    Text("Delete", color = MaterialTheme.colorScheme.error)
+                    Text(stringResource(Res.string.action_delete), color = MaterialTheme.colorScheme.error)
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showDeleteDialog = false }) {
-                    Text("Cancel")
+                    Text(stringResource(Res.string.action_cancel))
                 }
             }
         )

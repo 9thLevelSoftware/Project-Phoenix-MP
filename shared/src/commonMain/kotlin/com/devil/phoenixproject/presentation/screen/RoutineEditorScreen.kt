@@ -37,6 +37,9 @@ import com.devil.phoenixproject.ui.theme.SupersetTheme
 import org.koin.compose.koinInject
 import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.rememberReorderableLazyListState
+import org.jetbrains.compose.resources.stringResource
+import vitruvianprojectphoenix.shared.generated.resources.Res
+import vitruvianprojectphoenix.shared.generated.resources.*
 
 
 // State holder for the editor
@@ -356,7 +359,7 @@ fun RoutineEditorScreen(
                 ExtendedFloatingActionButton(
                     onClick = { showExercisePicker = true },
                     icon = { Icon(Icons.Default.Add, null) },
-                    text = { Text("Add Exercise") },
+                    text = { Text(stringResource(Res.string.add_exercise)) },
                     containerColor = MaterialTheme.colorScheme.primaryContainer
                 )
             }
@@ -389,7 +392,7 @@ fun RoutineEditorScreen(
                     value = state.routineName,
                     onValueChange = { state = state.copy(routineName = it) },
                     modifier = Modifier.weight(1f),
-                    placeholder = { Text("Routine Name") },
+                    placeholder = { Text(stringResource(Res.string.routine_name)) },
                     textStyle = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
                     singleLine = true
                 )
@@ -406,7 +409,7 @@ fun RoutineEditorScreen(
                         navController.popBackStack()
                     }
                 ) {
-                    Text("Save")
+                    Text(stringResource(Res.string.action_save))
                 }
             }
 
@@ -581,7 +584,7 @@ fun RoutineEditorScreen(
                                             onDismissRequest = { exerciseMenuFor = null }
                                         ) {
                                             DropdownMenuItem(
-                                                text = { Text("Edit") },
+                                                text = { Text(stringResource(Res.string.action_edit)) },
                                                 onClick = {
                                                     exerciseToConfig = exercise
                                                     isNewExercise = false
@@ -591,7 +594,7 @@ fun RoutineEditorScreen(
                                                 leadingIcon = { Icon(Icons.Default.Edit, null) }
                                             )
                                             DropdownMenuItem(
-                                                text = { Text("Delete") },
+                                                text = { Text(stringResource(Res.string.action_delete)) },
                                                 onClick = {
                                                     val remaining = state.exercises.filter { it.id != exercise.id }
                                                     updateExercises(remaining)
@@ -720,12 +723,12 @@ fun RoutineEditorScreen(
         var newName by remember { mutableStateOf(superset.name) }
         AlertDialog(
             onDismissRequest = { supersetToRename = null },
-            title = { Text("Rename Superset") },
+            title = { Text(stringResource(Res.string.rename_superset)) },
             text = {
                 OutlinedTextField(
                     value = newName,
                     onValueChange = { newName = it },
-                    label = { Text("Name") },
+                    label = { Text(stringResource(Res.string.label_name)) },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
@@ -737,12 +740,12 @@ fun RoutineEditorScreen(
                         supersetToRename = null
                     }
                 ) {
-                    Text("Save")
+                    Text(stringResource(Res.string.action_save))
                 }
             },
             dismissButton = {
                 TextButton(onClick = { supersetToRename = null }) {
-                    Text("Cancel")
+                    Text(stringResource(Res.string.action_cancel))
                 }
             }
         )
@@ -764,7 +767,7 @@ fun RoutineEditorScreen(
     supersetToChangeColor?.let { superset ->
         AlertDialog(
             onDismissRequest = { supersetToChangeColor = null },
-            title = { Text("Choose Color") },
+            title = { Text(stringResource(Res.string.choose_color)) },
             text = {
                 Row(
                     horizontalArrangement = Arrangement.spacedBy(16.dp),
@@ -791,7 +794,7 @@ fun RoutineEditorScreen(
             },
             confirmButton = {
                 TextButton(onClick = { supersetToChangeColor = null }) {
-                    Text("Cancel")
+                    Text(stringResource(Res.string.action_cancel))
                 }
             }
         )
@@ -801,7 +804,7 @@ fun RoutineEditorScreen(
     supersetToDelete?.let { superset ->
         AlertDialog(
             onDismissRequest = { supersetToDelete = null },
-            title = { Text("Delete Superset?") },
+            title = { Text(stringResource(Res.string.delete_superset_title)) },
             text = {
                 Text(
                     "This will delete the superset \"${superset.name}\" and all ${superset.exerciseCount} exercises in it. This cannot be undone."
@@ -817,12 +820,12 @@ fun RoutineEditorScreen(
                         contentColor = MaterialTheme.colorScheme.error
                     )
                 ) {
-                    Text("Delete All")
+                    Text(stringResource(Res.string.delete_all))
                 }
             },
             dismissButton = {
                 TextButton(onClick = { supersetToDelete = null }) {
-                    Text("Cancel")
+                    Text(stringResource(Res.string.action_cancel))
                 }
             }
         )
@@ -856,8 +859,8 @@ fun RoutineEditorScreen(
     if (showBatchDeleteDialog) {
         AlertDialog(
             onDismissRequest = { showBatchDeleteDialog = false },
-            title = { Text("Delete ${selectedExerciseIds.size} exercises?") },
-            text = { Text("This cannot be undone.") },
+            title = { Text(stringResource(Res.string.delete_selected_exercises, selectedExerciseIds.size)) },
+            text = { Text(stringResource(Res.string.cannot_be_undone)) },
             confirmButton = {
                 TextButton(
                     onClick = {
@@ -867,12 +870,12 @@ fun RoutineEditorScreen(
                         clearSelection()
                     }
                 ) {
-                    Text("Delete", color = MaterialTheme.colorScheme.error)
+                    Text(stringResource(Res.string.action_delete), color = MaterialTheme.colorScheme.error)
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showBatchDeleteDialog = false }) {
-                    Text("Cancel")
+                    Text(stringResource(Res.string.action_cancel))
                 }
             }
         )

@@ -16,6 +16,9 @@ import com.devil.phoenixproject.data.repository.UserProfile
 import com.devil.phoenixproject.data.repository.UserProfileRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
+import org.jetbrains.compose.resources.stringResource
+import vitruvianprojectphoenix.shared.generated.resources.Res
+import vitruvianprojectphoenix.shared.generated.resources.*
 
 /**
  * Dialog for editing an existing user profile.
@@ -33,7 +36,7 @@ fun EditProfileDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Edit Profile") },
+        title = { Text(stringResource(Res.string.edit_profile)) },
         text = {
             Column(
                 verticalArrangement = Arrangement.spacedBy(16.dp)
@@ -41,7 +44,7 @@ fun EditProfileDialog(
                 OutlinedTextField(
                     value = name,
                     onValueChange = { name = it },
-                    label = { Text("Name") },
+                    label = { Text(stringResource(Res.string.label_name)) },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
@@ -96,12 +99,12 @@ fun EditProfileDialog(
                 },
                 enabled = name.isNotBlank()
             ) {
-                Text("Save")
+                Text(stringResource(Res.string.action_save))
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("Cancel")
+                Text(stringResource(Res.string.action_cancel))
             }
         }
     )

@@ -49,6 +49,9 @@ import com.devil.phoenixproject.presentation.util.ResponsiveDimensions
 import com.devil.phoenixproject.presentation.util.LocalWindowSizeClass
 import com.devil.phoenixproject.presentation.util.WindowWidthSizeClass
 import kotlin.math.abs
+import org.jetbrains.compose.resources.stringResource
+import vitruvianprojectphoenix.shared.generated.resources.Res
+import vitruvianprojectphoenix.shared.generated.resources.*
 
 /**
  * Workout Heads-Up Display (HUD)
@@ -469,7 +472,7 @@ private fun HudTopBar(
             ) {
                 Icon(Icons.Default.Stop, contentDescription = null)
                 Spacer(modifier = Modifier.width(8.dp))
-                Text("STOP", fontWeight = FontWeight.Bold)
+                Text(stringResource(Res.string.stop_label), fontWeight = FontWeight.Bold)
             }
         }
     }
@@ -756,7 +759,7 @@ private fun ExecutionPage(
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         } else {
-            Text("Waiting for data...", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(stringResource(Res.string.waiting_for_data), color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }

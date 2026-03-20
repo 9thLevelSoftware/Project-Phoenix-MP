@@ -34,6 +34,9 @@ import com.devil.phoenixproject.presentation.viewmodel.SetMode
 import com.devil.phoenixproject.ui.theme.Spacing
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
+import org.jetbrains.compose.resources.stringResource
+import vitruvianprojectphoenix.shared.generated.resources.Res
+import vitruvianprojectphoenix.shared.generated.resources.*
 
 /**
  * Exercise configuration bottom sheet for SingleExerciseScreen
@@ -601,13 +604,13 @@ fun SetModeToggle(
             FilterChip(
                 selected = setMode == SetMode.REPS,
                 onClick = { onModeChange(SetMode.REPS) },
-                label = { Text("Reps") },
+                label = { Text(stringResource(Res.string.label_reps)) },
                 modifier = Modifier.weight(1f)
             )
             FilterChip(
                 selected = setMode == SetMode.DURATION,
                 onClick = { onModeChange(SetMode.DURATION) },
-                label = { Text("Duration") },
+                label = { Text(stringResource(Res.string.label_duration)) },
                 modifier = Modifier.weight(1f)
             )
         }
@@ -1203,7 +1206,7 @@ fun WeightConfigurationCard(
                         FilterChip(
                             selected = weightPercentOfPR == percent,
                             onClick = { onWeightPercentOfPRChange(percent) },
-                            label = { Text("$percent%") },
+                            label = { Text(stringResource(Res.string.percent_label, percent)) },
                             modifier = Modifier.weight(1f)
                         )
                     }

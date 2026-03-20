@@ -53,6 +53,9 @@ import androidx.compose.runtime.CompositionLocalProvider
 import com.devil.phoenixproject.presentation.util.LocalWindowSizeClass
 import com.devil.phoenixproject.presentation.util.calculateWindowSizeClass
 import androidx.compose.foundation.layout.BoxWithConstraints
+import org.jetbrains.compose.resources.stringResource
+import vitruvianprojectphoenix.shared.generated.resources.Res
+import vitruvianprojectphoenix.shared.generated.resources.*
 
 /**
  * Enhanced main screen with dynamic top bar and bottom navigation.
@@ -295,7 +298,7 @@ fun EnhancedMainScreen(
                                 contentDescription = "Analytics"
                             )
                         },
-                        label = { Text("Analytics") },
+                        label = { Text(stringResource(Res.string.nav_analytics)) },
                         selected = currentRoute == NavigationRoutes.Analytics.route,
                         onClick = {
                             if (currentRoute != NavigationRoutes.Analytics.route) {
@@ -323,7 +326,7 @@ fun EnhancedMainScreen(
                                 contentDescription = "Workouts"
                             )
                         },
-                        label = { Text("Workouts") },
+                        label = { Text(stringResource(Res.string.nav_workouts)) },
                         selected = isWorkoutsRoute,
                         onClick = {
                             if (currentRoute != NavigationRoutes.Home.route) {
@@ -379,7 +382,7 @@ fun EnhancedMainScreen(
                                 contentDescription = "Settings"
                             )
                         },
-                        label = { Text("Settings") },
+                        label = { Text(stringResource(Res.string.nav_settings)) },
                         selected = currentRoute == NavigationRoutes.Settings.route,
                         onClick = {
                             if (currentRoute != NavigationRoutes.Settings.route) {
@@ -449,18 +452,18 @@ fun EnhancedMainScreen(
             if (showExitRoutineConfirmation) {
                 AlertDialog(
                     onDismissRequest = { showExitRoutineConfirmation = false },
-                    title = { Text("Exit Routine?") },
-                    text = { Text("Progress will be saved.") },
+                    title = { Text(stringResource(Res.string.exit_routine_title)) },
+                    text = { Text(stringResource(Res.string.exit_routine_message)) },
                     confirmButton = {
                         Button(onClick = {
                             showExitRoutineConfirmation = false
                             viewModel.exitRoutineFlow()
                             navController.navigateUp()
-                        }) { Text("Exit") }
+                        }) { Text(stringResource(Res.string.action_exit)) }
                     },
                     dismissButton = {
                         TextButton(onClick = { showExitRoutineConfirmation = false }) {
-                            Text("Cancel")
+                            Text(stringResource(Res.string.action_cancel))
                         }
                     }
                 )

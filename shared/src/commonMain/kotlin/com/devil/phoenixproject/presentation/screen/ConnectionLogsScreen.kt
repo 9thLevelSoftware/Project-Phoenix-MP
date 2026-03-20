@@ -34,6 +34,9 @@ import kotlin.time.Instant
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
 import org.koin.compose.viewmodel.koinViewModel
+import org.jetbrains.compose.resources.stringResource
+import vitruvianprojectphoenix.shared.generated.resources.Res
+import vitruvianprojectphoenix.shared.generated.resources.*
 
 /**
  * Connection logs screen - shows BLE connection history with filtering.
@@ -94,7 +97,7 @@ fun ConnectionLogsScreen(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp, vertical = 8.dp),
-            placeholder = { Text("Search logs...") },
+            placeholder = { Text(stringResource(Res.string.search_logs)) },
             leadingIcon = { Icon(Icons.Default.Search, contentDescription = "Search") },
             trailingIcon = {
                 if (filter.searchQuery.isNotEmpty()) {
@@ -159,7 +162,7 @@ fun ConnectionLogsScreen(
                 FilterChip(
                     selected = isAutoScrollEnabled,
                     onClick = { logsViewModel.toggleAutoScroll() },
-                    label = { Text("Auto-scroll") },
+                    label = { Text(stringResource(Res.string.auto_scroll)) },
                     leadingIcon = {
                         Icon(
                             Icons.Default.KeyboardArrowDown,
@@ -238,10 +241,10 @@ fun ConnectionLogsScreen(
     if (showExportDialog) {
         AlertDialog(
             onDismissRequest = { showExportDialog = false },
-            title = { Text("Export Logs") },
+            title = { Text(stringResource(Res.string.export_logs)) },
             text = {
                 Column {
-                    Text("${logs.size} log entries ready to export.")
+                    Text(stringResource(Res.string.logs_ready_to_export, logs.size))
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
                         text = "Log content preview:",
@@ -275,12 +278,12 @@ fun ConnectionLogsScreen(
                     showCopiedMessage = true
                     showExportDialog = false
                 }) {
-                    Text("Copy to Clipboard")
+                    Text(stringResource(Res.string.copy_to_clipboard))
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showExportDialog = false }) {
-                    Text("Cancel")
+                    Text(stringResource(Res.string.action_cancel))
                 }
             }
         )
@@ -290,8 +293,8 @@ fun ConnectionLogsScreen(
     if (showClearDialog) {
         AlertDialog(
             onDismissRequest = { showClearDialog = false },
-            title = { Text("Clear Logs?") },
-            text = { Text("This will permanently delete all ${logs.size} log entries.") },
+            title = { Text(stringResource(Res.string.clear_logs_title)) },
+            text = { Text(stringResource(Res.string.clear_logs_message, logs.size)) },
             confirmButton = {
                 TextButton(
                     onClick = {
@@ -302,12 +305,12 @@ fun ConnectionLogsScreen(
                         contentColor = MaterialTheme.colorScheme.error
                     )
                 ) {
-                    Text("Clear All")
+                    Text(stringResource(Res.string.clear_all))
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showClearDialog = false }) {
-                    Text("Cancel")
+                    Text(stringResource(Res.string.action_cancel))
                 }
             }
         )
@@ -335,7 +338,7 @@ private fun LogLevelFilterChip(
                         )
                 )
                 Spacer(modifier = Modifier.width(4.dp))
-                Text("${level.name} ($count)")
+                Text(stringResource(Res.string.log_level_count, level.name, count))
             }
         }
     )

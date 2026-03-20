@@ -15,6 +15,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import org.jetbrains.compose.resources.stringResource
+import vitruvianprojectphoenix.shared.generated.resources.Res
+import vitruvianprojectphoenix.shared.generated.resources.*
 
 /**
  * Dialog for selecting superset rest time from fixed options.
@@ -31,7 +34,7 @@ fun RestTimePickerDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Rest Between Exercises") },
+        title = { Text(stringResource(Res.string.rest_between_exercises)) },
         text = {
             FlowRow(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -64,7 +67,7 @@ fun RestTimePickerDialog(
         confirmButton = {},
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("Cancel")
+                Text(stringResource(Res.string.action_cancel))
             }
         }
     )

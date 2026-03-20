@@ -28,6 +28,9 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.ui.theme.Spacing
+import org.jetbrains.compose.resources.stringResource
+import vitruvianprojectphoenix.shared.generated.resources.Res
+import vitruvianprojectphoenix.shared.generated.resources.*
 
 // Conversion constants
 private const val KG_TO_LB = 2.20462f
@@ -312,7 +315,7 @@ private fun WeightPickerDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Set Weight") },
+        title = { Text(stringResource(Res.string.set_weight)) },
         text = {
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
@@ -406,12 +409,12 @@ private fun WeightPickerDialog(
         },
         confirmButton = {
             Button(onClick = { onWeightSelected(selectedWeightKg) }) {
-                Text("Set")
+                Text(stringResource(Res.string.label_set))
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("Cancel")
+                Text(stringResource(Res.string.action_cancel))
             }
         }
     )

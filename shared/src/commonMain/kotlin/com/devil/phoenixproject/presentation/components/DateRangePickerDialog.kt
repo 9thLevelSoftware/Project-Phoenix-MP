@@ -13,6 +13,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.util.KmpUtils
+import org.jetbrains.compose.resources.stringResource
+import vitruvianprojectphoenix.shared.generated.resources.Res
+import vitruvianprojectphoenix.shared.generated.resources.*
 
 /**
  * Date range options for export filtering
@@ -151,7 +154,7 @@ fun DateRangePickerDialog(
                 onClick = onDismiss,
                 shape = RoundedCornerShape(20.dp)
             ) {
-                Text("Cancel")
+                Text(stringResource(Res.string.action_cancel))
             }
         },
         containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,

@@ -13,6 +13,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.presentation.manager.ResumableProgressInfo
+import org.jetbrains.compose.resources.stringResource
+import vitruvianprojectphoenix.shared.generated.resources.Res
+import vitruvianprojectphoenix.shared.generated.resources.*
 
 /**
  * Dialog shown when user tries to start a routine that has existing progress.
@@ -29,10 +32,10 @@ fun ResumeRoutineDialog(
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Resume Workout?") },
+        title = { Text(stringResource(Res.string.resume_workout_title)) },
         text = {
             Column {
-                Text("You have progress saved:")
+                Text(stringResource(Res.string.resume_workout_saved))
                 Spacer(Modifier.height(8.dp))
                 Text(
                     "Exercise ${progressInfo.currentExercise} of ${progressInfo.totalExercises}",
@@ -48,12 +51,12 @@ fun ResumeRoutineDialog(
         },
         confirmButton = {
             Button(onClick = onResume) {
-                Text("Continue")
+                Text(stringResource(Res.string.action_continue))
             }
         },
         dismissButton = {
             OutlinedButton(onClick = onRestart) {
-                Text("Restart from Set 1")
+                Text(stringResource(Res.string.restart_from_set_1))
             }
         }
     )

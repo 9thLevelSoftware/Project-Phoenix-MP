@@ -22,6 +22,9 @@ import com.devil.phoenixproject.data.repository.UserProfileRepository
 import com.devil.phoenixproject.ui.theme.Spacing
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
+import org.jetbrains.compose.resources.stringResource
+import vitruvianprojectphoenix.shared.generated.resources.Res
+import vitruvianprojectphoenix.shared.generated.resources.*
 
 // Profile color palette
 val ProfileColors = listOf(
@@ -193,12 +196,12 @@ fun AddProfileDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Add Profile") },
+        title = { Text(stringResource(Res.string.add_profile)) },
         text = {
             OutlinedTextField(
                 value = newProfileName,
                 onValueChange = { newProfileName = it },
-                label = { Text("Name") },
+                label = { Text(stringResource(Res.string.label_name)) },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth()
             )
@@ -216,12 +219,12 @@ fun AddProfileDialog(
                 },
                 enabled = newProfileName.isNotBlank()
             ) {
-                Text("Add")
+                Text(stringResource(Res.string.action_add))
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("Cancel")
+                Text(stringResource(Res.string.action_cancel))
             }
         }
     )

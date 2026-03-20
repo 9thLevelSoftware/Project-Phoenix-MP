@@ -47,6 +47,9 @@ import com.devil.phoenixproject.data.repository.AuthRepository
 import com.devil.phoenixproject.data.repository.AuthState
 import com.devil.phoenixproject.domain.subscription.SubscriptionManager
 import kotlinx.coroutines.launch
+import org.jetbrains.compose.resources.stringResource
+import vitruvianprojectphoenix.shared.generated.resources.Res
+import vitruvianprojectphoenix.shared.generated.resources.*
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -74,7 +77,7 @@ fun AccountScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Account") },
+                title = { Text(stringResource(Res.string.account_title)) },
                 navigationIcon = {
                     IconButton(onClick = onBackClick) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
@@ -125,7 +128,7 @@ fun AccountScreen(
                                 .padding(24.dp),
                             contentAlignment = Alignment.Center
                         ) {
-                            Text("Loading...")
+                            Text(stringResource(Res.string.label_loading))
                         }
                     }
                 }
@@ -271,7 +274,7 @@ private fun NotAuthenticatedCard(
                 onClick = onSignInClick,
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Text("Sign In / Create Account")
+                Text(stringResource(Res.string.sign_in_create_account))
             }
         }
     }
@@ -339,7 +342,7 @@ private fun SubscriptionStatusCard(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(8.dp)
                 ) {
-                    Text("Upgrade to Pro")
+                    Text(stringResource(Res.string.upgrade_to_pro))
                 }
             }
         }
