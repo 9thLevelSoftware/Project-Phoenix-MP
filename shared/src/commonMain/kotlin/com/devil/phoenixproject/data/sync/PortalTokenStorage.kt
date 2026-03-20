@@ -44,6 +44,10 @@ class PortalTokenStorage(private val settings: Settings) {
     }
 
     fun saveGoTrueAuth(response: GoTrueAuthResponse) {
+        // Preserve existing premium status — GoTrue auth response does not include it,
+        // and overwriting would reset paid users to non-premium on every sign-in.
+        val existingPremium: Boolean = settings[KEY_IS_PREMIUM, false]
+
         settings[KEY_TOKEN] = response.accessToken
         settings[KEY_REFRESH_TOKEN] = response.refreshToken
         val expiresAt = response.expiresAt
@@ -52,6 +56,7 @@ class PortalTokenStorage(private val settings: Settings) {
         settings[KEY_USER_ID] = response.user.id
         settings[KEY_USER_EMAIL] = response.user.email ?: ""
         settings[KEY_USER_NAME] = response.user.displayName ?: ""
+        settings[KEY_IS_PREMIUM] = existingPremium
         _isAuthenticated.value = true
         _currentUser.value = loadUser()
     }
