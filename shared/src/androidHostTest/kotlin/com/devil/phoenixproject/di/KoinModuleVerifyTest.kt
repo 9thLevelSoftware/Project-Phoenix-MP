@@ -3,6 +3,7 @@ package com.devil.phoenixproject.di
 import com.devil.phoenixproject.data.local.DriverFactory
 import com.devil.phoenixproject.data.repository.BleRepository
 import com.devil.phoenixproject.data.sync.SupabaseConfig
+import com.devil.phoenixproject.domain.voice.SafeWordListenerFactory
 import com.devil.phoenixproject.util.ConnectivityChecker
 import com.devil.phoenixproject.util.CsvExporter
 import com.devil.phoenixproject.util.CsvImporter
@@ -28,6 +29,8 @@ class KoinModuleVerifyTest {
                 DataBackupManager::class,
                 ConnectivityChecker::class,
                 SupabaseConfig::class,
+                // Platform-provided factories
+                SafeWordListenerFactory::class,
                 // Lambda types used in constructor injection (e.g. PortalApiClient tokenProvider)
                 Function0::class,
             )
