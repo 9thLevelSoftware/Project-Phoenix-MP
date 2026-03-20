@@ -125,13 +125,13 @@ class GhostRacingEngineTest {
     }
 
     @Test
-    fun compareRepReturnsAheadWhenGhostMcvIsZeroOrNegative() {
-        // Guard against bad data -- treat zero/negative ghost as always ahead
+    fun compareRepReturnsBeyondWhenGhostMcvIsZeroOrNegative() {
+        // Guard against bad data -- no valid comparison possible, return BEYOND
         val verdict1 = GhostRacingEngine.compareRep(currentMcvMmS = 400f, ghostMcvMmS = 0f)
-        assertEquals(GhostVerdict.AHEAD, verdict1)
+        assertEquals(GhostVerdict.BEYOND, verdict1)
 
         val verdict2 = GhostRacingEngine.compareRep(currentMcvMmS = 400f, ghostMcvMmS = -10f)
-        assertEquals(GhostVerdict.AHEAD, verdict2)
+        assertEquals(GhostVerdict.BEYOND, verdict2)
     }
 
     // ==========================================================

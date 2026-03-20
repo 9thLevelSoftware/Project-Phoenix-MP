@@ -54,8 +54,8 @@ object GhostRacingEngine {
      * @return AHEAD if >5% faster, BEHIND if >5% slower, TIED if within tolerance
      */
     fun compareRep(currentMcvMmS: Float, ghostMcvMmS: Float): GhostVerdict {
-        // Guard: bad ghost data -- treat as always ahead
-        if (ghostMcvMmS <= 0f) return GhostVerdict.AHEAD
+        // Guard: bad ghost data -- no valid comparison possible
+        if (ghostMcvMmS <= 0f) return GhostVerdict.BEYOND
 
         val deltaPercent = ((currentMcvMmS - ghostMcvMmS) / ghostMcvMmS) * 100f
         return when {
