@@ -267,7 +267,6 @@
     <string name="no_plateaus">No se detectaron mesetas. ¡Sigue progresando!</string>
 
     <string name="form_check">Control de forma</string>
-    <string name="form_check_ios_soon">El control de forma llegará pronto a iOS. ¡Mantente atento!</string>
     <string name="workout_in_progress">Entrenamiento en progreso</string>
     <string name="stop_before_editing">Por favor detén el entrenamiento actual antes de editar rutinas.</string>
 

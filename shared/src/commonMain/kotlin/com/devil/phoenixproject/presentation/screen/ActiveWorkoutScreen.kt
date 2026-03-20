@@ -8,22 +8,17 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import com.devil.phoenixproject.data.repository.ExerciseRepository
-import com.devil.phoenixproject.data.repository.SmartSuggestionsRepository
 import com.devil.phoenixproject.domain.model.*
-import com.devil.phoenixproject.domain.premium.ReadinessEngine
 import com.devil.phoenixproject.presentation.components.BatchedBadgeCelebrationDialog
 import com.devil.phoenixproject.presentation.components.ConnectionErrorDialog
 import com.devil.phoenixproject.presentation.components.HapticFeedbackEffect
 import com.devil.phoenixproject.presentation.components.PRCelebrationDialog
-import com.devil.phoenixproject.presentation.components.ReadinessBriefingCard
 import org.koin.compose.koinInject
 import com.devil.phoenixproject.data.repository.GamificationRepository
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
 import com.devil.phoenixproject.presentation.manager.DefaultWorkoutSessionManager
 import com.devil.phoenixproject.presentation.navigation.NavigationRoutes
 import co.touchlab.kermit.Logger
-import com.devil.phoenixproject.domain.model.FormAssessment
-import com.devil.phoenixproject.isIosPlatform
 import com.devil.phoenixproject.presentation.manager.DetectionState
 import com.devil.phoenixproject.util.setKeepScreenOn
 import kotlinx.coroutines.delay
@@ -69,13 +64,6 @@ fun ActiveWorkoutScreen(
     val latestRepQuality by viewModel.latestRepQuality.collectAsState()
     val latestBiomechanicsResult by viewModel.latestBiomechanicsResult.collectAsState()
     val detectionState by viewModel.detectionState.collectAsState()
-    // CV Form Check state (Phase 19)
-    val isFormCheckEnabled by viewModel.isFormCheckEnabled.collectAsState()
-    val latestFormViolations by viewModel.latestFormViolations.collectAsState()
-    val latestFormScore by viewModel.latestFormScore.collectAsState()
-    // Ghost Racing state (Phase 22)
-    val ghostSession by viewModel.ghostSession.collectAsState()
-    val latestGhostVerdict by viewModel.latestGhostVerdict.collectAsState()
     // Issue #237: Motion-triggered set start
     val motionStartHoldProgress by viewModel.motionStartHoldProgress.collectAsState()
     // Issue #297, #228: Rest timer pause state
@@ -103,34 +91,7 @@ fun ActiveWorkoutScreen(
         }
     }
 
-    // Readiness briefing
-    var readinessDismissed by remember { mutableStateOf(false) }
-    var readinessResult by remember { mutableStateOf<ReadinessResult?>(null) }
 
-    // Compute readiness once on screen open
-    val smartSuggestionsRepo: SmartSuggestionsRepository = koinInject()
-    LaunchedEffect(Unit) {
-        val twentyEightDaysMs = 28L * 24 * 60 * 60 * 1000
-        val nowMs = currentTimeMillis()
-        val summaries = smartSuggestionsRepo.getSessionSummariesSince(nowMs - twentyEightDaysMs)
-        readinessResult = ReadinessEngine.computeReadiness(summaries, nowMs)
-    }
-
-    // iOS "coming soon" dialog state (CV-10)
-    var showFormCheckComingSoonDialog by remember { mutableStateOf(false) }
-
-    // Form check toggle callback with iOS guard
-    val onToggleFormCheck: () -> Unit = {
-        if (isIosPlatform) {
-            // CV-10: iOS shows "coming soon" dialog
-            showFormCheckComingSoonDialog = true
-        } else {
-            viewModel.toggleFormCheck()
-        }
-    }
-    val onFormAssessment: (FormAssessment) -> Unit = { assessment ->
-        viewModel.onFormAssessment(assessment)
-    }
 
     // Badge Celebration state
     val gamificationRepository: GamificationRepository = koinInject()
@@ -336,8 +297,6 @@ fun ActiveWorkoutScreen(
         canGoBack, canSkipForward,
         timedExerciseRemainingSeconds, isCurrentExerciseBodyweight, latestRepQuality,
         latestBiomechanicsResult, detectionState,
-        isFormCheckEnabled, latestFormViolations, latestFormScore,
-        ghostSession, latestGhostVerdict,
         motionStartHoldProgress, isRestPaused,
         currentWarmupSetIndex, totalWarmupSets,
         justLiftRestCountdown
@@ -372,11 +331,6 @@ fun ActiveWorkoutScreen(
             latestRepQualityScore = latestRepQuality?.composite,
             latestBiomechanicsResult = latestBiomechanicsResult,
             detectionState = detectionState,
-            isFormCheckEnabled = isFormCheckEnabled,
-            latestFormViolations = latestFormViolations,
-            latestFormScore = latestFormScore,
-            ghostSession = ghostSession,
-            latestGhostVerdict = latestGhostVerdict,
             motionStartHoldProgress = motionStartHoldProgress,
             isRestPaused = isRestPaused,
             currentWarmupSetIndex = currentWarmupSetIndex,
@@ -423,24 +377,11 @@ fun ActiveWorkoutScreen(
         snackbarHost = { SnackbarHost(snackbarHostState) }
     ) { paddingValues ->
         Column(modifier = Modifier.padding(paddingValues)) {
-            // Readiness briefing card -- shown in Idle state for Elite users (BRIEF-02)
-            // Card is purely informational, sits above workout controls, never blocks workout start
-            if (!readinessDismissed && readinessResult != null && workoutState is WorkoutState.Idle) {
-                ReadinessBriefingCard(
-                    result = readinessResult!!,
-                    onDismiss = { readinessDismissed = true },
-                    onPortalLink = { /* Portal deep link -- placeholder for now */ },
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
-                )
-            }
-
             WorkoutTab(
                 state = workoutUiState,
                 actions = workoutActions,
                 exerciseRepository = exerciseRepository,
                 hapticEvents = hapticEvents,
-                onToggleFormCheck = onToggleFormCheck,
-                onFormAssessment = onFormAssessment,
                 modifier = Modifier
             )
         }
@@ -520,20 +461,6 @@ fun ActiveWorkoutScreen(
                 }
             )
         }
-    }
-
-    // iOS Form Check "coming soon" dialog (CV-10)
-    if (showFormCheckComingSoonDialog) {
-        AlertDialog(
-            onDismissRequest = { showFormCheckComingSoonDialog = false },
-            title = { Text(stringResource(Res.string.form_check)) },
-            text = { Text(stringResource(Res.string.form_check_ios_soon)) },
-            confirmButton = {
-                TextButton(onClick = { showFormCheckComingSoonDialog = false }) {
-                    Text(stringResource(Res.string.action_ok))
-                }
-            }
-        )
     }
 
     // Connection error dialog (ConnectingOverlay removed - status shown in top bar button)

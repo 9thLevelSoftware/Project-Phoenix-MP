@@ -15,7 +15,6 @@ import com.devil.phoenixproject.data.repository.TrainingCycleRepository
 import com.devil.phoenixproject.data.repository.WorkoutRepository
 import com.devil.phoenixproject.data.sync.SyncTriggerManager
 import com.devil.phoenixproject.domain.model.*
-import com.devil.phoenixproject.domain.premium.FormRulesEngine
 import com.devil.phoenixproject.domain.premium.GhostRacingEngine
 import com.devil.phoenixproject.domain.premium.RepQualityScorer
 import com.devil.phoenixproject.domain.replay.RepBoundaryDetector
@@ -1463,34 +1462,6 @@ class ActiveSessionEngine(
 
     // ===== Form Check =====
 
-    /**
-     * Called from FormCheckOverlay when a new form assessment frame is available.
-     * Accumulates assessments for set-end scoring and emits real-time violations.
-     * Audio cues are debounced per JointAngleType (3-second cooldown).
-     */
-    fun onFormAssessment(assessment: FormAssessment) {
-        coordinator.formAssessments.add(assessment)
-        coordinator._latestFormViolations.value = assessment.violations
-
-        // Emit warning audio with per-violation-type debounce (3 seconds)
-        val now = currentTimeMillis()
-        val hasCriticalOrWarning = assessment.violations.any { violation ->
-            val shouldEmit = (violation.severity == FormViolationSeverity.WARNING ||
-                violation.severity == FormViolationSeverity.CRITICAL) &&
-                (now - (coordinator.formWarningLastEmitTimestamps[violation.rule.jointAngle] ?: 0L)) >= 3000L
-
-            if (shouldEmit) {
-                coordinator.formWarningLastEmitTimestamps[violation.rule.jointAngle] = now
-            }
-            shouldEmit
-        }
-        if (hasCriticalOrWarning) {
-            scope.launch {
-                coordinator._hapticEvents.emit(HapticEvent.FORM_WARNING)
-            }
-        }
-    }
-
     // ===== Core Workout Lifecycle =====
 
     fun resetForNewWorkout() {
@@ -1501,11 +1472,6 @@ class ActiveSessionEngine(
         // Reset biomechanics engine and rep boundary timestamps
         coordinator.biomechanicsEngine.reset()
         coordinator.repBoundaryTimestamps.clear()
-        // Reset form check state for fresh workout
-        coordinator.formAssessments.clear()
-        coordinator._latestFormViolations.value = emptyList()
-        coordinator.formWarningLastEmitTimestamps.clear()
-        coordinator._latestFormScore.value = null
         // Reset ghost racing state for fresh workout
         coordinator._ghostSession.value = null
         coordinator._latestGhostVerdict.value = null
@@ -2304,9 +2270,6 @@ class ActiveSessionEngine(
         // getSetSummary() is read-only/idempotent.
         val bioSummary = coordinator.biomechanicsEngine.getSetSummary()
 
-        // Capture form score for persistence (may be null if form check was not active)
-        val formScoreValue = coordinator._latestFormScore.value
-
         val session = WorkoutSession(
             id = sessionId,
             timestamp = coordinator.workoutStartTime,
@@ -2347,9 +2310,7 @@ class ActiveSessionEngine(
             avgAsymmetryPercent = bioSummary?.avgAsymmetryPercent,
             totalVelocityLossPercent = bioSummary?.totalVelocityLossPercent,
             dominantSide = bioSummary?.dominantSide,
-            strengthProfile = bioSummary?.strengthProfile?.name,
-            // Form Check score (Phase 19 - captured when form check is enabled)
-            formScore = formScoreValue
+            strengthProfile = bioSummary?.strengthProfile?.name
         )
 
         workoutRepository.saveSession(session)
@@ -2526,13 +2487,6 @@ class ActiveSessionEngine(
                 applyAutoAcceptedDetection()
             }
 
-            // Compute form score BEFORE saveWorkoutSession() so the persisted session
-            // picks up the current set's score (saveWorkoutSession reads _latestFormScore).
-            val formScore = if (coordinator.formAssessments.isNotEmpty()) {
-                FormRulesEngine.calculateFormScore(coordinator.formAssessments)
-            } else null
-            coordinator._latestFormScore.value = formScore
-
             saveWorkoutSession()
 
             // Persist per-rep metric data (GATE-04: captured for all tiers)
@@ -2581,11 +2535,6 @@ class ActiveSessionEngine(
             coordinator.biomechanicsEngine.reset()
             coordinator.repBoundaryTimestamps.clear()
 
-            // Reset form check state for next set
-            coordinator.formAssessments.clear()
-            coordinator._latestFormViolations.value = emptyList()
-            coordinator.formWarningLastEmitTimestamps.clear()
-
             val completedReps = coordinator._repCount.value.workingReps
             val warmupReps = coordinator._repCount.value.warmupReps
             val metricsList = coordinator.collectedMetrics.value
@@ -2613,7 +2562,6 @@ class ActiveSessionEngine(
             val summary = baseSummary.copy(
                 qualitySummary = qualitySummary,
                 biomechanicsSummary = biomechanicsSummary,
-                formScore = formScore,
                 ghostSetSummary = ghostSetSummary
             )
 

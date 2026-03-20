@@ -3,9 +3,6 @@ package com.devil.phoenixproject.presentation.screen
 import com.devil.phoenixproject.data.repository.AutoStopUiState
 import com.devil.phoenixproject.domain.model.*
 import com.devil.phoenixproject.domain.model.BiomechanicsRepResult
-import com.devil.phoenixproject.domain.model.FormViolation
-import com.devil.phoenixproject.domain.model.GhostRepComparison
-import com.devil.phoenixproject.domain.model.GhostSession
 import com.devil.phoenixproject.domain.usecase.RepRanges
 import com.devil.phoenixproject.presentation.manager.DetectionState
 
@@ -74,13 +71,6 @@ data class WorkoutUiState(
     val latestRepQualityScore: Int? = null,
     val latestBiomechanicsResult: BiomechanicsRepResult? = null,
     val detectionState: DetectionState = DetectionState(),
-    // Form Check state (Phase 19 CV-05/CV-06)
-    val isFormCheckEnabled: Boolean = false,
-    val latestFormViolations: List<FormViolation> = emptyList(),
-    val latestFormScore: Int? = null,
-    // Ghost Racing state (Phase 22)
-    val ghostSession: GhostSession? = null,
-    val latestGhostVerdict: GhostRepComparison? = null,
     // Issue #237: Motion-triggered set start hold progress (0.0-1.0, null = not active)
     val motionStartHoldProgress: Float? = null,
     // Issue #297, #228: Rest timer pause state for UI display

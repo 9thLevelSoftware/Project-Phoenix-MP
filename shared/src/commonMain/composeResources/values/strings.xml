@@ -280,7 +280,6 @@
 
     <!-- ==================== Form Check ==================== -->
     <string name="form_check">Form Check</string>
-    <string name="form_check_ios_soon">Form Check is coming soon to iOS. Stay tuned!</string>
 
     <!-- ==================== Daily Routines ==================== -->
     <string name="workout_in_progress">Workout in Progress</string>
