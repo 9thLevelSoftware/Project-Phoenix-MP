@@ -3,8 +3,11 @@ package com.devil.phoenixproject.util
 import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.domain.model.generateUUID
 import kotlinx.datetime.LocalDate
+import kotlinx.datetime.LocalDateTime
+import kotlinx.datetime.LocalTime
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.atStartOfDayIn
+import kotlinx.datetime.toInstant
 
 /**
  * Shared CSV parsing logic for workout history CSVs exported by [CsvExporter].
@@ -125,8 +128,10 @@ object CsvParser {
         val exerciseName = field("exercise") ?: return null
         val mode = field("mode") ?: return null
 
-        // Parse date to epoch millis
-        val timestamp = parseDateToEpochMs(dateStr) ?: throw IllegalArgumentException(
+        // Parse date + optional time to epoch millis.
+        // Without time column, multiple same-day workouts all collapse to midnight.
+        val timeStr = field("time")
+        val timestamp = parseDateTimeToEpochMs(dateStr, timeStr) ?: throw IllegalArgumentException(
             "Invalid date format: '$dateStr' (expected yyyy-MM-dd)"
         )
 
@@ -161,7 +166,7 @@ object CsvParser {
     }
 
     /**
-     * Parse a date string in yyyy-MM-dd format to epoch milliseconds.
+     * Parse a date string in yyyy-MM-dd format to epoch milliseconds (midnight).
      */
     private fun parseDateToEpochMs(dateStr: String): Long? {
         return try {
@@ -170,6 +175,32 @@ object CsvParser {
             instant.toEpochMilliseconds()
         } catch (_: Exception) {
             null
+        }
+    }
+
+    /**
+     * Parse date + optional time to epoch milliseconds.
+     * Time format expected: "HH:mm" or "HH:mm:ss".
+     * Falls back to midnight if time is null or unparseable.
+     */
+    private fun parseDateTimeToEpochMs(dateStr: String, timeStr: String?): Long? {
+        val localDate = try {
+            LocalDate.parse(dateStr)
+        } catch (_: Exception) {
+            return null
+        }
+
+        if (timeStr.isNullOrBlank()) {
+            return localDate.atStartOfDayIn(TimeZone.currentSystemDefault()).toEpochMilliseconds()
+        }
+
+        return try {
+            val localTime = LocalTime.parse(timeStr.trim())
+            val localDateTime = LocalDateTime(localDate, localTime)
+            localDateTime.toInstant(TimeZone.currentSystemDefault()).toEpochMilliseconds()
+        } catch (_: Exception) {
+            // Fall back to midnight if time parsing fails
+            localDate.atStartOfDayIn(TimeZone.currentSystemDefault()).toEpochMilliseconds()
         }
     }
 
