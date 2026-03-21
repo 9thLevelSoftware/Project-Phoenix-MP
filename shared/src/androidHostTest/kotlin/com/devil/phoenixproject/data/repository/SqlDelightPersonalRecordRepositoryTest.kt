@@ -2,11 +2,13 @@ package com.devil.phoenixproject.data.repository
 
 import com.devil.phoenixproject.database.VitruvianDatabase
 import com.devil.phoenixproject.domain.model.PRType
+import com.devil.phoenixproject.util.OneRepMaxCalculator
 import com.devil.phoenixproject.testutil.createTestDatabase
 import kotlinx.coroutines.test.runTest
 import org.junit.Before
 import org.junit.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class SqlDelightPersonalRecordRepositoryTest {
@@ -22,10 +24,11 @@ class SqlDelightPersonalRecordRepositoryTest {
     }
 
     @Test
-    fun `updatePRsIfBetter inserts weight and volume PRs`() = runTest {
+    fun `updatePRsIfBetter normalizes legacy mode keys on write and lookup`() = runTest {
         val result = repository.updatePRsIfBetter(
             exerciseId = "bench",
-            weightPerCableKg = 50f,
+            weightPRWeightPerCableKg = 50f,
+            volumePRWeightPerCableKg = 50f,
             reps = 5,
             workoutMode = "OldSchool",
             timestamp = 1000L
@@ -34,45 +37,57 @@ class SqlDelightPersonalRecordRepositoryTest {
         assertTrue(result.contains(PRType.MAX_WEIGHT))
         assertTrue(result.contains(PRType.MAX_VOLUME))
 
-        val weightPr = repository.getWeightPR("bench", "OldSchool")
+        val weightPr = repository.getWeightPR("bench", "Old School")
         assertEquals(50f, weightPr?.weightPerCableKg)
+        assertEquals("Old School", weightPr?.workoutMode)
+        assertEquals(weightPr?.id, repository.getWeightPR("bench", "OldSchool")?.id)
     }
 
     @Test
-    fun `updatePRsIfBetter updates volume without replacing weight`() = runTest {
+    fun `updatePRsIfBetter uses achieved load for weight PR and conservative load for volume PR`() = runTest {
         repository.updatePRsIfBetter(
             exerciseId = "bench",
-            weightPerCableKg = 50f,
+            weightPRWeightPerCableKg = 60f,
+            volumePRWeightPerCableKg = 50f,
             reps = 5,
-            workoutMode = "OldSchool",
+            workoutMode = "Old School",
             timestamp = 1000L
-        )
-
-        val result = repository.updatePRsIfBetter(
-            exerciseId = "bench",
-            weightPerCableKg = 45f,
-            reps = 10,
-            workoutMode = "OldSchool",
-            timestamp = 2000L
         ).getOrThrow()
 
-        assertTrue(result.contains(PRType.MAX_VOLUME))
-        val bestWeight = repository.getBestWeightPR("bench")
-        assertEquals(50f, bestWeight?.weightPerCableKg)
+        val weightPr = repository.getWeightPR("bench", "Old School")
+        val volumePr = repository.getVolumePR("bench", "Old School")
+        val exercise = database.vitruvianDatabaseQueries.selectExerciseById("bench").executeAsOneOrNull()
+
+        assertEquals(60f, weightPr?.weightPerCableKg)
+        assertEquals(300f, weightPr?.volume)
+        assertEquals(50f, volumePr?.weightPerCableKg)
+        assertEquals(250f, volumePr?.volume)
+        assertEquals(
+            OneRepMaxCalculator.epley(60f, 5).toDouble(),
+            exercise?.one_rep_max_kg
+        )
+    }
+
+    @Test
+    fun `normalizeWorkoutModeKey only canonicalizes exact echo mode`() {
+        assertEquals("Echo", normalizeWorkoutModeKey("Echo"))
+        assertEquals("EchoLevel3", normalizeWorkoutModeKey("EchoLevel3"))
     }
 
     @Test
     fun `getBestPR returns highest weight`() = runTest {
         repository.updatePRsIfBetter(
             exerciseId = "bench",
-            weightPerCableKg = 40f,
+            weightPRWeightPerCableKg = 40f,
+            volumePRWeightPerCableKg = 40f,
             reps = 8,
             workoutMode = "OldSchool",
             timestamp = 1000L
         )
         repository.updatePRsIfBetter(
             exerciseId = "bench",
-            weightPerCableKg = 60f,
+            weightPRWeightPerCableKg = 60f,
+            volumePRWeightPerCableKg = 60f,
             reps = 3,
             workoutMode = "OldSchool",
             timestamp = 2000L
@@ -80,6 +95,28 @@ class SqlDelightPersonalRecordRepositoryTest {
 
         val best = repository.getBestPR("bench")
         assertEquals(60f, best?.weightPerCableKg)
+    }
+
+    @Test
+    fun `normalized lookup reads legacy mode rows before migration cleanup`() = runTest {
+        database.vitruvianDatabaseQueries.insertRecord(
+            exerciseId = "bench",
+            exerciseName = "Bench Press",
+            weight = 55.0,
+            reps = 8,
+            oneRepMax = OneRepMaxCalculator.epley(55f, 8).toDouble(),
+            achievedAt = 1000L,
+            workoutMode = "OldSchool",
+            prType = PRType.MAX_WEIGHT.name,
+            volume = 440.0
+        )
+
+        val canonical = repository.getWeightPR("bench", "Old School")
+        val legacy = repository.getWeightPR("bench", "OldSchool")
+
+        assertEquals(55f, canonical?.weightPerCableKg)
+        assertEquals(canonical?.id, legacy?.id)
+        assertNull(database.vitruvianDatabaseQueries.selectPR("bench", "Old School", PRType.MAX_WEIGHT.name).executeAsOneOrNull())
     }
 
     private fun insertExercise(id: String, name: String) {

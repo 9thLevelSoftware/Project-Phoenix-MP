@@ -1,6 +1,7 @@
 package com.devil.phoenixproject.testutil
 
 import com.devil.phoenixproject.data.repository.PersonalRecordRepository
+import com.devil.phoenixproject.data.repository.normalizeWorkoutModeKey
 import com.devil.phoenixproject.domain.model.PRType
 import com.devil.phoenixproject.domain.model.PersonalRecord
 import com.devil.phoenixproject.domain.model.WorkoutPhase
@@ -22,7 +23,8 @@ class FakePersonalRecordRepository : PersonalRecordRepository {
 
     data class UpdateCall(
         val exerciseId: String,
-        val weightPerCableKg: Float,
+        val weightPRWeightPerCableKg: Float,
+        val volumePRWeightPerCableKg: Float,
         val reps: Int,
         val workoutMode: String,
         val timestamp: Long
@@ -30,7 +32,7 @@ class FakePersonalRecordRepository : PersonalRecordRepository {
 
     // Test control methods
     fun addRecord(record: PersonalRecord) {
-        val key = "${record.exerciseId}-${record.workoutMode}-${record.prType}"
+        val key = "${record.exerciseId}-${normalizeWorkoutModeKey(record.workoutMode)}-${record.prType}"
         records[key] = record
         updateRecordsFlow()
     }
@@ -54,7 +56,10 @@ class FakePersonalRecordRepository : PersonalRecordRepository {
 
     override suspend fun getLatestPR(exerciseId: String, workoutMode: String): PersonalRecord? {
         return records.values
-            .filter { it.exerciseId == exerciseId && it.workoutMode == workoutMode }
+            .filter {
+                it.exerciseId == exerciseId &&
+                    normalizeWorkoutModeKey(it.workoutMode) == normalizeWorkoutModeKey(workoutMode)
+            }
             .maxByOrNull { it.timestamp }
     }
 
@@ -84,11 +89,12 @@ class FakePersonalRecordRepository : PersonalRecordRepository {
         workoutMode: String,
         timestamp: Long
     ): Result<Boolean> {
-        updateCalls.add(UpdateCall(exerciseId, weightPerCableKg, reps, workoutMode, timestamp))
+        updateCalls.add(UpdateCall(exerciseId, weightPerCableKg, weightPerCableKg, reps, workoutMode, timestamp))
 
-        val key = "$exerciseId-$workoutMode-${PRType.MAX_VOLUME}"
+        val normalizedMode = normalizeWorkoutModeKey(workoutMode)
+        val key = "$exerciseId-$normalizedMode-${PRType.MAX_VOLUME}"
         val existing = records[key]
-        val newVolume = weightPerCableKg * 2 * reps
+        val newVolume = weightPerCableKg * reps
 
         return if (existing == null || newVolume > existing.volume) {
             records[key] = PersonalRecord(
@@ -97,7 +103,7 @@ class FakePersonalRecordRepository : PersonalRecordRepository {
                 exerciseName = existing?.exerciseName ?: exerciseId,
                 weightPerCableKg = weightPerCableKg,
                 reps = reps,
-                oneRepMax = calculateOneRepMax(weightPerCableKg * 2, reps),
+                oneRepMax = calculateOneRepMax(weightPerCableKg, reps),
                 timestamp = timestamp,
                 workoutMode = workoutMode,
                 prType = PRType.MAX_VOLUME,
@@ -112,13 +118,21 @@ class FakePersonalRecordRepository : PersonalRecordRepository {
 
     override suspend fun getWeightPR(exerciseId: String, workoutMode: String): PersonalRecord? {
         return records.values
-            .filter { it.exerciseId == exerciseId && it.workoutMode == workoutMode && it.prType == PRType.MAX_WEIGHT }
+            .filter {
+                it.exerciseId == exerciseId &&
+                    normalizeWorkoutModeKey(it.workoutMode) == normalizeWorkoutModeKey(workoutMode) &&
+                    it.prType == PRType.MAX_WEIGHT
+            }
             .maxByOrNull { it.weightPerCableKg }
     }
 
     override suspend fun getVolumePR(exerciseId: String, workoutMode: String): PersonalRecord? {
         return records.values
-            .filter { it.exerciseId == exerciseId && it.workoutMode == workoutMode && it.prType == PRType.MAX_VOLUME }
+            .filter {
+                it.exerciseId == exerciseId &&
+                    normalizeWorkoutModeKey(it.workoutMode) == normalizeWorkoutModeKey(workoutMode) &&
+                    it.prType == PRType.MAX_VOLUME
+            }
             .maxByOrNull { it.volume }
     }
 
@@ -136,13 +150,21 @@ class FakePersonalRecordRepository : PersonalRecordRepository {
 
     override suspend fun getBestWeightPR(exerciseId: String, workoutMode: String): PersonalRecord? {
         return records.values
-            .filter { it.exerciseId == exerciseId && it.workoutMode == workoutMode }
+            .filter {
+                it.exerciseId == exerciseId &&
+                    normalizeWorkoutModeKey(it.workoutMode) == normalizeWorkoutModeKey(workoutMode) &&
+                    it.prType == PRType.MAX_WEIGHT
+            }
             .maxByOrNull { it.weightPerCableKg }
     }
 
     override suspend fun getBestVolumePR(exerciseId: String, workoutMode: String): PersonalRecord? {
         return records.values
-            .filter { it.exerciseId == exerciseId && it.workoutMode == workoutMode }
+            .filter {
+                it.exerciseId == exerciseId &&
+                    normalizeWorkoutModeKey(it.workoutMode) == normalizeWorkoutModeKey(workoutMode) &&
+                    it.prType == PRType.MAX_VOLUME
+            }
             .maxByOrNull { it.volume }
     }
 
@@ -154,52 +176,63 @@ class FakePersonalRecordRepository : PersonalRecordRepository {
 
     override suspend fun updatePRsIfBetter(
         exerciseId: String,
-        weightPerCableKg: Float,
+        weightPRWeightPerCableKg: Float,
+        volumePRWeightPerCableKg: Float,
         reps: Int,
         workoutMode: String,
         timestamp: Long
     ): Result<List<PRType>> {
-        updateCalls.add(UpdateCall(exerciseId, weightPerCableKg, reps, workoutMode, timestamp))
+        updateCalls.add(
+            UpdateCall(
+                exerciseId = exerciseId,
+                weightPRWeightPerCableKg = weightPRWeightPerCableKg,
+                volumePRWeightPerCableKg = volumePRWeightPerCableKg,
+                reps = reps,
+                workoutMode = workoutMode,
+                timestamp = timestamp
+            )
+        )
 
         val brokenPRs = mutableListOf<PRType>()
-        val totalWeight = weightPerCableKg * 2
-        val newVolume = totalWeight * reps
-        val newOneRepMax = calculateOneRepMax(totalWeight, reps)
+        val normalizedMode = normalizeWorkoutModeKey(workoutMode)
+        val weightPRVolume = weightPRWeightPerCableKg * reps
+        val newVolumePRVolume = volumePRWeightPerCableKg * reps
+        val newOneRepMax = calculateOneRepMax(weightPRWeightPerCableKg, reps)
 
         // Check weight PR
-        val weightKey = "$exerciseId-$workoutMode-${PRType.MAX_WEIGHT}"
+        val weightKey = "$exerciseId-$normalizedMode-${PRType.MAX_WEIGHT}"
         val existingWeightPR = records[weightKey]
-        if (existingWeightPR == null || weightPerCableKg > existingWeightPR.weightPerCableKg) {
+        if (existingWeightPR == null || weightPRWeightPerCableKg > existingWeightPR.weightPerCableKg) {
             records[weightKey] = PersonalRecord(
                 id = existingWeightPR?.id ?: records.size.toLong(),
                 exerciseId = exerciseId,
                 exerciseName = existingWeightPR?.exerciseName ?: exerciseId,
-                weightPerCableKg = weightPerCableKg,
+                weightPerCableKg = weightPRWeightPerCableKg,
                 reps = reps,
                 oneRepMax = newOneRepMax,
                 timestamp = timestamp,
                 workoutMode = workoutMode,
                 prType = PRType.MAX_WEIGHT,
-                volume = newVolume
+                volume = weightPRVolume
             )
             brokenPRs.add(PRType.MAX_WEIGHT)
         }
 
         // Check volume PR
-        val volumeKey = "$exerciseId-$workoutMode-${PRType.MAX_VOLUME}"
+        val volumeKey = "$exerciseId-$normalizedMode-${PRType.MAX_VOLUME}"
         val existingVolumePR = records[volumeKey]
-        if (existingVolumePR == null || newVolume > existingVolumePR.volume) {
+        if (existingVolumePR == null || newVolumePRVolume > existingVolumePR.volume) {
             records[volumeKey] = PersonalRecord(
                 id = existingVolumePR?.id ?: records.size.toLong(),
                 exerciseId = exerciseId,
                 exerciseName = existingVolumePR?.exerciseName ?: exerciseId,
-                weightPerCableKg = weightPerCableKg,
+                weightPerCableKg = volumePRWeightPerCableKg,
                 reps = reps,
                 oneRepMax = newOneRepMax,
                 timestamp = timestamp,
                 workoutMode = workoutMode,
                 prType = PRType.MAX_VOLUME,
-                volume = newVolume
+                volume = newVolumePRVolume
             )
             brokenPRs.add(PRType.MAX_VOLUME)
         }

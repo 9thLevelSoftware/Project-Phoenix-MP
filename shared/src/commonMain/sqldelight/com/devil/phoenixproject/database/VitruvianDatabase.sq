@@ -537,6 +537,11 @@ UPDATE WorkoutSession
 SET duration = ?, totalReps = ?, workingReps = ?, formScore = ?
 WHERE id = ?;
 
+updateSessionMode:
+UPDATE WorkoutSession
+SET mode = ?
+WHERE id = ?;
+
 updateSessionRoutineName:
 UPDATE WorkoutSession
 SET routineName = ?
