@@ -1,0 +1,28 @@
+-- Migration 21: Add profile_id to profile-scoped tables for multi-profile data separation.
+-- All existing data is assigned to the 'default' profile via DEFAULT clause.
+-- Gamification tables (GamificationStats, RpgAttributes, EarnedBadge, StreakHistory,
+-- ExerciseSignature) are intentionally NOT modified — they remain user-global.
+
+-- === Core workout data ===
+ALTER TABLE WorkoutSession ADD COLUMN profile_id TEXT NOT NULL DEFAULT 'default';
+ALTER TABLE PersonalRecord ADD COLUMN profile_id TEXT NOT NULL DEFAULT 'default';
+
+-- === Routines & Cycles ===
+ALTER TABLE Routine ADD COLUMN profile_id TEXT NOT NULL DEFAULT 'default';
+ALTER TABLE TrainingCycle ADD COLUMN profile_id TEXT NOT NULL DEFAULT 'default';
+
+-- === Exercise intelligence (mobile-only, per-profile) ===
+ALTER TABLE AssessmentResult ADD COLUMN profile_id TEXT NOT NULL DEFAULT 'default';
+ALTER TABLE ProgressionEvent ADD COLUMN profile_id TEXT NOT NULL DEFAULT 'default';
+
+-- === Indexes for profile_id filtering ===
+CREATE INDEX idx_session_profile ON WorkoutSession(profile_id);
+CREATE INDEX idx_pr_profile ON PersonalRecord(profile_id);
+CREATE INDEX idx_routine_profile ON Routine(profile_id);
+CREATE INDEX idx_cycle_profile ON TrainingCycle(profile_id);
+CREATE INDEX idx_assessment_profile ON AssessmentResult(profile_id);
+CREATE INDEX idx_progression_profile ON ProgressionEvent(profile_id);
+
+-- === Update PersonalRecord unique index to include profile_id ===
+DROP INDEX IF EXISTS idx_pr_unique;
+CREATE UNIQUE INDEX idx_pr_unique ON PersonalRecord(exerciseId, workoutMode, prType, phase, profile_id);
