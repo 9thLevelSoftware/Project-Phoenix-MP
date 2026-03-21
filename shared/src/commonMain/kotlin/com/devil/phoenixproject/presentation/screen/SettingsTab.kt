@@ -32,7 +32,6 @@ import com.devil.phoenixproject.util.ImportResult
 import com.devil.phoenixproject.util.rememberFilePicker
 import kotlinx.coroutines.launch
 import org.koin.compose.koinInject
-import com.devil.phoenixproject.domain.subscription.SubscriptionManager
 import com.devil.phoenixproject.presentation.components.CountdownDropdown
 import com.devil.phoenixproject.ui.theme.*
 import com.devil.phoenixproject.data.sync.SyncTriggerManager
@@ -143,12 +142,9 @@ fun SettingsTab(
 
     // Inject DataBackupManager for manual backup/restore operations
     val backupManager: DataBackupManager = koinInject()
-    // Inject SubscriptionManager for tier gating
-    val subscriptionManager: SubscriptionManager = koinInject()
     // Inject SyncTriggerManager for sync error indicator
     val syncTriggerManager: SyncTriggerManager = koinInject()
     val hasSyncError by syncTriggerManager.hasPersistentError.collectAsState()
-    val hasProAccess by subscriptionManager.hasProAccess.collectAsState()
 
     // Set global title
     val settingsTitle = stringResource(Res.string.settings_title)
@@ -1133,8 +1129,7 @@ fun SettingsTab(
 //        }
 //    }
 
-    // LED Biofeedback Section - Phoenix tier gated (GATE-01)
-    if (hasProAccess) {
+    // LED Biofeedback Section
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -1216,8 +1211,6 @@ fun SettingsTab(
             }
         }
     }
-    } // end hasProAccess gate (GATE-01)
-
     // Data Management Section - Material 3 Expressive
     Card(
         modifier = Modifier

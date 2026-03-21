@@ -16,8 +16,6 @@ import com.devil.phoenixproject.data.repository.TrainingCycleRepository
 import com.devil.phoenixproject.data.repository.WorkoutRepository
 import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.domain.model.*
-import com.devil.phoenixproject.domain.model.FormAssessment
-import com.devil.phoenixproject.domain.model.FormViolation
 import com.devil.phoenixproject.domain.usecase.RepCounterFromMachine
 import com.devil.phoenixproject.data.sync.SyncTriggerManager
 import com.devil.phoenixproject.domain.usecase.ResolveRoutineWeightsUseCase
@@ -153,35 +151,6 @@ class MainViewModel constructor(
     val justLiftRestCountdown: StateFlow<Int?> get() = workoutSessionManager.coordinator.justLiftRestCountdown
     val cycleDayCompletionEvent get() = workoutSessionManager.coordinator.cycleDayCompletionEvent
     fun clearCycleDayCompletionEvent() = workoutSessionManager.clearCycleDayCompletionEvent()
-
-    // ===== CV Form Check Delegation =====
-
-    /** Whether CV form check is enabled by the user */
-    val isFormCheckEnabled: StateFlow<Boolean> get() = workoutSessionManager.coordinator._isFormCheckEnabled
-
-    /** Latest form violations for real-time warning display */
-    val latestFormViolations: StateFlow<List<FormViolation>> get() = workoutSessionManager.coordinator._latestFormViolations
-
-    /** Latest form score computed at set end */
-    val latestFormScore: StateFlow<Int?> get() = workoutSessionManager.coordinator._latestFormScore
-
-    /** Toggle form check on/off. Only functional on Android for Phoenix+ users. */
-    fun toggleFormCheck() {
-        workoutSessionManager.coordinator._isFormCheckEnabled.value = !workoutSessionManager.coordinator._isFormCheckEnabled.value
-    }
-
-    /** Forward form assessment from FormCheckOverlay to ActiveSessionEngine */
-    fun onFormAssessment(assessment: FormAssessment) {
-        workoutSessionManager.activeSessionEngine.onFormAssessment(assessment)
-    }
-
-    // ===== Ghost Racing Delegation (Phase 22) =====
-
-    /** Ghost session loaded for current exercise (null if no qualifying session) */
-    val ghostSession get() = workoutSessionManager.coordinator.ghostSession
-
-    /** Latest per-rep ghost comparison verdict */
-    val latestGhostVerdict get() = workoutSessionManager.coordinator.latestGhostVerdict
 
     // ===== Exercise Detection Delegation =====
     val detectionState get() = workoutSessionManager.detectionManager.detectionState

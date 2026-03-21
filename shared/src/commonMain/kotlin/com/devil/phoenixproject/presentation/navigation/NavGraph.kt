@@ -24,13 +24,9 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
 import androidx.savedstate.read
-// MVP: Removed for v0.7.0 — only used in commented-out features
-// import com.devil.phoenixproject.data.repository.AuthRepository
 import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.data.repository.TrainingCycleRepository
 import com.devil.phoenixproject.domain.model.TrainingCycle
-// MVP: Removed for v0.7.0 — only used in commented-out features
-// import com.devil.phoenixproject.domain.subscription.SubscriptionManager
 import com.devil.phoenixproject.presentation.screen.*
 // MVP: Removed for v0.7.0 — only used in commented-out Strength Assessment routes
 // import com.devil.phoenixproject.presentation.viewmodel.AssessmentViewModel
@@ -584,88 +580,6 @@ fun NavGraph(
 //                onNavigateBack = { navController.popBackStack() }
 //            )
 //        }
-
-        // TODO: Uncomment when online account features are ready for public release
-        // Auth screen - sign in / sign up
-        // composable(
-        //     route = NavigationRoutes.Auth.route,
-        //     enterTransition = {
-        //         slideIntoContainer(
-        //             towards = AnimatedContentTransitionScope.SlideDirection.Up,
-        //             animationSpec = tween(300)
-        //         )
-        //     },
-        //     exitTransition = { fadeOut(animationSpec = tween(200)) },
-        //     popExitTransition = {
-        //         slideOutOfContainer(
-        //             towards = AnimatedContentTransitionScope.SlideDirection.Down,
-        //             animationSpec = tween(300)
-        //         )
-        //     }
-        // ) {
-        //     val authRepository: AuthRepository = koinInject()
-        //     AuthScreen(
-        //         authRepository = authRepository,
-        //         onAuthSuccess = { navController.popBackStack() },
-        //         onBackClick = { navController.popBackStack() }
-        //     )
-        // }
-
-        // TODO: Uncomment when subscription system is ready for public release
-        // Paywall screen - subscription offerings
-        // composable(
-        //     route = NavigationRoutes.Paywall.route,
-        //     enterTransition = {
-        //         slideIntoContainer(
-        //             towards = AnimatedContentTransitionScope.SlideDirection.Up,
-        //             animationSpec = tween(300)
-        //         )
-        //     },
-        //     exitTransition = { fadeOut(animationSpec = tween(200)) },
-        //     popExitTransition = {
-        //         slideOutOfContainer(
-        //             towards = AnimatedContentTransitionScope.SlideDirection.Down,
-        //             animationSpec = tween(300)
-        //         )
-        //     }
-        // ) {
-        //     val subscriptionManager: SubscriptionManager = koinInject()
-        //     PaywallScreen(
-        //         subscriptionManager = subscriptionManager,
-        //         onBackClick = { navController.popBackStack() },
-        //         onPurchaseSuccess = { navController.popBackStack() }
-        //     )
-        // }
-
-        // TODO: Uncomment when online account features are ready for public release
-        // Account screen - user account and subscription status
-        // composable(
-        //     route = NavigationRoutes.Account.route,
-        //     enterTransition = {
-        //         slideIntoContainer(
-        //             towards = AnimatedContentTransitionScope.SlideDirection.Left,
-        //             animationSpec = tween(300)
-        //         )
-        //     },
-        //     exitTransition = { fadeOut(animationSpec = tween(200)) },
-        //     popEnterTransition = { fadeIn(animationSpec = tween(200)) },
-        //     popExitTransition = {
-        //         slideOutOfContainer(
-        //             towards = AnimatedContentTransitionScope.SlideDirection.Right,
-        //             animationSpec = tween(300)
-        //         )
-        //     }
-        // ) {
-        //     val authRepository: AuthRepository = koinInject()
-        //     val subscriptionManager: SubscriptionManager = koinInject()
-        //     AccountScreen(
-        //         authRepository = authRepository,
-        //         subscriptionManager = subscriptionManager,
-        //         onBackClick = { navController.popBackStack() },
-        //         onSignInClick = { navController.navigate(NavigationRoutes.Auth.route) },
-        //         onUpgradeClick = { navController.navigate(NavigationRoutes.Paywall.route) }
-        //     )
-        // }
 
         // Link Account screen - cloud sync with Phoenix Portal
         composable(

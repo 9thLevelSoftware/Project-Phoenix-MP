@@ -35,7 +35,6 @@ import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.data.local.BadgeDefinitions
 import com.devil.phoenixproject.data.repository.BadgeWithProgress
 import com.devil.phoenixproject.domain.model.*
-import com.devil.phoenixproject.domain.subscription.SubscriptionManager
 import com.devil.phoenixproject.presentation.components.RpgAttributeCard
 import com.devil.phoenixproject.presentation.viewmodel.GamificationViewModel
 import com.devil.phoenixproject.presentation.util.LocalWindowSizeClass
@@ -62,10 +61,6 @@ fun BadgesScreen(
 
     var selectedBadge by remember { mutableStateOf<BadgeWithProgress?>(null) }
 
-    // RPG attributes - gated to Phoenix+ tier (RPG-03)
-    val subscriptionManager: SubscriptionManager = koinInject()
-    val hasProAccess by subscriptionManager.hasProAccess.collectAsState()
-
     // Clear topbar title to allow dynamic title from EnhancedMainScreen
     LaunchedEffect(Unit) {
         mainViewModel.updateTopBarTitle("")
@@ -78,21 +73,18 @@ fun BadgesScreen(
                 .padding(paddingValues)
                 .background(MaterialTheme.colorScheme.background)
         ) {
-            // RPG Attribute Card -- Phoenix+ only (RPG-03)
-            if (hasProAccess) {
-                // Compute attributes fresh each time screen opens
-                LaunchedEffect(Unit) {
-                    viewModel.loadRpgProfile()
-                }
-                val rpgProfile by viewModel.rpgProfile.collectAsState()
-                rpgProfile?.let { profile ->
-                    RpgAttributeCard(
-                        profile = profile,
-                        onPortalLink = { /* Portal deep link - deferred to v0.6.0+ (PORTAL-02) */ },
-                        modifier = Modifier.padding(horizontal = Spacing.medium)
-                    )
-                    Spacer(modifier = Modifier.height(Spacing.small))
-                }
+            // RPG Attribute Card
+            LaunchedEffect(Unit) {
+                viewModel.loadRpgProfile()
+            }
+            val rpgProfile by viewModel.rpgProfile.collectAsState()
+            rpgProfile?.let { profile ->
+                RpgAttributeCard(
+                    profile = profile,
+                    onPortalLink = { /* Portal deep link - deferred to v0.6.0+ (PORTAL-02) */ },
+                    modifier = Modifier.padding(horizontal = Spacing.medium)
+                )
+                Spacer(modifier = Modifier.height(Spacing.small))
             }
 
             // Streak Widget at top

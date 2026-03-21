@@ -6,7 +6,6 @@ import com.devil.phoenixproject.data.sync.PortalTokenStorage
 import com.devil.phoenixproject.data.sync.SupabaseConfig
 import com.devil.phoenixproject.data.sync.SyncManager
 import com.devil.phoenixproject.data.sync.SyncTriggerManager
-import com.devil.phoenixproject.domain.subscription.SubscriptionManager
 import org.koin.dsl.module
 
 val syncModule = module {
@@ -30,7 +29,6 @@ val syncModule = module {
     }
     single { SyncTriggerManager(get(), get()) }
 
-    // Auth & Subscription (using Supabase GoTrue)
+    // Auth (using Supabase GoTrue)
     single<AuthRepository> { PortalAuthRepository(get(), get(), get()) }
-    single { SubscriptionManager(get()) }
 }

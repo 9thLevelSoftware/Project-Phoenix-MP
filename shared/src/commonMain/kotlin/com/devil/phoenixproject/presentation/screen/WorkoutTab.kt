@@ -22,10 +22,6 @@ import com.devil.phoenixproject.data.repository.AutoStopUiState
 import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.domain.model.*
 import com.devil.phoenixproject.domain.model.BiomechanicsRepResult
-import com.devil.phoenixproject.domain.model.FormAssessment
-import com.devil.phoenixproject.domain.model.FormViolation
-import com.devil.phoenixproject.domain.model.GhostRepComparison
-import com.devil.phoenixproject.domain.model.GhostSession
 import com.devil.phoenixproject.domain.usecase.RepRanges
 import com.devil.phoenixproject.presentation.components.AutoStartOverlay
 import com.devil.phoenixproject.presentation.components.AutoStopOverlay
@@ -60,9 +56,6 @@ fun WorkoutTab(
     actions: WorkoutActions,
     exerciseRepository: ExerciseRepository,
     hapticEvents: SharedFlow<HapticEvent>? = null,
-    hasFormCheckAccess: Boolean = false,
-    onToggleFormCheck: () -> Unit = {},
-    onFormAssessment: (FormAssessment) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     // Delegate to the original implementation
@@ -123,13 +116,6 @@ fun WorkoutTab(
         detectionState = state.detectionState,
         onDetectionConfirmed = actions::onDetectionConfirmed,
         onDetectionDismissed = actions::onDetectionDismissed,
-        isFormCheckEnabled = state.isFormCheckEnabled,
-        hasFormCheckAccess = hasFormCheckAccess,
-        latestFormViolations = state.latestFormViolations,
-        onToggleFormCheck = onToggleFormCheck,
-        onFormAssessment = onFormAssessment,
-        ghostSession = state.ghostSession,
-        latestGhostVerdict = state.latestGhostVerdict,
         motionStartHoldProgress = state.motionStartHoldProgress,
         isRestPaused = state.isRestPaused,
         justLiftRestCountdown = state.justLiftRestCountdown
@@ -199,15 +185,6 @@ fun WorkoutTab(
     detectionState: DetectionState = DetectionState(),  // Exercise auto-detection state
     onDetectionConfirmed: suspend (String, String) -> Unit = { _, _ -> },  // Detection confirm callback
     onDetectionDismissed: () -> Unit = {},  // Detection dismiss callback
-    // CV Form Check parameters (Phase 19)
-    isFormCheckEnabled: Boolean = false,
-    hasFormCheckAccess: Boolean = false,
-    latestFormViolations: List<FormViolation> = emptyList(),
-    onToggleFormCheck: () -> Unit = {},
-    onFormAssessment: (FormAssessment) -> Unit = {},
-    // Ghost Racing parameters (Phase 22)
-    ghostSession: GhostSession? = null,
-    latestGhostVerdict: GhostRepComparison? = null,
     // Issue #237: Motion-triggered set start
     motionStartHoldProgress: Float? = null,
     // Issue #297, #228: Rest timer pause state
@@ -250,13 +227,6 @@ fun WorkoutTab(
                 detectionState = detectionState,
                 onDetectionConfirmed = onDetectionConfirmed,
                 onDetectionDismissed = onDetectionDismissed,
-                isFormCheckEnabled = isFormCheckEnabled,
-                hasFormCheckAccess = hasFormCheckAccess,
-                latestFormViolations = latestFormViolations,
-                onToggleFormCheck = onToggleFormCheck,
-                onFormAssessment = onFormAssessment,
-                ghostSession = ghostSession,
-                latestGhostVerdict = latestGhostVerdict,
                 modifier = Modifier.fillMaxSize()
             )
 

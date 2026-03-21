@@ -267,7 +267,6 @@
     <string name="no_plateaus">Keine Plateaus erkannt. Weiter so!</string>
 
     <string name="form_check">Formkontrolle</string>
-    <string name="form_check_ios_soon">Formkontrolle kommt bald für iOS. Bleib dran!</string>
     <string name="workout_in_progress">Training läuft</string>
     <string name="stop_before_editing">Bitte stoppe das aktuelle Training, bevor du Routinen bearbeitest.</string>
 

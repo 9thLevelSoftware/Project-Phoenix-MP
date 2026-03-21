@@ -31,11 +31,9 @@ import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.domain.model.effectiveHeaviestKgPerCable
 import com.devil.phoenixproject.domain.model.toSetSummary
-import com.devil.phoenixproject.domain.subscription.SubscriptionManager
 import com.devil.phoenixproject.presentation.manager.HistoryItem
 import com.devil.phoenixproject.presentation.components.BiomechanicsHistorySummary
 import com.devil.phoenixproject.presentation.components.EmptyState
-import com.devil.phoenixproject.presentation.components.PremiumBiomechanicsUpsell
 import com.devil.phoenixproject.presentation.components.RepBiomechanicsDetail
 import com.devil.phoenixproject.presentation.components.RepReplayCard
 import com.devil.phoenixproject.presentation.components.charts.HistoryTimePeriod
@@ -1126,11 +1124,6 @@ fun EnhancedMetricItem(
  * Biomechanics section for a single workout session.
  *
  * Guards against older sessions without biomechanics data (shows nothing).
- * Tier gating:
- * - FREE: shows PremiumBiomechanicsUpsell
- * - Phoenix+ (hasProAccess): shows VBT metrics, force curves, but NOT asymmetry
- * - Elite (hasEliteAccess): shows everything including asymmetry
- *
  * Per-rep biomechanics data is lazy-loaded only when user expands the per-rep section
  * to avoid deserializing 101-point force curves for every session in the list.
  */
@@ -1139,51 +1132,41 @@ private fun BiomechanicsSection(session: WorkoutSession) {
     // Only show for sessions that have biomechanics data (v0.5.0+)
     if (!session.hasBiomechanicsData) return
 
-    val subscriptionManager: SubscriptionManager = koinInject()
-    val hasProAccess by subscriptionManager.hasProAccess.collectAsState()
-    val hasEliteAccess by subscriptionManager.hasEliteAccess.collectAsState()
-
     Spacer(modifier = Modifier.height(Spacing.medium))
 
-    if (hasProAccess) {
-        // Phoenix+ or Elite tier: show biomechanics summary and per-rep details
-        var isRepBiomechanicsExpanded by remember { mutableStateOf(false) }
+    var isRepBiomechanicsExpanded by remember { mutableStateOf(false) }
 
-        BiomechanicsHistorySummary(
-            avgMcvMmS = session.avgMcvMmS,
-            avgAsymmetryPercent = if (hasEliteAccess) session.avgAsymmetryPercent else null,
-            totalVelocityLossPercent = session.totalVelocityLossPercent,
-            dominantSide = if (hasEliteAccess) session.dominantSide else null,
-            strengthProfile = session.strengthProfile,
-            onExpandReps = { isRepBiomechanicsExpanded = !isRepBiomechanicsExpanded }
-        )
+    BiomechanicsHistorySummary(
+        avgMcvMmS = session.avgMcvMmS,
+        avgAsymmetryPercent = session.avgAsymmetryPercent,
+        totalVelocityLossPercent = session.totalVelocityLossPercent,
+        dominantSide = session.dominantSide,
+        strengthProfile = session.strengthProfile,
+        onExpandReps = { isRepBiomechanicsExpanded = !isRepBiomechanicsExpanded }
+    )
 
-        // Per-rep detail (lazy-loaded only when expanded)
-        AnimatedVisibility(
-            visible = isRepBiomechanicsExpanded,
-            enter = expandVertically(),
-            exit = shrinkVertically()
-        ) {
-            val biomechanicsRepository: BiomechanicsRepository = koinInject()
-            var repBiomechanics by remember { mutableStateOf<List<BiomechanicsRepResult>>(emptyList()) }
-            var isLoadingBiomechanics by remember { mutableStateOf(true) }
+    // Per-rep detail (lazy-loaded only when expanded)
+    AnimatedVisibility(
+        visible = isRepBiomechanicsExpanded,
+        enter = expandVertically(),
+        exit = shrinkVertically()
+    ) {
+        val biomechanicsRepository: BiomechanicsRepository = koinInject()
+        var repBiomechanics by remember { mutableStateOf<List<BiomechanicsRepResult>>(emptyList()) }
+        var isLoadingBiomechanics by remember { mutableStateOf(true) }
 
-            LaunchedEffect(session.id) {
-                isLoadingBiomechanics = true
-                repBiomechanics = biomechanicsRepository.getRepBiomechanics(session.id)
-                isLoadingBiomechanics = false
-            }
-
-            RepBiomechanicsDetail(
-                repResults = repBiomechanics,
-                isLoading = isLoadingBiomechanics,
-                showAsymmetry = hasEliteAccess,
-                showForceCurves = true // Phoenix+ tier has FORCE_CURVES access
-            )
+        LaunchedEffect(session.id) {
+            isLoadingBiomechanics = true
+            repBiomechanics = biomechanicsRepository.getRepBiomechanics(session.id)
+            isLoadingBiomechanics = false
         }
-    } else {
-        // FREE tier: show upsell card
-        PremiumBiomechanicsUpsell()
+
+        RepBiomechanicsDetail(
+            repResults = repBiomechanics,
+            isLoading = isLoadingBiomechanics,
+            showAsymmetry = true,
+            showForceCurves = true
+        )
     }
 }
 

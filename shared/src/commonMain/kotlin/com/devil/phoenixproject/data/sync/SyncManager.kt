@@ -80,11 +80,17 @@ class SyncManager(
             val error = pushResult.exceptionOrNull()
             if (error is PortalApiException && error.statusCode == 401) {
                 _syncState.value = SyncState.NotAuthenticated
+            } else if (error is PortalApiException && (error.statusCode == 402 || error.statusCode == 403)) {
+                tokenStorage.updatePremiumStatus(false)
+                _syncState.value = SyncState.NotPremium
             } else {
                 _syncState.value = SyncState.Error(error?.message ?: "Push failed")
             }
             return@withLock Result.failure(error ?: Exception("Push failed"))
         }
+
+        // Successful push confirms premium status
+        tokenStorage.updatePremiumStatus(true)
 
         // Parse syncTime from ISO 8601 to epoch millis
         val pushResponse = pushResult.getOrThrow()

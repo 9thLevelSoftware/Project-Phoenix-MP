@@ -19,8 +19,6 @@ import com.devil.phoenixproject.data.repository.SmartSuggestionsRepository
 import com.devil.phoenixproject.domain.model.*
 import com.devil.phoenixproject.domain.model.currentTimeMillis
 import com.devil.phoenixproject.domain.premium.SmartSuggestionsEngine
-import com.devil.phoenixproject.domain.subscription.SubscriptionManager
-import com.devil.phoenixproject.presentation.components.LockedFeatureOverlay
 import com.devil.phoenixproject.ui.theme.AccessibilityTheme
 import com.devil.phoenixproject.ui.theme.Spacing
 import kotlinx.coroutines.Dispatchers
@@ -41,25 +39,12 @@ import vitruvianprojectphoenix.shared.generated.resources.*
  * 4. Plateau Detection (SUGG-04)
  * 5. Time-of-Day Optimal Training Window (SUGG-05)
  *
- * Gated behind Elite tier subscription (SUGG-06 / GATE-03).
  */
 @Composable
 fun SmartInsightsTab(
     modifier: Modifier = Modifier
 ) {
-    val subscriptionManager: SubscriptionManager = koinInject()
-    val hasEliteAccess by subscriptionManager.hasEliteAccess.collectAsState()
-
-    if (hasEliteAccess) {
-        SmartInsightsContent(modifier = modifier)
-    } else {
-        LockedFeatureOverlay(
-            featureName = stringResource(Res.string.insights_locked_name),
-            featureDescription = stringResource(Res.string.insights_locked_desc),
-            onUpgradeClick = { /* Paywall not yet wired */ },
-            modifier = modifier.padding(24.dp)
-        )
-    }
+    SmartInsightsContent(modifier = modifier)
 }
 
 @Composable

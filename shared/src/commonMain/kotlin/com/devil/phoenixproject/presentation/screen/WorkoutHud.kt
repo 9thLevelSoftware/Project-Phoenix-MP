@@ -24,16 +24,7 @@ import com.devil.phoenixproject.data.repository.ExerciseVideoEntity
 import com.devil.phoenixproject.domain.model.*
 import com.devil.phoenixproject.domain.model.BiomechanicsRepResult
 import com.devil.phoenixproject.domain.model.BiomechanicsVelocityZone
-import com.devil.phoenixproject.domain.model.FormAssessment
-import com.devil.phoenixproject.domain.model.FormViolation
 import com.devil.phoenixproject.presentation.components.AutoDetectionSheet
-import com.devil.phoenixproject.presentation.components.FormCheckOverlay
-import com.devil.phoenixproject.presentation.components.FormWarningBanner
-import com.devil.phoenixproject.presentation.components.GhostRacingOverlay
-import com.devil.phoenixproject.domain.model.GhostRepComparison
-import com.devil.phoenixproject.domain.model.GhostSession
-import com.devil.phoenixproject.domain.model.GhostVerdict
-import com.devil.phoenixproject.presentation.components.BalanceBar
 import com.devil.phoenixproject.presentation.components.ExpandedForceCurve
 import com.devil.phoenixproject.presentation.components.ForceCurveMiniGraph
 import com.devil.phoenixproject.presentation.components.VideoPlayer
@@ -90,27 +81,11 @@ fun WorkoutHud(
     detectionState: DetectionState = DetectionState(),
     onDetectionConfirmed: suspend (exerciseId: String, exerciseName: String) -> Unit = { _, _ -> },
     onDetectionDismissed: () -> Unit = {},
-    // CV Form Check parameters (Phase 19)
-    isFormCheckEnabled: Boolean = false,
-    hasFormCheckAccess: Boolean = false,
-    latestFormViolations: List<FormViolation> = emptyList(),
-    onToggleFormCheck: () -> Unit = {},
-    onFormAssessment: (FormAssessment) -> Unit = {},
-    // Ghost Racing parameters (Phase 22)
-    ghostSession: GhostSession? = null,
-    latestGhostVerdict: GhostRepComparison? = null,
     modifier: Modifier = Modifier
 ) {
     val scope = rememberCoroutineScope()
     // Determine if we're in Echo mode
     val isEchoMode = workoutParameters.isEchoMode
-    // Resolve current exercise's form type for FormCheckOverlay (CV-04 gap closure)
-    val currentExerciseName = remember(loadedRoutine, currentExerciseIndex) {
-        loadedRoutine?.exercises?.getOrNull(currentExerciseIndex)?.exercise?.name
-    }
-    val exerciseFormType = remember(currentExerciseName) {
-        ExerciseFormType.fromExerciseName(currentExerciseName)
-    }
     val pagerState = rememberPagerState(pageCount = { 3 })
     val topBarModeLabel = if (isCurrentExerciseBodyweight) "Bodyweight" else workoutParameters.programMode.displayName
 
@@ -142,9 +117,7 @@ fun WorkoutHud(
                 connectionState = connectionState,
                 workoutMode = topBarModeLabel,
                 onStopWorkout = onStopWorkout,
-                isFormCheckEnabled = isFormCheckEnabled,
-                hasFormCheckAccess = hasFormCheckAccess,
-                onToggleFormCheck = onToggleFormCheck
+
             )
         },
         bottomBar = {
@@ -319,41 +292,6 @@ fun WorkoutHud(
                 )
             }
 
-            // L/R Balance Bar (below cable position bars)
-            // Only show when biomechanics data is available and not bodyweight
-            if (latestBiomechanicsResult != null && !isCurrentExerciseBodyweight) {
-                BalanceBar(
-                    asymmetryPercent = latestBiomechanicsResult.asymmetry.asymmetryPercent,
-                    dominantSide = latestBiomechanicsResult.asymmetry.dominantSide,
-                    showAlert = showAsymmetryAlert,
-                    modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                        .fillMaxWidth(0.7f)
-                        .padding(bottom = 24.dp)
-                )
-            }
-
-            // Ghost Racing overlay (Phase 22) -- positioned inset from cable bars
-            if (ghostSession != null) {
-                val repVelocity = latestGhostVerdict?.currentMcvMmS ?: 0f
-                val ghostVelocity = if (latestGhostVerdict != null && latestGhostVerdict.verdict != GhostVerdict.BEYOND) {
-                    latestGhostVerdict.ghostMcvMmS
-                } else {
-                    ghostSession.avgMcvMmS  // Show average as baseline before first rep
-                }
-                val maxVelocity = (ghostSession.avgMcvMmS * 2f).coerceAtLeast(100f)
-
-                GhostRacingOverlay(
-                    currentRepVelocity = repVelocity,
-                    ghostRepVelocity = ghostVelocity,
-                    maxVelocity = maxVelocity,
-                    verdict = latestGhostVerdict,
-                    modifier = Modifier
-                        .align(Alignment.CenterStart)
-                        .padding(start = 48.dp, top = 32.dp)  // Inset from cable bar
-                )
-            }
-
             // Exercise Auto-Detection Sheet (non-blocking overlay)
             // Shows when detection state is active, has a classification, and not dismissed
             if (detectionState.isActive && detectionState.classification != null && !detectionState.isDismissed) {
@@ -369,31 +307,7 @@ fun WorkoutHud(
                 )
             }
 
-            // FormCheckOverlay -- camera preview with skeleton (CV-04)
-            // Conditionally composed (not just hidden) so camera resources are released when disabled
-            if (isFormCheckEnabled) {
-                FormCheckOverlay(
-                    isEnabled = true,
-                    exerciseType = exerciseFormType,
-                    onFormAssessment = onFormAssessment,
-                    modifier = Modifier
-                        .size(width = 160.dp, height = 120.dp)
-                        .align(Alignment.TopEnd)
-                        .padding(top = 48.dp, end = 8.dp)
-                )
-            }
 
-            // FormWarningBanner -- real-time corrective cue for highest-severity violation (CV-04)
-            if (isFormCheckEnabled) {
-                FormWarningBanner(
-                    violations = latestFormViolations,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 4.dp)
-                        .align(Alignment.TopStart)
-                        .padding(top = 56.dp)
-                )
-            }
         }
     }
 }
@@ -402,10 +316,7 @@ fun WorkoutHud(
 private fun HudTopBar(
     connectionState: ConnectionState,
     workoutMode: String,
-    onStopWorkout: () -> Unit,
-    isFormCheckEnabled: Boolean = false,
-    hasFormCheckAccess: Boolean = false,
-    onToggleFormCheck: () -> Unit = {}
+    onStopWorkout: () -> Unit
 ) {
     val windowSizeClass = LocalWindowSizeClass.current
     val buttonHeight = when (windowSizeClass.widthSizeClass) {
@@ -440,25 +351,8 @@ private fun HudTopBar(
             )
         }
 
-        // Right: Form Check toggle + STOP Button
+        // Right: STOP Button
         Row(verticalAlignment = Alignment.CenterVertically) {
-            // Form Check toggle (CV-01) - only visible for Phoenix+ tier
-            if (hasFormCheckAccess) {
-                IconToggleButton(
-                    checked = isFormCheckEnabled,
-                    onCheckedChange = { onToggleFormCheck() }
-                ) {
-                    Icon(
-                        imageVector = if (isFormCheckEnabled)
-                            Icons.Filled.Visibility else Icons.Filled.VisibilityOff,
-                        contentDescription = if (isFormCheckEnabled)
-                            "Disable Form Check" else "Enable Form Check",
-                        tint = if (isFormCheckEnabled)
-                            MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
-
             // STOP Button (Prominent)
             Button(
                 onClick = onStopWorkout,

@@ -24,9 +24,7 @@ import com.devil.phoenixproject.ui.theme.Spacing
 
 /**
  * RPG Attribute Card -- shows character class header, five attribute bars (0-100),
- * and a Portal deep-link button. Displayed on BadgesScreen for Phoenix+ tier users.
- *
- * Follows ReadinessBriefingCard composable pattern (Card > Column > header + content + portal link).
+ * and a Portal deep-link button. Displayed on BadgesScreen.
  */
 @Composable
 fun RpgAttributeCard(

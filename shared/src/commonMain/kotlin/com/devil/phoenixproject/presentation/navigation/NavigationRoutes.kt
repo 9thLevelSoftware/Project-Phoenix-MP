@@ -33,11 +33,6 @@ sealed class NavigationRoutes(val route: String) {
         fun createRoute(cycleId: String) = "cycleReview/$cycleId"
     }
 
-    // Premium/Account routes
-    object Auth : NavigationRoutes("auth")
-    object Paywall : NavigationRoutes("paywall")
-    object Account : NavigationRoutes("account")
-
     // MVP: Removed for v0.7.0 — Smart Insights moved to portal
     object SmartInsights : NavigationRoutes("smart_insights")
 
