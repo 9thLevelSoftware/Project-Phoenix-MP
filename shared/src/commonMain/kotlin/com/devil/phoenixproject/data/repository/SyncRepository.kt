@@ -150,4 +150,11 @@ interface SyncRepository {
      * Uses delete-then-reinsert for cycle days (same pattern as portal edge function).
      */
     suspend fun mergePortalCycles(cycles: List<PullTrainingCycleDto>, profileId: String = "default")
+
+    /**
+     * Merge pulled workout sessions into local database.
+     * Uses INSERT OR IGNORE — if a session with the same ID already exists locally,
+     * it is NOT overwritten (local data wins for immutable sessions).
+     */
+    suspend fun mergePortalSessions(sessions: List<WorkoutSession>)
 }

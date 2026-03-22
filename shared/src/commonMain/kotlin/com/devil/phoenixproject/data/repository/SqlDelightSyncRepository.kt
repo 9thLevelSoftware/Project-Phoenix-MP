@@ -604,6 +604,65 @@ class SqlDelightSyncRepository(
         }
     }
 
+    override suspend fun mergePortalSessions(sessions: List<WorkoutSession>) {
+        withContext(Dispatchers.IO) {
+            db.transaction {
+                for (session in sessions) {
+                    queries.insertSessionIgnore(
+                        id = session.id,
+                        timestamp = session.timestamp,
+                        mode = session.mode,
+                        targetReps = session.reps.toLong(),
+                        weightPerCableKg = session.weightPerCableKg.toDouble(),
+                        progressionKg = session.progressionKg.toDouble(),
+                        duration = session.duration,
+                        totalReps = session.totalReps.toLong(),
+                        warmupReps = session.warmupReps.toLong(),
+                        workingReps = session.workingReps.toLong(),
+                        isJustLift = if (session.isJustLift) 1L else 0L,
+                        stopAtTop = if (session.stopAtTop) 1L else 0L,
+                        eccentricLoad = session.eccentricLoad.toLong(),
+                        echoLevel = session.echoLevel.toLong(),
+                        exerciseId = session.exerciseId,
+                        exerciseName = session.exerciseName,
+                        routineSessionId = session.routineSessionId,
+                        routineName = session.routineName,
+                        routineId = session.routineId,
+                        safetyFlags = session.safetyFlags.toLong(),
+                        deloadWarningCount = session.deloadWarningCount.toLong(),
+                        romViolationCount = session.romViolationCount.toLong(),
+                        spotterActivations = session.spotterActivations.toLong(),
+                        peakForceConcentricA = session.peakForceConcentricA?.toDouble(),
+                        peakForceConcentricB = session.peakForceConcentricB?.toDouble(),
+                        peakForceEccentricA = session.peakForceEccentricA?.toDouble(),
+                        peakForceEccentricB = session.peakForceEccentricB?.toDouble(),
+                        avgForceConcentricA = session.avgForceConcentricA?.toDouble(),
+                        avgForceConcentricB = session.avgForceConcentricB?.toDouble(),
+                        avgForceEccentricA = session.avgForceEccentricA?.toDouble(),
+                        avgForceEccentricB = session.avgForceEccentricB?.toDouble(),
+                        heaviestLiftKg = session.heaviestLiftKg?.toDouble(),
+                        totalVolumeKg = session.totalVolumeKg?.toDouble(),
+                        cableCount = session.cableCount?.toLong(),
+                        estimatedCalories = session.estimatedCalories?.toDouble(),
+                        warmupAvgWeightKg = session.warmupAvgWeightKg?.toDouble(),
+                        workingAvgWeightKg = session.workingAvgWeightKg?.toDouble(),
+                        burnoutAvgWeightKg = session.burnoutAvgWeightKg?.toDouble(),
+                        peakWeightKg = session.peakWeightKg?.toDouble(),
+                        rpe = session.rpe?.toLong(),
+                        avgMcvMmS = session.avgMcvMmS?.toDouble(),
+                        avgAsymmetryPercent = session.avgAsymmetryPercent?.toDouble(),
+                        totalVelocityLossPercent = session.totalVelocityLossPercent?.toDouble(),
+                        dominantSide = session.dominantSide,
+                        strengthProfile = session.strengthProfile,
+                        formScore = session.formScore?.toLong(),
+                        profile_id = session.profileId
+                    )
+                }
+            }
+            Logger.d { "Merged ${sessions.size} portal sessions (INSERT OR IGNORE)" }
+        }
+    }
+
     // === Portal Push Operations (full domain objects) ===
 
     override suspend fun getWorkoutSessionsModifiedSince(timestamp: Long): List<WorkoutSession> {

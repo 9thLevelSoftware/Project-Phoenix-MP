@@ -538,12 +538,15 @@ class SyncManagerTest {
     // ===== Pull Uses Push Timestamp (Task 1.6) =====
 
     @Test
-    fun pullReceivesPushTimestampNotStaleLastSync() = runTest {
+    fun pullReceivesStoredLastSyncNotPushTimestamp() = runTest {
         setupAuthenticated()
-        // Set a stale lastSync
-        tokenStorage.setLastSyncTimestamp(1000L)
+        // Set a stored lastSync — pull should use THIS, not the push response time.
+        // Using the push response time would ask "what changed since NOW" which
+        // always returns 0 results. The stored lastSync asks "give me everything
+        // that changed since my last successful sync."
+        val storedLastSync = 1000L
+        tokenStorage.setLastSyncTimestamp(storedLastSync)
         val pushSyncTimeIso = "2026-03-02T12:00:00Z"
-        val pushSyncTimeEpoch = kotlinx.datetime.Instant.parse(pushSyncTimeIso).toEpochMilliseconds()
         fakeApi.pushResult = Result.success(
             PortalSyncPushResponse(syncTime = pushSyncTimeIso)
         )
@@ -551,12 +554,12 @@ class SyncManagerTest {
 
         manager.sync()
 
-        // The pull should have been called with the push response timestamp, not the stale 1000L
+        // The pull should have been called with the stored lastSync, not the push timestamp
         assertNotNull(fakeApi.lastPullLastSync, "Pull should have been called")
         assertEquals(
-            pushSyncTimeEpoch,
+            storedLastSync,
             fakeApi.lastPullLastSync,
-            "Pull should receive push response timestamp, not stale lastSync"
+            "Pull should receive stored lastSync, not push response timestamp"
         )
     }
 }
