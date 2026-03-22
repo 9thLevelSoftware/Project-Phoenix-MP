@@ -303,6 +303,7 @@ class DataBackupManagerRoutineNameTest {
             dominantSide = null,
             strengthProfile = null,
             formScore = null,
+            profile_id = "default",
         )
 
         val backup = backupManager.exportAllData()

@@ -33,8 +33,8 @@ class SqlDelightProgressionRepositoryTest {
 
         repository.createProgressionSuggestion(event)
 
-        assertTrue(repository.hasPendingProgression("bench"))
-        val latest = repository.getLatestProgressionEvent("bench")
+        assertTrue(repository.hasPendingProgression("bench", profileId = "default"))
+        val latest = repository.getLatestProgressionEvent("bench", profileId = "default")
         assertEquals(event.id, latest?.id)
     }
 
@@ -49,8 +49,8 @@ class SqlDelightProgressionRepositoryTest {
 
         repository.recordResponse(event.id, ProgressionResponse.ACCEPTED, actualWeight = 52.5f)
 
-        assertFalse(repository.hasPendingProgression("bench"))
-        val updated = repository.getLatestProgressionEvent("bench")
+        assertFalse(repository.hasPendingProgression("bench", profileId = "default"))
+        val updated = repository.getLatestProgressionEvent("bench", profileId = "default")
         assertEquals(ProgressionResponse.ACCEPTED, updated?.userResponse)
     }
 }

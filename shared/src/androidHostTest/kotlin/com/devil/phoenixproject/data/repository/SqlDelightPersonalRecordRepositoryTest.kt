@@ -31,16 +31,17 @@ class SqlDelightPersonalRecordRepositoryTest {
             volumePRWeightPerCableKg = 50f,
             reps = 5,
             workoutMode = "OldSchool",
-            timestamp = 1000L
+            timestamp = 1000L,
+            profileId = "default"
         ).getOrThrow()
 
         assertTrue(result.contains(PRType.MAX_WEIGHT))
         assertTrue(result.contains(PRType.MAX_VOLUME))
 
-        val weightPr = repository.getWeightPR("bench", "Old School")
+        val weightPr = repository.getWeightPR("bench", "Old School", profileId = "default")
         assertEquals(50f, weightPr?.weightPerCableKg)
         assertEquals("Old School", weightPr?.workoutMode)
-        assertEquals(weightPr?.id, repository.getWeightPR("bench", "OldSchool")?.id)
+        assertEquals(weightPr?.id, repository.getWeightPR("bench", "OldSchool", profileId = "default")?.id)
     }
 
     @Test
@@ -51,11 +52,12 @@ class SqlDelightPersonalRecordRepositoryTest {
             volumePRWeightPerCableKg = 50f,
             reps = 5,
             workoutMode = "Old School",
-            timestamp = 1000L
+            timestamp = 1000L,
+            profileId = "default"
         ).getOrThrow()
 
-        val weightPr = repository.getWeightPR("bench", "Old School")
-        val volumePr = repository.getVolumePR("bench", "Old School")
+        val weightPr = repository.getWeightPR("bench", "Old School", profileId = "default")
+        val volumePr = repository.getVolumePR("bench", "Old School", profileId = "default")
         val exercise = database.vitruvianDatabaseQueries.selectExerciseById("bench").executeAsOneOrNull()
 
         assertEquals(60f, weightPr?.weightPerCableKg)
@@ -82,7 +84,8 @@ class SqlDelightPersonalRecordRepositoryTest {
             volumePRWeightPerCableKg = 40f,
             reps = 8,
             workoutMode = "OldSchool",
-            timestamp = 1000L
+            timestamp = 1000L,
+            profileId = "default"
         )
         repository.updatePRsIfBetter(
             exerciseId = "bench",
@@ -90,10 +93,11 @@ class SqlDelightPersonalRecordRepositoryTest {
             volumePRWeightPerCableKg = 60f,
             reps = 3,
             workoutMode = "OldSchool",
-            timestamp = 2000L
+            timestamp = 2000L,
+            profileId = "default"
         )
 
-        val best = repository.getBestPR("bench")
+        val best = repository.getBestPR("bench", profileId = "default")
         assertEquals(60f, best?.weightPerCableKg)
     }
 
@@ -108,15 +112,17 @@ class SqlDelightPersonalRecordRepositoryTest {
             achievedAt = 1000L,
             workoutMode = "OldSchool",
             prType = PRType.MAX_WEIGHT.name,
-            volume = 440.0
+            volume = 440.0,
+            phase = "COMBINED",
+            profile_id = "default"
         )
 
-        val canonical = repository.getWeightPR("bench", "Old School")
-        val legacy = repository.getWeightPR("bench", "OldSchool")
+        val canonical = repository.getWeightPR("bench", "Old School", profileId = "default")
+        val legacy = repository.getWeightPR("bench", "OldSchool", profileId = "default")
 
         assertEquals(55f, canonical?.weightPerCableKg)
         assertEquals(canonical?.id, legacy?.id)
-        assertNull(database.vitruvianDatabaseQueries.selectPR("bench", "Old School", PRType.MAX_WEIGHT.name).executeAsOneOrNull())
+        assertNull(database.vitruvianDatabaseQueries.selectPR("bench", "Old School", PRType.MAX_WEIGHT.name, phase = "COMBINED", profileId = "default").executeAsOneOrNull())
     }
 
     private fun insertExercise(id: String, name: String) {

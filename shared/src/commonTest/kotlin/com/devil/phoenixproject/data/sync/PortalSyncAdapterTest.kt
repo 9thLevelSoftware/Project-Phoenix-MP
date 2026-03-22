@@ -754,7 +754,8 @@ class PortalSyncAdapterTest {
             loadVelocityData = "[]",
             assessmentSessionId = "sess-1",
             userOverrideKg = null,
-            createdAt = 1700000000000L
+            createdAt = 1700000000000L,
+            profile_id = "default"
         )
 
         val dto1 = PortalSyncAdapter.toPortalAssessmentResult(result1)

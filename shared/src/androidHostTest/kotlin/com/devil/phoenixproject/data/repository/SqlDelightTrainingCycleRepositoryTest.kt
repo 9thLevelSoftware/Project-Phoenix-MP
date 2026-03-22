@@ -46,9 +46,9 @@ class SqlDelightTrainingCycleRepositoryTest {
         val cycle = TrainingCycle.create(id = "cycle-2", name = "Active Cycle")
         repository.saveCycle(cycle)
 
-        repository.setActiveCycle("cycle-2")
+        repository.setActiveCycle("cycle-2", profileId = "default")
 
-        repository.getActiveCycle().test {
+        repository.getActiveCycle(profileId = "default").test {
             val active = awaitItem()
             assertNotNull(active)
             assertEquals("cycle-2", active.id)
@@ -185,7 +185,8 @@ class SqlDelightTrainingCycleRepositoryTest {
             description = "",
             createdAt = 0L,
             lastUsed = null,
-            useCount = 0L
+            useCount = 0L,
+            profile_id = "default"
         )
     }
 

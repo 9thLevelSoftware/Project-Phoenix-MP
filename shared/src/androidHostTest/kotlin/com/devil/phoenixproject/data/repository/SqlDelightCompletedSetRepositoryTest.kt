@@ -113,7 +113,8 @@ class SqlDelightCompletedSetRepositoryTest {
             description = "",
             createdAt = 0L,
             lastUsed = null,
-            useCount = 0L
+            useCount = 0L,
+            profile_id = "default"
         )
     }
 
@@ -201,7 +202,8 @@ class SqlDelightCompletedSetRepositoryTest {
             totalVelocityLossPercent = null,
             dominantSide = null,
             strengthProfile = null,
-            formScore = null
+            formScore = null,
+            profile_id = "default"
         )
     }
 }

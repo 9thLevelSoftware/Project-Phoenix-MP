@@ -111,7 +111,8 @@ class MigrationManagerTest {
             description = "",
             createdAt = 1_700_000_000_000,
             lastUsed = null,
-            useCount = 0
+            useCount = 0,
+            profile_id = "default"
         )
         insertMinimalRoutineExercise(
             id = "re-bench",
@@ -144,7 +145,8 @@ class MigrationManagerTest {
             description = "",
             createdAt = 1_700_000_000_000,
             lastUsed = null,
-            useCount = 0
+            useCount = 0,
+            profile_id = "default"
         )
         insertMinimalRoutineExercise(
             id = "re-bench",
@@ -217,7 +219,9 @@ class MigrationManagerTest {
             achievedAt = 1_700_000_000_000,
             workoutMode = "OldSchool",
             prType = PRType.MAX_WEIGHT.name,
-            volume = 500.0
+            volume = 500.0,
+            phase = "COMBINED",
+            profile_id = "default"
         )
         queries.insertRecord(
             exerciseId = "deadlift",
@@ -228,21 +232,23 @@ class MigrationManagerTest {
             achievedAt = 1_700_000_100_000,
             workoutMode = "Old School",
             prType = PRType.MAX_WEIGHT.name,
-            volume = 500.0
+            volume = 500.0,
+            phase = "COMBINED",
+            profile_id = "default"
         )
 
         migrationManager.checkAndRunMigrations()
         Thread.sleep(500)
 
-        val canonical = queries.selectPR("deadlift", "Old School", PRType.MAX_WEIGHT.name).executeAsOneOrNull()
-        val records = queries.selectAllRecords().executeAsList()
+        val canonical = queries.selectPR("deadlift", "Old School", PRType.MAX_WEIGHT.name, phase = "COMBINED", profileId = "default").executeAsOneOrNull()
+        val records = queries.selectAllRecords(profileId = "default").executeAsList()
             .filter { it.exerciseId == "deadlift" && it.prType == PRType.MAX_WEIGHT.name }
 
         assertNotNull(canonical)
         assertEquals(1, records.size)
         assertEquals("Old School", canonical.workoutMode)
         assertEquals(60.0, canonical.weight)
-        assertNull(queries.selectPR("deadlift", "OldSchool", PRType.MAX_WEIGHT.name).executeAsOneOrNull())
+        assertNull(queries.selectPR("deadlift", "OldSchool", PRType.MAX_WEIGHT.name, phase = "COMBINED", profileId = "default").executeAsOneOrNull())
     }
 
     @Test
@@ -268,10 +274,10 @@ class MigrationManagerTest {
         Thread.sleep(500)
 
         val session = queries.selectSessionById("session-pr-repair").executeAsOneOrNull()
-        val weightPr = queries.selectPR("deadlift", "Old School", PRType.MAX_WEIGHT.name).executeAsOneOrNull()
-        val volumePr = queries.selectPR("deadlift", "Old School", PRType.MAX_VOLUME.name).executeAsOneOrNull()
+        val weightPr = queries.selectPR("deadlift", "Old School", PRType.MAX_WEIGHT.name, phase = "COMBINED", profileId = "default").executeAsOneOrNull()
+        val volumePr = queries.selectPR("deadlift", "Old School", PRType.MAX_VOLUME.name, phase = "COMBINED", profileId = "default").executeAsOneOrNull()
         val exercise = queries.selectExerciseById("deadlift").executeAsOneOrNull()
-        val repairedRecords = queries.selectAllRecords().executeAsList()
+        val repairedRecords = queries.selectAllRecords(profileId = "default").executeAsList()
             .filter { it.exerciseId == "deadlift" }
 
         assertNotNull(session)
@@ -422,6 +428,7 @@ class MigrationManagerTest {
             dominantSide = null,
             strengthProfile = null,
             formScore = null,
+            profile_id = "default",
         )
     }
 }
