@@ -634,8 +634,12 @@ abstract class BaseDataBackupManager(
 
                 // Import personal records
                 backup.data.personalRecords.forEach { pr ->
-                    if (pr.id !in existingPRIds) {
-                        queries.insertRecord(
+                    try {
+                        // Use upsertPR which does INSERT OR REPLACE on the business key
+                        // (exerciseId, workoutMode, prType, phase, profile_id).
+                        // This handles both new records and records that match an existing
+                        // business key but have different autoincrement IDs.
+                        queries.upsertPR(
                             exerciseId = pr.exerciseId,
                             exerciseName = pr.exerciseName,
                             weight = pr.weight.toDouble(),
@@ -649,7 +653,8 @@ abstract class BaseDataBackupManager(
                             profile_id = pr.profileId ?: "default"
                         )
                         personalRecordsImported++
-                    } else {
+                    } catch (e: Exception) {
+                        Logger.w("DataBackupManager") { "Failed to import PR: ${e.message}" }
                         personalRecordsSkipped++
                     }
                 }
