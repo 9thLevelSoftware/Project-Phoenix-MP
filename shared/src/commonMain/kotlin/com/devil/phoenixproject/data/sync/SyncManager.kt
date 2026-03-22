@@ -50,6 +50,8 @@ class SyncManager(
     suspend fun login(email: String, password: String): Result<PortalUser> {
         return apiClient.signIn(email, password).map { goTrueResponse ->
             tokenStorage.saveGoTrueAuth(goTrueResponse)
+            _syncState.value = SyncState.Idle // Reset stale NotAuthenticated state
+            Logger.i("SyncManager") { "Login successful for ${goTrueResponse.user.email}" }
             goTrueResponse.toPortalAuthResponse().user
         }
     }
@@ -57,6 +59,8 @@ class SyncManager(
     suspend fun signup(email: String, password: String, displayName: String): Result<PortalUser> {
         return apiClient.signUp(email, password, displayName).map { goTrueResponse ->
             tokenStorage.saveGoTrueAuth(goTrueResponse)
+            _syncState.value = SyncState.Idle // Reset stale NotAuthenticated state
+            Logger.i("SyncManager") { "Signup successful for ${goTrueResponse.user.email}" }
             goTrueResponse.toPortalAuthResponse().user
         }
     }
