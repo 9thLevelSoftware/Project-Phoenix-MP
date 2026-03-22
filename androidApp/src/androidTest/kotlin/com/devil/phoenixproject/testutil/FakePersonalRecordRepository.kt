@@ -55,7 +55,7 @@ class FakePersonalRecordRepository : PersonalRecordRepository {
 
     // ========== PersonalRecordRepository interface implementation ==========
 
-    override suspend fun getLatestPR(exerciseId: String, workoutMode: String): PersonalRecord? {
+    override suspend fun getLatestPR(exerciseId: String, workoutMode: String, profileId: String): PersonalRecord? {
         return records.values
             .filter {
                 it.exerciseId == exerciseId &&
@@ -64,19 +64,19 @@ class FakePersonalRecordRepository : PersonalRecordRepository {
             .maxByOrNull { it.timestamp }
     }
 
-    override fun getPRsForExercise(exerciseId: String): Flow<List<PersonalRecord>> {
+    override fun getPRsForExercise(exerciseId: String, profileId: String): Flow<List<PersonalRecord>> {
         return _recordsFlow.map { list -> list.filter { it.exerciseId == exerciseId } }
     }
 
-    override suspend fun getBestPR(exerciseId: String): PersonalRecord? {
+    override suspend fun getBestPR(exerciseId: String, profileId: String): PersonalRecord? {
         return records.values
             .filter { it.exerciseId == exerciseId }
             .maxByOrNull { it.volume }
     }
 
-    override fun getAllPRs(): Flow<List<PersonalRecord>> = _recordsFlow
+    override fun getAllPRs(profileId: String): Flow<List<PersonalRecord>> = _recordsFlow
 
-    override fun getAllPRsGrouped(): Flow<List<PersonalRecord>> {
+    override fun getAllPRsGrouped(profileId: String): Flow<List<PersonalRecord>> {
         return _recordsFlow.map { list ->
             list.groupBy { it.exerciseId }
                 .mapNotNull { (_, records) -> records.maxByOrNull { it.volume } }
@@ -88,7 +88,8 @@ class FakePersonalRecordRepository : PersonalRecordRepository {
         weightPerCableKg: Float,
         reps: Int,
         workoutMode: String,
-        timestamp: Long
+        timestamp: Long,
+        profileId: String
     ): Result<Boolean> {
         updateCalls.add(UpdateCall(exerciseId, weightPerCableKg, weightPerCableKg, reps, workoutMode, timestamp))
 
@@ -117,7 +118,7 @@ class FakePersonalRecordRepository : PersonalRecordRepository {
         }
     }
 
-    override suspend fun getWeightPR(exerciseId: String, workoutMode: String): PersonalRecord? {
+    override suspend fun getWeightPR(exerciseId: String, workoutMode: String, profileId: String): PersonalRecord? {
         return records.values
             .filter {
                 it.exerciseId == exerciseId &&
@@ -127,7 +128,7 @@ class FakePersonalRecordRepository : PersonalRecordRepository {
             .maxByOrNull { it.weightPerCableKg }
     }
 
-    override suspend fun getVolumePR(exerciseId: String, workoutMode: String): PersonalRecord? {
+    override suspend fun getVolumePR(exerciseId: String, workoutMode: String, profileId: String): PersonalRecord? {
         return records.values
             .filter {
                 it.exerciseId == exerciseId &&
@@ -137,19 +138,19 @@ class FakePersonalRecordRepository : PersonalRecordRepository {
             .maxByOrNull { it.volume }
     }
 
-    override suspend fun getBestWeightPR(exerciseId: String): PersonalRecord? {
+    override suspend fun getBestWeightPR(exerciseId: String, profileId: String): PersonalRecord? {
         return records.values
             .filter { it.exerciseId == exerciseId && it.prType == PRType.MAX_WEIGHT }
             .maxByOrNull { it.weightPerCableKg }
     }
 
-    override suspend fun getBestVolumePR(exerciseId: String): PersonalRecord? {
+    override suspend fun getBestVolumePR(exerciseId: String, profileId: String): PersonalRecord? {
         return records.values
             .filter { it.exerciseId == exerciseId && it.prType == PRType.MAX_VOLUME }
             .maxByOrNull { it.volume }
     }
 
-    override suspend fun getBestWeightPR(exerciseId: String, workoutMode: String): PersonalRecord? {
+    override suspend fun getBestWeightPR(exerciseId: String, workoutMode: String, profileId: String): PersonalRecord? {
         return records.values
             .filter {
                 it.exerciseId == exerciseId &&
@@ -159,7 +160,7 @@ class FakePersonalRecordRepository : PersonalRecordRepository {
             .maxByOrNull { it.weightPerCableKg }
     }
 
-    override suspend fun getBestVolumePR(exerciseId: String, workoutMode: String): PersonalRecord? {
+    override suspend fun getBestVolumePR(exerciseId: String, workoutMode: String, profileId: String): PersonalRecord? {
         return records.values
             .filter {
                 it.exerciseId == exerciseId &&
@@ -169,7 +170,7 @@ class FakePersonalRecordRepository : PersonalRecordRepository {
             .maxByOrNull { it.volume }
     }
 
-    override suspend fun getAllPRsForExercise(exerciseId: String): List<PersonalRecord> {
+    override suspend fun getAllPRsForExercise(exerciseId: String, profileId: String): List<PersonalRecord> {
         return records.values
             .filter { it.exerciseId == exerciseId }
             .sortedByDescending { it.timestamp }
@@ -181,7 +182,8 @@ class FakePersonalRecordRepository : PersonalRecordRepository {
         volumePRWeightPerCableKg: Float,
         reps: Int,
         workoutMode: String,
-        timestamp: Long
+        timestamp: Long,
+        profileId: String
     ): Result<List<PRType>> {
         updateCalls.add(
             UpdateCall(
@@ -248,7 +250,8 @@ class FakePersonalRecordRepository : PersonalRecordRepository {
         timestamp: Long,
         reps: Int,
         peakConcentricForceKg: Float,
-        peakEccentricForceKg: Float
+        peakEccentricForceKg: Float,
+        profileId: String
     ): Result<List<WorkoutPhase>> {
         // Simplified fake: just return empty (no phase-specific PR tracking in E2E tests)
         return Result.success(emptyList())
