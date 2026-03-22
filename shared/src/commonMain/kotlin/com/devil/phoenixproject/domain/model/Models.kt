@@ -41,7 +41,8 @@ data class PersonalRecord(
     val workoutMode: String,
     val prType: PRType = PRType.MAX_WEIGHT,
     val volume: Float,
-    val phase: WorkoutPhase = WorkoutPhase.COMBINED
+    val phase: WorkoutPhase = WorkoutPhase.COMBINED,
+    val profileId: String = "default"
 )
 
 /**
@@ -502,7 +503,9 @@ data class WorkoutSession(
     val dominantSide: String? = null,
     val strengthProfile: String? = null,
     // Form Check score (added in v0.5.1 Phase 19 CV-06)
-    val formScore: Int? = null
+    val formScore: Int? = null,
+    // Profile scoping
+    val profileId: String = "default"
 ) {
     /** True if this session has detailed summary metrics (v0.2.1+) */
     val hasSummaryMetrics: Boolean

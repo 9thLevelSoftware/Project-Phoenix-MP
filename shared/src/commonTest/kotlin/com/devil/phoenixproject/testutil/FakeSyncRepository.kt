@@ -125,7 +125,7 @@ class FakeSyncRepository : SyncRepository {
         mergedGamificationStats = stats
     }
 
-    override suspend fun mergePortalRoutines(routines: List<PullRoutineDto>, lastSync: Long) {
+    override suspend fun mergePortalRoutines(routines: List<PullRoutineDto>, lastSync: Long, profileId: String) {
         mergePortalRoutinesCallCount++
         mergedPortalRoutines = routines
         mergedPortalRoutinesLastSync = lastSync
@@ -143,7 +143,7 @@ class FakeSyncRepository : SyncRepository {
 
     override suspend fun getAllAssessments(): List<AssessmentResult> = emptyList()
 
-    override suspend fun mergePortalCycles(cycles: List<PullTrainingCycleDto>) {
+    override suspend fun mergePortalCycles(cycles: List<PullTrainingCycleDto>, profileId: String) {
         // no-op for tests
     }
 }

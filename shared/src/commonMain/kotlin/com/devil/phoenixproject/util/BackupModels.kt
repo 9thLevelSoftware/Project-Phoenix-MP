@@ -71,7 +71,9 @@ data class WorkoutSessionBackup(
     val dominantSide: String? = null,
     val strengthProfile: String? = null,
     // Form Check score (added in v0.5.1 Phase 19 CV-06)
-    val formScore: Long? = null
+    val formScore: Long? = null,
+    // Profile separation (profile data separation plan)
+    val profileId: String? = null  // null for backward compat with pre-profile backups
 )
 
 /**
@@ -102,7 +104,8 @@ data class RoutineBackup(
     val description: String = "",
     val createdAt: Long,
     val lastUsed: Long? = null,
-    val useCount: Int = 0
+    val useCount: Int = 0,
+    val profileId: String? = null  // null for backward compat with pre-profile backups
 )
 
 /**
@@ -163,7 +166,8 @@ data class PersonalRecordBackup(
     val workoutMode: String,
     val prType: String = "MAX_WEIGHT",
     val volume: Float = 0f,
-    val phase: String? = "COMBINED"  // Nullable for backward compat with pre-v0.7.0 backups
+    val phase: String? = "COMBINED",  // Nullable for backward compat with pre-v0.7.0 backups
+    val profileId: String? = null  // null for backward compat with pre-profile backups
 )
 
 /**
@@ -188,7 +192,8 @@ data class TrainingCycleBackup(
     val name: String,
     val description: String? = null,
     val createdAt: Long,
-    val isActive: Boolean = false
+    val isActive: Boolean = false,
+    val profileId: String? = null  // null for backward compat with pre-profile backups
 )
 
 /**
@@ -288,7 +293,8 @@ data class ProgressionEventBackup(
     val reason: String,
     val userResponse: String? = null,
     val actualWeightKg: Float? = null,
-    val timestamp: Long
+    val timestamp: Long,
+    val profileId: String? = null  // null for backward compat with pre-profile backups
 )
 
 /**

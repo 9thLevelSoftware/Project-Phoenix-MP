@@ -24,7 +24,8 @@ val syncModule = module {
             tokenStorage = get(),
             syncRepository = get(),
             gamificationRepository = get(),
-            repMetricRepository = get()
+            repMetricRepository = get(),
+            userProfileRepository = get()
         )
     }
     single { SyncTriggerManager(get(), get()) }

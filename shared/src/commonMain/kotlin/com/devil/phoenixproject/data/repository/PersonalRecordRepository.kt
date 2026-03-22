@@ -18,14 +18,14 @@ interface PersonalRecordRepository {
      * @param workoutMode Workout mode (e.g., "OldSchool", "Pump", "TUT")
      * @return PersonalRecord or null if no PR exists
      */
-    suspend fun getLatestPR(exerciseId: String, workoutMode: String): PersonalRecord?
+    suspend fun getLatestPR(exerciseId: String, workoutMode: String, profileId: String): PersonalRecord?
 
     /**
      * Get all PRs for an exercise across all workout modes
      * @param exerciseId Exercise ID
      * @return Flow emitting list of personal records
      */
-    fun getPRsForExercise(exerciseId: String): Flow<List<PersonalRecord>>
+    fun getPRsForExercise(exerciseId: String, profileId: String): Flow<List<PersonalRecord>>
 
     /**
      * Get the best PR for an exercise across all modes
@@ -33,20 +33,20 @@ interface PersonalRecordRepository {
      * @param exerciseId Exercise ID
      * @return PersonalRecord or null if no PR exists
      */
-    suspend fun getBestPR(exerciseId: String): PersonalRecord?
+    suspend fun getBestPR(exerciseId: String, profileId: String): PersonalRecord?
 
     /**
      * Get all personal records
      * @return Flow emitting list of all personal records
      */
-    fun getAllPRs(): Flow<List<PersonalRecord>>
+    fun getAllPRs(profileId: String): Flow<List<PersonalRecord>>
 
     /**
      * Get all personal records grouped by exercise (for analytics)
      * Returns one record per exercise (the best one)
      * @return Flow emitting list of personal records
      */
-    fun getAllPRsGrouped(): Flow<List<PersonalRecord>>
+    fun getAllPRsGrouped(profileId: String): Flow<List<PersonalRecord>>
 
     /**
      * Update PR if the new performance is better
@@ -65,7 +65,8 @@ interface PersonalRecordRepository {
         weightPerCableKg: Float,
         reps: Int,
         workoutMode: String,
-        timestamp: Long
+        timestamp: Long,
+        profileId: String
     ): Result<Boolean> {
         return updatePRsIfBetter(
             exerciseId = exerciseId,
@@ -73,7 +74,8 @@ interface PersonalRecordRepository {
             volumePRWeightPerCableKg = weightPerCableKg,
             reps = reps,
             workoutMode = workoutMode,
-            timestamp = timestamp
+            timestamp = timestamp,
+            profileId = profileId
         ).fold(
             onSuccess = { Result.success(it.isNotEmpty()) },
             onFailure = { Result.failure(it) }
@@ -88,7 +90,7 @@ interface PersonalRecordRepository {
      * @param workoutMode Workout mode
      * @return PersonalRecord or null if no weight PR exists
      */
-    suspend fun getWeightPR(exerciseId: String, workoutMode: String): PersonalRecord?
+    suspend fun getWeightPR(exerciseId: String, workoutMode: String, profileId: String): PersonalRecord?
 
     /**
      * Get the volume PR for an exercise in a specific workout mode
@@ -96,44 +98,48 @@ interface PersonalRecordRepository {
      * @param workoutMode Workout mode
      * @return PersonalRecord or null if no volume PR exists
      */
-    suspend fun getVolumePR(exerciseId: String, workoutMode: String): PersonalRecord?
+    suspend fun getVolumePR(exerciseId: String, workoutMode: String, profileId: String): PersonalRecord?
 
     /**
      * Get the best weight PR for an exercise across all modes
      * @param exerciseId Exercise ID
+     * @param profileId Profile to filter by
      * @return PersonalRecord with highest weight, or null if no PR exists
      */
-    suspend fun getBestWeightPR(exerciseId: String): PersonalRecord?
+    suspend fun getBestWeightPR(exerciseId: String, profileId: String): PersonalRecord?
 
     /**
      * Get the best volume PR for an exercise across all modes
      * @param exerciseId Exercise ID
+     * @param profileId Profile to filter by
      * @return PersonalRecord with highest volume (weight × reps), or null if no PR exists
      */
-    suspend fun getBestVolumePR(exerciseId: String): PersonalRecord?
+    suspend fun getBestVolumePR(exerciseId: String, profileId: String): PersonalRecord?
 
     /**
      * Get the best weight PR for an exercise in a specific mode
      * @param exerciseId Exercise ID
      * @param workoutMode Workout mode (e.g., "OldSchool", "Pump", "TUT")
+     * @param profileId Profile to filter by
      * @return PersonalRecord with highest weight for this mode, or null if no PR exists
      */
-    suspend fun getBestWeightPR(exerciseId: String, workoutMode: String): PersonalRecord?
+    suspend fun getBestWeightPR(exerciseId: String, workoutMode: String, profileId: String): PersonalRecord?
 
     /**
      * Get the best volume PR for an exercise in a specific mode
      * @param exerciseId Exercise ID
      * @param workoutMode Workout mode (e.g., "OldSchool", "Pump", "TUT")
+     * @param profileId Profile to filter by
      * @return PersonalRecord with highest volume for this mode, or null if no PR exists
      */
-    suspend fun getBestVolumePR(exerciseId: String, workoutMode: String): PersonalRecord?
+    suspend fun getBestVolumePR(exerciseId: String, workoutMode: String, profileId: String): PersonalRecord?
 
     /**
      * Get all PRs for an exercise (all modes) for display
      * @param exerciseId Exercise ID
      * @return List of all PRs for the exercise, ordered by mode, type, and date
      */
-    suspend fun getAllPRsForExercise(exerciseId: String): List<PersonalRecord>
+    suspend fun getAllPRsForExercise(exerciseId: String, profileId: String): List<PersonalRecord>
 
     /**
      * Update PRs if the new performance is better
@@ -151,7 +157,8 @@ interface PersonalRecordRepository {
         weightPerCableKg: Float,
         reps: Int,
         workoutMode: String,
-        timestamp: Long
+        timestamp: Long,
+        profileId: String
     ): Result<List<PRType>> {
         return updatePRsIfBetter(
             exerciseId = exerciseId,
@@ -159,7 +166,8 @@ interface PersonalRecordRepository {
             volumePRWeightPerCableKg = weightPerCableKg,
             reps = reps,
             workoutMode = workoutMode,
-            timestamp = timestamp
+            timestamp = timestamp,
+            profileId = profileId
         )
     }
 
@@ -182,7 +190,8 @@ interface PersonalRecordRepository {
         volumePRWeightPerCableKg: Float,
         reps: Int,
         workoutMode: String,
-        timestamp: Long
+        timestamp: Long,
+        profileId: String
     ): Result<List<PRType>>
 
     // ========== Phase-specific PR Methods (Issue #111) ==========
@@ -205,7 +214,8 @@ interface PersonalRecordRepository {
         timestamp: Long,
         reps: Int,
         peakConcentricForceKg: Float,
-        peakEccentricForceKg: Float
+        peakEccentricForceKg: Float,
+        profileId: String
     ): Result<List<WorkoutPhase>>
 }
 

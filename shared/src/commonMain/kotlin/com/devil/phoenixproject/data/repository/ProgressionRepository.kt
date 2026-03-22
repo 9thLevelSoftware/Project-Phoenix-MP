@@ -13,32 +13,32 @@ interface ProgressionRepository {
     /**
      * Get all progression events for an exercise, ordered by timestamp (newest first).
      */
-    suspend fun getProgressionEvents(exerciseId: String): List<ProgressionEvent>
+    suspend fun getProgressionEvents(exerciseId: String, profileId: String): List<ProgressionEvent>
 
     /**
      * Get progression events as a Flow for reactive updates.
      */
-    fun getProgressionEventsFlow(exerciseId: String): Flow<List<ProgressionEvent>>
+    fun getProgressionEventsFlow(exerciseId: String, profileId: String): Flow<List<ProgressionEvent>>
 
     /**
      * Get the most recent progression event for an exercise.
      */
-    suspend fun getLatestProgressionEvent(exerciseId: String): ProgressionEvent?
+    suspend fun getLatestProgressionEvent(exerciseId: String, profileId: String): ProgressionEvent?
 
     /**
      * Get all pending progression suggestions (user hasn't responded yet).
      */
-    suspend fun getPendingProgressions(): List<ProgressionEvent>
+    suspend fun getPendingProgressions(profileId: String): List<ProgressionEvent>
 
     /**
      * Get pending progression as a Flow for reactive updates.
      */
-    fun getPendingProgressionsFlow(): Flow<List<ProgressionEvent>>
+    fun getPendingProgressionsFlow(profileId: String): Flow<List<ProgressionEvent>>
 
     /**
      * Check if there's a pending progression for an exercise.
      */
-    suspend fun hasPendingProgression(exerciseId: String): Boolean
+    suspend fun hasPendingProgression(exerciseId: String, profileId: String): Boolean
 
     /**
      * Create a new progression suggestion.
@@ -63,7 +63,7 @@ interface ProgressionRepository {
     suspend fun deleteProgressionEvent(eventId: String)
 
     /**
-     * Delete all progression events for an exercise.
+     * Delete all progression events for an exercise within a profile.
      */
-    suspend fun deleteProgressionEventsForExercise(exerciseId: String)
+    suspend fun deleteProgressionEventsForExercise(exerciseId: String, profileId: String)
 }

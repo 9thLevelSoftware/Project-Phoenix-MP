@@ -17,21 +17,21 @@ interface SmartSuggestionsRepository {
      * Get session summaries since the given timestamp, joined with exercise muscle group data.
      * Used for volume analysis, balance analysis, and time-of-day analysis.
      */
-    suspend fun getSessionSummariesSince(sinceTimestamp: Long): List<SessionSummary>
+    suspend fun getSessionSummariesSince(sinceTimestamp: Long, profileId: String): List<SessionSummary>
 
     /**
      * Get last-performed dates for all active exercises.
      * Used for neglect detection. Only exerciseId, exerciseName, muscleGroup, and timestamp
      * are populated; weight/rep fields default to 0.
      */
-    suspend fun getExerciseLastPerformed(): List<SessionSummary>
+    suspend fun getExerciseLastPerformed(profileId: String): List<SessionSummary>
 
     /**
      * Get per-exercise weight history ordered by timestamp.
      * Used for plateau detection. Only exerciseId, exerciseName, weightPerCableKg, and timestamp
      * are populated; muscleGroup defaults to exercise name, reps default to 0.
      */
-    suspend fun getExerciseWeightHistory(): List<SessionSummary>
+    suspend fun getExerciseWeightHistory(profileId: String): List<SessionSummary>
 }
 
 /**
@@ -46,9 +46,9 @@ class SqlDelightSmartSuggestionsRepository(
 
     private val queries = database.vitruvianDatabaseQueries
 
-    override suspend fun getSessionSummariesSince(sinceTimestamp: Long): List<SessionSummary> =
+    override suspend fun getSessionSummariesSince(sinceTimestamp: Long, profileId: String): List<SessionSummary> =
         withContext(Dispatchers.IO) {
-            queries.selectSessionSummariesSince(sinceTimestamp).executeAsList().map { row ->
+            queries.selectSessionSummariesSince(sinceTimestamp, profileId = profileId).executeAsList().map { row ->
                 SessionSummary(
                     exerciseId = row.exerciseId,
                     exerciseName = row.exerciseName ?: "Unknown",
@@ -61,9 +61,9 @@ class SqlDelightSmartSuggestionsRepository(
             }
         }
 
-    override suspend fun getExerciseLastPerformed(): List<SessionSummary> =
+    override suspend fun getExerciseLastPerformed(profileId: String): List<SessionSummary> =
         withContext(Dispatchers.IO) {
-            queries.selectExerciseLastPerformed().executeAsList().map { row ->
+            queries.selectExerciseLastPerformed(profileId = profileId).executeAsList().map { row ->
                 SessionSummary(
                     exerciseId = row.exerciseId,
                     exerciseName = row.exerciseName,
@@ -76,9 +76,9 @@ class SqlDelightSmartSuggestionsRepository(
             }
         }
 
-    override suspend fun getExerciseWeightHistory(): List<SessionSummary> =
+    override suspend fun getExerciseWeightHistory(profileId: String): List<SessionSummary> =
         withContext(Dispatchers.IO) {
-            queries.selectExerciseWeightHistory().executeAsList().map { row ->
+            queries.selectExerciseWeightHistory(profileId = profileId).executeAsList().map { row ->
                 SessionSummary(
                     exerciseId = row.exerciseId,
                     exerciseName = row.exerciseName ?: "Unknown",

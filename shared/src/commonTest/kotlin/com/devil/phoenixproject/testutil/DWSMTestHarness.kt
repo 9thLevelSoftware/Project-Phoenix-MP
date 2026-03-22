@@ -89,6 +89,7 @@ class DWSMTestHarness(val testScope: TestScope) {
         resolveWeightsUseCase = resolveWeightsUseCase,
         settingsManager = settingsManager,
         detectionManager = detectionManager,
+        userProfileRepository = FakeUserProfileRepository(),
         scope = dwsmScope
     )
 

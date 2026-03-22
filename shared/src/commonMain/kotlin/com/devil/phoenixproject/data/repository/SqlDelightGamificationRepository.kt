@@ -278,7 +278,7 @@ class SqlDelightGamificationRepository(
         val weekStartMs = weekStart.atStartOfDayIn(TimeZone.currentSystemDefault()).toEpochMilliseconds()
 
         // Count sessions with timestamp >= weekStartMs
-        val sessions = queries.selectAllSessions().executeAsList()
+        val sessions = queries.selectAllSessions(profileId = "default").executeAsList()
         return sessions.count { it.timestamp >= weekStartMs }
     }
 
@@ -288,7 +288,7 @@ class SqlDelightGamificationRepository(
      * Legacy rows without cable metadata default conservatively to single-cable volume.
      */
     private fun getMaxSingleSessionVolume(): Int {
-        val sessions = queries.selectAllSessions().executeAsList()
+        val sessions = queries.selectAllSessions(profileId = "default").executeAsList()
         if (sessions.isEmpty()) return 0
 
         return sessions.maxOfOrNull { session ->
@@ -302,7 +302,7 @@ class SqlDelightGamificationRepository(
      * @param hourEnd End hour (0-23, inclusive)
      */
     private fun hasWorkoutAtTime(hourStart: Int, hourEnd: Int): Boolean {
-        val sessions = queries.selectAllSessions().executeAsList()
+        val sessions = queries.selectAllSessions(profileId = "default").executeAsList()
 
         return sessions.any { session ->
             val sessionTime = Instant.fromEpochMilliseconds(session.timestamp)
@@ -323,7 +323,7 @@ class SqlDelightGamificationRepository(
      * Count workouts completed within a specific time range
      */
     private fun countWorkoutsAtTime(hourStart: Int, hourEnd: Int): Int {
-        val sessions = queries.selectAllSessions().executeAsList()
+        val sessions = queries.selectAllSessions(profileId = "default").executeAsList()
 
         return sessions.count { session ->
             val sessionTime = Instant.fromEpochMilliseconds(session.timestamp)
@@ -427,7 +427,7 @@ class SqlDelightGamificationRepository(
      * This is tracked by checking if there was a gap >= breakDays between any two workouts
      */
     private fun hasComebackAfterBreak(breakDays: Int): Boolean {
-        val sessions = queries.selectAllSessions().executeAsList()
+        val sessions = queries.selectAllSessions(profileId = "default").executeAsList()
         if (sessions.size < 2) return false
 
         val sortedSessions = sessions.sortedBy { it.timestamp }

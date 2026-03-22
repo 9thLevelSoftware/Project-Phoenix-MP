@@ -333,6 +333,20 @@ data class PortalAssessmentResultDto(
     val createdAt: String // ISO 8601
 )
 
+// ─── Local Profile (profile data separation) ──────────────────────
+
+/**
+ * DTO for syncing local device profiles to the portal.
+ * The portal stores these in a `local_profiles` table to enable
+ * profile-scoped filtering in the web dashboard.
+ */
+@Serializable
+data class LocalProfileDto(
+    val id: String,
+    val name: String,
+    val colorIndex: Int
+)
+
 // ─── Push Response ──────────────────────────────────────────────────
 
 /**
@@ -379,7 +393,11 @@ data class PortalSyncPayload(
     // Phase 3: Extended metrics
     val phaseStatistics: List<PortalPhaseStatisticsDto> = emptyList(),
     val exerciseSignatures: List<PortalExerciseSignatureDto> = emptyList(),
-    val assessments: List<PortalAssessmentResultDto> = emptyList()
+    val assessments: List<PortalAssessmentResultDto> = emptyList(),
+    // Profile data separation: active profile tagging + full profile snapshot
+    val profileId: String? = null,
+    val profileName: String? = null,
+    val allProfiles: List<LocalProfileDto>? = null
 )
 
 // ─── Pull Response DTOs (camelCase — NO @SerialName) ──────────────────
@@ -399,7 +417,9 @@ data class PortalSyncPullResponse(
     val cycles: List<PullTrainingCycleDto> = emptyList(),
     val rpgAttributes: PullRpgAttributesDto? = null,
     val badges: List<PullBadgeDto> = emptyList(),
-    val gamificationStats: PullGamificationStatsDto? = null
+    val gamificationStats: PullGamificationStatsDto? = null,
+    // Profile data separation: profile list from portal (round-trip)
+    val localProfiles: List<LocalProfileDto>? = null
 )
 
 /**

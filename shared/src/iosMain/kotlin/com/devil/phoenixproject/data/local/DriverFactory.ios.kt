@@ -501,7 +501,8 @@ actual class DriverFactory {
                 rpe INTEGER,
                 updatedAt INTEGER,
                 serverId TEXT,
-                deletedAt INTEGER
+                deletedAt INTEGER,
+                profile_id TEXT NOT NULL DEFAULT 'default'
             )
             """,
             // ==================== Metric Samples ====================
@@ -536,7 +537,8 @@ actual class DriverFactory {
                 volume REAL NOT NULL DEFAULT 0.0,
                 updatedAt INTEGER,
                 serverId TEXT,
-                deletedAt INTEGER
+                deletedAt INTEGER,
+                profile_id TEXT NOT NULL DEFAULT 'default'
             )
             """,
             // ==================== Routines ====================
@@ -550,7 +552,8 @@ actual class DriverFactory {
                 useCount INTEGER NOT NULL DEFAULT 0,
                 updatedAt INTEGER,
                 serverId TEXT,
-                deletedAt INTEGER
+                deletedAt INTEGER,
+                profile_id TEXT NOT NULL DEFAULT 'default'
             )
             """,
             // ==================== Supersets ====================
@@ -746,6 +749,7 @@ actual class DriverFactory {
                 assessmentSessionId TEXT,
                 userOverrideKg REAL,
                 createdAt INTEGER NOT NULL,
+                profile_id TEXT NOT NULL DEFAULT 'default',
                 FOREIGN KEY (exerciseId) REFERENCES Exercise(id) ON DELETE CASCADE,
                 FOREIGN KEY (assessmentSessionId) REFERENCES WorkoutSession(id) ON DELETE SET NULL
             )
@@ -794,7 +798,8 @@ actual class DriverFactory {
                 name TEXT NOT NULL,
                 description TEXT,
                 created_at INTEGER NOT NULL,
-                is_active INTEGER NOT NULL DEFAULT 0
+                is_active INTEGER NOT NULL DEFAULT 0,
+                profile_id TEXT NOT NULL DEFAULT 'default'
             )
             """,
             """
@@ -877,6 +882,7 @@ actual class DriverFactory {
                 user_response TEXT,
                 actual_weight_kg REAL,
                 timestamp INTEGER NOT NULL,
+                profile_id TEXT NOT NULL DEFAULT 'default',
                 FOREIGN KEY (exercise_id) REFERENCES Exercise(id) ON DELETE CASCADE
             )
             """,
@@ -995,6 +1001,14 @@ actual class DriverFactory {
         // GamificationStats columns
         safeAddColumn(driver, "GamificationStats", "updatedAt", "INTEGER")
         safeAddColumn(driver, "GamificationStats", "serverId", "TEXT")
+
+        // Multi-profile support columns (migration 21)
+        safeAddColumn(driver, "WorkoutSession", "profile_id", "TEXT NOT NULL DEFAULT 'default'")
+        safeAddColumn(driver, "PersonalRecord", "profile_id", "TEXT NOT NULL DEFAULT 'default'")
+        safeAddColumn(driver, "Routine", "profile_id", "TEXT NOT NULL DEFAULT 'default'")
+        safeAddColumn(driver, "TrainingCycle", "profile_id", "TEXT NOT NULL DEFAULT 'default'")
+        safeAddColumn(driver, "AssessmentResult", "profile_id", "TEXT NOT NULL DEFAULT 'default'")
+        safeAddColumn(driver, "ProgressionEvent", "profile_id", "TEXT NOT NULL DEFAULT 'default'")
     }
 
     /**
@@ -1016,7 +1030,7 @@ actual class DriverFactory {
             "CREATE INDEX IF NOT EXISTS idx_metric_sample_session ON MetricSample(sessionId)",
             // PersonalRecord indexes
             "CREATE INDEX IF NOT EXISTS idx_personal_record_exercise ON PersonalRecord(exerciseId)",
-            "CREATE UNIQUE INDEX IF NOT EXISTS idx_pr_unique ON PersonalRecord(exerciseId, workoutMode, prType, phase)",
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_pr_unique ON PersonalRecord(exerciseId, workoutMode, prType, phase, profile_id)",
             // Superset indexes
             "CREATE INDEX IF NOT EXISTS idx_superset_routine ON Superset(routineId)",
             // ConnectionLog indexes
@@ -1041,7 +1055,14 @@ actual class DriverFactory {
             "CREATE INDEX IF NOT EXISTS idx_cycle_progress_cycle ON CycleProgress(cycle_id)",
             "CREATE INDEX IF NOT EXISTS idx_planned_set_exercise ON PlannedSet(routine_exercise_id)",
             "CREATE INDEX IF NOT EXISTS idx_completed_set_session ON CompletedSet(session_id)",
-            "CREATE INDEX IF NOT EXISTS idx_progression_exercise ON ProgressionEvent(exercise_id)"
+            "CREATE INDEX IF NOT EXISTS idx_progression_exercise ON ProgressionEvent(exercise_id)",
+            // Multi-profile indexes (migration 21)
+            "CREATE INDEX IF NOT EXISTS idx_session_profile ON WorkoutSession(profile_id)",
+            "CREATE INDEX IF NOT EXISTS idx_pr_profile ON PersonalRecord(profile_id)",
+            "CREATE INDEX IF NOT EXISTS idx_routine_profile ON Routine(profile_id)",
+            "CREATE INDEX IF NOT EXISTS idx_cycle_profile ON TrainingCycle(profile_id)",
+            "CREATE INDEX IF NOT EXISTS idx_assessment_profile ON AssessmentResult(profile_id)",
+            "CREATE INDEX IF NOT EXISTS idx_progression_profile ON ProgressionEvent(profile_id)"
         )
 
         for (sql in indexes) {

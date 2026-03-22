@@ -10,6 +10,7 @@ import com.devil.phoenixproject.data.repository.CompletedSetRepository
 import com.devil.phoenixproject.data.repository.BiomechanicsRepository
 import com.devil.phoenixproject.data.repository.RepMetricRepository
 import com.devil.phoenixproject.data.repository.TrainingCycleRepository
+import com.devil.phoenixproject.data.repository.UserProfileRepository
 import com.devil.phoenixproject.data.repository.WorkoutRepository
 import com.devil.phoenixproject.data.sync.SyncTriggerManager
 import com.devil.phoenixproject.domain.model.*
@@ -133,6 +134,7 @@ class DefaultWorkoutSessionManager(
     private val settingsManager: SettingsManager,
     val detectionManager: ExerciseDetectionManager,
     private val dataBackupManager: DataBackupManager? = null,
+    private val userProfileRepository: UserProfileRepository,
     private val scope: CoroutineScope,
     private val _hapticEvents: MutableSharedFlow<HapticEvent> = MutableSharedFlow(
         extraBufferCapacity = 10,
@@ -180,6 +182,7 @@ class DefaultWorkoutSessionManager(
         repMetricRepository = repMetricRepository,
         biomechanicsRepository = biomechanicsRepository,
         settingsManager = settingsManager,
+        userProfileRepository = userProfileRepository,
         scope = scope,
         detectionManager = detectionManager,
         dataBackupManager = dataBackupManager

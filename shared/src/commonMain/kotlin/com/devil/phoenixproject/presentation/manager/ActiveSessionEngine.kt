@@ -12,6 +12,7 @@ import com.devil.phoenixproject.data.repository.CompletedSetRepository
 import com.devil.phoenixproject.data.repository.BiomechanicsRepository
 import com.devil.phoenixproject.data.repository.RepMetricRepository
 import com.devil.phoenixproject.data.repository.TrainingCycleRepository
+import com.devil.phoenixproject.data.repository.UserProfileRepository
 import com.devil.phoenixproject.data.repository.WorkoutRepository
 import com.devil.phoenixproject.data.sync.SyncTriggerManager
 import com.devil.phoenixproject.domain.model.*
@@ -63,6 +64,7 @@ class ActiveSessionEngine(
     private val repMetricRepository: RepMetricRepository,
     private val biomechanicsRepository: BiomechanicsRepository,
     private val settingsManager: SettingsManager,
+    private val userProfileRepository: UserProfileRepository,
     private val scope: CoroutineScope,
     private val detectionManager: ExerciseDetectionManager? = null,
     private val dataBackupManager: DataBackupManager? = null
@@ -1215,7 +1217,8 @@ class ActiveSessionEngine(
     }
 
     suspend fun getLastWeightForExercise(exerciseId: String): Float? {
-        return workoutRepository.getAllSessions()
+        val profileId = userProfileRepository.activeProfile.value?.id ?: "default"
+        return workoutRepository.getAllSessions(profileId = profileId)
             .first()
             .filter { it.exerciseId == exerciseId }
             .sortedByDescending { it.timestamp }
@@ -1224,7 +1227,8 @@ class ActiveSessionEngine(
     }
 
     suspend fun getPrWeightForExercise(exerciseId: String): Float? {
-        return workoutRepository.getAllPersonalRecords()
+        val profileId = userProfileRepository.activeProfile.value?.id ?: "default"
+        return workoutRepository.getAllPersonalRecords(profileId)
             .first()
             .filter { it.exerciseId == exerciseId }
             .maxOfOrNull { it.weightPerCableKg }
@@ -1567,11 +1571,13 @@ class ActiveSessionEngine(
             if (exerciseId != null && exerciseId.isNotBlank() && !isBodyweight) {
                 scope.launch {
                     try {
+                        val activeProfileId = userProfileRepository.activeProfile.value?.id ?: "default"
                         val candidate = workoutRepository.findBestGhostSession(
                             exerciseId = exerciseId,
                             mode = params.programMode.displayName,
                             weightPerCableKg = params.weightPerCableKg,
-                            weightToleranceKg = 5f
+                            weightToleranceKg = 5f,
+                            profileId = activeProfileId
                         )
                         if (candidate != null) {
                             val repBio = biomechanicsRepository.getRepBiomechanics(candidate.id)
@@ -2311,7 +2317,8 @@ class ActiveSessionEngine(
             avgAsymmetryPercent = bioSummary?.avgAsymmetryPercent,
             totalVelocityLossPercent = bioSummary?.totalVelocityLossPercent,
             dominantSide = bioSummary?.dominantSide,
-            strengthProfile = bioSummary?.strengthProfile?.name
+            strengthProfile = bioSummary?.strengthProfile?.name,
+            profileId = userProfileRepository.activeProfile.value?.id ?: "default"
         )
 
         workoutRepository.saveSession(session)

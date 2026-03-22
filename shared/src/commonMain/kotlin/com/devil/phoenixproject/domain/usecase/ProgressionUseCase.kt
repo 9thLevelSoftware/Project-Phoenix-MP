@@ -56,10 +56,11 @@ class ProgressionUseCase(
     suspend fun checkForProgression(
         exerciseId: String,
         targetReps: Int? = null,
-        targetRpe: Int = DEFAULT_TARGET_RPE
+        targetRpe: Int = DEFAULT_TARGET_RPE,
+        profileId: String = "default"
     ): ProgressionEvent? {
         // Check if there's already a pending progression for this exercise
-        if (progressionRepository.hasPendingProgression(exerciseId)) {
+        if (progressionRepository.hasPendingProgression(exerciseId, profileId)) {
             log.d { "Pending progression already exists for exercise $exerciseId" }
             return null
         }
@@ -82,7 +83,7 @@ class ProgressionUseCase(
         val rpeProgression = checkRpeBasedProgression(recentSets, currentWeight, targetRpe)
         if (rpeProgression) {
             log.i { "RPE-based progression suggested for exercise $exerciseId" }
-            return createProgressionEvent(exerciseId, currentWeight, ProgressionReason.LOW_RPE)
+            return createProgressionEvent(exerciseId, currentWeight, ProgressionReason.LOW_RPE, profileId)
         }
 
         // Check for rep-based progression
@@ -90,7 +91,7 @@ class ProgressionUseCase(
             val repProgression = checkRepBasedProgression(recentSets, currentWeight, targetReps)
             if (repProgression) {
                 log.i { "Rep-based progression suggested for exercise $exerciseId" }
-                return createProgressionEvent(exerciseId, currentWeight, ProgressionReason.REPS_ACHIEVED)
+                return createProgressionEvent(exerciseId, currentWeight, ProgressionReason.REPS_ACHIEVED, profileId)
             }
         }
 
@@ -201,9 +202,10 @@ class ProgressionUseCase(
      */
     suspend fun checkForDeload(
         exerciseId: String,
-        targetReps: Int? = null
+        targetReps: Int? = null,
+        profileId: String = "default"
     ): ProgressionEvent? {
-        if (progressionRepository.hasPendingProgression(exerciseId)) {
+        if (progressionRepository.hasPendingProgression(exerciseId, profileId)) {
             log.d { "Pending progression already exists for exercise $exerciseId" }
             return null
         }
@@ -223,20 +225,20 @@ class ProgressionUseCase(
         if (targetReps != null) {
             if (checkMissedRepsDeload(recentSets, currentWeight, targetReps)) {
                 log.i { "Deload suggested for $exerciseId: missed reps $SESSIONS_FOR_MISSED_REPS_DELOAD+ sessions" }
-                return createDeloadEvent(exerciseId, currentWeight, ProgressionReason.MISSED_REPS)
+                return createDeloadEvent(exerciseId, currentWeight, ProgressionReason.MISSED_REPS, profileId)
             }
         }
 
         // Check high RPE
         if (checkHighRpeDeload(recentSets, currentWeight)) {
             log.i { "Deload suggested for $exerciseId: RPE consistently >= $HIGH_RPE_THRESHOLD" }
-            return createDeloadEvent(exerciseId, currentWeight, ProgressionReason.HIGH_RPE)
+            return createDeloadEvent(exerciseId, currentWeight, ProgressionReason.HIGH_RPE, profileId)
         }
 
         // Check plateau (needs more data)
         if (checkPlateauDeload(recentSets, exerciseId)) {
             log.i { "Deload suggested for $exerciseId: plateau detected" }
-            return createDeloadEvent(exerciseId, currentWeight, ProgressionReason.PLATEAU_DETECTED)
+            return createDeloadEvent(exerciseId, currentWeight, ProgressionReason.PLATEAU_DETECTED, profileId)
         }
 
         return null
@@ -317,12 +319,14 @@ class ProgressionUseCase(
     private suspend fun createProgressionEvent(
         exerciseId: String,
         currentWeight: Float,
-        reason: ProgressionReason
+        reason: ProgressionReason,
+        profileId: String = "default"
     ): ProgressionEvent {
         val event = ProgressionEvent.create(
             exerciseId = exerciseId,
             previousWeightKg = currentWeight,
-            reason = reason
+            reason = reason,
+            profileId = profileId
         )
 
         progressionRepository.createProgressionSuggestion(event)
@@ -335,12 +339,14 @@ class ProgressionUseCase(
     private suspend fun createDeloadEvent(
         exerciseId: String,
         currentWeight: Float,
-        reason: ProgressionReason
+        reason: ProgressionReason,
+        profileId: String = "default"
     ): ProgressionEvent {
         val event = ProgressionEvent.createDeload(
             exerciseId = exerciseId,
             previousWeightKg = currentWeight,
-            reason = reason
+            reason = reason,
+            profileId = profileId
         )
 
         progressionRepository.createProgressionSuggestion(event)
@@ -362,8 +368,8 @@ class ProgressionUseCase(
     /**
      * Get the suggested weight for an exercise if there's a pending progression.
      */
-    suspend fun getSuggestedWeight(exerciseId: String): Float? {
-        val event = progressionRepository.getLatestProgressionEvent(exerciseId)
+    suspend fun getSuggestedWeight(exerciseId: String, profileId: String = "default"): Float? {
+        val event = progressionRepository.getLatestProgressionEvent(exerciseId, profileId)
         return if (event?.isPending() == true) {
             event.suggestedWeightKg
         } else {
@@ -374,8 +380,8 @@ class ProgressionUseCase(
     /**
      * Get all pending progressions.
      */
-    suspend fun getPendingProgressions(): List<ProgressionEvent> {
-        return progressionRepository.getPendingProgressions()
+    suspend fun getPendingProgressions(profileId: String = "default"): List<ProgressionEvent> {
+        return progressionRepository.getPendingProgressions(profileId)
     }
 
     /**

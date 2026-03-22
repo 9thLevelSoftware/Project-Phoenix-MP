@@ -4,6 +4,7 @@ import com.devil.phoenixproject.testutil.FakeGamificationRepository
 import com.devil.phoenixproject.testutil.FakePortalApiClient
 import com.devil.phoenixproject.testutil.FakeRepMetricRepository
 import com.devil.phoenixproject.testutil.FakeSyncRepository
+import com.devil.phoenixproject.testutil.FakeUserProfileRepository
 import com.russhwolf.settings.MapSettings
 import kotlinx.coroutines.async
 import kotlinx.coroutines.test.runTest
@@ -29,13 +30,15 @@ class SyncManagerTest {
     private val fakeSyncRepo = FakeSyncRepository()
     private val fakeGamificationRepo = FakeGamificationRepository()
     private val fakeRepMetricRepo = FakeRepMetricRepository()
+    private val fakeUserProfileRepo = FakeUserProfileRepository()
 
     private fun createManager() = SyncManager(
         apiClient = fakeApi,
         tokenStorage = tokenStorage,
         syncRepository = fakeSyncRepo,
         gamificationRepository = fakeGamificationRepo,
-        repMetricRepository = fakeRepMetricRepo
+        repMetricRepository = fakeRepMetricRepo,
+        userProfileRepository = fakeUserProfileRepo
     )
 
     /**

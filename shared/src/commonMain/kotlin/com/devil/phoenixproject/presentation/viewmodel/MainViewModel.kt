@@ -13,6 +13,7 @@ import com.devil.phoenixproject.data.repository.CompletedSetRepository
 import com.devil.phoenixproject.data.repository.BiomechanicsRepository
 import com.devil.phoenixproject.data.repository.RepMetricRepository
 import com.devil.phoenixproject.data.repository.TrainingCycleRepository
+import com.devil.phoenixproject.data.repository.UserProfileRepository
 import com.devil.phoenixproject.data.repository.WorkoutRepository
 import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.domain.model.*
@@ -69,7 +70,8 @@ class MainViewModel constructor(
     private val biomechanicsRepository: BiomechanicsRepository,
     private val resolveWeightsUseCase: ResolveRoutineWeightsUseCase,
     private val detectionManager: ExerciseDetectionManager,
-    private val dataBackupManager: DataBackupManager
+    private val dataBackupManager: DataBackupManager,
+    private val userProfileRepository: UserProfileRepository
 ) : ViewModel() {
 
     // Shared haptic events flow - created here, passed to both GamificationManager and WorkoutSessionManager
@@ -82,7 +84,7 @@ class MainViewModel constructor(
     val settingsManager = SettingsManager(preferencesManager, bleRepository, viewModelScope)
 
     // === Phase 1a: HistoryManager (extracted from this class) ===
-    val historyManager = HistoryManager(workoutRepository, personalRecordRepository, viewModelScope)
+    val historyManager = HistoryManager(workoutRepository, personalRecordRepository, userProfileRepository, viewModelScope)
 
     // === Phase 2b: GamificationManager (extracted from this class) ===
     val gamificationManager = GamificationManager(
@@ -108,6 +110,7 @@ class MainViewModel constructor(
         settingsManager = settingsManager,
         detectionManager = detectionManager,
         dataBackupManager = dataBackupManager,
+        userProfileRepository = userProfileRepository,
         scope = viewModelScope,
         _hapticEvents = _hapticEvents
     )

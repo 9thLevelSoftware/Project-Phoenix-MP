@@ -173,7 +173,7 @@ class MigrationManager(
     }
 
     private fun normalizeLegacyPersonalRecordModes() {
-        val records = runCatching { queries.selectAllRecords().executeAsList() }
+        val records = runCatching { queries.selectAllRecords(profileId = "default").executeAsList() }
             .getOrElse { error ->
                 log.e(error) { "Failed to load personal records for mode normalization" }
                 return
@@ -190,7 +190,8 @@ class MigrationManager(
                     exerciseId = record.exerciseId,
                     workoutMode = normalizedMode,
                     prType = record.prType,
-                    phase = record.phase
+                    phase = record.phase,
+                    profileId = "default"
                 ).executeAsOneOrNull()
 
                 if (canonicalRecord == null || shouldReplacePersonalRecord(record, canonicalRecord)) {
@@ -204,7 +205,8 @@ class MigrationManager(
                         workoutMode = normalizedMode,
                         prType = record.prType,
                         volume = record.volume,
-                        phase = record.phase
+                        phase = record.phase,
+                        profile_id = "default"
                     )
                     updated++
                 } else {
@@ -215,7 +217,8 @@ class MigrationManager(
                     exerciseId = record.exerciseId,
                     workoutMode = record.workoutMode,
                     prType = record.prType,
-                    phase = record.phase
+                    phase = record.phase,
+                    profile_id = "default"
                 )
             }
         }
@@ -260,7 +263,8 @@ class MigrationManager(
                     volumePRWeightPerCableKg = configuredWeightKg,
                     reps = reps,
                     workoutMode = normalizedMode,
-                    timestamp = session.timestamp
+                    timestamp = session.timestamp,
+                    profileId = "default"
                 ).getOrThrow()
             }.getOrElse { error ->
                 log.e(error) { "Failed to repair PRs for session ${session.id}" }

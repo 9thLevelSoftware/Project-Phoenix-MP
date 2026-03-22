@@ -82,14 +82,17 @@ fun TrainingCyclesScreen(
     val workoutRepository: WorkoutRepository = koinInject()
     val templateConverter: TemplateConverter = koinInject()
     val personalRecordRepository: com.devil.phoenixproject.data.repository.PersonalRecordRepository = koinInject()
+    val userProfileRepository: com.devil.phoenixproject.data.repository.UserProfileRepository = koinInject()
+    val activeProfile by userProfileRepository.activeProfile.collectAsState()
+    val profileId = activeProfile?.id ?: "default"
     val scope = rememberCoroutineScope()
 
     // User preferences for weight unit
     val weightUnit by viewModel.weightUnit.collectAsState()
 
     // Collect cycles from repository
-    val cycles by cycleRepository.getAllCycles().collectAsState(initial = emptyList())
-    val activeCycle by cycleRepository.getActiveCycle().collectAsState(initial = null)
+    val cycles by cycleRepository.getAllCycles(profileId).collectAsState(initial = emptyList())
+    val activeCycle by cycleRepository.getActiveCycle(profileId).collectAsState(initial = null)
     val routines by viewModel.routines.collectAsState()
 
     // State
@@ -323,12 +326,12 @@ fun TrainingCyclesScreen(
                         isActive = cycle.id == activeCycle?.id,
                         onActivate = {
                             scope.launch {
-                                cycleRepository.setActiveCycle(cycle.id)
+                                cycleRepository.setActiveCycle(cycle.id, profileId)
                             }
                         },
                         onDeactivate = {
                             scope.launch {
-                                cycleRepository.clearActiveCycle()
+                                cycleRepository.clearActiveCycle(profileId)
                             }
                         },
                         onEdit = {
@@ -442,7 +445,7 @@ fun TrainingCyclesScreen(
                         val exerciseId = exercise.id ?: return@let
 
                         // First try to get the PR (best weight ever achieved)
-                        val pr = personalRecordRepository.getBestWeightPR(exerciseId)
+                        val pr = personalRecordRepository.getBestWeightPR(exerciseId, profileId)
                         val prOneRepMax = pr?.oneRepMax
 
                         // Use PR's 1RM if available, else fall back to stored exercise 1RM

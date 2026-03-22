@@ -5,6 +5,7 @@ import com.devil.phoenixproject.data.local.BadgeDefinitions
 import com.devil.phoenixproject.data.repository.GamificationRepository
 import com.devil.phoenixproject.data.repository.RepMetricRepository
 import com.devil.phoenixproject.data.repository.SyncRepository
+import com.devil.phoenixproject.data.repository.UserProfileRepository
 import com.devil.phoenixproject.domain.model.CharacterClass
 import com.devil.phoenixproject.domain.model.RpgProfile
 import com.devil.phoenixproject.domain.model.currentTimeMillis
@@ -31,7 +32,8 @@ class SyncManager(
     private val tokenStorage: PortalTokenStorage,
     private val syncRepository: SyncRepository,
     private val gamificationRepository: GamificationRepository,
-    private val repMetricRepository: RepMetricRepository
+    private val repMetricRepository: RepMetricRepository,
+    private val userProfileRepository: UserProfileRepository
 ) {
     private val syncMutex = Mutex()
     private val _syncState = MutableStateFlow<SyncState>(SyncState.Idle)
@@ -197,6 +199,11 @@ class SyncManager(
 
         // 7. Build portal payload (telemetry setIds match generated exercise set IDs)
         val buildResult = PortalSyncAdapter.toPortalWorkoutSessionsWithTelemetry(sessionsWithReps, userId)
+
+        // 7b. Profile data for portal tagging and profile-scoped filtering
+        val activeProfile = userProfileRepository.activeProfile.value
+        val allProfiles = userProfileRepository.allProfiles.value
+
         val payload = PortalSyncPayload(
             deviceId = deviceId,
             platform = platform,
@@ -210,7 +217,10 @@ class SyncManager(
             gamificationStats = gamStatsDto,
             phaseStatistics = phaseStatsDtos,
             exerciseSignatures = signatureDtos,
-            assessments = assessmentDtos
+            assessments = assessmentDtos,
+            profileId = activeProfile?.id,
+            profileName = activeProfile?.name,
+            allProfiles = allProfiles.map { LocalProfileDto(it.id, it.name, it.colorIndex) }
         )
 
         // 8. Send to Edge Function
@@ -233,9 +243,10 @@ class SyncManager(
      */
     private suspend fun pullRemoteChanges(lastSync: Long): Long? {
         val deviceId = tokenStorage.getDeviceId()
+        val activeProfileId = userProfileRepository.activeProfile.value?.id
 
-        // 1. Call pull Edge Function
-        val pullResult = apiClient.pullPortalPayload(lastSync, deviceId)
+        // 1. Call pull Edge Function (pass profileId for profile-scoped filtering)
+        val pullResult = apiClient.pullPortalPayload(lastSync, deviceId, activeProfileId)
         if (pullResult.isFailure) {
             Logger.w("SyncManager") {
                 "Pull failed (non-fatal): ${pullResult.exceptionOrNull()?.message}"
@@ -254,15 +265,17 @@ class SyncManager(
         // 2. Sessions — SKIPPED (immutable/push-only per PULL-03)
         // pullResponse.sessions is deserialized but not merged.
 
+        val mergeProfileId = activeProfileId ?: "default"
+
         // 3. Routines — merge with local preference (PULL-03)
         if (pullResponse.routines.isNotEmpty()) {
-            syncRepository.mergePortalRoutines(pullResponse.routines, lastSync)
+            syncRepository.mergePortalRoutines(pullResponse.routines, lastSync, mergeProfileId)
             Logger.d("SyncManager") { "Merged ${pullResponse.routines.size} portal routines" }
         }
 
         // 3b. Training cycles — server wins (portal-authoritative for cycles)
         if (pullResponse.cycles.isNotEmpty()) {
-            syncRepository.mergePortalCycles(pullResponse.cycles)
+            syncRepository.mergePortalCycles(pullResponse.cycles, mergeProfileId)
             Logger.d("SyncManager") { "Merged ${pullResponse.cycles.size} portal training cycles" }
         }
 

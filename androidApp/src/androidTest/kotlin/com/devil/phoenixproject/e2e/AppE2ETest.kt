@@ -173,13 +173,13 @@ private val testModule = module {
             override suspend fun mergeCustomExercises(exercises: List<CustomExerciseSyncDto>) = Unit
             override suspend fun mergeBadges(badges: List<EarnedBadgeSyncDto>) = Unit
             override suspend fun mergeGamificationStats(stats: GamificationStatsSyncDto?) = Unit
-            override suspend fun mergePortalRoutines(routines: List<PullRoutineDto>, lastSync: Long) = Unit
+            override suspend fun mergePortalRoutines(routines: List<PullRoutineDto>, lastSync: Long, profileId: String) = Unit
             override suspend fun getFullCyclesForSync(): List<PortalSyncAdapter.CycleWithContext> = emptyList()
             override suspend fun getFullPRsModifiedSince(timestamp: Long): List<com.devil.phoenixproject.domain.model.PersonalRecord> = emptyList()
             override suspend fun getPhaseStatisticsForSessions(sessionIds: List<String>): List<PhaseStatistics> = emptyList()
             override suspend fun getAllExerciseSignatures(): List<ExerciseSignature> = emptyList()
             override suspend fun getAllAssessments(): List<AssessmentResult> = emptyList()
-            override suspend fun mergePortalCycles(cycles: List<PullTrainingCycleDto>) = Unit
+            override suspend fun mergePortalCycles(cycles: List<PullTrainingCycleDto>, profileId: String) = Unit
         }
     }
     single { ConnectivityChecker(ApplicationProvider.getApplicationContext()) }

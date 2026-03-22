@@ -68,7 +68,7 @@ class RoutineFlowManager(
     init {
         // Collector #1: Load routines (filter out cycle template routines)
         scope.launch {
-            workoutRepository.getAllRoutines().collect { routinesList ->
+            workoutRepository.getAllRoutines(profileId = "default").collect { routinesList ->
                 coordinator._routines.value = routinesList.filter { !it.id.startsWith("cycle_routine_") }
             }
         }

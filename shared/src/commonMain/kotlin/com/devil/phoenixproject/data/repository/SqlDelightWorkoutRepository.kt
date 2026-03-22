@@ -91,7 +91,9 @@ class SqlDelightWorkoutRepository(
         // Sync fields (migration 6)
         updatedAt: Long?,
         serverId: String?,
-        deletedAt: Long?
+        deletedAt: Long?,
+        // Multi-profile support (migration 21)
+        profileId: String
     ): WorkoutSession {
         return WorkoutSession(
             id = id,
@@ -142,7 +144,9 @@ class SqlDelightWorkoutRepository(
             dominantSide = dominantSide,
             strengthProfile = strengthProfile,
             // Form Check score
-            formScore = formScore?.toInt()
+            formScore = formScore?.toInt(),
+            // Multi-profile support
+            profileId = profileId
         )
     }
 
@@ -156,7 +160,9 @@ class SqlDelightWorkoutRepository(
         // Sync fields (migration 6)
         updatedAt: Long?,
         serverId: String?,
-        deletedAt: Long?
+        deletedAt: Long?,
+        // Multi-profile support (migration 21)
+        profileId: String
     ): Routine {
         return Routine(
             id = id,
@@ -164,7 +170,8 @@ class SqlDelightWorkoutRepository(
             exercises = emptyList(),
             createdAt = createdAt,
             lastUsed = lastUsed,
-            useCount = useCount.toInt()
+            useCount = useCount.toInt(),
+            profileId = profileId
         )
     }
 
@@ -389,8 +396,8 @@ class SqlDelightWorkoutRepository(
         }
     }
 
-    override fun getAllSessions(): Flow<List<WorkoutSession>> {
-        return queries.selectAllSessions(::mapToSession)
+    override fun getAllSessions(profileId: String): Flow<List<WorkoutSession>> {
+        return queries.selectAllSessions(profileId = profileId, mapper = ::mapToSession)
             .asFlow()
             .mapToList(Dispatchers.IO)
     }
@@ -446,7 +453,9 @@ class SqlDelightWorkoutRepository(
                 dominantSide = session.dominantSide,
                 strengthProfile = session.strengthProfile,
                 // Form Check score
-                formScore = session.formScore?.toLong()
+                formScore = session.formScore?.toLong(),
+                // Multi-profile support
+                profile_id = session.profileId
             )
         }
     }
@@ -463,8 +472,8 @@ class SqlDelightWorkoutRepository(
         }
     }
 
-    override fun getAllRoutines(): Flow<List<Routine>> {
-        return queries.selectAllRoutines(::mapToRoutineBasic)
+    override fun getAllRoutines(profileId: String): Flow<List<Routine>> {
+        return queries.selectAllRoutines(profileId = profileId, mapper = ::mapToRoutineBasic)
             .asFlow()
             .mapToList(Dispatchers.IO)
             .map { basicRoutines ->
@@ -499,7 +508,8 @@ class SqlDelightWorkoutRepository(
                     description = "", // Default empty description
                     createdAt = routine.createdAt,
                     lastUsed = routine.lastUsed,
-                    useCount = routine.useCount.toLong()
+                    useCount = routine.useCount.toLong(),
+                    profile_id = routine.profileId
                 )
 
                 // Delete existing supersets and exercises before re-inserting
@@ -640,17 +650,17 @@ class SqlDelightWorkoutRepository(
         }
     }
 
-    override suspend fun getAverageSetDurationMs(exerciseId: String): Long? {
+    override suspend fun getAverageSetDurationMs(exerciseId: String, profileId: String): Long? {
         return withContext(Dispatchers.IO) {
-            queries.selectAverageSetDurationMs(exerciseId)
+            queries.selectAverageSetDurationMs(exerciseId, profileId = profileId)
                 .executeAsOneOrNull()
                 ?.avgDurationMs
                 ?.toLong()
         }
     }
 
-    override fun getAllPersonalRecords(): Flow<List<PersonalRecordEntity>> {
-        return queries.selectAllRecords { id, exerciseId, exerciseName, weight, reps, oneRepMax, achievedAt, workoutMode, prType, volume, phase, updatedAt, serverId, deletedAt ->
+    override fun getAllPersonalRecords(profileId: String): Flow<List<PersonalRecordEntity>> {
+        return queries.selectAllRecords(profileId = profileId) { id, exerciseId, exerciseName, weight, reps, oneRepMax, achievedAt, workoutMode, prType, volume, phase, updatedAt, serverId, deletedAt, profileId_ ->
             PersonalRecordEntity(
                 id = id,
                 exerciseId = exerciseId,
@@ -672,18 +682,22 @@ class SqlDelightWorkoutRepository(
 
             val combinedPhase = "COMBINED"
 
+            val defaultProfileId = "default"
+
             val currentWeightPR = queries.selectPR(
                 exerciseId,
                 mode,
                 PRType.MAX_WEIGHT.name,
-                combinedPhase
+                combinedPhase,
+                profileId = defaultProfileId
             ).executeAsOneOrNull()
 
             val currentVolumePR = queries.selectPR(
                 exerciseId,
                 mode,
                 PRType.MAX_VOLUME.name,
-                combinedPhase
+                combinedPhase,
+                profileId = defaultProfileId
             ).executeAsOneOrNull()
 
             val isNewWeightPR = currentWeightPR == null || weightKg > currentWeightPR.weight.toFloat()
@@ -705,7 +719,8 @@ class SqlDelightWorkoutRepository(
                     workoutMode = mode,
                     prType = PRType.MAX_WEIGHT.name,
                     volume = newVolume.toDouble(),
-                    phase = combinedPhase
+                    phase = combinedPhase,
+                    profile_id = defaultProfileId
                 )
             }
 
@@ -720,7 +735,8 @@ class SqlDelightWorkoutRepository(
                     workoutMode = mode,
                     prType = PRType.MAX_VOLUME.name,
                     volume = newVolume.toDouble(),
-                    phase = combinedPhase
+                    phase = combinedPhase,
+                    profile_id = defaultProfileId
                 )
             }
 
@@ -762,8 +778,8 @@ class SqlDelightWorkoutRepository(
 
     // ========== New methods for full parity ==========
 
-    override fun getRecentSessions(limit: Int): Flow<List<WorkoutSession>> {
-        return queries.selectRecentSessions(limit.toLong(), ::mapToSession)
+    override fun getRecentSessions(profileId: String, limit: Int): Flow<List<WorkoutSession>> {
+        return queries.selectRecentSessions(profileId = profileId, limit = limit.toLong(), mapper = ::mapToSession)
             .asFlow()
             .mapToList(Dispatchers.IO)
     }
@@ -814,9 +830,9 @@ class SqlDelightWorkoutRepository(
         }
     }
 
-    override suspend fun getRecentSessionsSync(limit: Int): List<WorkoutSession> {
+    override suspend fun getRecentSessionsSync(profileId: String, limit: Int): List<WorkoutSession> {
         return withContext(Dispatchers.IO) {
-            queries.selectRecentSessions(limit.toLong(), ::mapToSession).executeAsList()
+            queries.selectRecentSessions(profileId = profileId, limit = limit.toLong(), mapper = ::mapToSession).executeAsList()
         }
     }
 
@@ -849,13 +865,15 @@ class SqlDelightWorkoutRepository(
         exerciseId: String,
         mode: String,
         weightPerCableKg: Float,
-        weightToleranceKg: Float
+        weightToleranceKg: Float,
+        profileId: String
     ): GhostSessionCandidate? = withContext(Dispatchers.IO) {
         queries.selectBestGhostSession(
             exerciseId = exerciseId,
             mode = mode,
             weightPerCableKg = weightPerCableKg.toDouble(),
-            value_ = weightToleranceKg.toDouble()
+            value_ = weightToleranceKg.toDouble(),
+            profileId = profileId
         ).executeAsOneOrNull()?.let { row ->
             GhostSessionCandidate(
                 id = row.id,

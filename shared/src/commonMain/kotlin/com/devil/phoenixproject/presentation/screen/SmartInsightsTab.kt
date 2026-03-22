@@ -16,6 +16,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.data.repository.SmartSuggestionsRepository
+import com.devil.phoenixproject.data.repository.UserProfileRepository
 import com.devil.phoenixproject.domain.model.*
 import com.devil.phoenixproject.domain.model.currentTimeMillis
 import com.devil.phoenixproject.domain.premium.SmartSuggestionsEngine
@@ -52,6 +53,9 @@ private fun SmartInsightsContent(
     modifier: Modifier = Modifier
 ) {
     val repository: SmartSuggestionsRepository = koinInject()
+    val userProfileRepository: UserProfileRepository = koinInject()
+    val activeProfile by userProfileRepository.activeProfile.collectAsState()
+    val profileId = activeProfile?.id ?: "default"
 
     val nowMs = remember { currentTimeMillis() }
     val twentyEightDaysMs = 28L * 24 * 60 * 60 * 1000
@@ -61,11 +65,11 @@ private fun SmartInsightsContent(
     var exerciseLastPerformed by remember { mutableStateOf<List<SessionSummary>>(emptyList()) }
     var weightHistory by remember { mutableStateOf<List<SessionSummary>>(emptyList()) }
 
-    LaunchedEffect(Unit) {
+    LaunchedEffect(profileId) {
         withContext(Dispatchers.IO) {
-            sessionSummaries = repository.getSessionSummariesSince(nowMs - twentyEightDaysMs)
-            exerciseLastPerformed = repository.getExerciseLastPerformed()
-            weightHistory = repository.getExerciseWeightHistory()
+            sessionSummaries = repository.getSessionSummariesSince(nowMs - twentyEightDaysMs, profileId)
+            exerciseLastPerformed = repository.getExerciseLastPerformed(profileId)
+            weightHistory = repository.getExerciseWeightHistory(profileId)
         }
         isLoading = false
     }

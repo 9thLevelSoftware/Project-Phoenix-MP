@@ -100,10 +100,13 @@ CREATE TABLE WorkoutSession (
     -- Sync fields (added in migration 6)
     updatedAt INTEGER,
     serverId TEXT,
-    deletedAt INTEGER
+    deletedAt INTEGER,
+    -- Multi-profile support (added in migration 21)
+    profile_id TEXT NOT NULL DEFAULT 'default'
 );
 
 CREATE INDEX idx_workout_session_timestamp ON WorkoutSession(timestamp);
+CREATE INDEX idx_session_profile ON WorkoutSession(profile_id);
 
 -- Exercise metrics (samples during workout)
 CREATE TABLE MetricSample (
@@ -141,10 +144,13 @@ CREATE TABLE PersonalRecord (
     -- Sync fields (added in migration 6)
     updatedAt INTEGER,
     serverId TEXT,
-    deletedAt INTEGER
+    deletedAt INTEGER,
+    -- Multi-profile support (added in migration 21)
+    profile_id TEXT NOT NULL DEFAULT 'default'
 );
 
-CREATE UNIQUE INDEX idx_pr_unique ON PersonalRecord(exerciseId, workoutMode, prType, phase);
+CREATE UNIQUE INDEX idx_pr_unique ON PersonalRecord(exerciseId, workoutMode, prType, phase, profile_id);
+CREATE INDEX idx_pr_profile ON PersonalRecord(profile_id);
 
 -- Custom routines
 CREATE TABLE Routine (
@@ -157,8 +163,12 @@ CREATE TABLE Routine (
     -- Sync fields (added in migration 6)
     updatedAt INTEGER,
     serverId TEXT,
-    deletedAt INTEGER
+    deletedAt INTEGER,
+    -- Multi-profile support (added in migration 21)
+    profile_id TEXT NOT NULL DEFAULT 'default'
 );
+
+CREATE INDEX idx_routine_profile ON Routine(profile_id);
 
 -- Supersets (first-class container for grouped exercises)
 CREATE TABLE Superset (
@@ -390,11 +400,14 @@ CREATE TABLE AssessmentResult (
     assessmentSessionId TEXT,
     userOverrideKg REAL,
     createdAt INTEGER NOT NULL,
+    -- Multi-profile support (added in migration 21)
+    profile_id TEXT NOT NULL DEFAULT 'default',
     FOREIGN KEY (exerciseId) REFERENCES Exercise(id) ON DELETE CASCADE,
     FOREIGN KEY (assessmentSessionId) REFERENCES WorkoutSession(id) ON DELETE SET NULL
 );
 
 CREATE INDEX idx_assessment_result_exercise ON AssessmentResult(exerciseId);
+CREATE INDEX idx_assessment_profile ON AssessmentResult(profile_id);
 
 -- Queries
 
@@ -500,7 +513,7 @@ DELETE FROM ExerciseVideo;
 
 -- Workout Session Queries
 selectAllSessions:
-SELECT * FROM WorkoutSession ORDER BY timestamp DESC;
+SELECT * FROM WorkoutSession WHERE profile_id = :profileId ORDER BY timestamp DESC;
 
 selectSessionById:
 SELECT * FROM WorkoutSession WHERE id = ?;
@@ -514,7 +527,7 @@ selectAllSessionIds:
 SELECT id FROM WorkoutSession;
 
 selectRecentSessions:
-SELECT * FROM WorkoutSession ORDER BY timestamp DESC LIMIT ?;
+SELECT * FROM WorkoutSession WHERE profile_id = :profileId ORDER BY timestamp DESC LIMIT :limit;
 
 insertSession:
 INSERT INTO WorkoutSession (
@@ -528,9 +541,10 @@ INSERT INTO WorkoutSession (
     heaviestLiftKg, totalVolumeKg, cableCount, estimatedCalories,
     warmupAvgWeightKg, workingAvgWeightKg, burnoutAvgWeightKg, peakWeightKg, rpe,
     avgMcvMmS, avgAsymmetryPercent, totalVelocityLossPercent, dominantSide, strengthProfile,
-    formScore
+    formScore,
+    profile_id
 )
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 updateSession:
 UPDATE WorkoutSession
@@ -576,34 +590,38 @@ DELETE FROM MetricSample WHERE sessionId = ?;
 selectAverageSetDurationMs:
 SELECT AVG(duration) AS avgDurationMs
 FROM WorkoutSession
-WHERE exerciseId = ? AND duration > 0;
+WHERE exerciseId = ? AND duration > 0
+AND profile_id = :profileId;
 
 -- Personal Record Queries
 
 -- Get all PRs ordered by timestamp
 selectAllRecords:
-SELECT * FROM PersonalRecord ORDER BY achievedAt DESC;
+SELECT * FROM PersonalRecord WHERE profile_id = :profileId ORDER BY achievedAt DESC;
 
 -- Get PRs for a specific exercise
 selectRecordsByExercise:
-SELECT * FROM PersonalRecord WHERE exerciseId = ? ORDER BY oneRepMax DESC;
+SELECT * FROM PersonalRecord WHERE exerciseId = ? AND profile_id = :profileId ORDER BY oneRepMax DESC;
 
 -- Get PR by exercise, workout mode, PR type, and phase
 selectPR:
 SELECT * FROM PersonalRecord
 WHERE exerciseId = ? AND workoutMode = ? AND prType = ? AND phase = ?
+AND profile_id = :profileId
 LIMIT 1;
 
 -- Get both PRs (MAX_WEIGHT and MAX_VOLUME) for an exercise in a specific mode (COMBINED phase)
 selectPRsForExerciseAndMode:
 SELECT * FROM PersonalRecord
 WHERE exerciseId = ? AND workoutMode = ?
+AND profile_id = :profileId
 ORDER BY prType;
 
 -- Get the best weight PR for an exercise across all modes
 selectBestWeightPR:
 SELECT * FROM PersonalRecord
 WHERE exerciseId = ? AND prType = 'MAX_WEIGHT'
+AND profile_id = :profileId
 ORDER BY weight DESC
 LIMIT 1;
 
@@ -611,6 +629,7 @@ LIMIT 1;
 selectBestVolumePR:
 SELECT * FROM PersonalRecord
 WHERE exerciseId = ? AND prType = 'MAX_VOLUME'
+AND profile_id = :profileId
 ORDER BY volume DESC
 LIMIT 1;
 
@@ -620,6 +639,7 @@ SELECT * FROM PersonalRecord
 WHERE exerciseId = :exerciseId
 AND prType = 'MAX_WEIGHT'
 AND workoutMode = :workoutMode
+AND profile_id = :profileId
 ORDER BY weight DESC
 LIMIT 1;
 
@@ -629,6 +649,7 @@ SELECT * FROM PersonalRecord
 WHERE exerciseId = :exerciseId
 AND prType = 'MAX_VOLUME'
 AND workoutMode = :workoutMode
+AND profile_id = :profileId
 ORDER BY volume DESC
 LIMIT 1;
 
@@ -636,12 +657,14 @@ LIMIT 1;
 selectAllPRsForExercise:
 SELECT * FROM PersonalRecord
 WHERE exerciseId = :exerciseId
+AND profile_id = :profileId
 ORDER BY workoutMode, prType, achievedAt DESC;
 
 -- Get the best overall PR for an exercise (prefers weight, for backwards compatibility)
 selectBestPR:
 SELECT * FROM PersonalRecord
 WHERE exerciseId = ?
+AND profile_id = :profileId
 ORDER BY weight DESC, volume DESC
 LIMIT 1;
 
@@ -649,51 +672,56 @@ LIMIT 1;
 selectLatestPR:
 SELECT * FROM PersonalRecord
 WHERE exerciseId = ? AND workoutMode = ? AND prType = 'MAX_WEIGHT'
+AND profile_id = :profileId
 LIMIT 1;
 
 -- Get all PRs grouped by exercise for analytics
 selectAllPRsGrouped:
-SELECT * FROM PersonalRecord ORDER BY exerciseId, workoutMode, prType, achievedAt DESC;
+SELECT * FROM PersonalRecord WHERE profile_id = :profileId ORDER BY exerciseId, workoutMode, prType, achievedAt DESC;
 
 -- Insert a new PR (with prType, volume, and phase support)
 insertRecord:
-INSERT INTO PersonalRecord (exerciseId, exerciseName, weight, reps, oneRepMax, achievedAt, workoutMode, prType, volume, phase)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+INSERT INTO PersonalRecord (exerciseId, exerciseName, weight, reps, oneRepMax, achievedAt, workoutMode, prType, volume, phase, profile_id)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 -- Upsert PR (insert or replace) - requires ID
 upsertRecord:
-INSERT OR REPLACE INTO PersonalRecord (id, exerciseId, exerciseName, weight, reps, oneRepMax, achievedAt, workoutMode, prType, volume, phase)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+INSERT OR REPLACE INTO PersonalRecord (id, exerciseId, exerciseName, weight, reps, oneRepMax, achievedAt, workoutMode, prType, volume, phase, profile_id)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 -- Upsert PR by unique key (exerciseId, workoutMode, prType, phase) - no ID required
 -- Uses INSERT OR REPLACE which replaces on unique index conflict (idx_pr_unique)
 upsertPR:
-INSERT OR REPLACE INTO PersonalRecord (exerciseId, exerciseName, weight, reps, oneRepMax, achievedAt, workoutMode, prType, volume, phase)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+INSERT OR REPLACE INTO PersonalRecord (exerciseId, exerciseName, weight, reps, oneRepMax, achievedAt, workoutMode, prType, volume, phase, profile_id)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 -- Delete PR by unique key (for upsert fallback)
 deletePRByKey:
 DELETE FROM PersonalRecord
-WHERE exerciseId = ? AND workoutMode = ? AND prType = ? AND phase = ?;
+WHERE exerciseId = ? AND workoutMode = ? AND prType = ? AND phase = ? AND profile_id = ?;
 
 -- Get all PR IDs for duplicate checking during import
 selectAllPRIds:
 SELECT id FROM PersonalRecord;
 
+-- Get all PRs unfiltered (for backup export across all profiles)
+selectAllRecordsSync:
+SELECT * FROM PersonalRecord ORDER BY achievedAt DESC;
+
 -- Routine Queries
 selectAllRoutines:
-SELECT * FROM Routine ORDER BY name ASC;
+SELECT * FROM Routine WHERE profile_id = :profileId ORDER BY name ASC;
 
 selectRoutineById:
 SELECT * FROM Routine WHERE id = ?;
 
 insertRoutine:
-INSERT INTO Routine (id, name, description, createdAt, lastUsed, useCount) VALUES (?, ?, ?, ?, ?, ?);
+INSERT INTO Routine (id, name, description, createdAt, lastUsed, useCount, profile_id) VALUES (?, ?, ?, ?, ?, ?, ?);
 
 -- Upsert routine (insert or replace) - handles both new and existing routines
 upsertRoutine:
-INSERT OR REPLACE INTO Routine (id, name, description, createdAt, lastUsed, useCount)
-VALUES (?, ?, ?, ?, ?, ?);
+INSERT OR REPLACE INTO Routine (id, name, description, createdAt, lastUsed, useCount, profile_id)
+VALUES (?, ?, ?, ?, ?, ?, ?);
 
 updateRoutineLastUsed:
 UPDATE Routine SET lastUsed = ?, useCount = useCount + 1 WHERE id = ?;
@@ -790,7 +818,7 @@ WHERE id = ?;
 
 -- Analytics Queries
 selectVolumeHistory:
-SELECT timestamp, totalReps, weightPerCableKg FROM WorkoutSession ORDER BY timestamp ASC;
+SELECT timestamp, totalReps, weightPerCableKg FROM WorkoutSession WHERE profile_id = :profileId ORDER BY timestamp ASC;
 
 -- ==================== CONNECTION LOG QUERIES ====================
 
@@ -946,17 +974,17 @@ DELETE FROM ExerciseSignature WHERE exerciseId = ?;
 -- ==================== ASSESSMENT RESULT QUERIES ====================
 
 insertAssessmentResult:
-INSERT INTO AssessmentResult (exerciseId, estimatedOneRepMaxKg, loadVelocityData, assessmentSessionId, userOverrideKg, createdAt)
-VALUES (?, ?, ?, ?, ?, ?);
+INSERT INTO AssessmentResult (exerciseId, estimatedOneRepMaxKg, loadVelocityData, assessmentSessionId, userOverrideKg, createdAt, profile_id)
+VALUES (?, ?, ?, ?, ?, ?, ?);
 
 selectAssessmentsByExercise:
-SELECT * FROM AssessmentResult WHERE exerciseId = ? ORDER BY createdAt DESC;
+SELECT * FROM AssessmentResult WHERE exerciseId = ? AND profile_id = :profileId ORDER BY createdAt DESC;
 
 selectLatestAssessment:
-SELECT * FROM AssessmentResult WHERE exerciseId = ? ORDER BY createdAt DESC LIMIT 1;
+SELECT * FROM AssessmentResult WHERE exerciseId = ? AND profile_id = :profileId ORDER BY createdAt DESC LIMIT 1;
 
 selectAllAssessments:
-SELECT * FROM AssessmentResult ORDER BY createdAt DESC;
+SELECT * FROM AssessmentResult WHERE profile_id = :profileId ORDER BY createdAt DESC;
 
 deleteAssessmentResult:
 DELETE FROM AssessmentResult WHERE id = ?;
@@ -1164,8 +1192,12 @@ CREATE TABLE TrainingCycle (
     name TEXT NOT NULL,
     description TEXT,
     created_at INTEGER NOT NULL,
-    is_active INTEGER NOT NULL DEFAULT 0
+    is_active INTEGER NOT NULL DEFAULT 0,
+    -- Multi-profile support (added in migration 21)
+    profile_id TEXT NOT NULL DEFAULT 'default'
 );
+
+CREATE INDEX idx_cycle_profile ON TrainingCycle(profile_id);
 
 -- Cycle Days (replaces ProgramDay - day 1, 2, 3... instead of Mon/Tue/Wed)
 CREATE TABLE CycleDay (
@@ -1247,6 +1279,8 @@ CREATE TABLE ProgressionEvent (
     user_response TEXT,
     actual_weight_kg REAL,
     timestamp INTEGER NOT NULL,
+    -- Multi-profile support (added in migration 21)
+    profile_id TEXT NOT NULL DEFAULT 'default',
     FOREIGN KEY (exercise_id) REFERENCES Exercise(id) ON DELETE CASCADE
 );
 
@@ -1257,31 +1291,32 @@ CREATE INDEX idx_cycle_progress_cycle ON CycleProgress(cycle_id);
 CREATE INDEX idx_planned_set_exercise ON PlannedSet(routine_exercise_id);
 CREATE INDEX idx_completed_set_session ON CompletedSet(session_id);
 CREATE INDEX idx_progression_exercise ON ProgressionEvent(exercise_id);
+CREATE INDEX idx_progression_profile ON ProgressionEvent(profile_id);
 
 -- ==================== TRAINING CYCLES QUERIES ====================
 
 -- TrainingCycle Queries
 selectAllTrainingCycles:
-SELECT * FROM TrainingCycle ORDER BY created_at DESC;
+SELECT * FROM TrainingCycle WHERE profile_id = :profileId ORDER BY created_at DESC;
 
 selectTrainingCycleById:
 SELECT * FROM TrainingCycle WHERE id = ?;
 
 selectActiveTrainingCycle:
-SELECT * FROM TrainingCycle WHERE is_active = 1 LIMIT 1;
+SELECT * FROM TrainingCycle WHERE is_active = 1 AND profile_id = :profileId LIMIT 1;
 
 insertTrainingCycle:
-INSERT INTO TrainingCycle (id, name, description, created_at, is_active)
-VALUES (?, ?, ?, ?, ?);
+INSERT INTO TrainingCycle (id, name, description, created_at, is_active, profile_id)
+VALUES (?, ?, ?, ?, ?, ?);
 
 updateTrainingCycle:
 UPDATE TrainingCycle SET name = ?, description = ?, is_active = ? WHERE id = ?;
 
 setActiveTrainingCycle:
-UPDATE TrainingCycle SET is_active = CASE WHEN id = ? THEN 1 ELSE 0 END;
+UPDATE TrainingCycle SET is_active = CASE WHEN id = ? THEN 1 ELSE 0 END WHERE profile_id = :profileId;
 
 deactivateAllCycles:
-UPDATE TrainingCycle SET is_active = 0;
+UPDATE TrainingCycle SET is_active = 0 WHERE profile_id = :profileId;
 
 deleteTrainingCycle:
 DELETE FROM TrainingCycle WHERE id = ?;
@@ -1418,17 +1453,17 @@ DELETE FROM CompletedSet WHERE session_id = ?;
 
 -- ProgressionEvent Queries
 selectProgressionEventsByExercise:
-SELECT * FROM ProgressionEvent WHERE exercise_id = ? ORDER BY timestamp DESC;
+SELECT * FROM ProgressionEvent WHERE exercise_id = ? AND profile_id = :profileId ORDER BY timestamp DESC;
 
 selectRecentProgressionEvent:
-SELECT * FROM ProgressionEvent WHERE exercise_id = ? ORDER BY timestamp DESC LIMIT 1;
+SELECT * FROM ProgressionEvent WHERE exercise_id = ? AND profile_id = :profileId ORDER BY timestamp DESC LIMIT 1;
 
 selectPendingProgressionEvents:
-SELECT * FROM ProgressionEvent WHERE user_response IS NULL ORDER BY timestamp DESC;
+SELECT * FROM ProgressionEvent WHERE user_response IS NULL AND profile_id = :profileId ORDER BY timestamp DESC;
 
 insertProgressionEvent:
-INSERT INTO ProgressionEvent (id, exercise_id, suggested_weight_kg, previous_weight_kg, reason, user_response, actual_weight_kg, timestamp)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?);
+INSERT INTO ProgressionEvent (id, exercise_id, suggested_weight_kg, previous_weight_kg, reason, user_response, actual_weight_kg, timestamp, profile_id)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 updateProgressionEventResponse:
 UPDATE ProgressionEvent SET user_response = ?, actual_weight_kg = ? WHERE id = ?;
@@ -1492,8 +1527,8 @@ SELECT id FROM UserProfile;
 -- INSERT OR IGNORE queries for backup import (skips duplicates)
 
 insertTrainingCycleIgnore:
-INSERT OR IGNORE INTO TrainingCycle (id, name, description, created_at, is_active)
-VALUES (?, ?, ?, ?, ?);
+INSERT OR IGNORE INTO TrainingCycle (id, name, description, created_at, is_active, profile_id)
+VALUES (?, ?, ?, ?, ?, ?);
 
 insertCycleDayIgnore:
 INSERT OR IGNORE INTO CycleDay (id, cycle_id, day_number, name, routine_id, is_rest_day, echo_level, eccentric_load_percent, weight_progression_percent, rep_modifier, rest_time_override_seconds)
@@ -1516,8 +1551,8 @@ INSERT OR IGNORE INTO CompletedSet (id, session_id, planned_set_id, set_number, 
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 insertProgressionEventIgnore:
-INSERT OR IGNORE INTO ProgressionEvent (id, exercise_id, suggested_weight_kg, previous_weight_kg, reason, user_response, actual_weight_kg, timestamp)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?);
+INSERT OR IGNORE INTO ProgressionEvent (id, exercise_id, suggested_weight_kg, previous_weight_kg, reason, user_response, actual_weight_kg, timestamp, profile_id)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 insertEarnedBadgeIgnore:
 INSERT OR IGNORE INTO EarnedBadge (badgeId, earnedAt, celebratedAt) VALUES (?, ?, ?);
@@ -1622,9 +1657,10 @@ INSERT OR REPLACE INTO WorkoutSession (
     warmupAvgWeightKg, workingAvgWeightKg, burnoutAvgWeightKg, peakWeightKg, rpe,
     avgMcvMmS, avgAsymmetryPercent, totalVelocityLossPercent, dominantSide, strengthProfile,
     formScore,
-    updatedAt, serverId, deletedAt
+    updatedAt, serverId, deletedAt,
+    profile_id
 )
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 -- Get PRs modified since last sync
 selectPRsModifiedSince:
@@ -1696,6 +1732,7 @@ FROM WorkoutSession ws
 LEFT JOIN Exercise e ON ws.exerciseId = e.id
 WHERE ws.exerciseId IS NOT NULL
   AND ws.timestamp > ?
+  AND ws.profile_id = :profileId
 ORDER BY ws.timestamp DESC;
 
 -- Exercise last-performed dates (for neglect detection)
@@ -1705,6 +1742,7 @@ SELECT e.id AS exerciseId, e.name AS exerciseName, e.muscleGroup,
 FROM Exercise e
 INNER JOIN WorkoutSession ws ON ws.exerciseId = e.id
 WHERE e.archived = 0
+  AND ws.profile_id = :profileId
 GROUP BY e.id;
 
 -- Per-exercise weight history (for plateau detection)
@@ -1712,6 +1750,7 @@ selectExerciseWeightHistory:
 SELECT ws.exerciseId, ws.exerciseName, ws.weightPerCableKg, ws.timestamp
 FROM WorkoutSession ws
 WHERE ws.exerciseId IS NOT NULL
+  AND ws.profile_id = :profileId
 ORDER BY ws.exerciseId, ws.timestamp ASC;
 
 -- ==================== GHOST RACING QUERIES ====================
@@ -1727,5 +1766,6 @@ WHERE exerciseId = ?
   AND avgMcvMmS > 0
   AND workingReps > 0
   AND ABS(weightPerCableKg - ?) <= ?
+  AND profile_id = :profileId
 ORDER BY avgMcvMmS DESC
 LIMIT 1;

@@ -96,7 +96,8 @@ class WorkoutFlowE2ETest {
             biomechanicsRepository = FakeBiomechanicsRepository(),
             resolveWeightsUseCase = resolveWeightsUseCase,
             detectionManager = detectionManager,
-            dataBackupManager = FakeDataBackupManager()
+            dataBackupManager = FakeDataBackupManager(),
+            userProfileRepository = com.devil.phoenixproject.testutil.FakeUserProfileRepository()
         )
 
         robot = WorkoutRobot(viewModel, fakeBleRepository)
@@ -337,7 +338,7 @@ class WorkoutFlowE2ETest {
 
         localRobot.verifyWorkoutSummary()
         localRobot.verifyRepCount(expectedWorking = 2, expectedWarmup = 3)
-        kotlin.test.assertEquals(1, fakeWorkoutRepository.getRecentSessionsSync(5).size)
+        kotlin.test.assertEquals(1, fakeWorkoutRepository.getRecentSessionsSync("default", 5).size)
     }
 
     @Test

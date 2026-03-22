@@ -94,7 +94,7 @@ interface SyncRepository {
     /**
      * Get all VBT assessment results for sync push.
      */
-    suspend fun getAllAssessments(): List<com.devil.phoenixproject.database.AssessmentResult>
+    suspend fun getAllAssessments(profileId: String = "default"): List<com.devil.phoenixproject.database.AssessmentResult>
 
     // === ID Mapping (after push) ===
 
@@ -142,12 +142,12 @@ interface SyncRepository {
      * @param routines Portal routine DTOs with nested exercises
      * @param lastSync The lastSync timestamp — routines modified locally after this are preserved
      */
-    suspend fun mergePortalRoutines(routines: List<PullRoutineDto>, lastSync: Long)
+    suspend fun mergePortalRoutines(routines: List<PullRoutineDto>, lastSync: Long, profileId: String = "default")
 
     /**
      * Merge portal training cycles with days into local database.
      * Server wins: portal cycles overwrite local versions.
      * Uses delete-then-reinsert for cycle days (same pattern as portal edge function).
      */
-    suspend fun mergePortalCycles(cycles: List<PullTrainingCycleDto>)
+    suspend fun mergePortalCycles(cycles: List<PullTrainingCycleDto>, profileId: String = "default")
 }

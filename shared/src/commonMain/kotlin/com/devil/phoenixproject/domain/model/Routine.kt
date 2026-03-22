@@ -30,7 +30,8 @@ data class Routine(
     val supersets: List<Superset> = emptyList(),  // Superset containers
     val createdAt: Long = currentTimeMillis(),
     val lastUsed: Long? = null,
-    val useCount: Int = 0
+    val useCount: Int = 0,
+    val profileId: String = "default"
 ) {
     /**
      * Get all items (supersets + standalone exercises) in display order.

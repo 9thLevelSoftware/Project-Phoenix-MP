@@ -32,7 +32,8 @@ data class TrainingCycle(
     val createdAt: Long,
     val isActive: Boolean,
     val progressionRule: ProgressionRule? = null,
-    val weekNumber: Int = 1
+    val weekNumber: Int = 1,
+    val profileId: String = "default"
 ) {
     companion object {
         fun create(
@@ -476,7 +477,8 @@ data class ProgressionEvent(
     val reason: ProgressionReason,
     val userResponse: ProgressionResponse?,
     val actualWeightKg: Float?,
-    val timestamp: Long
+    val timestamp: Long,
+    val profileId: String = "default"
 ) {
     /**
      * Calculate the suggested increment.
@@ -493,7 +495,8 @@ data class ProgressionEvent(
             id: String = generateUUID(),
             exerciseId: String,
             previousWeightKg: Float,
-            reason: ProgressionReason
+            reason: ProgressionReason,
+            profileId: String = "default"
         ): ProgressionEvent {
             val suggestedWeight = calculateProgressionWeight(previousWeightKg)
             return ProgressionEvent(
@@ -504,7 +507,8 @@ data class ProgressionEvent(
                 reason = reason,
                 userResponse = null,
                 actualWeightKg = null,
-                timestamp = currentTimeMillis()
+                timestamp = currentTimeMillis(),
+                profileId = profileId
             )
         }
 
@@ -515,7 +519,8 @@ data class ProgressionEvent(
             id: String = generateUUID(),
             exerciseId: String,
             previousWeightKg: Float,
-            reason: ProgressionReason
+            reason: ProgressionReason,
+            profileId: String = "default"
         ): ProgressionEvent {
             val suggestedWeight = calculateDeloadWeight(previousWeightKg)
             return ProgressionEvent(
@@ -526,7 +531,8 @@ data class ProgressionEvent(
                 reason = reason,
                 userResponse = null,
                 actualWeightKg = null,
-                timestamp = currentTimeMillis()
+                timestamp = currentTimeMillis(),
+                profileId = profileId
             )
         }
 

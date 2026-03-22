@@ -137,12 +137,16 @@ open class PortalApiClient(
         }
     }
 
-    open suspend fun pullPortalPayload(lastSync: Long, deviceId: String): Result<PortalSyncPullResponse> {
+    open suspend fun pullPortalPayload(lastSync: Long, deviceId: String, profileId: String? = null): Result<PortalSyncPullResponse> {
         return authenticatedRequest { token ->
             httpClient.post("${supabaseConfig.url}/functions/v1/mobile-sync-pull") {
                 bearerAuth(token)
                 header("apikey", supabaseConfig.anonKey)
-                setBody(mapOf("deviceId" to deviceId, "lastSync" to lastSync))
+                setBody(buildMap<String, Any> {
+                    put("deviceId", deviceId)
+                    put("lastSync", lastSync)
+                    if (profileId != null) put("profileId", profileId)
+                })
             }
         }
     }

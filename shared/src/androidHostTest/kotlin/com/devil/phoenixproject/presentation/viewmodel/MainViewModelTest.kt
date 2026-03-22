@@ -107,7 +107,8 @@ class MainViewModelTest {
             biomechanicsRepository = FakeBiomechanicsRepository(),
             resolveWeightsUseCase = resolveWeightsUseCase,
             detectionManager = detectionManager,
-            dataBackupManager = FakeDataBackupManager()
+            dataBackupManager = FakeDataBackupManager(),
+            userProfileRepository = com.devil.phoenixproject.testutil.FakeUserProfileRepository()
         )
     }
 
@@ -406,7 +407,7 @@ class MainViewModelTest {
         advanceUntilIdle()
 
         assertIs<WorkoutState.SetSummary>(viewModel.workoutState.value)
-        assertEquals(1, fakeWorkoutRepository.getRecentSessionsSync(10).size)
+        assertEquals(1, fakeWorkoutRepository.getRecentSessionsSync("default", 10).size)
         assertEquals(2, viewModel.repCount.value.workingReps)
     }
 
@@ -477,7 +478,7 @@ class MainViewModelTest {
         runCurrent()
 
         assertEquals(WorkoutState.Active, viewModel.workoutState.value)
-        assertEquals(0, fakeWorkoutRepository.getRecentSessionsSync(10).size)
+        assertEquals(0, fakeWorkoutRepository.getRecentSessionsSync("default", 10).size)
 
         // Complete warmup and verify auto-stop can now trigger for timed cable.
         val activeMetric = WorkoutMetric(
@@ -516,9 +517,9 @@ class MainViewModelTest {
         runCurrent()
         runCurrent()
 
-        assertEquals(1, fakeWorkoutRepository.getRecentSessionsSync(10).size)
+        assertEquals(1, fakeWorkoutRepository.getRecentSessionsSync("default", 10).size)
         assertIs<WorkoutState.SetSummary>(viewModel.workoutState.value)
-        assertEquals(1, fakeWorkoutRepository.getRecentSessionsSync(10).size)
+        assertEquals(1, fakeWorkoutRepository.getRecentSessionsSync("default", 10).size)
     }
 
     private fun forceAutoStopTimerElapsed() {

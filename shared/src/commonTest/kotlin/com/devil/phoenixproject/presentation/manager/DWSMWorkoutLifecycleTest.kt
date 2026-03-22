@@ -898,7 +898,7 @@ class DWSMWorkoutLifecycleTest {
         assertEquals(24f, prUpdate.weightPRWeightPerCableKg)
         assertEquals(12f, prUpdate.volumePRWeightPerCableKg)
 
-        val session = harness.fakeWorkoutRepo.getAllSessions().first().first()
+        val session = harness.fakeWorkoutRepo.getAllSessions("default").first().first()
         assertEquals(24f, session.heaviestLiftKg)
         assertEquals(192f, session.totalVolumeKg)
         assertEquals(2, session.cableCount)
@@ -978,7 +978,7 @@ class DWSMWorkoutLifecycleTest {
         assertEquals(60f, updatedPr?.weightPerCableKg)
         assertEquals(updatedPr?.id, harness.fakePRRepo.getWeightPR(deadliftId, "OldSchool")?.id)
 
-        val session = harness.fakeWorkoutRepo.getAllSessions().first().first()
+        val session = harness.fakeWorkoutRepo.getAllSessions("default").first().first()
         assertEquals(60f, session.heaviestLiftKg)
         harness.cleanup()
     }
@@ -991,7 +991,7 @@ class DWSMWorkoutLifecycleTest {
         advanceUntilIdle()
 
         // Check that a session was saved to the fake workout repository
-        val sessions = harness.fakeWorkoutRepo.getAllSessions().first()
+        val sessions = harness.fakeWorkoutRepo.getAllSessions("default").first()
 
         // Characterization: stopWorkout always saves a session even with 0 reps
         assertTrue(sessions.isNotEmpty(),
@@ -1007,7 +1007,7 @@ class DWSMWorkoutLifecycleTest {
         advanceUntilIdle()
 
         // Verify session was saved even when exiting
-        val sessions = harness.fakeWorkoutRepo.getAllSessions().first()
+        val sessions = harness.fakeWorkoutRepo.getAllSessions("default").first()
 
         // Characterization: stopWorkout(exitingWorkout=true) saves session THEN sets Idle
         assertTrue(sessions.isNotEmpty(),
@@ -1031,7 +1031,7 @@ class DWSMWorkoutLifecycleTest {
         harness.dwsm.stopWorkout(exitingWorkout = false)
         advanceUntilIdle()
 
-        val session = harness.fakeWorkoutRepo.getAllSessions().first().first()
+        val session = harness.fakeWorkoutRepo.getAllSessions("default").first().first()
         assertTrue(
             session.routineSessionId?.isNotBlank() == true,
             "Routine workout sessions should include a non-empty routineSessionId"
@@ -1062,7 +1062,7 @@ class DWSMWorkoutLifecycleTest {
         harness.dwsm.stopWorkout(exitingWorkout = false)
         advanceUntilIdle()
 
-        val session = harness.fakeWorkoutRepo.getAllSessions().first().first()
+        val session = harness.fakeWorkoutRepo.getAllSessions("default").first().first()
         assertEquals(
             null,
             session.routineSessionId,

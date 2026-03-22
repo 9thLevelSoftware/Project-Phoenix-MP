@@ -40,7 +40,9 @@ class SqlDelightAssessmentRepository(
         loadVelocityData: String,
         assessmentSessionId: String?,
         userOverrideKg: Double?,
-        createdAt: Long
+        createdAt: Long,
+        // Multi-profile support (migration 21)
+        profileId: String
     ): AssessmentResultEntity {
         return AssessmentResultEntity(
             id = id,
@@ -49,7 +51,8 @@ class SqlDelightAssessmentRepository(
             loadVelocityData = loadVelocityData,
             assessmentSessionId = assessmentSessionId,
             userOverrideKg = userOverrideKg?.toFloat(),
-            createdAt = createdAt
+            createdAt = createdAt,
+            profileId = profileId
         )
     }
 
@@ -58,7 +61,8 @@ class SqlDelightAssessmentRepository(
         estimatedOneRepMaxKg: Float,
         loadVelocityDataJson: String,
         sessionId: String?,
-        userOverrideKg: Float?
+        userOverrideKg: Float?,
+        profileId: String
     ): Long {
         return withContext(Dispatchers.IO) {
             queries.insertAssessmentResult(
@@ -67,22 +71,23 @@ class SqlDelightAssessmentRepository(
                 loadVelocityData = loadVelocityDataJson,
                 assessmentSessionId = sessionId,
                 userOverrideKg = userOverrideKg?.toDouble(),
-                createdAt = currentTimeMillis()
+                createdAt = currentTimeMillis(),
+                profile_id = profileId
             )
             // Return the last inserted row ID
             queries.lastInsertRowId().executeAsOne()
         }
     }
 
-    override fun getAssessmentsByExercise(exerciseId: String): Flow<List<AssessmentResultEntity>> {
-        return queries.selectAssessmentsByExercise(exerciseId, ::mapToEntity)
+    override fun getAssessmentsByExercise(exerciseId: String, profileId: String): Flow<List<AssessmentResultEntity>> {
+        return queries.selectAssessmentsByExercise(exerciseId, profileId = profileId, mapper = ::mapToEntity)
             .asFlow()
             .mapToList(Dispatchers.IO)
     }
 
-    override suspend fun getLatestAssessment(exerciseId: String): AssessmentResultEntity? {
+    override suspend fun getLatestAssessment(exerciseId: String, profileId: String): AssessmentResultEntity? {
         return withContext(Dispatchers.IO) {
-            queries.selectLatestAssessment(exerciseId, ::mapToEntity).executeAsOneOrNull()
+            queries.selectLatestAssessment(exerciseId, profileId = profileId, mapper = ::mapToEntity).executeAsOneOrNull()
         }
     }
 
@@ -100,7 +105,8 @@ class SqlDelightAssessmentRepository(
         userOverrideKg: Float?,
         totalReps: Int,
         durationMs: Long,
-        weightPerCableKg: Float
+        weightPerCableKg: Float,
+        profileId: String
     ): String {
         return withContext(Dispatchers.IO) {
             val sessionId = generateUUID()
@@ -116,7 +122,8 @@ class SqlDelightAssessmentRepository(
                 totalReps = totalReps,
                 exerciseId = exerciseId,
                 exerciseName = exerciseName,
-                routineName = ASSESSMENT_ROUTINE_NAME
+                routineName = ASSESSMENT_ROUTINE_NAME,
+                profileId = profileId
             )
             workoutRepository.saveSession(session)
             Logger.d { "Assessment session created: $sessionId for exercise $exerciseName" }
@@ -128,7 +135,8 @@ class SqlDelightAssessmentRepository(
                 loadVelocityData = loadVelocityDataJson,
                 assessmentSessionId = sessionId,
                 userOverrideKg = userOverrideKg?.toDouble(),
-                createdAt = currentTimeMillis()
+                createdAt = currentTimeMillis(),
+                profile_id = profileId
             )
             Logger.d { "Assessment result saved for exercise $exerciseName (1RM: ${estimatedOneRepMaxKg}kg)" }
 

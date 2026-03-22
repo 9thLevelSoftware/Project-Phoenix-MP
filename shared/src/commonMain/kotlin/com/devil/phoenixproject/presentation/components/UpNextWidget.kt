@@ -35,8 +35,11 @@ fun UpNextWidget(
     modifier: Modifier = Modifier
 ) {
     val cycleRepository: TrainingCycleRepository = koinInject()
+    val userProfileRepository: com.devil.phoenixproject.data.repository.UserProfileRepository = koinInject()
+    val activeProfile by userProfileRepository.activeProfile.collectAsState()
+    val profileId = activeProfile?.id ?: "default"
 
-    val activeCycle by cycleRepository.getActiveCycle().collectAsState(initial = null)
+    val activeCycle by cycleRepository.getActiveCycle(profileId).collectAsState(initial = null)
     var progress by remember { mutableStateOf<CycleProgress?>(null) }
 
     // Load progress when active cycle changes
@@ -385,8 +388,11 @@ fun UpNextCompactWidget(
     modifier: Modifier = Modifier
 ) {
     val cycleRepository: TrainingCycleRepository = koinInject()
+    val userProfileRepository: com.devil.phoenixproject.data.repository.UserProfileRepository = koinInject()
+    val activeProfile by userProfileRepository.activeProfile.collectAsState()
+    val profileId = activeProfile?.id ?: "default"
 
-    val activeCycle by cycleRepository.getActiveCycle().collectAsState(initial = null)
+    val activeCycle by cycleRepository.getActiveCycle(profileId).collectAsState(initial = null)
     var progress by remember { mutableStateOf<CycleProgress?>(null) }
 
     LaunchedEffect(activeCycle) {

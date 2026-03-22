@@ -31,7 +31,9 @@ class SqlDelightTrainingCycleRepository(
         name: String,
         description: String?,
         created_at: Long,
-        is_active: Long
+        is_active: Long,
+        // Multi-profile support (migration 21)
+        profileId: String
     ): TrainingCycle {
         val days = getCycleDays(id)
         return TrainingCycle(
@@ -40,7 +42,8 @@ class SqlDelightTrainingCycleRepository(
             description = description,
             days = days,
             createdAt = created_at,
-            isActive = is_active == 1L
+            isActive = is_active == 1L,
+            profileId = profileId
         )
     }
 
@@ -120,15 +123,16 @@ class SqlDelightTrainingCycleRepository(
 
     // ==================== Training Cycles ====================
 
-    override fun getAllCycles(): Flow<List<TrainingCycle>> {
-        return queries.selectAllTrainingCycles { id, name, description, created_at, is_active ->
+    override fun getAllCycles(profileId: String): Flow<List<TrainingCycle>> {
+        return queries.selectAllTrainingCycles(profileId = profileId) { id, name, description, created_at, is_active, profile_id ->
             TrainingCycle(
                 id = id,
                 name = name,
                 description = description,
                 days = emptyList(), // Will be loaded separately when needed
                 createdAt = created_at,
-                isActive = is_active == 1L
+                isActive = is_active == 1L,
+                profileId = profile_id
             )
         }
             .asFlow()
@@ -155,20 +159,22 @@ class SqlDelightTrainingCycleRepository(
                 description = row.description,
                 days = days,
                 createdAt = row.created_at,
-                isActive = row.is_active == 1L
+                isActive = row.is_active == 1L,
+                profileId = row.profile_id
             )
         }
     }
 
-    override fun getActiveCycle(): Flow<TrainingCycle?> {
-        return queries.selectActiveTrainingCycle { id, name, description, created_at, is_active ->
+    override fun getActiveCycle(profileId: String): Flow<TrainingCycle?> {
+        return queries.selectActiveTrainingCycle(profileId = profileId) { id, name, description, created_at, is_active, profile_id ->
             TrainingCycle(
                 id = id,
                 name = name,
                 description = description,
                 days = emptyList(), // Will be loaded separately
                 createdAt = created_at,
-                isActive = is_active == 1L
+                isActive = is_active == 1L,
+                profileId = profile_id
             )
         }
             .asFlow()
@@ -198,7 +204,8 @@ class SqlDelightTrainingCycleRepository(
                     name = cycle.name,
                     description = cycle.description,
                     created_at = cycle.createdAt,
-                    is_active = if (cycle.isActive) 1L else 0L
+                    is_active = if (cycle.isActive) 1L else 0L,
+                    profile_id = cycle.profileId
                 )
 
                 // Insert all days
@@ -220,7 +227,7 @@ class SqlDelightTrainingCycleRepository(
 
                 // If cycle is active, deactivate all others and initialize progress
                 if (cycle.isActive) {
-                    queries.setActiveTrainingCycle(cycle.id)
+                    queries.setActiveTrainingCycle(cycle.id, profileId = cycle.profileId)
                     // Initialize progress if it doesn't exist (uses INSERT OR IGNORE to prevent UNIQUE constraint violations)
                     val now = currentTimeMillis()
                     val progressId = generateUUID()
@@ -273,17 +280,17 @@ class SqlDelightTrainingCycleRepository(
 
                 // If cycle is active, deactivate all others
                 if (cycle.isActive) {
-                    queries.setActiveTrainingCycle(cycle.id)
+                    queries.setActiveTrainingCycle(cycle.id, profileId = cycle.profileId)
                 }
             }
         }
     }
 
-    override suspend fun setActiveCycle(cycleId: String) {
+    override suspend fun setActiveCycle(cycleId: String, profileId: String) {
         withContext(Dispatchers.IO) {
             db.transaction {
                 // Set this cycle as active and all others as inactive
-                queries.setActiveTrainingCycle(cycleId)
+                queries.setActiveTrainingCycle(cycleId, profileId = profileId)
 
                 // Initialize progress if it doesn't exist (uses INSERT OR IGNORE to prevent race conditions)
                 val now = currentTimeMillis()
@@ -309,9 +316,9 @@ class SqlDelightTrainingCycleRepository(
         }
     }
 
-    override suspend fun clearActiveCycle() {
+    override suspend fun clearActiveCycle(profileId: String) {
         withContext(Dispatchers.IO) {
-            queries.deactivateAllCycles()
+            queries.deactivateAllCycles(profileId = profileId)
         }
     }
 

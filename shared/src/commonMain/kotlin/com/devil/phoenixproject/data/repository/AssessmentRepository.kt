@@ -12,7 +12,8 @@ data class AssessmentResultEntity(
     val loadVelocityData: String,
     val assessmentSessionId: String?,
     val userOverrideKg: Float?,
-    val createdAt: Long
+    val createdAt: Long,
+    val profileId: String = "default"
 )
 
 /**
@@ -31,6 +32,7 @@ interface AssessmentRepository {
      * @param loadVelocityDataJson JSON blob of load-velocity data points
      * @param sessionId Optional workout session ID to link
      * @param userOverrideKg Optional user-provided override for the 1RM
+     * @param profileId Profile ID for multi-profile support
      * @return Row ID of the inserted assessment result
      */
     suspend fun saveAssessment(
@@ -38,22 +40,25 @@ interface AssessmentRepository {
         estimatedOneRepMaxKg: Float,
         loadVelocityDataJson: String,
         sessionId: String?,
-        userOverrideKg: Float? = null
+        userOverrideKg: Float? = null,
+        profileId: String = "default"
     ): Long
 
     /**
      * Get all assessments for an exercise, ordered by most recent first.
      * @param exerciseId Exercise ID
+     * @param profileId Profile ID for multi-profile support
      * @return Flow emitting list of assessment results
      */
-    fun getAssessmentsByExercise(exerciseId: String): Flow<List<AssessmentResultEntity>>
+    fun getAssessmentsByExercise(exerciseId: String, profileId: String): Flow<List<AssessmentResultEntity>>
 
     /**
      * Get the most recent assessment for an exercise.
      * @param exerciseId Exercise ID
+     * @param profileId Profile ID for multi-profile support
      * @return Latest assessment result, or null if none exist
      */
-    suspend fun getLatestAssessment(exerciseId: String): AssessmentResultEntity?
+    suspend fun getLatestAssessment(exerciseId: String, profileId: String): AssessmentResultEntity?
 
     /**
      * Delete an assessment result by ID.
@@ -74,6 +79,7 @@ interface AssessmentRepository {
      * @param totalReps Total reps performed during assessment
      * @param durationMs Duration of assessment in milliseconds
      * @param weightPerCableKg Weight used per cable during assessment
+     * @param profileId Profile ID for multi-profile support
      * @return Session ID of the created WorkoutSession
      */
     suspend fun saveAssessmentSession(
@@ -84,6 +90,7 @@ interface AssessmentRepository {
         userOverrideKg: Float?,
         totalReps: Int,
         durationMs: Long,
-        weightPerCableKg: Float
+        weightPerCableKg: Float,
+        profileId: String = "default"
     ): String
 }

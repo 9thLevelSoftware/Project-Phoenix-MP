@@ -34,7 +34,9 @@ class SqlDelightPersonalRecordRepository(
         // Sync fields (migration 6)
         updatedAt: Long?,
         serverId: String?,
-        deletedAt: Long?
+        deletedAt: Long?,
+        // Multi-profile support (migration 21)
+        profileId: String
     ): PersonalRecord {
         return PersonalRecord(
             id = id,
@@ -54,39 +56,40 @@ class SqlDelightPersonalRecordRepository(
                 "CONCENTRIC" -> WorkoutPhase.CONCENTRIC
                 "ECCENTRIC" -> WorkoutPhase.ECCENTRIC
                 else -> WorkoutPhase.COMBINED
-            }
+            },
+            profileId = profileId
         )
     }
 
-    override suspend fun getLatestPR(exerciseId: String, workoutMode: String): PersonalRecord? {
+    override suspend fun getLatestPR(exerciseId: String, workoutMode: String, profileId: String): PersonalRecord? {
         return withContext(Dispatchers.IO) {
-            recordsForExercise(exerciseId)
+            recordsForExercise(exerciseId, profileId)
                 .filter { normalizeWorkoutModeKey(it.workoutMode) == normalizeWorkoutModeKey(workoutMode) }
                 .maxByOrNull { it.timestamp }
         }
     }
 
-    override fun getPRsForExercise(exerciseId: String): Flow<List<PersonalRecord>> {
-        return queries.selectRecordsByExercise(exerciseId, ::mapToPR)
+    override fun getPRsForExercise(exerciseId: String, profileId: String): Flow<List<PersonalRecord>> {
+        return queries.selectRecordsByExercise(exerciseId, profileId = profileId, mapper = ::mapToPR)
             .asFlow()
             .mapToList(Dispatchers.IO)
     }
 
-    override suspend fun getBestPR(exerciseId: String): PersonalRecord? {
+    override suspend fun getBestPR(exerciseId: String, profileId: String): PersonalRecord? {
         return withContext(Dispatchers.IO) {
-            recordsForExercise(exerciseId)
+            recordsForExercise(exerciseId, profileId)
                 .maxByOrNull { it.weightPerCableKg } // Sort by weight (parity with parent repo)
         }
     }
 
-    override fun getAllPRs(): Flow<List<PersonalRecord>> {
-        return queries.selectAllRecords(::mapToPR)
+    override fun getAllPRs(profileId: String): Flow<List<PersonalRecord>> {
+        return queries.selectAllRecords(profileId = profileId, mapper = ::mapToPR)
             .asFlow()
             .mapToList(Dispatchers.IO)
     }
 
-    override fun getAllPRsGrouped(): Flow<List<PersonalRecord>> {
-        return getAllPRs().map { records ->
+    override fun getAllPRsGrouped(profileId: String): Flow<List<PersonalRecord>> {
+        return getAllPRs(profileId).map { records ->
             records.groupBy { it.exerciseId }
                 .mapNotNull { (_, prs) ->
                     // Return the best PR for each exercise (by weight, parity with parent repo)
@@ -100,7 +103,8 @@ class SqlDelightPersonalRecordRepository(
         weightPerCableKg: Float,
         reps: Int,
         workoutMode: String,
-        timestamp: Long
+        timestamp: Long,
+        profileId: String
     ): Result<Boolean> {
         return withContext(Dispatchers.IO) {
             try {
@@ -111,7 +115,8 @@ class SqlDelightPersonalRecordRepository(
                     reps = reps,
                     workoutMode = workoutMode,
                     timestamp = timestamp,
-                    phase = WorkoutPhase.COMBINED
+                    phase = WorkoutPhase.COMBINED,
+                    profileId = profileId
                 )
                 Result.success(brokenPRs.isNotEmpty())
             } catch (e: Exception) {
@@ -122,57 +127,57 @@ class SqlDelightPersonalRecordRepository(
 
     // ========== Volume/Weight PR Methods ==========
 
-    override suspend fun getWeightPR(exerciseId: String, workoutMode: String): PersonalRecord? {
+    override suspend fun getWeightPR(exerciseId: String, workoutMode: String, profileId: String): PersonalRecord? {
         return withContext(Dispatchers.IO) {
-            recordsForMode(exerciseId, workoutMode)
+            recordsForMode(exerciseId, workoutMode, profileId)
                 .filter { it.prType == PRType.MAX_WEIGHT && it.phase == WorkoutPhase.COMBINED }
                 .maxByOrNull { it.weightPerCableKg }
         }
     }
 
-    override suspend fun getVolumePR(exerciseId: String, workoutMode: String): PersonalRecord? {
+    override suspend fun getVolumePR(exerciseId: String, workoutMode: String, profileId: String): PersonalRecord? {
         return withContext(Dispatchers.IO) {
-            recordsForMode(exerciseId, workoutMode)
+            recordsForMode(exerciseId, workoutMode, profileId)
                 .filter { it.prType == PRType.MAX_VOLUME && it.phase == WorkoutPhase.COMBINED }
                 .maxByOrNull { it.volume }
         }
     }
 
-    override suspend fun getBestWeightPR(exerciseId: String): PersonalRecord? {
+    override suspend fun getBestWeightPR(exerciseId: String, profileId: String): PersonalRecord? {
         return withContext(Dispatchers.IO) {
-            recordsForExercise(exerciseId)
+            recordsForExercise(exerciseId, profileId)
                 .filter { it.prType == PRType.MAX_WEIGHT }
                 .maxByOrNull { it.weightPerCableKg }
         }
     }
 
-    override suspend fun getBestVolumePR(exerciseId: String): PersonalRecord? {
+    override suspend fun getBestVolumePR(exerciseId: String, profileId: String): PersonalRecord? {
         return withContext(Dispatchers.IO) {
-            recordsForExercise(exerciseId)
+            recordsForExercise(exerciseId, profileId)
                 .filter { it.prType == PRType.MAX_VOLUME }
                 .maxByOrNull { it.volume }
         }
     }
 
-    override suspend fun getBestWeightPR(exerciseId: String, workoutMode: String): PersonalRecord? {
+    override suspend fun getBestWeightPR(exerciseId: String, workoutMode: String, profileId: String): PersonalRecord? {
         return withContext(Dispatchers.IO) {
-            recordsForMode(exerciseId, workoutMode)
+            recordsForMode(exerciseId, workoutMode, profileId)
                 .filter { it.prType == PRType.MAX_WEIGHT }
                 .maxByOrNull { it.weightPerCableKg }
         }
     }
 
-    override suspend fun getBestVolumePR(exerciseId: String, workoutMode: String): PersonalRecord? {
+    override suspend fun getBestVolumePR(exerciseId: String, workoutMode: String, profileId: String): PersonalRecord? {
         return withContext(Dispatchers.IO) {
-            recordsForMode(exerciseId, workoutMode)
+            recordsForMode(exerciseId, workoutMode, profileId)
                 .filter { it.prType == PRType.MAX_VOLUME }
                 .maxByOrNull { it.volume }
         }
     }
 
-    override suspend fun getAllPRsForExercise(exerciseId: String): List<PersonalRecord> {
+    override suspend fun getAllPRsForExercise(exerciseId: String, profileId: String): List<PersonalRecord> {
         return withContext(Dispatchers.IO) {
-            queries.selectAllPRsForExercise(exerciseId, ::mapToPR)
+            queries.selectAllPRsForExercise(exerciseId = exerciseId, profileId = profileId, mapper = ::mapToPR)
                 .executeAsList()
         }
     }
@@ -183,7 +188,8 @@ class SqlDelightPersonalRecordRepository(
         volumePRWeightPerCableKg: Float,
         reps: Int,
         workoutMode: String,
-        timestamp: Long
+        timestamp: Long,
+        profileId: String
     ): Result<List<PRType>> {
         return withContext(Dispatchers.IO) {
             try {
@@ -194,7 +200,8 @@ class SqlDelightPersonalRecordRepository(
                     reps = reps,
                     workoutMode = workoutMode,
                     timestamp = timestamp,
-                    phase = WorkoutPhase.COMBINED
+                    phase = WorkoutPhase.COMBINED,
+                    profileId = profileId
                 )
                 Result.success(brokenPRs)
             } catch (e: Exception) {
@@ -209,7 +216,8 @@ class SqlDelightPersonalRecordRepository(
         timestamp: Long,
         reps: Int,
         peakConcentricForceKg: Float,
-        peakEccentricForceKg: Float
+        peakEccentricForceKg: Float,
+        profileId: String
     ): Result<List<WorkoutPhase>> {
         return withContext(Dispatchers.IO) {
             try {
@@ -224,7 +232,8 @@ class SqlDelightPersonalRecordRepository(
                         reps = reps,
                         workoutMode = workoutMode,
                         timestamp = timestamp,
-                        phase = WorkoutPhase.CONCENTRIC
+                        phase = WorkoutPhase.CONCENTRIC,
+                        profileId = profileId
                     )
                     if (broken.isNotEmpty()) brokenPhases.add(WorkoutPhase.CONCENTRIC)
                 }
@@ -238,7 +247,8 @@ class SqlDelightPersonalRecordRepository(
                         reps = reps,
                         workoutMode = workoutMode,
                         timestamp = timestamp,
-                        phase = WorkoutPhase.ECCENTRIC
+                        phase = WorkoutPhase.ECCENTRIC,
+                        profileId = profileId
                     )
                     if (broken.isNotEmpty()) brokenPhases.add(WorkoutPhase.ECCENTRIC)
                 }
@@ -261,7 +271,8 @@ class SqlDelightPersonalRecordRepository(
         reps: Int,
         workoutMode: String,
         timestamp: Long,
-        phase: WorkoutPhase
+        phase: WorkoutPhase,
+        profileId: String
     ): List<PRType> {
         val brokenPRs = mutableListOf<PRType>()
         val canonicalWorkoutMode = normalizeWorkoutModeKey(workoutMode)
@@ -271,12 +282,12 @@ class SqlDelightPersonalRecordRepository(
         val phaseName = phase.name
 
         // Check weight PR for this phase
-        val currentWeightPR = queries.selectPR(exerciseId, canonicalWorkoutMode, PRType.MAX_WEIGHT.name, phaseName, ::mapToPR)
+        val currentWeightPR = queries.selectPR(exerciseId, canonicalWorkoutMode, PRType.MAX_WEIGHT.name, phaseName, profileId = profileId, mapper = ::mapToPR)
             .executeAsOneOrNull()
         val isNewWeightPR = currentWeightPR == null || weightPRWeightPerCableKg > currentWeightPR.weightPerCableKg
 
         // Check volume PR for this phase
-        val currentVolumePR = queries.selectPR(exerciseId, canonicalWorkoutMode, PRType.MAX_VOLUME.name, phaseName, ::mapToPR)
+        val currentVolumePR = queries.selectPR(exerciseId, canonicalWorkoutMode, PRType.MAX_VOLUME.name, phaseName, profileId = profileId, mapper = ::mapToPR)
             .executeAsOneOrNull()
         val currentVolume = currentVolumePR?.volume ?: 0f
         val isNewVolumePR = volumeForVolumePR > currentVolume
@@ -292,7 +303,8 @@ class SqlDelightPersonalRecordRepository(
                 workoutMode = canonicalWorkoutMode,
                 prType = PRType.MAX_WEIGHT.name,
                 volume = volumeForWeightPR.toDouble(),
-                phase = phaseName
+                phase = phaseName,
+                profile_id = profileId
             )
             brokenPRs.add(PRType.MAX_WEIGHT)
         }
@@ -308,7 +320,8 @@ class SqlDelightPersonalRecordRepository(
                 workoutMode = canonicalWorkoutMode,
                 prType = PRType.MAX_VOLUME.name,
                 volume = volumeForVolumePR.toDouble(),
-                phase = phaseName
+                phase = phaseName,
+                profile_id = profileId
             )
             brokenPRs.add(PRType.MAX_VOLUME)
         }
@@ -329,13 +342,13 @@ class SqlDelightPersonalRecordRepository(
         return brokenPRs
     }
 
-    private fun recordsForExercise(exerciseId: String): List<PersonalRecord> {
-        return queries.selectRecordsByExercise(exerciseId, ::mapToPR).executeAsList()
+    private fun recordsForExercise(exerciseId: String, profileId: String): List<PersonalRecord> {
+        return queries.selectRecordsByExercise(exerciseId, profileId = profileId, mapper = ::mapToPR).executeAsList()
     }
 
-    private fun recordsForMode(exerciseId: String, workoutMode: String): List<PersonalRecord> {
+    private fun recordsForMode(exerciseId: String, workoutMode: String, profileId: String): List<PersonalRecord> {
         val canonicalWorkoutMode = normalizeWorkoutModeKey(workoutMode)
-        return recordsForExercise(exerciseId)
+        return recordsForExercise(exerciseId, profileId)
             .filter { normalizeWorkoutModeKey(it.workoutMode) == canonicalWorkoutMode }
     }
 }

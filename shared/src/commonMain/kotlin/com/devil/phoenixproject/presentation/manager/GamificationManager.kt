@@ -76,7 +76,8 @@ class GamificationManager(
                         volumePRWeightPerCableKg = volumeWeightKg,
                         reps = workingReps,
                         workoutMode = workoutMode,
-                        timestamp = timestamp
+                        timestamp = timestamp,
+                        profileId = "default"
                     )
 
                     // Check phase-specific PRs (Issue #111)
@@ -87,7 +88,8 @@ class GamificationManager(
                             timestamp = timestamp,
                             reps = workingReps,
                             peakConcentricForceKg = peakConcentricForceKg,
-                            peakEccentricForceKg = peakEccentricForceKg
+                            peakEccentricForceKg = peakEccentricForceKg,
+                            profileId = "default"
                         ).onFailure { e ->
                             Logger.e(e) { "Error updating phase-specific PRs: ${e.message}" }
                         }

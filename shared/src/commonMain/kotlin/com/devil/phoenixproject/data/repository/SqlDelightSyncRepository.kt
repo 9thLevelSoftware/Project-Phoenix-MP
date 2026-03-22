@@ -256,7 +256,8 @@ class SqlDelightSyncRepository(
                         formScore = null,
                         updatedAt = dto.updatedAt,
                         serverId = dto.serverId,
-                        deletedAt = dto.deletedAt
+                        deletedAt = dto.deletedAt,
+                        profile_id = "default"
                     )
                 }
             }
@@ -280,7 +281,8 @@ class SqlDelightSyncRepository(
                         workoutMode = dto.workoutMode,
                         prType = "MAX_WEIGHT",
                         volume = (dto.weight * dto.reps).toDouble(),
-                        phase = "COMBINED"
+                        phase = "COMBINED",
+                        profile_id = "default"
                     )
                 }
             }
@@ -307,7 +309,8 @@ class SqlDelightSyncRepository(
                         description = dto.description,
                         createdAt = dto.createdAt,
                         lastUsed = existing?.lastUsed,
-                        useCount = existing?.useCount ?: 0L
+                        useCount = existing?.useCount ?: 0L,
+                        profile_id = "default"
                     )
 
                     // Update sync fields
@@ -395,7 +398,7 @@ class SqlDelightSyncRepository(
 
     // === Portal Pull Operations (merge portal data) ===
 
-    override suspend fun mergePortalRoutines(routines: List<PullRoutineDto>, lastSync: Long) {
+    override suspend fun mergePortalRoutines(routines: List<PullRoutineDto>, lastSync: Long, profileId: String) {
         withContext(Dispatchers.IO) {
             db.transaction {
                 for (portalRoutine in routines) {
@@ -418,7 +421,8 @@ class SqlDelightSyncRepository(
                         description = portalRoutine.description,
                         createdAt = existing?.createdAt ?: currentTimeMillis(),
                         lastUsed = existing?.lastUsed,
-                        useCount = existing?.useCount ?: 0L
+                        useCount = existing?.useCount ?: 0L,
+                        profile_id = existing?.profile_id ?: profileId
                     )
 
                     // Replace routine exercises and supersets: delete existing then insert portal versions
@@ -522,7 +526,7 @@ class SqlDelightSyncRepository(
         }
     }
 
-    override suspend fun mergePortalCycles(cycles: List<PullTrainingCycleDto>) {
+    override suspend fun mergePortalCycles(cycles: List<PullTrainingCycleDto>, profileId: String) {
         withContext(Dispatchers.IO) {
             db.transaction {
                 for (portalCycle in cycles) {
@@ -532,7 +536,8 @@ class SqlDelightSyncRepository(
                         name = portalCycle.name,
                         description = portalCycle.description,
                         created_at = currentTimeMillis(),
-                        is_active = if (portalCycle.status == "active") 1L else 0L
+                        is_active = if (portalCycle.status == "active") 1L else 0L,
+                        profile_id = profileId
                     )
 
                     // For existing cycles, update metadata (updateTrainingCycle takes 4 params: name, description, is_active, id)
@@ -831,7 +836,9 @@ class SqlDelightSyncRepository(
         formScore: Long?,
         updatedAt: Long?,
         serverId: String?,
-        deletedAt: Long?
+        deletedAt: Long?,
+        // Multi-profile support (migration 21)
+        profileId: String
     ): WorkoutSession {
         return WorkoutSession(
             id = id,
@@ -879,7 +886,8 @@ class SqlDelightSyncRepository(
             totalVelocityLossPercent = totalVelocityLossPercent?.toFloat(),
             dominantSide = dominantSide,
             strengthProfile = strengthProfile,
-            formScore = formScore?.toInt()
+            formScore = formScore?.toInt(),
+            profileId = profileId
         )
     }
 
@@ -967,9 +975,9 @@ class SqlDelightSyncRepository(
         }
     }
 
-    override suspend fun getAllAssessments(): List<com.devil.phoenixproject.database.AssessmentResult> {
+    override suspend fun getAllAssessments(profileId: String): List<com.devil.phoenixproject.database.AssessmentResult> {
         return withContext(Dispatchers.IO) {
-            queries.selectAllAssessments().executeAsList()
+            queries.selectAllAssessments(profileId = profileId).executeAsList()
         }
     }
 }

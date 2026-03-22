@@ -61,7 +61,7 @@ class SqlDelightWorkoutRepositoryTest {
         repository.saveSession(createTestSession(id = "session-2", timestamp = 2000))
         repository.saveSession(createTestSession(id = "session-3", timestamp = 3000))
 
-        repository.getAllSessions().test {
+        repository.getAllSessions("default").test {
             val sessions = awaitItem()
             assertEquals(3, sessions.size)
             cancelAndIgnoreRemainingEvents()
@@ -74,7 +74,7 @@ class SqlDelightWorkoutRepositoryTest {
             repository.saveSession(createTestSession(id = "session-$i", timestamp = i.toLong() * 1000))
         }
 
-        repository.getRecentSessions(3).test {
+        repository.getRecentSessions("default", 3).test {
             val sessions = awaitItem()
             assertEquals(3, sessions.size)
             cancelAndIgnoreRemainingEvents()
@@ -88,7 +88,7 @@ class SqlDelightWorkoutRepositoryTest {
 
         repository.deleteAllSessions()
 
-        repository.getAllSessions().test {
+        repository.getAllSessions("default").test {
             val sessions = awaitItem()
             assertTrue(sessions.isEmpty())
             cancelAndIgnoreRemainingEvents()

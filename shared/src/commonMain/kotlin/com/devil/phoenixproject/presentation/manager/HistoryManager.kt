@@ -2,6 +2,7 @@ package com.devil.phoenixproject.presentation.manager
 
 import com.devil.phoenixproject.data.repository.PersonalRecordRepository
 import com.devil.phoenixproject.data.repository.PersonalRecordEntity
+import com.devil.phoenixproject.data.repository.UserProfileRepository
 import com.devil.phoenixproject.data.repository.WorkoutRepository
 import com.devil.phoenixproject.domain.model.PersonalRecord
 import com.devil.phoenixproject.domain.model.WorkoutSession
@@ -12,6 +13,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -45,13 +47,18 @@ data class GroupedRoutineHistoryItem(
 class HistoryManager(
     private val workoutRepository: WorkoutRepository,
     private val personalRecordRepository: PersonalRecordRepository,
+    private val userProfileRepository: UserProfileRepository,
     private val scope: CoroutineScope
 ) {
     private val _workoutHistory = MutableStateFlow<List<WorkoutSession>>(emptyList())
     val workoutHistory: StateFlow<List<WorkoutSession>> = _workoutHistory.asStateFlow()
 
     val allWorkoutSessions: StateFlow<List<WorkoutSession>> =
-        workoutRepository.getAllSessions()
+        userProfileRepository.activeProfile
+            .flatMapLatest { profile ->
+                val profileId = profile?.id ?: "default"
+                workoutRepository.getAllSessions(profileId)
+            }
             .stateIn(
                 scope = scope,
                 started = SharingStarted.WhileSubscribed(5000),
@@ -83,7 +90,11 @@ class HistoryManager(
     }.stateIn(scope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val allPersonalRecords: StateFlow<List<PersonalRecord>> =
-        personalRecordRepository.getAllPRsGrouped()
+        userProfileRepository.activeProfile
+            .flatMapLatest { profile ->
+                val profileId = profile?.id ?: "default"
+                personalRecordRepository.getAllPRsGrouped(profileId)
+            }
             .stateIn(
                 scope = scope,
                 started = SharingStarted.WhileSubscribed(5000),
@@ -92,7 +103,11 @@ class HistoryManager(
 
     @Suppress("unused")
     val personalBests: StateFlow<List<PersonalRecordEntity>> =
-        workoutRepository.getAllPersonalRecords()
+        userProfileRepository.activeProfile
+            .flatMapLatest { profile ->
+                val profileId = profile?.id ?: "default"
+                workoutRepository.getAllPersonalRecords(profileId)
+            }
             .stateIn(
                 scope = scope,
                 started = SharingStarted.WhileSubscribed(5000),
@@ -151,10 +166,16 @@ class HistoryManager(
 
     init {
         // Load recent history (moved from MainViewModel init L483-487)
+        // Re-subscribes automatically when active profile changes via flatMapLatest.
         scope.launch {
-            workoutRepository.getAllSessions().collect { sessions ->
-                _workoutHistory.value = sessions.take(20)
-            }
+            userProfileRepository.activeProfile
+                .flatMapLatest { profile ->
+                    val profileId = profile?.id ?: "default"
+                    workoutRepository.getAllSessions(profileId)
+                }
+                .collect { sessions ->
+                    _workoutHistory.value = sessions.take(20)
+                }
         }
     }
 

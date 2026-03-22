@@ -73,7 +73,7 @@ class FakePortalApiClient : PortalApiClient(
         return pushResult
     }
 
-    override suspend fun pullPortalPayload(lastSync: Long, deviceId: String): Result<PortalSyncPullResponse> {
+    override suspend fun pullPortalPayload(lastSync: Long, deviceId: String, profileId: String?): Result<PortalSyncPullResponse> {
         pullCallCount++
         lastPullLastSync = lastSync
         lastPullDeviceId = deviceId

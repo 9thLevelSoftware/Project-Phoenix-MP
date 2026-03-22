@@ -26,7 +26,7 @@ class RoutineTimeEstimator(
             val exerciseId = exercise.exercise.id
             if (exerciseId != null) {
                 // Try to get average set duration from history
-                val avgDurationMs = workoutRepository.getAverageSetDurationMs(exerciseId)
+                val avgDurationMs = workoutRepository.getAverageSetDurationMs(exerciseId, profileId = "default")
                 if (avgDurationMs != null && avgDurationMs > 0) {
                     totalHistoricalMs += avgDurationMs * exercise.sets
                     historicalExerciseCount++

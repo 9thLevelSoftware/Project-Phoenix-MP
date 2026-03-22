@@ -72,7 +72,7 @@ class FakeWorkoutRepository : WorkoutRepository {
 
     // ========== WorkoutRepository interface implementation ==========
 
-    override fun getAllSessions(): Flow<List<WorkoutSession>> = _sessionsFlow
+    override fun getAllSessions(profileId: String): Flow<List<WorkoutSession>> = _sessionsFlow
 
     override suspend fun saveSession(session: WorkoutSession) {
         sessions[session.id] = session
@@ -91,12 +91,12 @@ class FakeWorkoutRepository : WorkoutRepository {
         updateSessionsFlow()
     }
 
-    override fun getRecentSessions(limit: Int): Flow<List<WorkoutSession>> =
+    override fun getRecentSessions(profileId: String, limit: Int): Flow<List<WorkoutSession>> =
         _sessionsFlow.map { it.take(limit) }
 
     override suspend fun getSession(sessionId: String): WorkoutSession? = sessions[sessionId]
 
-    override fun getAllRoutines(): Flow<List<Routine>> = _routinesFlow
+    override fun getAllRoutines(profileId: String): Flow<List<Routine>> = _routinesFlow
 
     override suspend fun saveRoutine(routine: Routine) {
         routines[routine.id] = routine
@@ -125,9 +125,9 @@ class FakeWorkoutRepository : WorkoutRepository {
         }
     }
 
-    override suspend fun getAverageSetDurationMs(exerciseId: String): Long? = null
+    override suspend fun getAverageSetDurationMs(exerciseId: String, profileId: String): Long? = null
 
-    override fun getAllPersonalRecords(): Flow<List<PersonalRecordEntity>> = _personalRecordsFlow
+    override fun getAllPersonalRecords(profileId: String): Flow<List<PersonalRecordEntity>> = _personalRecordsFlow
 
     override suspend fun updatePRIfBetter(exerciseId: String, weightKg: Float, reps: Int, mode: String) {
         val key = "$exerciseId-$mode"
@@ -159,7 +159,7 @@ class FakeWorkoutRepository : WorkoutRepository {
         return metrics[sessionId] ?: emptyList()
     }
 
-    override suspend fun getRecentSessionsSync(limit: Int): List<WorkoutSession> {
+    override suspend fun getRecentSessionsSync(profileId: String, limit: Int): List<WorkoutSession> {
         return sessions.values.sortedByDescending { it.timestamp }.take(limit)
     }
 
@@ -188,7 +188,8 @@ class FakeWorkoutRepository : WorkoutRepository {
         exerciseId: String,
         mode: String,
         weightPerCableKg: Float,
-        weightToleranceKg: Float
+        weightToleranceKg: Float,
+        profileId: String
     ): GhostSessionCandidate? = null // No ghost session in tests by default
 
     override fun getAllPhaseStatistics(): Flow<List<PhaseStatisticsData>> = _phaseStatisticsFlow
