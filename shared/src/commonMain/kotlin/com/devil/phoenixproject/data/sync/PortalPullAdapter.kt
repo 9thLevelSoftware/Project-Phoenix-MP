@@ -1,21 +1,79 @@
 package com.devil.phoenixproject.data.sync
 
 import com.devil.phoenixproject.domain.model.ProgramMode
+import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.domain.model.currentTimeMillis
 
 /**
- * Converts portal pull response DTOs (camelCase) to legacy merge DTOs (used by SyncRepository merge methods).
+ * Converts portal pull response DTOs (camelCase) to domain objects and legacy merge DTOs
+ * (used by SyncRepository merge methods).
  *
  * This is the inverse of PortalSyncAdapter (which converts mobile → portal for push).
- * Only converts data types that are actually merged during pull:
+ * Converts:
+ *   - Sessions (with exercises/sets) → WorkoutSession domain objects
  *   - Routines (with exercises) → RoutineSyncDto
  *   - Badges → EarnedBadgeSyncDto
  *   - Gamification stats → GamificationStatsSyncDto
  *
- * Sessions are SKIPPED during pull (immutable/push-only per PULL-03).
  * RPG attributes are handled directly via GamificationRepository (no legacy DTO needed).
  */
 object PortalPullAdapter {
+
+    /**
+     * Convert a portal workout session (1 workout with N exercises) to N mobile
+     * WorkoutSession rows (1 per exercise). This is the reverse of the push
+     * adapter's grouping logic.
+     *
+     * Weight convention: the Supabase DB stores per-cable weight values. The portal
+     * UI multiplies by WEIGHT_MULTIPLIER (2) for display only. The pull Edge Function
+     * returns raw DB values, so PullSetDto.weightKg is already per-cable — no division needed.
+     *
+     * @param portalSession The pulled workout session from the portal
+     * @param profileId The local profile to assign these sessions to
+     * @return List of WorkoutSession domain objects, one per exercise
+     */
+    fun toWorkoutSessions(
+        portalSession: PullWorkoutSessionDto,
+        profileId: String
+    ): List<WorkoutSession> {
+        if (portalSession.exercises.isEmpty()) return emptyList()
+
+        val timestamp = try {
+            kotlin.time.Instant.parse(portalSession.startedAt ?: return emptyList())
+                .toEpochMilliseconds()
+        } catch (_: Exception) {
+            return emptyList()
+        }
+
+        val mobileMode = portalModeToMobileMode(portalSession.workoutMode ?: "OLD_SCHOOL")
+        val exerciseCount = maxOf(portalSession.exerciseCount, portalSession.exercises.size, 1)
+
+        return portalSession.exercises.map { exercise ->
+            val totalReps = exercise.sets.sumOf { it.actualReps }
+            val maxWeight = exercise.sets.maxOfOrNull { it.weightKg } ?: 0f
+            val totalVolume = exercise.sets.sumOf { (it.weightKg * it.actualReps).toDouble() }.toFloat()
+
+            WorkoutSession(
+                id = exercise.id,
+                timestamp = timestamp,
+                mode = mobileMode,
+                reps = exercise.sets.firstOrNull()?.targetReps ?: totalReps / maxOf(exercise.sets.size, 1),
+                weightPerCableKg = maxWeight, // Already per-cable from DB
+                duration = (portalSession.durationSeconds / exerciseCount).toLong(),
+                totalReps = totalReps,
+                warmupReps = 0, // Portal doesn't distinguish warmup vs working
+                workingReps = totalReps,
+                exerciseId = null, // No catalog ID from portal; requires local catalog lookup
+                exerciseName = exercise.name,
+                routineSessionId = portalSession.id,
+                routineName = portalSession.routineName,
+                heaviestLiftKg = maxWeight,
+                totalVolumeKg = totalVolume,
+                cableCount = 2,
+                profileId = profileId
+            )
+        }
+    }
 
     /**
      * Convert portal routine DTO to legacy RoutineSyncDto for merge.
