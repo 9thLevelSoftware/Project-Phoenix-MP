@@ -103,7 +103,7 @@ See `.planning/milestones/v0.7.0-*` for archived phase details.
 **Workflow:** Guided + Deep Analysis
 
 - [x] Phase 32: BLE Reliability (3/3 plans) — completed 2026-03-23
-- [ ] Phase 33: Sync & Data Integrity (0/3 plans)
+- [x] Phase 33: Sync & Data Integrity (3/3 plans) — completed 2026-03-23
 - [ ] Phase 34: Lifecycle & Security (0/3 plans)
 - [ ] Phase 35: iOS Platform Parity (0/3 plans)
 - [ ] Phase 36: Integration Validation (0/3 plans)
