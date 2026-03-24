@@ -4,6 +4,7 @@ import android.app.Activity
 import android.app.Application
 import android.os.Bundle
 import co.touchlab.kermit.Logger
+import co.touchlab.kermit.Severity
 import coil3.ImageLoader
 import coil3.SingletonImageLoader
 import coil3.network.ktor3.KtorNetworkFetcherFactory
@@ -25,6 +26,11 @@ class VitruvianApp : Application(), SingletonImageLoader.Factory {
 
     override fun onCreate() {
         super.onCreate()
+
+        // Configure Kermit log level for release builds — suppress Debug/Verbose/Info
+        if (!BuildConfig.DEBUG) {
+            Logger.mutableConfig.minSeverity = Severity.Warn
+        }
 
         // Initialize DeviceInfo with BuildConfig values
         DeviceInfo.initialize(

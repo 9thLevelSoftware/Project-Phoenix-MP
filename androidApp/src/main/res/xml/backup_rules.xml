@@ -7,4 +7,5 @@
     <exclude domain="database" path="vitruvian.db-wal" />
     <exclude domain="database" path="vitruvian.db-shm" />
     <exclude domain="sharedpref" path="vitruvian_preferences.xml" />
+    <exclude domain="sharedpref" path="vitruvian_secure_preferences.xml" />
 </full-backup-content>
