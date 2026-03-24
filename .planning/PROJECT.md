@@ -8,23 +8,22 @@ Kotlin Multiplatform app for controlling Vitruvian Trainer workout machines via 
 
 Users can connect to their Vitruvian trainer and execute workouts with accurate rep counting, weight control, and progress tracking — reliably, on both platforms.
 
-## Current State: v0.7.0 In Progress
+## Current State: v0.8.0 Beta Readiness
 
-**Branch:** `MVP` (from `new_ideas`): https://github.com/9thLevelSoftware/Project-Phoenix-MP/tree/MVP
-**Previous:** v0.6.0 shipped 2026-03-02
+**Branch:** TBD (from `MVP`)
+**Previous:** v0.7.0 shipped 2026-03-15
 
-**What v0.7.0 ships:**
-- User-facing cloud sync UI on Android and iOS (LinkAccountScreen, "Link Portal Account" button)
-- iOS Supabase credential injection (Info.plist → PlatformModule.ios.kt)
-- Ktor ProGuard rules for release builds
-- Sync error indicator in SettingsTab (hasPersistentError)
-- Version bump to 0.7.0
-- Release builds for Play Store + TestFlight
+**What v0.8.0 ships:**
+- BLE reliability fixes: connection, reconnection, state machine hardening, permission UX
+- Sync data integrity: profile-scoped queries, PR DTO completeness, chunked first sync, push transaction safety
+- Android lifecycle/security: foreground service crash fix, encrypted token storage, exception handling, release build hygiene
+- iOS platform parity: schema version fix, missing columns, connectivity checker, feature gating
+- Integration validation across all subsystems
 
-**What v0.7.0 does NOT include (portal planned separately):**
-- Portal deployment, Vercel setup, Edge Function secrets — planned in phoenix-portal repo
-- Third-party integrations (Strava/Fitbit/Garmin/Hevy) — portal-only
-- No new features — this is about shipping what v0.6.0 built
+**What v0.8.0 does NOT include:**
+- SavedStateHandle process death recovery — deferred to v0.9.0 (foreground service mitigates during active workouts)
+- New features — this is strictly a stability and correctness pass
+- Portal-only changes beyond H6 (sync push transaction fix)
 
 ## Requirements
 
@@ -43,17 +42,40 @@ Users can connect to their Vitruvian trainer and execute workouts with accurate 
 - ✓ Portal sync adapter with correct hierarchy/unit conversions (v0.5.1)
 - ✓ Bidirectional portal sync via Supabase Edge Functions (v0.6.0)
 - ✓ Unified Supabase Auth across mobile and portal (v0.6.0)
+- ✓ Cloud sync UI, iOS sync launch, sync polish (v0.7.0)
 
-### Active (v0.7.0)
+### Active (v0.8.0)
 
-- **SYNC-UI-01**: Enable LinkAccount route and "Link Portal Account" button in mobile app
-- **SYNC-UI-02**: Add Ktor ProGuard keep rules to prevent release build crashes
-- **SYNC-IOS-01**: Inject Supabase credentials into iOS via Info.plist / NSBundle
-- **SYNC-IOS-02**: Verify Ktor Darwin engine for sync HTTP calls on iOS
-- **SYNC-IOS-03**: TestFlight deployment pipeline verification
-- **SYNC-POLISH-01**: Sync error indicator in SettingsTab (hasPersistentError)
-- **SYNC-POLISH-02**: Version bump to 0.7.0 + release builds (Play Store + TestFlight)
-- **SYNC-POLISH-03**: End-to-end sync validation (sign up → sync → verify on portal)
+- **BLE-01**: Fix connectToDevice() dead StateFlow — primary connect path broken (B1)
+- **BLE-02**: Wire auto-reconnect flow consumer — reconnection never triggers (B2)
+- **BLE-03**: Cancel stale peripheral state observer on reconnect (H2)
+- **BLE-04**: Add error handling to onDeviceReady() fire-and-forget launch (H3)
+- **BLE-05**: Add scan timeout to startScanning() (H4)
+- **BLE-06**: Fix BLE permission denied loop on Android 11+ (H10)
+- **BLE-07**: Add .catch{} to permanent init collectors in ActiveSessionEngine (M1)
+- **BLE-08**: Increase CONNECTION_RETRY_DELAY_MS from 100ms to 1500ms (M2)
+- **SYNC-01**: Add profile_id filter to all sync push queries (B3)
+- **SYNC-02**: Add prType/phase/volume to PersonalRecordSyncDto (B4)
+- **SYNC-03**: Implement chunked first sync for large histories (H5)
+- **SYNC-04**: Wrap routine_exercises push in database transaction (H6, cross-repo)
+- **SYNC-05**: Fix updatedAt IS NULL perpetual re-push (M3)
+- **SYNC-06**: Handle Instant.parse() failure in SyncManager (M4)
+- **LIFE-01**: Fix START_STICKY null intent foreground service crash (B5)
+- **LIFE-02**: Encrypt auth tokens with EncryptedSharedPreferences (B6)
+- **LIFE-03**: Add top-level exception handler to workoutJob (H1)
+- **LIFE-04**: Gate Coil DebugLogger on BuildConfig.DEBUG (H9)
+- **LIFE-05**: Fix ActivityHolder WeakReference lifecycle (H11)
+- **LIFE-06**: Set allowBackup=false in manifest (M6)
+- **LIFE-07**: Uncomment ProGuard log-stripping rules (M7)
+- **IOS-01**: Update CURRENT_SCHEMA_VERSION to 22 (B7)
+- **IOS-02**: Add formScore column to iOS manual schema (B8)
+- **IOS-03**: Implement ConnectivityChecker with NWPathMonitor (H12)
+- **IOS-04**: Document/improve withPlatformLock global lock (H13)
+- **IOS-05**: Gate Form Check feature behind platform check on iOS (H14)
+- **IOS-06**: Verify no Vico chart imports leak to commonMain/iosMain (H15)
+- **VAL-01**: BLE connect + reconnect scenario validation
+- **VAL-02**: Sync E2E + profile isolation validation
+- **VAL-03**: iOS launch + session load + schema validation
 
 ### Out of Scope
 
@@ -62,7 +84,8 @@ Users can connect to their Vitruvian trainer and execute workouts with accurate 
 - Portal community features (shared_routines, comments/votes) — Portal-only, no mobile sync needed
 - Training cycles — Portal-only, future mobile feature
 - External integrations (Strava/Fitbit/Garmin/Hevy) — Portal-only
-- iOS CV implementation — Deferred to future milestone
+- iOS CV implementation — Deferred to future milestone (H14 gates the UI in v0.8.0)
+- SavedStateHandle process death recovery — Deferred to v0.9.0 (foreground service mitigates)
 - Server-side subscription validation — Client-side FeatureGate accepted for pre-launch
 - 50Hz ghost telemetry overlay — Performance TBD, separate milestone
 - Real-time chat or social features — Not core to sync compatibility
@@ -101,17 +124,31 @@ Users can connect to their Vitruvian trainer and execute workouts with accurate 
 </details>
 
 <details>
-<summary>v0.7.0 Key Decisions</summary>
+<summary>v0.7.0 Key Decisions (archived)</summary>
 
 | Decision | Rationale | Outcome |
 |----------|-----------|---------|
-| Branch from new_ideas, not main | Sync infrastructure (phases 23-28) lives on new_ideas; cherry-picking not feasible | In Progress |
-| Android + iOS together | Both platforms ship with working sync in same milestone | In Progress |
-| Mobile-only milestone | Portal has its own planning in phoenix-portal repo | In Progress |
-| Launch + quick wins scope | Ship existing sync + polish items, no new features | In Progress |
-| Strava + Hevy live, Fitbit/Garmin Coming Soon | Strava/Hevy are instant approval; Fitbit (1-3 wk) and Garmin (2-6 wk) gate on portal side | In Progress |
+| Branch from new_ideas, not main | Sync infrastructure (phases 23-28) lives on new_ideas; cherry-picking not feasible | Shipped |
+| Android + iOS together | Both platforms ship with working sync in same milestone | Shipped |
+| Mobile-only milestone | Portal has its own planning in phoenix-portal repo | Shipped |
+| Launch + quick wins scope | Ship existing sync + polish items, no new features | Shipped |
+| Strava + Hevy live, Fitbit/Garmin Coming Soon | Strava/Hevy are instant approval; Fitbit (1-3 wk) and Garmin (2-6 wk) gate on portal side | Shipped |
+
+</details>
+
+<details>
+<summary>v0.8.0 Key Decisions</summary>
+
+| Decision | Rationale | Outcome |
+|----------|-----------|---------|
+| Single milestone for all 29 findings | Clean version boundary; "no beta until fixed" framing | In Progress |
+| Phase by subsystem (BLE/Sync/Lifecycle/iOS) | Changes within each phase touch related files; minimizes cross-cutting risk | In Progress |
+| H6 included despite cross-repo | Keeps all sync integrity fixes together; cross-repo established in v0.6.0 | In Progress |
+| H8 SavedStateHandle deferred to v0.9.0 | Architectural refactor too risky for bug-fix milestone; foreground service mitigates | In Progress |
+| 3 plans per phase | Blockers + high + medium/cleanup per phase; 15 plans total matches project conventions | In Progress |
+| Guided + Deep Analysis workflow | Step-by-step with plan approval; deep analysis for interconnected BLE and sync fixes | In Progress |
 
 </details>
 
 ---
-*Last updated: 2026-03-15 — v0.7.0 MVP Cloud Sync initialized*
+*Last updated: 2026-03-23 — v0.8.0 Beta Readiness initialized*

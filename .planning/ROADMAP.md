@@ -10,6 +10,7 @@
 - ✅ **v0.5.1 Board Polish & Premium UI** — Phases 16-22 (shipped 2026-02-28)
 - ✅ **v0.6.0 Portal Sync Compatibility** — Phases 23-28 (shipped 2026-03-02)
 - ✅ **v0.7.0 MVP Cloud Sync** — Phases 29-31 (shipped 2026-03-15)
+- **v0.8.0 Beta Readiness** — Phases 32-36 (in progress)
 
 ## Phases
 
@@ -83,48 +84,89 @@ See `.planning/milestones/v0.6.0-*` for archived phase details.
 
 </details>
 
-### v0.7.0 MVP Cloud Sync (Phases 29-31)
-
-**Branch:** `MVP` — https://github.com/9thLevelSoftware/Project-Phoenix-MP/tree/MVP
-**Scope:** Mobile-only. Portal planned separately in phoenix-portal repo.
-**Source:** `.planning/exploration-mvp-cloud-sync.md`, `docs/plans/mvp-cloud-sync-mobile.md`
+<details>
+<summary>✅ v0.7.0 MVP Cloud Sync (Phases 29-31) — SHIPPED 2026-03-15</summary>
 
 - [x] Phase 29: Core Sync UI (2/2 plans) — Enable sync UI on both platforms, ProGuard fix (completed 2026-03-15)
 - [x] Phase 30: iOS Sync Launch (2/2 plans) — Credential injection, Darwin engine verification, TestFlight (completed 2026-03-15)
 - [x] Phase 31: Polish & Validation (4/4 plans) — UX cleanup, sync discoverability, version bump, E2E validation (completed 2026-03-15)
 
-### Phase 29: Core Sync UI
-**Goal**: Enable the user-facing sync experience that's been built but commented out since v0.6.0
-**Requirements**: SYNC-UI-01, SYNC-UI-02
-**Recommended Agents**: Senior Developer, Frontend Developer
-**Success Criteria**:
-- LinkAccount route is navigable from Settings → "Link Portal Account"
-- LinkAccountScreen shows login/signup/sync controls
-- Release build (Android) does not crash on sync due to ProGuard stripping
-- Debug build compiles cleanly on both Android and iOS
-**Plans**: 2
+See `.planning/milestones/v0.7.0-*` for archived phase details.
 
-### Phase 30: iOS Sync Launch
-**Goal**: Make cloud sync functional on iOS by injecting Supabase credentials and verifying the Ktor Darwin HTTP engine
-**Requirements**: SYNC-IOS-01, SYNC-IOS-02, SYNC-IOS-03
-**Recommended Agents**: Mobile App Builder, Senior Developer
-**Success Criteria**:
-- PlatformModule.ios.kt reads SupabaseConfig from Info.plist (not hardcoded)
-- iOS app can authenticate with Supabase GoTrue (login + signup)
-- iOS app can push a workout session and pull routines via Edge Functions
-- TestFlight build uploaded and accessible to beta testers
-**Plans**: 2
+</details>
 
-### Phase 31: Polish & Validation
-**Goal**: Add sync status visibility, bump version, build releases for both platforms, and validate end-to-end sync
-**Requirements**: SYNC-POLISH-01, SYNC-POLISH-02, SYNC-POLISH-03
-**Recommended Agents**: Senior Developer, Frontend Developer, Evidence Collector
+### v0.8.0 Beta Readiness (Phases 32-36)
+
+**Branch:** TBD (from `MVP`)
+**Scope:** 29 audit findings across BLE, Sync, Lifecycle/Security, iOS. One cross-repo fix (H6 in phoenix-portal).
+**Source:** `.planning/exploration-beta-readiness-audit.md`
+**Workflow:** Guided + Deep Analysis
+
+- [x] Phase 32: BLE Reliability (3/3 plans) — completed 2026-03-23
+- [ ] Phase 33: Sync & Data Integrity (0/3 plans)
+- [ ] Phase 34: Lifecycle & Security (0/3 plans)
+- [ ] Phase 35: iOS Platform Parity (0/3 plans)
+- [ ] Phase 36: Integration Validation (0/3 plans)
+
+### Phase 32: BLE Reliability
+**Goal**: Fix the BLE connection chain so devices can connect, reconnect, and maintain stable sessions
+**Requirements**: BLE-01, BLE-02, BLE-03, BLE-04, BLE-05, BLE-06, BLE-07, BLE-08
+**Recommended Agents**: Senior Developer, Mobile App Builder, Evidence Collector
 **Success Criteria**:
-- Sync error indicator visible in SettingsTab when hasPersistentError is true
-- versionName = "0.7.0", versionCode incremented
-- Signed release APK/AAB builds successfully
-- TestFlight build submitted
-- E2E test: sign up on portal → sign in on mobile → complete workout → sync → verify data on portal dashboard
+- Device connection works from scan results screen (B1 fix verified)
+- BLE reconnection triggers automatically on unexpected disconnect (B2 fix verified)
+- Scan stops after timeout period (H4 fix verified)
+- Permission denial shows appropriate action button per Android version (H10 fix verified)
+- No uncaught exceptions from BLE collectors or init flows
+**Plans**: 3
+
+### Phase 33: Sync & Data Integrity
+**Goal**: Fix data corruption paths in sync push/pull and ensure profile isolation
+**Requirements**: SYNC-01, SYNC-02, SYNC-03, SYNC-04, SYNC-05, SYNC-06
+**Recommended Agents**: Senior Developer, Backend Architect, Evidence Collector
+**Success Criteria**:
+- Multi-profile sync only pushes active profile's data (B3 fix verified)
+- PR records survive round-trip push/pull with correct prType and phase (B4 fix verified)
+- First sync completes for users with 6+ months of history (H5 fix verified)
+- Routine exercises survive partial sync failures (H6 fix verified)
+- No perpetual re-push of already-synced sessions (M3 fix verified)
+**Plans**: 3
+
+### Phase 34: Lifecycle & Security
+**Goal**: Fix crash paths in Android lifecycle and harden security for beta users
+**Requirements**: LIFE-01, LIFE-02, LIFE-03, LIFE-04, LIFE-05, LIFE-06, LIFE-07
+**Recommended Agents**: Senior Developer, Security Engineer, Evidence Collector
+**Success Criteria**:
+- Foreground service handles system restart without crash (B5 fix verified)
+- Auth tokens encrypted at rest (B6 fix verified)
+- Workout session data preserved on DB/IO error with user notification (H1 fix verified)
+- No debug logging in release builds (H9, M7 fixes verified)
+- allowBackup=false in manifest (M6 fix verified)
+**Plans**: 3
+
+### Phase 35: iOS Platform Parity
+**Goal**: Fix iOS-specific runtime failures and document platform feature gaps
+**Requirements**: IOS-01, IOS-02, IOS-03, IOS-04, IOS-05, IOS-06
+**Recommended Agents**: Mobile App Builder, Senior Developer, Evidence Collector
+**Success Criteria**:
+- iOS app launches without database wipe (B7 fix verified)
+- Session history screen loads on iOS (B8 fix verified)
+- Sync fails fast on airplane mode on iOS (H12 fix verified)
+- Form Check camera button hidden on iOS (H14 fix verified)
+- iOS build compiles with no unresolved references (H15 verified)
+**Plans**: 3
+
+### Phase 36: Integration Validation
+**Goal**: End-to-end verification that all fixes work together across platforms
+**Requirements**: VAL-01, VAL-02, VAL-03
+**Recommended Agents**: Evidence Collector, Senior Developer, Mobile App Builder
+**Success Criteria**:
+- BLE connect + reconnect scenarios pass on physical device
+- Sync E2E cycle completes (sign up → sync → verify on portal)
+- Multi-profile sync isolation verified
+- iOS cold launch + session load verified
+- No regressions in existing unit tests
+- Release build (Android) and TestFlight build (iOS) compile and run
 **Plans**: 3
 
 ## Progress
@@ -139,8 +181,9 @@ See `.planning/milestones/v0.6.0-*` for archived phase details.
 | v0.5.1 Board Polish & Premium UI | 16-22 | 16 | Complete | 2026-02-28 |
 | v0.6.0 Portal Sync Compatibility | 23-28 | 13 | Complete | 2026-03-02 |
 | v0.7.0 MVP Cloud Sync | 29-31 | 8 | Complete | 2026-03-15 |
+| v0.8.0 Beta Readiness | 32-36 | 15 | In Progress | — |
 
-**Last phase number:** 31
+**Last phase number:** 36
 
 ---
-*Last updated: 2026-03-15 — v0.7.0 initialized*
+*Last updated: 2026-03-23 — v0.8.0 Beta Readiness initialized*
