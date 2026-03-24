@@ -112,12 +112,13 @@
     public static final ** CREATOR;
 }
 
-# Remove logging in release (optional - uncomment to strip logs)
-# -assumenosideeffects class android.util.Log {
-#     public static int v(...);
-#     public static int d(...);
-#     public static int i(...);
-# }
+# Remove verbose/debug/info logging in release builds
+# Keep Log.w and Log.e for warnings and errors
+-assumenosideeffects class android.util.Log {
+    public static int v(...);
+    public static int d(...);
+    public static int i(...);
+}
 
 # ==================== MediaPipe ====================
 # Keep all MediaPipe framework classes (JNI + reflection)
