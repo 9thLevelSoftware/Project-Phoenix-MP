@@ -15,14 +15,14 @@ progress:
 
 ## Current Position
 
-Phase: 35 of 36 (planned)
+Phase: 35 of 36 (complete)
 Plan: —
-Status: Phase 35 planned — 3 plans across 2 waves
-Last activity: 2026-03-23 — Phase 35 iOS Platform Parity planned
+Status: Phase 35 complete — review passed (1 cycle, inline)
+Last activity: 2026-03-24 — Phase 35 iOS Platform Parity executed + reviewed
 
 ## Progress
 ```
-[############........] 60% — 9/15 plans complete
+[################....] 80% — 12/15 plans complete
 ```
 
 ## Project Reference
@@ -61,7 +61,7 @@ See: .planning/PROJECT.md (updated 2026-03-23)
 
 ## Next Action
 
-Run `/legion:build` to execute Phase 35: iOS Platform Parity
+Run `/legion:plan 36` to plan Phase 36: Integration Validation (final phase)
 
 ---
 *Last updated: 2026-03-23 — v0.8.0 Beta Readiness initialized*
