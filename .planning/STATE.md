@@ -15,10 +15,10 @@ progress:
 
 ## Current Position
 
-Phase: 34 of 36 (complete)
+Phase: 35 of 36 (planned)
 Plan: —
-Status: Phase 34 complete — review passed (2 cycles)
-Last activity: 2026-03-23 — Phase 34 Lifecycle & Security review passed
+Status: Phase 35 planned — 3 plans across 2 waves
+Last activity: 2026-03-23 — Phase 35 iOS Platform Parity planned
 
 ## Progress
 ```
@@ -56,11 +56,12 @@ See: .planning/PROJECT.md (updated 2026-03-23)
 |-------|-------|-----------|
 | Phase 32: BLE Reliability | [#308](https://github.com/9thLevelSoftware/Project-Phoenix-MP/issues/308) (closed) | v0.8.0 Beta Readiness (#2) |
 | Phase 33: Sync & Data Integrity | [#309](https://github.com/9thLevelSoftware/Project-Phoenix-MP/issues/309) (closed) | v0.8.0 Beta Readiness (#2) |
-| Phase 34: Lifecycle & Security | [#310](https://github.com/9thLevelSoftware/Project-Phoenix-MP/issues/310) | v0.8.0 Beta Readiness (#2) |
+| Phase 34: Lifecycle & Security | [#310](https://github.com/9thLevelSoftware/Project-Phoenix-MP/issues/310) (closed) | v0.8.0 Beta Readiness (#2) |
+| Phase 35: iOS Platform Parity | [#311](https://github.com/9thLevelSoftware/Project-Phoenix-MP/issues/311) | v0.8.0 Beta Readiness (#2) |
 
 ## Next Action
 
-Run `/legion:plan 35` to plan Phase 35: iOS Platform Parity
+Run `/legion:build` to execute Phase 35: iOS Platform Parity
 
 ---
 *Last updated: 2026-03-23 — v0.8.0 Beta Readiness initialized*
