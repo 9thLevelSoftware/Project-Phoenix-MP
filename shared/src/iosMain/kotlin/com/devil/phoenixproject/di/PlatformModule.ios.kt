@@ -33,6 +33,9 @@ actual val platformModule: Module = module {
         val defaults = NSUserDefaults.standardUserDefaults
         NSUserDefaultsSettings(defaults)
     }
+    // iOS apps are sandboxed; use the same Settings for secure storage.
+    // Keychain-backed storage is a future enhancement.
+    single<Settings>(SecureSettingsQualifier) { get() }
     factory<BleRepository> { KableBleRepository() }
     single<CsvExporter> { IosCsvExporter() }
     single<CsvImporter> { IosCsvImporter(get()) }

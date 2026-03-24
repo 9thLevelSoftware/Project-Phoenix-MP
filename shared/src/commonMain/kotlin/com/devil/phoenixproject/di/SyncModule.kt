@@ -10,7 +10,7 @@ import org.koin.dsl.module
 
 val syncModule = module {
     // Portal Sync (must be before Auth since PortalAuthRepository depends on these)
-    single { PortalTokenStorage(get()) }
+    single { PortalTokenStorage(get(SecureSettingsQualifier)) }
     single {
         PortalApiClient(
             supabaseConfig = get<SupabaseConfig>(),

@@ -86,7 +86,7 @@ class PortalTokenStorageTest {
     // ===== clearAuth Tests =====
 
     @Test
-    fun clearAuthPreservesDeviceIdAndLastSyncTimestamp() {
+    fun clearAuthPreservesDeviceIdAndResetsLastSync() {
         val storage = createStorage()
 
         // Setup: save auth and set device ID / lastSync
@@ -108,9 +108,10 @@ class PortalTokenStorageTest {
         assertNull(storage.getToken(), "getToken should return null")
         assertNull(storage.getRefreshToken(), "getRefreshToken should return null")
 
-        // DeviceId and lastSync should be preserved
+        // DeviceId should be preserved for stable identity
         assertEquals(deviceId, storage.getDeviceId(), "DeviceId should be preserved after clearAuth")
-        assertEquals(1234567890L, storage.getLastSyncTimestamp(), "lastSyncTimestamp should be preserved after clearAuth")
+        // lastSync should be reset so a re-link triggers a full pull
+        assertEquals(0L, storage.getLastSyncTimestamp(), "lastSyncTimestamp should be reset after clearAuth")
     }
 
     // ===== saveGoTrueAuth Tests =====

@@ -162,6 +162,9 @@ kotlin {
                 // Activity Compose (for file picker Activity Result APIs)
                 implementation(libs.androidx.activity.compose)
 
+                // Encrypted SharedPreferences for secure token storage
+                implementation(libs.androidx.security.crypto)
+
                 // MediaPipe Pose Estimation (CV Form Check)
                 implementation(libs.mediapipe.tasks.vision)
 

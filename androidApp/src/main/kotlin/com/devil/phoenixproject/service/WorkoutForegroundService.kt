@@ -56,7 +56,17 @@ class WorkoutForegroundService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        when (intent?.action) {
+        if (intent == null) {
+            // Android restarted the service after it was killed. BLE connection is lost and
+            // the workout cannot meaningfully resume, so post the required foreground
+            // notification (Android 8+ crashes without it) and shut down immediately.
+            log.w { "WorkoutForegroundService restarted with null intent, stopping" }
+            startForeground(NOTIFICATION_ID, createNotification())
+            stopSelf()
+            return START_NOT_STICKY
+        }
+
+        when (intent.action) {
             ACTION_START_WORKOUT -> {
                 workoutMode = intent.getStringExtra(EXTRA_WORKOUT_MODE) ?: "Old School"
                 targetReps = intent.getIntExtra(EXTRA_TARGET_REPS, 10)
@@ -70,7 +80,8 @@ class WorkoutForegroundService : Service() {
                 stopSelf()
             }
         }
-        return START_STICKY // Restart if killed by system
+        // A killed workout cannot resume the BLE connection, so do not request restart.
+        return START_NOT_STICKY
     }
 
     override fun onBind(intent: Intent?): IBinder? {
