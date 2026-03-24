@@ -25,6 +25,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import com.devil.phoenixproject.isIosPlatform
 import com.devil.phoenixproject.domain.model.BiomechanicsSetSummary
 import com.devil.phoenixproject.domain.model.BiomechanicsVelocityZone
 import com.devil.phoenixproject.domain.model.ForceCurveResult
@@ -276,7 +277,8 @@ fun SetSummaryCard(
             }
 
             // Form Check Score (CV-05) - shown when form check was enabled during set
-            summary.formScore?.let { score ->
+            // Platform gate: MediaPipe PoseLandmarker is Android-only; hide on iOS
+            if (!isIosPlatform) summary.formScore?.let { score ->
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     colors = CardDefaults.cardColors(
