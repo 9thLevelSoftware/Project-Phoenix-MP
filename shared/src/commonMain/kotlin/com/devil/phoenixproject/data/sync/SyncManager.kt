@@ -350,12 +350,13 @@ class SyncManager(
                     return result
                 }
 
-                lastResponse = result.getOrThrow()
+                val batchResponse = result.getOrThrow()
+                lastResponse = batchResponse
 
                 // Update sync timestamp after each successful batch so retries skip
                 // already-pushed sessions (their modifiedAt < this new timestamp).
                 val batchSyncEpoch = try {
-                    kotlin.time.Instant.parse(lastResponse!!.syncTime).toEpochMilliseconds()
+                    kotlin.time.Instant.parse(batchResponse.syncTime).toEpochMilliseconds()
                 } catch (e: Exception) {
                     Logger.w(e) { "Failed to parse batch syncTime, using current time" }
                     currentTimeMillis()
