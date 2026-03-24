@@ -35,6 +35,15 @@ class SyncManager(
     private val repMetricRepository: RepMetricRepository,
     private val userProfileRepository: UserProfileRepository
 ) {
+    companion object {
+        /**
+         * Maximum sessions per sync batch. Keeps HTTP payload well under the Edge Function
+         * body limit (~1 MB). Each session includes nested exercises, sets, rep summaries,
+         * and linked telemetry + phase stats, so 50 sessions is a safe upper bound.
+         */
+        const val SYNC_BATCH_SIZE = 50
+    }
+
     private val syncMutex = Mutex()
     private val _syncState = MutableStateFlow<SyncState>(SyncState.Idle)
     val syncState: StateFlow<SyncState> = _syncState.asStateFlow()
@@ -101,9 +110,27 @@ class SyncManager(
         // Successful push confirms premium status
         tokenStorage.updatePremiumStatus(true)
 
+        // Stamp pushed sessions so they aren't re-sent on next sync.
+        // Sessions with NULL updatedAt would match every delta query indefinitely.
+        val stampTime = currentTimeMillis()
+        val activeProfileId = userProfileRepository.activeProfile.value?.id ?: "default"
+        val lastSyncForStamp = tokenStorage.getLastSyncTimestamp()
+        val pushedSessions = syncRepository.getWorkoutSessionsModifiedSince(lastSyncForStamp, activeProfileId)
+        pushedSessions.forEach { session ->
+            syncRepository.updateSessionTimestamp(session.id, stampTime)
+        }
+        if (pushedSessions.isNotEmpty()) {
+            Logger.d("SyncManager") { "Stamped ${pushedSessions.size} pushed sessions with updatedAt=$stampTime" }
+        }
+
         // Parse syncTime from ISO 8601 to epoch millis
         val pushResponse = pushResult.getOrThrow()
-        val syncTimeEpoch = kotlin.time.Instant.parse(pushResponse.syncTime).toEpochMilliseconds()
+        val syncTimeEpoch = try {
+            kotlin.time.Instant.parse(pushResponse.syncTime).toEpochMilliseconds()
+        } catch (e: Exception) {
+            Logger.w(e) { "Failed to parse syncTime '${pushResponse.syncTime}', using current time" }
+            currentTimeMillis()
+        }
 
         // Pull remote changes using the STORED lastSync (before push), not the push
         // response time. Using the push response time would ask "what changed since NOW"
@@ -202,49 +229,143 @@ class SyncManager(
 
         // 6. Phase 3 extended metrics (GAPs 7-9)
         val sessionIds = sessions.map { it.id }
-        val phaseStatsDtos = syncRepository.getPhaseStatisticsForSessions(sessionIds)
+        val phaseStatsBySessionId = syncRepository.getPhaseStatisticsForSessions(sessionIds)
             .map { PortalSyncAdapter.toPortalPhaseStatistics(it) }
+            .groupBy { it.sessionId }
         val signatureDtos = syncRepository.getAllExerciseSignatures()
             .map { PortalSyncAdapter.toPortalExerciseSignature(it) }
         val assessmentDtos = syncRepository.getAllAssessments()
             .map { PortalSyncAdapter.toPortalAssessmentResult(it) }
 
-        // 7. Build portal payload (telemetry setIds match generated exercise set IDs)
+        // 7. Build portal session + telemetry DTOs (telemetry setIds match generated exercise set IDs)
         val buildResult = PortalSyncAdapter.toPortalWorkoutSessionsWithTelemetry(sessionsWithReps, userId)
+
+        // Build a telemetry index keyed by set ID for batch slicing.
+        // Each session's exercises contain sets whose IDs are referenced by telemetry rows.
+        val sessionSetIds = buildResult.sessions.associate { session ->
+            val setIds = session.exercises.flatMap { ex -> ex.sets.map { s -> s.id } }.toSet()
+            session.id to setIds
+        }
+        val telemetryBySetId = buildResult.telemetry.groupBy { it.setId }
 
         // 7b. Profile data for portal tagging and profile-scoped filtering
         val activeProfile = userProfileRepository.activeProfile.value
         val allProfiles = userProfileRepository.allProfiles.value
+        val routineDtos = routines.map { PortalSyncAdapter.toPortalRoutine(it, userId) }
+        val cycleDtos = cyclesWithContext.map { PortalSyncAdapter.toPortalTrainingCycle(it, userId) }
+        val profileDtos = allProfiles.map { LocalProfileDto(it.id, it.name, it.colorIndex) }
 
-        val payload = PortalSyncPayload(
-            deviceId = deviceId,
-            platform = platform,
-            lastSync = lastSync,
-            sessions = buildResult.sessions,
-            telemetry = buildResult.telemetry,
-            routines = routines.map { PortalSyncAdapter.toPortalRoutine(it, userId) },
-            cycles = cyclesWithContext.map { PortalSyncAdapter.toPortalTrainingCycle(it, userId) },
-            rpgAttributes = rpgDto,
-            badges = badgeDtos,
-            gamificationStats = gamStatsDto,
-            phaseStatistics = phaseStatsDtos,
-            exerciseSignatures = signatureDtos,
-            assessments = assessmentDtos,
-            profileId = activeProfile?.id,
-            profileName = activeProfile?.name,
-            allProfiles = allProfiles.map { LocalProfileDto(it.id, it.name, it.colorIndex) }
-        )
-
-        // 8. Send to Edge Function
-        Logger.d("SyncManager") {
-            "Pushing portal payload: ${payload.sessions.size} sessions, " +
-            "${payload.telemetry.size} telemetry points, " +
-            "${payload.routines.size} routines, ${payload.cycles.size} cycles, " +
-            "${payload.phaseStatistics.size} phase stats, " +
-            "${payload.exerciseSignatures.size} signatures, " +
-            "${payload.assessments.size} assessments"
+        // 8. Chunked push -- batch sessions to stay under Edge Function body limit (~1 MB).
+        //    Non-session data (routines, cycles, badges, RPG, gamification, signatures, assessments)
+        //    is included only in the final batch to avoid duplicate upserts.
+        //    Each successful batch updates the sync timestamp so a mid-sequence failure
+        //    does not force a full resend of already-pushed batches.
+        val allSessions = buildResult.sessions
+        val totalBatches = if (allSessions.size > SYNC_BATCH_SIZE) {
+            (allSessions.size + SYNC_BATCH_SIZE - 1) / SYNC_BATCH_SIZE
+        } else {
+            1
         }
-        return apiClient.pushPortalPayload(payload)
+
+        Logger.d("SyncManager") {
+            "Pushing portal payload: ${allSessions.size} sessions ($totalBatches batch(es)), " +
+            "${buildResult.telemetry.size} telemetry points, " +
+            "${routineDtos.size} routines, ${cycleDtos.size} cycles, " +
+            "${phaseStatsBySessionId.size} sessions with phase stats, " +
+            "${signatureDtos.size} signatures, " +
+            "${assessmentDtos.size} assessments"
+        }
+
+        var lastResponse: PortalSyncPushResponse? = null
+
+        if (allSessions.size <= SYNC_BATCH_SIZE) {
+            // --- Single-push fast path (most common case) ---
+            val payload = PortalSyncPayload(
+                deviceId = deviceId,
+                platform = platform,
+                lastSync = lastSync,
+                sessions = allSessions,
+                telemetry = buildResult.telemetry,
+                routines = routineDtos,
+                cycles = cycleDtos,
+                rpgAttributes = rpgDto,
+                badges = badgeDtos,
+                gamificationStats = gamStatsDto,
+                phaseStatistics = phaseStatsBySessionId.values.flatten(),
+                exerciseSignatures = signatureDtos,
+                assessments = assessmentDtos,
+                profileId = activeProfile?.id,
+                profileName = activeProfile?.name,
+                allProfiles = profileDtos
+            )
+            val result = apiClient.pushPortalPayload(payload)
+            if (result.isFailure) return result
+            lastResponse = result.getOrThrow()
+        } else {
+            // --- Batched push for large history syncs ---
+            val batches = allSessions.chunked(SYNC_BATCH_SIZE)
+            batches.forEachIndexed { index, batchSessions ->
+                val isLastBatch = index == batches.lastIndex
+                Logger.i("SyncManager") {
+                    "Sync batch ${index + 1}/$totalBatches: ${batchSessions.size} sessions" +
+                    if (isLastBatch) " (+ non-session data)" else ""
+                }
+
+                // Slice telemetry to only rows belonging to this batch's sessions
+                val batchTelemetry = batchSessions.flatMap { session ->
+                    val setIds = sessionSetIds[session.id] ?: emptySet()
+                    setIds.flatMap { setId -> telemetryBySetId[setId] ?: emptyList() }
+                }
+
+                // Slice phase stats to this batch's sessions
+                val batchPhaseStats = batchSessions.flatMap { session ->
+                    phaseStatsBySessionId[session.id] ?: emptyList()
+                }
+
+                val payload = PortalSyncPayload(
+                    deviceId = deviceId,
+                    platform = platform,
+                    lastSync = lastSync,
+                    sessions = batchSessions,
+                    telemetry = batchTelemetry,
+                    // Non-session data only on last batch to avoid duplicate upserts
+                    routines = if (isLastBatch) routineDtos else emptyList(),
+                    cycles = if (isLastBatch) cycleDtos else emptyList(),
+                    rpgAttributes = if (isLastBatch) rpgDto else null,
+                    badges = if (isLastBatch) badgeDtos else emptyList(),
+                    gamificationStats = if (isLastBatch) gamStatsDto else null,
+                    phaseStatistics = batchPhaseStats,
+                    exerciseSignatures = if (isLastBatch) signatureDtos else emptyList(),
+                    assessments = if (isLastBatch) assessmentDtos else emptyList(),
+                    profileId = activeProfile?.id,
+                    profileName = activeProfile?.name,
+                    allProfiles = if (isLastBatch) profileDtos else null
+                )
+
+                val result = apiClient.pushPortalPayload(payload)
+                if (result.isFailure) {
+                    Logger.e("SyncManager") {
+                        "Batch ${index + 1}/$totalBatches failed: ${result.exceptionOrNull()?.message}"
+                    }
+                    return result
+                }
+
+                lastResponse = result.getOrThrow()
+
+                // Update sync timestamp after each successful batch so retries skip
+                // already-pushed sessions (their modifiedAt < this new timestamp).
+                val batchSyncEpoch = try {
+                    kotlin.time.Instant.parse(lastResponse!!.syncTime).toEpochMilliseconds()
+                } catch (e: Exception) {
+                    Logger.w(e) { "Failed to parse batch syncTime, using current time" }
+                    currentTimeMillis()
+                }
+                tokenStorage.setLastSyncTimestamp(batchSyncEpoch)
+                Logger.d("SyncManager") { "Batch ${index + 1}/$totalBatches committed, syncTime=$batchSyncEpoch" }
+            }
+        }
+
+        return Result.success(lastResponse!!)
         // No updateServerIds() -- portal uses client-provided UUIDs
     }
 

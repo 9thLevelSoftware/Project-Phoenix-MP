@@ -161,6 +161,14 @@ class SqlDelightSyncRepository(
         }
     }
 
+    // === Post-Push Stamping ===
+
+    override suspend fun updateSessionTimestamp(sessionId: String, timestamp: Long) {
+        withContext(Dispatchers.IO) {
+            queries.updateSessionTimestamp(timestamp, sessionId)
+        }
+    }
+
     // === ID Mapping ===
 
     override suspend fun updateServerIds(mappings: IdMappings) {

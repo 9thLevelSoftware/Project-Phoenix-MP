@@ -96,6 +96,14 @@ interface SyncRepository {
      */
     suspend fun getAllAssessments(profileId: String = "default"): List<com.devil.phoenixproject.database.AssessmentResult>
 
+    // === Post-Push Stamping ===
+
+    /**
+     * Stamp pushed sessions with current timestamp so they are not re-sent on next sync.
+     * Sessions with NULL updatedAt would otherwise match every delta query indefinitely.
+     */
+    suspend fun updateSessionTimestamp(sessionId: String, timestamp: Long)
+
     // === ID Mapping (after push) ===
 
     /**
