@@ -39,7 +39,7 @@ class IosDataBackupManager(
 
     private val backupDirectory: String
         get() {
-            val dir = "$documentsDirectory/VitruvianBackups"
+            val dir = "$documentsDirectory/PhoenixBackups"
             val url = NSURL.fileURLWithPath(dir)
             if (!fileManager.fileExistsAtPath(dir)) {
                 fileManager.createDirectoryAtURL(

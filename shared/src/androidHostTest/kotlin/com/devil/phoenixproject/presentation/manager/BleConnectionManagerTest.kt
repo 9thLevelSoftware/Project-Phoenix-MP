@@ -149,9 +149,12 @@ class BleConnectionManagerTest {
     }
 
     private class FakeWorkoutStateProvider(
-        var active: Boolean
+        var active: Boolean,
+        var midSet: Boolean = false
     ) : WorkoutStateProvider {
         override val isWorkoutActiveForConnectionAlert: Boolean
             get() = active
+        override val isWorkoutMidSet: Boolean
+            get() = midSet
     }
 }

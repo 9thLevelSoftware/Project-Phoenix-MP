@@ -7,6 +7,9 @@ import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 import com.devil.phoenixproject.domain.model.BiomechanicsVelocityZone
+import org.jetbrains.compose.resources.stringResource
+import vitruvianprojectphoenix.shared.generated.resources.Res
+import vitruvianprojectphoenix.shared.generated.resources.*
 
 /**
  * Semantic color palette for accessibility-aware UI elements.
@@ -173,12 +176,14 @@ fun velocityZoneColor(zone: BiomechanicsVelocityZone): Color {
 }
 
 /**
- * Returns the human-readable label for a velocity zone.
+ * Returns the translatable human-readable label for a velocity zone.
+ * Must be called from a @Composable context.
  */
+@Composable
 fun velocityZoneLabel(zone: BiomechanicsVelocityZone): String = when (zone) {
-    BiomechanicsVelocityZone.EXPLOSIVE -> "Explosive"
-    BiomechanicsVelocityZone.FAST -> "Fast"
-    BiomechanicsVelocityZone.MODERATE -> "Moderate"
-    BiomechanicsVelocityZone.SLOW -> "Slow"
-    BiomechanicsVelocityZone.GRIND -> "Grind"
+    BiomechanicsVelocityZone.EXPLOSIVE -> stringResource(Res.string.zone_explosive)
+    BiomechanicsVelocityZone.FAST -> stringResource(Res.string.zone_fast)
+    BiomechanicsVelocityZone.MODERATE -> stringResource(Res.string.zone_moderate)
+    BiomechanicsVelocityZone.SLOW -> stringResource(Res.string.zone_slow)
+    BiomechanicsVelocityZone.GRIND -> stringResource(Res.string.zone_grind)
 }

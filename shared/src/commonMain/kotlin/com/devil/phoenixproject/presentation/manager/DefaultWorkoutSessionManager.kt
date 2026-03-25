@@ -269,6 +269,9 @@ class DefaultWorkoutSessionManager(
             else -> false
         }
 
+    override val isWorkoutMidSet: Boolean
+        get() = coordinator._workoutState.value is WorkoutState.Active
+
     // ===== Routine CRUD — delegated to RoutineFlowManager =====
 
     fun getRoutineById(routineId: String): Routine? = routineFlowManager.getRoutineById(routineId)

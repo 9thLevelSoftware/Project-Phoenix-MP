@@ -52,7 +52,10 @@ class AndroidCsvImporter(
                 var skipped = 0
                 val importErrors = parseErrors.toMutableList()
 
-                for (session in sessions) {
+                for (parsedSession in sessions) {
+                    // Stamp each imported session with the active profile's ID
+                    // so it appears in the correct user's history.
+                    val session = parsedSession.copy(profileId = profileId)
                     val key = DuplicateKey(session.timestamp, session.exerciseName ?: "")
                     if (key in existingKeys) {
                         skipped++

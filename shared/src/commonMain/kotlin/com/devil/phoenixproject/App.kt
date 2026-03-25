@@ -65,15 +65,10 @@ fun App() {
     val syncTriggerManager = koinInject<SyncTriggerManager>()
     co.touchlab.kermit.Logger.i { "iOS App: All dependencies injected successfully" }
 
-    // Apply persisted language preference to platform locale on startup.
-    // This ensures the locale matches the saved preference after a cold start.
-    val userPreferences by viewModel.userPreferences.collectAsState()
-    LaunchedEffect(Unit) {
-        val savedLanguage = userPreferences.language
-        if (savedLanguage.isNotBlank() && savedLanguage != "en") {
-            com.devil.phoenixproject.util.applyAppLocale(savedLanguage)
-        }
-    }
+    // Locale is applied BEFORE composition in platform-specific startup code:
+    // - Android: MainActivity.applyStoredLocaleBeforeComposition() in onCreate()
+    // - iOS: Applied via NSUserDefaults AppleLanguages before Compose entry point
+    // This prevents the first-frame English flicker on non-EN locales.
 
     // Theme state - persisted via ThemeViewModel
     val themeMode by themeViewModel.themeMode.collectAsState()

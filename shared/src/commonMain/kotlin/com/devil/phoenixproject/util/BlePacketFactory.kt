@@ -220,26 +220,26 @@ object BlePacketFactory {
         putFloatLE(frame, BleConstants.ActivationPacket.OFFSET_PROGRESSION, params.progressionRegressionKg)
 
         // Diagnostic logging
-        println("BLE-ACTIVATION: === MODE: ${params.programMode}, Weight: ${params.weightPerCableKg}kg ===")
-        println("BLE-ACTIVATION: adjustedWeight=${adjustedWeightPerCable}kg, effectiveKg=$effectiveKg")
+        Logger.d("BlePacket") { "=== MODE: ${params.programMode}, Weight: ${params.weightPerCableKg}kg ===" }
+        Logger.d("BlePacket") { "adjustedWeight=${adjustedWeightPerCable}kg, effectiveKg=$effectiveKg" }
         if (variant == ForceConfigVariant.OVERLAP) {
-            println(
-                "BLE-ACTIVATION: softMax[0x48]=${readFloatLE(frame, BleConstants.ActivationPacket.OFFSET_SOFT_MAX)}kg, " +
+            Logger.d("BlePacket") {
+                "softMax[0x48]=${readFloatLE(frame, BleConstants.ActivationPacket.OFFSET_SOFT_MAX)}kg, " +
                     "increment[0x4C]=${readFloatLE(frame, BleConstants.ActivationPacket.OFFSET_INCREMENT)}kg/rep"
-            )
+            }
         } else {
-            println("BLE-ACTIVATION: non-overlap layout active (0x48..0x4F preserved as profile bytes)")
+            Logger.d("BlePacket") { "non-overlap layout active (0x48..0x4F preserved as profile bytes)" }
         }
-        println(
-            "BLE-ACTIVATION: forceMin[0x50]=${readFloatLE(frame, BleConstants.ActivationPacket.OFFSET_FORCE_MIN)}kg, " +
+        Logger.d("BlePacket") {
+            "forceMin[0x50]=${readFloatLE(frame, BleConstants.ActivationPacket.OFFSET_FORCE_MIN)}kg, " +
                 "forceMax[0x54]=${readFloatLE(frame, BleConstants.ActivationPacket.OFFSET_FORCE_MAX)}kg"
-        )
-        println(
-            "BLE-ACTIVATION: targetWeight[0x58]=${readFloatLE(frame, BleConstants.ActivationPacket.OFFSET_TARGET_WEIGHT)}kg, " +
+        }
+        Logger.d("BlePacket") {
+            "targetWeight[0x58]=${readFloatLE(frame, BleConstants.ActivationPacket.OFFSET_TARGET_WEIGHT)}kg, " +
                 "progression[0x5C]=${readFloatLE(frame, BleConstants.ActivationPacket.OFFSET_PROGRESSION)}kg/rep"
-        )
+        }
         val repsHex = frame[0x04].toUByte().toString(16).padStart(2, '0').uppercase()
-        println("BLE-ACTIVATION: reps[0x04]=0x$repsHex (isAMRAP=${params.isAMRAP}, isJustLift=${params.isJustLift})")
+        Logger.d("BlePacket") { "reps[0x04]=0x$repsHex (isAMRAP=${params.isAMRAP}, isJustLift=${params.isJustLift})" }
 
         return frame
     }
@@ -273,10 +273,8 @@ object BlePacketFactory {
         // Values > 150% can cause machine faults (yellow light)
         val safeEccentricPct = eccentricPct.coerceIn(0, 150)
         if (eccentricPct != safeEccentricPct) {
-            // CRITICAL: Log with println for reliable logcat output - helps diagnose machine fault reports
-            println("BLE-FAULT-PREVENTION: ⚠️ Eccentric load $eccentricPct% CLAMPED to $safeEccentricPct% (hardware limit 150%)")
-            Logger.w("BlePacketFactory") {
-                "⚠️ Eccentric load $eccentricPct% clamped to $safeEccentricPct% (hardware limit)"
+            Logger.w("BlePacket") {
+                "Eccentric load $eccentricPct% CLAMPED to $safeEccentricPct% (hardware limit 150%)"
             }
         }
 
@@ -294,13 +292,13 @@ object BlePacketFactory {
 
         Logger.d("BlePacketFactory") { "=== ECHO: ${level.displayName}, eccentric: $safeEccentricPct% ===" }
 
-        putShortLE(frame, 0x08, echoParams.eccentricPct)
-        putShortLE(frame, 0x0a, echoParams.concentricPct)
-        putFloatLE(frame, 0x0c, echoParams.smoothing)
-        putFloatLE(frame, 0x10, echoParams.gain)
-        putFloatLE(frame, 0x14, echoParams.cap)
-        putFloatLE(frame, 0x18, echoParams.floor)
-        putFloatLE(frame, 0x1c, echoParams.negLimit)
+        putShortLE(frame, 0x08, echoParams.eccentricOverload)
+        putShortLE(frame, 0x0a, echoParams.referenceMapBlend)
+        putFloatLE(frame, 0x0c, echoParams.concentricDelayS)
+        putFloatLE(frame, 0x10, echoParams.concentricDurationSeconds)
+        putFloatLE(frame, 0x14, echoParams.concentricMaxVelocity)
+        putFloatLE(frame, 0x18, echoParams.eccentricDurationSeconds)
+        putFloatLE(frame, 0x1c, echoParams.eccentricMaxVelocity)
 
         return frame
     }
@@ -455,21 +453,25 @@ object BlePacketFactory {
     // ========== Echo Parameters ==========
 
     private fun getEchoParams(level: EchoLevel, eccentricPct: Int): EchoParams {
+        // Official app reference: Yj/d.java (EchoConfiguration) + dk/d.java (EchoVelocity)
+        // concentricDurationSeconds = 50.0 / velocity
+        // concentricMaxVelocity = velocity (raw EchoVelocity enum value)
+        // eccentricMaxVelocity = -200.0 (fixed in official app constructor)
         val params = EchoParams(
-            eccentricPct = eccentricPct,
-            concentricPct = 50,
-            smoothing = 0.1f,
-            floor = 0.0f,
-            negLimit = -100.0f,
-            gain = 1.0f,
-            cap = 50.0f
+            eccentricOverload = eccentricPct,
+            referenceMapBlend = 50,
+            concentricDelayS = 0.1f,
+            eccentricDurationSeconds = 0.0f,
+            eccentricMaxVelocity = -200.0f,
+            concentricDurationSeconds = 1.0f,
+            concentricMaxVelocity = 50.0f
         )
 
         return when (level) {
-            EchoLevel.HARD -> params.copy(gain = 1.0f, cap = 50.0f)
-            EchoLevel.HARDER -> params.copy(gain = 1.25f, cap = 40.0f)
-            EchoLevel.HARDEST -> params.copy(gain = 1.667f, cap = 30.0f)
-            EchoLevel.EPIC -> params.copy(gain = 3.333f, cap = 15.0f)
+            EchoLevel.HARD -> params.copy(concentricDurationSeconds = 1.0f, concentricMaxVelocity = 50.0f)
+            EchoLevel.HARDER -> params.copy(concentricDurationSeconds = 1.25f, concentricMaxVelocity = 40.0f)
+            EchoLevel.HARDEST -> params.copy(concentricDurationSeconds = 1.667f, concentricMaxVelocity = 30.0f)
+            EchoLevel.EPIC -> params.copy(concentricDurationSeconds = 3.333f, concentricMaxVelocity = 15.0f)
         }
     }
 }

@@ -448,19 +448,6 @@ class RoutineFlowManager(
         // Only bodyweight exercises should have warmupReps = 0
         val isFirstBodyweight = isBodyweightExercise(firstExercise)
 
-        // Issue #188: Trace routine loading with println for reliable logcat output
-        println("Issue188-Load: ╔══════════════════════════════════════════════════════════════")
-        println("Issue188-Load: ║ LOADING ROUTINE: ${routine.name}")
-        println("Issue188-Load: ╠══════════════════════════════════════════════════════════════")
-        println("Issue188-Load: ║ First exercise: ${firstExercise.exercise.displayName}")
-        println("Issue188-Load: ║ setReps list: ${firstExercise.setReps}")
-        println("Issue188-Load: ║ firstSetReps (firstOrNull): $firstSetReps")
-        println("Issue188-Load: ║ isAMRAP field on exercise: ${firstExercise.isAMRAP}")
-        println("Issue188-Load: ║ progressionKg: ${firstExercise.progressionKg}kg")
-        println("Issue188-Load: ║ weightPerCableKg: ${firstSetWeight}kg")
-        println("Issue188-Load: ║ programMode: ${firstExercise.programMode.displayName}")
-        println("Issue188-Load: ╚══════════════════════════════════════════════════════════════")
-
         // Issue #203: Fallback to exercise-level isAMRAP flag for legacy ExerciseEditDialog compatibility
         // Legacy "Last set AMRAP" only applies when we're on the last set (set index 0 for single-set exercises)
         val isFirstSetLastSet = firstExercise.setReps.size <= 1
@@ -493,11 +480,6 @@ class RoutineFlowManager(
             coordinator._totalWarmupSets.value = 0
         }
 
-        // Issue #188: Log computed params
-        println("Issue188-Load: ║ COMPUTED WorkoutParameters:")
-        println("Issue188-Load: ║   isAMRAP=${params.isAMRAP} (from firstSetReps == null || exercise.isAMRAP)")
-        println("Issue188-Load: ║   reps=${params.reps}")
-        println("Issue188-Load: ║   progressionRegressionKg=${params.progressionRegressionKg}kg")
         lifecycleDelegate.setWorkoutParametersInternal(params)
     }
 

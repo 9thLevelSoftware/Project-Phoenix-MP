@@ -50,6 +50,7 @@ class LedFeedbackController(
     // Core state
     private var lastSentSchemeIndex: Int = -1
     private var currentZone: VelocityZone = VelocityZone.REST
+    private var pendingZone: VelocityZone = VelocityZone.REST
     private var zoneStabilityCount: Int = 0
     private var feedbackSuspended: Boolean = false
     private var celebrationJob: Job? = null
@@ -241,6 +242,7 @@ class LedFeedbackController(
      * @return CONTROLLED (green) for 0.90-1.10, FAST (yellow) for 0.75-1.25, EXPLOSIVE (red) otherwise
      */
     internal fun resolveEchoZone(echoLoadRatio: Float): VelocityZone = when {
+        echoLoadRatio <= 0f           -> VelocityZone.REST         // H5: No cable engagement yet
         echoLoadRatio in 0.90f..1.10f -> VelocityZone.CONTROLLED  // Green: matching target
         echoLoadRatio in 0.75f..1.25f -> VelocityZone.FAST        // Yellow: slightly off
         else                          -> VelocityZone.EXPLOSIVE   // Red: significant mismatch
@@ -268,18 +270,36 @@ class LedFeedbackController(
     /**
      * Apply zone stability hysteresis: require [ZONE_STABILITY_THRESHOLD] consecutive
      * samples in a new zone before switching. Prevents LED flicker from velocity noise.
+     *
+     * H4 fix: Uses a pendingZone field to track which zone is being counted toward.
+     * The counter increments when the target matches the pending zone, and resets
+     * when a different zone arrives. Only transitions the current zone after
+     * ZONE_STABILITY_THRESHOLD consecutive samples in the same pending zone.
      */
     private fun applyZoneWithHysteresis(targetZone: VelocityZone) {
+        // Already in this zone — nothing to do
         if (targetZone == currentZone) {
+            pendingZone = currentZone
             zoneStabilityCount = 0
             return
         }
-        zoneStabilityCount++
-        if (zoneStabilityCount < ZONE_STABILITY_THRESHOLD) return
 
-        currentZone = targetZone
-        zoneStabilityCount = 0
-        sendColorIfChanged(targetZone.schemeIndex)
+        // Track pending zone for stability counting
+        if (targetZone != pendingZone) {
+            // New target zone — reset counter
+            pendingZone = targetZone
+            zoneStabilityCount = 1
+        } else {
+            // Same pending zone — increment
+            zoneStabilityCount++
+        }
+
+        // Only transition when stable for ZONE_STABILITY_THRESHOLD consecutive samples
+        if (zoneStabilityCount >= ZONE_STABILITY_THRESHOLD) {
+            currentZone = targetZone
+            zoneStabilityCount = 0
+            sendColorIfChanged(targetZone.schemeIndex)
+        }
     }
 
     /**
@@ -307,6 +327,7 @@ class LedFeedbackController(
     private fun resetZoneState() {
         lastSentSchemeIndex = -1
         currentZone = VelocityZone.REST
+        pendingZone = VelocityZone.REST
         zoneStabilityCount = 0
     }
 }

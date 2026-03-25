@@ -83,9 +83,10 @@ fun EnhancedMainScreen(
     val loadedRoutine by viewModel.loadedRoutine.collectAsState()
     val currentRoutineName = loadedRoutine?.name ?: ""
 
-    // For cycle screens - check if editingCycle exists in ViewModel
-    // If not, leave empty for now - we'll handle it when updating cycle screens
-    val editingCycleName = "" // TODO: Add viewModel.editingCycle if needed
+    // Cycle name display: ViewModel does not currently expose editingCycle state,
+    // so the top bar will show an empty cycle name. This is acceptable because
+    // cycle editing navigates to its own screen with its own title.
+    val editingCycleName = ""
 
     // For exercise detail - derive from loaded routine and current exercise index
     val currentExerciseIndex by viewModel.currentExerciseIndex.collectAsState()

@@ -138,7 +138,7 @@ fun RestTimerCard(
                     Spacer(modifier = Modifier.height(4.dp))
                 }
                 Text(
-                    text = if (isSupersetTransition) "QUICK REST" else "REST TIME",
+                    text = if (isSupersetTransition) stringResource(Res.string.rest_quick_rest) else stringResource(Res.string.rest_time),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                     color = if (isSupersetTransition)
@@ -184,7 +184,7 @@ fun RestTimerCard(
                     )
                     if (isRestPaused) {
                         Text(
-                            text = "PAUSED",
+                            text = stringResource(Res.string.rest_paused),
                             style = MaterialTheme.typography.labelMedium,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.secondary,
@@ -231,12 +231,12 @@ fun RestTimerCard(
                 ) {
                     Icon(
                         if (isRestPaused) Icons.Default.PlayArrow else Icons.Default.Pause,
-                        contentDescription = if (isRestPaused) "Resume timer" else "Pause timer",
+                        contentDescription = if (isRestPaused) stringResource(Res.string.rest_resume) else stringResource(Res.string.rest_pause),
                         modifier = Modifier.size(20.dp)
                     )
                     Spacer(modifier = Modifier.width(4.dp))
                     Text(
-                        text = if (isRestPaused) "Resume" else "Pause",
+                        text = if (isRestPaused) stringResource(Res.string.rest_resume) else stringResource(Res.string.rest_pause),
                         style = MaterialTheme.typography.labelLarge,
                         fontWeight = FontWeight.Bold
                     )
@@ -254,7 +254,7 @@ fun RestTimerCard(
                     )
                     Spacer(modifier = Modifier.width(4.dp))
                     Text(
-                        text = "Reset",
+                        text = stringResource(Res.string.rest_reset),
                         style = MaterialTheme.typography.labelLarge,
                         fontWeight = FontWeight.Bold
                     )
@@ -267,7 +267,7 @@ fun RestTimerCard(
                 verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
                 Text(
-                    text = "UP NEXT",
+                    text = stringResource(Res.string.rest_up_next),
                     style = MaterialTheme.typography.labelLarge,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -276,7 +276,7 @@ fun RestTimerCard(
 
                 // Next exercise name or completion message
                 Text(
-                    text = if (isLastExercise) "Workout Complete" else nextExerciseName,
+                    text = if (isLastExercise) stringResource(Res.string.rest_workout_complete) else nextExerciseName,
                     style = MaterialTheme.typography.headlineSmall,
                     fontWeight = FontWeight.Bold,
                     color = if (isLastExercise)
@@ -290,7 +290,7 @@ fun RestTimerCard(
                 // Issue #222: Hide for bodyweight exercises
                 if (!isLastExercise && nextExerciseMode != null && !isNextExerciseBodyweight) {
                     Text(
-                        text = "$nextExerciseMode Mode",
+                        text = stringResource(Res.string.rest_mode, nextExerciseMode),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.secondary,
                         fontWeight = FontWeight.Medium
@@ -300,7 +300,7 @@ fun RestTimerCard(
                 // Set progress indicator - FIXED: Show upcoming set (currentSet + 1)
                 if (!isLastExercise) {
                     Text(
-                        text = "Set ${currentSet + 1} of $totalSets",
+                        text = stringResource(Res.string.rest_set_of, currentSet + 1, totalSets),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -332,7 +332,7 @@ fun RestTimerCard(
                         verticalArrangement = Arrangement.spacedBy(Spacing.medium)
                     ) {
                         Text(
-                            "NEXT SET CONFIGURATION",
+                            stringResource(Res.string.rest_next_set_config),
                             style = MaterialTheme.typography.labelLarge,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -349,7 +349,7 @@ fun RestTimerCard(
                                 },
                                 valueRange = 1f..50f,
                                 step = 1f,
-                                label = "Target Reps",
+                                label = stringResource(Res.string.rest_target_reps),
                                 formatValue = { it.toInt().toString() }
                             )
                         }
@@ -385,7 +385,7 @@ fun RestTimerCard(
                                     },
                                     valueRange = 0f..maxWeight,
                                     step = weightStep,
-                                    label = "Weight per cable",
+                                    label = stringResource(Res.string.rest_weight_per_cable),
                                     formatValue = { formatWeightWithUnit(it, weightUnit) }
                                 )
                             }
@@ -403,7 +403,7 @@ fun RestTimerCard(
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                     Text(
-                        "Exercise ${currentExerciseIndex + 1} of $totalExercises",
+                        stringResource(Res.string.rest_exercise_of, currentExerciseIndex + 1, totalExercises),
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -450,7 +450,7 @@ fun RestTimerCard(
                     )
                     Spacer(modifier = Modifier.width(Spacing.small))
                     Text(
-                        text = if (isLastExercise) "Continue" else "Skip Rest",
+                        text = if (isLastExercise) stringResource(Res.string.rest_continue) else stringResource(Res.string.rest_skip),
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold
                     )
@@ -472,7 +472,7 @@ fun RestTimerCard(
                     )
                     Spacer(modifier = Modifier.width(Spacing.small))
                     Text(
-                        text = "End Workout",
+                        text = stringResource(Res.string.rest_end_workout),
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.error
@@ -534,7 +534,7 @@ private fun RestTimerEchoLevelSelector(
 ) {
     Column {
         Text(
-            text = "ECHO LEVEL",
+            text = stringResource(Res.string.rest_echo_level),
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             letterSpacing = 1.sp
@@ -600,7 +600,7 @@ private fun RestTimerEccentricLoadSlider(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
-                text = "ECCENTRIC LOAD",
+                text = stringResource(Res.string.rest_eccentric_load),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 letterSpacing = 1.sp

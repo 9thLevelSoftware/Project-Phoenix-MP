@@ -4,6 +4,7 @@ import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.data.repository.BleRepository
 import com.devil.phoenixproject.data.repository.ScannedDevice
 import com.devil.phoenixproject.domain.model.ConnectionState
+import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -23,6 +24,14 @@ import kotlinx.coroutines.withTimeoutOrNull
  */
 interface WorkoutStateProvider {
     val isWorkoutActiveForConnectionAlert: Boolean
+
+    /**
+     * True when the machine is actively executing a set (WorkoutState.Active).
+     * CRITICAL: Reconnecting mid-set will fault the machine because it cannot
+     * receive a new exercise packet until the active one fully ends.
+     * Use this to guard auto-reconnect attempts.
+     */
+    val isWorkoutMidSet: Boolean
 }
 
 /**
@@ -103,6 +112,13 @@ class BleConnectionManager(
         scope.launch {
             bleRepository.reconnectionRequested.collect { request ->
                 Logger.w { "Auto-reconnect requested: ${request.deviceName} (reason: ${request.reason})" }
+                // H1: CRITICAL — never reconnect mid-set. The machine cannot receive a new
+                // exercise packet until the active one fully ends; doing so causes a fault
+                // (blinking red light). Only reconnect between sets (Resting, Countdown, etc).
+                if (workoutStateProvider.isWorkoutMidSet) {
+                    Logger.w { "Skipping reconnect — workout is mid-set (machine would fault)" }
+                    return@collect
+                }
                 if (workoutStateProvider.isWorkoutActiveForConnectionAlert) {
                     delay(1500L) // BLE stack cooldown — Android needs time to release GATT resources
                     ensureConnection(
@@ -243,6 +259,9 @@ class BleConnectionManager(
                     _pendingConnectionCallback = null
                     onFailed()
                 }
+            } catch (e: CancellationException) {
+                // H2: Don't swallow coroutine cancellation — propagate to caller
+                throw e
             } catch (e: Exception) {
                 Logger.e { "ensureConnection error: ${e.message}" }
                 bleRepository.cancelConnection()

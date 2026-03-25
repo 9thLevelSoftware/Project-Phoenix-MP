@@ -665,4 +665,101 @@ class BlePacketFactoryTest {
             assertEquals(0x4E.toByte(), packet[0], "Command should be 0x4E for level $level")
         }
     }
+
+    // ========== Echo Mode: Official App Byte Parity Tests ==========
+    // These tests verify Phoenix Echo packets match the official Vitruvian app byte-for-byte.
+    // Reference: VitruvianDeobfuscated Yj/d.java (EchoConfiguration), Ek/C1516m.java (EchoForceConfig),
+    //            Ek/C1517n.java (EchoPhase), Ek/P.java (CommandId.ECHO = 78 = 0x4E)
+
+    /** Helper: read a little-endian unsigned short from a byte array */
+    private fun readUShortLE(data: ByteArray, offset: Int): Int {
+        return (data[offset].toInt() and 0xFF) or
+            ((data[offset + 1].toInt() and 0xFF) shl 8)
+    }
+
+    @Test
+    fun `Echo HARD packet matches official app byte layout`() {
+        val packet = BlePacketFactory.createEchoControl(
+            level = EchoLevel.HARD,
+            warmupReps = 3,
+            targetReps = 2,
+            eccentricPct = 75
+        )
+
+        // Header
+        assertEquals(0x4E, packet[0].toInt() and 0xFF, "Command ID")
+        assertEquals(0x00, packet[1].toInt() and 0xFF)
+        assertEquals(0x00, packet[2].toInt() and 0xFF)
+        assertEquals(0x00, packet[3].toInt() and 0xFF)
+
+        // Rep counts
+        assertEquals(3, packet[0x04].toInt(), "warmupReps / romRepCount")
+        assertEquals(2, packet[0x05].toInt(), "targetReps / repCount")
+
+        // EchoForceConfig fields (matching official C1516m serialization order)
+        assertEquals(0, readUShortLE(packet, 0x06), "spotter (always 0)")
+        assertEquals(75, readUShortLE(packet, 0x08), "eccentricOverload")
+        assertEquals(50, readUShortLE(packet, 0x0A), "referenceMapBlend (always 50)")
+        assertEquals(0.1f, readFloatLE(packet, 0x0C), "concentricDelayS (always 0.1)")
+
+        // Concentric EchoPhase: HARD = velocity 50, duration = 50/50 = 1.0s
+        assertEquals(1.0f, readFloatLE(packet, 0x10), "concentricDurationSeconds (50/50)")
+        assertEquals(50.0f, readFloatLE(packet, 0x14), "concentricMaxVelocity (HARD=50)")
+
+        // Eccentric EchoPhase: fixed in official app
+        assertEquals(0.0f, readFloatLE(packet, 0x18), "eccentricDurationSeconds (always 0.0)")
+        assertEquals(-200.0f, readFloatLE(packet, 0x1C), "eccentricMaxVelocity (official=-200.0)")
+    }
+
+    @Test
+    fun `Echo HARDER packet has correct velocity parameters`() {
+        val packet = BlePacketFactory.createEchoControl(EchoLevel.HARDER, eccentricPct = 100)
+
+        // HARDER = velocity 40, duration = 50/40 = 1.25s
+        assertEquals(1.25f, readFloatLE(packet, 0x10), "concentricDurationSeconds (50/40)")
+        assertEquals(40.0f, readFloatLE(packet, 0x14), "concentricMaxVelocity (HARDER=40)")
+        assertEquals(-200.0f, readFloatLE(packet, 0x1C), "eccentricMaxVelocity")
+    }
+
+    @Test
+    fun `Echo HARDEST packet has correct velocity parameters`() {
+        val packet = BlePacketFactory.createEchoControl(EchoLevel.HARDEST, eccentricPct = 100)
+
+        // HARDEST = velocity 30, duration = 50/30 = 1.667s
+        assertEquals(1.667f, readFloatLE(packet, 0x10), "concentricDurationSeconds (50/30)")
+        assertEquals(30.0f, readFloatLE(packet, 0x14), "concentricMaxVelocity (HARDEST=30)")
+        assertEquals(-200.0f, readFloatLE(packet, 0x1C), "eccentricMaxVelocity")
+    }
+
+    @Test
+    fun `Echo EPIC packet has correct velocity parameters`() {
+        val packet = BlePacketFactory.createEchoControl(EchoLevel.EPIC, eccentricPct = 100)
+
+        // EPIC = velocity 15, duration = 50/15 = 3.333s
+        assertEquals(3.333f, readFloatLE(packet, 0x10), "concentricDurationSeconds (50/15)")
+        assertEquals(15.0f, readFloatLE(packet, 0x14), "concentricMaxVelocity (EPIC=15)")
+        assertEquals(-200.0f, readFloatLE(packet, 0x1C), "eccentricMaxVelocity")
+    }
+
+    @Test
+    fun `Echo eccentric load clamped at 150 percent`() {
+        val packet = BlePacketFactory.createEchoControl(EchoLevel.HARD, eccentricPct = 200)
+
+        // Hardware safety: should clamp to 150%
+        assertEquals(150, readUShortLE(packet, 0x08), "eccentricOverload clamped to 150%")
+    }
+
+    @Test
+    fun `Echo all fixed fields match official app defaults`() {
+        // Verify the fixed protocol values that never change across any Echo level
+        for (level in EchoLevel.entries) {
+            val packet = BlePacketFactory.createEchoControl(level, eccentricPct = 100)
+
+            assertEquals(0, readUShortLE(packet, 0x06), "spotter should be 0 for $level")
+            assertEquals(50, readUShortLE(packet, 0x0A), "referenceMapBlend should be 50 for $level")
+            assertEquals(0.1f, readFloatLE(packet, 0x0C), "concentricDelayS should be 0.1 for $level")
+            assertEquals(0.0f, readFloatLE(packet, 0x18), "eccentricDurationSeconds should be 0.0 for $level")
+            assertEquals(-200.0f, readFloatLE(packet, 0x1C), "eccentricMaxVelocity should be -200.0 for $level")
+        }
+    }
 }
