@@ -25,7 +25,6 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import com.devil.phoenixproject.isIosPlatform
 import com.devil.phoenixproject.domain.model.BiomechanicsSetSummary
 import com.devil.phoenixproject.domain.model.BiomechanicsVelocityZone
 import com.devil.phoenixproject.domain.model.ForceCurveResult
@@ -274,50 +273,6 @@ fun SetSummaryCard(
             // Balance Analysis section (shown when biomechanics data is available)
             summary.biomechanicsSummary?.let { biomechanics ->
                 AsymmetrySummaryCard(biomechanics)
-            }
-
-            // Form Check Score (CV-05) - shown when form check was enabled during set
-            // Platform gate: MediaPipe PoseLandmarker is Android-only; hide on iOS
-            if (!isIosPlatform) summary.formScore?.let { score ->
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
-                    ),
-                    shape = RoundedCornerShape(16.dp)
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(12.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                imageVector = Icons.Filled.Visibility,
-                                contentDescription = stringResource(Res.string.cd_form_score),
-                                modifier = Modifier.size(18.dp),
-                                tint = MaterialTheme.colorScheme.primary
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(
-                                text = "Form Score",
-                                style = MaterialTheme.typography.bodyMedium
-                            )
-                        }
-                        Text(
-                            text = "$score / 100",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = when {
-                                score >= 80 -> MaterialTheme.colorScheme.primary  // Good form
-                                score >= 50 -> MaterialTheme.colorScheme.tertiary  // Needs work
-                                else -> MaterialTheme.colorScheme.error  // Poor form
-                            }
-                        )
-                    }
-                }
             }
 
             // Ghost Racing Delta (Phase 22) - shown when ghost comparison data is available

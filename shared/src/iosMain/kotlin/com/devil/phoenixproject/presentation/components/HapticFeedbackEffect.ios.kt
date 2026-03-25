@@ -362,12 +362,6 @@ private fun playHapticFeedback(event: HapticEvent) {
                 generator.prepare()
                 generator.impactOccurred()
             }
-            is HapticEvent.FORM_WARNING -> {
-                // Light impact for form warning
-                val generator = UIImpactFeedbackGenerator(UIImpactFeedbackStyle.UIImpactFeedbackStyleLight)
-                generator.prepare()
-                generator.impactOccurred()
-            }
             is HapticEvent.REP_COUNT_ANNOUNCED -> {
                 // No haptic for rep count announcement - audio only
             }

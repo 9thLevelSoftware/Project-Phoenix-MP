@@ -16,7 +16,7 @@ object FeatureGate {
     /**
      * All premium features available in the app.
      *
-     * Phoenix tier: Force curves, per-rep metrics, VBT, portal sync, LED biofeedback, rep quality, CV form check, RPG attributes, ghost racing
+     * Phoenix tier: Force curves, per-rep metrics, VBT, portal sync, LED biofeedback, rep quality, RPG attributes, ghost racing
      * Elite tier: All Phoenix features + asymmetry, auto-regulation, smart suggestions, replay, assessment, advanced analytics, readiness briefing
      */
     enum class Feature {
@@ -28,7 +28,6 @@ object FeatureGate {
         LED_BIOFEEDBACK,
         REP_QUALITY_SCORE,
         // New Phoenix tier features (v0.5.1)
-        CV_FORM_CHECK,
         RPG_ATTRIBUTES,
         GHOST_RACING,
 
@@ -50,7 +49,6 @@ object FeatureGate {
         Feature.PORTAL_SYNC,
         Feature.LED_BIOFEEDBACK,
         Feature.REP_QUALITY_SCORE,
-        Feature.CV_FORM_CHECK,
         Feature.RPG_ATTRIBUTES,
         Feature.GHOST_RACING
     )

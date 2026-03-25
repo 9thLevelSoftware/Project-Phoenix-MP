@@ -40,7 +40,6 @@ class FeatureGateTest {
             Feature.PORTAL_SYNC,
             Feature.LED_BIOFEEDBACK,
             Feature.REP_QUALITY_SCORE,
-            Feature.CV_FORM_CHECK,
             Feature.RPG_ATTRIBUTES,
             Feature.GHOST_RACING
         )
@@ -89,10 +88,6 @@ class FeatureGateTest {
 
     @Test
     fun `PHOENIX tier has v051 phoenix features`() {
-        assertTrue(
-            FeatureGate.isEnabled(Feature.CV_FORM_CHECK, SubscriptionTier.PHOENIX),
-            "CV_FORM_CHECK should be enabled for PHOENIX tier"
-        )
         assertTrue(
             FeatureGate.isEnabled(Feature.RPG_ATTRIBUTES, SubscriptionTier.PHOENIX),
             "RPG_ATTRIBUTES should be enabled for PHOENIX tier"

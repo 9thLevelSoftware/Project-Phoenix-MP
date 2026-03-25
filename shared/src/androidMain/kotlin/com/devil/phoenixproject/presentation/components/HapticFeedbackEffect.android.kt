@@ -73,8 +73,6 @@ actual fun HapticFeedbackEffect(
                 loadSoundByName(context, soundPool, "chirpchirp")?.let { put(HapticEvent.WORKOUT_END, it) }
                 loadSoundByName(context, soundPool, "restover")?.let { put(HapticEvent.REST_ENDING, it) }
                 loadSoundByName(context, soundPool, "discomode")?.let { put(HapticEvent.DISCO_MODE_UNLOCKED, it) }
-                // Form warning: reuse restover sound as interim warning tone (distinct from rep beep)
-                loadSoundByName(context, soundPool, "restover")?.let { put(HapticEvent.FORM_WARNING, it) }
                 // Issue #100: Warmup-to-working transition (ascending tone)
                 loadSoundByName(context, soundPool, "beepboop")?.let { put(HapticEvent.WARMUP_TO_WORKING, it) }
             } catch (e: Exception) {
@@ -245,7 +243,6 @@ private fun playWithMediaPlayer(event: HapticEvent, context: Context) {
         is HapticEvent.BADGE_EARNED -> getRandomBadgeSound()
         is HapticEvent.PERSONAL_RECORD -> getRandomPRSound()
         is HapticEvent.REP_COUNT_ANNOUNCED -> "rep_%02d".format(event.repNumber)
-        is HapticEvent.FORM_WARNING -> "restover"
         is HapticEvent.COUNTDOWN_TICK -> "beep"
         is HapticEvent.WARMUP_TO_WORKING -> "beepboop"
         is HapticEvent.ERROR -> return
@@ -382,10 +379,6 @@ private fun playHapticFeedback(
                     -1
                 )
             }
-            is HapticEvent.FORM_WARNING -> {
-                // Light click for form warning (paired with warning sound)
-                VibrationEffect.createOneShot(50, VibrationEffect.DEFAULT_AMPLITUDE)
-            }
             is HapticEvent.COUNTDOWN_TICK -> {
                 // Issue #100: Very light tick for rest countdown (last 10 seconds)
                 VibrationEffect.createOneShot(30, 80)
@@ -431,10 +424,6 @@ private fun playHapticFeedback(
             }
             is HapticEvent.BADGE_EARNED, is HapticEvent.PERSONAL_RECORD -> {
                 vibrator.vibrate(longArrayOf(0, 100, 60, 120, 60, 150), -1)
-            }
-            is HapticEvent.FORM_WARNING -> {
-                // Light click for form warning
-                vibrator.vibrate(50)
             }
             is HapticEvent.COUNTDOWN_TICK -> {
                 // Issue #100: Light tick for countdown

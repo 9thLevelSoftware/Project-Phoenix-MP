@@ -100,8 +100,6 @@ sealed class WorkoutState {
         val qualitySummary: SetQualitySummary? = null,
         // Biomechanics Set Summary (null for Free tier or if no reps processed by engine)
         val biomechanicsSummary: BiomechanicsSetSummary? = null,
-        // Form Check score (null if form check was not enabled, 0-100)
-        val formScore: Int? = null,
         // Ghost Racing summary (null if ghost racing was not active for this set)
         val ghostSetSummary: GhostSetSummary? = null
     ) : WorkoutState()
@@ -437,9 +435,6 @@ sealed class HapticEvent {
     /** Strong haptic + random PR celebration sound */
     data object PERSONAL_RECORD : HapticEvent()
 
-    /** Warning tone for form violations during CV form check */
-    data object FORM_WARNING : HapticEvent()
-
     /** Issue #100: Distinct transition sound from warmup to working sets */
     data object WARMUP_TO_WORKING : HapticEvent()
 
@@ -502,7 +497,7 @@ data class WorkoutSession(
     val totalVelocityLossPercent: Float? = null,
     val dominantSide: String? = null,
     val strengthProfile: String? = null,
-    // Form Check score (added in v0.5.1 Phase 19 CV-06)
+    // Form score (legacy DB column from migration 16, always null for new sessions)
     val formScore: Int? = null,
     // Profile scoping
     val profileId: String = "default"
@@ -515,9 +510,6 @@ data class WorkoutSession(
     val hasBiomechanicsData: Boolean
         get() = avgMcvMmS != null
 
-    /** True if this session has form check data (v0.5.1+) */
-    val hasFormCheckData: Boolean
-        get() = formScore != null
 }
 
 /**
@@ -574,8 +566,7 @@ fun WorkoutSession.toSetSummary(): WorkoutState.SetSummary? {
         warmupAvgWeightKg = warmupAvgWeightKg ?: 0f,
         workingAvgWeightKg = workingAvgWeightKg ?: 0f,
         burnoutAvgWeightKg = burnoutAvgWeightKg ?: 0f,
-        peakWeightKg = peakWeightKg ?: 0f,
-        formScore = formScore
+        peakWeightKg = peakWeightKg ?: 0f
     )
 }
 

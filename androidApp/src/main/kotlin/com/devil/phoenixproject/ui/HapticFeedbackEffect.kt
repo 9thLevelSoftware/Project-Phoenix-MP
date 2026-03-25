@@ -54,8 +54,6 @@ fun HapticFeedbackEffect(
                 put(HapticEvent.WORKOUT_END, soundPool.load(context, R.raw.chirpchirp, 1))
                 put(HapticEvent.REST_ENDING, soundPool.load(context, R.raw.restover, 1))
                 put(HapticEvent.DISCO_MODE_UNLOCKED, soundPool.load(context, R.raw.discomode, 1))
-                // Form warning: reuse restover sound as interim warning tone (distinct from rep beep)
-                put(HapticEvent.FORM_WARNING, soundPool.load(context, R.raw.restover, 1))
                 // Issue #100: Warmup-to-working transition (ascending tone)
                 put(HapticEvent.WARMUP_TO_WORKING, soundPool.load(context, R.raw.beepboop, 1))
                 // BADGE_EARNED, PERSONAL_RECORD use random sounds from lists below
@@ -197,8 +195,6 @@ private fun playHapticFeedback(event: HapticEvent, hapticFeedback: HapticFeedbac
         is HapticEvent.DISCO_MODE_UNLOCKED,
         is HapticEvent.BADGE_EARNED,
         is HapticEvent.PERSONAL_RECORD -> HapticFeedbackType.LongPress // Strong vibration
-
-        is HapticEvent.FORM_WARNING -> HapticFeedbackType.TextHandleMove // Light click for form warning
 
         is HapticEvent.COUNTDOWN_TICK -> HapticFeedbackType.TextHandleMove // Issue #100: Light tick for countdown
         is HapticEvent.WARMUP_TO_WORKING -> HapticFeedbackType.LongPress // Issue #100: Distinct transition feedback
