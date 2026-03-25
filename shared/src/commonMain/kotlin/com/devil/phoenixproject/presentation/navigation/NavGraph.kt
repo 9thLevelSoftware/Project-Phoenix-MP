@@ -28,8 +28,7 @@ import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.data.repository.TrainingCycleRepository
 import com.devil.phoenixproject.domain.model.TrainingCycle
 import com.devil.phoenixproject.presentation.screen.*
-// MVP: Removed for v0.7.0 — only used in commented-out Strength Assessment routes
-// import com.devil.phoenixproject.presentation.viewmodel.AssessmentViewModel
+import com.devil.phoenixproject.presentation.viewmodel.AssessmentViewModel
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
 import com.devil.phoenixproject.ui.theme.ThemeMode
 import org.koin.compose.koinInject
@@ -226,15 +225,14 @@ fun NavGraph(
             )
         }
 
-        // MVP: Removed for v0.7.0 — functionality moving to portal
-//        // Smart Insights screen - Elite-gated training suggestions
-//        composable(
-//            route = NavigationRoutes.SmartInsights.route,
-//            enterTransition = { fadeIn(animationSpec = tween(200)) },
-//            exitTransition = { fadeOut(animationSpec = tween(200)) }
-//        ) {
-//            SmartInsightsTab()
-//        }
+        // Smart Insights screen - training suggestions and readiness
+        composable(
+            route = NavigationRoutes.SmartInsights.route,
+            enterTransition = { fadeIn(animationSpec = tween(200)) },
+            exitTransition = { fadeOut(animationSpec = tween(200)) }
+        ) {
+            SmartInsightsTab()
+        }
 
         // Exercise Detail screen - drill-down for individual exercise
         composable(
@@ -498,81 +496,82 @@ fun NavGraph(
             }
         }
 
-        // MVP: Removed for v0.7.0 — functionality moving to portal
-//        // Strength Assessment Picker - no exercise pre-selected
-//        composable(
-//            route = NavigationRoutes.StrengthAssessmentPicker.route,
-//            enterTransition = {
-//                slideIntoContainer(
-//                    towards = AnimatedContentTransitionScope.SlideDirection.Left,
-//                    animationSpec = tween(300)
-//                )
-//            },
-//            exitTransition = {
-//                slideOutOfContainer(
-//                    towards = AnimatedContentTransitionScope.SlideDirection.Left,
-//                    animationSpec = tween(300)
-//                )
-//            },
-//            popEnterTransition = {
-//                slideIntoContainer(
-//                    towards = AnimatedContentTransitionScope.SlideDirection.Right,
-//                    animationSpec = tween(300)
-//                )
-//            },
-//            popExitTransition = {
-//                slideOutOfContainer(
-//                    towards = AnimatedContentTransitionScope.SlideDirection.Right,
-//                    animationSpec = tween(300)
-//                )
-//            }
-//        ) {
-//            val assessmentViewModel: AssessmentViewModel = koinInject()
-//            AssessmentWizardScreen(
-//                viewModel = assessmentViewModel,
-//                themeMode = themeMode,
-//                onNavigateBack = { navController.popBackStack() }
-//            )
-//        }
-//
-//        // Strength Assessment with pre-selected exercise
-//        composable(
-//            route = NavigationRoutes.StrengthAssessment.route,
-//            arguments = listOf(navArgument("exerciseId") { type = NavType.StringType }),
-//            enterTransition = {
-//                slideIntoContainer(
-//                    towards = AnimatedContentTransitionScope.SlideDirection.Left,
-//                    animationSpec = tween(300)
-//                )
-//            },
-//            exitTransition = {
-//                slideOutOfContainer(
-//                    towards = AnimatedContentTransitionScope.SlideDirection.Left,
-//                    animationSpec = tween(300)
-//                )
-//            },
-//            popEnterTransition = {
-//                slideIntoContainer(
-//                    towards = AnimatedContentTransitionScope.SlideDirection.Right,
-//                    animationSpec = tween(300)
-//                )
-//            },
-//            popExitTransition = {
-//                slideOutOfContainer(
-//                    towards = AnimatedContentTransitionScope.SlideDirection.Right,
-//                    animationSpec = tween(300)
-//                )
-//            }
-//        ) { backStackEntry ->
-//            val exerciseId = backStackEntry.arguments?.read { getStringOrNull("exerciseId") } ?: ""
-//            val assessmentViewModel: AssessmentViewModel = koinInject()
-//            AssessmentWizardScreen(
-//                viewModel = assessmentViewModel,
-//                exerciseId = exerciseId,
-//                themeMode = themeMode,
-//                onNavigateBack = { navController.popBackStack() }
-//            )
-//        }
+        // Strength Assessment Picker - no exercise pre-selected
+        composable(
+            route = NavigationRoutes.StrengthAssessmentPicker.route,
+            enterTransition = {
+                slideIntoContainer(
+                    towards = AnimatedContentTransitionScope.SlideDirection.Left,
+                    animationSpec = tween(300)
+                )
+            },
+            exitTransition = {
+                slideOutOfContainer(
+                    towards = AnimatedContentTransitionScope.SlideDirection.Left,
+                    animationSpec = tween(300)
+                )
+            },
+            popEnterTransition = {
+                slideIntoContainer(
+                    towards = AnimatedContentTransitionScope.SlideDirection.Right,
+                    animationSpec = tween(300)
+                )
+            },
+            popExitTransition = {
+                slideOutOfContainer(
+                    towards = AnimatedContentTransitionScope.SlideDirection.Right,
+                    animationSpec = tween(300)
+                )
+            }
+        ) {
+            val assessmentViewModel: AssessmentViewModel = koinInject()
+            AssessmentWizardScreen(
+                viewModel = assessmentViewModel,
+                themeMode = themeMode,
+                onNavigateBack = { navController.popBackStack() },
+                metricsFlow = viewModel.currentMetric
+            )
+        }
+
+        // Strength Assessment with pre-selected exercise
+        composable(
+            route = NavigationRoutes.StrengthAssessment.route,
+            arguments = listOf(navArgument("exerciseId") { type = NavType.StringType }),
+            enterTransition = {
+                slideIntoContainer(
+                    towards = AnimatedContentTransitionScope.SlideDirection.Left,
+                    animationSpec = tween(300)
+                )
+            },
+            exitTransition = {
+                slideOutOfContainer(
+                    towards = AnimatedContentTransitionScope.SlideDirection.Left,
+                    animationSpec = tween(300)
+                )
+            },
+            popEnterTransition = {
+                slideIntoContainer(
+                    towards = AnimatedContentTransitionScope.SlideDirection.Right,
+                    animationSpec = tween(300)
+                )
+            },
+            popExitTransition = {
+                slideOutOfContainer(
+                    towards = AnimatedContentTransitionScope.SlideDirection.Right,
+                    animationSpec = tween(300)
+                )
+            }
+        ) { backStackEntry ->
+            val exerciseId = backStackEntry.arguments?.read { getStringOrNull("exerciseId") } ?: ""
+            val assessmentViewModel: AssessmentViewModel = koinInject()
+            AssessmentWizardScreen(
+                viewModel = assessmentViewModel,
+                exerciseId = exerciseId,
+                themeMode = themeMode,
+                onNavigateBack = { navController.popBackStack() },
+                metricsFlow = viewModel.currentMetric
+            )
+        }
 
         // Link Account screen - cloud sync with Phoenix Portal
         composable(

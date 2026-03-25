@@ -33,13 +33,13 @@ sealed class NavigationRoutes(val route: String) {
         fun createRoute(cycleId: String) = "cycleReview/$cycleId"
     }
 
-    // MVP: Removed for v0.7.0 — Smart Insights moved to portal
+    // Smart Insights - training suggestions and readiness
     object SmartInsights : NavigationRoutes("smart_insights")
 
     // Cloud Sync routes
     object LinkAccount : NavigationRoutes("link_account")
 
-    // MVP: Removed for v0.7.0 — Strength Assessment deferred (needs BLE velocity integration)
+    // Strength Assessment - VBT-based 1RM estimation with BLE velocity capture
     object StrengthAssessment : NavigationRoutes("strength_assessment/{exerciseId}") {
         fun createRoute(exerciseId: String) = "strength_assessment/$exerciseId"
     }

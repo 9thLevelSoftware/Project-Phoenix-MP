@@ -11,12 +11,16 @@ import com.devil.phoenixproject.domain.assessment.AssessmentResult
 import com.devil.phoenixproject.domain.assessment.AssessmentSetResult
 import com.devil.phoenixproject.domain.assessment.LoadVelocityPoint
 import com.devil.phoenixproject.domain.model.Exercise
+import com.devil.phoenixproject.domain.model.WorkoutMetric
 import com.devil.phoenixproject.domain.model.currentTimeMillis
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
@@ -39,7 +43,11 @@ sealed class AssessmentStep {
         val suggestedWeightKg: Float = 20f,
         val recordedSets: List<AssessmentSetResult> = emptyList(),
         val latestVelocity: Float? = null,
-        val shouldStop: Boolean = false
+        val shouldStop: Boolean = false,
+        /** True while the user is performing a set and velocity is being captured from BLE. */
+        val isCapturing: Boolean = false,
+        /** Live mean velocity in m/s being accumulated during capture. Null before any data. */
+        val liveVelocityMs: Float? = null
     ) : AssessmentStep()
 
     data class Results(
@@ -82,6 +90,8 @@ class AssessmentViewModel(
     private var selectedExercise: Exercise? = null
     private var assessmentStartTimeMs: Long = 0L
     private var assessmentResult: AssessmentResult? = null
+    private var velocityCaptureJob: Job? = null
+    private val capturedVelocities = mutableListOf<Float>()
 
     init {
         loadExercises()
@@ -143,16 +153,18 @@ class AssessmentViewModel(
 
     /**
      * Auto-select an exercise by ID (used when navigating from exercise detail).
+     * Uses flow.first{} to wait for exercises to load before searching,
+     * avoiding a race where the snapshot may be empty on fast navigation.
      */
     fun selectExerciseById(exerciseId: String) {
         viewModelScope.launch {
-            // Wait for exercises to be loaded, then find the match
-            val allExercises = _exercises.value
+            // Wait for the exercises flow to emit a non-empty list, then find the target
+            val allExercises = _exercises.first { it.isNotEmpty() }
             val exercise = allExercises.find { it.id == exerciseId }
             if (exercise != null) {
                 selectExercise(exercise)
             } else {
-                Logger.w("Exercise with ID $exerciseId not found in loaded exercises")
+                Logger.w("Assessment: Exercise $exerciseId not found in loaded exercises")
             }
         }
     }
@@ -168,12 +180,16 @@ class AssessmentViewModel(
         assessmentStartTimeMs = currentTimeMillis()
         val exercise = selectedExercise ?: return
 
-        // Calculate initial suggested weight
+        // Calculate initial suggested weight.
+        // exercise.oneRepMaxKg is stored as per-cable in the DB.
+        // The wizard displays and works with TOTAL weight (what the user sees on the machine).
+        // Total weight = per-cable * 2.
         val existingOneRm = exercise.oneRepMaxKg
         val startingLoad = if (existingOneRm != null && existingOneRm > 0f) {
-            existingOneRm * 0.4f
+            // Start at ~40% of total 1RM
+            (existingOneRm * 2f) * 0.4f
         } else {
-            20f
+            20f // Default starting weight (total)
         }
 
         // Use the engine to get a properly snapped suggestion
@@ -194,10 +210,10 @@ class AssessmentViewModel(
     /**
      * Record a completed set during the progressive loading phase.
      *
-     * Called AFTER the user physically performs reps on the machine and
-     * enters the actual weight used and the mean velocity observed.
+     * Called after the user physically performs reps on the machine and
+     * velocity is captured from the BLE metrics stream.
      *
-     * @param loadKg Actual weight used for the set
+     * @param loadKg Actual TOTAL weight used for the set (both cables combined, what user sees on machine)
      * @param reps Number of reps performed (typically 3)
      * @param meanVelocityMs Mean concentric velocity in m/s
      * @param peakVelocityMs Peak concentric velocity in m/s
@@ -289,6 +305,8 @@ class AssessmentViewModel(
                 val durationMs = currentTimeMillis() - assessmentStartTimeMs
                 val avgWeight = current.loadVelocityPoints.map { it.loadKg }.average().toFloat()
 
+                // Convert from total weight (used throughout the wizard UI) to per-cable
+                // for DB storage. The DB stores per-cable values per project weight convention.
                 assessmentRepository.saveAssessmentSession(
                     exerciseId = exercise.id ?: exercise.name,
                     exerciseName = exercise.displayName,
@@ -297,7 +315,7 @@ class AssessmentViewModel(
                     userOverrideKg = if (overrideKg != null && overrideKg > 0f) overrideKg else null,
                     totalReps = totalReps,
                     durationMs = durationMs,
-                    weightPerCableKg = avgWeight / 2f // Per cable = total / 2
+                    weightPerCableKg = avgWeight / 2f
                 )
 
                 _currentStep.value = AssessmentStep.Complete(
@@ -315,9 +333,83 @@ class AssessmentViewModel(
     }
 
     /**
+     * Begin capturing velocity data from BLE metrics during an assessment set.
+     * The user physically performs reps on the machine while we observe the metrics flow.
+     *
+     * @param metricsFlow The live WorkoutMetric StateFlow (from MainViewModel.currentMetric)
+     * @param maxDurationMs Maximum capture duration before auto-stopping (default 60s)
+     */
+    fun startVelocityCapture(metricsFlow: StateFlow<WorkoutMetric?>, maxDurationMs: Long = 60_000) {
+        val current = _currentStep.value
+        if (current !is AssessmentStep.ProgressiveLoading) return
+        if (current.isCapturing) return // Already capturing
+
+        capturedVelocities.clear()
+        _currentStep.value = current.copy(isCapturing = true, liveVelocityMs = null)
+
+        velocityCaptureJob = viewModelScope.launch {
+            // Velocity noise floor: ignore values below 50 mm/s (0.05 m/s) to filter resting noise
+            val noiseFloorMmS = 50.0
+
+            withTimeoutOrNull(maxDurationMs) {
+                metricsFlow.collect { metric ->
+                    if (metric != null) {
+                        // Average velocity across both cables, in mm/s
+                        val avgVelocityMmS = (kotlin.math.abs(metric.velocityA) + kotlin.math.abs(metric.velocityB)) / 2.0
+                        if (avgVelocityMmS > noiseFloorMmS) {
+                            val velocityMs = (avgVelocityMmS / 1000.0).toFloat()
+                            capturedVelocities.add(velocityMs)
+
+                            // Update live display with running mean
+                            val runningMean = capturedVelocities.average().toFloat()
+                            val step = _currentStep.value
+                            if (step is AssessmentStep.ProgressiveLoading && step.isCapturing) {
+                                _currentStep.value = step.copy(liveVelocityMs = runningMean)
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Auto-stop after timeout
+            stopVelocityCapture()
+        }
+    }
+
+    /**
+     * Stop capturing velocity and record the set with the captured mean velocity.
+     * Called when the user presses "End Set" or after the capture timeout.
+     */
+    fun stopVelocityCapture() {
+        velocityCaptureJob?.cancel()
+        velocityCaptureJob = null
+
+        val current = _currentStep.value
+        if (current !is AssessmentStep.ProgressiveLoading) return
+
+        if (capturedVelocities.isNotEmpty()) {
+            val meanVelocity = capturedVelocities.average().toFloat()
+            val peakVelocity = capturedVelocities.max()
+            val weight = current.suggestedWeightKg
+
+            // Record the set with captured BLE velocity data
+            // Weight is total (both cables) as displayed in the UI
+            recordSet(weight, 3, meanVelocity, peakVelocity)
+        } else {
+            // No velocity data captured -- return to non-capturing state
+            _currentStep.value = current.copy(isCapturing = false, liveVelocityMs = null)
+            Logger.w("Assessment: No velocity data captured during set")
+        }
+        capturedVelocities.clear()
+    }
+
+    /**
      * Reset the wizard back to exercise selection.
      */
     fun reset() {
+        velocityCaptureJob?.cancel()
+        velocityCaptureJob = null
+        capturedVelocities.clear()
         selectedExercise = null
         assessmentResult = null
         assessmentStartTimeMs = 0L

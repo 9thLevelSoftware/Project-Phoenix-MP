@@ -22,6 +22,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.devil.phoenixproject.domain.assessment.LoadVelocityPoint
+import com.devil.phoenixproject.domain.model.WorkoutMetric
 import com.devil.phoenixproject.presentation.components.VideoPlayer
 import com.devil.phoenixproject.presentation.viewmodel.AssessmentStep
 import com.devil.phoenixproject.presentation.viewmodel.AssessmentViewModel
@@ -30,6 +31,7 @@ import com.devil.phoenixproject.ui.theme.Spacing
 import com.devil.phoenixproject.util.KmpUtils
 import com.devil.phoenixproject.ui.theme.ThemeMode
 import com.devil.phoenixproject.ui.theme.screenBackgroundBrush
+import kotlinx.coroutines.flow.StateFlow
 import org.jetbrains.compose.resources.stringResource
 import vitruvianprojectphoenix.shared.generated.resources.Res
 import vitruvianprojectphoenix.shared.generated.resources.*
@@ -46,13 +48,18 @@ import vitruvianprojectphoenix.shared.generated.resources.*
  * @param themeMode Current theme mode
  * @param onNavigateBack Callback to navigate back when assessment is complete or cancelled
  */
+/**
+ * @param metricsFlow Live BLE metrics flow for velocity capture during assessment sets.
+ *        When null, the wizard falls back to manual velocity entry (e.g., when not connected).
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AssessmentWizardScreen(
     viewModel: AssessmentViewModel,
     exerciseId: String? = null,
     themeMode: ThemeMode,
-    onNavigateBack: () -> Unit
+    onNavigateBack: () -> Unit,
+    metricsFlow: StateFlow<WorkoutMetric?>? = null
 ) {
     val currentStep by viewModel.currentStep.collectAsState()
     val exercises by viewModel.exercises.collectAsState()
@@ -86,6 +93,9 @@ fun AssessmentWizardScreen(
             is AssessmentStep.ProgressiveLoading -> ProgressiveLoadingContent(
                 step = step,
                 onRecordSet = viewModel::recordSet,
+                onStartCapture = { metricsFlow?.let { viewModel.startVelocityCapture(it) } },
+                onStopCapture = { viewModel.stopVelocityCapture() },
+                hasBleMetrics = metricsFlow != null,
                 onCancel = viewModel::reset
             )
             is AssessmentStep.Results -> ResultsContent(
@@ -325,9 +335,13 @@ private fun InstructionContent(
 private fun ProgressiveLoadingContent(
     step: AssessmentStep.ProgressiveLoading,
     onRecordSet: (Float, Int, Float, Float) -> Unit,
+    onStartCapture: () -> Unit,
+    onStopCapture: () -> Unit,
+    hasBleMetrics: Boolean,
     onCancel: () -> Unit
 ) {
     var weightInput by remember(step.currentSetNumber) { mutableStateOf(step.suggestedWeightKg.toString()) }
+    // Manual fallback fields only used when BLE metrics are unavailable
     var velocityInput by remember(step.currentSetNumber) { mutableStateOf("") }
 
     Column(
@@ -346,7 +360,7 @@ private fun ProgressiveLoadingContent(
 
         Spacer(modifier = Modifier.height(Spacing.medium))
 
-        // Suggested weight card
+        // Suggested weight card (total weight = both cables combined)
         Card(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(16.dp),
@@ -361,7 +375,7 @@ private fun ProgressiveLoadingContent(
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Text(
-                    text = "Suggested Weight",
+                    text = "Suggested Weight (Total)",
                     style = MaterialTheme.typography.labelLarge,
                     color = MaterialTheme.colorScheme.onPrimaryContainer
                 )
@@ -422,7 +436,7 @@ private fun ProgressiveLoadingContent(
                             modifier = Modifier.weight(1f)
                         )
                         Text(
-                            text = "${set.meanVelocityMs} m/s",
+                            text = "${KmpUtils.formatFloat(set.meanVelocityMs, 2)} m/s",
                             style = MaterialTheme.typography.bodyMedium,
                             fontWeight = FontWeight.Bold,
                             color = velocityColor
@@ -456,58 +470,23 @@ private fun ProgressiveLoadingContent(
 
         // Input section (when not stopped)
         if (!step.shouldStop) {
-            Text(
-                text = "Log This Set",
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onBackground
-            )
-            Spacer(modifier = Modifier.height(Spacing.small))
-
-            OutlinedTextField(
-                value = weightInput,
-                onValueChange = { weightInput = it },
-                label = { Text(stringResource(Res.string.actual_weight_label)) },
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true,
-                shape = RoundedCornerShape(12.dp)
-            )
-
-            Spacer(modifier = Modifier.height(Spacing.small))
-
-            OutlinedTextField(
-                value = velocityInput,
-                onValueChange = { velocityInput = it },
-                label = { Text(stringResource(Res.string.mean_velocity_label)) },
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true,
-                shape = RoundedCornerShape(12.dp)
-            )
-
-            Spacer(modifier = Modifier.height(Spacing.medium))
-
-            val weight = weightInput.toFloatOrNull()
-            val velocity = velocityInput.toFloatOrNull()
-            val canLog = weight != null && weight > 0f && velocity != null && velocity > 0f
-
-            Button(
-                onClick = {
-                    if (weight != null && velocity != null) {
-                        onRecordSet(weight, 3, velocity, velocity)
-                    }
-                },
-                enabled = canLog,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(56.dp),
-                shape = RoundedCornerShape(16.dp)
-            ) {
-                Text(
-                    "Log Set",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold
+            if (hasBleMetrics) {
+                // BLE velocity capture mode: user performs a set while we capture velocity
+                BleVelocityCaptureSection(
+                    isCapturing = step.isCapturing,
+                    liveVelocityMs = step.liveVelocityMs,
+                    suggestedWeight = step.suggestedWeightKg,
+                    onStartCapture = onStartCapture,
+                    onStopCapture = onStopCapture
+                )
+            } else {
+                // Manual fallback mode: user types weight and velocity
+                ManualInputSection(
+                    weightInput = weightInput,
+                    velocityInput = velocityInput,
+                    onWeightChange = { weightInput = it },
+                    onVelocityChange = { velocityInput = it },
+                    onRecordSet = onRecordSet
                 )
             }
         }
@@ -516,10 +495,189 @@ private fun ProgressiveLoadingContent(
 
         TextButton(
             onClick = onCancel,
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier.fillMaxWidth(),
+            enabled = !step.isCapturing
         ) {
             Text(stringResource(Res.string.cancel_assessment))
         }
+    }
+}
+
+/**
+ * BLE velocity capture UI: shows instructions, live velocity, and start/stop buttons.
+ */
+@Composable
+private fun BleVelocityCaptureSection(
+    isCapturing: Boolean,
+    liveVelocityMs: Float?,
+    suggestedWeight: Float,
+    onStartCapture: () -> Unit,
+    onStopCapture: () -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
+        )
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(Spacing.medium),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            if (!isCapturing) {
+                // Pre-set instructions
+                Text(
+                    text = "Set the machine to ${KmpUtils.formatFloat(suggestedWeight, 1)} kg",
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Spacer(modifier = Modifier.height(Spacing.extraSmall))
+                Text(
+                    text = "Perform 3 reps with maximum concentric intent.\nTap Start Set, then begin lifting.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(modifier = Modifier.height(Spacing.medium))
+
+                Button(
+                    onClick = onStartCapture,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(56.dp),
+                    shape = RoundedCornerShape(16.dp)
+                ) {
+                    Text(
+                        "Start Set",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            } else {
+                // Capturing: show live velocity
+                Text(
+                    text = "Capturing velocity...",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.primary,
+                    fontWeight = FontWeight.Bold
+                )
+
+                Spacer(modifier = Modifier.height(Spacing.small))
+
+                // Live velocity display
+                val displayVelocity = liveVelocityMs?.let { KmpUtils.formatFloat(it, 2) } ?: "--"
+                Text(
+                    text = "$displayVelocity m/s",
+                    style = MaterialTheme.typography.displaySmall,
+                    fontWeight = FontWeight.Black,
+                    color = MaterialTheme.colorScheme.primary
+                )
+
+                Text(
+                    text = "Mean concentric velocity",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                Spacer(modifier = Modifier.height(Spacing.small))
+
+                LinearProgressIndicator(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(4.dp),
+                    color = MaterialTheme.colorScheme.primary
+                )
+
+                Spacer(modifier = Modifier.height(Spacing.medium))
+
+                Button(
+                    onClick = onStopCapture,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(56.dp),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.tertiary
+                    )
+                ) {
+                    Text(
+                        "End Set",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Manual velocity entry fallback when BLE is not connected.
+ */
+@Composable
+private fun ManualInputSection(
+    weightInput: String,
+    velocityInput: String,
+    onWeightChange: (String) -> Unit,
+    onVelocityChange: (String) -> Unit,
+    onRecordSet: (Float, Int, Float, Float) -> Unit
+) {
+    Text(
+        text = "Log This Set",
+        style = MaterialTheme.typography.titleSmall,
+        fontWeight = FontWeight.Bold,
+        color = MaterialTheme.colorScheme.onBackground
+    )
+    Spacer(modifier = Modifier.height(Spacing.small))
+
+    OutlinedTextField(
+        value = weightInput,
+        onValueChange = onWeightChange,
+        label = { Text(stringResource(Res.string.actual_weight_label)) },
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+        modifier = Modifier.fillMaxWidth(),
+        singleLine = true,
+        shape = RoundedCornerShape(12.dp)
+    )
+
+    Spacer(modifier = Modifier.height(Spacing.small))
+
+    OutlinedTextField(
+        value = velocityInput,
+        onValueChange = onVelocityChange,
+        label = { Text(stringResource(Res.string.mean_velocity_label)) },
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+        modifier = Modifier.fillMaxWidth(),
+        singleLine = true,
+        shape = RoundedCornerShape(12.dp)
+    )
+
+    Spacer(modifier = Modifier.height(Spacing.medium))
+
+    val weight = weightInput.toFloatOrNull()
+    val velocity = velocityInput.toFloatOrNull()
+    val canLog = weight != null && weight > 0f && velocity != null && velocity > 0f
+
+    Button(
+        onClick = {
+            if (weight != null && velocity != null) {
+                onRecordSet(weight, 3, velocity, velocity)
+            }
+        },
+        enabled = canLog,
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(56.dp),
+        shape = RoundedCornerShape(16.dp)
+    ) {
+        Text(
+            "Log Set",
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Bold
+        )
     }
 }
 

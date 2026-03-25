@@ -45,10 +45,10 @@ class AssessmentEngine {
         // Velocity should decrease with increasing load (negative slope)
         if (slope >= 0.0) return null
 
-        // Extrapolate load at 1RM velocity
-        // velocity = slope * load + intercept
-        // load = (velocity - intercept) / slope
-        val estimatedLoad = (config.oneRmVelocityMs.toDouble() - intercept) / slope
+        // Extrapolate load at 1RM velocity: load = (velocity - intercept) / slope
+        // Clamp to at least 1 kg -- 1RM cannot be negative or zero
+        val estimatedLoad = ((config.oneRmVelocityMs.toDouble() - intercept) / slope)
+            .coerceAtLeast(1.0)
 
         // Compute R-squared
         val meanY = sumY / n

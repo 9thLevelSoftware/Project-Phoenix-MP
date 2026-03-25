@@ -19,7 +19,9 @@ import com.devil.phoenixproject.data.repository.SmartSuggestionsRepository
 import com.devil.phoenixproject.data.repository.UserProfileRepository
 import com.devil.phoenixproject.domain.model.*
 import com.devil.phoenixproject.domain.model.currentTimeMillis
+import com.devil.phoenixproject.domain.premium.ReadinessEngine
 import com.devil.phoenixproject.domain.premium.SmartSuggestionsEngine
+import com.devil.phoenixproject.presentation.components.ReadinessBriefingCard
 import com.devil.phoenixproject.ui.theme.AccessibilityTheme
 import com.devil.phoenixproject.ui.theme.Spacing
 import kotlinx.coroutines.Dispatchers
@@ -31,15 +33,15 @@ import vitruvianprojectphoenix.shared.generated.resources.Res
 import vitruvianprojectphoenix.shared.generated.resources.*
 
 /**
- * Smart Insights Tab - Elite-only training insights powered by SmartSuggestionsEngine.
+ * Smart Insights Tab - training insights powered by SmartSuggestionsEngine and ReadinessEngine.
  *
- * Displays 5 insight sections:
+ * Displays 6 insight sections:
  * 1. Weekly Volume per muscle group (SUGG-01)
  * 2. Push/Pull/Legs Balance Analysis (SUGG-02)
  * 3. Neglected Exercises (SUGG-03)
  * 4. Plateau Detection (SUGG-04)
  * 5. Time-of-Day Optimal Training Window (SUGG-05)
- *
+ * 6. Training Readiness / ACWR (ACWR-01)
  */
 @Composable
 fun SmartInsightsTab(
@@ -147,6 +149,14 @@ private fun SmartInsightsContent(
         // Section E: Optimal Training Time (SUGG-05)
         item {
             TimeOfDayCard(timeOfDay)
+        }
+
+        // Section F: Training Readiness / ACWR (ACWR-01)
+        item {
+            val readiness = remember(sessionSummaries) {
+                ReadinessEngine.computeReadiness(sessionSummaries, nowMs)
+            }
+            ReadinessBriefingCard(readinessResult = readiness)
         }
     }
 }
