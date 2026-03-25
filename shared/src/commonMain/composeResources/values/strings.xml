@@ -256,6 +256,8 @@
     <string name="rest_skip">Skip Rest</string>
     <string name="rest_end_workout">End Workout</string>
     <string name="rest_continue">Continue</string>
+    <string name="rest_complete_announcement">Rest complete</string>
+    <string name="rest_seconds_remaining">%1$d seconds remaining</string>
 
     <!-- ==================== Weight Adjustment ==================== -->
     <string name="set_weight">Set Weight</string>
@@ -296,9 +298,6 @@
     <string name="no_plateaus">No plateaus detected. Keep progressing!</string>
 
     <!-- ==================== Badges ==================== -->
-
-    <!-- ==================== Form Check ==================== -->
-    <string name="form_check">Form Check</string>
 
     <!-- ==================== Daily Routines ==================== -->
     <string name="workout_in_progress">Workout in Progress</string>
@@ -561,7 +560,6 @@
     <string name="cd_earned">Earned</string>
     <string name="cd_streak">Streak</string>
     <string name="cd_personal_record">Personal Record</string>
-    <string name="cd_form_score">Form Score</string>
     <string name="cd_ghost_racing">Ghost Racing</string>
     <string name="cd_balance">Balance</string>
     <string name="cd_velocity">Velocity</string>

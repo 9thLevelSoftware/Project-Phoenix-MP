@@ -249,6 +249,8 @@
     <string name="rest_skip">Rust overslaan</string>
     <string name="rest_end_workout">Training beëindigen</string>
     <string name="rest_continue">Doorgaan</string>
+    <string name="rest_complete_announcement">Rust voltooid</string>
+    <string name="rest_seconds_remaining">Nog %1$d seconden</string>
     <string name="set_weight">Gewicht instellen</string>
 
     <!-- Connection Logs -->
@@ -286,7 +288,6 @@
     <string name="great_variety">Geweldige variatie! Alle oefeningen recent uitgevoerd.</string>
     <string name="no_plateaus">Geen plateaus gedetecteerd. Blijf vooruitgaan!</string>
 
-    <string name="form_check">Vormcontrole</string>
     <string name="workout_in_progress">Training bezig</string>
     <string name="stop_before_editing">Stop eerst de huidige training voordat je routines bewerkt.</string>
 
@@ -505,7 +506,6 @@
     <string name="cd_earned">Verdiend</string>
     <string name="cd_streak">Reeks</string>
     <string name="cd_personal_record">Persoonlijk record</string>
-    <string name="cd_form_score">Vormscore</string>
     <string name="cd_ghost_racing">Ghost Racing</string>
     <string name="cd_balance">Balans</string>
     <string name="cd_velocity">Snelheid</string>

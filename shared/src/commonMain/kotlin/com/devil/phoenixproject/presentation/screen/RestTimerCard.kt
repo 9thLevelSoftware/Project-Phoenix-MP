@@ -17,6 +17,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -84,6 +88,33 @@ fun RestTimerCard(
     // Determine if this is Echo mode
     val isEchoMode = programMode == ProgramMode.Echo
 
+    // Accessibility: determine if current second is an announcement interval.
+    // Announce every 10s, at 5s remaining, and at 0 to avoid spamming TalkBack.
+    val isAnnouncementSecond = remember(restSecondsRemaining) {
+        restSecondsRemaining == 0 ||
+            restSecondsRemaining == 5 ||
+            (restSecondsRemaining > 0 && restSecondsRemaining % 10 == 0)
+    }
+
+    // Accessibility: liveRegion announcements are driven by changes to this state.
+    // We only update it at announcement intervals so TalkBack doesn't fire every second.
+    val restCompleteText = stringResource(Res.string.rest_complete_announcement)
+    val secondsRemainingText = stringResource(Res.string.rest_seconds_remaining, restSecondsRemaining)
+    val pausedText = stringResource(Res.string.rest_paused)
+    var lastAnnouncedText by remember { mutableStateOf("") }
+
+    LaunchedEffect(restSecondsRemaining, isRestPaused) {
+        val newText = when {
+            isRestPaused -> pausedText
+            restSecondsRemaining == 0 -> restCompleteText
+            isAnnouncementSecond -> secondsRemainingText
+            else -> return@LaunchedEffect // Don't update — no announcement this tick
+        }
+        if (newText != lastAnnouncedText) {
+            lastAnnouncedText = newText
+        }
+    }
+
     // Background gradient - respects theme mode
     Box(
         modifier = modifier
@@ -110,6 +141,18 @@ fun RestTimerCard(
                 repeatMode = RepeatMode.Reverse
             ),
             label = "pulse"
+        )
+
+        // Accessibility: hidden node that announces countdown at key intervals.
+        // Uses liveRegion(Polite) so TalkBack/VoiceOver reads changes without
+        // interrupting other speech. Only fires when lastAnnouncedText changes.
+        Box(
+            modifier = Modifier
+                .size(0.dp)
+                .semantics {
+                    liveRegion = LiveRegionMode.Polite
+                    contentDescription = lastAnnouncedText
+                }
         )
 
         Column(

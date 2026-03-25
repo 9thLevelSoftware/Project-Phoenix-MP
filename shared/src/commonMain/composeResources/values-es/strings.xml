@@ -248,6 +248,8 @@
     <string name="rest_skip">Saltar descanso</string>
     <string name="rest_end_workout">Finalizar entrenamiento</string>
     <string name="rest_continue">Continuar</string>
+    <string name="rest_complete_announcement">Descanso completado</string>
+    <string name="rest_seconds_remaining">%1$d segundos restantes</string>
     <string name="set_weight">Establecer peso</string>
 
     <!-- Connection Logs -->
@@ -285,7 +287,6 @@
     <string name="great_variety">¡Gran variedad! Todos los ejercicios realizados recientemente.</string>
     <string name="no_plateaus">No se detectaron mesetas. ¡Sigue progresando!</string>
 
-    <string name="form_check">Control de forma</string>
     <string name="workout_in_progress">Entrenamiento en progreso</string>
     <string name="stop_before_editing">Por favor detén el entrenamiento actual antes de editar rutinas.</string>
 
@@ -524,7 +525,6 @@
     <string name="cd_earned">Earned</string>
     <string name="cd_streak">Streak</string>
     <string name="cd_personal_record">Personal Record</string>
-    <string name="cd_form_score">Form Score</string>
     <string name="cd_ghost_racing">Ghost Racing</string>
     <string name="cd_balance">Balance</string>
     <string name="cd_velocity">Velocity</string>

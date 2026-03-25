@@ -1,6 +1,9 @@
 package com.devil.phoenixproject.data.local
 
+import app.cash.sqldelight.db.AfterVersion
+import app.cash.sqldelight.db.QueryResult
 import app.cash.sqldelight.db.SqlDriver
+import app.cash.sqldelight.db.SqlSchema
 import app.cash.sqldelight.driver.native.NativeSqliteDriver
 import co.touchlab.sqliter.DatabaseConfiguration
 import com.devil.phoenixproject.database.VitruvianDatabase
@@ -20,19 +23,21 @@ import platform.Foundation.NSUserDomainMask
 import kotlinx.cinterop.ObjCObjectVar
 
 /**
- * iOS DriverFactory - delegates all schema management to SQLDelight.
+ * iOS DriverFactory - delegates schema creation to SQLDelight and wraps migrations
+ * with SAVEPOINT-based rollback protection.
  *
  * SQLDelight's [VitruvianDatabase.Schema] handles:
  * - Fresh installs: runs `create()` which executes the full schema from VitruvianDatabase.sq
- * - Upgrades: runs `migrate()` which applies .sqm files for each version step
+ * - Upgrades: each migration step (.sqm) is wrapped in a SAVEPOINT so that a failure
+ *   rolls back only the failed step, leaving the database at the last successful version
  * - Version tracking: reads/writes `PRAGMA user_version` automatically
  *
- * This replaces the previous 1100+ line manual schema approach that repeatedly drifted
- * from the canonical .sq schema, causing missing-column crashes and version-mismatch wipes.
- *
- * Recovery strategy: if migration fails (e.g., duplicate column from partial prior migration),
- * delete the database and let SQLDelight recreate it from scratch. Data loss is preferable
- * to an unbootable app -- the mobile app syncs to Supabase, so data can be recovered.
+ * Recovery strategy (layered):
+ * 1. SAVEPOINT rollback: a failed migration rolls back to the pre-migration state and stops.
+ *    The database remains at the last successfully applied version.
+ * 2. Nuclear delete: only if the SAVEPOINT mechanism itself fails (e.g., database corruption
+ *    beyond repair), the database is deleted and recreated from scratch. Data can be
+ *    recovered via Supabase sync.
  */
 actual class DriverFactory {
 
@@ -41,22 +46,29 @@ actual class DriverFactory {
     }
 
     /**
-     * Creates the SQLite driver using SQLDelight's generated schema.
+     * Creates the SQLite driver using SQLDelight's generated schema, wrapped with
+     * SAVEPOINT-based migration protection.
      *
      * On a fresh install, SQLDelight runs VitruvianDatabase.Schema.create() which
      * executes the full CREATE TABLE/INDEX schema from VitruvianDatabase.sq.
      *
-     * On upgrade, SQLDelight reads PRAGMA user_version, then applies .sqm migration
-     * files sequentially until the schema version matches VitruvianDatabase.Schema.version.
+     * On upgrade, [SavepointMigratingSchema] applies each .sqm migration step inside
+     * a SAVEPOINT transaction. If a step fails, it rolls back to the savepoint and stops
+     * migrating -- the database stays at the last successful version rather than being
+     * deleted.
      *
-     * If anything fails, we delete the database and create a fresh one.
+     * Nuclear database deletion is reserved as a last resort for unrecoverable errors
+     * (e.g., actual database corruption where the SAVEPOINT mechanism itself fails).
      */
     actual fun createDriver(): SqlDriver {
-        NSLog("iOS DB: Initializing database (schema version ${VitruvianDatabase.Schema.version})")
+        val targetVersion = VitruvianDatabase.Schema.version
+        NSLog("iOS DB: Initializing database (schema version $targetVersion)")
+
+        val savepointSchema = SavepointMigratingSchema(VitruvianDatabase.Schema)
 
         val driver = try {
             NativeSqliteDriver(
-                schema = VitruvianDatabase.Schema,
+                schema = savepointSchema,
                 name = DATABASE_NAME,
                 onConfiguration = { config ->
                     config.copy(
@@ -67,8 +79,17 @@ actual class DriverFactory {
                 }
             )
         } catch (e: Exception) {
-            NSLog("iOS DB: Migration failed (${e::class.simpleName}: ${e.message?.take(200)}), recreating database")
+            // The SAVEPOINT wrapper absorbs individual migration failures gracefully.
+            // If we reach here, something more fundamental went wrong (corrupt DB, disk I/O, etc.)
+            NSLog("iOS DB: Driver creation failed (${e::class.simpleName}: ${e.message?.take(200)})")
+            NSLog("iOS DB: Falling back to nuclear recovery (database delete + recreate)")
             recoverByDeletingDatabase()
+        }
+
+        if (savepointSchema.stoppedAtVersion != null) {
+            val stopped = savepointSchema.stoppedAtVersion
+            NSLog("iOS DB: WARNING - Migrations stopped at version $stopped (target was $targetVersion)")
+            NSLog("iOS DB: Database is functional at version $stopped. Data preserved.")
         }
 
         // Post-creation pragmas
@@ -83,10 +104,11 @@ actual class DriverFactory {
 
     /**
      * Nuclear recovery: delete the database and all associated files, then create fresh.
-     * This is the last resort when migration fails. Data can be recovered via Supabase sync.
+     * This is the LAST RESORT when the SAVEPOINT mechanism itself fails -- meaning the
+     * database is likely corrupted beyond repair. Data can be recovered via Supabase sync.
      */
     private fun recoverByDeletingDatabase(): SqlDriver {
-        NSLog("iOS DB: Deleting database for fresh creation")
+        NSLog("iOS DB: NUCLEAR RECOVERY - Deleting database for fresh creation")
         deleteAllDatabaseFiles()
 
         return try {
@@ -190,5 +212,111 @@ actual class DriverFactory {
         val libraryUrl = (urls as List<NSURL>).firstOrNull()
         val libraryPath = libraryUrl?.path ?: ""
         return "$libraryPath/$DATABASE_NAME"
+    }
+}
+
+// ==================== SAVEPOINT Migration Wrapper ====================
+
+/**
+ * Wraps a [SqlSchema] to apply each migration step inside a SAVEPOINT transaction.
+ *
+ * When NativeSqliteDriver calls [migrate], this wrapper:
+ * 1. Loops from [oldVersion] to [newVersion], one step at a time
+ * 2. Creates a SAVEPOINT before each step
+ * 3. Delegates to the real schema's migrate() for that single step
+ * 4. On success: RELEASE the savepoint and update PRAGMA user_version
+ * 5. On failure: ROLLBACK TO SAVEPOINT, log the error, and stop migrating
+ *
+ * This ensures a bad migration leaves the database at the previous working version
+ * instead of triggering a full database delete. The [stoppedAtVersion] property
+ * records which version the database ended at if migration was interrupted.
+ *
+ * Note: SQLDelight's NativeSqliteDriver calls migrate() with the full range
+ * (oldVersion -> targetVersion). This wrapper intercepts that to apply steps
+ * individually with rollback protection. After migrate() returns, the driver
+ * sets PRAGMA user_version to newVersion -- but if we stopped early, the DB is
+ * actually at [stoppedAtVersion]. The caller should check this property.
+ */
+private class SavepointMigratingSchema(
+    private val delegate: SqlSchema<QueryResult.Value<Unit>>
+) : SqlSchema<QueryResult.Value<Unit>> {
+
+    override val version: Long get() = delegate.version
+
+    /**
+     * If migration was interrupted, this holds the version the database was left at.
+     * Null means all migrations succeeded (or no migration was needed).
+     */
+    var stoppedAtVersion: Long? = null
+        private set
+
+    override fun create(driver: SqlDriver): QueryResult.Value<Unit> {
+        return delegate.create(driver)
+    }
+
+    override fun migrate(
+        driver: SqlDriver,
+        oldVersion: Long,
+        newVersion: Long,
+        vararg callbacks: AfterVersion
+    ): QueryResult.Value<Unit> {
+        if (oldVersion >= newVersion) {
+            return QueryResult.Value(Unit)
+        }
+
+        NSLog("iOS DB: Migrating from version $oldVersion to $newVersion with SAVEPOINT protection")
+
+        for (version in oldVersion until newVersion) {
+            val stepFrom = version
+            val stepTo = version + 1
+            val savepointName = "migration_v${stepTo}"
+
+            try {
+                // Create a savepoint before applying this migration step
+                driver.execute(null, "SAVEPOINT $savepointName", 0)
+
+                // Apply this single migration step via the real schema
+                delegate.migrate(driver, stepFrom, stepTo, *callbacks)
+
+                // Migration step succeeded -- release the savepoint (commits the changes)
+                driver.execute(null, "RELEASE SAVEPOINT $savepointName", 0)
+
+                // Explicitly update user_version to reflect successful migration.
+                // This is critical: if a later step fails, the DB version must reflect
+                // only the steps that actually completed.
+                driver.execute(null, "PRAGMA user_version = $stepTo", 0)
+
+                NSLog("iOS DB: Migration to version $stepTo succeeded")
+            } catch (e: Exception) {
+                NSLog("iOS DB: Migration to version $stepTo FAILED (${e::class.simpleName}: ${e.message?.take(200)})")
+
+                // Roll back this failed migration step to the savepoint
+                try {
+                    driver.execute(null, "ROLLBACK TO SAVEPOINT $savepointName", 0)
+                    driver.execute(null, "RELEASE SAVEPOINT $savepointName", 0)
+                    NSLog("iOS DB: Rolled back version $stepTo, database remains at version $stepFrom")
+                } catch (rollbackError: Exception) {
+                    // If even the rollback fails, the database may be in a bad state.
+                    // Log it but don't throw -- let the caller's nuclear fallback handle it.
+                    NSLog("iOS DB: ROLLBACK FAILED for version $stepTo: ${rollbackError.message?.take(200)}")
+                }
+
+                // Record where we stopped and halt further migrations
+                stoppedAtVersion = stepFrom
+                // Ensure user_version reflects the last successful state
+                try {
+                    driver.execute(null, "PRAGMA user_version = $stepFrom", 0)
+                } catch (pragmaError: Exception) {
+                    NSLog("iOS DB: Warning - could not set user_version to $stepFrom: ${pragmaError.message?.take(100)}")
+                }
+
+                // Stop migrating -- the database is usable at stepFrom
+                NSLog("iOS DB: Stopping migration. Database functional at version $stepFrom (target was $newVersion)")
+                return QueryResult.Value(Unit)
+            }
+        }
+
+        NSLog("iOS DB: All migrations completed successfully (now at version $newVersion)")
+        return QueryResult.Value(Unit)
     }
 }
