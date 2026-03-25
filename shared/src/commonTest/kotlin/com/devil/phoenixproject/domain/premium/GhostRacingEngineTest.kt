@@ -179,6 +179,31 @@ class GhostRacingEngineTest {
     }
 
     @Test
+    fun computeSetDeltaReturnsTiedWhenComparisonsEmpty() {
+        // Edge case: empty list should return TIED (not BEYOND)
+        val summary = GhostRacingEngine.computeSetDelta(emptyList())
+        assertEquals(GhostVerdict.TIED, summary.overallVerdict)
+        assertEquals(0, summary.repsCompared)
+        assertEquals(0, summary.repsBeyondGhost)
+    }
+
+    @Test
+    fun computeSetDeltaReturnsBeyondWhenAllRepsExceedGhost() {
+        // C7: When ALL reps are BEYOND (no comparable reps), overall verdict should be BEYOND, not TIED
+        val comparisons = listOf(
+            GhostRepComparison(repNumber = 1, currentMcvMmS = 500f, ghostMcvMmS = 0f, deltaMcvMmS = 0f, verdict = GhostVerdict.BEYOND),
+            GhostRepComparison(repNumber = 2, currentMcvMmS = 480f, ghostMcvMmS = 0f, deltaMcvMmS = 0f, verdict = GhostVerdict.BEYOND),
+            GhostRepComparison(repNumber = 3, currentMcvMmS = 460f, ghostMcvMmS = 0f, deltaMcvMmS = 0f, verdict = GhostVerdict.BEYOND)
+        )
+        val summary = GhostRacingEngine.computeSetDelta(comparisons)
+        assertEquals(GhostVerdict.BEYOND, summary.overallVerdict)
+        assertEquals(0, summary.repsCompared)
+        assertEquals(3, summary.repsBeyondGhost)
+        assertEquals(0f, summary.totalDeltaMcvMmS)
+        assertEquals(0f, summary.avgDeltaMcvMmS)
+    }
+
+    @Test
     fun computeSetDeltaExcludesBeyondRepsFromDeltaCalculations() {
         val comparisons = listOf(
             GhostRepComparison(repNumber = 1, currentMcvMmS = 430f, ghostMcvMmS = 400f, deltaMcvMmS = 30f, verdict = GhostVerdict.AHEAD),

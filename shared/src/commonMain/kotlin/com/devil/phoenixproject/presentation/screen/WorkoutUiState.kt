@@ -3,6 +3,7 @@ package com.devil.phoenixproject.presentation.screen
 import com.devil.phoenixproject.data.repository.AutoStopUiState
 import com.devil.phoenixproject.domain.model.*
 import com.devil.phoenixproject.domain.model.BiomechanicsRepResult
+import com.devil.phoenixproject.domain.model.GhostRepComparison
 import com.devil.phoenixproject.domain.usecase.RepRanges
 import com.devil.phoenixproject.presentation.manager.DetectionState
 
@@ -81,7 +82,10 @@ data class WorkoutUiState(
     // Total number of variable warm-up sets (0 if none)
     val totalWarmupSets: Int = 0,
     // Issue #113: Just Lift visual rest countdown (null = not resting, 0 = done)
-    val justLiftRestCountdown: Int? = null
+    val justLiftRestCountdown: Int? = null,
+    // C5: Ghost racing live overlay state
+    val latestGhostVerdict: GhostRepComparison? = null,
+    val hasGhostSession: Boolean = false
 ) {
     /** True when currently executing a variable warm-up set (for HUD label) */
     val isInVariableWarmup: Boolean get() = currentWarmupSetIndex >= 0

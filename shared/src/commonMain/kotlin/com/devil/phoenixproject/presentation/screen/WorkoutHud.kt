@@ -24,6 +24,8 @@ import com.devil.phoenixproject.data.repository.ExerciseVideoEntity
 import com.devil.phoenixproject.domain.model.*
 import com.devil.phoenixproject.domain.model.BiomechanicsRepResult
 import com.devil.phoenixproject.domain.model.BiomechanicsVelocityZone
+import com.devil.phoenixproject.domain.model.GhostRepComparison
+import com.devil.phoenixproject.domain.model.GhostVerdict
 import com.devil.phoenixproject.presentation.components.AutoDetectionSheet
 import com.devil.phoenixproject.presentation.components.ExpandedForceCurve
 import com.devil.phoenixproject.presentation.components.ForceCurveMiniGraph
@@ -81,6 +83,9 @@ fun WorkoutHud(
     detectionState: DetectionState = DetectionState(),
     onDetectionConfirmed: suspend (exerciseId: String, exerciseName: String) -> Unit = { _, _ -> },
     onDetectionDismissed: () -> Unit = {},
+    // C5: Ghost racing overlay state
+    latestGhostVerdict: GhostRepComparison? = null,
+    hasGhostSession: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     val scope = rememberCoroutineScope()
@@ -180,7 +185,9 @@ fun WorkoutHud(
                         weightUnit = weightUnit,
                         formatWeight = formatWeight,
                         isCurrentExerciseBodyweight = isCurrentExerciseBodyweight,
-                        latestBiomechanicsResult = latestBiomechanicsResult
+                        latestBiomechanicsResult = latestBiomechanicsResult,
+                        latestGhostVerdict = latestGhostVerdict,
+                        hasGhostSession = hasGhostSession
                     )
                 }
             }
@@ -774,7 +781,9 @@ private fun StatsPage(
     weightUnit: WeightUnit,
     formatWeight: (Float, WeightUnit) -> String,
     isCurrentExerciseBodyweight: Boolean = false,
-    latestBiomechanicsResult: BiomechanicsRepResult? = null
+    latestBiomechanicsResult: BiomechanicsRepResult? = null,
+    latestGhostVerdict: GhostRepComparison? = null,
+    hasGhostSession: Boolean = false
 ) {
     if (isCurrentExerciseBodyweight) {
         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -902,6 +911,11 @@ private fun StatsPage(
                     }
                 }
             }
+        }
+
+        // C5: Ghost Racing Overlay — compact verdict display when racing against a previous session
+        if (hasGhostSession) {
+            GhostRacingOverlay(latestGhostVerdict = latestGhostVerdict)
         }
 
         // Load Section
@@ -1073,5 +1087,102 @@ private fun StatColumn(
             fontWeight = FontWeight.Bold,
             color = color
         )
+    }
+}
+
+// Phoenix palette constants for ghost racing verdict colors
+private val GhostAheadColor = Color(0xFF10B981)   // Forge Green — AHEAD/BEYOND
+private val GhostBehindColor = Color(0xFFDC2626)   // Flame Red — BEHIND
+private val GhostTiedColor = Color(0xFFF59E0B)     // Gold — TIED
+
+/**
+ * Compact ghost racing overlay card showing live per-rep verdict against a previous session.
+ * Displays verdict label, velocity delta, and color-codes by outcome.
+ * Only rendered when a ghost session is active (hasGhostSession == true).
+ */
+@Composable
+private fun GhostRacingOverlay(
+    latestGhostVerdict: GhostRepComparison?
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
+        ),
+        shape = RoundedCornerShape(16.dp)
+    ) {
+        if (latestGhostVerdict == null) {
+            // Ghost session loaded but no rep completed yet
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(12.dp),
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    Icons.Default.Timer,
+                    contentDescription = null,
+                    modifier = Modifier.size(16.dp),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    "GHOST RACING",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    letterSpacing = 1.sp
+                )
+            }
+        } else {
+            val verdictColor = when (latestGhostVerdict.verdict) {
+                GhostVerdict.AHEAD, GhostVerdict.BEYOND -> GhostAheadColor
+                GhostVerdict.BEHIND -> GhostBehindColor
+                GhostVerdict.TIED -> GhostTiedColor
+            }
+            val verdictLabel = when (latestGhostVerdict.verdict) {
+                GhostVerdict.AHEAD -> "AHEAD"
+                GhostVerdict.BEHIND -> "BEHIND"
+                GhostVerdict.TIED -> "TIED"
+                GhostVerdict.BEYOND -> "NEW BEST"
+            }
+            val deltaSign = if (latestGhostVerdict.deltaMcvMmS >= 0f) "+" else "-"
+            val deltaText = if (latestGhostVerdict.verdict == GhostVerdict.BEYOND) {
+                "Rep ${latestGhostVerdict.repNumber}"
+            } else {
+                "${deltaSign}${formatMcv(abs(latestGhostVerdict.deltaMcvMmS))} m/s"
+            }
+
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(12.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                Text(
+                    "GHOST RACE",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    letterSpacing = 1.sp
+                )
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        verdictLabel,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = verdictColor
+                    )
+                    Text(
+                        deltaText,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = verdictColor
+                    )
+                }
+            }
+        }
     }
 }

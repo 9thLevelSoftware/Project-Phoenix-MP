@@ -63,6 +63,9 @@ fun ActiveWorkoutScreen(
     val isCurrentExerciseBodyweight by viewModel.isCurrentExerciseBodyweight.collectAsState()
     val latestRepQuality by viewModel.latestRepQuality.collectAsState()
     val latestBiomechanicsResult by viewModel.latestBiomechanicsResult.collectAsState()
+    // C5: Ghost racing live overlay state
+    val latestGhostVerdict by viewModel.latestGhostVerdict.collectAsState()
+    val ghostSession by viewModel.ghostSession.collectAsState()
     val detectionState by viewModel.detectionState.collectAsState()
     // Issue #237: Motion-triggered set start
     val motionStartHoldProgress by viewModel.motionStartHoldProgress.collectAsState()
@@ -299,7 +302,8 @@ fun ActiveWorkoutScreen(
         latestBiomechanicsResult, detectionState,
         motionStartHoldProgress, isRestPaused,
         currentWarmupSetIndex, totalWarmupSets,
-        justLiftRestCountdown
+        justLiftRestCountdown,
+        latestGhostVerdict, ghostSession
     ) {
         WorkoutUiState(
             connectionState = connectionState,
@@ -335,7 +339,9 @@ fun ActiveWorkoutScreen(
             isRestPaused = isRestPaused,
             currentWarmupSetIndex = currentWarmupSetIndex,
             totalWarmupSets = totalWarmupSets,
-            justLiftRestCountdown = justLiftRestCountdown
+            justLiftRestCountdown = justLiftRestCountdown,
+            latestGhostVerdict = latestGhostVerdict,
+            hasGhostSession = ghostSession != null
         )
     }
 

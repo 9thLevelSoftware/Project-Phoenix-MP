@@ -118,7 +118,9 @@ fun WorkoutTab(
         onDetectionDismissed = actions::onDetectionDismissed,
         motionStartHoldProgress = state.motionStartHoldProgress,
         isRestPaused = state.isRestPaused,
-        justLiftRestCountdown = state.justLiftRestCountdown
+        justLiftRestCountdown = state.justLiftRestCountdown,
+        latestGhostVerdict = state.latestGhostVerdict,
+        hasGhostSession = state.hasGhostSession
     )
 }
 
@@ -190,7 +192,10 @@ fun WorkoutTab(
     // Issue #297, #228: Rest timer pause state
     isRestPaused: Boolean = false,
     // Issue #113: Just Lift visual rest countdown (null = not resting)
-    justLiftRestCountdown: Int? = null
+    justLiftRestCountdown: Int? = null,
+    // C5: Ghost racing overlay state
+    latestGhostVerdict: GhostRepComparison? = null,
+    hasGhostSession: Boolean = false
 ) {
     // Note: HapticFeedbackEffect is now global in EnhancedMainScreen
     // No need for local haptic effect here
@@ -227,6 +232,8 @@ fun WorkoutTab(
                 detectionState = detectionState,
                 onDetectionConfirmed = onDetectionConfirmed,
                 onDetectionDismissed = onDetectionDismissed,
+                latestGhostVerdict = latestGhostVerdict,
+                hasGhostSession = hasGhostSession,
                 modifier = Modifier.fillMaxSize()
             )
 

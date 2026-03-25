@@ -82,6 +82,7 @@ object GhostRacingEngine {
         val repsBehind = comparable.count { it.verdict == GhostVerdict.BEHIND }
 
         val overallVerdict = when {
+            comparable.isEmpty() && comparisons.any { it.verdict == GhostVerdict.BEYOND } -> GhostVerdict.BEYOND
             avgDelta > 0f -> GhostVerdict.AHEAD
             avgDelta < 0f -> GhostVerdict.BEHIND
             else -> GhostVerdict.TIED
