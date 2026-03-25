@@ -38,7 +38,9 @@ class BiomechanicsEngine(
      */
     val latestRepResult: StateFlow<BiomechanicsRepResult?> = _latestRepResult.asStateFlow()
 
-    private val repResults = mutableListOf<BiomechanicsRepResult>()
+    // C2: Thread-safe snapshot list — processRep() runs on Dispatchers.Default while
+    // getSetSummary()/reset() may be called from the main dispatcher
+    private val repResults = kotlinx.coroutines.flow.MutableStateFlow<List<BiomechanicsRepResult>>(emptyList())
     private var firstRepMcv: Float? = null
 
     /**
@@ -71,7 +73,7 @@ class BiomechanicsEngine(
             timestamp = timestamp
         )
 
-        repResults.add(result)
+        repResults.value = repResults.value + result
         _latestRepResult.value = result
         return result
     }
@@ -82,28 +84,30 @@ class BiomechanicsEngine(
      * @return Set summary with averaged metrics, or null if no reps processed
      */
     fun getSetSummary(): BiomechanicsSetSummary? {
-        if (repResults.isEmpty()) return null
+        // Snapshot once for consistent reads throughout the method
+        val results = repResults.value
+        if (results.isEmpty()) return null
 
-        val velocities = repResults.map { it.velocity.meanConcentricVelocityMmS }
+        val velocities = results.map { it.velocity.meanConcentricVelocityMmS }
         val avgMcv = velocities.average().toFloat()
-        val peakVelocity = repResults.maxOf { it.velocity.peakVelocityMmS }
+        val peakVelocity = results.maxOf { it.velocity.peakVelocityMmS }
 
-        val totalVelocityLoss = if (repResults.size >= 2) {
-            val firstMcv = repResults.first().velocity.meanConcentricVelocityMmS
-            val lastMcv = repResults.last().velocity.meanConcentricVelocityMmS
+        val totalVelocityLoss = if (results.size >= 2) {
+            val firstMcv = results.first().velocity.meanConcentricVelocityMmS
+            val lastMcv = results.last().velocity.meanConcentricVelocityMmS
             if (firstMcv > 0) ((firstMcv - lastMcv) / firstMcv * 100f) else null
         } else null
 
-        val zoneDistribution = repResults
+        val zoneDistribution = results
             .map { it.velocity.zone }
             .groupingBy { it }
             .eachCount()
 
-        val avgAsymmetry = repResults.map { it.asymmetry.asymmetryPercent }.average().toFloat()
+        val avgAsymmetry = results.map { it.asymmetry.asymmetryPercent }.average().toFloat()
 
         // Determine overall dominant side by summing loads
-        val totalLoadA = repResults.sumOf { it.asymmetry.avgLoadA.toDouble() }.toFloat()
-        val totalLoadB = repResults.sumOf { it.asymmetry.avgLoadB.toDouble() }.toFloat()
+        val totalLoadA = results.sumOf { it.asymmetry.avgLoadA.toDouble() }.toFloat()
+        val totalLoadB = results.sumOf { it.asymmetry.avgLoadB.toDouble() }.toFloat()
         val dominantSide = when {
             totalLoadA == 0f && totalLoadB == 0f -> "BALANCED"
             kotlin.math.abs(totalLoadA - totalLoadB) / maxOf(totalLoadA, totalLoadB) < 0.02f -> "BALANCED"
@@ -112,14 +116,14 @@ class BiomechanicsEngine(
         }
 
         // Most common strength profile
-        val profileCounts = repResults
+        val profileCounts = results
             .map { it.forceCurve.strengthProfile }
             .groupingBy { it }
             .eachCount()
         val strengthProfile = profileCounts.maxByOrNull { it.value }?.key ?: StrengthProfile.FLAT
 
         // Compute averaged force curve across all reps with valid 101-point curves
-        val validCurves = repResults.map { it.forceCurve }
+        val validCurves = results.map { it.forceCurve }
             .filter { it.normalizedForceN.size == 101 }
         val avgForceCurve = if (validCurves.isEmpty()) {
             null
@@ -150,7 +154,7 @@ class BiomechanicsEngine(
         }
 
         return BiomechanicsSetSummary(
-            repResults = repResults.toList(),
+            repResults = results,
             avgMcvMmS = avgMcv,
             peakVelocityMmS = peakVelocity,
             totalVelocityLossPercent = totalVelocityLoss,
@@ -168,7 +172,7 @@ class BiomechanicsEngine(
      * Called at set completion or workout reset.
      */
     fun reset() {
-        repResults.clear()
+        repResults.value = emptyList()
         firstRepMcv = null
         _latestRepResult.value = null
     }

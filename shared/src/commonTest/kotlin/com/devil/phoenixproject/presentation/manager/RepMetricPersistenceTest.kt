@@ -4,6 +4,7 @@ import com.devil.phoenixproject.domain.model.RepMetricData
 import com.devil.phoenixproject.domain.model.WorkoutState
 import com.devil.phoenixproject.testutil.DWSMTestHarness
 import com.devil.phoenixproject.testutil.WorkoutStateFixtures.activeDWSM
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
@@ -64,8 +65,8 @@ class RepMetricPersistenceTest {
             createTestRepMetricData(2),
             createTestRepMetricData(3)
         )
-        repMetrics.forEach { coordinator.setRepMetrics.add(it) }
-        assertEquals(3, coordinator.setRepMetrics.size, "Should have 3 accumulated rep metrics")
+        repMetrics.forEach { metric -> coordinator.setRepMetrics.update { it + metric } }
+        assertEquals(3, coordinator.setRepMetrics.value.size, "Should have 3 accumulated rep metrics")
 
         // Trigger set completion
         harness.activeSessionEngine.handleSetCompletion()
@@ -77,7 +78,7 @@ class RepMetricPersistenceTest {
         assertEquals(3, saved.size, "Should have persisted 3 rep metrics")
 
         // Verify setRepMetrics list is cleared after persistence
-        assertTrue(coordinator.setRepMetrics.isEmpty(), "setRepMetrics should be cleared after persistence")
+        assertTrue(coordinator.setRepMetrics.value.isEmpty(), "setRepMetrics should be cleared after persistence")
 
         harness.cleanup()
     }
@@ -90,7 +91,7 @@ class RepMetricPersistenceTest {
         assertNotNull(sessionId)
 
         // Do NOT add any rep metrics - list is empty
-        assertTrue(coordinator.setRepMetrics.isEmpty())
+        assertTrue(coordinator.setRepMetrics.value.isEmpty())
 
         // Trigger set completion
         harness.activeSessionEngine.handleSetCompletion()
@@ -111,12 +112,12 @@ class RepMetricPersistenceTest {
         assertNotNull(sessionId)
 
         // Add 5 rep metrics (1 warmup + 4 working)
-        coordinator.setRepMetrics.add(createTestRepMetricData(1, isWarmup = true))
-        coordinator.setRepMetrics.add(createTestRepMetricData(2))
-        coordinator.setRepMetrics.add(createTestRepMetricData(3))
-        coordinator.setRepMetrics.add(createTestRepMetricData(4))
-        coordinator.setRepMetrics.add(createTestRepMetricData(5))
-        val expectedCount = coordinator.setRepMetrics.size
+        coordinator.setRepMetrics.update { it + createTestRepMetricData(1, isWarmup = true) }
+        coordinator.setRepMetrics.update { it + createTestRepMetricData(2) }
+        coordinator.setRepMetrics.update { it + createTestRepMetricData(3) }
+        coordinator.setRepMetrics.update { it + createTestRepMetricData(4) }
+        coordinator.setRepMetrics.update { it + createTestRepMetricData(5) }
+        val expectedCount = coordinator.setRepMetrics.value.size
 
         // Trigger set completion
         harness.activeSessionEngine.handleSetCompletion()
