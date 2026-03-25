@@ -47,6 +47,9 @@ class SafeWordDetectionManager(
     /** Coroutine bridging the current listener's detectedWord to the stable flow. */
     private var bridgeJob: Job? = null
 
+    /** Supervisor for the bridge scope — held as a field so stop() can cancel it. */
+    private var bridgeSupervisor = SupervisorJob()
+
     /**
      * Start safe word detection for the current workout.
      * No-op if voice stop is disabled or no safe word is configured.
@@ -74,8 +77,9 @@ class SafeWordDetectionManager(
         val newListener = listenerFactory.create(safeWord)
         listener = newListener
 
-        // Bridge the listener's flow to our stable flow
-        bridgeJob = CoroutineScope(Dispatchers.Main + SupervisorJob()).launch {
+        // Bridge the listener's flow to our stable flow with a tracked supervisor
+        bridgeSupervisor = SupervisorJob()
+        bridgeJob = CoroutineScope(Dispatchers.Main + bridgeSupervisor).launch {
             newListener.detectedWord.collect { word ->
                 _detectedWord.tryEmit(word)
             }
@@ -91,6 +95,7 @@ class SafeWordDetectionManager(
     fun stop() {
         bridgeJob?.cancel()
         bridgeJob = null
+        bridgeSupervisor.cancel()
         listener?.let {
             Logger.d(TAG) { "Stopping safe word detection" }
             it.stopListening()

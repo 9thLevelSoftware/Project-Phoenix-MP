@@ -2,6 +2,12 @@
 
 package com.devil.phoenixproject.domain.voice
 
+import kotlinx.cinterop.BetaInteropApi
+import kotlinx.cinterop.ObjCObjectVar
+import kotlinx.cinterop.alloc
+import kotlinx.cinterop.memScoped
+import kotlinx.cinterop.ptr
+import kotlinx.cinterop.value
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -16,6 +22,7 @@ import platform.AVFAudio.AVAudioSessionModeDefault
 import platform.AVFAudio.AVAudioSessionSetActiveOptionNotifyOthersOnDeactivation
 import platform.AVFAudio.setActive
 import platform.Foundation.NSDate
+import platform.Foundation.NSError
 import platform.Foundation.NSLog
 import platform.Foundation.timeIntervalSince1970
 import platform.Speech.SFSpeechAudioBufferRecognitionRequest
@@ -25,6 +32,7 @@ import platform.Speech.SFSpeechRecognitionTaskStateCanceling
 import platform.Speech.SFSpeechRecognitionTaskStateCompleted
 import platform.Speech.SFSpeechRecognizer
 import platform.Speech.SFSpeechRecognizerAuthorizationStatusAuthorized
+import platform.Speech.SFSpeechRecognizerAuthorizationStatusNotDetermined
 import platform.darwin.dispatch_after
 import platform.darwin.dispatch_async
 import platform.darwin.dispatch_get_main_queue
@@ -67,6 +75,9 @@ actual class SafeWordListener(
     /** Last time we emitted a detection — used to debounce partial+final duplicates. */
     private var lastEmitTimeMs = 0L
 
+    /** Guards against re-entrant tearDown calls from concurrent dispatch. */
+    private var isTearingDown = false
+
     actual fun startListening() {
         if (shouldBeListening) return
 
@@ -76,10 +87,25 @@ actual class SafeWordListener(
         }
 
         val authStatus = SFSpeechRecognizer.authorizationStatus()
-        if (authStatus != SFSpeechRecognizerAuthorizationStatusAuthorized) {
-            NSLog("$TAG: Speech recognition not authorized (status=$authStatus)")
-            _isListening.value = false
-            return // Don't retry — authorization requires user action
+        when (authStatus) {
+            SFSpeechRecognizerAuthorizationStatusAuthorized -> { /* proceed */ }
+            SFSpeechRecognizerAuthorizationStatusNotDetermined -> {
+                SFSpeechRecognizer.requestAuthorization { newStatus ->
+                    if (newStatus == SFSpeechRecognizerAuthorizationStatusAuthorized) {
+                        // Re-enter startListening on main thread
+                        dispatch_async(dispatch_get_main_queue()) { startListening() }
+                    } else {
+                        NSLog("$TAG: Speech recognition denied by user")
+                        _isListening.value = false
+                    }
+                }
+                return // Wait for callback
+            }
+            else -> {
+                NSLog("$TAG: Speech recognition not authorized (status=$authStatus)")
+                _isListening.value = false
+                return
+            }
         }
 
         shouldBeListening = true
@@ -129,7 +155,20 @@ actual class SafeWordListener(
             }
 
             engine.prepare()
-            engine.startAndReturnError(null)
+            @OptIn(BetaInteropApi::class)
+            val engineStarted = memScoped {
+                val errorPtr = alloc<ObjCObjectVar<NSError?>>()
+                val started = engine.startAndReturnError(errorPtr.ptr)
+                if (!started) {
+                    val startError = errorPtr.value
+                    NSLog("$TAG: Audio engine failed to start: ${startError?.localizedDescription}")
+                }
+                started
+            }
+            if (!engineStarted) {
+                _isListening.value = false
+                return
+            }
 
             // Start recognition task
             recognitionTask = speechRecognizer.recognitionTaskWithRequest(
@@ -164,7 +203,7 @@ actual class SafeWordListener(
 
     private fun handleRecognitionResult(
         result: SFSpeechRecognitionResult?,
-        error: platform.Foundation.NSError?,
+        error: NSError?,
     ) {
         if (result != null) {
             val text = result.bestTranscription.formattedString
@@ -210,32 +249,36 @@ actual class SafeWordListener(
     }
 
     private fun tearDown() {
+        if (isTearingDown) return
+        isTearingDown = true
         try {
             audioEngine?.let { engine ->
                 engine.inputNode.removeTapOnBus(0u)
                 engine.stop()
             }
+            audioEngine = null
+
+            recognitionRequest?.endAudio()
+            recognitionRequest = null
+
+            cancelExistingTask()
+
+            _isListening.value = false
+
+            // Deactivate audio session to release resources
+            try {
+                AVAudioSession.sharedInstance().setActive(
+                    false,
+                    AVAudioSessionSetActiveOptionNotifyOthersOnDeactivation,
+                    null,
+                )
+            } catch (e: Exception) {
+                NSLog("$TAG: Error deactivating audio session: ${e.message}")
+            }
         } catch (e: Exception) {
             NSLog("$TAG: Error stopping audio engine: ${e.message}")
-        }
-        audioEngine = null
-
-        recognitionRequest?.endAudio()
-        recognitionRequest = null
-
-        cancelExistingTask()
-
-        _isListening.value = false
-
-        // Deactivate audio session to release resources
-        try {
-            AVAudioSession.sharedInstance().setActive(
-                false,
-                AVAudioSessionSetActiveOptionNotifyOthersOnDeactivation,
-                null,
-            )
-        } catch (e: Exception) {
-            NSLog("$TAG: Error deactivating audio session: ${e.message}")
+        } finally {
+            isTearingDown = false
         }
     }
 

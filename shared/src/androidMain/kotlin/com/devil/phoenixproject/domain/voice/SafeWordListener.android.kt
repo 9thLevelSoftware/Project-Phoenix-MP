@@ -2,6 +2,8 @@ package com.devil.phoenixproject.domain.voice
 
 import android.content.Context
 import android.content.Intent
+import android.media.AudioAttributes
+import android.media.AudioFocusRequest
 import android.media.AudioManager
 import android.os.Bundle
 import android.os.Handler
@@ -51,6 +53,9 @@ actual class SafeWordListener(
 
     /** Last time we emitted a detection — used to debounce partial+final duplicates. */
     private var lastEmitTimeMs = 0L
+
+    /** Active audio focus request, held for abandoning on teardown. */
+    private var audioFocusRequest: AudioFocusRequest? = null
 
     actual fun startListening() {
         if (shouldBeListening) return
@@ -120,12 +125,22 @@ actual class SafeWordListener(
     private fun requestTransientAudioFocus() {
         try {
             val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
-            @Suppress("DEPRECATION") // Simple approach; AudioFocusRequest requires API 26 builder
-            audioManager?.requestAudioFocus(
-                null,
-                AudioManager.STREAM_MUSIC,
-                AudioManager.AUDIOFOCUS_GAIN_TRANSIENT,
-            )
+                ?: return
+            val request = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT)
+                .setAudioAttributes(
+                    AudioAttributes.Builder()
+                        .setUsage(AudioAttributes.USAGE_ASSISTANCE_SONIFICATION)
+                        .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                        .build()
+                )
+                .setOnAudioFocusChangeListener { focusChange ->
+                    if (focusChange == AudioManager.AUDIOFOCUS_LOSS) {
+                        stopListening()
+                    }
+                }
+                .build()
+            audioFocusRequest = request
+            audioManager.requestAudioFocus(request)
         } catch (e: Exception) {
             Log.w(TAG, "Failed to request audio focus, continuing anyway", e)
         }
@@ -143,6 +158,20 @@ actual class SafeWordListener(
         } finally {
             recognizer = null
             _isListening.value = false
+            abandonAudioFocus()
+        }
+    }
+
+    private fun abandonAudioFocus() {
+        try {
+            audioFocusRequest?.let { request ->
+                val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
+                audioManager?.abandonAudioFocusRequest(request)
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to abandon audio focus", e)
+        } finally {
+            audioFocusRequest = null
         }
     }
 
