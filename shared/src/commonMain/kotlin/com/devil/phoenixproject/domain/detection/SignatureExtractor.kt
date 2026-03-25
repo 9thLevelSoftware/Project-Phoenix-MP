@@ -76,19 +76,30 @@ class SignatureExtractor {
     }
 
     /**
+     * Combine dual-cable position into a single value.
+     * Uses average when both cables are active (non-zero), max when single cable (M4).
+     */
+    private fun combinePosition(positionA: Float, positionB: Float): Float {
+        return if (positionA > 0f && positionB > 0f) {
+            (positionA + positionB) / 2f
+        } else {
+            maxOf(positionA, positionB)
+        }
+    }
+
+    /**
      * Apply moving average smoothing to position data.
-     * Uses maxOf(positionA, positionB) so single-right-cable exercises
-     * (where positionA may be zero) still produce valid signatures.
+     * Uses combinePosition() to correctly handle both single-cable and dual-cable exercises.
      */
     private fun smoothPositions(metrics: List<WorkoutMetric>): List<Float> {
         if (metrics.size < SMOOTHING_WINDOW) {
-            return metrics.map { maxOf(it.positionA, it.positionB) }
+            return metrics.map { combinePosition(it.positionA, it.positionB) }
         }
 
         return metrics.indices.map { i ->
             val start = maxOf(0, i - SMOOTHING_WINDOW / 2)
             val end = minOf(metrics.size - 1, i + SMOOTHING_WINDOW / 2)
-            (start..end).map { maxOf(metrics[it].positionA, metrics[it].positionB) }.average().toFloat()
+            (start..end).map { combinePosition(metrics[it].positionA, metrics[it].positionB) }.average().toFloat()
         }
     }
 
@@ -160,10 +171,10 @@ class SignatureExtractor {
             val valleyStart = valleys[i]
             val valleyEnd = minOf(valleys[i + 1], metrics.size - 1)
 
-            // Find peak and valley positions using raw data (cable-agnostic)
+            // Find peak and valley positions using raw data with consistent dual-cable handling
             val repMetrics = metrics.subList(valleyStart, valleyEnd + 1)
-            val peakPos = repMetrics.maxOfOrNull { maxOf(it.positionA, it.positionB) } ?: continue
-            val valleyPos = repMetrics.minOfOrNull { maxOf(it.positionA, it.positionB) } ?: continue
+            val peakPos = repMetrics.maxOfOrNull { combinePosition(it.positionA, it.positionB) } ?: continue
+            val valleyPos = repMetrics.minOfOrNull { combinePosition(it.positionA, it.positionB) } ?: continue
 
             roms.add(peakPos - valleyPos)
         }

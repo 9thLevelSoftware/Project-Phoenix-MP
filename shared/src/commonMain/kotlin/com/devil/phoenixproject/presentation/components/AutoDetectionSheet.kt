@@ -19,6 +19,7 @@ import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.domain.detection.ExerciseClassification
 import com.devil.phoenixproject.domain.model.Exercise
 import com.devil.phoenixproject.ui.theme.AccessibilityTheme
+import co.touchlab.kermit.Logger
 import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.stringResource
 import vitruvianprojectphoenix.shared.generated.resources.Res
@@ -55,7 +56,14 @@ fun AutoDetectionSheet(
         onDismiss = { showExercisePicker = false },
         onExerciseSelected = { exercise ->
             showExercisePicker = false
-            onConfirm(exercise.id ?: "", exercise.name)
+            val resolvedId = exercise.id
+            if (!resolvedId.isNullOrBlank()) {
+                onConfirm(resolvedId, exercise.name)
+            } else {
+                Logger.w("AutoDetectionSheet") {
+                    "Selected exercise '${exercise.name}' has no ID — skipping to prevent signature corruption"
+                }
+            }
         },
         exerciseRepository = exerciseRepository,
         enableVideoPlayback = false,
@@ -162,11 +170,14 @@ fun AutoDetectionSheet(
                             onClick = {
                                 scope.launch {
                                     val exercise = exerciseRepository.findByName(alternateName)
-                                    if (exercise != null) {
-                                        onConfirm(exercise.id ?: "", exercise.name)
+                                    val resolvedId = exercise?.id
+                                    if (!resolvedId.isNullOrBlank()) {
+                                        onConfirm(resolvedId, exercise.name)
                                     } else {
-                                        // Fallback: pass name without ID (caller must handle)
-                                        onConfirm("", alternateName)
+                                        // H12: Do NOT call onConfirm("", name) — corrupts signature DB
+                                        Logger.w("AutoDetectionSheet") {
+                                            "Alternate exercise '$alternateName' not found in library — skipping"
+                                        }
                                     }
                                 }
                             },
@@ -202,10 +213,14 @@ fun AutoDetectionSheet(
                 // Confirm button
                 Button(
                     onClick = {
-                        onConfirm(
-                            classification.exerciseId ?: "",
-                            classification.exerciseName
-                        )
+                        val resolvedId = classification.exerciseId
+                        if (!resolvedId.isNullOrBlank()) {
+                            onConfirm(resolvedId, classification.exerciseName)
+                        } else {
+                            Logger.w("AutoDetectionSheet") {
+                                "Cannot confirm '${classification.exerciseName}' — no exerciseId"
+                            }
+                        }
                     },
                     modifier = Modifier.weight(1f),
                     shape = RoundedCornerShape(12.dp),

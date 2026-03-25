@@ -230,7 +230,9 @@ class WorkoutCoordinator(
     internal var warmupCompleteTimeMs: Long = 0  // Issue #252: Exclude warmup time from duration
     internal var routineStartTime: Long = 0  // Issue #195: Track routine start separately from per-set start
     internal val collectedMetrics = MutableStateFlow<List<WorkoutMetric>>(emptyList())
-    internal val setRepMetrics = mutableListOf<RepMetricData>()
+    // C3: Thread-safe via MutableStateFlow snapshot — prevents ConcurrentModificationException
+    // across coroutine dispatchers during rep processing and set completion
+    internal val setRepMetrics = MutableStateFlow<List<RepMetricData>>(emptyList())
 
     internal var currentRoutineSessionId: String? = null
     internal var currentRoutineName: String? = null
@@ -252,14 +254,13 @@ class WorkoutCoordinator(
     internal var autoStopStartTime: Long? = null
     @Volatile
     internal var autoStopTriggered = false
+    @Volatile
     internal var autoStopStopRequested = false
-    // Guard to prevent race condition where multiple stopWorkout() calls create duplicate sessions
-    // Issue #97: handleMonitorMetric() can call stopWorkout() multiple times before state changes
-    @Volatile
-    internal var stopWorkoutInProgress = false
+    // C1: Guard to prevent duplicate stopWorkout() calls creating duplicate sessions
+    // Uses MutableStateFlow for thread-safe compareAndSet across KMP targets
+    internal val stopWorkoutInProgress = MutableStateFlow(false)
     // Guard to prevent duplicate auto-completion when rep target is reached
-    @Volatile
-    internal var setCompletionInProgress = false
+    internal val setCompletionInProgress = MutableStateFlow(false)
     internal var currentHandleState: HandleState = HandleState.WaitingForRest
 
     // Velocity-based stall detection state (Issue #204, #214)
@@ -295,6 +296,8 @@ class WorkoutCoordinator(
     internal var repEventsCollectionJob: Job? = null
     internal var workoutJob: Job? = null
     // Flag to skip countdown - checked in countdown loop
+    // H3: @Volatile ensures cross-coroutine visibility for countdown skip checks
+    @Volatile
     internal var skipCountdownRequested: Boolean = false
     // Track if current workout is duration-based (timed exercise) to show countdown timer
     internal var isCurrentWorkoutTimed: Boolean = false
@@ -352,7 +355,8 @@ class WorkoutCoordinator(
      * Each entry marks the completion timestamp of a rep, enabling per-rep metric extraction.
      * Cleared at set completion and workout reset.
      */
-    internal val repBoundaryTimestamps = mutableListOf<Long>()
+    // C3: Thread-safe via MutableStateFlow snapshot
+    internal val repBoundaryTimestamps = MutableStateFlow<List<Long>>(emptyList())
 
     /**
      * Latest biomechanics result for HUD display.
@@ -370,5 +374,6 @@ class WorkoutCoordinator(
     val latestGhostVerdict: StateFlow<GhostRepComparison?> = _latestGhostVerdict.asStateFlow()
 
     /** Accumulates per-rep ghost comparisons for the current set. Cleared on set reset. */
-    internal val ghostRepComparisons = mutableListOf<GhostRepComparison>()
+    // C3: Thread-safe via MutableStateFlow snapshot
+    internal val ghostRepComparisons = MutableStateFlow<List<GhostRepComparison>>(emptyList())
 }

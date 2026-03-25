@@ -31,8 +31,10 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlin.math.ceil
@@ -676,7 +678,7 @@ class ActiveSessionEngine(
             // Capture rep boundary timestamp BEFORE scoring so scoreCurrentRep()
             // and processBiomechanicsForRep() both see the correct metric window.
             val now = KmpUtils.currentTimeMillis()
-            coordinator.repBoundaryTimestamps.add(now)
+            coordinator.repBoundaryTimestamps.update { it + now }
 
             scoreCurrentRep(repCountAfter)
 
@@ -703,10 +705,14 @@ class ActiveSessionEngine(
             val ghostSession = coordinator._ghostSession.value
             if (ghostSession != null) {
                 scope.launch {
-                    // Small delay to let processBiomechanicsForRep complete on Default dispatcher
-                    delay(50)
-                    val latestBio = coordinator.biomechanicsEngine.latestRepResult.value
-                    if (latestBio != null && latestBio.repNumber == repCountAfter) {
+                    // M1: Flow-based wait replaces arbitrary 50ms delay. Waits up to 500ms for
+                    // processBiomechanicsForRep() to emit the matching rep result on Default dispatcher.
+                    val latestBio = withTimeoutOrNull(500L) {
+                        coordinator.biomechanicsEngine.latestRepResult
+                            .filterNotNull()
+                            .first { it.repNumber == repCountAfter }
+                    }
+                    if (latestBio != null) {
                         val currentMcv = latestBio.velocity.meanConcentricVelocityMmS
                         val ghostRepIndex = repCountAfter - 1  // 0-based index (Pitfall 2: off-by-one)
                         if (ghostRepIndex < ghostSession.repVelocities.size) {
@@ -718,7 +724,7 @@ class ActiveSessionEngine(
                                 deltaMcvMmS = currentMcv - ghostMcv,
                                 verdict = GhostRacingEngine.compareRep(currentMcv, ghostMcv)
                             )
-                            coordinator.ghostRepComparisons.add(comparison)
+                            coordinator.ghostRepComparisons.update { it + comparison }
                             coordinator._latestGhostVerdict.value = comparison
                         } else {
                             // Beyond ghost rep count -- user exceeded their PB
@@ -729,7 +735,7 @@ class ActiveSessionEngine(
                                 deltaMcvMmS = 0f,
                                 verdict = GhostVerdict.BEYOND
                             )
-                            coordinator.ghostRepComparisons.add(comparison)
+                            coordinator.ghostRepComparisons.update { it + comparison }
                             coordinator._latestGhostVerdict.value = comparison
                         }
                     }
@@ -748,7 +754,7 @@ class ActiveSessionEngine(
         if (metrics.isEmpty()) return
 
         // Get all metrics for this rep (use rep boundary timestamps if available)
-        val boundaries = coordinator.repBoundaryTimestamps.toList()
+        val boundaries = coordinator.repBoundaryTimestamps.value
         val prevBoundary = if (boundaries.size >= 2) boundaries[boundaries.size - 2] else 0L
         val currentBoundary = if (boundaries.isNotEmpty()) boundaries.last() else KmpUtils.currentTimeMillis()
 
@@ -861,7 +867,7 @@ class ActiveSessionEngine(
         )
 
         // Accumulate rep metric data for persistence at set completion
-        coordinator.setRepMetrics.add(repData)
+        coordinator.setRepMetrics.update { it + repData }
 
         val score = coordinator.repQualityScorer.scoreRep(repData)
         coordinator._latestRepQuality.value = score
@@ -880,7 +886,7 @@ class ActiveSessionEngine(
     private fun processBiomechanicsForRep(repNumber: Int, timestamp: Long) {
         scope.launch(Dispatchers.Default) {
             val allMetrics = coordinator.collectedMetrics.value
-            val boundaries = coordinator.repBoundaryTimestamps.toList()
+            val boundaries = coordinator.repBoundaryTimestamps.value
 
             // Segment: metrics between previous boundary and current boundary
             val prevBoundary = if (boundaries.size >= 2) boundaries[boundaries.size - 2] else 0L
@@ -1490,14 +1496,14 @@ class ActiveSessionEngine(
         coordinator._workoutState.value = WorkoutState.Idle
         coordinator._repCount.value = RepCount()
         coordinator._repRanges.value = null
-        coordinator.setRepMetrics.clear()
+        coordinator.setRepMetrics.value = emptyList()
         // Reset biomechanics engine and rep boundary timestamps
         coordinator.biomechanicsEngine.reset()
-        coordinator.repBoundaryTimestamps.clear()
+        coordinator.repBoundaryTimestamps.value = emptyList()
         // Reset ghost racing state for fresh workout
         coordinator._ghostSession.value = null
         coordinator._latestGhostVerdict.value = null
-        coordinator.ghostRepComparisons.clear()
+        coordinator.ghostRepComparisons.value = emptyList()
         coordinator.warmupCompleteTimeMs = 0
         // Reset variable warm-up state
         coordinator._currentWarmupSetIndex.value = -1
@@ -1543,8 +1549,8 @@ class ActiveSessionEngine(
         Logger.d { "startWorkout called: skipCountdown=$skipCountdown, isJustLiftMode=$isJustLiftMode" }
         Logger.d { "startWorkout: loadedRoutine=${coordinator._loadedRoutine.value?.name}, params=${coordinator._workoutParameters.value}" }
 
-        coordinator.stopWorkoutInProgress = false
-        coordinator.setCompletionInProgress = false
+        coordinator.stopWorkoutInProgress.value = false
+        coordinator.setCompletionInProgress.value = false
         resetAutoStopState()
         coordinator.skipCountdownRequested = skipCountdown
 
@@ -1584,40 +1590,42 @@ class ActiveSessionEngine(
             Logger.d { "  - isBodyweight: $isBodyweight" }
             Logger.d { "  - isTimedCableExercise: $isTimedCableExercise" }
 
-            // Pre-load ghost session for real-time comparison (Phase 22)
-            // Only when exercise is known (not Just Lift mode) -- no DB reads during active set
+            // H7: Pre-load ghost session BEFORE countdown so data is ready for rep 1.
+            // Previously this was fire-and-forget (scope.launch) which could race with early reps.
+            // Now runs inline within the workoutJob coroutine — completes before countdown starts.
             val exerciseId = params.selectedExerciseId
             if (exerciseId != null && exerciseId.isNotBlank() && !isBodyweight) {
-                scope.launch {
-                    try {
-                        val activeProfileId = userProfileRepository.activeProfile.value?.id ?: "default"
-                        val candidate = workoutRepository.findBestGhostSession(
-                            exerciseId = exerciseId,
-                            mode = params.programMode.displayName,
-                            weightPerCableKg = params.weightPerCableKg,
-                            weightToleranceKg = 5f,
-                            profileId = activeProfileId
+                try {
+                    val activeProfileId = userProfileRepository.activeProfile.value?.id ?: "default"
+                    val candidate = workoutRepository.findBestGhostSession(
+                        exerciseId = exerciseId,
+                        mode = params.programMode.displayName,
+                        weightPerCableKg = params.weightPerCableKg,
+                        weightToleranceKg = 5f,
+                        profileId = activeProfileId
+                    )
+                    if (candidate != null) {
+                        val repBio = biomechanicsRepository.getRepBiomechanics(candidate.id)
+                        coordinator._ghostSession.value = GhostSession(
+                            sessionId = candidate.id,
+                            exerciseName = candidate.exerciseName ?: "",
+                            weightPerCableKg = candidate.weightPerCableKg,
+                            workingReps = candidate.workingReps,
+                            avgMcvMmS = candidate.avgMcvMmS,
+                            repVelocities = repBio.map { it.velocity.meanConcentricVelocityMmS },
+                            // C6: Was incorrectly assigning peakVelocityMmS (velocity) to a position field.
+                            // Use stickingPointPct (ROM % of minimum force) as the best available
+                            // single-value position metric from BiomechanicsRepResult.
+                            repPeakPositions = repBio.map { it.forceCurve.stickingPointPct ?: 0f }
                         )
-                        if (candidate != null) {
-                            val repBio = biomechanicsRepository.getRepBiomechanics(candidate.id)
-                            coordinator._ghostSession.value = GhostSession(
-                                sessionId = candidate.id,
-                                exerciseName = candidate.exerciseName ?: "",
-                                weightPerCableKg = candidate.weightPerCableKg,
-                                workingReps = candidate.workingReps,
-                                avgMcvMmS = candidate.avgMcvMmS,
-                                repVelocities = repBio.map { it.velocity.meanConcentricVelocityMmS },
-                                repPeakPositions = repBio.map { it.velocity.peakVelocityMmS }
-                            )
-                            Logger.d { "Ghost session loaded: ${candidate.id}, ${repBio.size} reps, avgMcv=${candidate.avgMcvMmS}" }
-                        } else {
-                            coordinator._ghostSession.value = null
-                            Logger.d { "No ghost session found for exerciseId=$exerciseId, mode=${params.programMode.displayName}, weight=${params.weightPerCableKg}kg" }
-                        }
-                    } catch (e: Exception) {
-                        Logger.e(e) { "Failed to load ghost session" }
+                        Logger.d { "Ghost session loaded: ${candidate.id}, ${repBio.size} reps, avgMcv=${candidate.avgMcvMmS}" }
+                    } else {
                         coordinator._ghostSession.value = null
+                        Logger.d { "No ghost session found for exerciseId=$exerciseId, mode=${params.programMode.displayName}, weight=${params.weightPerCableKg}kg" }
                     }
+                } catch (e: Exception) {
+                    Logger.e(e) { "Failed to load ghost session" }
+                    coordinator._ghostSession.value = null
                 }
             } else {
                 coordinator._ghostSession.value = null
@@ -1965,8 +1973,8 @@ class ActiveSessionEngine(
     }
 
     fun stopWorkout(exitingWorkout: Boolean = false) {
-        if (coordinator.stopWorkoutInProgress) return
-        coordinator.stopWorkoutInProgress = true
+        // C1: Atomic compareAndSet prevents TOCTOU race — only the first caller proceeds
+        if (!coordinator.stopWorkoutInProgress.compareAndSet(expect = false, update = true)) return
 
         val shouldExitToIdle = exitingWorkout
 
@@ -2058,7 +2066,9 @@ class ActiveSessionEngine(
                  workingAvgWeightKg = if (params.isEchoMode) summary.workingAvgWeightKg else null,
                  burnoutAvgWeightKg = if (params.isEchoMode) summary.burnoutAvgWeightKg else null,
                  peakWeightKg = if (params.isEchoMode) summary.peakWeightKg else null,
-                 rpe = coordinator._currentSetRpe.value
+                 rpe = coordinator._currentSetRpe.value,
+                 // C4: profileId was missing from manual-stop path — matches saveWorkoutSession() pattern
+                 profileId = userProfileRepository.activeProfile.value?.id ?: "default"
              )
              workoutRepository.saveSession(session)
 
@@ -2133,8 +2143,8 @@ class ActiveSessionEngine(
     }
 
     fun stopAndReturnToSetReady() {
-        if (coordinator.stopWorkoutInProgress) return
-        coordinator.stopWorkoutInProgress = true
+        // C1: Atomic compareAndSet prevents TOCTOU race
+        if (!coordinator.stopWorkoutInProgress.compareAndSet(expect = false, update = true)) return
 
         coordinator.workoutJob?.cancel()
         coordinator.workoutJob = null
@@ -2162,14 +2172,14 @@ class ActiveSessionEngine(
 
                 Logger.d { "stopAndReturnToSetReady: Reset to SetReady for exercise=${coordinator._currentExerciseIndex.value}, set=${coordinator._currentSetIndex.value}" }
             } finally {
-                coordinator.stopWorkoutInProgress = false
+                coordinator.stopWorkoutInProgress.value = false
             }
         }
     }
 
     fun stopAndSkipCurrentExercise() {
-        if (coordinator.stopWorkoutInProgress) return
-        coordinator.stopWorkoutInProgress = true
+        // C1: Atomic compareAndSet prevents TOCTOU race
+        if (!coordinator.stopWorkoutInProgress.compareAndSet(expect = false, update = true)) return
 
         val skippedExerciseIndex = coordinator._currentExerciseIndex.value
         val skippedSetIndex = coordinator._currentSetIndex.value
@@ -2205,7 +2215,7 @@ class ActiveSessionEngine(
                     "stopAndSkipCurrentExercise: Skipped exercise=$skippedExerciseIndex, set=$skippedSetIndex"
                 }
             } finally {
-                coordinator.stopWorkoutInProgress = false
+                coordinator.stopWorkoutInProgress.value = false
             }
         }
     }
@@ -2434,11 +2444,11 @@ class ActiveSessionEngine(
      * Phase B: Rest timer, navigation advancement (delegated back to DWSM via startRestTimer).
      */
     internal fun handleSetCompletion() {
-        if (coordinator.setCompletionInProgress) {
+        // 1.2: Atomic compareAndSet prevents duplicate set completion across dispatchers
+        if (!coordinator.setCompletionInProgress.compareAndSet(expect = false, update = true)) {
             Logger.d("handleSetCompletion: already in progress - ignoring")
             return
         }
-        coordinator.setCompletionInProgress = true
         coordinator.bodyweightTimerJob?.cancel()
         coordinator.bodyweightTimerJob = null
         coordinator._timedExerciseRemainingSeconds.value = null
@@ -2485,8 +2495,8 @@ class ActiveSessionEngine(
                     // Reset for next warm-up set
                     repCounter.resetCountsOnly()
                     resetAutoStopState()
-                    coordinator.setCompletionInProgress = false
-                    coordinator.stopWorkoutInProgress = false
+                    coordinator.setCompletionInProgress.value = false
+                    coordinator.stopWorkoutInProgress.value = false
                     // Restore working weight in params before startWorkout overrides it
                     val workingWeight = currentExercise.setWeightsPerCableKg.getOrNull(0)
                         ?: currentExercise.weightPerCableKg
@@ -2503,8 +2513,8 @@ class ActiveSessionEngine(
                     // Reset for first working set
                     repCounter.reset()
                     resetAutoStopState()
-                    coordinator.setCompletionInProgress = false
-                    coordinator.stopWorkoutInProgress = false
+                    coordinator.setCompletionInProgress.value = false
+                    coordinator.stopWorkoutInProgress.value = false
                     // Restore working weight/reps
                     val workingWeight = currentExercise.setWeightsPerCableKg.getOrNull(0)
                         ?: currentExercise.weightPerCableKg
@@ -2532,7 +2542,7 @@ class ActiveSessionEngine(
 
             // Persist per-rep metric data (GATE-04: captured for all tiers)
             val sessionId = coordinator.currentSessionId
-            val repMetricsToSave = coordinator.setRepMetrics.toList()
+            val repMetricsToSave = coordinator.setRepMetrics.value
             if (sessionId != null && repMetricsToSave.isNotEmpty()) {
                 try {
                     repMetricRepository.saveRepMetrics(sessionId, repMetricsToSave)
@@ -2541,7 +2551,7 @@ class ActiveSessionEngine(
                     Logger.e(e) { "Failed to persist rep metrics for session $sessionId" }
                 }
             }
-            coordinator.setRepMetrics.clear()
+            coordinator.setRepMetrics.value = emptyList()
 
             // Persist per-rep biomechanics data (GATE-04: captured for all tiers)
             val biomechanicsSummary = coordinator.biomechanicsEngine.getSetSummary()
@@ -2574,7 +2584,7 @@ class ActiveSessionEngine(
 
             // Reset biomechanics engine and rep boundary timestamps for next set
             coordinator.biomechanicsEngine.reset()
-            coordinator.repBoundaryTimestamps.clear()
+            coordinator.repBoundaryTimestamps.value = emptyList()
 
             val completedReps = coordinator._repCount.value.workingReps
             val warmupReps = coordinator._repCount.value.warmupReps
@@ -2591,12 +2601,12 @@ class ActiveSessionEngine(
             )
 
             // Compute ghost set delta BEFORE resetting ghost state
-            val ghostSetSummary = if (coordinator.ghostRepComparisons.isNotEmpty()) {
-                GhostRacingEngine.computeSetDelta(coordinator.ghostRepComparisons.toList())
+            val ghostSetSummary = if (coordinator.ghostRepComparisons.value.isNotEmpty()) {
+                GhostRacingEngine.computeSetDelta(coordinator.ghostRepComparisons.value)
             } else null
 
             // Reset ghost comparison state for next set (keep ghostSession loaded for multi-set workouts)
-            coordinator.ghostRepComparisons.clear()
+            coordinator.ghostRepComparisons.value = emptyList()
             coordinator._latestGhostVerdict.value = null
 
             // Attach quality, biomechanics, form check, and ghost summaries to the set summary

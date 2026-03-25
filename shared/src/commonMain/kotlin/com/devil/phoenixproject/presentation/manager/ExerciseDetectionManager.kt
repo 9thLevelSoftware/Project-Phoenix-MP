@@ -58,8 +58,8 @@ class ExerciseDetectionManager(
     private val _detectionState = MutableStateFlow(DetectionState())
     val detectionState: StateFlow<DetectionState> = _detectionState
 
-    /** Flag to prevent multiple triggers per set */
-    private var hasTriggeredThisSet = false
+    /** Flag to prevent multiple triggers per set — uses StateFlow.compareAndSet for thread safety (C9) */
+    private val hasTriggeredThisSet = MutableStateFlow(false)
 
     /**
      * Called after each working rep completes.
@@ -80,8 +80,8 @@ class ExerciseDetectionManager(
         scope: CoroutineScope,
         hasExerciseAssigned: Boolean = false
     ) {
-        // Skip if already triggered this set or user dismissed
-        if (hasTriggeredThisSet || _detectionState.value.isDismissed) {
+        // Skip if user dismissed
+        if (_detectionState.value.isDismissed) {
             return
         }
 
@@ -95,7 +95,10 @@ class ExerciseDetectionManager(
             return
         }
 
-        hasTriggeredThisSet = true
+        // Atomically claim the trigger — prevents double-firing across threads (C9)
+        if (!hasTriggeredThisSet.compareAndSet(expect = false, update = true)) {
+            return
+        }
 
         scope.launch(Dispatchers.Default) {
             try {
@@ -214,7 +217,7 @@ class ExerciseDetectionManager(
      * Called when transitioning between sets or starting a new workout.
      */
     fun resetForNewSet() {
-        hasTriggeredThisSet = false
+        hasTriggeredThisSet.value = false
         _detectionState.value = DetectionState()
     }
 
