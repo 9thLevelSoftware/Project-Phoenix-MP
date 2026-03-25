@@ -47,9 +47,11 @@ import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.data.repository.AutoStopUiState
+import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.data.repository.UserProfileRepository
 import com.devil.phoenixproject.domain.model.*
 import com.devil.phoenixproject.presentation.components.AddProfileDialog
+import com.devil.phoenixproject.presentation.components.AutoDetectionSheet
 import com.devil.phoenixproject.presentation.components.CompactNumberPicker
 import com.devil.phoenixproject.presentation.components.ProfileSidePanel
 import com.devil.phoenixproject.presentation.components.ProgressionSlider
@@ -86,6 +88,9 @@ fun JustLiftScreen(
     @Suppress("UNUSED_VARIABLE") // Reserved for future connecting overlay
     val isAutoConnecting by viewModel.isAutoConnecting.collectAsState()
     val connectionError by viewModel.connectionError.collectAsState()
+    // M16: Collect detection state so post-set detection sheet isn't lost on nav back
+    val detectionState by viewModel.detectionState.collectAsState()
+    val exerciseRepository: ExerciseRepository = koinInject()
 
     var selectedMode by remember { mutableStateOf(workoutParameters.programMode.toWorkoutMode(workoutParameters.echoLevel)) }
     // Initialize to match the picker's default: 1 lb = 0.453592 kg
@@ -670,6 +675,21 @@ fun JustLiftScreen(
                 profileRepository = profileRepository,
                 scope = scope,
                 onDismiss = { showAddProfileDialog = false }
+            )
+        }
+
+        // M16: Show exercise auto-detection sheet when detection fires during/after set completion.
+        // The detection state persists in ExerciseDetectionManager until explicitly reset,
+        // so if detection triggers while transitioning from ActiveWorkoutScreen back here,
+        // the pending result is still available for the user to confirm or dismiss.
+        if (detectionState.isActive && detectionState.classification != null) {
+            AutoDetectionSheet(
+                classification = detectionState.classification!!,
+                exerciseRepository = exerciseRepository,
+                onConfirm = { exerciseId, exerciseName ->
+                    scope.launch { viewModel.onDetectionConfirmed(exerciseId, exerciseName) }
+                },
+                onDismiss = { viewModel.onDetectionDismissed() }
             )
         }
     }
