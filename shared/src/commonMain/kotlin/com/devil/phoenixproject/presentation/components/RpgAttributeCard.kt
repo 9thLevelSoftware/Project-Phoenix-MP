@@ -21,6 +21,9 @@ import com.devil.phoenixproject.domain.model.CharacterClass
 import com.devil.phoenixproject.domain.model.RpgAttribute
 import com.devil.phoenixproject.domain.model.RpgProfile
 import com.devil.phoenixproject.ui.theme.Spacing
+import org.jetbrains.compose.resources.stringResource
+import vitruvianprojectphoenix.shared.generated.resources.Res
+import vitruvianprojectphoenix.shared.generated.resources.rpg_no_data_yet
 
 /**
  * RPG Attribute Card -- shows character class header, five attribute bars (0-100),
@@ -32,6 +35,29 @@ fun RpgAttributeCard(
     onPortalLink: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    // M13: Show a friendly empty state for zero-workout users instead of a card
+    // with all-zero attribute bars, which is confusing and uninformative.
+    if (profile == RpgProfile.EMPTY) {
+        Card(
+            modifier = modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surface
+            ),
+            shape = MaterialTheme.shapes.medium
+        ) {
+            Text(
+                text = stringResource(Res.string.rpg_no_data_yet),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(Spacing.large)
+            )
+        }
+        return
+    }
+
     Card(
         modifier = modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(

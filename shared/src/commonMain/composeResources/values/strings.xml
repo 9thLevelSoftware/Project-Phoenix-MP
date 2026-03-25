@@ -237,6 +237,25 @@
 
     <!-- ==================== Rest Timer ==================== -->
     <string name="rest_between_exercises">Rest Between Exercises</string>
+    <string name="rest_quick_rest">QUICK REST</string>
+    <string name="rest_time">REST TIME</string>
+    <string name="rest_paused">PAUSED</string>
+    <string name="rest_up_next">UP NEXT</string>
+    <string name="rest_next_set_config">NEXT SET CONFIGURATION</string>
+    <string name="rest_echo_level">ECHO LEVEL</string>
+    <string name="rest_eccentric_load">ECCENTRIC LOAD</string>
+    <string name="rest_workout_complete">Workout Complete</string>
+    <string name="rest_weight_per_cable">Weight per cable</string>
+    <string name="rest_target_reps">Target Reps</string>
+    <string name="rest_exercise_of">Exercise %1$d of %2$d</string>
+    <string name="rest_set_of">Set %1$d of %2$d</string>
+    <string name="rest_mode">%1$s Mode</string>
+    <string name="rest_resume">Resume</string>
+    <string name="rest_pause">Pause</string>
+    <string name="rest_reset">Reset</string>
+    <string name="rest_skip">Skip Rest</string>
+    <string name="rest_end_workout">End Workout</string>
+    <string name="rest_continue">Continue</string>
 
     <!-- ==================== Weight Adjustment ==================== -->
     <string name="set_weight">Set Weight</string>
@@ -326,6 +345,13 @@
     <!-- ==================== Selection Action Bar ==================== -->
 
     <!-- ==================== RPE Slider ==================== -->
+
+    <!-- ==================== Velocity Zones ==================== -->
+    <string name="zone_explosive">Explosive</string>
+    <string name="zone_fast">Fast</string>
+    <string name="zone_moderate">Moderate</string>
+    <string name="zone_slow">Slow</string>
+    <string name="zone_grind">Grind</string>
 
     <!-- ==================== Ghost Racing ==================== -->
     <string name="ghost_you">YOU</string>
@@ -577,4 +603,7 @@
     <string name="settings_calibration_open_settings">Open Settings</string>
     <string name="cd_voice_stop">Voice emergency stop</string>
     <string name="cd_calibration_check">Calibration check</string>
+
+    <!-- ==================== RPG Attributes ==================== -->
+    <string name="rpg_no_data_yet">Complete your first workout to unlock RPG attributes</string>
 </resources>

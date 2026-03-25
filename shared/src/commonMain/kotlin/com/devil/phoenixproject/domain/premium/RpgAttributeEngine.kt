@@ -115,14 +115,23 @@ object RpgAttributeEngine {
      * If the spread (max - min) is <= [BALANCED_THRESHOLD], returns PHOENIX.
      * Otherwise, the dominant attribute determines the class.
      * Mastery dominant also maps to PHOENIX (well-rounded achiever).
+     *
+     * M12: Tie-breaking is intentional. When multiple attributes share the max value,
+     * Kotlin's `when` matches the first branch that equals `max`. The priority order is:
+     *   POWERLIFTER (str) > ATHLETE (pow) > IRONMAN (sta) > MONK (con) > PHOENIX (mas)
+     * This favors the strength archetype for ambiguous ties, which aligns with the
+     * Vitruvian Trainer's identity as a strength-focused machine. This is a deliberate
+     * design choice, not a bug.
      */
     internal fun classifyCharacter(str: Int, pow: Int, sta: Int, con: Int, mas: Int): CharacterClass {
         val attrs = listOf(str, pow, sta, con, mas)
         val max = attrs.max()
         val min = attrs.min()
 
+        // If all attributes are within BALANCED_THRESHOLD of each other, the user is well-rounded
         if (max - min <= BALANCED_THRESHOLD) return CharacterClass.PHOENIX
 
+        // First match wins on tie — see KDoc above for intentional priority order
         return when (max) {
             str -> CharacterClass.POWERLIFTER
             pow -> CharacterClass.ATHLETE

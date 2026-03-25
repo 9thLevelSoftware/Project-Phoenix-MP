@@ -229,6 +229,25 @@
     <string name="resume_workout_saved">Vous avez une progression sauvegardée :</string>
     <string name="restart_from_set_1">Redémarrer depuis la série 1</string>
     <string name="rest_between_exercises">Repos entre les exercices</string>
+    <string name="rest_quick_rest">REPOS RAPIDE</string>
+    <string name="rest_time">TEMPS DE REPOS</string>
+    <string name="rest_paused">EN PAUSE</string>
+    <string name="rest_up_next">SUIVANT</string>
+    <string name="rest_next_set_config">CONFIGURATION DE LA PROCHAINE SÉRIE</string>
+    <string name="rest_echo_level">NIVEAU ECHO</string>
+    <string name="rest_eccentric_load">CHARGE EXCENTRIQUE</string>
+    <string name="rest_workout_complete">Entraînement terminé</string>
+    <string name="rest_weight_per_cable">Poids par câble</string>
+    <string name="rest_target_reps">Répétitions cibles</string>
+    <string name="rest_exercise_of">Exercice %1$d sur %2$d</string>
+    <string name="rest_set_of">Série %1$d sur %2$d</string>
+    <string name="rest_mode">Mode %1$s</string>
+    <string name="rest_resume">Reprendre</string>
+    <string name="rest_pause">Pause</string>
+    <string name="rest_reset">Réinitialiser</string>
+    <string name="rest_skip">Passer le repos</string>
+    <string name="rest_end_workout">Terminer l\'entraînement</string>
+    <string name="rest_continue">Continuer</string>
     <string name="set_weight">Régler le poids</string>
 
     <!-- Connection Logs -->
@@ -292,6 +311,13 @@
     <string name="percent_label">%1$d%%</string>
     <string name="nav_previous">◄</string>
     <string name="nav_next">►</string>
+    <!-- Velocity Zones -->
+    <string name="zone_explosive">Explosif</string>
+    <string name="zone_fast">Rapide</string>
+    <string name="zone_moderate">Modéré</string>
+    <string name="zone_slow">Lent</string>
+    <string name="zone_grind">Grind</string>
+
     <string name="ghost_you">VOUS</string>
     <string name="ghost_best">MEILLEUR</string>
     <!-- ==================== Issue 1: AnalyticsScreen ==================== -->
@@ -537,6 +563,10 @@
     <string name="settings_calibration_fail">La d\u00e9tection n\'\u00e9tait pas fiable. Essayez un autre mot.</string>
     <string name="settings_calibration_progress">%1$d sur 3 d\u00e9tections</string>
     <string name="settings_calibration_mic_error">Impossible d\'acc\u00e9der au microphone. V\u00e9rifiez les autorisations et r\u00e9essayez.</string>
+    <string name="settings_calibration_open_settings">Ouvrir les paramètres</string>
     <string name="cd_voice_stop">Arr\u00eat d\'urgence vocal</string>
     <string name="cd_calibration_check">V\u00e9rification de calibration</string>
+
+    <!-- ==================== RPG Attributes ==================== -->
+    <string name="rpg_no_data_yet">Terminez votre premier entra\u00eenement pour d\u00e9bloquer les attributs RPG</string>
 </resources>

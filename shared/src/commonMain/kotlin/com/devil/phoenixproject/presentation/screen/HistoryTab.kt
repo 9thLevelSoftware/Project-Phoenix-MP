@@ -61,6 +61,10 @@ fun HistoryTab(
     @Suppress("UNUSED_VARIABLE")  // Kept for future pull-to-refresh implementation
     var isRefreshing by remember { mutableStateOf(false) }
 
+    // M8: Hoist koinInject calls to parent composable scope (outside LazyColumn items).
+    // Calling koinInject inside lazy item lambdas can cause stale scope issues during recomposition.
+    val repMetricRepository: RepMetricRepository = koinInject()
+
     var selectedPeriod by remember { mutableStateOf(HistoryTimePeriod.ALL) }
 
     // Filter history items by selected time period
@@ -135,6 +139,7 @@ fun HistoryTab(
                                 formatWeight = formatWeight,
                                 kgToDisplay = kgToDisplay,
                                 exerciseRepository = exerciseRepository,
+                                repMetricRepository = repMetricRepository,
                                 onDelete = { onDeleteWorkout(item.session.id) }
                             )
                         }
@@ -145,6 +150,7 @@ fun HistoryTab(
                                 formatWeight = formatWeight,
                                 kgToDisplay = kgToDisplay,
                                 exerciseRepository = exerciseRepository,
+                                repMetricRepository = repMetricRepository,
                                 onDelete = { sessionId -> onDeleteWorkout(sessionId) }
                             )
                         }
@@ -163,6 +169,7 @@ fun WorkoutHistoryCard(
     formatWeight: (Float, WeightUnit) -> String,
     kgToDisplay: (Float, WeightUnit) -> Float,
     exerciseRepository: com.devil.phoenixproject.data.repository.ExerciseRepository,
+    repMetricRepository: RepMetricRepository,
     onDelete: () -> Unit
 ) {
     var showDeleteDialog by remember { mutableStateOf(false) }
@@ -383,7 +390,8 @@ fun WorkoutHistoryCard(
                     RepDetailsSection(
                         sessionId = session.id,
                         weightUnit = weightUnit,
-                        formatWeight = formatWeight
+                        formatWeight = formatWeight,
+                        repMetricRepository = repMetricRepository
                     )
 
                     // Biomechanics Section (v0.5.0+, tier-gated)
@@ -579,13 +587,19 @@ private fun CompletedSetsSection(
 private fun RepDetailsSection(
     sessionId: String,
     weightUnit: WeightUnit,
-    formatWeight: (Float, WeightUnit) -> String
+    formatWeight: (Float, WeightUnit) -> String,
+    repMetricRepository: RepMetricRepository
 ) {
-    val repMetricRepository: RepMetricRepository = koinInject()
     var repMetrics by remember { mutableStateOf<List<RepMetricData>>(emptyList()) }
 
+    // M8: Wrap DB call in try/catch to prevent crashes from corrupted or missing data
     LaunchedEffect(sessionId) {
-        repMetrics = repMetricRepository.getRepMetrics(sessionId)
+        try {
+            repMetrics = repMetricRepository.getRepMetrics(sessionId)
+        } catch (e: Exception) {
+            co.touchlab.kermit.Logger.e("HistoryTab") { "Failed to load rep metrics for session $sessionId: ${e.message}" }
+            repMetrics = emptyList()
+        }
     }
 
     if (repMetrics.isNotEmpty()) {
@@ -635,6 +649,7 @@ fun GroupedRoutineCard(
     formatWeight: (Float, WeightUnit) -> String,
     kgToDisplay: (Float, WeightUnit) -> Float,
     exerciseRepository: com.devil.phoenixproject.data.repository.ExerciseRepository,
+    repMetricRepository: RepMetricRepository,
     onDelete: (String) -> Unit
 ) {
     var showDeleteDialog by remember { mutableStateOf(false) }
@@ -906,7 +921,8 @@ fun GroupedRoutineCard(
                         RepDetailsSection(
                             sessionId = session.id,
                             weightUnit = weightUnit,
-                            formatWeight = formatWeight
+                            formatWeight = formatWeight,
+                            repMetricRepository = repMetricRepository
                         )
 
                         // Biomechanics Section per session (v0.5.0+, tier-gated)

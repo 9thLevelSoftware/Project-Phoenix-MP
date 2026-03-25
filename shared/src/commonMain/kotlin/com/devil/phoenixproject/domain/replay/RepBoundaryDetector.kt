@@ -163,7 +163,17 @@ class RepBoundaryDetector {
             val endIndex = valleys[i + 1]
 
             // Find peak position between valleys using raw positions for accuracy
-            val peakIndex = findPeakBetween(rawPositions, startIndex, endIndex)
+            val rawPeak = findPeakBetween(rawPositions, startIndex, endIndex)
+
+            // M6: When peak is at startIndex, concentricIndices would be empty (startIndex until startIndex).
+            // This happens when the true peak equals the valley value. Search the first half for an
+            // actual peak; if still at startIndex, use the midpoint as a reasonable fallback.
+            val peakIndex = if (rawPeak == startIndex && endIndex > startIndex + 1) {
+                val halfwayPeak = findPeakBetween(rawPositions, startIndex, (startIndex + endIndex) / 2)
+                if (halfwayPeak == startIndex) (startIndex + endIndex) / 2 else halfwayPeak
+            } else {
+                rawPeak
+            }
 
             // Build concentric and eccentric ranges
             val concentricIndices = startIndex until peakIndex

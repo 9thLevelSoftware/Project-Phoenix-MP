@@ -39,12 +39,19 @@ fun RepReplayCard(
     formatWeight: (Float, WeightUnit) -> String,
     modifier: Modifier = Modifier
 ) {
-    // Combine concentric + eccentric loads for continuous curve
-    val combinedForceData = repData.concentricLoadsA + repData.eccentricLoadsA
+    // M7: Combine both cables (A+B) for each phase, then concatenate for a continuous curve.
+    // Guard against mismatched array sizes between cables A and B by using the shorter length.
+    val concentricCombined = FloatArray(minOf(repData.concentricLoadsA.size, repData.concentricLoadsB.size)) { i ->
+        repData.concentricLoadsA[i] + repData.concentricLoadsB[i]
+    }
+    val eccentricCombined = FloatArray(minOf(repData.eccentricLoadsA.size, repData.eccentricLoadsB.size)) { i ->
+        repData.eccentricLoadsA[i] + repData.eccentricLoadsB[i]
+    }
+    val combinedForceData = concentricCombined + eccentricCombined
 
     // Peak index is at the transition point (end of concentric phase)
-    val peakIndex = if (repData.concentricLoadsA.isNotEmpty()) {
-        repData.concentricLoadsA.size - 1
+    val peakIndex = if (concentricCombined.isNotEmpty()) {
+        concentricCombined.size - 1
     } else {
         null
     }

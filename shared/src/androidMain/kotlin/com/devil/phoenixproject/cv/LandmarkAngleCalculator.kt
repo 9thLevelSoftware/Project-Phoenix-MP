@@ -163,9 +163,10 @@ object LandmarkAngleCalculator {
 
         angles[JointAngleType.TRUNK_LEAN] = calculateTrunkLean2D(nl)
 
-        // Valgus is harder to detect in 2D - report 0 (neutral)
-        angles[JointAngleType.KNEE_VALGUS_LEFT] = 0f
-        angles[JointAngleType.KNEE_VALGUS_RIGHT] = 0f
+        // M5: Knee valgus requires 3D (frontal plane) data to compute meaningfully.
+        // In 2D fallback, leave KNEE_VALGUS keys absent from the map so
+        // FormRulesEngine skips the check (null-safe lookup on line 75).
+        // Previously forced to 0f which falsely reported "perfect" valgus.
     }
 
     /**

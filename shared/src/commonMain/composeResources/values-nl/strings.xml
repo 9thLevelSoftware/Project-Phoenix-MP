@@ -230,6 +230,25 @@
     <string name="resume_workout_saved">Je hebt opgeslagen voortgang:</string>
     <string name="restart_from_set_1">Herstart vanaf serie 1</string>
     <string name="rest_between_exercises">Rust tussen oefeningen</string>
+    <string name="rest_quick_rest">SNELLE RUST</string>
+    <string name="rest_time">RUSTTIJD</string>
+    <string name="rest_paused">GEPAUZEERD</string>
+    <string name="rest_up_next">VOLGENDE</string>
+    <string name="rest_next_set_config">VOLGENDE SERIE-CONFIGURATIE</string>
+    <string name="rest_echo_level">ECHO-NIVEAU</string>
+    <string name="rest_eccentric_load">EXCENTRISCHE BELASTING</string>
+    <string name="rest_workout_complete">Training voltooid</string>
+    <string name="rest_weight_per_cable">Gewicht per kabel</string>
+    <string name="rest_target_reps">Doelherhalingen</string>
+    <string name="rest_exercise_of">Oefening %1$d van %2$d</string>
+    <string name="rest_set_of">Serie %1$d van %2$d</string>
+    <string name="rest_mode">%1$s-modus</string>
+    <string name="rest_resume">Hervatten</string>
+    <string name="rest_pause">Pauzeren</string>
+    <string name="rest_reset">Resetten</string>
+    <string name="rest_skip">Rust overslaan</string>
+    <string name="rest_end_workout">Training beëindigen</string>
+    <string name="rest_continue">Doorgaan</string>
     <string name="set_weight">Gewicht instellen</string>
 
     <!-- Connection Logs -->
@@ -293,6 +312,13 @@
     <string name="percent_label">%1$d%%</string>
     <string name="nav_previous">◄</string>
     <string name="nav_next">►</string>
+    <!-- Velocity Zones -->
+    <string name="zone_explosive">Explosief</string>
+    <string name="zone_fast">Snel</string>
+    <string name="zone_moderate">Matig</string>
+    <string name="zone_slow">Langzaam</string>
+    <string name="zone_grind">Grind</string>
+
     <string name="ghost_you">JIJ</string>
     <string name="ghost_best">BESTE</string>
 
@@ -516,6 +542,10 @@
     <string name="settings_calibration_fail">Detectie was onbetrouwbaar. Probeer een ander woord.</string>
     <string name="settings_calibration_progress">%1$d van 3 detecties</string>
     <string name="settings_calibration_mic_error">Kon geen toegang krijgen tot de microfoon. Controleer toestemmingen en probeer opnieuw.</string>
+    <string name="settings_calibration_open_settings">Instellingen openen</string>
     <string name="cd_voice_stop">Spraak noodstop</string>
     <string name="cd_calibration_check">Kalibratiecontrole</string>
+
+    <!-- ==================== RPG Attributes ==================== -->
+    <string name="rpg_no_data_yet">Voltooi je eerste training om RPG-attributen te ontgrendelen</string>
 </resources>

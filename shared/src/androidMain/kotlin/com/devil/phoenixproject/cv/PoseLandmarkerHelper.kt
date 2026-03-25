@@ -114,6 +114,12 @@ class PoseLandmarkerHelper(
                 bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true
             )
 
+            // Recycle the source bitmap if createBitmap returned a new object (H18 — bitmap leak fix).
+            // When rotation/flip is identity, createBitmap returns the same instance, so skip recycle.
+            if (rotatedBitmap !== bitmap) {
+                bitmap.recycle()
+            }
+
             // Build MediaPipe image and run async detection
             val mpImage = BitmapImageBuilder(rotatedBitmap).build()
             poseLandmarker?.detectAsync(mpImage, currentTimeMs)
@@ -141,23 +147,30 @@ class PoseLandmarkerHelper(
     }
 
     private fun handleResult(result: PoseLandmarkerResult, input: MPImage) {
-        if (result.landmarks().isEmpty()) {
-            listener.onEmpty()
-            return
+        try {
+            if (result.landmarks().isEmpty()) {
+                listener.onEmpty()
+                return
+            }
+
+            // Use first detected pose (single-person assumption for workout)
+            val normalizedLandmarks = result.landmarks()[0]
+            val worldLandmarks = result.worldLandmarks().getOrNull(0)
+
+            // Extract timestamp from result (set during detectAsync call)
+            val timestampMs = result.timestampMs()
+
+            listener.onResults(
+                normalizedLandmarks = normalizedLandmarks,
+                worldLandmarks = worldLandmarks,
+                timestampMs = timestampMs
+            )
+        } finally {
+            // H18: Recycle the MPImage's backing bitmap after inference completes.
+            // MediaPipe LIVE_STREAM mode delivers results asynchronously, so this
+            // is the earliest safe point to release the rotatedBitmap memory.
+            input.close()
         }
-
-        // Use first detected pose (single-person assumption for workout)
-        val normalizedLandmarks = result.landmarks()[0]
-        val worldLandmarks = result.worldLandmarks().getOrNull(0)
-
-        // Extract timestamp from result (set during detectAsync call)
-        val timestampMs = result.timestampMs()
-
-        listener.onResults(
-            normalizedLandmarks = normalizedLandmarks,
-            worldLandmarks = worldLandmarks,
-            timestampMs = timestampMs
-        )
     }
 
     private fun handleError(error: RuntimeException) {
