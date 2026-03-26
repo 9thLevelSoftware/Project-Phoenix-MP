@@ -4,7 +4,6 @@ import com.devil.phoenixproject.data.repository.UserProfile
 import com.devil.phoenixproject.data.repository.UserProfileRepository
 import com.devil.phoenixproject.domain.model.currentTimeMillis
 import com.devil.phoenixproject.domain.model.generateUUID
-import com.devil.phoenixproject.domain.premium.SubscriptionTier
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -107,9 +106,5 @@ class FakeUserProfileRepository : UserProfileRepository {
 
     override fun getActiveProfileSubscriptionStatus(): Flow<com.devil.phoenixproject.data.repository.SubscriptionStatus> {
         return flowOf(com.devil.phoenixproject.data.repository.SubscriptionStatus.FREE)
-    }
-
-    override fun getActiveProfileTier(): Flow<SubscriptionTier> {
-        return flowOf(SubscriptionTier.FREE)
     }
 }

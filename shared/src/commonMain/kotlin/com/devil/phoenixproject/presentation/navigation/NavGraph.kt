@@ -334,12 +334,6 @@ fun NavGraph(
                 onDiscoModeToggle = { viewModel.toggleDiscoMode(it) },
                 onPlayDiscoSound = { viewModel.emitDiscoSound() },
                 onTestSounds = { viewModel.testSounds() },
-                // LED Biofeedback
-                ledFeedbackEnabled = userPreferences.ledFeedbackEnabled,
-                onLedFeedbackChange = { viewModel.setLedFeedbackEnabled(it) },
-                // Color-blind mode (WCAG accessibility)
-                colorBlindModeEnabled = userPreferences.colorBlindModeEnabled,
-                onColorBlindModeChange = { viewModel.setColorBlindModeEnabled(it) },
                 // Gamification toggle
                 gamificationEnabled = userPreferences.gamificationEnabled,
                 onGamificationEnabledChange = { viewModel.setGamificationEnabled(it) },

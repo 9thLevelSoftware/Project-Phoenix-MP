@@ -3,7 +3,6 @@ package com.devil.phoenixproject.ui.theme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.ReadOnlyComposable
-import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 import com.devil.phoenixproject.domain.model.BiomechanicsVelocityZone
@@ -14,10 +13,7 @@ import vitruvianprojectphoenix.shared.generated.resources.*
 /**
  * Semantic color palette for accessibility-aware UI elements.
  *
- * Two palettes are provided:
- * - [StandardPalette]: Uses the existing codebase colors (red/green/amber).
- * - [ColorBlindPalette]: Deuteranopia-safe palette using blue/orange axis.
- *
+ * Uses the standard codebase colors (red/green/amber).
  * Access via [AccessibilityTheme.colors] in any composable.
  */
 @Immutable
@@ -47,7 +43,7 @@ data class AccessibilityColors(
     val qualityBelowAverage: Color,
     val qualityPoor: Color,
 
-    // Reserved for future phases (readiness card, ghost racing)
+    // Reserved for future phases (readiness card)
     val statusGreen: Color,
     val statusYellow: Color,
     val statusRed: Color
@@ -91,49 +87,6 @@ val StandardPalette = AccessibilityColors(
 )
 
 /**
- * Deuteranopia-safe palette using blue/orange axis.
- * All red/green distinctions replaced with blue/orange equivalents
- * that remain distinguishable for users with red-green color vision deficiency.
- */
-val ColorBlindPalette = AccessibilityColors(
-    // Semantic status (blue/orange axis)
-    success = Color(0xFF2196F3),     // Blue
-    error = Color(0xFFFF9800),       // Orange
-    warning = Color(0xFFFDD835),     // Yellow
-    neutral = Color(0xFF9E9E9E),
-
-    // Velocity zones (dark blue -> deep orange gradient)
-    zoneExplosive = Color(0xFF1565C0),   // Dark blue
-    zoneFast = Color(0xFF42A5F5),         // Medium blue
-    zoneModerate = Color(0xFFFDD835),     // Yellow
-    zoneSlow = Color(0xFFFF9800),         // Orange
-    zoneGrind = Color(0xFFE65100),        // Deep orange
-
-    // Asymmetry severity
-    asymmetryGood = Color(0xFF2196F3),
-    asymmetryCaution = Color(0xFFFDD835),
-    asymmetryBad = Color(0xFFFF9800),
-
-    // Rep quality
-    qualityExcellent = Color(0xFF1565C0),
-    qualityGood = Color(0xFF42A5F5),
-    qualityFair = Color(0xFFFDD835),
-    qualityBelowAverage = Color(0xFFFF9800),
-    qualityPoor = Color(0xFFE65100),
-
-    // Reserved -- blue/yellow/orange mapping
-    statusGreen = Color(0xFF2196F3),
-    statusYellow = Color(0xFFFDD835),
-    statusRed = Color(0xFFFF9800)
-)
-
-/**
- * CompositionLocal for color-blind mode toggle state.
- * Dynamic (compositionLocalOf) -- triggers recomposition when toggled.
- */
-val LocalColorBlindMode = compositionLocalOf { false }
-
-/**
  * CompositionLocal for the active accessibility color palette.
  * Static (staticCompositionLocalOf) -- entire value swaps on mode change.
  */
@@ -145,17 +98,12 @@ val LocalAccessibilityColors = staticCompositionLocalOf { StandardPalette }
  * Usage:
  * ```kotlin
  * val color = AccessibilityTheme.colors.success
- * val isColorBlind = AccessibilityTheme.isColorBlindMode
  * ```
  */
 object AccessibilityTheme {
     val colors: AccessibilityColors
         @Composable @ReadOnlyComposable
         get() = LocalAccessibilityColors.current
-
-    val isColorBlindMode: Boolean
-        @Composable @ReadOnlyComposable
-        get() = LocalColorBlindMode.current
 }
 
 /**

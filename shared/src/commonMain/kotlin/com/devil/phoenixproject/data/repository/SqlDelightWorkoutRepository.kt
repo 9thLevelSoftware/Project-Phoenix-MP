@@ -8,7 +8,6 @@ import com.devil.phoenixproject.database.VitruvianDatabase
 import com.devil.phoenixproject.domain.model.EccentricLoad
 import com.devil.phoenixproject.domain.model.EchoLevel
 import com.devil.phoenixproject.domain.model.Exercise
-import com.devil.phoenixproject.domain.model.GhostSessionCandidate
 import com.devil.phoenixproject.domain.model.PRType
 import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.Routine
@@ -858,30 +857,6 @@ class SqlDelightWorkoutRepository(
                 timestamp = stats.timestamp
             )
             Logger.d { "Saved phase statistics for session $sessionId" }
-        }
-    }
-
-    override suspend fun findBestGhostSession(
-        exerciseId: String,
-        mode: String,
-        weightPerCableKg: Float,
-        weightToleranceKg: Float,
-        profileId: String
-    ): GhostSessionCandidate? = withContext(Dispatchers.IO) {
-        queries.selectBestGhostSession(
-            exerciseId = exerciseId,
-            mode = mode,
-            weightPerCableKg = weightPerCableKg.toDouble(),
-            value_ = weightToleranceKg.toDouble(),
-            profileId = profileId
-        ).executeAsOneOrNull()?.let { row ->
-            GhostSessionCandidate(
-                id = row.id,
-                exerciseName = row.exerciseName,
-                weightPerCableKg = row.weightPerCableKg.toFloat(),
-                workingReps = row.workingReps.toInt(),
-                avgMcvMmS = row.avgMcvMmS.toFloat()
-            )
         }
     }
 

@@ -73,9 +73,6 @@ fun App() {
     // Theme state - persisted via ThemeViewModel
     val themeMode by themeViewModel.themeMode.collectAsState()
 
-    // Color-blind mode - persisted via SettingsManager through MainViewModel
-    val colorBlindModeEnabled by viewModel.colorBlindModeEnabled.collectAsState()
-
     // EULA acceptance state
     val eulaAccepted by eulaViewModel.eulaAccepted.collectAsState()
 
@@ -95,7 +92,7 @@ fun App() {
     // Lifecycle observer for foreground sync
     AppLifecycleObserver(syncTriggerManager)
 
-    VitruvianTheme(themeMode = themeMode, colorBlindMode = colorBlindModeEnabled) {
+    VitruvianTheme(themeMode = themeMode) {
         Box(modifier = Modifier.fillMaxSize()) {
             // EULA acceptance screen - shown first if not accepted
             if (!eulaAccepted) {

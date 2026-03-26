@@ -66,22 +66,6 @@ class SettingsManager(
         scope.launch { preferencesManager.setAudioRepCountEnabled(enabled) }
     }
 
-    val ledFeedbackEnabled: StateFlow<Boolean> = userPreferences
-        .map { it.ledFeedbackEnabled }
-        .stateIn(scope, SharingStarted.Eagerly, false)
-
-    fun setLedFeedbackEnabled(enabled: Boolean) {
-        scope.launch { preferencesManager.setLedFeedbackEnabled(enabled) }
-    }
-
-    val colorBlindModeEnabled: StateFlow<Boolean> = userPreferences
-        .map { it.colorBlindModeEnabled }
-        .stateIn(scope, SharingStarted.Eagerly, false)
-
-    fun setColorBlindModeEnabled(enabled: Boolean) {
-        scope.launch { preferencesManager.setColorBlindModeEnabled(enabled) }
-    }
-
     fun setRepCountTiming(timing: RepCountTiming) {
         scope.launch { preferencesManager.setRepCountTiming(timing) }
     }

@@ -99,9 +99,7 @@ sealed class WorkoutState {
         // Rep Quality Summary (null for Free tier or if scorer wasn't active)
         val qualitySummary: SetQualitySummary? = null,
         // Biomechanics Set Summary (null for Free tier or if no reps processed by engine)
-        val biomechanicsSummary: BiomechanicsSetSummary? = null,
-        // Ghost Racing summary (null if ghost racing was not active for this set)
-        val ghostSetSummary: GhostSetSummary? = null
+        val biomechanicsSummary: BiomechanicsSetSummary? = null
     ) : WorkoutState()
     object Paused : WorkoutState()
     object Completed : WorkoutState()

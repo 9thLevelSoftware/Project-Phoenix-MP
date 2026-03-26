@@ -9,8 +9,7 @@ import kotlinx.coroutines.withContext
 /**
  * Repository for per-rep biomechanics data CRUD operations.
  *
- * IMPORTANT: No subscription tier checks here. Data is captured for ALL users (GATE-04).
- * Feature gating happens at the UI/feature layer via FeatureGate.
+ * Data is captured for ALL users regardless of subscription status.
  */
 interface BiomechanicsRepository {
     suspend fun saveRepBiomechanics(sessionId: String, results: List<BiomechanicsRepResult>)

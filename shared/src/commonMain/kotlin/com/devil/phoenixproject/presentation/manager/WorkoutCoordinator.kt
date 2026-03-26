@@ -4,8 +4,6 @@ import com.devil.phoenixproject.data.repository.AutoStopUiState
 import com.devil.phoenixproject.data.repository.HandleState
 import com.devil.phoenixproject.domain.model.*
 import com.devil.phoenixproject.domain.model.BiomechanicsRepResult
-import com.devil.phoenixproject.domain.model.GhostRepComparison
-import com.devil.phoenixproject.domain.model.GhostSession
 import com.devil.phoenixproject.domain.premium.BiomechanicsEngine
 import com.devil.phoenixproject.domain.premium.RepQualityScorer
 import kotlin.concurrent.Volatile
@@ -318,14 +316,6 @@ class WorkoutCoordinator(
     internal var handleDetectionEnabledTimestamp: Long = 0L
     internal val HANDLE_DETECTION_DEBOUNCE_MS = 500L
 
-    // ===== LED Biofeedback =====
-
-    /**
-     * LED biofeedback controller for real-time LED color changes during workouts.
-     * Set during DI construction (nullable for tests that don't need LED feedback).
-     */
-    var ledFeedbackController: LedFeedbackController? = null
-
     // ===== Rep Quality Scoring =====
 
     /**
@@ -365,15 +355,4 @@ class WorkoutCoordinator(
     val latestBiomechanicsResult: StateFlow<BiomechanicsRepResult?>
         get() = biomechanicsEngine.latestRepResult
 
-    // ===== Ghost Racing State (Phase 22) =====
-
-    internal val _ghostSession = MutableStateFlow<GhostSession?>(null)
-    val ghostSession: StateFlow<GhostSession?> = _ghostSession.asStateFlow()
-
-    internal val _latestGhostVerdict = MutableStateFlow<GhostRepComparison?>(null)
-    val latestGhostVerdict: StateFlow<GhostRepComparison?> = _latestGhostVerdict.asStateFlow()
-
-    /** Accumulates per-rep ghost comparisons for the current set. Cleared on set reset. */
-    // C3: Thread-safe via MutableStateFlow snapshot
-    internal val ghostRepComparisons = MutableStateFlow<List<GhostRepComparison>>(emptyList())
 }

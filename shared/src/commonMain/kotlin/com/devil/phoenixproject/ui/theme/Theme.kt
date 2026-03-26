@@ -103,7 +103,6 @@ private val LightColorScheme = lightColorScheme(
 @Composable
 fun VitruvianTheme(
     themeMode: ThemeMode = ThemeMode.SYSTEM,
-    colorBlindMode: Boolean = false,
     content: @Composable () -> Unit
 ) {
     val useDarkColors = when (themeMode) {
@@ -111,7 +110,6 @@ fun VitruvianTheme(
         ThemeMode.LIGHT -> false
         ThemeMode.DARK -> true
     }
-    val accessibilityColors = if (colorBlindMode) ColorBlindPalette else StandardPalette
 
     MaterialTheme(
         colorScheme = if (useDarkColors) DarkColorScheme else LightColorScheme,
@@ -119,8 +117,7 @@ fun VitruvianTheme(
         shapes = ExpressiveShapes, // Material 3 Expressive: More rounded shapes
     ) {
         CompositionLocalProvider(
-            LocalColorBlindMode provides colorBlindMode,
-            LocalAccessibilityColors provides accessibilityColors,
+            LocalAccessibilityColors provides StandardPalette,
             content = content
         )
     }

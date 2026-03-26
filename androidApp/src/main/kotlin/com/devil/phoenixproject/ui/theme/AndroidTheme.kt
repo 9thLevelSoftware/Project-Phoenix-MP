@@ -19,12 +19,11 @@ import com.devil.phoenixproject.ui.theme.VitruvianTheme as SharedVitruvianTheme
 fun VitruvianTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
     dynamicColor: Boolean = false, // Disabled - breaks brand identity
-    colorBlindMode: Boolean = false,
     content: @Composable () -> Unit
 ) {
     val themeMode = if (darkTheme) SharedThemeMode.DARK else SharedThemeMode.LIGHT
 
-    SharedVitruvianTheme(themeMode = themeMode, colorBlindMode = colorBlindMode) {
+    SharedVitruvianTheme(themeMode = themeMode) {
         val view = LocalView.current
 
         if (!view.isInEditMode) {

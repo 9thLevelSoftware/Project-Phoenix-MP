@@ -118,9 +118,7 @@ fun WorkoutTab(
         onDetectionDismissed = actions::onDetectionDismissed,
         motionStartHoldProgress = state.motionStartHoldProgress,
         isRestPaused = state.isRestPaused,
-        justLiftRestCountdown = state.justLiftRestCountdown,
-        latestGhostVerdict = state.latestGhostVerdict,
-        hasGhostSession = state.hasGhostSession
+        justLiftRestCountdown = state.justLiftRestCountdown
     )
 }
 
@@ -192,10 +190,7 @@ fun WorkoutTab(
     // Issue #297, #228: Rest timer pause state
     isRestPaused: Boolean = false,
     // Issue #113: Just Lift visual rest countdown (null = not resting)
-    justLiftRestCountdown: Int? = null,
-    // C5: Ghost racing overlay state
-    latestGhostVerdict: GhostRepComparison? = null,
-    hasGhostSession: Boolean = false
+    justLiftRestCountdown: Int? = null
 ) {
     // Note: HapticFeedbackEffect is now global in EnhancedMainScreen
     // No need for local haptic effect here
@@ -232,8 +227,6 @@ fun WorkoutTab(
                 detectionState = detectionState,
                 onDetectionConfirmed = onDetectionConfirmed,
                 onDetectionDismissed = onDetectionDismissed,
-                latestGhostVerdict = latestGhostVerdict,
-                hasGhostSession = hasGhostSession,
                 modifier = Modifier.fillMaxSize()
             )
 
@@ -611,7 +604,7 @@ fun WorkoutTab(
 private fun JustLiftRestTimerBadge(secondsRemaining: Int) {
     val minutes = secondsRemaining / 60
     val seconds = secondsRemaining % 60
-    val timeText = if (minutes > 0) "%d:%02d".format(minutes, seconds) else "${seconds}s"
+    val timeText = if (minutes > 0) "$minutes:${seconds.toString().padStart(2, '0')}" else "${seconds}s"
 
     Surface(
         shape = RoundedCornerShape(24.dp),

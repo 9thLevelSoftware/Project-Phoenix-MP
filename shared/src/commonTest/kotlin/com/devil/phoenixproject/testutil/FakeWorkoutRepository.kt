@@ -3,7 +3,6 @@ package com.devil.phoenixproject.testutil
 import com.devil.phoenixproject.data.repository.PersonalRecordEntity
 import com.devil.phoenixproject.data.repository.PhaseStatisticsData
 import com.devil.phoenixproject.data.repository.WorkoutRepository
-import com.devil.phoenixproject.domain.model.GhostSessionCandidate
 import com.devil.phoenixproject.domain.model.HeuristicStatistics
 import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.domain.model.WorkoutMetric
@@ -182,14 +181,6 @@ class FakeWorkoutRepository : WorkoutRepository {
         )
         updatePhaseStatisticsFlow()
     }
-
-    override suspend fun findBestGhostSession(
-        exerciseId: String,
-        mode: String,
-        weightPerCableKg: Float,
-        weightToleranceKg: Float,
-        profileId: String
-    ): GhostSessionCandidate? = null // No ghost session in tests by default
 
     override fun getAllPhaseStatistics(): Flow<List<PhaseStatisticsData>> = _phaseStatisticsFlow
 }

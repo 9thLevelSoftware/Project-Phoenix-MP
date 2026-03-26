@@ -114,14 +114,12 @@ class RepMetricRepositoryTest {
 
     @Test
     fun `GATE-04 compliance - repository interface has no tier parameter`() {
-        // GATE-04: Data capture happens for ALL tiers.
-        // RepMetricRepository methods take only sessionId and data, never a SubscriptionTier.
+        // Data capture happens for ALL users.
+        // RepMetricRepository methods take only sessionId and data, never a subscription tier.
         // This test verifies the principle by checking the interface contract compiles
-        // with sessionId-only signatures. If someone adds a tier parameter, existing
-        // callers (including this test) will break at compile time.
+        // with sessionId-only signatures.
         val repo: RepMetricRepository? = null
         // These lines verify the method signatures have no tier parameter:
-        // If the interface were changed to require SubscriptionTier, this would not compile.
         @Suppress("SENSELESS_COMPARISON")
         if (repo != null) {
             // Just verifying method signatures - not actually calling

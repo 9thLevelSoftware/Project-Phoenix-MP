@@ -3,8 +3,7 @@ package com.devil.phoenixproject.domain.model
 /**
  * Velocity zone for Mean Concentric Velocity (MCV) analysis.
  *
- * This classifies MCV for training load analysis (separate from VelocityZone in LedFeedback.kt
- * which maps absolute velocity to LED colors).
+ * This classifies MCV for training load analysis.
  *
  * Thresholds based on VBT research:
  * - EXPLOSIVE: MCV >= 1.0 m/s (power/speed work)

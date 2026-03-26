@@ -38,7 +38,8 @@ private fun ensureImageLoader() {
                 add(KtorNetworkFetcherFactory())
             }
             .crossfade(true)
-            .logger(DebugLogger())
+            // DebugLogger only in debug builds — iOS has no BuildConfig, use Platform.isDebugBinary
+            .apply { if (Platform.isDebugBinary) logger(DebugLogger()) }
             .build()
     }
 }

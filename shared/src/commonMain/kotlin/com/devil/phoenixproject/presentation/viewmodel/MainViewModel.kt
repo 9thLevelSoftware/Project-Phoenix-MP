@@ -150,9 +150,6 @@ class MainViewModel constructor(
     val isCurrentExerciseBodyweight: StateFlow<Boolean> get() = workoutSessionManager.coordinator.isCurrentExerciseBodyweight
     val latestRepQuality get() = workoutSessionManager.coordinator.latestRepQuality
     val latestBiomechanicsResult get() = workoutSessionManager.coordinator.latestBiomechanicsResult
-    // C5: Ghost racing state for live overlay
-    val latestGhostVerdict get() = workoutSessionManager.coordinator.latestGhostVerdict
-    val ghostSession get() = workoutSessionManager.coordinator.ghostSession
     val motionStartHoldProgress: StateFlow<Float?> get() = workoutSessionManager.coordinator.motionStartHoldProgress
     val justLiftRestCountdown: StateFlow<Int?> get() = workoutSessionManager.coordinator.justLiftRestCountdown
     val cycleDayCompletionEvent get() = workoutSessionManager.coordinator.cycleDayCompletionEvent
@@ -225,9 +222,6 @@ class MainViewModel constructor(
     fun setEnableVideoPlayback(enabled: Boolean) = settingsManager.setEnableVideoPlayback(enabled)
     fun setStallDetectionEnabled(enabled: Boolean) = settingsManager.setStallDetectionEnabled(enabled)
     fun setAudioRepCountEnabled(enabled: Boolean) = settingsManager.setAudioRepCountEnabled(enabled)
-    fun setLedFeedbackEnabled(enabled: Boolean) = settingsManager.setLedFeedbackEnabled(enabled)
-    val colorBlindModeEnabled: StateFlow<Boolean> get() = settingsManager.colorBlindModeEnabled
-    fun setColorBlindModeEnabled(enabled: Boolean) = settingsManager.setColorBlindModeEnabled(enabled)
     fun setRepCountTiming(timing: RepCountTiming) = settingsManager.setRepCountTiming(timing)
     fun setSummaryCountdownSeconds(seconds: Int) = settingsManager.setSummaryCountdownSeconds(seconds)
     fun setAutoStartCountdownSeconds(seconds: Int) = settingsManager.setAutoStartCountdownSeconds(seconds)
