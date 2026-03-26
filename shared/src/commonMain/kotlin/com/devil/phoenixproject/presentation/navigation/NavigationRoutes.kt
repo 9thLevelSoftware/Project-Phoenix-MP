@@ -44,6 +44,10 @@ sealed class NavigationRoutes(val route: String) {
         fun createRoute(exerciseId: String) = "strength_assessment/$exerciseId"
     }
     object StrengthAssessmentPicker : NavigationRoutes("strength_assessment_picker")
+
+    // Integration routes
+    object Integrations : NavigationRoutes("integrations")
+    object ExternalActivities : NavigationRoutes("external_activities")
 }
 
 /**

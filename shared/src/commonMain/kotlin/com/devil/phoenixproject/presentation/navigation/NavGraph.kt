@@ -321,6 +321,7 @@ fun NavGraph(
                 onNavigateToConnectionLogs = { navController.navigate(NavigationRoutes.ConnectionLogs.route) },
                 onNavigateToBadges = { navController.navigate(NavigationRoutes.Badges.route) },
                 onNavigateToLinkAccount = { navController.navigate(NavigationRoutes.LinkAccount.route) },
+                onNavigateToIntegrations = { navController.navigate(NavigationRoutes.Integrations.route) },
                 isAutoConnecting = isAutoConnecting,
                 connectionError = connectionError,
                 onClearConnectionError = { viewModel.clearConnectionError() },
@@ -587,6 +588,57 @@ fun NavGraph(
         ) {
             LinkAccountScreen(
                 onNavigateBack = { navController.popBackStack() }
+            )
+        }
+
+        // Integrations screen - third-party app connections and CSV import/export
+        composable(
+            route = NavigationRoutes.Integrations.route,
+            enterTransition = {
+                slideIntoContainer(
+                    towards = AnimatedContentTransitionScope.SlideDirection.Left,
+                    animationSpec = tween(300)
+                )
+            },
+            exitTransition = { fadeOut(animationSpec = tween(200)) },
+            popEnterTransition = { fadeIn(animationSpec = tween(200)) },
+            popExitTransition = {
+                slideOutOfContainer(
+                    towards = AnimatedContentTransitionScope.SlideDirection.Right,
+                    animationSpec = tween(300)
+                )
+            }
+        ) {
+            val weightUnit by viewModel.weightUnit.collectAsState()
+            IntegrationsScreen(
+                weightUnit = weightUnit,
+                onNavigateToExternalActivities = {
+                    navController.navigate(NavigationRoutes.ExternalActivities.route)
+                },
+                onSetTitle = { viewModel.updateTopBarTitle(it) }
+            )
+        }
+
+        // External Activities screen - list of imported workouts from third-party apps
+        composable(
+            route = NavigationRoutes.ExternalActivities.route,
+            enterTransition = {
+                slideIntoContainer(
+                    towards = AnimatedContentTransitionScope.SlideDirection.Left,
+                    animationSpec = tween(300)
+                )
+            },
+            exitTransition = { fadeOut(animationSpec = tween(200)) },
+            popEnterTransition = { fadeIn(animationSpec = tween(200)) },
+            popExitTransition = {
+                slideOutOfContainer(
+                    towards = AnimatedContentTransitionScope.SlideDirection.Right,
+                    animationSpec = tween(300)
+                )
+            }
+        ) {
+            ExternalActivitiesScreen(
+                onSetTitle = { viewModel.updateTopBarTitle(it) }
             )
         }
     }
