@@ -176,14 +176,38 @@ jobs:
           APPSTORE_API_KEY_ID: ${{ secrets.APPSTORE_API_KEY_ID }}
           APPSTORE_ISSUER_ID: ${{ secrets.APPSTORE_ISSUER_ID }}
         run: |
+          set -eo pipefail
           mkdir -p ~/.appstoreconnect/private_keys
           echo "$APPSTORE_API_KEY" > ~/.appstoreconnect/private_keys/AuthKey_${APPSTORE_API_KEY_ID}.p8
 
-          xcrun altool --upload-app \
-            -f "$RUNNER_TEMP/export/VitruvianPhoenix.ipa" \
-            --type ios \
+          IPA_PATH="$RUNNER_TEMP/export/VitruvianPhoenix.ipa"
+          BUILD_VERSION="${{ steps.build_number.outputs.build_number }}"
+          MARKETING_VERSION=$(grep 'MARKETING_VERSION' iosApp/VitruvianPhoenix/VitruvianPhoenix.xcodeproj/project.pbxproj | head -1 | sed 's/.*= //;s/;.*//')
+
+          echo "=== Validating IPA before upload ==="
+          echo "IPA: $IPA_PATH ($(du -h "$IPA_PATH" | cut -f1))"
+          echo "Bundle ID: $BUNDLE_ID"
+          echo "Build version: $BUILD_VERSION"
+          echo "Marketing version: $MARKETING_VERSION"
+
+          xcrun altool --validate-app \
+            -f "$IPA_PATH" \
+            -t ios \
             --apiKey "$APPSTORE_API_KEY_ID" \
             --apiIssuer "$APPSTORE_ISSUER_ID"
+
+          echo "=== Uploading IPA to App Store Connect ==="
+          # --upload-app is deprecated and silently fails on Xcode 26+; use --upload-package
+          xcrun altool --upload-package "$IPA_PATH" \
+            --type ios \
+            --bundle-id "$BUNDLE_ID" \
+            --bundle-version "$BUILD_VERSION" \
+            --bundle-short-version-string "$MARKETING_VERSION" \
+            --apple-id "${{ secrets.APP_APPLE_ID }}" \
+            --apiKey "$APPSTORE_API_KEY_ID" \
+            --apiIssuer "$APPSTORE_ISSUER_ID"
+
+          echo "=== Upload completed successfully ==="
 
       - name: Set up Python
         uses: actions/setup-python@v5
