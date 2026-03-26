@@ -1038,4 +1038,98 @@ class BlePacketFactoryTest {
         assertEquals(40.0f, readFloatLE(packet, 0x58), "softMax (=weight)")
         assertEquals(0.0f, readFloatLE(packet, 0x5C), "increment (=progression)")
     }
+
+    // ========== Eccentric Only Mode: Official App Byte Parity Tests ==========
+    // Reference: VitruvianDeobfuscated Dk/e.java ordinal 5 (ECCENTRIC)
+    //
+    // IMPORTANT: Eccentric mode uses a DIFFERENT RepConfig than other modes.
+    // The official app overrides bottom.inner.mmPerM from 250 → 50, making
+    // bottom-of-rep detection more sensitive for eccentric-focused training.
+
+    @Test
+    fun `EccentricOnly packet matches official app RepConfig header`() {
+        val params = WorkoutParameters(
+            programMode = ProgramMode.EccentricOnly,
+            reps = 6,
+            warmupReps = 3,
+            weightPerCableKg = 60f
+        )
+        val packet = BlePacketFactory.createProgramParams(params)
+
+        assertEquals(0x04.toByte(), packet[0x00], "command byte 0")
+
+        // RepCounts: total=9 (6+3), baseline=3, adaptive=3, pad=0
+        assertEquals(9.toByte(), packet[0x04], "RepCounts.total")
+        assertEquals(3.toByte(), packet[0x05], "RepCounts.baseline")
+        assertEquals(3.toByte(), packet[0x06], "RepCounts.adaptive")
+        assertEquals(0.toByte(), packet[0x07], "RepCounts.padding")
+
+        // Standard header fields (same as default)
+        assertEquals(5.0f, readFloatLE(packet, 0x08), "seedRange")
+        assertEquals(5.0f, readFloatLE(packet, 0x0C), "top.threshold")
+        assertEquals(0.0f, readFloatLE(packet, 0x10), "top.drift")
+        assertEquals(250.toShort(), readShortLE(packet, 0x14), "top.inner.mmPerM")
+        assertEquals(250.toShort(), readShortLE(packet, 0x16), "top.inner.mmMax")
+        assertEquals(200.toShort(), readShortLE(packet, 0x18), "top.outer.mmPerM")
+        assertEquals(30.toShort(), readShortLE(packet, 0x1A), "top.outer.mmMax")
+
+        // bottom RepBound — ECCENTRIC-SPECIFIC OVERRIDE
+        assertEquals(5.0f, readFloatLE(packet, 0x1C), "bottom.threshold")
+        assertEquals(0.0f, readFloatLE(packet, 0x20), "bottom.drift")
+        // Official: bottom.inner = L(50, 250) — NOT the default L(250, 250)
+        assertEquals(50.toShort(), readShortLE(packet, 0x24), "bottom.inner.mmPerM (ECCENTRIC=50)")
+        assertEquals(250.toShort(), readShortLE(packet, 0x26), "bottom.inner.mmMax")
+        assertEquals(200.toShort(), readShortLE(packet, 0x28), "bottom.outer.mmPerM")
+        assertEquals(30.toShort(), readShortLE(packet, 0x2A), "bottom.outer.mmMax")
+
+        assertEquals(250.toShort(), readShortLE(packet, 0x2C), "safety.mmPerM")
+        assertEquals(80.toShort(), readShortLE(packet, 0x2E), "safety.mmMax")
+    }
+
+    @Test
+    fun `EccentricOnly packet matches official app mode profile`() {
+        val params = WorkoutParameters(
+            programMode = ProgramMode.EccentricOnly,
+            reps = 6,
+            weightPerCableKg = 60f
+        )
+        val packet = BlePacketFactory.createProgramParams(params)
+
+        // Concentric down ramp: C1507d(50, 550, 50.0f)
+        assertEquals(50.toShort(), readShortLE(packet, 0x30), "conc.down.minMmS")
+        assertEquals(550.toShort(), readShortLE(packet, 0x32), "conc.down.maxMmS")
+        assertEquals(50.0f, readFloatLE(packet, 0x34), "conc.down.ramp")
+
+        // Concentric up ramp: C1507d(650, 750, 10.0f)
+        assertEquals(650.toShort(), readShortLE(packet, 0x38), "conc.up.minMmS")
+        assertEquals(750.toShort(), readShortLE(packet, 0x3A), "conc.up.maxMmS")
+        assertEquals(10.0f, readFloatLE(packet, 0x3C), "conc.up.ramp")
+
+        // Eccentric down ramp: C1507d(-900, -700, 70.0f)
+        assertEquals((-900).toShort(), readShortLE(packet, 0x40), "ecc.down.minMmS")
+        assertEquals((-700).toShort(), readShortLE(packet, 0x42), "ecc.down.maxMmS")
+        assertEquals(70.0f, readFloatLE(packet, 0x44), "ecc.down.ramp")
+
+        // Eccentric up ramp: C1507d(-100, -50, 20.0f)
+        assertEquals((-100).toShort(), readShortLE(packet, 0x48), "ecc.up.minMmS")
+        assertEquals((-50).toShort(), readShortLE(packet, 0x4A), "ecc.up.maxMmS")
+        assertEquals(20.0f, readFloatLE(packet, 0x4C), "ecc.up.ramp")
+    }
+
+    @Test
+    fun `EccentricOnly packet matches official app force config`() {
+        val weight = 60f
+        val params = WorkoutParameters(
+            programMode = ProgramMode.EccentricOnly,
+            reps = 6,
+            weightPerCableKg = weight,
+            progressionRegressionKg = 0f
+        )
+        val packet = BlePacketFactory.createProgramParams(params)
+
+        assertEquals(0.0f, readFloatLE(packet, 0x50), "forces.min")
+        assertEquals(70.0f, readFloatLE(packet, 0x54), "forces.max (10+weight)")
+        assertEquals(60.0f, readFloatLE(packet, 0x58), "softMax (=weight)")
+        assertEquals(0.0f, readFloatLE(packet, 0x5C), "increment (=progression)")
+    }
 }
