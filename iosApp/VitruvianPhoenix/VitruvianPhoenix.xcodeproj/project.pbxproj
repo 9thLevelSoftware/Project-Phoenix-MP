@@ -99,7 +99,6 @@
 			isa = PBXNativeTarget;
 			buildConfigurationList = DFE6BD522EEDF42300886589 /* Build configuration list for PBXNativeTarget "VitruvianPhoenix" */;
 			buildPhases = (
-				DFE6BD812EEE200000886589 /* Build Shared Framework */,
 				DFE6BD432EEDF42200886589 /* Sources */,
 				DFE6BD442EEDF42200886589 /* Frameworks */,
 				DFE6BD452EEDF42200886589 /* Resources */,
@@ -166,21 +165,6 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXShellScriptBuildPhase section */
-		DFE6BD812EEE200000886589 /* Build Shared Framework */ = {
-			isa = PBXShellScriptBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			inputPaths = (
-			);
-			name = "Build Shared Framework";
-			outputPaths = (
-				"$(SRCROOT)/../../shared/build/bin/iosArm64/debugFramework/shared.framework/shared",
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-			shellPath = /bin/sh;
-			shellScript = "cd \"$SRCROOT/../..\"\nexport JAVA_HOME=/opt/homebrew/opt/openjdk@17/libexec/openjdk.jdk/Contents/Home\nexport PATH=\"/opt/homebrew/bin:$PATH\"\n./gradlew :shared:linkDebugFrameworkIosArm64 -Pskip.supabase.check=true\n";
-		};
 		DFE6BD802EEE100000886589 /* Generate shared.framework dSYM */ = {
 			isa = PBXShellScriptBuildPhase;
 			buildActionMask = 2147483647;
