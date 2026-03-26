@@ -2,7 +2,7 @@ name: CI Tests
 
 on:
   push:
-    branches: [main, beta*, feature/*]
+    branches: [main, mvp, beta*, feature/*]
     paths-ignore:
       - '**.md'
       - 'docs/**'
@@ -52,7 +52,7 @@ jobs:
             ${{ runner.os }}-gradle-
 
       - name: Run shared module unit tests
-        run: ./gradlew :shared:testAndroidHostTest --continue
+        run: ./gradlew :shared:testAndroidHostTest --continue -Pskip.supabase.check=true
 
       - name: Upload test results
         if: always()
@@ -101,7 +101,7 @@ jobs:
             ${{ runner.os }}-gradle-
 
       - name: Build debug APK
-        run: ./gradlew :androidApp:assembleDebug
+        run: ./gradlew :androidApp:assembleDebug -Pskip.supabase.check=true
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
@@ -142,7 +142,7 @@ jobs:
             ${{ runner.os }}-gradle-konan-
 
       - name: Compile iOS main and test targets
-        run: ./gradlew :shared:compileKotlinIosArm64 :shared:compileTestKotlinIosArm64
+        run: ./gradlew :shared:compileKotlinIosArm64 :shared:compileTestKotlinIosArm64 -Pskip.supabase.check=true
 
   ios-schema-check:
     name: iOS Schema Sync Check
@@ -187,7 +187,7 @@ jobs:
             ${{ runner.os }}-gradle-
 
       - name: Run Android lint
-        run: ./gradlew :androidApp:lintDebug
+        run: ./gradlew :androidApp:lintDebug -Pskip.supabase.check=true
 
       - name: Upload lint results
         if: always()
