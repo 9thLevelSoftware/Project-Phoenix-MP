@@ -46,6 +46,7 @@ kotlin {
             xcf.add(this)
             // Link system frameworks required by shared module
             linkerOpts("-framework", "HealthKit")
+            linkerOpts("-framework", "Speech")
         }
         binaries.all {
             freeCompilerArgs += listOf("-Xadd-light-debug=enable")
