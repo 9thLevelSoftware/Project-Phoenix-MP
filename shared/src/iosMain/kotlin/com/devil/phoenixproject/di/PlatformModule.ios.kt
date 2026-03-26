@@ -1,5 +1,6 @@
 package com.devil.phoenixproject.di
 
+import com.devil.phoenixproject.data.integration.HealthIntegration
 import com.devil.phoenixproject.data.local.DriverFactory
 import com.devil.phoenixproject.data.repository.BleRepository
 import com.devil.phoenixproject.data.repository.KableBleRepository
@@ -42,4 +43,5 @@ actual val platformModule: Module = module {
     single<DataBackupManager> { IosDataBackupManager(get()) }
     single { ConnectivityChecker() }
     single<SafeWordListenerFactory> { IosSafeWordListenerFactory() }
+    single { HealthIntegration() }
 }

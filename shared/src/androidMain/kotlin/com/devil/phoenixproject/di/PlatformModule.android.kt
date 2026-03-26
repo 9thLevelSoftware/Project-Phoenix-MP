@@ -13,6 +13,7 @@ import com.devil.phoenixproject.util.AndroidCsvImporter
 import com.devil.phoenixproject.util.AndroidDataBackupManager
 import com.devil.phoenixproject.domain.voice.AndroidSafeWordListenerFactory
 import com.devil.phoenixproject.domain.voice.SafeWordListenerFactory
+import com.devil.phoenixproject.data.integration.HealthIntegration
 import com.devil.phoenixproject.util.ConnectivityChecker
 import com.devil.phoenixproject.util.CsvExporter
 import com.devil.phoenixproject.util.CsvImporter
@@ -51,6 +52,7 @@ actual val platformModule: Module = module {
     single<DataBackupManager> { AndroidDataBackupManager(androidContext(), get()) }
     single { ConnectivityChecker(androidContext()) }
     single<SafeWordListenerFactory> { AndroidSafeWordListenerFactory(androidContext()) }
+    single { HealthIntegration(androidContext()) }
 }
 
 /**
