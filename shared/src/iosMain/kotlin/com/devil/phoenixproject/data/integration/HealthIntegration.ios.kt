@@ -56,15 +56,8 @@ actual class HealthIntegration {
     /**
      * Checks whether HealthKit is available on this device.
      * Returns false on iPad and devices without HealthKit support.
-     *
-     * TODO: Remove the early-return false once HealthKit compilation is verified on macOS.
-     *       The implementation below is complete — it just hasn't been through an iOS build yet.
      */
     actual suspend fun isAvailable(): Boolean {
-        // Gate: hide HealthKit integration until iOS compilation is verified on macOS
-        return false
-
-        @Suppress("UNREACHABLE_CODE")
         return try {
             HKHealthStore.isHealthDataAvailable()
         } catch (e: Exception) {
