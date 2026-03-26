@@ -169,9 +169,10 @@ kotlin {
                 implementation(libs.androidx.security.crypto)
 
                 // Health Connect (Google Health)
-                // Pinned to alpha11: stable 1.1.0 made Metadata constructor internal,
-                // breaking ExerciseSessionRecord/TotalCaloriesBurnedRecord creation.
-                // TODO: Migrate to stable API when Google provides a public record builder.
+                // Pinned to alpha11: stable 1.1.0 made record constructors and Metadata internal.
+                // The alpha SDK still uses public constructors. The permission strings are identical
+                // across alpha11 and stable — the real fix for permissions was the manifest
+                // intent-filter (VIEW_PERMISSION_USAGE + HEALTH_PERMISSIONS category).
                 implementation("androidx.health.connect:connect-client:1.1.0-alpha11")
 
             }

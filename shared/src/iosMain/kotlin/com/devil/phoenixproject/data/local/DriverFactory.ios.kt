@@ -112,14 +112,16 @@ actual class DriverFactory {
             recoverByDeletingDatabase()
         }
 
+        val readyDriver = repairKnownLegacySchemaOrRecover(driver)
+
         // Post-creation pragmas
-        applyPragmas(driver)
+        applyPragmas(readyDriver)
 
         // Exclude database files from iCloud backup to prevent restoring stale schemas
         excludeDatabaseFromBackup()
 
         NSLog("iOS DB: Initialization complete")
-        return driver
+        return readyDriver
     }
 
     /**
@@ -160,6 +162,75 @@ actual class DriverFactory {
             driver.execute(null, "PRAGMA foreign_keys = ON", 0)
         } catch (e: Exception) {
             NSLog("iOS DB: Warning - pragma setup failed: ${e.message}")
+        }
+    }
+
+    /**
+     * Repair the known legacy iOS schema drift from TestFlight build 20260315120.
+     *
+     * That build stamped user_version=13 but omitted WorkoutSession.cableCount from the
+     * physical schema. Newer builds migrate from 13 -> current successfully, but SQLDelight
+     * still expects cableCount to exist when mapping WorkoutSession rows on startup.
+     *
+     * We heal the missing column in place to preserve local data. If the repair or the
+     * post-repair verification fails, fall back to the existing nuclear recovery path.
+     */
+    private fun repairKnownLegacySchemaOrRecover(driver: SqlDriver): SqlDriver {
+        return try {
+            safeAddColumn(driver, "WorkoutSession", "cableCount", "INTEGER")
+
+            if (!columnExists(driver, "WorkoutSession", "cableCount")) {
+                throw IllegalStateException("WorkoutSession.cableCount is still missing after repair")
+            }
+
+            driver
+        } catch (e: Exception) {
+            NSLog("iOS DB: Legacy schema repair failed (${e::class.simpleName}: ${e.message?.take(200)})")
+            try {
+                driver.close()
+            } catch (closeError: Exception) {
+                NSLog("iOS DB: Warning - could not close driver before recovery: ${closeError.message?.take(120)}")
+            }
+            NSLog("iOS DB: Falling back to nuclear recovery (database delete + recreate)")
+            recoverByDeletingDatabase()
+        }
+    }
+
+    private fun safeAddColumn(driver: SqlDriver, table: String, column: String, definition: String) {
+        if (columnExists(driver, table, column)) return
+
+        try {
+            driver.execute(null, "ALTER TABLE $table ADD COLUMN $column $definition", 0)
+            NSLog("iOS DB: Schema heal added $table.$column")
+        } catch (e: Exception) {
+            val msg = e.message?.lowercase() ?: ""
+            if (msg.contains("duplicate column")) {
+                NSLog("iOS DB: Schema heal found existing $table.$column during ALTER replay")
+                return
+            }
+            throw IllegalStateException("Failed to add $table.$column", e)
+        }
+    }
+
+    private fun columnExists(driver: SqlDriver, table: String, column: String): Boolean {
+        return try {
+            driver.executeQuery(
+                identifier = null,
+                sql = "PRAGMA table_info($table)",
+                mapper = { cursor ->
+                    var found = false
+                    while (cursor.next().value) {
+                        if (cursor.getString(1) == column) {
+                            found = true
+                            break
+                        }
+                    }
+                    QueryResult.Value(found)
+                },
+                parameters = 0
+            ).value
+        } catch (e: Exception) {
+            throw IllegalStateException("Failed to inspect $table schema", e)
         }
     }
 

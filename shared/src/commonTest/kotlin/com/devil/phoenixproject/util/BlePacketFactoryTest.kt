@@ -362,7 +362,7 @@ class BlePacketFactoryTest {
     }
 
     @Test
-    fun `Issue #267 Just Lift packet preserves target and activation tail contract`() {
+    fun `Issue 267 Just Lift packet preserves target and activation tail contract`() {
         val targetWeight = 42.5f
         val progression = 2.0f
         val params = WorkoutParameters(

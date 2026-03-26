@@ -359,7 +359,9 @@ class IntegrationsViewModel(
         profileId: String,
         granted: Boolean
     ) {
-        if (granted && healthIntegration.hasPermissions()) {
+        val hasPerms = healthIntegration.hasPermissions()
+        log.d { "Health permission result: granted=$granted, hasPermissions=$hasPerms for ${provider.key}" }
+        if (granted && hasPerms) {
             markHealthIntegrationConnected(provider, profileId)
         } else {
             externalActivityRepo.updateIntegrationStatus(
@@ -369,9 +371,9 @@ class IntegrationsViewModel(
                 errorMessage = "Permission not granted"
             )
             _uiState.value = _uiState.value.copy(
-                errorMessage = "Health permissions were not granted"
+                errorMessage = "Health permissions were not granted. Please enable Health Connect permissions in your device's Health Connect settings."
             )
-            log.w { "Health permissions not granted for ${provider.key}" }
+            log.w { "Health permissions not granted for ${provider.key} (granted=$granted, hasPerms=$hasPerms)" }
         }
     }
 

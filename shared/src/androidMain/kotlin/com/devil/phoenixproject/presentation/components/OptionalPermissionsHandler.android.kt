@@ -64,46 +64,47 @@ fun RequireOptionalPermissions(
         return
     }
 
-    // ── Permission launchers ──────────────────────────────────────────────
+    // ── Permission launchers (sequential: mic first, then health) ────────
+    //
+    // Android only allows one Activity Result contract in flight at a time.
+    // Launching two simultaneously causes the second to be silently dropped.
+    // Flow: user taps Grant → mic dialog → mic callback → health dialog → health callback → done
 
-    // Track completion of both permission flows
-    var micPermissionDone by remember { mutableStateOf(false) }
-    var healthPermissionDone by remember { mutableStateOf(false) }
-    var permissionsRequested by remember { mutableStateOf(false) }
+    // Permission flow phase tracking
+    // IDLE → MIC_REQUESTED → HEALTH_REQUESTED → DONE
+    var phase by remember { mutableStateOf("IDLE") }
 
-    // Standard Android permission launcher (RECORD_AUDIO)
-    val micPermissionLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.RequestPermission()
-    ) { granted ->
-        log.d { "Microphone permission result: $granted" }
-        micPermissionDone = true
-    }
-
-    // Health Connect permission launcher
+    // Health Connect availability
     val healthAvailable = remember {
         try {
             HealthConnectClient.getSdkStatus(context) == HealthConnectClient.SDK_AVAILABLE
         } catch (_: Exception) { false }
     }
 
+    // Health Connect permission launcher (registered first, launched second)
     val healthPermissionLauncher = rememberLauncherForActivityResult(
         contract = PermissionController.createRequestPermissionResultContract()
     ) { grantedPermissions ->
         val granted = grantedPermissions.containsAll(requiredHealthPermissions)
         log.d { "Health Connect permission result: $granted (got ${grantedPermissions.size} permissions)" }
-        healthPermissionDone = true
+        // Both permissions handled, mark done
+        prefsManager.setPermissionsOnboardingShown(true)
+        onboardingShown = true
     }
 
-    // When both permission flows complete, mark onboarding done and proceed
-    LaunchedEffect(micPermissionDone, healthPermissionDone, permissionsRequested) {
-        if (permissionsRequested) {
-            val micDone = micPermissionDone
-            // If Health Connect isn't available, skip waiting for it
-            val healthDone = healthPermissionDone || !healthAvailable
-            if (micDone && healthDone) {
-                prefsManager.setPermissionsOnboardingShown(true)
-                onboardingShown = true
-            }
+    // Standard Android permission launcher (RECORD_AUDIO) — launched first
+    val micPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        log.d { "Microphone permission result: $granted" }
+        // Mic done, now launch health if available
+        if (healthAvailable) {
+            phase = "HEALTH_REQUESTED"
+            healthPermissionLauncher.launch(requiredHealthPermissions)
+        } else {
+            // No health to request, we're done
+            prefsManager.setPermissionsOnboardingShown(true)
+            onboardingShown = true
         }
     }
 
@@ -116,15 +117,8 @@ fun RequireOptionalPermissions(
         OptionalPermissionsScreen(
             healthAvailable = healthAvailable,
             onGrantPermissions = {
-                permissionsRequested = true
-                // Launch microphone permission
+                phase = "MIC_REQUESTED"
                 micPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
-                // Launch Health Connect permissions (if available)
-                if (healthAvailable) {
-                    healthPermissionLauncher.launch(requiredHealthPermissions)
-                } else {
-                    healthPermissionDone = true
-                }
             },
             onSkip = {
                 log.d { "User skipped optional permissions" }

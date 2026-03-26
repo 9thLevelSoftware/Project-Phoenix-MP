@@ -55,11 +55,14 @@
         android:name="android.hardware.bluetooth_le"
         android:required="true" />
 
-    <!-- Health Connect availability check -->
+    <!-- Health Connect availability check (both Android 13 APK and Android 14+ platform) -->
     <queries>
         <package android:name="com.google.android.apps.healthdata" />
         <intent>
             <action android:name="androidx.health.ACTION_SHOW_PERMISSIONS_RATIONALE" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW_PERMISSION_USAGE" />
         </intent>
     </queries>
 
@@ -84,6 +87,22 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+
+            <!-- Health Connect: permissions rationale (pre-Android 14, Health Connect APK) -->
+            <intent-filter>
+                <action android:name="androidx.health.ACTION_SHOW_PERMISSIONS_RATIONALE" />
+            </intent-filter>
+
+            <!-- Health Connect: permissions rationale (Android 14+, platform module) -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW_PERMISSION_USAGE" />
+                <category android:name="android.intent.category.HEALTH_PERMISSIONS" />
+            </intent-filter>
+
+            <!-- Health Connect: onboarding (required by Play Store for HC-enabled apps) -->
+            <intent-filter>
+                <action android:name="androidx.health.ACTION_SHOW_ONBOARDING" />
+            </intent-filter>
         </activity>
 
         <!-- Foreground service for workout sessions -->
@@ -102,17 +121,6 @@
                 android:name="android.support.FILE_PROVIDER_PATHS"
                 android:resource="@xml/file_paths" />
         </provider>
-
-        <!-- Health Connect permissions rationale activity (required by Play Store policy) -->
-        <activity-alias
-            android:name="ViewPermissionUsageActivity"
-            android:exported="true"
-            android:targetActivity=".MainActivity"
-            android:permission="android.permission.START_VIEW_PERMISSION_USAGE">
-            <intent-filter>
-                <action android:name="androidx.health.ACTION_SHOW_PERMISSIONS_RATIONALE" />
-            </intent-filter>
-        </activity-alias>
     </application>
 
 </manifest>

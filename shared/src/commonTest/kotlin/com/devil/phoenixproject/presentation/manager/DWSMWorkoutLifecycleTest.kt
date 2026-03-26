@@ -768,7 +768,7 @@ class DWSMWorkoutLifecycleTest {
     }
 
     @Test
-    fun `Issue #267 Just Lift warmup to working rep transitions without failed stall state`() = runTest {
+    fun `Issue 267 Just Lift warmup to working rep transitions without failed stall state`() = runTest {
         val harness = DWSMTestHarness(this)
         harness.fakeBleRepo.simulateConnect("Vee_Test")
 

@@ -75,11 +75,10 @@ fun LinkAccountScreen(
                     onLogout = { viewModel.logout() }
                 )
             } else {
-                // Login/Signup form
-                LoginSignupForm(
+                // Login form (sign up happens via Phoenix Portal)
+                LoginForm(
                     uiState = uiState,
                     onLogin = { email, password -> viewModel.login(email, password) },
-                    onSignup = { email, password, name -> viewModel.signup(email, password, name) },
                     onClearError = { viewModel.clearError() }
                 )
             }
@@ -184,16 +183,13 @@ private fun LinkedAccountContent(
 }
 
 @Composable
-private fun LoginSignupForm(
+private fun LoginForm(
     uiState: LinkAccountUiState,
     onLogin: (String, String) -> Unit,
-    onSignup: (String, String, String) -> Unit,
     onClearError: () -> Unit
 ) {
-    var isSignupMode by remember { mutableStateOf(false) }
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
-    var displayName by remember { mutableStateOf("") }
     var showPassword by remember { mutableStateOf(false) }
 
     Card(
@@ -202,40 +198,15 @@ private fun LoginSignupForm(
         Column(
             modifier = Modifier.padding(16.dp)
         ) {
-            // Tab row for Login/Signup
-            PrimaryTabRow(
-                selectedTabIndex = if (isSignupMode) 1 else 0
-            ) {
-                Tab(
-                    selected = !isSignupMode,
-                    onClick = { isSignupMode = false; onClearError() }
-                ) {
-                    Text(stringResource(Res.string.action_login), modifier = Modifier.padding(16.dp))
-                }
-                Tab(
-                    selected = isSignupMode,
-                    onClick = { isSignupMode = true; onClearError() }
-                ) {
-                    Text(stringResource(Res.string.action_sign_up), modifier = Modifier.padding(16.dp))
-                }
-            }
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            if (isSignupMode) {
-                OutlinedTextField(
-                    value = displayName,
-                    onValueChange = { displayName = it },
-                    label = { Text(stringResource(Res.string.label_display_name)) },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-            }
+            Text(
+                text = stringResource(Res.string.action_login),
+                style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier.padding(bottom = 16.dp)
+            )
 
             OutlinedTextField(
                 value = email,
-                onValueChange = { email = it },
+                onValueChange = { email = it; onClearError() },
                 label = { Text(stringResource(Res.string.label_email)) },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
@@ -246,7 +217,7 @@ private fun LoginSignupForm(
 
             OutlinedTextField(
                 value = password,
-                onValueChange = { password = it },
+                onValueChange = { password = it; onClearError() },
                 label = { Text(stringResource(Res.string.label_password)) },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
@@ -275,16 +246,9 @@ private fun LoginSignupForm(
             Spacer(modifier = Modifier.height(16.dp))
 
             Button(
-                onClick = {
-                    if (isSignupMode) {
-                        onSignup(email, password, displayName)
-                    } else {
-                        onLogin(email, password)
-                    }
-                },
+                onClick = { onLogin(email, password) },
                 modifier = Modifier.fillMaxWidth(),
                 enabled = email.isNotBlank() && password.isNotBlank() &&
-                        (!isSignupMode || displayName.isNotBlank()) &&
                         uiState !is LinkAccountUiState.Loading
             ) {
                 if (uiState is LinkAccountUiState.Loading) {
@@ -293,9 +257,18 @@ private fun LoginSignupForm(
                         color = MaterialTheme.colorScheme.onPrimary
                     )
                 } else {
-                    Text(if (isSignupMode) "Create Account" else "Login")
+                    Text(stringResource(Res.string.action_login))
                 }
             }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            Text(
+                text = "Log in with your existing Phoenix Portal account to sync workouts across devices.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.fillMaxWidth()
+            )
         }
     }
 }
