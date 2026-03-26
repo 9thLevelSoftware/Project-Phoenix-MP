@@ -31,8 +31,7 @@ import platform.Speech.SFSpeechRecognitionTask
 import platform.Speech.SFSpeechRecognitionTaskStateCanceling
 import platform.Speech.SFSpeechRecognitionTaskStateCompleted
 import platform.Speech.SFSpeechRecognizer
-import platform.Speech.SFSpeechRecognizerAuthorizationStatusAuthorized
-import platform.Speech.SFSpeechRecognizerAuthorizationStatusNotDetermined
+import platform.Speech.SFSpeechRecognizerAuthorizationStatus
 import platform.darwin.dispatch_after
 import platform.darwin.dispatch_async
 import platform.darwin.dispatch_get_main_queue
@@ -88,10 +87,10 @@ actual class SafeWordListener(
 
         val authStatus = SFSpeechRecognizer.authorizationStatus()
         when (authStatus) {
-            SFSpeechRecognizerAuthorizationStatusAuthorized -> { /* proceed */ }
-            SFSpeechRecognizerAuthorizationStatusNotDetermined -> {
+            SFSpeechRecognizerAuthorizationStatus.authorized -> { /* proceed */ }
+            SFSpeechRecognizerAuthorizationStatus.notDetermined -> {
                 SFSpeechRecognizer.requestAuthorization { newStatus ->
-                    if (newStatus == SFSpeechRecognizerAuthorizationStatusAuthorized) {
+                    if (newStatus == SFSpeechRecognizerAuthorizationStatus.authorized) {
                         // Re-enter startListening on main thread
                         dispatch_async(dispatch_get_main_queue()) { startListening() }
                     } else {
