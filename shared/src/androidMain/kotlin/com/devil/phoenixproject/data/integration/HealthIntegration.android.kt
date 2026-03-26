@@ -13,7 +13,7 @@ import java.time.ZoneId
 
 private val log = Logger.withTag("HealthIntegration.Android")
 
-private val REQUIRED_PERMISSIONS = setOf(
+internal val requiredHealthPermissions = setOf(
     HealthPermission.getWritePermission(ExerciseSessionRecord::class),
     HealthPermission.getWritePermission(TotalCaloriesBurnedRecord::class),
 )
@@ -60,7 +60,7 @@ actual class HealthIntegration(private val context: Context) {
         val c = client ?: return false
         return try {
             val granted = c.permissionController.getGrantedPermissions()
-            granted.containsAll(REQUIRED_PERMISSIONS)
+            granted.containsAll(requiredHealthPermissions)
         } catch (e: Exception) {
             log.w(e) { "Error checking Health Connect permissions" }
             false
@@ -80,6 +80,8 @@ actual class HealthIntegration(private val context: Context) {
 
         return try {
             val startInstant = Instant.ofEpochMilli(session.timestamp)
+            // session.duration is in SECONDS (confirmed by CsvExporter.formatDuration
+            // which divides by 3600 to get hours, and WorkoutSession domain model convention)
             val endInstant = startInstant.plusSeconds(session.duration.coerceAtLeast(1L))
             val zoneOffset = ZoneId.systemDefault().rules.getOffset(startInstant)
 
@@ -92,7 +94,7 @@ actual class HealthIntegration(private val context: Context) {
                         endZoneOffset = zoneOffset,
                         exerciseType = ExerciseSessionRecord.EXERCISE_TYPE_WEIGHTLIFTING,
                         title = buildExerciseTitle(session),
-                    )
+                                            )
                 )
 
                 val calories = session.estimatedCalories
@@ -104,7 +106,7 @@ actual class HealthIntegration(private val context: Context) {
                             endTime = endInstant,
                             endZoneOffset = zoneOffset,
                             energy = Energy.kilocalories(calories.toDouble()),
-                        )
+                                                    )
                     )
                 }
             }

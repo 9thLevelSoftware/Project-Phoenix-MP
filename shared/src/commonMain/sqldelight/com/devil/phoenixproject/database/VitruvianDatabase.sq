@@ -1868,15 +1868,36 @@ getUnsyncedExternalActivities:
 SELECT * FROM ExternalActivity
 WHERE profileId = ? AND needsSync = 1;
 
-upsertExternalActivity:
-INSERT OR REPLACE INTO ExternalActivity(
+insertExternalActivityIfNew:
+INSERT OR IGNORE INTO ExternalActivity(
     id, externalId, provider, name, activityType, startedAt,
     durationSeconds, distanceMeters, calories, avgHeartRate,
     maxHeartRate, elevationGainMeters, rawData, syncedAt, profileId, needsSync
 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
+updateExternalActivityOnConflict:
+UPDATE ExternalActivity SET
+    name = ?,
+    activityType = ?,
+    startedAt = ?,
+    durationSeconds = ?,
+    distanceMeters = ?,
+    calories = ?,
+    avgHeartRate = ?,
+    maxHeartRate = ?,
+    elevationGainMeters = ?,
+    rawData = ?,
+    syncedAt = ?,
+    profileId = ?
+WHERE externalId = ? AND provider = ?;
+
 markExternalActivitySynced:
 UPDATE ExternalActivity SET needsSync = 0 WHERE id = ?;
+
+markExternalActivitySyncedBySyncKey:
+UPDATE ExternalActivity
+SET needsSync = 0
+WHERE externalId = ? AND provider = ? AND profileId = ?;
 
 deleteExternalActivitiesByProvider:
 DELETE FROM ExternalActivity WHERE provider = ? AND profileId = ?;

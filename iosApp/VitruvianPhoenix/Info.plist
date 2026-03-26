@@ -72,5 +72,9 @@
     <string>Project Phoenix uses the microphone for safe word detection during workouts, enabling hands-free emergency stops.</string>
     <key>NSSpeechRecognitionUsageDescription</key>
     <string>Project Phoenix uses on-device speech recognition to listen for your safe word during workouts.</string>
+    <key>NSHealthShareUsageDescription</key>
+    <string>Project Phoenix can read your health data to avoid logging duplicate workouts.</string>
+    <key>NSHealthUpdateUsageDescription</key>
+    <string>Project Phoenix writes your completed workouts to Apple Health so they appear alongside your other fitness data.</string>
 </dict>
 </plist>

@@ -6,21 +6,17 @@
 
 -- ============================================================
 -- STEP 0: "Pre-Flight" Schema Check
--- Ensure RoutineExercise has all columns required for the SELECT below.
--- This saves users who crashed during Migration 4 or 7 (missing superset/PR columns).
+-- Ensure RoutineExercise has all columns required for the SELECT in STEP 5.
 --
--- NOTE: Android handles these in DriverFactory.android.kt preflightMigration()
--- because ALTER TABLE ADD COLUMN IF NOT EXISTS requires SQLite 3.35+ (iOS 15+)
--- and Android devices typically have SQLite 3.28-3.32.
+-- These ALTER TABLE ADD COLUMN statements were moved to Kotlin pre-flight code:
+-- - Android: DriverFactory.android.kt preflightMigration(10)
+-- - iOS: DriverFactory.ios.kt SavepointMigratingSchema.preFlightMigration10()
 --
--- On iOS, these will fail with "duplicate column" if already present, which is OK.
+-- Pure SQL ALTER TABLE ADD COLUMN has no IF NOT EXISTS support on iOS SQLite
+-- (requires SQLite 3.35+). Running them here would crash iOS users who already
+-- have these columns from migrations 4 or 7. The Kotlin pre-flight catches
+-- "duplicate column" errors and continues.
 -- ============================================================
-ALTER TABLE RoutineExercise ADD COLUMN supersetId TEXT;
-ALTER TABLE RoutineExercise ADD COLUMN orderInSuperset INTEGER NOT NULL DEFAULT 0;
-ALTER TABLE RoutineExercise ADD COLUMN usePercentOfPR INTEGER NOT NULL DEFAULT 0;
-ALTER TABLE RoutineExercise ADD COLUMN weightPercentOfPR INTEGER NOT NULL DEFAULT 80;
-ALTER TABLE RoutineExercise ADD COLUMN prTypeForScaling TEXT NOT NULL DEFAULT 'MAX_WEIGHT';
-ALTER TABLE RoutineExercise ADD COLUMN setWeightsPercentOfPR TEXT;
 
 -- ============================================================
 -- STEP 1: Clean up any leftover temp tables from failed migrations

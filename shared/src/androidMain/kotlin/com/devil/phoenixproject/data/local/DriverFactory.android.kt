@@ -13,13 +13,6 @@ actual class DriverFactory(private val context: Context) {
     companion object {
         private const val TAG = "DriverFactory"
         private const val DATABASE_NAME = "vitruvian.db"
-
-        // Increment this when you make schema changes during development.
-        // This forces a database reset when the app is updated.
-        // For production, use proper SQLDelight migrations (.sqm files) instead.
-        private const val DEV_SCHEMA_VERSION = 5  // Bumped: Subscription fields on UserProfile
-        private const val PREFS_NAME = "vitruvian_db_prefs"
-        private const val KEY_SCHEMA_VERSION = "dev_schema_version"
     }
 
     actual fun createDriver(): SqlDriver {
@@ -553,9 +546,13 @@ actual class DriverFactory(private val context: Context) {
                  */
                 private fun ensureGamificationTablesExist(db: SupportSQLiteDatabase) {
                     val statements = listOf(
+                        // Note: badgeId is intentionally NOT UNIQUE inline. The composite
+                        // uniqueness constraint (badgeId, profile_id) is added by migration 22.
+                        // Legacy versions had `badgeId TEXT NOT NULL UNIQUE` here, which
+                        // migration 24 rebuilds the table to remove.
                         """CREATE TABLE IF NOT EXISTS EarnedBadge (
                             id INTEGER PRIMARY KEY AUTOINCREMENT,
-                            badgeId TEXT NOT NULL UNIQUE,
+                            badgeId TEXT NOT NULL,
                             earnedAt INTEGER NOT NULL,
                             celebratedAt INTEGER
                         )""",

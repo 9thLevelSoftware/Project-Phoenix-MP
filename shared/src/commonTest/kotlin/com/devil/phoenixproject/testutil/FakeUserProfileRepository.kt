@@ -1,6 +1,7 @@
 package com.devil.phoenixproject.testutil
 
 import com.devil.phoenixproject.data.repository.UserProfile
+import com.devil.phoenixproject.data.repository.SubscriptionStatus
 import com.devil.phoenixproject.data.repository.UserProfileRepository
 import com.devil.phoenixproject.domain.model.currentTimeMillis
 import com.devil.phoenixproject.domain.model.generateUUID
@@ -21,6 +22,23 @@ class FakeUserProfileRepository : UserProfileRepository {
     private fun updateFlows() {
         _allProfiles.value = profiles.values.toList()
         _activeProfile.value = profiles.values.firstOrNull { it.isActive }
+    }
+
+    fun setActiveProfileForTest(
+        id: String = "default",
+        subscriptionStatus: SubscriptionStatus = SubscriptionStatus.FREE,
+        supabaseUserId: String? = null
+    ) {
+        profiles[id] = UserProfile(
+            id = id,
+            name = "Default",
+            colorIndex = 0,
+            createdAt = currentTimeMillis(),
+            isActive = true,
+            supabaseUserId = supabaseUserId,
+            subscriptionStatus = subscriptionStatus
+        )
+        updateFlows()
     }
 
     override suspend fun createProfile(name: String, colorIndex: Int): UserProfile {
@@ -95,16 +113,21 @@ class FakeUserProfileRepository : UserProfileRepository {
         }
     }
 
-    override suspend fun updateSubscriptionStatus(profileId: String, status: com.devil.phoenixproject.data.repository.SubscriptionStatus, expiresAt: Long?) {
-        // Stub for test — subscription status updates not tested in unit tests
-        updateFlows()
+    override suspend fun updateSubscriptionStatus(profileId: String, status: SubscriptionStatus, expiresAt: Long?) {
+        profiles[profileId]?.let { profile ->
+            profiles[profileId] = profile.copy(
+                subscriptionStatus = status,
+                subscriptionExpiresAt = expiresAt
+            )
+            updateFlows()
+        }
     }
 
     override suspend fun getProfileBySupabaseId(supabaseUserId: String): UserProfile? {
         return profiles.values.firstOrNull { it.supabaseUserId == supabaseUserId }
     }
 
-    override fun getActiveProfileSubscriptionStatus(): Flow<com.devil.phoenixproject.data.repository.SubscriptionStatus> {
-        return flowOf(com.devil.phoenixproject.data.repository.SubscriptionStatus.FREE)
+    override fun getActiveProfileSubscriptionStatus(): Flow<SubscriptionStatus> {
+        return flowOf(activeProfile.value?.subscriptionStatus ?: SubscriptionStatus.FREE)
     }
 }

@@ -151,10 +151,13 @@ object CsvExporter {
     internal fun formatTimestamp(epochMs: Long): String {
         val instant = Instant.fromEpochMilliseconds(epochMs)
         val local = instant.toLocalDateTime(TimeZone.currentSystemDefault())
-        return "%04d-%02d-%02d %02d:%02d:%02d".format(
-            local.year, local.month.number, local.day,
-            local.hour, local.minute, local.second
-        )
+        val y = local.year.toString().padStart(4, '0')
+        val mo = local.month.number.toString().padStart(2, '0')
+        val d = local.day.toString().padStart(2, '0')
+        val h = local.hour.toString().padStart(2, '0')
+        val mi = local.minute.toString().padStart(2, '0')
+        val s = local.second.toString().padStart(2, '0')
+        return "$y-$mo-$d $h:$mi:$s"
     }
 
     /**
@@ -177,8 +180,16 @@ object CsvExporter {
         val totalKg = perCableKg * WEIGHT_MULTIPLIER
         val value = if (weightUnit == WeightUnit.LB) totalKg * KG_TO_LB else totalKg
         // Format with up to 2 decimal places, strip trailing zeros after decimal
-        val formatted = "%.2f".format(value)
-        return formatted.trimEnd('0').trimEnd('.')
+        val rounded = (value * 100).toLong() / 100.0
+        val formatted = rounded.toString()
+        // Ensure at most 2 decimal places
+        val dotIndex = formatted.indexOf('.')
+        val trimmed = if (dotIndex >= 0 && formatted.length - dotIndex > 3) {
+            formatted.substring(0, dotIndex + 3)
+        } else {
+            formatted
+        }
+        return trimmed.trimEnd('0').trimEnd('.')
     }
 
     /**
@@ -195,11 +206,13 @@ object CsvExporter {
     }
 
     /**
-     * Escape a CSV field value. Wraps in double-quotes if the value contains
-     * a comma, double-quote, or newline. Internal double-quotes are doubled.
+     * Escape a CSV field value per RFC 4180. Wraps in double-quotes if the value
+     * contains a comma, double-quote, newline, or carriage return. Internal
+     * double-quotes are doubled.
      */
     internal fun escapeCsvField(value: String): String {
-        val needsQuoting = value.contains(',') || value.contains('"') || value.contains('\n')
+        val needsQuoting = value.contains(',') || value.contains('"') ||
+            value.contains('\n') || value.contains('\r')
         return if (needsQuoting) {
             "\"${value.replace("\"", "\"\"")}\""
         } else {

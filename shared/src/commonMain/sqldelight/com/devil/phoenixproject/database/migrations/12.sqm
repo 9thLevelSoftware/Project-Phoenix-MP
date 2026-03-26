@@ -2,7 +2,7 @@
 -- Stores per-rep force curve and summary data for premium analytics
 -- Also adds direct routine linkage to WorkoutSession
 
-CREATE TABLE RepMetric (
+CREATE TABLE IF NOT EXISTS RepMetric (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     sessionId TEXT NOT NULL,
     repNumber INTEGER NOT NULL,
@@ -39,8 +39,8 @@ CREATE TABLE RepMetric (
     FOREIGN KEY (sessionId) REFERENCES WorkoutSession(id) ON DELETE CASCADE
 );
 
-CREATE INDEX idx_rep_metric_session ON RepMetric(sessionId);
-CREATE INDEX idx_rep_metric_session_rep ON RepMetric(sessionId, repNumber);
+CREATE INDEX IF NOT EXISTS idx_rep_metric_session ON RepMetric(sessionId);
+CREATE INDEX IF NOT EXISTS idx_rep_metric_session_rep ON RepMetric(sessionId, repNumber);
 
 -- Add routineId column to WorkoutSession
 ALTER TABLE WorkoutSession ADD COLUMN routineId TEXT;

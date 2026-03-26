@@ -23,7 +23,7 @@ val presentationModule = module {
     factory { ConnectionLogsViewModel() }
     factory { CycleEditorViewModel(get()) }
     factory { GamificationViewModel(get(), get()) }
-    factory { IntegrationsViewModel(get(), get(), get(), get()) }
+    factory { IntegrationsViewModel(get(), get(), get(), get(), get(), get()) }
     factory { AssessmentViewModel(get(), get(), get()) }
     // ThemeViewModel as singleton - app-wide theme state that must persist
     single { ThemeViewModel(get()) }

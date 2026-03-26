@@ -23,9 +23,11 @@ import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.isIosPlatform
 import com.devil.phoenixproject.presentation.viewmodel.IntegrationsViewModel
 import com.devil.phoenixproject.ui.theme.Spacing
+import com.devil.phoenixproject.util.rememberHealthPermissionRequester
 import com.devil.phoenixproject.util.KmpUtils
 import com.devil.phoenixproject.util.readUriContent
 import com.devil.phoenixproject.util.rememberFilePicker
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 import org.koin.compose.viewmodel.koinViewModel
 
@@ -40,6 +42,8 @@ fun IntegrationsScreen(
     val viewModel: IntegrationsViewModel = koinViewModel()
     val uiState by viewModel.uiState.collectAsState()
     val scope = rememberCoroutineScope()
+    val healthPermissionRequester = rememberHealthPermissionRequester()
+    var triggerHealthPermissionRequest by remember { mutableStateOf(false) }
 
     // Set screen title
     LaunchedEffect(Unit) {
@@ -58,6 +62,18 @@ fun IntegrationsScreen(
         uiState.successMessage?.let {
             snackbarHostState.showSnackbar(it)
             viewModel.clearMessages()
+        }
+    }
+    LaunchedEffect(viewModel) {
+        viewModel.healthPermissionRequests.collect {
+            triggerHealthPermissionRequest = true
+        }
+    }
+
+    if (triggerHealthPermissionRequest) {
+        healthPermissionRequester.LaunchPermissionRequest { granted ->
+            triggerHealthPermissionRequest = false
+            viewModel.onHealthPermissionResult(granted)
         }
     }
 
@@ -102,9 +118,7 @@ fun IntegrationsScreen(
                     if (content != null) {
                         viewModel.previewCsvImport(
                             content = content,
-                            weightUnit = importWeightUnit,
-                            profileId = "default",
-                            isPaidUser = false
+                            weightUnit = importWeightUnit
                         )
                     } else {
                         snackbarHostState.showSnackbar("Could not read file")
@@ -175,7 +189,7 @@ fun IntegrationsScreen(
             value = apiKeyInput,
             onValueChange = { apiKeyInput = it },
             onConfirm = {
-                viewModel.connectProvider(IntegrationProvider.HEVY, apiKeyInput, "default", false)
+                viewModel.connectProvider(IntegrationProvider.HEVY, apiKeyInput)
                 showHevyApiKeyDialog = false
                 apiKeyInput = ""
             },
@@ -193,7 +207,7 @@ fun IntegrationsScreen(
             value = apiKeyInput,
             onValueChange = { apiKeyInput = it },
             onConfirm = {
-                viewModel.connectProvider(IntegrationProvider.LIFTOSAUR, apiKeyInput, "default", false)
+                viewModel.connectProvider(IntegrationProvider.LIFTOSAUR, apiKeyInput)
                 showLiftosaurApiKeyDialog = false
                 apiKeyInput = ""
             },
@@ -240,7 +254,7 @@ fun IntegrationsScreen(
                     Switch(
                         checked = healthConnected,
                         onCheckedChange = { enabled ->
-                            viewModel.toggleHealthIntegration(enabled, "default")
+                            viewModel.toggleHealthIntegration(enabled)
                         }
                     )
                 }
@@ -269,7 +283,7 @@ fun IntegrationsScreen(
                             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                                 OutlinedButton(
                                     onClick = {
-                                        viewModel.syncProvider(IntegrationProvider.HEVY, "default", false)
+                                        viewModel.syncProvider(IntegrationProvider.HEVY)
                                     },
                                     enabled = !uiState.isSyncing,
                                     shape = RoundedCornerShape(12.dp),
@@ -283,7 +297,7 @@ fun IntegrationsScreen(
                                 }
                                 TextButton(
                                     onClick = {
-                                        viewModel.disconnectProvider(IntegrationProvider.HEVY, "default")
+                                        viewModel.disconnectProvider(IntegrationProvider.HEVY)
                                     },
                                     modifier = Modifier.height(36.dp)
                                 ) {
@@ -326,7 +340,7 @@ fun IntegrationsScreen(
                             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                                 OutlinedButton(
                                     onClick = {
-                                        viewModel.syncProvider(IntegrationProvider.LIFTOSAUR, "default", false)
+                                        viewModel.syncProvider(IntegrationProvider.LIFTOSAUR)
                                     },
                                     enabled = !uiState.isSyncing,
                                     shape = RoundedCornerShape(12.dp),
@@ -340,7 +354,7 @@ fun IntegrationsScreen(
                                 }
                                 TextButton(
                                     onClick = {
-                                        viewModel.disconnectProvider(IntegrationProvider.LIFTOSAUR, "default")
+                                        viewModel.disconnectProvider(IntegrationProvider.LIFTOSAUR)
                                     },
                                     modifier = Modifier.height(36.dp)
                                 ) {
@@ -436,7 +450,7 @@ fun IntegrationsScreen(
                         OutlinedButton(
                             onClick = {
                                 csvExportWeightUnit = csvWeightUnit
-                                viewModel.exportCsv(csvWeightUnit, "default")
+                                viewModel.exportCsv(csvWeightUnit)
                             },
                             enabled = !uiState.isExporting,
                             shape = RoundedCornerShape(12.dp),

@@ -369,7 +369,16 @@ data class PortalSyncPushResponse(
     val personalRecordsInserted: Int = 0,
     val phaseStatisticsInserted: Int = 0,
     val exerciseSignaturesUpserted: Int = 0,
-    val assessmentsInserted: Int = 0
+    val assessmentsInserted: Int = 0,
+    val externalActivitiesUpserted: Int = 0,
+    val externalActivityIds: List<String> = emptyList(),
+    val externalActivityKeys: List<ExternalActivityAckDto> = emptyList()
+)
+
+@Serializable
+data class ExternalActivityAckDto(
+    val externalId: String,
+    val provider: String
 )
 
 // ─── Composite Sync Payload ─────────────────────────────────────────

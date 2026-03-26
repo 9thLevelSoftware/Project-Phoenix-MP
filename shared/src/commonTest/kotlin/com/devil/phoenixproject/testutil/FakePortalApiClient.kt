@@ -1,6 +1,8 @@
 package com.devil.phoenixproject.testutil
 
 import com.devil.phoenixproject.data.sync.GoTrueAuthResponse
+import com.devil.phoenixproject.data.sync.IntegrationSyncRequest
+import com.devil.phoenixproject.data.sync.IntegrationSyncResponse
 import com.devil.phoenixproject.data.sync.PortalApiClient
 import com.devil.phoenixproject.data.sync.PortalApiException
 import com.devil.phoenixproject.data.sync.PortalSyncPayload
@@ -48,14 +50,20 @@ class FakePortalApiClient : PortalApiClient(
     var signInResult: Result<GoTrueAuthResponse>? = null
     var signUpResult: Result<GoTrueAuthResponse>? = null
 
+    var integrationSyncResult: Result<IntegrationSyncResponse> = Result.success(
+        IntegrationSyncResponse(status = "ok")
+    )
+
     // Call counters and captures
     var pushCallCount = 0
     var pullCallCount = 0
     var signInCallCount = 0
     var signUpCallCount = 0
+    var integrationSyncCallCount = 0
     var lastPushPayload: PortalSyncPayload? = null
     var lastPullLastSync: Long? = null
     var lastPullDeviceId: String? = null
+    var lastIntegrationSyncRequest: IntegrationSyncRequest? = null
 
     override suspend fun signIn(email: String, password: String): Result<GoTrueAuthResponse> {
         signInCallCount++
@@ -78,5 +86,11 @@ class FakePortalApiClient : PortalApiClient(
         lastPullLastSync = lastSync
         lastPullDeviceId = deviceId
         return pullResult
+    }
+
+    override suspend fun callIntegrationSync(request: IntegrationSyncRequest): Result<IntegrationSyncResponse> {
+        integrationSyncCallCount++
+        lastIntegrationSyncRequest = request
+        return integrationSyncResult
     }
 }

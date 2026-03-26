@@ -5,6 +5,11 @@ import com.devil.phoenixproject.domain.model.IntegrationProvider
 import com.devil.phoenixproject.domain.model.IntegrationStatus
 import kotlinx.coroutines.flow.Flow
 
+data class ExternalActivitySyncKey(
+    val externalId: String,
+    val provider: IntegrationProvider
+)
+
 /**
  * Repository for external activity data from third-party integrations (Hevy, Liftosaur, Strong, etc.)
  * and integration connection state tracking.
@@ -35,6 +40,13 @@ interface ExternalActivityRepository {
      * Uses a transaction for atomicity.
      */
     suspend fun markSynced(ids: List<String>)
+
+    /**
+     * Mark activities as synced using the same composite key the database uses for deduplication.
+     * This avoids clearing needsSync on the wrong provider when two integrations emit the same
+     * external activity ID.
+     */
+    suspend fun markSyncedBySyncKeys(syncKeys: List<ExternalActivitySyncKey>, profileId: String)
 
     /**
      * Delete all activities from a specific provider for a given profile.

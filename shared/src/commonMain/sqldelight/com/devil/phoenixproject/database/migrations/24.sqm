@@ -1,0 +1,45 @@
+-- Migration 24: Rebuild EarnedBadge to remove legacy inline UNIQUE(badgeId) constraint.
+--
+-- Problem: Android's ensureGamificationTablesExist() bootstrap created EarnedBadge with
+-- `badgeId TEXT NOT NULL UNIQUE` (inline column constraint). Migration 22 added a composite
+-- unique index on (badgeId, profile_id) for multi-profile support, but the old inline UNIQUE
+-- on badgeId alone was never removed (SQLite doesn't support DROP CONSTRAINT).
+--
+-- Result: Two UNIQUE constraints exist on Android upgrade paths:
+--   1. sqlite_autoindex_EarnedBadge_1 on (badgeId) alone  [from bootstrap]
+--   2. idx_earned_badge_profile on (badgeId, profile_id)   [from migration 22]
+-- This prevents Profile B from earning a badge that Profile A already has, breaking
+-- multi-profile badge isolation.
+--
+-- Fix: Copy-Drop-Recreate the table without the inline UNIQUE. Only the composite
+-- index (badgeId, profile_id) should enforce uniqueness.
+--
+-- iOS note: On iOS, the pre-flight in DriverFactory.ios.kt already creates EarnedBadge
+-- without inline UNIQUE, so this migration is a no-op for iOS fresh installs. For iOS
+-- upgrade paths, this ensures the correct constraint shape regardless of creation source.
+
+CREATE TABLE IF NOT EXISTS EarnedBadge_rebuild (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    badgeId TEXT NOT NULL,
+    earnedAt INTEGER NOT NULL,
+    celebratedAt INTEGER,
+    updatedAt INTEGER,
+    serverId TEXT,
+    deletedAt INTEGER,
+    profile_id TEXT NOT NULL DEFAULT 'default'
+);
+
+-- Copy all existing data. Use INSERT OR IGNORE to skip any rows that would violate
+-- the new table's constraints (shouldn't happen, but defensive).
+INSERT OR IGNORE INTO EarnedBadge_rebuild (id, badgeId, earnedAt, celebratedAt, updatedAt, serverId, deletedAt, profile_id)
+SELECT id, badgeId, earnedAt, celebratedAt, updatedAt, serverId, deletedAt, profile_id
+FROM EarnedBadge;
+
+-- Drop old table (removes both the inline UNIQUE and the named index)
+DROP TABLE IF EXISTS EarnedBadge;
+
+-- Rename to final name
+ALTER TABLE EarnedBadge_rebuild RENAME TO EarnedBadge;
+
+-- Recreate only the composite unique index (the correct multi-profile constraint)
+CREATE UNIQUE INDEX IF NOT EXISTS idx_earned_badge_profile ON EarnedBadge(badgeId, profile_id);

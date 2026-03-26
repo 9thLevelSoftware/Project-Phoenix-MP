@@ -4,4 +4,4 @@ ALTER TABLE PersonalRecord ADD COLUMN phase TEXT NOT NULL DEFAULT 'COMBINED';
 
 -- Recreate unique index to include phase dimension
 DROP INDEX IF EXISTS idx_pr_unique;
-CREATE UNIQUE INDEX idx_pr_unique ON PersonalRecord(exerciseId, workoutMode, prType, phase);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_pr_unique ON PersonalRecord(exerciseId, workoutMode, prType, phase);

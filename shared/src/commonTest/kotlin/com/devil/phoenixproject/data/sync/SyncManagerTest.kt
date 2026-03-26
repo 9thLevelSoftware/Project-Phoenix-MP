@@ -1,11 +1,14 @@
 package com.devil.phoenixproject.data.sync
 
+import com.devil.phoenixproject.data.repository.SubscriptionStatus
 import com.devil.phoenixproject.testutil.FakeExternalActivityRepository
 import com.devil.phoenixproject.testutil.FakeGamificationRepository
 import com.devil.phoenixproject.testutil.FakePortalApiClient
 import com.devil.phoenixproject.testutil.FakeRepMetricRepository
 import com.devil.phoenixproject.testutil.FakeSyncRepository
 import com.devil.phoenixproject.testutil.FakeUserProfileRepository
+import com.devil.phoenixproject.domain.model.ExternalActivity
+import com.devil.phoenixproject.domain.model.IntegrationProvider
 import com.russhwolf.settings.MapSettings
 import kotlinx.coroutines.async
 import kotlinx.coroutines.test.runTest
@@ -217,6 +220,75 @@ class SyncManagerTest {
         assertTrue(payload.sessions.isEmpty(), "Sessions should be empty")
         assertTrue(payload.routines.isEmpty(), "Routines should be empty")
         assertEquals(1, fakeApi.pushCallCount, "Push should still be called even with empty data")
+    }
+
+    @Test
+    fun syncIncludesExternalActivitiesWhenLocalSubscriptionIsActive() = runTest {
+        setupAuthenticated()
+        fakeUserProfileRepo.setActiveProfileForTest(subscriptionStatus = SubscriptionStatus.ACTIVE)
+        fakeExternalActivityRepo.activities += ExternalActivity(
+            externalId = "hevy-activity-1",
+            provider = IntegrationProvider.HEVY,
+            name = "Push Day",
+            startedAt = 1000L,
+            profileId = "default",
+            needsSync = true
+        )
+        fakeApi.pushResult = Result.success(
+            PortalSyncPushResponse(syncTime = "2026-03-02T12:00:00Z")
+        )
+        val manager = createManager()
+
+        manager.sync()
+
+        val payload = fakeApi.lastPushPayload
+        assertNotNull(payload, "Push payload should be captured")
+        assertEquals(1, payload.externalActivities.size, "Local paid status should allow external activity push")
+        assertEquals("hevy-activity-1", payload.externalActivities.single().externalId)
+    }
+
+    @Test
+    fun syncMarksExternalActivitiesSyncedByProviderScopedKeys() = runTest {
+        setupAuthenticated()
+        fakeUserProfileRepo.setActiveProfileForTest(subscriptionStatus = SubscriptionStatus.ACTIVE)
+        fakeExternalActivityRepo.activities += ExternalActivity(
+            externalId = "shared-id",
+            provider = IntegrationProvider.HEVY,
+            name = "Hevy Push Day",
+            startedAt = 1000L,
+            profileId = "default",
+            needsSync = true
+        )
+        fakeExternalActivityRepo.activities += ExternalActivity(
+            externalId = "shared-id",
+            provider = IntegrationProvider.LIFTOSAUR,
+            name = "Liftosaur Push Day",
+            startedAt = 2000L,
+            profileId = "default",
+            needsSync = true
+        )
+        fakeApi.pushResult = Result.success(
+            PortalSyncPushResponse(
+                syncTime = "2026-03-02T12:00:00Z",
+                externalActivityKeys = listOf(
+                    ExternalActivityAckDto(
+                        externalId = "shared-id",
+                        provider = IntegrationProvider.HEVY.key
+                    )
+                )
+            )
+        )
+        val manager = createManager()
+
+        manager.sync()
+
+        assertEquals(1, fakeExternalActivityRepo.markedSyncedKeys.size)
+        assertEquals("shared-id", fakeExternalActivityRepo.markedSyncedKeys.single().externalId)
+        assertEquals(IntegrationProvider.HEVY, fakeExternalActivityRepo.markedSyncedKeys.single().provider)
+        assertTrue(
+            fakeExternalActivityRepo.markedSyncedIds.isEmpty(),
+            "Legacy ID-only sync stamping should not run when provider-scoped acknowledgements are present"
+        )
     }
 
     // ===== Pull Success Flow =====

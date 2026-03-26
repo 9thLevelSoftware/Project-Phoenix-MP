@@ -1,6 +1,7 @@
 package com.devil.phoenixproject.testutil
 
 import com.devil.phoenixproject.data.integration.ExternalActivityRepository
+import com.devil.phoenixproject.data.integration.ExternalActivitySyncKey
 import com.devil.phoenixproject.domain.model.ConnectionStatus
 import com.devil.phoenixproject.domain.model.ExternalActivity
 import com.devil.phoenixproject.domain.model.IntegrationProvider
@@ -13,7 +14,18 @@ class FakeExternalActivityRepository : ExternalActivityRepository {
 
     val activities = mutableListOf<ExternalActivity>()
     val markedSyncedIds = mutableListOf<String>()
+    val markedSyncedKeys = mutableListOf<ExternalActivitySyncKey>()
     var upsertCallCount = 0
+
+    /** Captures every updateIntegrationStatus call for test assertions. */
+    data class StatusUpdate(
+        val provider: IntegrationProvider,
+        val status: ConnectionStatus,
+        val profileId: String,
+        val lastSyncAt: Long?,
+        val errorMessage: String?
+    )
+    val statusUpdates = mutableListOf<StatusUpdate>()
 
     override fun getAll(profileId: String, provider: IntegrationProvider?): Flow<List<ExternalActivity>> {
         return MutableStateFlow(
@@ -27,11 +39,31 @@ class FakeExternalActivityRepository : ExternalActivityRepository {
 
     override suspend fun upsertActivities(activities: List<ExternalActivity>) {
         upsertCallCount++
-        this.activities.addAll(activities)
+        // Deduplicate on (externalId, provider) to match real INSERT OR IGNORE + UPDATE behavior.
+        // Existing rows are updated in-place (preserving id and needsSync); new rows are appended.
+        for (activity in activities) {
+            val existingIndex = this.activities.indexOfFirst {
+                it.externalId == activity.externalId && it.provider == activity.provider
+            }
+            if (existingIndex >= 0) {
+                // Update data fields but preserve id and needsSync from existing row
+                val existing = this.activities[existingIndex]
+                this.activities[existingIndex] = activity.copy(
+                    id = existing.id,
+                    needsSync = existing.needsSync
+                )
+            } else {
+                this.activities.add(activity)
+            }
+        }
     }
 
     override suspend fun markSynced(ids: List<String>) {
         markedSyncedIds.addAll(ids)
+    }
+
+    override suspend fun markSyncedBySyncKeys(syncKeys: List<ExternalActivitySyncKey>, profileId: String) {
+        markedSyncedKeys.addAll(syncKeys)
     }
 
     override suspend fun deleteActivities(provider: IntegrationProvider, profileId: String) {
@@ -53,6 +85,6 @@ class FakeExternalActivityRepository : ExternalActivityRepository {
         lastSyncAt: Long?,
         errorMessage: String?
     ) {
-        // no-op for tests
+        statusUpdates += StatusUpdate(provider, status, profileId, lastSyncAt, errorMessage)
     }
 }

@@ -85,7 +85,10 @@ class SqlDelightExternalActivityRepository(
         withContext(Dispatchers.IO) {
             queries.transaction {
                 for (activity in activities) {
-                    queries.upsertExternalActivity(
+                    // INSERT OR IGNORE: inserts the row only if no existing row
+                    // matches the (externalId, provider) unique index.
+                    // This preserves the existing id and needsSync on re-import.
+                    queries.insertExternalActivityIfNew(
                         id = activity.id,
                         externalId = activity.externalId,
                         provider = activity.provider.key,
@@ -103,6 +106,25 @@ class SqlDelightExternalActivityRepository(
                         profileId = activity.profileId,
                         needsSync = if (activity.needsSync) 1L else 0L
                     )
+                    // UPDATE: updates data fields for any existing row.
+                    // Preserves id and needsSync (not touched by this statement).
+                    // No-op if the INSERT above succeeded (externalId+provider is new).
+                    queries.updateExternalActivityOnConflict(
+                        name = activity.name,
+                        activityType = activity.activityType,
+                        startedAt = activity.startedAt,
+                        durationSeconds = activity.durationSeconds.toLong(),
+                        distanceMeters = activity.distanceMeters,
+                        calories = activity.calories?.toLong(),
+                        avgHeartRate = activity.avgHeartRate?.toLong(),
+                        maxHeartRate = activity.maxHeartRate?.toLong(),
+                        elevationGainMeters = activity.elevationGainMeters,
+                        rawData = activity.rawData,
+                        syncedAt = activity.syncedAt,
+                        profileId = activity.profileId,
+                        externalId = activity.externalId,
+                        provider = activity.provider.key
+                    )
                 }
             }
         }
@@ -114,6 +136,21 @@ class SqlDelightExternalActivityRepository(
             queries.transaction {
                 for (id in ids) {
                     queries.markExternalActivitySynced(id = id)
+                }
+            }
+        }
+    }
+
+    override suspend fun markSyncedBySyncKeys(syncKeys: List<ExternalActivitySyncKey>, profileId: String) {
+        if (syncKeys.isEmpty()) return
+        withContext(Dispatchers.IO) {
+            queries.transaction {
+                for (syncKey in syncKeys) {
+                    queries.markExternalActivitySyncedBySyncKey(
+                        externalId = syncKey.externalId,
+                        provider = syncKey.provider.key,
+                        profileId = profileId
+                    )
                 }
             }
         }

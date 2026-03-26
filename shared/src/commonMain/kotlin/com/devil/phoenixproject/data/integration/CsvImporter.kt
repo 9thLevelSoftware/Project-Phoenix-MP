@@ -329,6 +329,15 @@ object CsvImporter {
     /**
      * Parse a Strong date string: `"YYYY-MM-DD HH:MM:SS"` → epoch milliseconds.
      * Returns 0L on failure.
+     *
+     * **Timezone handling:** Strong CSV files do not carry timezone information.
+     * Dates are interpreted as the device's local timezone via [TimeZone.currentSystemDefault].
+     * This is consistent with [CsvExporter.formatTimestamp] which also writes local time.
+     *
+     * **Cross-device caveat:** Importing a file exported on a device in a different timezone
+     * will shift timestamps by the timezone offset. Since [externalId] includes the epoch
+     * timestamp, the same workout imported on two devices in different timezones will produce
+     * different dedup keys and be treated as separate activities.
      */
     internal fun parseStrongDate(dateStr: String): Long {
         if (dateStr.isBlank()) return 0L

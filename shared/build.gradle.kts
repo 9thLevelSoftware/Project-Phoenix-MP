@@ -44,6 +44,8 @@ kotlin {
             baseName = "shared"
             isStatic = true
             xcf.add(this)
+            // Link system frameworks required by shared module
+            linkerOpts("-framework", "HealthKit")
         }
         binaries.all {
             freeCompilerArgs += listOf("-Xadd-light-debug=enable")
@@ -166,6 +168,9 @@ kotlin {
                 implementation(libs.androidx.security.crypto)
 
                 // Health Connect (Google Health)
+                // Pinned to alpha11: stable 1.1.0 made Metadata constructor internal,
+                // breaking ExerciseSessionRecord/TotalCaloriesBurnedRecord creation.
+                // TODO: Migrate to stable API when Google provides a public record builder.
                 implementation("androidx.health.connect:connect-client:1.1.0-alpha11")
 
             }
@@ -202,8 +207,8 @@ sqldelight {
     databases {
         create("VitruvianDatabase") {
             packageName.set("com.devil.phoenixproject.database")
-            // Version 24 = initial schema (1) + 23 migrations (1.sqm through 23.sqm)
-            version = 24
+            // Version 25 = initial schema (1) + 24 migrations (1.sqm through 24.sqm)
+            version = 25
         }
     }
 }

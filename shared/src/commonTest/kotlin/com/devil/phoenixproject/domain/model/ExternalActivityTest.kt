@@ -33,6 +33,6 @@ class ExternalActivityTest {
         assertEquals(0, activity.durationSeconds)
         assertNull(activity.calories)
         assertEquals("default", activity.profileId)
-        assertEquals(true, activity.needsSync)
+        assertEquals(false, activity.needsSync)
     }
 }

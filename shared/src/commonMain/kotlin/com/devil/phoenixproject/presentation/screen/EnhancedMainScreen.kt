@@ -149,8 +149,7 @@ fun EnhancedMainScreen(
         currentRoute == NavigationRoutes.DailyRoutines.route ||
         currentRoute == NavigationRoutes.TrainingCycles.route ||
         currentRoute == NavigationRoutes.Analytics.route ||
-        // MVP: SmartInsights removed for v0.7.0
-        // currentRoute == NavigationRoutes.SmartInsights.route ||
+        currentRoute == NavigationRoutes.SmartInsights.route ||
         currentRoute == NavigationRoutes.Settings.route
     }
 
@@ -346,34 +345,33 @@ fun EnhancedMainScreen(
                         )
                     )
 
-                    // MVP: Removed for v0.7.0 — functionality moving to portal
-//                    // Smart Insights tab
-//                    NavigationBarItem(
-//                        icon = {
-//                            Icon(
-//                                imageVector = Icons.Default.AutoAwesome,
-//                                contentDescription = "Insights"
-//                            )
-//                        },
-//                        label = { Text("Insights") },
-//                        selected = currentRoute == NavigationRoutes.SmartInsights.route,
-//                        onClick = {
-//                            if (currentRoute != NavigationRoutes.SmartInsights.route) {
-//                                navController.navigate(NavigationRoutes.SmartInsights.route) {
-//                                    popUpTo(NavigationRoutes.Home.route) { saveState = true }
-//                                    launchSingleTop = true
-//                                    restoreState = true
-//                                }
-//                            }
-//                        },
-//                        colors = NavigationBarItemDefaults.colors(
-//                            selectedIconColor = MaterialTheme.colorScheme.primary,
-//                            selectedTextColor = MaterialTheme.colorScheme.primary,
-//                            indicatorColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.2f),
-//                            unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
-//                            unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant
-//                        )
-//                    )
+                    // Smart Insights tab
+                    NavigationBarItem(
+                        icon = {
+                            Icon(
+                                imageVector = Icons.Default.AutoAwesome,
+                                contentDescription = "Insights"
+                            )
+                        },
+                        label = { Text("Insights") },
+                        selected = currentRoute == NavigationRoutes.SmartInsights.route,
+                        onClick = {
+                            if (currentRoute != NavigationRoutes.SmartInsights.route) {
+                                navController.navigate(NavigationRoutes.SmartInsights.route) {
+                                    popUpTo(NavigationRoutes.Home.route) { saveState = true }
+                                    launchSingleTop = true
+                                    restoreState = true
+                                }
+                            }
+                        },
+                        colors = NavigationBarItemDefaults.colors(
+                            selectedIconColor = MaterialTheme.colorScheme.primary,
+                            selectedTextColor = MaterialTheme.colorScheme.primary,
+                            indicatorColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.2f),
+                            unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                            unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    )
 
                     // Settings tab
                     NavigationBarItem(
@@ -721,8 +719,7 @@ private fun getScreenTitle(
         route == NavigationRoutes.DailyRoutines.route -> "Daily Routines"
         route == NavigationRoutes.TrainingCycles.route -> "Training Cycles"
         route == NavigationRoutes.Analytics.route -> "Analytics"
-        // MVP: Removed for v0.7.0 — SmartInsights tab removed
-        // route == NavigationRoutes.SmartInsights.route -> "Smart Insights"
+        route == NavigationRoutes.SmartInsights.route -> "Smart Insights"
         route == NavigationRoutes.Settings.route -> "Settings"
         route == NavigationRoutes.JustLift.route -> "Just Lift"
         route == NavigationRoutes.SingleExercise.route -> "Single Exercise"

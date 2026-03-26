@@ -1,6 +1,6 @@
 -- Migration 15: Per-Rep Biomechanics table + WorkoutSession summary columns (Phase 13 - v16)
 
-CREATE TABLE RepBiomechanics (
+CREATE TABLE IF NOT EXISTS RepBiomechanics (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     sessionId TEXT NOT NULL,
     repNumber INTEGER NOT NULL,
@@ -26,8 +26,8 @@ CREATE TABLE RepBiomechanics (
     FOREIGN KEY (sessionId) REFERENCES WorkoutSession(id) ON DELETE CASCADE
 );
 
-CREATE INDEX idx_rep_biomechanics_session ON RepBiomechanics(sessionId);
-CREATE UNIQUE INDEX idx_rep_biomechanics_session_rep ON RepBiomechanics(sessionId, repNumber);
+CREATE INDEX IF NOT EXISTS idx_rep_biomechanics_session ON RepBiomechanics(sessionId);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_rep_biomechanics_session_rep ON RepBiomechanics(sessionId, repNumber);
 
 -- Biomechanics summary columns on WorkoutSession (PERSIST-04)
 ALTER TABLE WorkoutSession ADD COLUMN avgMcvMmS REAL;

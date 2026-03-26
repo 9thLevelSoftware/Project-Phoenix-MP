@@ -2,9 +2,11 @@ package com.devil.phoenixproject.data.sync
 
 import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.data.local.BadgeDefinitions
+import com.devil.phoenixproject.data.integration.ExternalActivitySyncKey
 import com.devil.phoenixproject.data.integration.ExternalActivityRepository
 import com.devil.phoenixproject.data.repository.GamificationRepository
 import com.devil.phoenixproject.data.repository.RepMetricRepository
+import com.devil.phoenixproject.data.repository.SubscriptionStatus
 import com.devil.phoenixproject.data.repository.SyncRepository
 import com.devil.phoenixproject.data.repository.UserProfileRepository
 import com.devil.phoenixproject.domain.model.IntegrationProvider
@@ -238,7 +240,9 @@ class SyncManager(
         }
 
         // 5b. External activities (paid users only)
-        val isPremium = tokenStorage.currentUser.value?.isPremium == true
+        val localPaid = userProfileRepository.activeProfile.value?.subscriptionStatus == SubscriptionStatus.ACTIVE
+        val portalPaid = tokenStorage.currentUser.value?.isPremium == true
+        val isPremium = localPaid || portalPaid
         val externalActivityDtos = if (isPremium) {
             val unsyncedActivities = externalActivityRepository.getUnsyncedActivities(activeProfileId)
             unsyncedActivities.map { activity ->
@@ -404,11 +408,42 @@ class SyncManager(
             }
         }
 
-        // Mark external activities as synced after successful push
-        if (externalActivityDtos.isNotEmpty()) {
-            val syncedIds = externalActivityDtos.map { it.id }
-            externalActivityRepository.markSynced(syncedIds)
-            Logger.d("SyncManager") { "Marked ${syncedIds.size} external activities as synced" }
+        // Mark external activities as synced based on server acknowledgement.
+        // Only mark activities the server confirmed it persisted — prevents silently
+        // dropping activities that the server soft-failed on.
+        if (externalActivityDtos.isNotEmpty() && lastResponse != null) {
+            val response = lastResponse!!
+            val acknowledgedSyncKeys = response.externalActivityKeys.mapNotNull { ack ->
+                IntegrationProvider.fromKey(ack.provider)?.let { provider ->
+                    ExternalActivitySyncKey(externalId = ack.externalId, provider = provider)
+                }
+            }
+            if (acknowledgedSyncKeys.isNotEmpty()) {
+                // Server confirmed exact provider-scoped keys — mark only those.
+                externalActivityRepository.markSyncedBySyncKeys(
+                    syncKeys = acknowledgedSyncKeys,
+                    profileId = activeProfileId
+                )
+                Logger.d("SyncManager") {
+                    "Marked ${acknowledgedSyncKeys.size} external activities as synced (by server-confirmed provider/externalId keys)"
+                }
+            } else if (response.externalActivityIds.isNotEmpty()) {
+                Logger.w("SyncManager") {
+                    "Server returned legacy externalActivityIds without provider scoping; skipping optimistic sync stamping"
+                }
+            } else if (response.externalActivitiesUpserted > 0) {
+                // Backward compat: server confirmed a count but no IDs list
+                val syncedIds = externalActivityDtos.map { it.id }
+                externalActivityRepository.markSynced(syncedIds)
+                Logger.d("SyncManager") {
+                    "Marked ${syncedIds.size} external activities as synced (backward compat, server confirmed ${response.externalActivitiesUpserted})"
+                }
+            } else {
+                // Server did not confirm any activities were persisted — do NOT mark as synced
+                Logger.w("SyncManager") {
+                    "Pushed ${externalActivityDtos.size} external activities but server confirmed 0 — will retry on next sync"
+                }
+            }
         }
 
         return Result.success(lastResponse!!)

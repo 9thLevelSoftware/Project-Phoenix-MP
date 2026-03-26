@@ -16,13 +16,13 @@ ALTER TABLE AssessmentResult ADD COLUMN profile_id TEXT NOT NULL DEFAULT 'defaul
 ALTER TABLE ProgressionEvent ADD COLUMN profile_id TEXT NOT NULL DEFAULT 'default';
 
 -- === Indexes for profile_id filtering ===
-CREATE INDEX idx_session_profile ON WorkoutSession(profile_id);
-CREATE INDEX idx_pr_profile ON PersonalRecord(profile_id);
-CREATE INDEX idx_routine_profile ON Routine(profile_id);
-CREATE INDEX idx_cycle_profile ON TrainingCycle(profile_id);
-CREATE INDEX idx_assessment_profile ON AssessmentResult(profile_id);
-CREATE INDEX idx_progression_profile ON ProgressionEvent(profile_id);
+CREATE INDEX IF NOT EXISTS idx_session_profile ON WorkoutSession(profile_id);
+CREATE INDEX IF NOT EXISTS idx_pr_profile ON PersonalRecord(profile_id);
+CREATE INDEX IF NOT EXISTS idx_routine_profile ON Routine(profile_id);
+CREATE INDEX IF NOT EXISTS idx_cycle_profile ON TrainingCycle(profile_id);
+CREATE INDEX IF NOT EXISTS idx_assessment_profile ON AssessmentResult(profile_id);
+CREATE INDEX IF NOT EXISTS idx_progression_profile ON ProgressionEvent(profile_id);
 
 -- === Update PersonalRecord unique index to include profile_id ===
 DROP INDEX IF EXISTS idx_pr_unique;
-CREATE UNIQUE INDEX idx_pr_unique ON PersonalRecord(exerciseId, workoutMode, prType, phase, profile_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_pr_unique ON PersonalRecord(exerciseId, workoutMode, prType, phase, profile_id);
