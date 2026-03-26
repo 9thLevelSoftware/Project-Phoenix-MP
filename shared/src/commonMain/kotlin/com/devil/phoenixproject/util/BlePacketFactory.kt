@@ -183,6 +183,13 @@ object BlePacketFactory {
         frame[0x2a] = 0x1E
         frame[0x2b] = 0x00
 
+        // Eccentric-specific RepConfig override (official app: Dk/e.java ordinal 5)
+        // Eccentric mode uses bottom.inner.mmPerM = 50 (vs default 250) for
+        // more sensitive bottom-of-rep detection during eccentric-focused training.
+        if (params.programMode is ProgramMode.EccentricOnly) {
+            putShortLE(frame, 0x24, 50)  // bottom.inner.mmPerM = 50
+        }
+
         frame[0x2c] = 0xFA.toByte()
         frame[0x2d] = 0x00
         frame[0x2e] = 0x50
