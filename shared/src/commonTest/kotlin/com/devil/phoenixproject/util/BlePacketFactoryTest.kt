@@ -762,4 +762,106 @@ class BlePacketFactoryTest {
             assertEquals(-200.0f, readFloatLE(packet, 0x1C), "eccentricMaxVelocity should be -200.0 for $level")
         }
     }
+
+    // ========== Old School Mode: Official App Byte Parity Tests ==========
+    // Reference: VitruvianDeobfuscated Dk/e.java ordinal 4 (STATIC)
+    // Official mode mapping: Phoenix OldSchool = Official STATIC
+
+    @Test
+    fun `Old School packet matches official app RepConfig header`() {
+        val params = WorkoutParameters(
+            programMode = ProgramMode.OldSchool,
+            reps = 10,
+            warmupReps = 3,
+            weightPerCableKg = 50f
+        )
+        val packet = BlePacketFactory.createProgramParams(params)
+
+        // Command ID
+        assertEquals(0x04.toByte(), packet[0x00], "command byte 0")
+        assertEquals(0x00.toByte(), packet[0x01], "command byte 1")
+        assertEquals(0x00.toByte(), packet[0x02], "command byte 2")
+        assertEquals(0x00.toByte(), packet[0x03], "command byte 3")
+
+        // RepCounts: total=reps+warmup=13, baseline=3, adaptive=3, pad=0
+        assertEquals(13.toByte(), packet[0x04], "RepCounts.total")
+        assertEquals(3.toByte(), packet[0x05], "RepCounts.baseline")
+        assertEquals(3.toByte(), packet[0x06], "RepCounts.adaptive")
+        assertEquals(0.toByte(), packet[0x07], "RepCounts.padding")
+
+        // seedRange = 5.0f
+        assertEquals(5.0f, readFloatLE(packet, 0x08), "seedRange")
+
+        // top RepBound: threshold=5.0, drift=0.0
+        assertEquals(5.0f, readFloatLE(packet, 0x0C), "top.threshold")
+        assertEquals(0.0f, readFloatLE(packet, 0x10), "top.drift")
+
+        // top.inner = L(250, 250), top.outer = L(200, 30)
+        assertEquals(250.toShort(), readShortLE(packet, 0x14), "top.inner.mmPerM")
+        assertEquals(250.toShort(), readShortLE(packet, 0x16), "top.inner.mmMax")
+        assertEquals(200.toShort(), readShortLE(packet, 0x18), "top.outer.mmPerM")
+        assertEquals(30.toShort(), readShortLE(packet, 0x1A), "top.outer.mmMax")
+
+        // bottom RepBound: threshold=5.0, drift=0.0
+        assertEquals(5.0f, readFloatLE(packet, 0x1C), "bottom.threshold")
+        assertEquals(0.0f, readFloatLE(packet, 0x20), "bottom.drift")
+
+        // bottom.inner = L(250, 250), bottom.outer = L(200, 30) — default
+        assertEquals(250.toShort(), readShortLE(packet, 0x24), "bottom.inner.mmPerM")
+        assertEquals(250.toShort(), readShortLE(packet, 0x26), "bottom.inner.mmMax")
+        assertEquals(200.toShort(), readShortLE(packet, 0x28), "bottom.outer.mmPerM")
+        assertEquals(30.toShort(), readShortLE(packet, 0x2A), "bottom.outer.mmMax")
+
+        // safety = L(250, 80)
+        assertEquals(250.toShort(), readShortLE(packet, 0x2C), "safety.mmPerM")
+        assertEquals(80.toShort(), readShortLE(packet, 0x2E), "safety.mmMax")
+    }
+
+    @Test
+    fun `Old School packet matches official app mode profile`() {
+        val params = WorkoutParameters(
+            programMode = ProgramMode.OldSchool,
+            reps = 10,
+            weightPerCableKg = 50f
+        )
+        val packet = BlePacketFactory.createProgramParams(params)
+
+        // Concentric down ramp: C1507d(0, 20, 3.0f)
+        assertEquals(0.toShort(), readShortLE(packet, 0x30), "conc.down.minMmS")
+        assertEquals(20.toShort(), readShortLE(packet, 0x32), "conc.down.maxMmS")
+        assertEquals(3.0f, readFloatLE(packet, 0x34), "conc.down.ramp")
+
+        // Concentric up ramp: C1507d(75, 600, 50.0f)
+        assertEquals(75.toShort(), readShortLE(packet, 0x38), "conc.up.minMmS")
+        assertEquals(600.toShort(), readShortLE(packet, 0x3A), "conc.up.maxMmS")
+        assertEquals(50.0f, readFloatLE(packet, 0x3C), "conc.up.ramp")
+
+        // Eccentric down ramp: C1507d(-1300, -1200, 100.0f)
+        assertEquals((-1300).toShort(), readShortLE(packet, 0x40), "ecc.down.minMmS")
+        assertEquals((-1200).toShort(), readShortLE(packet, 0x42), "ecc.down.maxMmS")
+        assertEquals(100.0f, readFloatLE(packet, 0x44), "ecc.down.ramp")
+
+        // Eccentric up ramp: C1507d(-260, -110, 0.0f)
+        assertEquals((-260).toShort(), readShortLE(packet, 0x48), "ecc.up.minMmS")
+        assertEquals((-110).toShort(), readShortLE(packet, 0x4A), "ecc.up.maxMmS")
+        assertEquals(0.0f, readFloatLE(packet, 0x4C), "ecc.up.ramp")
+    }
+
+    @Test
+    fun `Old School packet matches official app force config`() {
+        val weight = 50f
+        val params = WorkoutParameters(
+            programMode = ProgramMode.OldSchool,
+            reps = 10,
+            weightPerCableKg = weight,
+            progressionRegressionKg = 0f
+        )
+        val packet = BlePacketFactory.createProgramParams(params)
+
+        // Force config: Gm.e(0.0f, 10.0f + weight), softMax=weight, increment=0
+        assertEquals(0.0f, readFloatLE(packet, 0x50), "forces.min")
+        assertEquals(60.0f, readFloatLE(packet, 0x54), "forces.max (10+weight)")
+        assertEquals(50.0f, readFloatLE(packet, 0x58), "softMax (=weight)")
+        assertEquals(0.0f, readFloatLE(packet, 0x5C), "increment (=progression)")
+    }
 }
