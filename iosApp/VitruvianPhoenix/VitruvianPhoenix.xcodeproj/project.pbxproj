@@ -99,6 +99,7 @@
 			isa = PBXNativeTarget;
 			buildConfigurationList = DFE6BD522EEDF42300886589 /* Build configuration list for PBXNativeTarget "VitruvianPhoenix" */;
 			buildPhases = (
+				DFE6BD812EEE200000886589 /* Build Shared Framework */,
 				DFE6BD432EEDF42200886589 /* Sources */,
 				DFE6BD442EEDF42200886589 /* Frameworks */,
 				DFE6BD452EEDF42200886589 /* Resources */,
@@ -165,6 +166,21 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXShellScriptBuildPhase section */
+		DFE6BD812EEE200000886589 /* Build Shared Framework */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+			);
+			name = "Build Shared Framework";
+			outputPaths = (
+				"$(SRCROOT)/../../shared/build/bin/iosArm64/debugFramework/shared.framework/shared",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "cd \"$SRCROOT/../..\"\nexport JAVA_HOME=/opt/homebrew/opt/openjdk@17/libexec/openjdk.jdk/Contents/Home\nexport PATH=\"/opt/homebrew/bin:$PATH\"\n./gradlew :shared:linkDebugFrameworkIosArm64 -Pskip.supabase.check=true\n";
+		};
 		DFE6BD802EEE100000886589 /* Generate shared.framework dSYM */ = {
 			isa = PBXShellScriptBuildPhase;
 			buildActionMask = 2147483647;
@@ -179,7 +195,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-                        shellScript = "# Generate dSYM for shared.framework\nif [ \"$CONFIGURATION\" = \"Release\" ]; then\n    FRAMEWORK_PATH=\"${SRCROOT}/../../shared/build/bin/iosArm64/debugFramework/shared.framework\"\n    DSYM_PATH=\"${DWARF_DSYM_FOLDER_PATH}/shared.framework.dSYM\"\n    FRAMEWORK_BIN=\"${FRAMEWORK_PATH}/shared\"\n    \n    if [ -f \"${FRAMEWORK_BIN}\" ]; then\n        FILE_TYPE=\"$(/usr/bin/file -b \"${FRAMEWORK_BIN}\" 2>/dev/null || true)\"\n        if echo \"${FILE_TYPE}\" | /usr/bin/grep -q \"Mach-O\"; then\n            echo \"Generating dSYM for shared.framework...\"\n            if xcrun dsymutil \"${FRAMEWORK_BIN}\" -o \"${DSYM_PATH}\" >/dev/null 2>&1; then\n                echo \"dSYM generated at ${DSYM_PATH}\"\n            else\n                echo \"Warning: dsymutil failed for shared.framework; skipping.\"\n            fi\n        else\n            echo \"Skipping dSYM generation for shared.framework (binary type: ${FILE_TYPE:-unknown}).\"\n        fi\n    else\n        echo \"Warning: shared.framework binary not found at ${FRAMEWORK_PATH}\"\n    fi\nfi\n";
+			shellScript = "# Generate dSYM for shared.framework\nif [ \"$CONFIGURATION\" = \"Release\" ]; then\n    FRAMEWORK_PATH=\"${SRCROOT}/../../shared/build/bin/iosArm64/debugFramework/shared.framework\"\n    DSYM_PATH=\"${DWARF_DSYM_FOLDER_PATH}/shared.framework.dSYM\"\n    FRAMEWORK_BIN=\"${FRAMEWORK_PATH}/shared\"\n    \n    if [ -f \"${FRAMEWORK_BIN}\" ]; then\n        FILE_TYPE=\"$(/usr/bin/file -b \"${FRAMEWORK_BIN}\" 2>/dev/null || true)\"\n        if echo \"${FILE_TYPE}\" | /usr/bin/grep -q \"Mach-O\"; then\n            echo \"Generating dSYM for shared.framework...\"\n            if xcrun dsymutil \"${FRAMEWORK_BIN}\" -o \"${DSYM_PATH}\" >/dev/null 2>&1; then\n                echo \"dSYM generated at ${DSYM_PATH}\"\n            else\n                echo \"Warning: dsymutil failed for shared.framework; skipping.\"\n            fi\n        else\n            echo \"Skipping dSYM generation for shared.framework (binary type: ${FILE_TYPE:-unknown}).\"\n        fi\n    else\n        echo \"Warning: shared.framework binary not found at ${FRAMEWORK_PATH}\"\n    fi\nfi\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 
@@ -323,6 +339,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CLANG_ENABLE_MODULES = YES;
+				CODE_SIGN_ENTITLEMENTS = VitruvianPhoenix/VitruvianPhoenix.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 2025122901;
 				DEVELOPMENT_TEAM = BDJDR669ZV;
@@ -330,9 +347,16 @@
 				FRAMEWORK_SEARCH_PATHS = "$(SRCROOT)/../../shared/build/bin/iosArm64/debugFramework";
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = VitruvianPhoenix/Info.plist;
-				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = "Project Phoenix";
+				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
+				INFOPLIST_KEY_LSSupportsOpeningDocumentsInPlace = YES;
+				INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription = "Project Phoenix needs Bluetooth to connect to your Vitruvian Trainer machine.";
+				INFOPLIST_KEY_NSBluetoothPeripheralUsageDescription = "Project Phoenix needs Bluetooth to connect to your Vitruvian Trainer machine.";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Project Phoenix uses the microphone for safe word detection during workouts, enabling hands-free emergency stops.";
+				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Project Phoenix uses on-device speech recognition to listen for your safe word during workouts.";
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
-				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UIRequiredDeviceCapabilities = "arm64 bluetooth-le";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -359,6 +383,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CLANG_ENABLE_MODULES = YES;
+				CODE_SIGN_ENTITLEMENTS = VitruvianPhoenix/VitruvianPhoenix.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 2025122901;
 				DEVELOPMENT_TEAM = BDJDR669ZV;
@@ -366,9 +391,16 @@
 				FRAMEWORK_SEARCH_PATHS = "$(SRCROOT)/../../shared/build/bin/iosArm64/debugFramework";
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = VitruvianPhoenix/Info.plist;
-				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = "Project Phoenix";
+				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
+				INFOPLIST_KEY_LSSupportsOpeningDocumentsInPlace = YES;
+				INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription = "Project Phoenix needs Bluetooth to connect to your Vitruvian Trainer machine.";
+				INFOPLIST_KEY_NSBluetoothPeripheralUsageDescription = "Project Phoenix needs Bluetooth to connect to your Vitruvian Trainer machine.";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Project Phoenix uses the microphone for safe word detection during workouts, enabling hands-free emergency stops.";
+				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Project Phoenix uses on-device speech recognition to listen for your safe word during workouts.";
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
-				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UIRequiredDeviceCapabilities = "arm64 bluetooth-le";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				LD_RUNPATH_SEARCH_PATHS = (

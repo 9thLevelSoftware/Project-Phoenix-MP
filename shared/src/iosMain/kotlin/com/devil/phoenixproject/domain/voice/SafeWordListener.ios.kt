@@ -87,10 +87,10 @@ actual class SafeWordListener(
 
         val authStatus = SFSpeechRecognizer.authorizationStatus()
         when (authStatus) {
-            SFSpeechRecognizerAuthorizationStatus.authorized -> { /* proceed */ }
-            SFSpeechRecognizerAuthorizationStatus.notDetermined -> {
+            SFSpeechRecognizerAuthorizationStatus.SFSpeechRecognizerAuthorizationStatusAuthorized -> { /* proceed */ }
+            SFSpeechRecognizerAuthorizationStatus.SFSpeechRecognizerAuthorizationStatusNotDetermined -> {
                 SFSpeechRecognizer.requestAuthorization { newStatus ->
-                    if (newStatus == SFSpeechRecognizerAuthorizationStatus.authorized) {
+                    if (newStatus == SFSpeechRecognizerAuthorizationStatus.SFSpeechRecognizerAuthorizationStatusAuthorized) {
                         // Re-enter startListening on main thread
                         dispatch_async(dispatch_get_main_queue()) { startListening() }
                     } else {
