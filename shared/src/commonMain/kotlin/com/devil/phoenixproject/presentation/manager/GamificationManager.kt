@@ -22,6 +22,9 @@ import kotlinx.coroutines.launch
 /**
  * Manages gamification events: personal record checking and badge awarding.
  * Extracted from MainViewModel.saveWorkoutSession() during monolith decomposition.
+ *
+ * All gamification operations are profile-scoped: the caller must pass the
+ * active profile ID so that badges, streaks, and stats are isolated per profile.
  */
 class GamificationManager(
     private val gamificationRepository: GamificationRepository,
@@ -46,6 +49,7 @@ class GamificationManager(
      *
      * @param peakConcentricForceKg Peak concentric force per cable (max of A/B), 0 if unavailable
      * @param peakEccentricForceKg Peak eccentric force per cable (max of A/B), 0 if unavailable
+     * @param profileId Active profile ID for profile-scoped gamification
      * @return true if a celebration sound will play (to avoid sound stacking)
      */
     suspend fun processPostSaveEvents(
@@ -57,7 +61,8 @@ class GamificationManager(
         isJustLift: Boolean,
         isEchoMode: Boolean,
         peakConcentricForceKg: Float = 0f,
-        peakEccentricForceKg: Float = 0f
+        peakEccentricForceKg: Float = 0f,
+        profileId: String = "default"
     ): Boolean {
         var hasCelebrationSound = false
 
@@ -77,7 +82,7 @@ class GamificationManager(
                         reps = workingReps,
                         workoutMode = workoutMode,
                         timestamp = timestamp,
-                        profileId = "default"
+                        profileId = profileId
                     )
 
                     // Check phase-specific PRs (Issue #111)
@@ -89,7 +94,7 @@ class GamificationManager(
                             reps = workingReps,
                             peakConcentricForceKg = peakConcentricForceKg,
                             peakEccentricForceKg = peakEccentricForceKg,
-                            profileId = "default"
+                            profileId = profileId
                         ).onFailure { e ->
                             Logger.e(e) { "Error updating phase-specific PRs: ${e.message}" }
                         }
@@ -133,8 +138,8 @@ class GamificationManager(
 
         // Update gamification stats and check for badges
         try {
-            gamificationRepository.updateStats()
-            val newBadges = gamificationRepository.checkAndAwardBadges()
+            gamificationRepository.updateStats(profileId)
+            val newBadges = gamificationRepository.checkAndAwardBadges(profileId)
             if (newBadges.isNotEmpty()) {
                 // Only emit badge sound if no other celebration sound is playing (avoid sound stacking)
                 // PR celebration dialog plays its own sound via callback, so skip badge sound when PR earned
@@ -160,8 +165,10 @@ class GamificationManager(
      *
      * Tracks consecutive sets above the minimum threshold (85) and awards
      * Form Master badges when streak criteria are met.
+     *
+     * @param profileId Active profile ID for profile-scoped badge awarding
      */
-    suspend fun processSetQualityEvent(averageSetQuality: Int) {
+    suspend fun processSetQualityEvent(averageSetQuality: Int, profileId: String = "default") {
         if (averageSetQuality >= 85) {
             consecutiveQualitySets++
             Logger.d("Quality streak: $consecutiveQualitySets consecutive sets (score=$averageSetQuality)")
@@ -180,8 +187,8 @@ class GamificationManager(
         for (badge in formMasterBadges) {
             val req = badge.requirement as BadgeRequirement.QualityStreak
             if (consecutiveQualitySets >= req.sets && averageSetQuality >= req.minScore) {
-                if (!gamificationRepository.isBadgeEarned(badge.id)) {
-                    val awarded = gamificationRepository.awardBadge(badge.id)
+                if (!gamificationRepository.isBadgeEarned(badge.id, profileId)) {
+                    val awarded = gamificationRepository.awardBadge(badge.id, profileId)
                     if (awarded) {
                         newlyEarned.add(badge)
                         Logger.d("Form Master badge earned: ${badge.name} (streak=$consecutiveQualitySets, score=$averageSetQuality)")

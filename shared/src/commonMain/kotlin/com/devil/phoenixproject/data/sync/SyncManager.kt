@@ -193,8 +193,8 @@ class SyncManager(
         // 4b. Gather training cycles (all — no delta, lacks updatedAt), profile-scoped
         val cyclesWithContext = syncRepository.getFullCyclesForSync(activeProfileId)
 
-        // 5. Gather gamification data
-        val rpgInput = gamificationRepository.getRpgInput()
+        // 5. Gather gamification data (profile-scoped)
+        val rpgInput = gamificationRepository.getRpgInput(activeProfileId)
         val rpgProfile = RpgAttributeEngine.computeProfile(rpgInput)
         val rpgDto = PortalRpgAttributesSyncDto(
             userId = userId,
@@ -208,7 +208,7 @@ class SyncManager(
             experiencePoints = 0
         )
 
-        val earnedBadges = gamificationRepository.getEarnedBadges().first()
+        val earnedBadges = gamificationRepository.getEarnedBadges(activeProfileId).first()
         val badgeDtos = earnedBadges.map { earned ->
             val badgeDef = BadgeDefinitions.getBadgeById(earned.badgeId)
             PortalEarnedBadgeSyncDto(
@@ -221,7 +221,7 @@ class SyncManager(
             )
         }
 
-        val legacyStats = syncRepository.getGamificationStatsForSync()
+        val legacyStats = syncRepository.getGamificationStatsForSync(activeProfileId)
         val gamStatsDto = legacyStats?.let { stats ->
             PortalGamificationStatsSyncDto(
                 userId = userId,
@@ -431,14 +431,14 @@ class SyncManager(
         // 4. Badges — union merge (insert if not exists)
         if (pullResponse.badges.isNotEmpty()) {
             val badgeDtos = pullResponse.badges.map { PortalPullAdapter.toBadgeSyncDto(it) }
-            syncRepository.mergeBadges(badgeDtos)
+            syncRepository.mergeBadges(badgeDtos, mergeProfileId)
             Logger.d("SyncManager") { "Merged ${pullResponse.badges.size} portal badges" }
         }
 
         // 5. Gamification stats — server wins (overwrite local, preserve local-only fields)
         pullResponse.gamificationStats?.let { stats ->
             val statsSyncDto = PortalPullAdapter.toGamificationStatsSyncDto(stats)
-            syncRepository.mergeGamificationStats(statsSyncDto)
+            syncRepository.mergeGamificationStats(statsSyncDto, mergeProfileId)
             Logger.d("SyncManager") { "Merged portal gamification stats" }
         }
 
@@ -458,7 +458,7 @@ class SyncManager(
                 characterClass = characterClass,
                 lastComputed = currentTimeMillis()
             )
-            gamificationRepository.saveRpgProfile(rpgProfile)
+            gamificationRepository.saveRpgProfile(rpgProfile, mergeProfileId)
             Logger.d("SyncManager") { "Merged portal RPG attributes: ${rpg.characterClass}" }
         }
 

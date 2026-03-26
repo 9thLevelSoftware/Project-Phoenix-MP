@@ -73,11 +73,11 @@ class FakeSyncRepository : SyncRepository {
         return customExercisesToReturn
     }
 
-    override suspend fun getBadgesModifiedSince(timestamp: Long): List<EarnedBadgeSyncDto> {
+    override suspend fun getBadgesModifiedSince(timestamp: Long, profileId: String): List<EarnedBadgeSyncDto> {
         return badgesToReturn
     }
 
-    override suspend fun getGamificationStatsForSync(): GamificationStatsSyncDto? {
+    override suspend fun getGamificationStatsForSync(profileId: String): GamificationStatsSyncDto? {
         return gamificationStatsToReturn
     }
 
@@ -115,12 +115,12 @@ class FakeSyncRepository : SyncRepository {
         mergedCustomExercises = exercises
     }
 
-    override suspend fun mergeBadges(badges: List<EarnedBadgeSyncDto>) {
+    override suspend fun mergeBadges(badges: List<EarnedBadgeSyncDto>, profileId: String) {
         mergeBadgesCallCount++
         mergedBadges = badges
     }
 
-    override suspend fun mergeGamificationStats(stats: GamificationStatsSyncDto?) {
+    override suspend fun mergeGamificationStats(stats: GamificationStatsSyncDto?, profileId: String) {
         mergeGamificationStatsCallCount++
         mergedGamificationStats = stats
     }

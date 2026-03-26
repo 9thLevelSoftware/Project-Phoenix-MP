@@ -1,0 +1,23 @@
+-- Migration 22: Add profile_id to gamification tables for multi-profile isolation
+-- Without this, Profile B's workouts advance Profile A's streaks and badges.
+
+ALTER TABLE EarnedBadge ADD COLUMN profile_id TEXT NOT NULL DEFAULT 'default';
+
+ALTER TABLE StreakHistory ADD COLUMN profile_id TEXT NOT NULL DEFAULT 'default';
+
+ALTER TABLE RpgAttributes ADD COLUMN profile_id TEXT NOT NULL DEFAULT 'default';
+
+ALTER TABLE GamificationStats ADD COLUMN profile_id TEXT NOT NULL DEFAULT 'default';
+
+-- Drop the old UNIQUE constraint on EarnedBadge.badgeId and re-create with profile_id.
+-- SQLite doesn't support DROP CONSTRAINT, so we need to work around it.
+-- The INSERT OR IGNORE in insertEarnedBadge already handles duplicate prevention.
+-- We create a new unique index on (badgeId, profile_id) to allow the same badge
+-- to be earned by different profiles.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_earned_badge_profile ON EarnedBadge(badgeId, profile_id);
+
+CREATE INDEX IF NOT EXISTS idx_streak_history_profile ON StreakHistory(profile_id);
+
+CREATE INDEX IF NOT EXISTS idx_rpg_attributes_profile ON RpgAttributes(profile_id);
+
+CREATE INDEX IF NOT EXISTS idx_gamification_stats_profile ON GamificationStats(profile_id);

@@ -6,6 +6,7 @@ import com.devil.phoenixproject.domain.model.BadgeRequirement
 import com.devil.phoenixproject.domain.model.BadgeTier
 import com.devil.phoenixproject.domain.model.Badge
 import com.devil.phoenixproject.testutil.FakeGamificationRepository
+import com.devil.phoenixproject.testutil.FakeUserProfileRepository
 import com.devil.phoenixproject.testutil.TestCoroutineRule
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
@@ -26,7 +27,7 @@ class GamificationViewModelTest {
     @Before
     fun setup() {
         repository = FakeGamificationRepository()
-        viewModel = GamificationViewModel(repository)
+        viewModel = GamificationViewModel(repository, FakeUserProfileRepository())
     }
 
     @Test

@@ -43,14 +43,14 @@ interface SyncRepository {
     suspend fun getCustomExercisesModifiedSince(timestamp: Long): List<CustomExerciseSyncDto>
 
     /**
-     * Get earned badges modified since the given timestamp
+     * Get earned badges modified since the given timestamp, scoped to profile
      */
-    suspend fun getBadgesModifiedSince(timestamp: Long): List<EarnedBadgeSyncDto>
+    suspend fun getBadgesModifiedSince(timestamp: Long, profileId: String): List<EarnedBadgeSyncDto>
 
     /**
-     * Get current gamification stats for sync
+     * Get current gamification stats for sync, scoped to profile
      */
-    suspend fun getGamificationStatsForSync(): GamificationStatsSyncDto?
+    suspend fun getGamificationStatsForSync(profileId: String): GamificationStatsSyncDto?
 
     // === Portal Push Operations (full domain objects) ===
 
@@ -134,14 +134,14 @@ interface SyncRepository {
     suspend fun mergeCustomExercises(exercises: List<CustomExerciseSyncDto>)
 
     /**
-     * Merge badges from server
+     * Merge badges from server, scoped to profile
      */
-    suspend fun mergeBadges(badges: List<EarnedBadgeSyncDto>)
+    suspend fun mergeBadges(badges: List<EarnedBadgeSyncDto>, profileId: String = "default")
 
     /**
-     * Merge gamification stats from server
+     * Merge gamification stats from server, scoped to profile
      */
-    suspend fun mergeGamificationStats(stats: GamificationStatsSyncDto?)
+    suspend fun mergeGamificationStats(stats: GamificationStatsSyncDto?, profileId: String = "default")
 
     /**
      * Merge portal routines with exercises. Handles full routine + exercise replacement.

@@ -1020,24 +1020,32 @@ SELECT last_insert_rowid();
 -- Earned Badges
 CREATE TABLE EarnedBadge (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    badgeId TEXT NOT NULL UNIQUE,
+    badgeId TEXT NOT NULL,
     earnedAt INTEGER NOT NULL,
     celebratedAt INTEGER,
     -- Sync fields (added in migration 6)
     updatedAt INTEGER,
     serverId TEXT,
-    deletedAt INTEGER
+    deletedAt INTEGER,
+    -- Multi-profile support (added in migration 22)
+    profile_id TEXT NOT NULL DEFAULT 'default'
 );
+
+CREATE UNIQUE INDEX idx_earned_badge_profile ON EarnedBadge(badgeId, profile_id);
 
 -- Streak History (for tracking historical streaks)
 CREATE TABLE StreakHistory (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     startDate INTEGER NOT NULL,
     endDate INTEGER NOT NULL,
-    length INTEGER NOT NULL
+    length INTEGER NOT NULL,
+    -- Multi-profile support (added in migration 22)
+    profile_id TEXT NOT NULL DEFAULT 'default'
 );
 
--- Aggregated Gamification Stats (single row table)
+CREATE INDEX idx_streak_history_profile ON StreakHistory(profile_id);
+
+-- Aggregated Gamification Stats (one row per profile)
 CREATE TABLE GamificationStats (
     id INTEGER PRIMARY KEY,
     totalWorkouts INTEGER NOT NULL DEFAULT 0,
@@ -1052,8 +1060,12 @@ CREATE TABLE GamificationStats (
     lastUpdated INTEGER NOT NULL,
     -- Sync fields (added in migration 6)
     updatedAt INTEGER,
-    serverId TEXT
+    serverId TEXT,
+    -- Multi-profile support (added in migration 22)
+    profile_id TEXT NOT NULL DEFAULT 'default'
 );
+
+CREATE INDEX idx_gamification_stats_profile ON GamificationStats(profile_id);
 
 -- RPG Attributes (dedicated table per STATE.md decision, not GamificationStats singleton)
 CREATE TABLE RpgAttributes (
@@ -1064,57 +1076,64 @@ CREATE TABLE RpgAttributes (
     consistency INTEGER NOT NULL DEFAULT 0,
     mastery INTEGER NOT NULL DEFAULT 0,
     characterClass TEXT NOT NULL DEFAULT 'Phoenix',
-    lastComputed INTEGER NOT NULL DEFAULT 0
+    lastComputed INTEGER NOT NULL DEFAULT 0,
+    -- Multi-profile support (added in migration 22)
+    profile_id TEXT NOT NULL DEFAULT 'default'
 );
+
+CREATE INDEX idx_rpg_attributes_profile ON RpgAttributes(profile_id);
 
 -- ==================== GAMIFICATION QUERIES ====================
 
 -- Earned Badge Queries
 selectAllEarnedBadges:
-SELECT * FROM EarnedBadge ORDER BY earnedAt DESC;
+SELECT * FROM EarnedBadge WHERE profile_id = :profileId ORDER BY earnedAt DESC;
 
 selectEarnedBadgeById:
-SELECT * FROM EarnedBadge WHERE badgeId = ?;
+SELECT * FROM EarnedBadge WHERE badgeId = ? AND profile_id = :profileId;
 
 selectUncelebratedBadges:
-SELECT * FROM EarnedBadge WHERE celebratedAt IS NULL ORDER BY earnedAt DESC;
+SELECT * FROM EarnedBadge WHERE celebratedAt IS NULL AND profile_id = :profileId ORDER BY earnedAt DESC;
 
 countEarnedBadges:
-SELECT COUNT(*) FROM EarnedBadge;
+SELECT COUNT(*) FROM EarnedBadge WHERE profile_id = :profileId;
 
 insertEarnedBadge:
-INSERT OR IGNORE INTO EarnedBadge (badgeId, earnedAt) VALUES (?, ?);
+INSERT OR IGNORE INTO EarnedBadge (badgeId, earnedAt, profile_id) VALUES (?, ?, :profileId);
 
 markBadgeCelebrated:
-UPDATE EarnedBadge SET celebratedAt = ? WHERE badgeId = ?;
+UPDATE EarnedBadge SET celebratedAt = ? WHERE badgeId = ? AND profile_id = :profileId;
 
 markBadgesCelebrated:
-UPDATE EarnedBadge SET celebratedAt = ? WHERE badgeId IN ?;
+UPDATE EarnedBadge SET celebratedAt = ? WHERE badgeId IN ? AND profile_id = :profileId;
 
 -- Streak History Queries
 selectAllStreakHistory:
-SELECT * FROM StreakHistory ORDER BY length DESC;
+SELECT * FROM StreakHistory WHERE profile_id = :profileId ORDER BY length DESC;
 
 selectLongestStreak:
-SELECT MAX(length) AS longestStreak FROM StreakHistory;
+SELECT MAX(length) AS longestStreak FROM StreakHistory WHERE profile_id = :profileId;
 
 insertStreakHistory:
-INSERT INTO StreakHistory (startDate, endDate, length) VALUES (?, ?, ?);
+INSERT INTO StreakHistory (startDate, endDate, length, profile_id) VALUES (?, ?, ?, :profileId);
 
 -- Gamification Stats Queries
 selectGamificationStats:
-SELECT * FROM GamificationStats WHERE id = 1;
+SELECT * FROM GamificationStats WHERE profile_id = :profileId;
 
 upsertGamificationStats:
 INSERT OR REPLACE INTO GamificationStats
-(id, totalWorkouts, totalReps, totalVolumeKg, longestStreak, currentStreak, uniqueExercisesUsed, prsAchieved, lastWorkoutDate, streakStartDate, lastUpdated)
-VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+(id, totalWorkouts, totalReps, totalVolumeKg, longestStreak, currentStreak, uniqueExercisesUsed, prsAchieved, lastWorkoutDate, streakStartDate, lastUpdated, profile_id)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, :profileId);
 
--- Analytics helpers for gamification
+-- Analytics helpers for gamification (profile-scoped)
 countTotalWorkouts:
+SELECT COUNT(*) FROM WorkoutSession WHERE profile_id = :profileId;
+
+-- Count queries for streaming backup progress (global, all profiles)
+countAllWorkoutSessions:
 SELECT COUNT(*) FROM WorkoutSession;
 
--- Count queries for streaming backup progress
 countAllMetricSamples:
 SELECT COUNT(*) FROM MetricSample;
 
@@ -1122,87 +1141,88 @@ countAllRoutineExercises:
 SELECT COUNT(*) FROM RoutineExercise;
 
 countTotalReps:
-SELECT SUM(totalReps) FROM WorkoutSession;
+SELECT SUM(totalReps) FROM WorkoutSession WHERE profile_id = :profileId;
 
 countTotalVolume:
-SELECT SUM(COALESCE(totalVolumeKg, totalReps * weightPerCableKg * COALESCE(cableCount, 1))) FROM WorkoutSession;
+SELECT SUM(COALESCE(totalVolumeKg, totalReps * weightPerCableKg * COALESCE(cableCount, 1))) FROM WorkoutSession WHERE profile_id = :profileId;
 
 countUniqueExercises:
-SELECT COUNT(DISTINCT exerciseId) FROM WorkoutSession WHERE exerciseId IS NOT NULL;
+SELECT COUNT(DISTINCT exerciseId) FROM WorkoutSession WHERE exerciseId IS NOT NULL AND profile_id = :profileId;
 
 countPersonalRecords:
-SELECT COUNT(*) FROM PersonalRecord;
+SELECT COUNT(*) FROM PersonalRecord WHERE profile_id = :profileId;
 
 selectWorkoutDates:
-SELECT DISTINCT DATE(timestamp / 1000, 'unixepoch') AS workoutDate FROM WorkoutSession ORDER BY timestamp DESC;
+SELECT DISTINCT DATE(timestamp / 1000, 'unixepoch') AS workoutDate FROM WorkoutSession WHERE profile_id = :profileId ORDER BY timestamp DESC;
 
 -- ==================== RPG ATTRIBUTES QUERIES ====================
 
 -- RPG Attributes Queries
 selectRpgAttributes:
-SELECT * FROM RpgAttributes WHERE id = 1;
+SELECT * FROM RpgAttributes WHERE profile_id = :profileId;
 
 upsertRpgAttributes:
 INSERT OR REPLACE INTO RpgAttributes
-(id, strength, power, stamina, consistency, mastery, characterClass, lastComputed)
-VALUES (1, ?, ?, ?, ?, ?, ?, ?);
+(id, strength, power, stamina, consistency, mastery, characterClass, lastComputed, profile_id)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, :profileId);
 
--- RPG computation helpers
+-- RPG computation helpers (profile-scoped)
 selectMaxWeightLifted:
-SELECT MAX(heaviestLiftKg) FROM WorkoutSession WHERE heaviestLiftKg IS NOT NULL;
+SELECT MAX(heaviestLiftKg) FROM WorkoutSession WHERE heaviestLiftKg IS NOT NULL AND profile_id = :profileId;
 
 selectAvgWorkingWeight:
-SELECT AVG(workingAvgWeightKg) FROM WorkoutSession WHERE workingAvgWeightKg IS NOT NULL;
+SELECT AVG(workingAvgWeightKg) FROM WorkoutSession WHERE workingAvgWeightKg IS NOT NULL AND profile_id = :profileId;
 
 selectPeakRepPower:
 SELECT MAX(peakPowerWatts) FROM RepMetric;
 
 countTrainingDays:
-SELECT COUNT(DISTINCT DATE(timestamp / 1000, 'unixepoch')) FROM WorkoutSession;
+SELECT COUNT(DISTINCT DATE(timestamp / 1000, 'unixepoch')) FROM WorkoutSession WHERE profile_id = :profileId;
 
 -- ==================== ADDITIONAL GAMIFICATION QUERIES ====================
 
--- Count workouts by workout mode
+-- Count workouts by workout mode (profile-scoped)
 countWorkoutsByMode:
-SELECT mode, COUNT(*) AS count FROM WorkoutSession GROUP BY mode;
+SELECT mode, COUNT(*) AS count FROM WorkoutSession WHERE profile_id = :profileId GROUP BY mode;
 
--- Get all unique workout modes used
+-- Get all unique workout modes used (profile-scoped)
 selectUniqueWorkoutModes:
-SELECT DISTINCT mode FROM WorkoutSession;
+SELECT DISTINCT mode FROM WorkoutSession WHERE profile_id = :profileId;
 
 -- Get peak power from all workout metrics
 selectPeakPower:
 SELECT MAX(power) AS peakPower FROM MetricSample;
 
--- Get unique muscle groups from exercises performed in workouts
+-- Get unique muscle groups from exercises performed in workouts (profile-scoped)
 selectUniqueMuscleGroupsFromWorkouts:
 SELECT DISTINCT e.muscleGroup
 FROM WorkoutSession ws
 INNER JOIN Exercise e ON ws.exerciseId = e.id
-WHERE ws.exerciseId IS NOT NULL;
+WHERE ws.exerciseId IS NOT NULL AND ws.profile_id = :profileId;
 
--- Count workouts completed on weekends (Saturday = 6, Sunday = 0 in SQLite strftime %w)
+-- Count workouts completed on weekends (profile-scoped)
 countWeekendWorkouts:
 SELECT COUNT(*) FROM WorkoutSession
-WHERE CAST(strftime('%w', timestamp / 1000, 'unixepoch') AS INTEGER) IN (0, 6);
+WHERE CAST(strftime('%w', timestamp / 1000, 'unixepoch') AS INTEGER) IN (0, 6)
+AND profile_id = :profileId;
 
--- Count completed routine sessions (workouts that are part of a routine)
+-- Count completed routine sessions (profile-scoped)
 countCompletedRoutineSessions:
-SELECT COUNT(DISTINCT routineSessionId) FROM WorkoutSession WHERE routineSessionId IS NOT NULL;
+SELECT COUNT(DISTINCT routineSessionId) FROM WorkoutSession WHERE routineSessionId IS NOT NULL AND profile_id = :profileId;
 
--- Count custom routines created
+-- Count custom routines created (profile-scoped)
 countCreatedRoutines:
-SELECT COUNT(*) FROM Routine;
+SELECT COUNT(*) FROM Routine WHERE profile_id = :profileId;
 
--- Get days since last workout (for comeback badge)
+-- Get days since last workout (for comeback badge, profile-scoped)
 selectDaysSinceLastWorkout:
 SELECT CAST((julianday('now') - julianday(MAX(timestamp) / 1000, 'unixepoch')) AS INTEGER) AS daysSince
-FROM WorkoutSession;
+FROM WorkoutSession WHERE profile_id = :profileId;
 
--- Check if a streak was previously broken and rebuilt
+-- Check if a streak was previously broken and rebuilt (profile-scoped)
 -- Returns the count of streak breaks (transitions from >0 streak to 0)
 selectStreakBreakCount:
-SELECT COUNT(*) FROM StreakHistory WHERE length > 0;
+SELECT COUNT(*) FROM StreakHistory WHERE length > 0 AND profile_id = :profileId;
 
 -- ==================== TRAINING CYCLES TABLES ====================
 
@@ -1538,7 +1558,7 @@ selectAllStreakHistorySync:
 SELECT * FROM StreakHistory;
 
 selectGamificationStatsSync:
-SELECT * FROM GamificationStats WHERE id = 1;
+SELECT * FROM GamificationStats;
 
 -- Backup sync queries for user profiles
 selectAllUserProfilesSync:
@@ -1579,10 +1599,10 @@ INSERT OR IGNORE INTO ProgressionEvent (id, exercise_id, suggested_weight_kg, pr
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 insertEarnedBadgeIgnore:
-INSERT OR IGNORE INTO EarnedBadge (badgeId, earnedAt, celebratedAt) VALUES (?, ?, ?);
+INSERT OR IGNORE INTO EarnedBadge (badgeId, earnedAt, celebratedAt, profile_id) VALUES (?, ?, ?, ?);
 
 insertStreakHistoryIgnore:
-INSERT OR IGNORE INTO StreakHistory (startDate, endDate, length) VALUES (?, ?, ?);
+INSERT OR IGNORE INTO StreakHistory (startDate, endDate, length, profile_id) VALUES (?, ?, ?, ?);
 
 insertUserProfileIgnore:
 INSERT OR IGNORE INTO UserProfile (id, name, colorIndex, createdAt, isActive) VALUES (?, ?, ?, ?, ?);
@@ -1716,22 +1736,23 @@ WHERE isCustom = 1 AND (updatedAt > ? OR updatedAt IS NULL) AND deletedAt IS NUL
 updateExerciseServerId:
 UPDATE Exercise SET serverId = ? WHERE id = ?;
 
--- Badges are global (no profile_id column) - intentionally unscoped
+-- Badges scoped to active profile for sync push
 selectBadgesModifiedSince:
 SELECT * FROM EarnedBadge
-WHERE (updatedAt > ? OR updatedAt IS NULL) AND deletedAt IS NULL;
+WHERE (updatedAt > ? OR updatedAt IS NULL) AND deletedAt IS NULL
+AND profile_id = :profileId;
 
 -- Update badge server ID
 updateBadgeServerId:
 UPDATE EarnedBadge SET serverId = ? WHERE id = ?;
 
--- Get gamification stats
+-- Get gamification stats for sync (profile-scoped)
 selectGamificationStatsForSync:
-SELECT * FROM GamificationStats WHERE id = 1;
+SELECT * FROM GamificationStats WHERE profile_id = :profileId;
 
--- Update gamification stats server ID
+-- Update gamification stats server ID (profile-scoped)
 updateGamificationStatsServerId:
-UPDATE GamificationStats SET serverId = ? WHERE id = 1;
+UPDATE GamificationStats SET serverId = ? WHERE profile_id = :profileId;
 
 -- Find session by server ID (for conflict resolution)
 selectSessionByServerId:

@@ -15,6 +15,7 @@ import com.devil.phoenixproject.presentation.components.HapticFeedbackEffect
 import com.devil.phoenixproject.presentation.components.PRCelebrationDialog
 import org.koin.compose.koinInject
 import com.devil.phoenixproject.data.repository.GamificationRepository
+import com.devil.phoenixproject.data.repository.UserProfileRepository
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
 import com.devil.phoenixproject.presentation.manager.DefaultWorkoutSessionManager
 import com.devil.phoenixproject.presentation.navigation.NavigationRoutes
@@ -63,9 +64,6 @@ fun ActiveWorkoutScreen(
     val isCurrentExerciseBodyweight by viewModel.isCurrentExerciseBodyweight.collectAsState()
     val latestRepQuality by viewModel.latestRepQuality.collectAsState()
     val latestBiomechanicsResult by viewModel.latestBiomechanicsResult.collectAsState()
-    // C5: Ghost racing live overlay state
-    val latestGhostVerdict by viewModel.latestGhostVerdict.collectAsState()
-    val ghostSession by viewModel.ghostSession.collectAsState()
     val detectionState by viewModel.detectionState.collectAsState()
     // Issue #237: Motion-triggered set start
     val motionStartHoldProgress by viewModel.motionStartHoldProgress.collectAsState()
@@ -98,6 +96,7 @@ fun ActiveWorkoutScreen(
 
     // Badge Celebration state
     val gamificationRepository: GamificationRepository = koinInject()
+    val userProfileRepository: UserProfileRepository = koinInject()
     var earnedBadges by remember { mutableStateOf<List<Badge>>(emptyList()) }
     LaunchedEffect(Unit) {
         viewModel.badgeEarnedEvents.collect { badges ->
@@ -302,8 +301,7 @@ fun ActiveWorkoutScreen(
         latestBiomechanicsResult, detectionState,
         motionStartHoldProgress, isRestPaused,
         currentWarmupSetIndex, totalWarmupSets,
-        justLiftRestCountdown,
-        latestGhostVerdict, ghostSession
+        justLiftRestCountdown
     ) {
         WorkoutUiState(
             connectionState = connectionState,
@@ -339,9 +337,7 @@ fun ActiveWorkoutScreen(
             isRestPaused = isRestPaused,
             currentWarmupSetIndex = currentWarmupSetIndex,
             totalWarmupSets = totalWarmupSets,
-            justLiftRestCountdown = justLiftRestCountdown,
-            latestGhostVerdict = latestGhostVerdict,
-            hasGhostSession = ghostSession != null
+            justLiftRestCountdown = justLiftRestCountdown
         )
     }
 
@@ -498,7 +494,8 @@ fun ActiveWorkoutScreen(
             onDismiss = { earnedBadges = emptyList() },
             onMarkAllCelebrated = { badgeIds ->
                 scope.launch {
-                    gamificationRepository.markBadgesCelebrated(badgeIds)
+                    val profileId = userProfileRepository.activeProfile.value?.id ?: "default"
+                    gamificationRepository.markBadgesCelebrated(badgeIds, profileId)
                 }
             },
             onSoundTrigger = {}  // Sound handled by ViewModel - skipped if PR already played

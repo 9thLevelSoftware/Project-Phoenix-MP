@@ -357,7 +357,8 @@ abstract class BaseDataBackupManager(
                         id = eb.id,
                         badgeId = eb.badgeId,
                         earnedAt = eb.earnedAt,
-                        celebratedAt = eb.celebratedAt
+                        celebratedAt = eb.celebratedAt,
+                        profileId = eb.profile_id
                     )
                 },
                 streakHistory = streakHistory.map { sh ->
@@ -365,7 +366,8 @@ abstract class BaseDataBackupManager(
                         id = sh.id,
                         startDate = sh.startDate,
                         endDate = sh.endDate,
-                        length = sh.length.toInt()
+                        length = sh.length.toInt(),
+                        profileId = sh.profile_id
                     )
                 },
                 gamificationStats = gamificationStats?.let { gs ->
@@ -379,7 +381,8 @@ abstract class BaseDataBackupManager(
                         prsAchieved = gs.prsAchieved.toInt(),
                         lastWorkoutDate = gs.lastWorkoutDate,
                         streakStartDate = gs.streakStartDate,
-                        lastUpdated = gs.lastUpdated
+                        lastUpdated = gs.lastUpdated,
+                        profileId = gs.profile_id
                     )
                 },
                 userProfiles = userProfiles.map { up ->
@@ -811,7 +814,8 @@ abstract class BaseDataBackupManager(
                     queries.insertEarnedBadgeIgnore(
                         badgeId = badge.badgeId,
                         earnedAt = badge.earnedAt,
-                        celebratedAt = badge.celebratedAt
+                        celebratedAt = badge.celebratedAt,
+                        profile_id = badge.profileId
                     )
                     earnedBadgesImported++
                 }
@@ -821,14 +825,17 @@ abstract class BaseDataBackupManager(
                     queries.insertStreakHistoryIgnore(
                         startDate = streak.startDate,
                         endDate = streak.endDate,
-                        length = streak.length.toLong()
+                        length = streak.length.toLong(),
+                        profile_id = streak.profileId
                     )
                     streakHistoryImported++
                 }
 
                 // Import gamification stats (upsert - replaces existing)
                 backup.data.gamificationStats?.let { stats ->
+                    val stableId = stats.profileId.hashCode().toLong()
                     queries.upsertGamificationStats(
+                        id = stableId,
                         totalWorkouts = stats.totalWorkouts.toLong(),
                         totalReps = stats.totalReps.toLong(),
                         totalVolumeKg = stats.totalVolumeKg.toLong(),
@@ -838,7 +845,8 @@ abstract class BaseDataBackupManager(
                         prsAchieved = stats.prsAchieved.toLong(),
                         lastWorkoutDate = stats.lastWorkoutDate,
                         streakStartDate = stats.streakStartDate,
-                        lastUpdated = stats.lastUpdated
+                        lastUpdated = stats.lastUpdated,
+                        profileId = stats.profileId
                     )
                     gamificationStatsImported = true
                 }
@@ -886,7 +894,7 @@ abstract class BaseDataBackupManager(
     ) {
         // Phase 1: Count
         onProgress(BackupProgress(BackupPhase.COUNTING, 0, 0))
-        val sessionCount = queries.countTotalWorkouts().executeAsOne()
+        val sessionCount = queries.countAllWorkoutSessions().executeAsOne()
         val metricCount = runCatching { queries.countAllMetricSamples().executeAsOne() }.getOrElse { 0L }
         val routines = queries.selectAllRoutinesSync().executeAsList()
         val routineExercises = queries.selectAllRoutineExercisesSync().executeAsList()
@@ -1522,7 +1530,8 @@ abstract class BaseDataBackupManager(
             id = eb.id,
             badgeId = eb.badgeId,
             earnedAt = eb.earnedAt,
-            celebratedAt = eb.celebratedAt
+            celebratedAt = eb.celebratedAt,
+            profileId = eb.profile_id
         )
 
     private fun mapStreakHistoryToBackup(sh: StreakHistory): StreakHistoryBackup =
@@ -1530,7 +1539,8 @@ abstract class BaseDataBackupManager(
             id = sh.id,
             startDate = sh.startDate,
             endDate = sh.endDate,
-            length = sh.length.toInt()
+            length = sh.length.toInt(),
+            profileId = sh.profile_id
         )
 
     private fun mapGamificationStatsToBackup(gs: GamificationStats): GamificationStatsBackup =
@@ -1544,7 +1554,8 @@ abstract class BaseDataBackupManager(
             prsAchieved = gs.prsAchieved.toInt(),
             lastWorkoutDate = gs.lastWorkoutDate,
             streakStartDate = gs.streakStartDate,
-            lastUpdated = gs.lastUpdated
+            lastUpdated = gs.lastUpdated,
+            profileId = gs.profile_id
         )
 
     private fun mapUserProfileToBackup(up: UserProfile): UserProfileBackup =

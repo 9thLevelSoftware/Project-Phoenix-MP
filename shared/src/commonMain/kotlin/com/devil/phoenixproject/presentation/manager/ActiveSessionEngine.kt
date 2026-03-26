@@ -16,7 +16,6 @@ import com.devil.phoenixproject.data.repository.UserProfileRepository
 import com.devil.phoenixproject.data.repository.WorkoutRepository
 import com.devil.phoenixproject.data.sync.SyncTriggerManager
 import com.devil.phoenixproject.domain.model.*
-import com.devil.phoenixproject.domain.premium.GhostRacingEngine
 import com.devil.phoenixproject.domain.premium.RepQualityScorer
 import com.devil.phoenixproject.domain.replay.RepBoundaryDetector
 import com.devil.phoenixproject.domain.usecase.RepCounterFromMachine
@@ -701,46 +700,6 @@ class ActiveSessionEngine(
                 )
             }
 
-            // Ghost racing: compare current rep against ghost (Phase 22)
-            val ghostSession = coordinator._ghostSession.value
-            if (ghostSession != null) {
-                scope.launch {
-                    // M1: Flow-based wait replaces arbitrary 50ms delay. Waits up to 500ms for
-                    // processBiomechanicsForRep() to emit the matching rep result on Default dispatcher.
-                    val latestBio = withTimeoutOrNull(500L) {
-                        coordinator.biomechanicsEngine.latestRepResult
-                            .filterNotNull()
-                            .first { it.repNumber == repCountAfter }
-                    }
-                    if (latestBio != null) {
-                        val currentMcv = latestBio.velocity.meanConcentricVelocityMmS
-                        val ghostRepIndex = repCountAfter - 1  // 0-based index (Pitfall 2: off-by-one)
-                        if (ghostRepIndex < ghostSession.repVelocities.size) {
-                            val ghostMcv = ghostSession.repVelocities[ghostRepIndex]
-                            val comparison = GhostRepComparison(
-                                repNumber = repCountAfter,
-                                currentMcvMmS = currentMcv,
-                                ghostMcvMmS = ghostMcv,
-                                deltaMcvMmS = currentMcv - ghostMcv,
-                                verdict = GhostRacingEngine.compareRep(currentMcv, ghostMcv)
-                            )
-                            coordinator.ghostRepComparisons.update { it + comparison }
-                            coordinator._latestGhostVerdict.value = comparison
-                        } else {
-                            // Beyond ghost rep count -- user exceeded their PB
-                            val comparison = GhostRepComparison(
-                                repNumber = repCountAfter,
-                                currentMcvMmS = currentMcv,
-                                ghostMcvMmS = 0f,
-                                deltaMcvMmS = 0f,
-                                verdict = GhostVerdict.BEYOND
-                            )
-                            coordinator.ghostRepComparisons.update { it + comparison }
-                            coordinator._latestGhostVerdict.value = comparison
-                        }
-                    }
-                }
-            }
         }
     }
 
@@ -965,18 +924,6 @@ class ActiveSessionEngine(
                 handleSetCompletion()
             }
 
-            // LED Biofeedback: update controller with current velocity and phase
-            coordinator.ledFeedbackController?.let { led ->
-                val maxVelocity = maxOf(kotlin.math.abs(metric.velocityA), kotlin.math.abs(metric.velocityB))
-                val repCount = repCounter.getRepCount()
-                val workoutMode = params.programMode.toWorkoutMode(params.echoLevel)
-                led.updateMetrics(
-                    velocity = maxVelocity,
-                    repPhase = repCount.activeRepPhase,
-                    workoutMode = workoutMode,
-                    echoLoadRatio = calculateEchoLoadRatio(metric, params)
-                )
-            }
         } else {
             resetAutoStopTimer()
         }
@@ -1145,22 +1092,6 @@ class ActiveSessionEngine(
         } else {
             resetAutoStopTimer()
         }
-    }
-
-    // ===== LED Biofeedback Helpers =====
-
-    /**
-     * Calculate echo load ratio (actual/target) for Echo mode LED feedback.
-     * Returns 0f for non-Echo modes.
-     */
-    private fun calculateEchoLoadRatio(metric: WorkoutMetric, params: WorkoutParameters): Float {
-        if (!params.isEchoMode) return 0f
-        val targetWeight = params.weightPerCableKg
-        if (targetWeight <= 0f) return 1.0f
-        val blA = coordinator._loadBaselineA.value.coerceAtLeast(0f)
-        val blB = coordinator._loadBaselineB.value.coerceAtLeast(0f)
-        val actualLoad = maxOf(metric.loadA - blA, metric.loadB - blB).coerceAtLeast(0f)
-        return (actualLoad / targetWeight).coerceIn(0f, 2f)
     }
 
     // ===== Weight Adjustment =====
@@ -1500,10 +1431,6 @@ class ActiveSessionEngine(
         // Reset biomechanics engine and rep boundary timestamps
         coordinator.biomechanicsEngine.reset()
         coordinator.repBoundaryTimestamps.value = emptyList()
-        // Reset ghost racing state for fresh workout
-        coordinator._ghostSession.value = null
-        coordinator._latestGhostVerdict.value = null
-        coordinator.ghostRepComparisons.value = emptyList()
         coordinator.warmupCompleteTimeMs = 0
         // Reset variable warm-up state
         coordinator._currentWarmupSetIndex.value = -1
@@ -1590,47 +1517,6 @@ class ActiveSessionEngine(
             Logger.d { "  - isBodyweight: $isBodyweight" }
             Logger.d { "  - isTimedCableExercise: $isTimedCableExercise" }
 
-            // H7: Pre-load ghost session BEFORE countdown so data is ready for rep 1.
-            // Previously this was fire-and-forget (scope.launch) which could race with early reps.
-            // Now runs inline within the workoutJob coroutine — completes before countdown starts.
-            val exerciseId = params.selectedExerciseId
-            if (exerciseId != null && exerciseId.isNotBlank() && !isBodyweight) {
-                try {
-                    val activeProfileId = userProfileRepository.activeProfile.value?.id ?: "default"
-                    val candidate = workoutRepository.findBestGhostSession(
-                        exerciseId = exerciseId,
-                        mode = params.programMode.displayName,
-                        weightPerCableKg = params.weightPerCableKg,
-                        weightToleranceKg = 5f,
-                        profileId = activeProfileId
-                    )
-                    if (candidate != null) {
-                        val repBio = biomechanicsRepository.getRepBiomechanics(candidate.id)
-                        coordinator._ghostSession.value = GhostSession(
-                            sessionId = candidate.id,
-                            exerciseName = candidate.exerciseName ?: "",
-                            weightPerCableKg = candidate.weightPerCableKg,
-                            workingReps = candidate.workingReps,
-                            avgMcvMmS = candidate.avgMcvMmS,
-                            repVelocities = repBio.map { it.velocity.meanConcentricVelocityMmS },
-                            // C6: Was incorrectly assigning peakVelocityMmS (velocity) to a position field.
-                            // Use stickingPointPct (ROM % of minimum force) as the best available
-                            // single-value position metric from BiomechanicsRepResult.
-                            repPeakPositions = repBio.map { it.forceCurve.stickingPointPct ?: 0f }
-                        )
-                        Logger.d { "Ghost session loaded: ${candidate.id}, ${repBio.size} reps, avgMcv=${candidate.avgMcvMmS}" }
-                    } else {
-                        coordinator._ghostSession.value = null
-                        Logger.d { "No ghost session found for exerciseId=$exerciseId, mode=${params.programMode.displayName}, weight=${params.weightPerCableKg}kg" }
-                    }
-                } catch (e: Exception) {
-                    Logger.e(e) { "Failed to load ghost session" }
-                    coordinator._ghostSession.value = null
-                }
-            } else {
-                coordinator._ghostSession.value = null
-            }
-
             // Issue #222: For ALL bodyweight exercises, skip machine commands
             if (isBodyweight) {
                 val effectiveDuration = bodyweightDuration ?: 30
@@ -1667,12 +1553,6 @@ class ActiveSessionEngine(
                 coordinator.currentSessionId = KmpUtils.randomUUID()
                 coordinator.collectedMetrics.value = emptyList()
                 coordinator._hapticEvents.emit(HapticEvent.WORKOUT_START)
-
-                // LED Biofeedback: configure controller for bodyweight workout
-                coordinator.ledFeedbackController?.let { led ->
-                    led.setEnabled(settingsManager.ledFeedbackEnabled.value)
-                    led.setUserColorScheme(settingsManager.userPreferences.value.colorScheme)
-                }
 
                 coordinator.bodyweightTimerJob?.cancel()
                 coordinator.bodyweightTimerJob = scope.launch {
@@ -1838,12 +1718,6 @@ class ActiveSessionEngine(
             }
             coordinator.collectedMetrics.value = emptyList()
             coordinator._hapticEvents.emit(HapticEvent.WORKOUT_START)
-
-            // LED Biofeedback: configure controller for this workout
-            coordinator.ledFeedbackController?.let { led ->
-                led.setEnabled(settingsManager.ledFeedbackEnabled.value)
-                led.setUserColorScheme(settingsManager.userPreferences.value.colorScheme)
-            }
 
             // exerciseDuration != null is logically redundant (implied by isTimedCableExercise)
             // but required for Kotlin smart-cast so exerciseDuration can be used as non-null below
@@ -2103,18 +1977,14 @@ class ActiveSessionEngine(
                  isJustLift = isJustLift,
                  isEchoMode = params.isEchoMode,
                  peakConcentricForceKg = maxOf(summary.peakForceConcentricA, summary.peakForceConcentricB),
-                 peakEccentricForceKg = maxOf(summary.peakForceEccentricA, summary.peakForceEccentricB)
+                 peakEccentricForceKg = maxOf(summary.peakForceEccentricA, summary.peakForceEccentricB),
+                 profileId = userProfileRepository.activeProfile.value?.id ?: "default"
              )
 
              if (hasPR && completedSetId != null) {
                  completedSetRepository.markAsPr(completedSetId)
                  Logger.d("Marked CompletedSet $completedSetId as PR (manual stop)")
-                 // LED Biofeedback: celebrate PR with rapid color flash
-                 coordinator.ledFeedbackController?.triggerPRCelebration()
              }
-
-             // LED Biofeedback: restore user's static color on workout end
-             coordinator.ledFeedbackController?.onWorkoutEnd()
 
              scope.launch {
                  syncTriggerManager?.onWorkoutCompleted()
@@ -2402,14 +2272,13 @@ class ActiveSessionEngine(
             isJustLift = params.isJustLift,
             isEchoMode = params.isEchoMode,
             peakConcentricForceKg = maxOf(summary.peakForceConcentricA, summary.peakForceConcentricB),
-            peakEccentricForceKg = maxOf(summary.peakForceEccentricA, summary.peakForceEccentricB)
+            peakEccentricForceKg = maxOf(summary.peakForceEccentricA, summary.peakForceEccentricB),
+            profileId = userProfileRepository.activeProfile.value?.id ?: "default"
         )
 
         if (hasPR && completedSetId != null) {
             completedSetRepository.markAsPr(completedSetId)
             Logger.d("Marked CompletedSet $completedSetId as PR")
-            // LED Biofeedback: celebrate PR with rapid color flash
-            coordinator.ledFeedbackController?.triggerPRCelebration()
         }
 
         // Sync trigger AFTER all persistence (session, metrics, CompletedSet, PR marking)
@@ -2600,25 +2469,15 @@ class ActiveSessionEngine(
                 workingRepsCount = completedReps
             )
 
-            // Compute ghost set delta BEFORE resetting ghost state
-            val ghostSetSummary = if (coordinator.ghostRepComparisons.value.isNotEmpty()) {
-                GhostRacingEngine.computeSetDelta(coordinator.ghostRepComparisons.value)
-            } else null
-
-            // Reset ghost comparison state for next set (keep ghostSession loaded for multi-set workouts)
-            coordinator.ghostRepComparisons.value = emptyList()
-            coordinator._latestGhostVerdict.value = null
-
-            // Attach quality, biomechanics, form check, and ghost summaries to the set summary
+            // Attach quality and biomechanics summaries to the set summary
             val summary = baseSummary.copy(
                 qualitySummary = qualitySummary,
-                biomechanicsSummary = biomechanicsSummary,
-                ghostSetSummary = ghostSetSummary
+                biomechanicsSummary = biomechanicsSummary
             )
 
             // Process quality event for Form Master badge tracking
             qualitySummary?.let { qs ->
-                gamificationManager.processSetQualityEvent(qs.averageScore)
+                gamificationManager.processSetQualityEvent(qs.averageScore, userProfileRepository.activeProfile.value?.id ?: "default")
             }
 
             Logger.d("Set summary: heaviest=${summary.heaviestLiftKgPerCable}kg, reps=$completedReps, duration=${summary.durationMs}ms")
@@ -2860,9 +2719,6 @@ class ActiveSessionEngine(
                 }
             }
 
-            // LED Biofeedback: show blue during rest
-            coordinator.ledFeedbackController?.onRestPeriodStart()
-
             var lastTickedSecond = -1  // Issue #100: track emitted ticks to fire once per second
             var lastDecrementTime = currentTimeMillis()
 
@@ -2904,7 +2760,6 @@ class ActiveSessionEngine(
                 if (remainingSeconds <= 0) {
                     if (!hasReachedZero) {
                         hasReachedZero = true
-                        coordinator.ledFeedbackController?.onRestPeriodEnd()
                     }
                 } else {
                     hasReachedZero = false
@@ -2929,11 +2784,6 @@ class ActiveSessionEngine(
 
             // Clean up rest timer control state
             coordinator._isRestPaused.value = false
-
-            // LED Biofeedback: resume normal feedback after rest
-            if (!hasReachedZero) {
-                coordinator.ledFeedbackController?.onRestPeriodEnd()
-            }
 
             if (autoplay) {
                 Logger.d("ActiveSessionEngine") { "autoplay rest complete: advancing to next set (no BLE stop - already sent at set end)" }
@@ -2997,7 +2847,6 @@ class ActiveSessionEngine(
     private fun advanceToNextSetInSingleExercise() {
         val routine = coordinator._loadedRoutine.value
         if (routine == null) {
-            coordinator.ledFeedbackController?.onWorkoutEnd()
             coordinator._workoutState.value = WorkoutState.Completed
             coordinator._currentSetIndex.value = 0
             coordinator._currentExerciseIndex.value = 0
@@ -3041,7 +2890,6 @@ class ActiveSessionEngine(
             resetAutoStopState()
             startWorkout(skipCountdown = true)
         } else {
-            coordinator.ledFeedbackController?.onWorkoutEnd()
             coordinator._workoutState.value = WorkoutState.Completed
             coordinator._loadedRoutine.value = null
             coordinator.routineStartTime = 0
@@ -3156,7 +3004,6 @@ class ActiveSessionEngine(
             startWorkoutOrSetReady()
         } else {
             Logger.d { "startNextSetOrExercise: No more steps - showing routine complete" }
-            coordinator.ledFeedbackController?.onWorkoutEnd()
             flowDelegate?.showRoutineComplete()
             coordinator._workoutState.value = WorkoutState.Idle
             coordinator._currentSetIndex.value = 0

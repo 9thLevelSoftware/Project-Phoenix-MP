@@ -305,7 +305,8 @@ data class EarnedBadgeBackup(
     val id: Long = 0,
     val badgeId: String,
     val earnedAt: Long,
-    val celebratedAt: Long? = null
+    val celebratedAt: Long? = null,
+    val profileId: String = "default"
 )
 
 /**
@@ -316,7 +317,8 @@ data class StreakHistoryBackup(
     val id: Long = 0,
     val startDate: Long,
     val endDate: Long,
-    val length: Int
+    val length: Int,
+    val profileId: String = "default"
 )
 
 /**
@@ -333,7 +335,8 @@ data class GamificationStatsBackup(
     val prsAchieved: Int = 0,
     val lastWorkoutDate: Long? = null,
     val streakStartDate: Long? = null,
-    val lastUpdated: Long
+    val lastUpdated: Long,
+    val profileId: String = "default"
 )
 
 /**

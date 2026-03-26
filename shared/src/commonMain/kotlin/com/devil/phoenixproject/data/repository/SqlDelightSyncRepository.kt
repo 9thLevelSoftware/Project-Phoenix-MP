@@ -129,9 +129,9 @@ class SqlDelightSyncRepository(
         }
     }
 
-    override suspend fun getBadgesModifiedSince(timestamp: Long): List<EarnedBadgeSyncDto> {
+    override suspend fun getBadgesModifiedSince(timestamp: Long, profileId: String): List<EarnedBadgeSyncDto> {
         return withContext(Dispatchers.IO) {
-            queries.selectBadgesModifiedSince(timestamp).executeAsList().map { row ->
+            queries.selectBadgesModifiedSince(timestamp, profileId = profileId).executeAsList().map { row ->
                 EarnedBadgeSyncDto(
                     clientId = row.id.toString(),
                     serverId = row.serverId,
@@ -145,9 +145,9 @@ class SqlDelightSyncRepository(
         }
     }
 
-    override suspend fun getGamificationStatsForSync(): GamificationStatsSyncDto? {
+    override suspend fun getGamificationStatsForSync(profileId: String): GamificationStatsSyncDto? {
         return withContext(Dispatchers.IO) {
-            queries.selectGamificationStatsForSync().executeAsOneOrNull()?.let { row ->
+            queries.selectGamificationStatsForSync(profileId = profileId).executeAsOneOrNull()?.let { row ->
                 GamificationStatsSyncDto(
                     clientId = row.id.toString(),
                     totalWorkouts = row.totalWorkouts.toInt(),
@@ -375,25 +375,27 @@ class SqlDelightSyncRepository(
         }
     }
 
-    override suspend fun mergeBadges(badges: List<EarnedBadgeSyncDto>) {
+    override suspend fun mergeBadges(badges: List<EarnedBadgeSyncDto>, profileId: String) {
         withContext(Dispatchers.IO) {
             db.transaction {
                 badges.forEach { dto ->
-                    queries.insertEarnedBadge(dto.badgeId, dto.earnedAt)
+                    queries.insertEarnedBadge(dto.badgeId, dto.earnedAt, profileId = profileId)
                 }
             }
-            Logger.d { "Merged ${badges.size} badges from server" }
+            Logger.d { "Merged ${badges.size} badges from server (profile=$profileId)" }
         }
     }
 
-    override suspend fun mergeGamificationStats(stats: GamificationStatsSyncDto?) {
+    override suspend fun mergeGamificationStats(stats: GamificationStatsSyncDto?, profileId: String) {
         if (stats == null) return
 
         withContext(Dispatchers.IO) {
             val now = currentTimeMillis()
-            val existing = queries.selectGamificationStats().executeAsOneOrNull()
+            val existing = queries.selectGamificationStats(profileId = profileId).executeAsOneOrNull()
 
+            val stableId = profileId.hashCode().toLong()
             queries.upsertGamificationStats(
+                id = stableId,
                 totalWorkouts = stats.totalWorkouts.toLong(),
                 totalReps = stats.totalReps.toLong(),
                 totalVolumeKg = stats.totalVolumeKg.toLong(),
@@ -403,9 +405,10 @@ class SqlDelightSyncRepository(
                 prsAchieved = existing?.prsAchieved ?: 0L,
                 lastWorkoutDate = existing?.lastWorkoutDate,
                 streakStartDate = existing?.streakStartDate,
-                lastUpdated = now
+                lastUpdated = now,
+                profileId = profileId
             )
-            Logger.d { "Merged gamification stats from server" }
+            Logger.d { "Merged gamification stats from server (profile=$profileId)" }
         }
     }
 
