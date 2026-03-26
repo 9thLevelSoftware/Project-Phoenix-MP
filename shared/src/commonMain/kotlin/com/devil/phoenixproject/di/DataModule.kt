@@ -1,5 +1,7 @@
 package com.devil.phoenixproject.di
 
+import com.devil.phoenixproject.data.integration.ExternalActivityRepository
+import com.devil.phoenixproject.data.integration.SqlDelightExternalActivityRepository
 import com.devil.phoenixproject.data.local.DatabaseFactory
 import com.devil.phoenixproject.data.local.ExerciseImporter
 import com.devil.phoenixproject.data.repository.*
@@ -41,4 +43,7 @@ val dataModule = module {
 
     // Exercise Detection Repository
     single<ExerciseSignatureRepository> { SqlDelightExerciseSignatureRepository(get()) }
+
+    // External Activity Repository (Task 3 - third-party integrations)
+    single<ExternalActivityRepository> { SqlDelightExternalActivityRepository(get()) }
 }
