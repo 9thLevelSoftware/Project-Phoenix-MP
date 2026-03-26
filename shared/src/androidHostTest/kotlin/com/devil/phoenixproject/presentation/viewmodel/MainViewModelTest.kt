@@ -115,7 +115,7 @@ class MainViewModelTest {
     // ========== Initial State Tests ==========
 
     @Test
-    fun `initial state is disconnected and idle`() = runTest {
+    fun `initial state is disconnected and idle`() = runTest(testCoroutineRule.dispatcher) {
         assertEquals(ConnectionState.Disconnected, viewModel.connectionState.value)
         assertEquals(WorkoutState.Idle, viewModel.workoutState.value)
         assertNull(viewModel.currentMetric.value)
@@ -124,7 +124,7 @@ class MainViewModelTest {
     }
 
     @Test
-    fun `initial workout parameters are default values`() = runTest {
+    fun `initial workout parameters are default values`() = runTest(testCoroutineRule.dispatcher) {
         val params = viewModel.workoutParameters.value
         assertEquals(ProgramMode.OldSchool, params.programMode)
         assertEquals(10, params.reps)
@@ -136,7 +136,7 @@ class MainViewModelTest {
     // ========== Connection State Tests ==========
 
     @Test
-    fun `connectionState reflects BLE repository state`() = runTest {
+    fun `connectionState reflects BLE repository state`() = runTest(testCoroutineRule.dispatcher) {
         viewModel.connectionState.test {
             assertEquals(ConnectionState.Disconnected, awaitItem())
 
@@ -159,7 +159,7 @@ class MainViewModelTest {
     }
 
     @Test
-    fun `connectionState reflects error state`() = runTest {
+    fun `connectionState reflects error state`() = runTest(testCoroutineRule.dispatcher) {
         viewModel.connectionState.test {
             assertEquals(ConnectionState.Disconnected, awaitItem())
 
@@ -175,7 +175,7 @@ class MainViewModelTest {
     // ========== Workout Parameters Tests ==========
 
     @Test
-    fun `updateWorkoutParameters updates state`() = runTest {
+    fun `updateWorkoutParameters updates state`() = runTest(testCoroutineRule.dispatcher) {
         val newParams = WorkoutParameters(
             programMode = ProgramMode.Pump,
             reps = 15,
@@ -198,7 +198,7 @@ class MainViewModelTest {
     // ========== Disconnect Tests ==========
 
     @Test
-    fun `disconnect calls BLE repository disconnect`() = runTest {
+    fun `disconnect calls BLE repository disconnect`() = runTest(testCoroutineRule.dispatcher) {
         fakeBleRepository.simulateConnect("Vee_Test", "AA:BB:CC:DD:EE:FF")
         advanceUntilIdle()
 
@@ -211,7 +211,7 @@ class MainViewModelTest {
     // ========== User Preferences Tests ==========
 
     @Test
-    fun `userPreferences reflects preferences manager state`() = runTest {
+    fun `userPreferences reflects preferences manager state`() = runTest(testCoroutineRule.dispatcher) {
         advanceUntilIdle()
 
         val preferences = viewModel.userPreferences.value
@@ -222,7 +222,7 @@ class MainViewModelTest {
     }
 
     @Test
-    fun `userPreferences updates when preferences change`() = runTest {
+    fun `userPreferences updates when preferences change`() = runTest(testCoroutineRule.dispatcher) {
         viewModel.userPreferences.test {
             awaitItem() // Initial value
 
@@ -244,7 +244,7 @@ class MainViewModelTest {
     // ========== Top Bar State Tests ==========
 
     @Test
-    fun `updateTopBarTitle updates title`() = runTest {
+    fun `updateTopBarTitle updates title`() = runTest(testCoroutineRule.dispatcher) {
         assertEquals("Project Phoenix", viewModel.topBarTitle.value)
 
         viewModel.updateTopBarTitle("Active Workout")
@@ -253,7 +253,7 @@ class MainViewModelTest {
     }
 
     @Test
-    fun `clearTopBarActions clears actions`() = runTest {
+    fun `clearTopBarActions clears actions`() = runTest(testCoroutineRule.dispatcher) {
         // Set some actions first using reflection or public method if available
         viewModel.clearTopBarActions()
 
@@ -261,7 +261,7 @@ class MainViewModelTest {
     }
 
     @Test
-    fun `setTopBarBackAction sets back action`() = runTest {
+    fun `setTopBarBackAction sets back action`() = runTest(testCoroutineRule.dispatcher) {
         assertNull(viewModel.topBarBackAction.value)
 
         var backPressed = false
@@ -273,7 +273,7 @@ class MainViewModelTest {
     }
 
     @Test
-    fun `clearTopBarBackAction clears back action`() = runTest {
+    fun `clearTopBarBackAction clears back action`() = runTest(testCoroutineRule.dispatcher) {
         viewModel.setTopBarBackAction { }
 
         viewModel.clearTopBarBackAction()
@@ -284,7 +284,7 @@ class MainViewModelTest {
     // ========== Routines Tests ==========
 
     @Test
-    fun `routines reflects workout repository state`() = runTest {
+    fun `routines reflects workout repository state`() = runTest(testCoroutineRule.dispatcher) {
         viewModel.routines.test {
             // Initial empty list
             assertEquals(emptyList(), awaitItem())
@@ -294,7 +294,7 @@ class MainViewModelTest {
     }
 
     @Test
-    fun `getRoutineById returns routine when exists`() = runTest {
+    fun `getRoutineById returns routine when exists`() = runTest(testCoroutineRule.dispatcher) {
         val routine = Routine(
             id = "routine-1",
             name = "Push Day",
@@ -310,7 +310,7 @@ class MainViewModelTest {
     }
 
     @Test
-    fun `getRoutineById returns null when not found`() = runTest {
+    fun `getRoutineById returns null when not found`() = runTest(testCoroutineRule.dispatcher) {
         val found = viewModel.getRoutineById("non-existent")
 
         assertNull(found)
@@ -319,7 +319,7 @@ class MainViewModelTest {
     // ========== Workout History Tests ==========
 
     @Test
-    fun `workoutHistory reflects repository sessions`() = runTest {
+    fun `workoutHistory reflects repository sessions`() = runTest(testCoroutineRule.dispatcher) {
         viewModel.workoutHistory.test {
             assertEquals(emptyList(), awaitItem())
 
@@ -330,21 +330,21 @@ class MainViewModelTest {
     // ========== Connection Error Tests ==========
 
     @Test
-    fun `connectionError is initially null`() = runTest {
+    fun `connectionError is initially null`() = runTest(testCoroutineRule.dispatcher) {
         assertNull(viewModel.connectionError.value)
     }
 
     // ========== Auto-Start Tests ==========
 
     @Test
-    fun `autoStartCountdown is initially null`() = runTest {
+    fun `autoStartCountdown is initially null`() = runTest(testCoroutineRule.dispatcher) {
         assertNull(viewModel.autoStartCountdown.value)
     }
 
     // ========== Auto-Stop State Tests ==========
 
     @Test
-    fun `autoStopState has default values`() = runTest {
+    fun `autoStopState has default values`() = runTest(testCoroutineRule.dispatcher) {
         val state = viewModel.autoStopState.value
         assertFalse(state.isActive)
         assertEquals(0f, state.progress)
@@ -353,13 +353,13 @@ class MainViewModelTest {
     // ========== Scanned Devices Tests ==========
 
     @Test
-    fun `scannedDevices is initially empty`() = runTest {
+    fun `scannedDevices is initially empty`() = runTest(testCoroutineRule.dispatcher) {
         // ViewModel maintains its own scannedDevices state (initialized empty)
         assertEquals(emptyList<ScannedDevice>(), viewModel.scannedDevices.value)
     }
 
     @Test
-    fun `startWorkout sends commands and moves to active`() = runTest {
+    fun `startWorkout sends commands and moves to active`() = runTest(testCoroutineRule.dispatcher) {
         viewModel.updateWorkoutParameters(
             WorkoutParameters(
                 programMode = ProgramMode.OldSchool,
@@ -387,7 +387,7 @@ class MainViewModelTest {
     }
 
     @Test
-    fun `rep events update counts and stop workout at target`() = runTest {
+    fun `rep events update counts and stop workout at target`() = runTest(testCoroutineRule.dispatcher) {
         viewModel.updateWorkoutParameters(
             WorkoutParameters(
                 programMode = ProgramMode.OldSchool,
@@ -412,7 +412,7 @@ class MainViewModelTest {
     }
 
     @Test
-    fun `disconnect during workout sets connection lost flag`() = runTest {
+    fun `disconnect during workout sets connection lost flag`() = runTest(testCoroutineRule.dispatcher) {
         fakeBleRepository.simulateConnect("Vee_Test", "AA:BB:CC:DD:EE:FF")
         advanceUntilIdle()
 
@@ -434,7 +434,7 @@ class MainViewModelTest {
     }
 
     @Test
-    fun `timed cable exercise blocks auto stop before warmup and allows it after warmup`() = runTest {
+    fun `timed cable exercise blocks auto stop before warmup and allows it after warmup`() = runTest(testCoroutineRule.dispatcher) {
         val timedCableExercise = RoutineExercise(
             id = "timed-cable-1",
             exercise = Exercise(
