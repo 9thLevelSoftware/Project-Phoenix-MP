@@ -38,6 +38,10 @@
     <!-- Camera permission for Form Check feature -->
     <uses-permission android:name="android.permission.CAMERA" />
 
+    <!-- Health Connect permissions (Android 14+ requires manifest declarations) -->
+    <uses-permission android:name="android.permission.health.WRITE_EXERCISE" />
+    <uses-permission android:name="android.permission.health.WRITE_TOTAL_CALORIES_BURNED" />
+
     <!-- Camera feature (not required - app works without camera) -->
     <uses-feature
         android:name="android.hardware.camera"
@@ -50,6 +54,14 @@
     <uses-feature
         android:name="android.hardware.bluetooth_le"
         android:required="true" />
+
+    <!-- Health Connect availability check -->
+    <queries>
+        <package android:name="com.google.android.apps.healthdata" />
+        <intent>
+            <action android:name="androidx.health.ACTION_SHOW_PERMISSIONS_RATIONALE" />
+        </intent>
+    </queries>
 
     <application
         android:name=".VitruvianApp"
@@ -90,6 +102,17 @@
                 android:name="android.support.FILE_PROVIDER_PATHS"
                 android:resource="@xml/file_paths" />
         </provider>
+
+        <!-- Health Connect permissions rationale activity (required by Play Store policy) -->
+        <activity-alias
+            android:name="ViewPermissionUsageActivity"
+            android:exported="true"
+            android:targetActivity=".MainActivity"
+            android:permission="android.permission.START_VIEW_PERMISSION_USAGE">
+            <intent-filter>
+                <action android:name="androidx.health.ACTION_SHOW_PERMISSIONS_RATIONALE" />
+            </intent-filter>
+        </activity-alias>
     </application>
 
 </manifest>
