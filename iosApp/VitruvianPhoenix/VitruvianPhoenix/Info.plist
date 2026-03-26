@@ -13,6 +13,24 @@
 		<key>UIApplicationSupportsMultipleScenes</key>
 		<false/>
 	</dict>
+	<key>CFBundleDisplayName</key>
+	<string>Project Phoenix</string>
+	<key>NSBluetoothAlwaysUsageDescription</key>
+	<string>Project Phoenix needs Bluetooth to connect to your Vitruvian Trainer machine.</string>
+	<key>NSBluetoothPeripheralUsageDescription</key>
+	<string>Project Phoenix needs Bluetooth to connect to your Vitruvian Trainer machine.</string>
+	<key>NSHealthShareUsageDescription</key>
+	<string>Project Phoenix can read your health data to avoid logging duplicate workouts.</string>
+	<key>NSHealthUpdateUsageDescription</key>
+	<string>Project Phoenix writes your completed workouts to Apple Health so they appear alongside your other fitness data.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Project Phoenix uses the microphone for safe word detection during workouts, enabling hands-free emergency stops.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>Project Phoenix uses on-device speech recognition to listen for your safe word during workouts.</string>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
+	<key>LSSupportsOpeningDocumentsInPlace</key>
+	<true/>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>bluetooth-central</string>

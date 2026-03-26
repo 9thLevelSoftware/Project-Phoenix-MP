@@ -82,7 +82,7 @@ jobs:
           ./gradlew :shared:linkReleaseFrameworkIosArm64 --no-parallel -Pskip.supabase.check=true
           # Explicitly generate compose resources for iOS
           ./gradlew :shared:generateComposeResClass -Pskip.supabase.check=true
-          ./gradlew :shared:iosArm64ProcessResources -Pskip.supabase.check=true || true
+          ./gradlew :shared:iosArm64ProcessResources -Pskip.supabase.check=true
 
           # Debug: Show what resource directories exist
           echo "=== Checking resource directories ==="
@@ -95,19 +95,15 @@ jobs:
           RESOURCE_DST="$FRAMEWORK_PATH/composeResources"
           mkdir -p "$RESOURCE_DST"
 
-          RESOURCE_PATHS=(
-            "shared/build/processedResources/iosArm64/main/composeResources"
-            "shared/build/kotlin-multiplatform-resources/aggregated-resources/iosArm64/composeResources"
-            "shared/build/generated/compose/resourceGenerator/assembledResources/iosArm64Main/composeResources"
-            "shared/build/generated/compose/resourceGenerator/preparedResources/commonMain/composeResources"
-          )
+          # Dynamically discover composeResources directories instead of hardcoding paths.
+          # Compose MP changes its output layout between versions; find adapts automatically.
+          mapfile -t CANDIDATES < <(find shared/build -type d -name composeResources 2>/dev/null)
 
           FOUND=false
-          for RESOURCE_SRC in "${RESOURCE_PATHS[@]}"; do
-            echo "Checking: $RESOURCE_SRC"
-            if [ -d "$RESOURCE_SRC" ] && [ "$(ls -A "$RESOURCE_SRC" 2>/dev/null)" ]; then
-              echo "Found compose resources at: $RESOURCE_SRC"
-              cp -R "$RESOURCE_SRC"/* "$RESOURCE_DST"/
+          for d in "${CANDIDATES[@]}"; do
+            if [ -d "$d" ] && [ "$(find "$d" -type f 2>/dev/null | head -1)" ]; then
+              echo "Found compose resources at: $d"
+              cp -R "$d"/* "$RESOURCE_DST"/
               FOUND=true
               break
             fi
@@ -117,9 +113,9 @@ jobs:
             echo "=== Copied compose resources to framework bundle ==="
             find "$RESOURCE_DST" -type f | head -20
           else
-            echo "ERROR: No compose resources found!"
-            echo "Checked paths:"
-            printf '  - %s\n' "${RESOURCE_PATHS[@]}"
+            echo "ERROR: No compose resources found under shared/build!"
+            echo "Found composeResources dirs:"
+            printf '  - %s\n' "${CANDIDATES[@]}"
             exit 1
           fi
 
