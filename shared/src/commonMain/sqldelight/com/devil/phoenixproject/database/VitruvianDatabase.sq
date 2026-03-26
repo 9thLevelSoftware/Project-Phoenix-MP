@@ -1817,3 +1817,79 @@ WHERE exerciseId = ?
   AND profile_id = :profileId
 ORDER BY avgMcvMmS DESC
 LIMIT 1;
+
+-- ─── External Activities (Third-party integrations) ─────────────────
+
+CREATE TABLE IF NOT EXISTS ExternalActivity (
+    id TEXT NOT NULL PRIMARY KEY,
+    externalId TEXT NOT NULL,
+    provider TEXT NOT NULL,
+    name TEXT NOT NULL,
+    activityType TEXT NOT NULL DEFAULT 'strength',
+    startedAt INTEGER NOT NULL,
+    durationSeconds INTEGER NOT NULL DEFAULT 0,
+    distanceMeters REAL,
+    calories INTEGER,
+    avgHeartRate INTEGER,
+    maxHeartRate INTEGER,
+    elevationGainMeters REAL,
+    rawData TEXT,
+    syncedAt INTEGER NOT NULL,
+    profileId TEXT NOT NULL DEFAULT 'default',
+    needsSync INTEGER NOT NULL DEFAULT 1
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_external_activity_dedup ON ExternalActivity(externalId, provider);
+CREATE INDEX IF NOT EXISTS idx_external_activity_profile ON ExternalActivity(profileId);
+CREATE INDEX IF NOT EXISTS idx_external_activity_provider ON ExternalActivity(provider);
+CREATE INDEX IF NOT EXISTS idx_external_activity_started ON ExternalActivity(startedAt DESC);
+
+CREATE TABLE IF NOT EXISTS IntegrationStatus (
+    provider TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'disconnected',
+    lastSyncAt INTEGER,
+    errorMessage TEXT,
+    profileId TEXT NOT NULL DEFAULT 'default',
+    PRIMARY KEY(provider, profileId)
+);
+
+-- ExternalActivity queries
+getAllExternalActivities:
+SELECT * FROM ExternalActivity
+WHERE profileId = ?
+ORDER BY startedAt DESC;
+
+getExternalActivitiesByProvider:
+SELECT * FROM ExternalActivity
+WHERE profileId = ? AND provider = ?
+ORDER BY startedAt DESC;
+
+getUnsyncedExternalActivities:
+SELECT * FROM ExternalActivity
+WHERE profileId = ? AND needsSync = 1;
+
+upsertExternalActivity:
+INSERT OR REPLACE INTO ExternalActivity(
+    id, externalId, provider, name, activityType, startedAt,
+    durationSeconds, distanceMeters, calories, avgHeartRate,
+    maxHeartRate, elevationGainMeters, rawData, syncedAt, profileId, needsSync
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+markExternalActivitySynced:
+UPDATE ExternalActivity SET needsSync = 0 WHERE id = ?;
+
+deleteExternalActivitiesByProvider:
+DELETE FROM ExternalActivity WHERE provider = ? AND profileId = ?;
+
+-- IntegrationStatus queries
+getIntegrationStatus:
+SELECT * FROM IntegrationStatus
+WHERE provider = ? AND profileId = ?;
+
+getAllIntegrationStatuses:
+SELECT * FROM IntegrationStatus
+WHERE profileId = ?;
+
+upsertIntegrationStatus:
+INSERT OR REPLACE INTO IntegrationStatus(provider, status, lastSyncAt, errorMessage, profileId)
+VALUES (?, ?, ?, ?, ?);
