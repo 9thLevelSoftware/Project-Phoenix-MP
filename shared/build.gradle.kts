@@ -165,6 +165,9 @@ kotlin {
                 // Encrypted SharedPreferences for secure token storage
                 implementation(libs.androidx.security.crypto)
 
+                // Health Connect (Google Health)
+                implementation("androidx.health.connect:connect-client:1.1.0-alpha11")
+
             }
         }
         
