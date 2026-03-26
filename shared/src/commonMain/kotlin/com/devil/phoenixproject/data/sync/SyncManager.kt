@@ -2,10 +2,12 @@ package com.devil.phoenixproject.data.sync
 
 import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.data.local.BadgeDefinitions
+import com.devil.phoenixproject.data.integration.ExternalActivityRepository
 import com.devil.phoenixproject.data.repository.GamificationRepository
 import com.devil.phoenixproject.data.repository.RepMetricRepository
 import com.devil.phoenixproject.data.repository.SyncRepository
 import com.devil.phoenixproject.data.repository.UserProfileRepository
+import com.devil.phoenixproject.domain.model.IntegrationProvider
 import com.devil.phoenixproject.domain.model.CharacterClass
 import com.devil.phoenixproject.domain.model.RpgProfile
 import com.devil.phoenixproject.domain.model.currentTimeMillis
@@ -33,7 +35,8 @@ class SyncManager(
     private val syncRepository: SyncRepository,
     private val gamificationRepository: GamificationRepository,
     private val repMetricRepository: RepMetricRepository,
-    private val userProfileRepository: UserProfileRepository
+    private val userProfileRepository: UserProfileRepository,
+    private val externalActivityRepository: ExternalActivityRepository
 ) {
     companion object {
         /**
@@ -234,6 +237,32 @@ class SyncManager(
             )
         }
 
+        // 5b. External activities (paid users only)
+        val isPremium = tokenStorage.currentUser.value?.isPremium == true
+        val externalActivityDtos = if (isPremium) {
+            val unsyncedActivities = externalActivityRepository.getUnsyncedActivities(activeProfileId)
+            unsyncedActivities.map { activity ->
+                ExternalActivitySyncDto(
+                    id = activity.id,
+                    externalId = activity.externalId,
+                    provider = activity.provider.key,
+                    name = activity.name,
+                    activityType = activity.activityType,
+                    startedAt = kotlin.time.Instant.fromEpochMilliseconds(activity.startedAt).toString(),
+                    durationSeconds = activity.durationSeconds,
+                    distanceMeters = activity.distanceMeters,
+                    calories = activity.calories,
+                    avgHeartRate = activity.avgHeartRate,
+                    maxHeartRate = activity.maxHeartRate,
+                    elevationGainMeters = activity.elevationGainMeters,
+                    rawData = activity.rawData,
+                    syncedAt = kotlin.time.Instant.fromEpochMilliseconds(activity.syncedAt).toString()
+                )
+            }
+        } else {
+            emptyList()
+        }
+
         // 6. Phase 3 extended metrics (GAPs 7-9)
         val sessionIds = sessions.map { it.id }
         val phaseStatsBySessionId = syncRepository.getPhaseStatisticsForSessions(sessionIds)
@@ -303,7 +332,8 @@ class SyncManager(
                 assessments = assessmentDtos,
                 profileId = activeProfile?.id,
                 profileName = activeProfile?.name,
-                allProfiles = profileDtos
+                allProfiles = profileDtos,
+                externalActivities = externalActivityDtos
             )
             val result = apiClient.pushPortalPayload(payload)
             if (result.isFailure) return result
@@ -346,7 +376,8 @@ class SyncManager(
                     assessments = if (isLastBatch) assessmentDtos else emptyList(),
                     profileId = activeProfile?.id,
                     profileName = activeProfile?.name,
-                    allProfiles = if (isLastBatch) profileDtos else null
+                    allProfiles = if (isLastBatch) profileDtos else null,
+                    externalActivities = if (isLastBatch) externalActivityDtos else emptyList()
                 )
 
                 val result = apiClient.pushPortalPayload(payload)
@@ -371,6 +402,13 @@ class SyncManager(
                 tokenStorage.setLastSyncTimestamp(batchSyncEpoch)
                 Logger.d("SyncManager") { "Batch ${index + 1}/$totalBatches committed, syncTime=$batchSyncEpoch" }
             }
+        }
+
+        // Mark external activities as synced after successful push
+        if (externalActivityDtos.isNotEmpty()) {
+            val syncedIds = externalActivityDtos.map { it.id }
+            externalActivityRepository.markSynced(syncedIds)
+            Logger.d("SyncManager") { "Marked ${syncedIds.size} external activities as synced" }
         }
 
         return Result.success(lastResponse!!)
@@ -460,6 +498,36 @@ class SyncManager(
             )
             gamificationRepository.saveRpgProfile(rpgProfile, mergeProfileId)
             Logger.d("SyncManager") { "Merged portal RPG attributes: ${rpg.characterClass}" }
+        }
+
+        // 7. External activities — upsert from portal (needsSync = false since already on server)
+        if (pullResponse.externalActivities.isNotEmpty()) {
+            val activities = pullResponse.externalActivities.map { dto ->
+                com.devil.phoenixproject.domain.model.ExternalActivity(
+                    id = dto.id,
+                    externalId = dto.externalId,
+                    provider = IntegrationProvider.fromKey(dto.provider) ?: IntegrationProvider.HEVY,
+                    name = dto.name,
+                    activityType = dto.activityType,
+                    startedAt = try {
+                        kotlin.time.Instant.parse(dto.startedAt).toEpochMilliseconds()
+                    } catch (_: Exception) { currentTimeMillis() },
+                    durationSeconds = dto.durationSeconds,
+                    distanceMeters = dto.distanceMeters,
+                    calories = dto.calories,
+                    avgHeartRate = dto.avgHeartRate,
+                    maxHeartRate = dto.maxHeartRate,
+                    elevationGainMeters = dto.elevationGainMeters,
+                    rawData = dto.rawData,
+                    syncedAt = try {
+                        kotlin.time.Instant.parse(dto.syncedAt).toEpochMilliseconds()
+                    } catch (_: Exception) { currentTimeMillis() },
+                    profileId = mergeProfileId,
+                    needsSync = false
+                )
+            }
+            externalActivityRepository.upsertActivities(activities)
+            Logger.d("SyncManager") { "Merged ${activities.size} portal external activities" }
         }
 
         return pullResponse.syncTime

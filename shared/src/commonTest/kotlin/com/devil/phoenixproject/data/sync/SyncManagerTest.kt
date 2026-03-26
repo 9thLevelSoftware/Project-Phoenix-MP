@@ -1,5 +1,6 @@
 package com.devil.phoenixproject.data.sync
 
+import com.devil.phoenixproject.testutil.FakeExternalActivityRepository
 import com.devil.phoenixproject.testutil.FakeGamificationRepository
 import com.devil.phoenixproject.testutil.FakePortalApiClient
 import com.devil.phoenixproject.testutil.FakeRepMetricRepository
@@ -31,6 +32,7 @@ class SyncManagerTest {
     private val fakeGamificationRepo = FakeGamificationRepository()
     private val fakeRepMetricRepo = FakeRepMetricRepository()
     private val fakeUserProfileRepo = FakeUserProfileRepository()
+    private val fakeExternalActivityRepo = FakeExternalActivityRepository()
 
     private fun createManager() = SyncManager(
         apiClient = fakeApi,
@@ -38,7 +40,8 @@ class SyncManagerTest {
         syncRepository = fakeSyncRepo,
         gamificationRepository = fakeGamificationRepo,
         repMetricRepository = fakeRepMetricRepo,
-        userProfileRepository = fakeUserProfileRepo
+        userProfileRepository = fakeUserProfileRepo,
+        externalActivityRepository = fakeExternalActivityRepo
     )
 
     /**

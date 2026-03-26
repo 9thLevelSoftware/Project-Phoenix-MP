@@ -397,7 +397,29 @@ data class PortalSyncPayload(
     // Profile data separation: active profile tagging + full profile snapshot
     val profileId: String? = null,
     val profileName: String? = null,
-    val allProfiles: List<LocalProfileDto>? = null
+    val allProfiles: List<LocalProfileDto>? = null,
+    // External integration activities (paid users only)
+    val externalActivities: List<ExternalActivitySyncDto> = emptyList()
+)
+
+// ─── External Activities (Integration sync) ──────────────────────────
+
+@Serializable
+data class ExternalActivitySyncDto(
+    val id: String,
+    val externalId: String,
+    val provider: String,
+    val name: String,
+    val activityType: String = "strength",
+    val startedAt: String,  // ISO-8601
+    val durationSeconds: Int = 0,
+    val distanceMeters: Double? = null,
+    val calories: Int? = null,
+    val avgHeartRate: Int? = null,
+    val maxHeartRate: Int? = null,
+    val elevationGainMeters: Double? = null,
+    val rawData: String? = null,
+    val syncedAt: String  // ISO-8601
 )
 
 // ─── Pull Response DTOs (camelCase — NO @SerialName) ──────────────────
@@ -431,7 +453,9 @@ data class PortalSyncPullResponse(
     val badges: List<PullBadgeDto> = emptyList(),
     val gamificationStats: PullGamificationStatsDto? = null,
     // Profile data separation: profile list from portal (round-trip)
-    val localProfiles: List<LocalProfileDto>? = null
+    val localProfiles: List<LocalProfileDto>? = null,
+    // External integration activities (paid users only)
+    val externalActivities: List<ExternalActivitySyncDto> = emptyList()
 )
 
 /**
