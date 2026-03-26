@@ -1226,4 +1226,46 @@ class BlePacketFactoryTest {
         }
     }
 
+    // ========== TUT Beast Mode: Official App Byte Parity Tests ==========
+    // Reference: VitruvianDeobfuscated Dk/e.java ordinal 6 (BEAST_MODE)
+
+    @Test
+    fun `TUTBeast packet matches official app mode profile`() {
+        val params = WorkoutParameters(
+            programMode = ProgramMode.TUTBeast,
+            reps = 6,
+            weightPerCableKg = 70f
+        )
+        val packet = BlePacketFactory.createProgramParams(params)
+
+        // Concentric down ramp: C1507d(150, 250, 7.0f)
+        assertEquals(150.toShort(), readShortLE(packet, 0x30), "conc.down.minMmS")
+        assertEquals(250.toShort(), readShortLE(packet, 0x32), "conc.down.maxMmS")
+        assertEquals(7.0f, readFloatLE(packet, 0x34), "conc.down.ramp")
+
+        // Concentric up ramp: C1507d(350, 450, 50.0f)
+        assertEquals(350.toShort(), readShortLE(packet, 0x38), "conc.up.minMmS")
+        assertEquals(450.toShort(), readShortLE(packet, 0x3A), "conc.up.maxMmS")
+        assertEquals(50.0f, readFloatLE(packet, 0x3C), "conc.up.ramp")
+
+        // Eccentric down ramp: C1507d(-900, -700, 70.0f)
+        assertEquals((-900).toShort(), readShortLE(packet, 0x40), "ecc.down.minMmS")
+        assertEquals((-700).toShort(), readShortLE(packet, 0x42), "ecc.down.maxMmS")
+        assertEquals(70.0f, readFloatLE(packet, 0x44), "ecc.down.ramp")
+
+        // Eccentric up ramp: C1507d(-100, -50, 28.0f)
+        assertEquals((-100).toShort(), readShortLE(packet, 0x48), "ecc.up.minMmS")
+        assertEquals((-50).toShort(), readShortLE(packet, 0x4A), "ecc.up.maxMmS")
+        assertEquals(28.0f, readFloatLE(packet, 0x4C), "ecc.up.ramp")
+    }
+
+    @Test
+    fun `TUTBeast uses default RepConfig (not Eccentric override)`() {
+        val packet = BlePacketFactory.createProgramParams(
+            WorkoutParameters(ProgramMode.TUTBeast, reps = 6, weightPerCableKg = 70f)
+        )
+
+        // TUT Beast uses default bottom.inner.mmPerM = 250 (NOT the Eccentric 50)
+        assertEquals(250.toShort(), readShortLE(packet, 0x24), "bottom.inner.mmPerM (default)")
+    }
 }
