@@ -1,5 +1,7 @@
 package com.devil.phoenixproject.di
 
+import com.devil.phoenixproject.data.integration.ExternalActivityRepository
+import com.devil.phoenixproject.data.integration.HealthIntegration
 import com.devil.phoenixproject.presentation.manager.ExerciseDetectionManager
 import com.devil.phoenixproject.presentation.viewmodel.AssessmentViewModel
 import com.devil.phoenixproject.presentation.viewmodel.ConnectionLogsViewModel
@@ -17,7 +19,7 @@ val presentationModule = module {
     factory { ExerciseDetectionManager(get(), get(), get(), get()) }
 
     // ViewModels
-    factory { MainViewModel(get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get()) }
+    factory { MainViewModel(get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get()) }
     factory { ConnectionLogsViewModel() }
     factory { CycleEditorViewModel(get()) }
     factory { GamificationViewModel(get(), get()) }

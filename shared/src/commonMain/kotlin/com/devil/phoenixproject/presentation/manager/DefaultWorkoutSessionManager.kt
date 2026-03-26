@@ -2,6 +2,8 @@ package com.devil.phoenixproject.presentation.manager
 
 import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.getPlatform
+import com.devil.phoenixproject.data.integration.ExternalActivityRepository
+import com.devil.phoenixproject.data.integration.HealthIntegration
 import com.devil.phoenixproject.data.preferences.PreferencesManager
 import com.devil.phoenixproject.data.repository.BleRepository
 import com.devil.phoenixproject.data.repository.ExerciseRepository
@@ -135,6 +137,8 @@ class DefaultWorkoutSessionManager(
     val detectionManager: ExerciseDetectionManager,
     private val dataBackupManager: DataBackupManager? = null,
     private val userProfileRepository: UserProfileRepository,
+    private val healthIntegration: HealthIntegration? = null,
+    private val externalActivityRepository: ExternalActivityRepository? = null,
     private val scope: CoroutineScope,
     private val _hapticEvents: MutableSharedFlow<HapticEvent> = MutableSharedFlow(
         extraBufferCapacity = 10,
@@ -186,7 +190,9 @@ class DefaultWorkoutSessionManager(
         userProfileRepository = userProfileRepository,
         scope = scope,
         detectionManager = detectionManager,
-        dataBackupManager = dataBackupManager
+        dataBackupManager = dataBackupManager,
+        healthIntegration = healthIntegration,
+        externalActivityRepository = externalActivityRepository
     )
 
     companion object {

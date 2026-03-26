@@ -1,6 +1,8 @@
 package com.devil.phoenixproject.presentation.manager
 
 import co.touchlab.kermit.Logger
+import com.devil.phoenixproject.data.integration.ExternalActivityRepository
+import com.devil.phoenixproject.data.integration.HealthIntegration
 import com.devil.phoenixproject.data.preferences.PreferencesManager
 import com.devil.phoenixproject.data.repository.AutoStopUiState
 import com.devil.phoenixproject.data.repository.BleRepository
@@ -16,6 +18,7 @@ import com.devil.phoenixproject.data.repository.UserProfileRepository
 import com.devil.phoenixproject.data.repository.WorkoutRepository
 import com.devil.phoenixproject.data.sync.SyncTriggerManager
 import com.devil.phoenixproject.domain.model.*
+import com.devil.phoenixproject.getPlatform
 import com.devil.phoenixproject.domain.premium.RepQualityScorer
 import com.devil.phoenixproject.domain.replay.RepBoundaryDetector
 import com.devil.phoenixproject.domain.usecase.RepCounterFromMachine
@@ -70,7 +73,9 @@ class ActiveSessionEngine(
     private val userProfileRepository: UserProfileRepository,
     private val scope: CoroutineScope,
     private val detectionManager: ExerciseDetectionManager? = null,
-    private val dataBackupManager: DataBackupManager? = null
+    private val dataBackupManager: DataBackupManager? = null,
+    private val healthIntegration: HealthIntegration? = null,
+    private val externalActivityRepository: ExternalActivityRepository? = null
 ) {
 
     /**
@@ -2234,6 +2239,28 @@ class ActiveSessionEngine(
         )
 
         workoutRepository.saveSession(session)
+
+        // Fire-and-forget health push: auto-push to Health Connect (Android) or HealthKit (iOS)
+        // after the session is persisted. Failure is non-fatal and never blocks workout completion.
+        if (healthIntegration != null && externalActivityRepository != null) {
+            val profileId = session.profileId
+            scope.launch {
+                try {
+                    val provider = if (getPlatform().name.startsWith("iOS")) {
+                        IntegrationProvider.APPLE_HEALTH
+                    } else {
+                        IntegrationProvider.GOOGLE_HEALTH
+                    }
+                    val status = externalActivityRepository.getIntegrationStatus(provider, profileId).first()
+                    if (status?.status == ConnectionStatus.CONNECTED) {
+                        healthIntegration.writeWorkout(session)
+                        Logger.i("ActiveSessionEngine") { "Auto-pushed workout to ${provider.displayName}" }
+                    }
+                } catch (e: Exception) {
+                    Logger.w("ActiveSessionEngine") { "Health auto-push failed (non-fatal): ${e.message}" }
+                }
+            }
+        }
 
         if (metricsSnapshot.isNotEmpty()) {
             workoutRepository.saveMetrics(sessionId, metricsSnapshot)

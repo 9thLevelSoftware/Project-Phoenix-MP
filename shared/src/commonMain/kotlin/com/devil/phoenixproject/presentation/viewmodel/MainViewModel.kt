@@ -2,6 +2,8 @@ package com.devil.phoenixproject.presentation.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.devil.phoenixproject.data.integration.ExternalActivityRepository
+import com.devil.phoenixproject.data.integration.HealthIntegration
 import com.devil.phoenixproject.data.preferences.PreferencesManager
 import com.devil.phoenixproject.data.repository.AutoStopUiState
 import com.devil.phoenixproject.data.repository.BleRepository
@@ -71,7 +73,9 @@ class MainViewModel constructor(
     private val resolveWeightsUseCase: ResolveRoutineWeightsUseCase,
     private val detectionManager: ExerciseDetectionManager,
     private val dataBackupManager: DataBackupManager,
-    private val userProfileRepository: UserProfileRepository
+    private val userProfileRepository: UserProfileRepository,
+    private val healthIntegration: HealthIntegration? = null,
+    private val externalActivityRepository: ExternalActivityRepository? = null
 ) : ViewModel() {
 
     // Shared haptic events flow - created here, passed to both GamificationManager and WorkoutSessionManager
@@ -111,6 +115,8 @@ class MainViewModel constructor(
         detectionManager = detectionManager,
         dataBackupManager = dataBackupManager,
         userProfileRepository = userProfileRepository,
+        healthIntegration = healthIntegration,
+        externalActivityRepository = externalActivityRepository,
         scope = viewModelScope,
         _hapticEvents = _hapticEvents
     )
