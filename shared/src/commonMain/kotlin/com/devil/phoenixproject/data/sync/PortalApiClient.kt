@@ -151,6 +151,16 @@ open class PortalApiClient(
         }
     }
 
+    open suspend fun callIntegrationSync(request: IntegrationSyncRequest): Result<IntegrationSyncResponse> {
+        return authenticatedRequest { token ->
+            httpClient.post("${supabaseConfig.url}/functions/v1/mobile-integration-sync") {
+                bearerAuth(token)
+                header("apikey", supabaseConfig.anonKey)
+                setBody(request)
+            }
+        }
+    }
+
     // === Private Helpers ===
 
     /**

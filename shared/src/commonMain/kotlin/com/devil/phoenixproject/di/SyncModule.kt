@@ -1,5 +1,6 @@
 package com.devil.phoenixproject.di
 
+import com.devil.phoenixproject.data.integration.IntegrationManager
 import com.devil.phoenixproject.data.repository.*
 import com.devil.phoenixproject.data.sync.PortalApiClient
 import com.devil.phoenixproject.data.sync.PortalTokenStorage
@@ -29,6 +30,7 @@ val syncModule = module {
         )
     }
     single { SyncTriggerManager(get(), get()) }
+    single { IntegrationManager(get(), get()) }
 
     // Auth (using Supabase GoTrue)
     single<AuthRepository> { PortalAuthRepository(get(), get(), get()) }
