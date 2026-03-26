@@ -31,8 +31,9 @@ import platform.Speech.SFSpeechRecognitionTask
 import platform.Speech.SFSpeechRecognitionTaskStateCanceling
 import platform.Speech.SFSpeechRecognitionTaskStateCompleted
 import platform.Speech.SFSpeechRecognizer
-import platform.Speech.SFSpeechRecognizerAuthorizationStatusAuthorized
-import platform.Speech.SFSpeechRecognizerAuthorizationStatusNotDetermined
+// Raw values for SFSpeechRecognizerAuthorizationStatus (Xcode 26+ changed enum mapping)
+private const val SPEECH_AUTH_NOT_DETERMINED = 0L
+private const val SPEECH_AUTH_AUTHORIZED = 3L
 import platform.darwin.dispatch_after
 import platform.darwin.dispatch_async
 import platform.darwin.dispatch_get_main_queue
@@ -88,10 +89,10 @@ actual class SafeWordListener(
 
         val authStatus = SFSpeechRecognizer.authorizationStatus()
         when (authStatus) {
-            SFSpeechRecognizerAuthorizationStatusAuthorized -> { /* proceed */ }
-            SFSpeechRecognizerAuthorizationStatusNotDetermined -> {
+            SPEECH_AUTH_AUTHORIZED -> { /* proceed */ }
+            SPEECH_AUTH_NOT_DETERMINED -> {
                 SFSpeechRecognizer.requestAuthorization { newStatus ->
-                    if (newStatus == SFSpeechRecognizerAuthorizationStatusAuthorized) {
+                    if (newStatus == SPEECH_AUTH_AUTHORIZED) {
                         // Re-enter startListening on main thread
                         dispatch_async(dispatch_get_main_queue()) { startListening() }
                     } else {

@@ -8,6 +8,7 @@ import coil3.util.DebugLogger
 import androidx.compose.ui.window.ComposeUIViewController
 import com.devil.phoenixproject.presentation.components.RequireBlePermissions
 import platform.Foundation.NSLog
+import kotlin.native.Platform as NativePlatform
 
 /**
  * Creates the main UIViewController for iOS that hosts the Compose Multiplatform UI.
@@ -38,8 +39,8 @@ private fun ensureImageLoader() {
                 add(KtorNetworkFetcherFactory())
             }
             .crossfade(true)
-            // DebugLogger only in debug builds — iOS has no BuildConfig, use Platform.isDebugBinary
-            .apply { if (Platform.isDebugBinary) logger(DebugLogger()) }
+            // DebugLogger only in debug builds — iOS has no BuildConfig, use kotlin.native.Platform
+            .apply { @OptIn(kotlin.experimental.ExperimentalNativeApi::class) if (NativePlatform.isDebugBinary) logger(DebugLogger()) }
             .build()
     }
 }
