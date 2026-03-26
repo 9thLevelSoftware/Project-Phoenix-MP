@@ -16,7 +16,8 @@ import org.koin.dsl.module
 val domainModule = module {
     // Preferences
     // Settings is provided by platformModule
-    single<PreferencesManager> { SettingsPreferencesManager(get()) }
+    single { SettingsPreferencesManager(get()) }
+    single<PreferencesManager> { get<SettingsPreferencesManager>() }
 
     // Use Cases
     single { RepCounterFromMachine() }

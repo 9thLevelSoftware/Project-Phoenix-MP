@@ -186,6 +186,8 @@ class SettingsPreferencesManager(
         private const val KEY_VOICE_STOP_ENABLED = "voice_stop_enabled"
         private const val KEY_SAFE_WORD = "safe_word"
         private const val KEY_SAFE_WORD_CALIBRATED = "safe_word_calibrated"
+        // Permissions onboarding (health + microphone)
+        private const val KEY_PERMISSIONS_ONBOARDING_SHOWN = "permissions_onboarding_shown"
     }
 
     private val _preferencesFlow = MutableStateFlow(loadPreferences())
@@ -285,6 +287,14 @@ class SettingsPreferencesManager(
     override suspend fun setAutoStartCountdownSeconds(seconds: Int) {
         settings.putInt(KEY_AUTOSTART_COUNTDOWN_SECONDS, seconds)
         updateAndEmit { copy(autoStartCountdownSeconds = seconds) }
+    }
+
+    fun isPermissionsOnboardingShown(): Boolean {
+        return settings.getBoolean(KEY_PERMISSIONS_ONBOARDING_SHOWN, false)
+    }
+
+    fun setPermissionsOnboardingShown(shown: Boolean) {
+        settings.putBoolean(KEY_PERMISSIONS_ONBOARDING_SHOWN, shown)
     }
 
     override suspend fun getSingleExerciseDefaults(exerciseId: String): SingleExerciseDefaults? {
