@@ -7,7 +7,6 @@ import coil3.request.crossfade
 import coil3.util.DebugLogger
 import androidx.compose.ui.window.ComposeUIViewController
 import com.devil.phoenixproject.presentation.components.RequireBlePermissions
-import com.devil.phoenixproject.presentation.components.RequireOptionalPermissions
 import platform.Foundation.NSLog
 import kotlin.native.Platform as NativePlatform
 
@@ -23,11 +22,8 @@ fun MainViewController() = run {
         ensureImageLoader()
         NSLog("iOS UI: Image loader ready, loading App()...")
         RequireBlePermissions {
-            NSLog("iOS UI: BLE permissions checked, checking optional permissions...")
-            RequireOptionalPermissions {
-                NSLog("iOS UI: All permissions handled, rendering App()...")
-                App()
-            }
+            NSLog("iOS UI: BLE permissions checked, rendering App()...")
+            App()
         }
     }
 }

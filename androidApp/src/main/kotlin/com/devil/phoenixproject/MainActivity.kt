@@ -10,7 +10,6 @@ import androidx.activity.enableEdgeToEdge
 import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.App
 import com.devil.phoenixproject.presentation.components.RequireBlePermissions
-import com.devil.phoenixproject.presentation.components.RequireOptionalPermissions
 import java.util.Locale
 
 class MainActivity : ComponentActivity() {
@@ -27,9 +26,7 @@ class MainActivity : ComponentActivity() {
             // Require BLE permissions before showing the app
             // Permission screens have their own theme, App provides its own theme
             RequireBlePermissions {
-                RequireOptionalPermissions {
-                    App()
-                }
+                App()
             }
         }
     }
