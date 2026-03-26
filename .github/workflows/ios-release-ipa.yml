@@ -79,10 +79,10 @@ jobs:
       - name: Build shared framework and resources
         run: |
           # Build the framework
-          ./gradlew :shared:linkReleaseFrameworkIosArm64 --no-parallel
+          ./gradlew :shared:linkReleaseFrameworkIosArm64 --no-parallel -Pskip.supabase.check=true
           # Explicitly generate compose resources for iOS
-          ./gradlew :shared:generateComposeResClass
-          ./gradlew :shared:iosArm64ProcessResources || true
+          ./gradlew :shared:generateComposeResClass -Pskip.supabase.check=true
+          ./gradlew :shared:iosArm64ProcessResources -Pskip.supabase.check=true || true
 
           # Debug: Show what resource directories exist
           echo "=== Checking resource directories ==="
