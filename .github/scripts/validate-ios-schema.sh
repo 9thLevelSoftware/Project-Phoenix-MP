@@ -129,7 +129,7 @@ def extract_columns(body: str) -> list[str]:
 
 def extract_sqldelight_tables(text: str) -> dict[str, list[str]]:
     clean_text = strip_sql_comments(text)
-    pattern = re.compile(r"CREATE TABLE\s+(\w+)\s*\((.*?)\);", re.S)
+    pattern = re.compile(r"CREATE TABLE\s+(?:IF NOT EXISTS\s+)?(\w+)\s*\((.*?)\);", re.S)
     return {
         match.group(1): extract_columns(match.group(2))
         for match in pattern.finditer(clean_text)

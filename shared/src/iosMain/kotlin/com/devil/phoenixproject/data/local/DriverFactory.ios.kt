@@ -424,6 +424,11 @@ private class SavepointMigratingSchema(
      * ensure dependencies exist; if they already exist, that's fine.
      */
     private fun runPreFlight(driver: SqlDriver, targetStep: Long) {
+        // Ensure all tables exist before any migration step. This is a no-op for
+        // tables that already exist (IF NOT EXISTS), but guarantees the schema is
+        // complete for iOS upgrade paths that may have skipped table creation.
+        ensureAllTablesExist(driver)
+
         when (targetStep) {
             10L -> preFlightMigration10(driver)
             11L -> ensureGamificationTablesExist(driver)
@@ -521,5 +526,498 @@ private class SavepointMigratingSchema(
             }
         }
         NSLog("iOS DB: Pre-flight gamification tables verified")
+    }
+
+    /**
+     * Layer 4 defense: ensure ALL tables from VitruvianDatabase.sq exist with their
+     * complete column definitions. This is called during pre-flight to guarantee that
+     * fresh iOS installs and upgrade paths both produce an identical schema.
+     *
+     * Each CREATE TABLE IF NOT EXISTS statement exactly mirrors the .sq file.
+     * The CI validator (.github/scripts/validate-ios-schema.sh) enforces parity
+     * between this function and VitruvianDatabase.sq — every table, every column,
+     * same order.
+     *
+     * This does NOT create indexes — those are handled by SQLDelight migrations.
+     */
+    private fun ensureAllTablesExist(driver: SqlDriver) {
+        val tables = listOf(
+            """CREATE TABLE IF NOT EXISTS Exercise (
+                id TEXT NOT NULL PRIMARY KEY,
+                name TEXT NOT NULL,
+                description TEXT,
+                created INTEGER NOT NULL DEFAULT 0,
+                muscleGroup TEXT NOT NULL,
+                muscleGroups TEXT NOT NULL,
+                muscles TEXT,
+                equipment TEXT NOT NULL,
+                movement TEXT,
+                sidedness TEXT,
+                grip TEXT,
+                gripWidth TEXT,
+                minRepRange REAL,
+                popularity REAL NOT NULL DEFAULT 0,
+                archived INTEGER NOT NULL DEFAULT 0,
+                isFavorite INTEGER NOT NULL DEFAULT 0,
+                isCustom INTEGER NOT NULL DEFAULT 0,
+                timesPerformed INTEGER NOT NULL DEFAULT 0,
+                lastPerformed INTEGER,
+                aliases TEXT,
+                defaultCableConfig TEXT NOT NULL,
+                one_rep_max_kg REAL DEFAULT NULL,
+                updatedAt INTEGER,
+                serverId TEXT,
+                deletedAt INTEGER
+            )""",
+            """CREATE TABLE IF NOT EXISTS ExerciseVideo (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                exerciseId TEXT NOT NULL,
+                angle TEXT NOT NULL,
+                videoUrl TEXT NOT NULL,
+                thumbnailUrl TEXT NOT NULL,
+                isTutorial INTEGER NOT NULL DEFAULT 0,
+                FOREIGN KEY (exerciseId) REFERENCES Exercise(id) ON DELETE CASCADE
+            )""",
+            """CREATE TABLE IF NOT EXISTS WorkoutSession (
+                id TEXT NOT NULL PRIMARY KEY,
+                timestamp INTEGER NOT NULL,
+                mode TEXT NOT NULL,
+                targetReps INTEGER NOT NULL,
+                weightPerCableKg REAL NOT NULL,
+                progressionKg REAL NOT NULL DEFAULT 0.0,
+                duration INTEGER NOT NULL DEFAULT 0,
+                totalReps INTEGER NOT NULL DEFAULT 0,
+                warmupReps INTEGER NOT NULL DEFAULT 0,
+                workingReps INTEGER NOT NULL DEFAULT 0,
+                isJustLift INTEGER NOT NULL DEFAULT 0,
+                stopAtTop INTEGER NOT NULL DEFAULT 0,
+                eccentricLoad INTEGER NOT NULL DEFAULT 100,
+                echoLevel INTEGER NOT NULL DEFAULT 1,
+                exerciseId TEXT,
+                exerciseName TEXT,
+                routineSessionId TEXT,
+                routineName TEXT,
+                routineId TEXT,
+                safetyFlags INTEGER NOT NULL DEFAULT 0,
+                deloadWarningCount INTEGER NOT NULL DEFAULT 0,
+                romViolationCount INTEGER NOT NULL DEFAULT 0,
+                spotterActivations INTEGER NOT NULL DEFAULT 0,
+                peakForceConcentricA REAL,
+                peakForceConcentricB REAL,
+                peakForceEccentricA REAL,
+                peakForceEccentricB REAL,
+                avgForceConcentricA REAL,
+                avgForceConcentricB REAL,
+                avgForceEccentricA REAL,
+                avgForceEccentricB REAL,
+                heaviestLiftKg REAL,
+                totalVolumeKg REAL,
+                cableCount INTEGER,
+                estimatedCalories REAL,
+                warmupAvgWeightKg REAL,
+                workingAvgWeightKg REAL,
+                burnoutAvgWeightKg REAL,
+                peakWeightKg REAL,
+                rpe INTEGER,
+                avgMcvMmS REAL,
+                avgAsymmetryPercent REAL,
+                totalVelocityLossPercent REAL,
+                dominantSide TEXT,
+                strengthProfile TEXT,
+                formScore INTEGER,
+                updatedAt INTEGER,
+                serverId TEXT,
+                deletedAt INTEGER,
+                profile_id TEXT NOT NULL DEFAULT 'default'
+            )""",
+            """CREATE TABLE IF NOT EXISTS MetricSample (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                sessionId TEXT NOT NULL,
+                timestamp INTEGER NOT NULL,
+                position REAL,
+                positionB REAL,
+                velocity REAL,
+                velocityB REAL,
+                load REAL,
+                loadB REAL,
+                power REAL,
+                status INTEGER NOT NULL DEFAULT 0,
+                FOREIGN KEY (sessionId) REFERENCES WorkoutSession(id) ON DELETE CASCADE
+            )""",
+            """CREATE TABLE IF NOT EXISTS PersonalRecord (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                exerciseId TEXT NOT NULL,
+                exerciseName TEXT NOT NULL,
+                weight REAL NOT NULL,
+                reps INTEGER NOT NULL,
+                oneRepMax REAL NOT NULL,
+                achievedAt INTEGER NOT NULL,
+                workoutMode TEXT NOT NULL,
+                prType TEXT NOT NULL DEFAULT 'MAX_WEIGHT',
+                volume REAL NOT NULL DEFAULT 0.0,
+                phase TEXT NOT NULL DEFAULT 'COMBINED',
+                updatedAt INTEGER,
+                serverId TEXT,
+                deletedAt INTEGER,
+                profile_id TEXT NOT NULL DEFAULT 'default'
+            )""",
+            """CREATE TABLE IF NOT EXISTS Routine (
+                id TEXT NOT NULL PRIMARY KEY,
+                name TEXT NOT NULL,
+                description TEXT NOT NULL DEFAULT '',
+                createdAt INTEGER NOT NULL,
+                lastUsed INTEGER,
+                useCount INTEGER NOT NULL DEFAULT 0,
+                updatedAt INTEGER,
+                serverId TEXT,
+                deletedAt INTEGER,
+                profile_id TEXT NOT NULL DEFAULT 'default'
+            )""",
+            """CREATE TABLE IF NOT EXISTS Superset (
+                id TEXT PRIMARY KEY NOT NULL,
+                routineId TEXT NOT NULL,
+                name TEXT NOT NULL,
+                colorIndex INTEGER NOT NULL DEFAULT 0,
+                restBetweenSeconds INTEGER NOT NULL DEFAULT 10,
+                orderIndex INTEGER NOT NULL,
+                FOREIGN KEY (routineId) REFERENCES Routine(id) ON DELETE CASCADE
+            )""",
+            """CREATE TABLE IF NOT EXISTS RoutineExercise (
+                id TEXT NOT NULL PRIMARY KEY,
+                routineId TEXT NOT NULL,
+                exerciseName TEXT NOT NULL,
+                exerciseMuscleGroup TEXT NOT NULL DEFAULT '',
+                exerciseEquipment TEXT NOT NULL DEFAULT '',
+                exerciseDefaultCableConfig TEXT NOT NULL DEFAULT 'DOUBLE',
+                exerciseId TEXT,
+                cableConfig TEXT NOT NULL DEFAULT 'DOUBLE',
+                orderIndex INTEGER NOT NULL,
+                setReps TEXT NOT NULL DEFAULT '10,10,10',
+                weightPerCableKg REAL NOT NULL DEFAULT 0.0,
+                setWeights TEXT NOT NULL DEFAULT '',
+                mode TEXT NOT NULL DEFAULT 'OldSchool',
+                eccentricLoad INTEGER NOT NULL DEFAULT 100,
+                echoLevel INTEGER NOT NULL DEFAULT 1,
+                progressionKg REAL NOT NULL DEFAULT 0.0,
+                restSeconds INTEGER NOT NULL DEFAULT 60,
+                duration INTEGER,
+                setRestSeconds TEXT NOT NULL DEFAULT '[]',
+                perSetRestTime INTEGER NOT NULL DEFAULT 0,
+                isAMRAP INTEGER NOT NULL DEFAULT 0,
+                supersetId TEXT,
+                orderInSuperset INTEGER NOT NULL DEFAULT 0,
+                usePercentOfPR INTEGER NOT NULL DEFAULT 0,
+                weightPercentOfPR INTEGER NOT NULL DEFAULT 80,
+                prTypeForScaling TEXT NOT NULL DEFAULT 'MAX_WEIGHT',
+                setWeightsPercentOfPR TEXT,
+                stallDetectionEnabled INTEGER NOT NULL DEFAULT 1,
+                stopAtTop INTEGER NOT NULL DEFAULT 0,
+                repCountTiming TEXT NOT NULL DEFAULT 'TOP',
+                setEchoLevels TEXT NOT NULL DEFAULT '',
+                warmupSets TEXT NOT NULL DEFAULT '',
+                FOREIGN KEY (routineId) REFERENCES Routine(id) ON DELETE CASCADE,
+                FOREIGN KEY (exerciseId) REFERENCES Exercise(id) ON DELETE SET NULL,
+                FOREIGN KEY (supersetId) REFERENCES Superset(id) ON DELETE SET NULL
+            )""",
+            """CREATE TABLE IF NOT EXISTS ConnectionLog (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                timestamp INTEGER NOT NULL,
+                eventType TEXT NOT NULL,
+                level TEXT NOT NULL,
+                deviceAddress TEXT,
+                deviceName TEXT,
+                message TEXT NOT NULL,
+                details TEXT,
+                metadata TEXT
+            )""",
+            """CREATE TABLE IF NOT EXISTS DiagnosticsHistory (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                runtimeSeconds INTEGER NOT NULL,
+                faultMask INTEGER NOT NULL,
+                temp1 INTEGER NOT NULL,
+                temp2 INTEGER NOT NULL,
+                temp3 INTEGER NOT NULL,
+                temp4 INTEGER NOT NULL,
+                temp5 INTEGER NOT NULL,
+                temp6 INTEGER NOT NULL,
+                temp7 INTEGER NOT NULL,
+                temp8 INTEGER NOT NULL,
+                containsFaults INTEGER NOT NULL DEFAULT 0,
+                timestamp INTEGER NOT NULL
+            )""",
+            """CREATE TABLE IF NOT EXISTS PhaseStatistics (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                sessionId TEXT NOT NULL,
+                concentricKgAvg REAL NOT NULL,
+                concentricKgMax REAL NOT NULL,
+                concentricVelAvg REAL NOT NULL,
+                concentricVelMax REAL NOT NULL,
+                concentricWattAvg REAL NOT NULL,
+                concentricWattMax REAL NOT NULL,
+                eccentricKgAvg REAL NOT NULL,
+                eccentricKgMax REAL NOT NULL,
+                eccentricVelAvg REAL NOT NULL,
+                eccentricVelMax REAL NOT NULL,
+                eccentricWattAvg REAL NOT NULL,
+                eccentricWattMax REAL NOT NULL,
+                timestamp INTEGER NOT NULL,
+                FOREIGN KEY (sessionId) REFERENCES WorkoutSession(id) ON DELETE CASCADE
+            )""",
+            """CREATE TABLE IF NOT EXISTS RepMetric (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                sessionId TEXT NOT NULL,
+                repNumber INTEGER NOT NULL,
+                isWarmup INTEGER NOT NULL DEFAULT 0,
+                startTimestamp INTEGER NOT NULL,
+                endTimestamp INTEGER NOT NULL,
+                durationMs INTEGER NOT NULL,
+                concentricDurationMs INTEGER NOT NULL,
+                concentricPositions TEXT NOT NULL,
+                concentricLoadsA TEXT NOT NULL,
+                concentricLoadsB TEXT NOT NULL,
+                concentricVelocities TEXT NOT NULL,
+                concentricTimestamps TEXT NOT NULL,
+                eccentricDurationMs INTEGER NOT NULL,
+                eccentricPositions TEXT NOT NULL,
+                eccentricLoadsA TEXT NOT NULL,
+                eccentricLoadsB TEXT NOT NULL,
+                eccentricVelocities TEXT NOT NULL,
+                eccentricTimestamps TEXT NOT NULL,
+                peakForceA REAL NOT NULL,
+                peakForceB REAL NOT NULL,
+                avgForceConcentricA REAL NOT NULL,
+                avgForceConcentricB REAL NOT NULL,
+                avgForceEccentricA REAL NOT NULL,
+                avgForceEccentricB REAL NOT NULL,
+                peakVelocity REAL NOT NULL,
+                avgVelocityConcentric REAL NOT NULL,
+                avgVelocityEccentric REAL NOT NULL,
+                rangeOfMotionMm REAL NOT NULL,
+                peakPowerWatts REAL NOT NULL,
+                avgPowerWatts REAL NOT NULL,
+                updatedAt INTEGER,
+                serverId TEXT,
+                FOREIGN KEY (sessionId) REFERENCES WorkoutSession(id) ON DELETE CASCADE
+            )""",
+            """CREATE TABLE IF NOT EXISTS RepBiomechanics (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                sessionId TEXT NOT NULL,
+                repNumber INTEGER NOT NULL,
+                mcvMmS REAL NOT NULL,
+                peakVelocityMmS REAL NOT NULL,
+                velocityZone TEXT NOT NULL,
+                velocityLossPercent REAL,
+                estimatedRepsRemaining INTEGER,
+                shouldStopSet INTEGER NOT NULL DEFAULT 0,
+                normalizedForceN TEXT NOT NULL,
+                normalizedPositionPct TEXT NOT NULL,
+                stickingPointPct REAL,
+                strengthProfile TEXT NOT NULL,
+                asymmetryPercent REAL NOT NULL,
+                dominantSide TEXT NOT NULL,
+                avgLoadA REAL NOT NULL,
+                avgLoadB REAL NOT NULL,
+                timestamp INTEGER NOT NULL,
+                FOREIGN KEY (sessionId) REFERENCES WorkoutSession(id) ON DELETE CASCADE
+            )""",
+            """CREATE TABLE IF NOT EXISTS ExerciseSignature (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                exerciseId TEXT NOT NULL,
+                romMm REAL NOT NULL,
+                durationMs INTEGER NOT NULL,
+                symmetryRatio REAL NOT NULL,
+                velocityProfile TEXT NOT NULL,
+                cableConfig TEXT NOT NULL,
+                sampleCount INTEGER NOT NULL DEFAULT 1,
+                confidence REAL NOT NULL DEFAULT 0.0,
+                createdAt INTEGER NOT NULL,
+                updatedAt INTEGER NOT NULL,
+                FOREIGN KEY (exerciseId) REFERENCES Exercise(id) ON DELETE CASCADE
+            )""",
+            """CREATE TABLE IF NOT EXISTS AssessmentResult (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                exerciseId TEXT NOT NULL,
+                estimatedOneRepMaxKg REAL NOT NULL,
+                loadVelocityData TEXT NOT NULL,
+                assessmentSessionId TEXT,
+                userOverrideKg REAL,
+                createdAt INTEGER NOT NULL,
+                profile_id TEXT NOT NULL DEFAULT 'default',
+                FOREIGN KEY (exerciseId) REFERENCES Exercise(id) ON DELETE CASCADE,
+                FOREIGN KEY (assessmentSessionId) REFERENCES WorkoutSession(id) ON DELETE SET NULL
+            )""",
+            """CREATE TABLE IF NOT EXISTS EarnedBadge (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                badgeId TEXT NOT NULL,
+                earnedAt INTEGER NOT NULL,
+                celebratedAt INTEGER,
+                updatedAt INTEGER,
+                serverId TEXT,
+                deletedAt INTEGER,
+                profile_id TEXT NOT NULL DEFAULT 'default'
+            )""",
+            """CREATE TABLE IF NOT EXISTS StreakHistory (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                startDate INTEGER NOT NULL,
+                endDate INTEGER NOT NULL,
+                length INTEGER NOT NULL,
+                profile_id TEXT NOT NULL DEFAULT 'default'
+            )""",
+            """CREATE TABLE IF NOT EXISTS GamificationStats (
+                id INTEGER PRIMARY KEY,
+                totalWorkouts INTEGER NOT NULL DEFAULT 0,
+                totalReps INTEGER NOT NULL DEFAULT 0,
+                totalVolumeKg INTEGER NOT NULL DEFAULT 0,
+                longestStreak INTEGER NOT NULL DEFAULT 0,
+                currentStreak INTEGER NOT NULL DEFAULT 0,
+                uniqueExercisesUsed INTEGER NOT NULL DEFAULT 0,
+                prsAchieved INTEGER NOT NULL DEFAULT 0,
+                lastWorkoutDate INTEGER,
+                streakStartDate INTEGER,
+                lastUpdated INTEGER NOT NULL,
+                updatedAt INTEGER,
+                serverId TEXT,
+                profile_id TEXT NOT NULL DEFAULT 'default'
+            )""",
+            """CREATE TABLE IF NOT EXISTS RpgAttributes (
+                id INTEGER PRIMARY KEY DEFAULT 1,
+                strength INTEGER NOT NULL DEFAULT 0,
+                power INTEGER NOT NULL DEFAULT 0,
+                stamina INTEGER NOT NULL DEFAULT 0,
+                consistency INTEGER NOT NULL DEFAULT 0,
+                mastery INTEGER NOT NULL DEFAULT 0,
+                characterClass TEXT NOT NULL DEFAULT 'Phoenix',
+                lastComputed INTEGER NOT NULL DEFAULT 0,
+                profile_id TEXT NOT NULL DEFAULT 'default'
+            )""",
+            """CREATE TABLE IF NOT EXISTS TrainingCycle (
+                id TEXT PRIMARY KEY NOT NULL,
+                name TEXT NOT NULL,
+                description TEXT,
+                created_at INTEGER NOT NULL,
+                is_active INTEGER NOT NULL DEFAULT 0,
+                profile_id TEXT NOT NULL DEFAULT 'default'
+            )""",
+            """CREATE TABLE IF NOT EXISTS CycleDay (
+                id TEXT PRIMARY KEY NOT NULL,
+                cycle_id TEXT NOT NULL,
+                day_number INTEGER NOT NULL,
+                name TEXT,
+                routine_id TEXT,
+                is_rest_day INTEGER NOT NULL DEFAULT 0,
+                echo_level TEXT,
+                eccentric_load_percent INTEGER,
+                weight_progression_percent REAL,
+                rep_modifier INTEGER,
+                rest_time_override_seconds INTEGER,
+                FOREIGN KEY (cycle_id) REFERENCES TrainingCycle(id) ON DELETE CASCADE,
+                FOREIGN KEY (routine_id) REFERENCES Routine(id) ON DELETE SET NULL
+            )""",
+            """CREATE TABLE IF NOT EXISTS CycleProgress (
+                id TEXT PRIMARY KEY NOT NULL,
+                cycle_id TEXT NOT NULL UNIQUE,
+                current_day_number INTEGER NOT NULL DEFAULT 1,
+                last_completed_date INTEGER,
+                cycle_start_date INTEGER NOT NULL,
+                last_advanced_at INTEGER,
+                completed_days TEXT,
+                missed_days TEXT,
+                rotation_count INTEGER NOT NULL DEFAULT 0,
+                FOREIGN KEY (cycle_id) REFERENCES TrainingCycle(id) ON DELETE CASCADE
+            )""",
+            """CREATE TABLE IF NOT EXISTS CycleProgression (
+                cycle_id TEXT PRIMARY KEY NOT NULL,
+                frequency_cycles INTEGER NOT NULL DEFAULT 2,
+                weight_increase_percent REAL,
+                echo_level_increase INTEGER NOT NULL DEFAULT 0,
+                eccentric_load_increase_percent INTEGER,
+                FOREIGN KEY (cycle_id) REFERENCES TrainingCycle(id) ON DELETE CASCADE
+            )""",
+            """CREATE TABLE IF NOT EXISTS PlannedSet (
+                id TEXT PRIMARY KEY NOT NULL,
+                routine_exercise_id TEXT NOT NULL,
+                set_number INTEGER NOT NULL,
+                set_type TEXT NOT NULL DEFAULT 'STANDARD',
+                target_reps INTEGER,
+                target_weight_kg REAL,
+                target_rpe INTEGER,
+                rest_seconds INTEGER,
+                FOREIGN KEY (routine_exercise_id) REFERENCES RoutineExercise(id) ON DELETE CASCADE
+            )""",
+            """CREATE TABLE IF NOT EXISTS CompletedSet (
+                id TEXT PRIMARY KEY NOT NULL,
+                session_id TEXT NOT NULL,
+                planned_set_id TEXT,
+                set_number INTEGER NOT NULL,
+                set_type TEXT NOT NULL DEFAULT 'STANDARD',
+                actual_reps INTEGER NOT NULL,
+                actual_weight_kg REAL NOT NULL,
+                logged_rpe INTEGER,
+                is_pr INTEGER NOT NULL DEFAULT 0,
+                completed_at INTEGER NOT NULL,
+                FOREIGN KEY (session_id) REFERENCES WorkoutSession(id) ON DELETE CASCADE,
+                FOREIGN KEY (planned_set_id) REFERENCES PlannedSet(id) ON DELETE SET NULL
+            )""",
+            """CREATE TABLE IF NOT EXISTS ProgressionEvent (
+                id TEXT PRIMARY KEY NOT NULL,
+                exercise_id TEXT NOT NULL,
+                suggested_weight_kg REAL NOT NULL,
+                previous_weight_kg REAL NOT NULL,
+                reason TEXT NOT NULL,
+                user_response TEXT,
+                actual_weight_kg REAL,
+                timestamp INTEGER NOT NULL,
+                profile_id TEXT NOT NULL DEFAULT 'default',
+                FOREIGN KEY (exercise_id) REFERENCES Exercise(id) ON DELETE CASCADE
+            )""",
+            """CREATE TABLE IF NOT EXISTS UserProfile (
+                id TEXT PRIMARY KEY NOT NULL,
+                name TEXT NOT NULL,
+                colorIndex INTEGER NOT NULL DEFAULT 0,
+                createdAt INTEGER NOT NULL,
+                isActive INTEGER NOT NULL DEFAULT 0,
+                supabase_user_id TEXT,
+                subscription_status TEXT DEFAULT 'free',
+                subscription_expires_at INTEGER,
+                last_auth_at INTEGER
+            )""",
+            // ExternalActivity and IntegrationStatus use CREATE TABLE IF NOT EXISTS
+            // in VitruvianDatabase.sq itself, so SQLDelight handles them as idempotent
+            // creates. They are included here for completeness on iOS upgrade paths.
+            """CREATE TABLE IF NOT EXISTS ExternalActivity (
+                id TEXT NOT NULL PRIMARY KEY,
+                externalId TEXT NOT NULL,
+                provider TEXT NOT NULL,
+                name TEXT NOT NULL,
+                activityType TEXT NOT NULL DEFAULT 'strength',
+                startedAt INTEGER NOT NULL,
+                durationSeconds INTEGER NOT NULL DEFAULT 0,
+                distanceMeters REAL,
+                calories INTEGER,
+                avgHeartRate INTEGER,
+                maxHeartRate INTEGER,
+                elevationGainMeters REAL,
+                rawData TEXT,
+                syncedAt INTEGER NOT NULL,
+                profileId TEXT NOT NULL DEFAULT 'default',
+                needsSync INTEGER NOT NULL DEFAULT 1
+            )""",
+            """CREATE TABLE IF NOT EXISTS IntegrationStatus (
+                provider TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'disconnected',
+                lastSyncAt INTEGER,
+                errorMessage TEXT,
+                profileId TEXT NOT NULL DEFAULT 'default',
+                PRIMARY KEY(provider, profileId)
+            )""",
+        )
+        for (sql in tables) {
+            try {
+                driver.execute(null, sql, 0)
+            } catch (e: Exception) {
+                NSLog("iOS DB: Pre-flight table creation warning: ${e.message?.take(120)}")
+            }
+        }
+        NSLog("iOS DB: Pre-flight all ${tables.size} tables verified")
     }
 }
