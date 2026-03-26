@@ -155,6 +155,7 @@ class DefaultWorkoutSessionManager(
         resolveWeightsUseCase = resolveWeightsUseCase,
         completedSetRepository = completedSetRepository,
         settingsManager = settingsManager,
+        userProfileRepository = userProfileRepository,
         scope = scope
     ).also { rfm ->
         rfm.lifecycleDelegate = object : RoutineFlowManager.WorkoutLifecycleDelegate {
@@ -187,14 +188,6 @@ class DefaultWorkoutSessionManager(
         detectionManager = detectionManager,
         dataBackupManager = dataBackupManager
     )
-
-    // ===== LED Biofeedback Controller =====
-    init {
-        coordinator.ledFeedbackController = LedFeedbackController(
-            bleRepository = bleRepository,
-            scope = scope
-        )
-    }
 
     companion object {
         /** Prefix for temporary single exercise routines to identify them for cleanup */

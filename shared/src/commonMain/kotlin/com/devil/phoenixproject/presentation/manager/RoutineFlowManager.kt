@@ -4,6 +4,7 @@ import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.data.repository.AutoStopUiState
 import com.devil.phoenixproject.data.repository.CompletedSetRepository
 import com.devil.phoenixproject.data.repository.ExerciseRepository
+import com.devil.phoenixproject.data.repository.UserProfileRepository
 import com.devil.phoenixproject.data.repository.WorkoutRepository
 import com.devil.phoenixproject.domain.model.*
 import com.devil.phoenixproject.domain.usecase.ResolveRoutineWeightsUseCase
@@ -33,6 +34,7 @@ class RoutineFlowManager(
     private val resolveWeightsUseCase: ResolveRoutineWeightsUseCase,
     private val completedSetRepository: CompletedSetRepository,
     private val settingsManager: SettingsManager,
+    private val userProfileRepository: UserProfileRepository,
     private val scope: CoroutineScope
 ) {
 
@@ -68,7 +70,8 @@ class RoutineFlowManager(
     init {
         // Collector #1: Load routines (filter out cycle template routines)
         scope.launch {
-            workoutRepository.getAllRoutines(profileId = "default").collect { routinesList ->
+            val activeProfileId = userProfileRepository.activeProfile.value?.id ?: "default"
+            workoutRepository.getAllRoutines(profileId = activeProfileId).collect { routinesList ->
                 coordinator._routines.value = routinesList.filter { !it.id.startsWith("cycle_routine_") }
             }
         }
