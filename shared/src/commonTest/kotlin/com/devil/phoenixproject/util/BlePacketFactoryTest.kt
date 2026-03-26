@@ -1132,4 +1132,98 @@ class BlePacketFactoryTest {
         assertEquals(60.0f, readFloatLE(packet, 0x58), "softMax (=weight)")
         assertEquals(0.0f, readFloatLE(packet, 0x5C), "increment (=progression)")
     }
+
+    // ========== Cross-Mode Regression Tests ==========
+
+    @Test
+    fun `all non-Echo modes produce 96-byte packets with correct command and RepConfig`() {
+        val modes = listOf(
+            ProgramMode.OldSchool to "OldSchool",
+            ProgramMode.Pump to "Pump",
+            ProgramMode.TUT to "TUT",
+            ProgramMode.TUTBeast to "TUTBeast",
+            ProgramMode.EccentricOnly to "EccentricOnly"
+        )
+
+        for ((mode, name) in modes) {
+            val params = WorkoutParameters(
+                programMode = mode,
+                reps = 10,
+                warmupReps = 3,
+                weightPerCableKg = 50f
+            )
+            val packet = BlePacketFactory.createProgramParams(params)
+
+            assertEquals(96, packet.size, "$name: packet size")
+            assertEquals(0x04.toByte(), packet[0x00], "$name: command ID")
+            assertEquals(13.toByte(), packet[0x04], "$name: reps total (10+3)")
+            assertEquals(3.toByte(), packet[0x05], "$name: baseline")
+            assertEquals(3.toByte(), packet[0x06], "$name: adaptive")
+            assertEquals(5.0f, readFloatLE(packet, 0x08), "$name: seedRange")
+
+            // All modes except Eccentric use default bottom.inner.mmPerM = 250
+            val expectedBottomInnerMmPerM: Short = if (mode is ProgramMode.EccentricOnly) 50 else 250
+            assertEquals(
+                expectedBottomInnerMmPerM,
+                readShortLE(packet, 0x24),
+                "$name: bottom.inner.mmPerM"
+            )
+        }
+    }
+
+    @Test
+    fun `Eccentric bottom RepBound differs from other modes`() {
+        val eccentricPacket = BlePacketFactory.createProgramParams(
+            WorkoutParameters(ProgramMode.EccentricOnly, reps = 10, weightPerCableKg = 50f)
+        )
+        val oldSchoolPacket = BlePacketFactory.createProgramParams(
+            WorkoutParameters(ProgramMode.OldSchool, reps = 10, weightPerCableKg = 50f)
+        )
+
+        // Eccentric has mmPerM=50, OldSchool has mmPerM=250 at offset 0x24
+        assertEquals(50.toShort(), readShortLE(eccentricPacket, 0x24), "Eccentric bottom.inner.mmPerM")
+        assertEquals(250.toShort(), readShortLE(oldSchoolPacket, 0x24), "OldSchool bottom.inner.mmPerM")
+
+        // All other bottom boundary fields should be identical
+        assertEquals(
+            readShortLE(eccentricPacket, 0x26),
+            readShortLE(oldSchoolPacket, 0x26),
+            "bottom.inner.mmMax should be same"
+        )
+        assertEquals(
+            readShortLE(eccentricPacket, 0x28),
+            readShortLE(oldSchoolPacket, 0x28),
+            "bottom.outer.mmPerM should be same"
+        )
+        assertEquals(
+            readShortLE(eccentricPacket, 0x2A),
+            readShortLE(oldSchoolPacket, 0x2A),
+            "bottom.outer.mmMax should be same"
+        )
+    }
+
+    // ========== Force Config with Progression Tests ==========
+
+    @Test
+    fun `force config with zero progression matches official app for all modes`() {
+        val modes = listOf(
+            ProgramMode.OldSchool,
+            ProgramMode.Pump,
+            ProgramMode.TUT,
+            ProgramMode.EccentricOnly
+        )
+
+        for (mode in modes) {
+            val weight = 45f
+            val packet = BlePacketFactory.createProgramParams(
+                WorkoutParameters(mode, reps = 10, weightPerCableKg = weight)
+            )
+
+            assertEquals(0.0f, readFloatLE(packet, 0x50), "$mode: forces.min")
+            assertEquals(55.0f, readFloatLE(packet, 0x54), "$mode: forces.max (10+weight)")
+            assertEquals(45.0f, readFloatLE(packet, 0x58), "$mode: softMax (=weight)")
+            assertEquals(0.0f, readFloatLE(packet, 0x5C), "$mode: increment (=0)")
+        }
+    }
+
 }
