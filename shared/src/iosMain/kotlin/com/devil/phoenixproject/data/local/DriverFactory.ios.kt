@@ -169,69 +169,32 @@ actual class DriverFactory {
      * Repair the known legacy iOS schema drift from TestFlight build 20260315120.
      *
      * That build stamped user_version=13 but omitted WorkoutSession.cableCount from the
-     * physical schema. Newer builds migrate from 13 -> current successfully, but SQLDelight
+     * physical schema. Newer builds migrate from 13→current successfully, but SQLDelight
      * still expects cableCount to exist when mapping WorkoutSession rows on startup.
      *
-     * We heal the missing column in place to preserve local data. If the repair or the
-     * post-repair verification fails, fall back to the existing nuclear recovery path.
+     * ## Root cause of previous crash-on-launch (March 2026):
+     *
+     * NativeSqliteDriver uses SEPARATE connection pools for reads and writes.
+     * `executeQuery()` (PRAGMA table_info) → reader pool.
+     * `execute()` (ALTER TABLE) → writer pool.
+     *
+     * After migrations add cableCount on the writer, the reader's schema cache is stale.
+     * `columnExists()` returned false → `ALTER TABLE ADD COLUMN` → "duplicate column" →
+     * nuclear recovery → fresh DB already has cableCount → same error on loop → crash.
+     *
+     * Fix: skip `columnExists()` entirely. Just attempt the ALTER TABLE and treat
+     * "duplicate column" as success. This avoids the reader/writer pool mismatch.
      */
     private fun repairKnownLegacySchemaOrRecover(driver: SqlDriver): SqlDriver {
-        return try {
-            safeAddColumn(driver, "WorkoutSession", "cableCount", "INTEGER")
-
-            if (!columnExists(driver, "WorkoutSession", "cableCount")) {
-                throw IllegalStateException("WorkoutSession.cableCount is still missing after repair")
-            }
-
-            driver
-        } catch (e: Exception) {
-            NSLog("iOS DB: Legacy schema repair failed (${e::class.simpleName}: ${e.message?.take(200)})")
-            try {
-                driver.close()
-            } catch (closeError: Exception) {
-                NSLog("iOS DB: Warning - could not close driver before recovery: ${closeError.message?.take(120)}")
-            }
-            NSLog("iOS DB: Falling back to nuclear recovery (database delete + recreate)")
-            recoverByDeletingDatabase()
-        }
-    }
-
-    private fun safeAddColumn(driver: SqlDriver, table: String, column: String, definition: String) {
-        if (columnExists(driver, table, column)) return
-
         try {
-            driver.execute(null, "ALTER TABLE $table ADD COLUMN $column $definition", 0)
-            NSLog("iOS DB: Schema heal added $table.$column")
+            driver.execute(null, "ALTER TABLE WorkoutSession ADD COLUMN cableCount INTEGER", 0)
+            NSLog("iOS DB: Legacy repair added WorkoutSession.cableCount")
         } catch (e: Exception) {
-            val msg = e.message?.lowercase() ?: ""
-            if (msg.contains("duplicate column")) {
-                NSLog("iOS DB: Schema heal found existing $table.$column during ALTER replay")
-                return
-            }
-            throw IllegalStateException("Failed to add $table.$column", e)
+            // "duplicate column" = column already exists = nothing to do.
+            // Any other error = schema is unknown, but don't nuclear-delete (causes loop).
+            NSLog("iOS DB: cableCount repair: ${e.message?.take(120) ?: "unknown"}")
         }
-    }
-
-    private fun columnExists(driver: SqlDriver, table: String, column: String): Boolean {
-        return try {
-            driver.executeQuery(
-                identifier = null,
-                sql = "PRAGMA table_info($table)",
-                mapper = { cursor ->
-                    var found = false
-                    while (cursor.next().value) {
-                        if (cursor.getString(1) == column) {
-                            found = true
-                            break
-                        }
-                    }
-                    QueryResult.Value(found)
-                },
-                parameters = 0
-            ).value
-        } catch (e: Exception) {
-            throw IllegalStateException("Failed to inspect $table schema", e)
-        }
+        return driver
     }
 
     // ==================== iCloud Backup Exclusion ====================

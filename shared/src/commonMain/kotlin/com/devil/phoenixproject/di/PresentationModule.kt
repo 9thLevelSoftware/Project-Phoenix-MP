@@ -17,20 +17,7 @@ val presentationModule = module {
     factory { ExerciseDetectionManager(get(), get(), get(), get()) }
 
     // ViewModels
-    // CRITICAL FIX: MainViewModel parameters 10, 17, 18 are nullable with defaults (? = null).
-    // Using get() for these crashes if the dependency can't be resolved (e.g., SyncTriggerManager
-    // fails because its own dependencies fail). Using getOrNull() matches the constructor's intent:
-    // these features are optional — sync, health integration, and external activities degrade
-    // gracefully when unavailable.
-    factory {
-        MainViewModel(
-            get(), get(), get(), get(), get(), get(), get(), get(), get(),
-            getOrNull(),  // SyncTriggerManager? = null
-            get(), get(), get(), get(), get(), get(),
-            getOrNull(),  // HealthIntegration? = null
-            getOrNull()   // ExternalActivityRepository? = null
-        )
-    }
+    factory { MainViewModel(get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get()) }
     factory { ConnectionLogsViewModel() }
     factory { CycleEditorViewModel(get()) }
     factory { GamificationViewModel(get(), get()) }
