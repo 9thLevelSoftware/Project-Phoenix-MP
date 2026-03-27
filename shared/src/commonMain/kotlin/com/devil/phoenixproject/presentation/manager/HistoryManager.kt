@@ -167,15 +167,21 @@ class HistoryManager(
     init {
         // Load recent history (moved from MainViewModel init L483-487)
         // Re-subscribes automatically when active profile changes via flatMapLatest.
+        // CRITICAL: try-catch required — on Kotlin/Native (iOS), unhandled exceptions
+        // in scope.launch call abort(), causing SIGABRT crash on launch.
         scope.launch {
-            userProfileRepository.activeProfile
-                .flatMapLatest { profile ->
-                    val profileId = profile?.id ?: "default"
-                    workoutRepository.getAllSessions(profileId)
-                }
-                .collect { sessions ->
-                    _workoutHistory.value = sessions.take(20)
-                }
+            try {
+                userProfileRepository.activeProfile
+                    .flatMapLatest { profile ->
+                        val profileId = profile?.id ?: "default"
+                        workoutRepository.getAllSessions(profileId)
+                    }
+                    .collect { sessions ->
+                        _workoutHistory.value = sessions.take(20)
+                    }
+            } catch (e: Exception) {
+                co.touchlab.kermit.Logger.e(e) { "Error loading workout history in HistoryManager init" }
+            }
         }
     }
 

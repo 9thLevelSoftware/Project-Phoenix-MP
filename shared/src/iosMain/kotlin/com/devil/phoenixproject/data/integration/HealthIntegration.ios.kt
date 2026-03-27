@@ -37,10 +37,11 @@ actual class HealthIntegration {
 
     private val healthStore: HKHealthStore by lazy { HKHealthStore() }
 
-    private val workoutType = HKObjectType.workoutType()
+    private val workoutType by lazy { HKObjectType.workoutType() }
 
-    private val activeEnergyType: HKQuantityType? =
+    private val activeEnergyType: HKQuantityType? by lazy {
         HKQuantityType.quantityTypeForIdentifier(HKQuantityTypeIdentifierActiveEnergyBurned)
+    }
 
     /**
      * The set of HealthKit types this integration writes.

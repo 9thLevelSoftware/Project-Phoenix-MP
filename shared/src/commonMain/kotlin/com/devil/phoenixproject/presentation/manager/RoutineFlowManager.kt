@@ -69,10 +69,16 @@ class RoutineFlowManager(
 
     init {
         // Collector #1: Load routines (filter out cycle template routines)
+        // CRITICAL: try-catch required — on Kotlin/Native (iOS), unhandled exceptions
+        // in scope.launch call abort(), causing SIGABRT crash on launch.
         scope.launch {
-            val activeProfileId = userProfileRepository.activeProfile.value?.id ?: "default"
-            workoutRepository.getAllRoutines(profileId = activeProfileId).collect { routinesList ->
-                coordinator._routines.value = routinesList.filter { !it.id.startsWith("cycle_routine_") }
+            try {
+                val activeProfileId = userProfileRepository.activeProfile.value?.id ?: "default"
+                workoutRepository.getAllRoutines(profileId = activeProfileId).collect { routinesList ->
+                    coordinator._routines.value = routinesList.filter { !it.id.startsWith("cycle_routine_") }
+                }
+            } catch (e: Exception) {
+                Logger.e(e) { "Error loading routines in RoutineFlowManager init" }
             }
         }
 

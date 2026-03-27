@@ -228,30 +228,36 @@ class DefaultWorkoutSessionManager(
         }
 
         // Manager-level summary auto-advance so countdown continues even when UI is backgrounded.
+        // try-catch required — on Kotlin/Native (iOS), unhandled exceptions in scope.launch
+        // call abort(), causing SIGABRT crash.
         scope.launch {
-            coordinator.workoutState.collect { state ->
-                summaryAutoAdvanceJob?.cancel()
-                summaryAutoAdvanceJob = null
+            try {
+                coordinator.workoutState.collect { state ->
+                    summaryAutoAdvanceJob?.cancel()
+                    summaryAutoAdvanceJob = null
 
-                if (state !is WorkoutState.SetSummary) return@collect
+                    if (state !is WorkoutState.SetSummary) return@collect
 
-                val summaryCountdownSeconds = settingsManager.userPreferences.value.summaryCountdownSeconds
-                val params = coordinator._workoutParameters.value
-                val shouldAutoAdvanceInManager =
-                    isIosPlatform &&
-                    summaryCountdownSeconds > 0 &&
-                        !params.isJustLift &&
-                        !params.isAMRAP
+                    val summaryCountdownSeconds = settingsManager.userPreferences.value.summaryCountdownSeconds
+                    val params = coordinator._workoutParameters.value
+                    val shouldAutoAdvanceInManager =
+                        isIosPlatform &&
+                        summaryCountdownSeconds > 0 &&
+                            !params.isJustLift &&
+                            !params.isAMRAP
 
-                if (!shouldAutoAdvanceInManager) return@collect
+                    if (!shouldAutoAdvanceInManager) return@collect
 
-                summaryAutoAdvanceJob = scope.launch {
-                    delay(summaryCountdownSeconds * 1000L)
-                    if (coordinator._workoutState.value is WorkoutState.SetSummary) {
-                        Logger.d { "Summary auto-advance fallback fired - proceeding from summary in manager scope" }
-                        proceedFromSummary()
+                    summaryAutoAdvanceJob = scope.launch {
+                        delay(summaryCountdownSeconds * 1000L)
+                        if (coordinator._workoutState.value is WorkoutState.SetSummary) {
+                            Logger.d { "Summary auto-advance fallback fired - proceeding from summary in manager scope" }
+                            proceedFromSummary()
+                        }
                     }
                 }
+            } catch (e: Exception) {
+                Logger.e(e) { "Error in summary auto-advance collector" }
             }
         }
     }
