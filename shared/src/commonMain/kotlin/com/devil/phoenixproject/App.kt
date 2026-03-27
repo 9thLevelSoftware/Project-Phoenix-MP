@@ -120,9 +120,19 @@ fun App() {
 
     if (depsResult.isFailure) {
         val e = depsResult.exceptionOrNull()!!
-        val msg = "${e::class.simpleName}: ${e.message}\nCause: ${e.cause?.let { "${it::class.simpleName}: ${it.message}" } ?: "none"}"
-        co.touchlab.kermit.Logger.e(e) { "FATAL DI resolution: $msg" }
-        CrashErrorScreen(msg)
+        // Traverse full cause chain for complete diagnostics
+        val causes = buildString {
+            var current: Throwable? = e
+            var depth = 0
+            while (current != null && depth < 10) {
+                if (depth > 0) append("\n")
+                append("[$depth] ${current::class.simpleName}: ${current.message?.take(200)}")
+                current = current.cause
+                depth++
+            }
+        }
+        co.touchlab.kermit.Logger.e(e) { "FATAL DI resolution:\n$causes" }
+        CrashErrorScreen(causes)
         return
     }
 
