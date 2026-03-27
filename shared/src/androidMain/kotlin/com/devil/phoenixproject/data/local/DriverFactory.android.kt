@@ -26,13 +26,8 @@ actual class DriverFactory(private val context: Context) {
                     db.execSQL("PRAGMA foreign_keys = ON;")
                     // Ensure gamification tables exist (no migration was ever added for them)
                     ensureGamificationTablesExist(db)
-                    // Issue #246: 0.5.0 added RoutineExercise columns without a migration.
-                    // Heal older v11 databases in-place so routines load correctly.
-                    ensureRoutineExerciseBehaviorColumns(db)
-                    // Migration 13 was retroactively edited after release to add cableCount.
-                    // Heal the column here so both "version 13 + cableCount" and
-                    // "version 14+ without cableCount" installs converge safely.
-                    ensureWorkoutSessionCableCountColumn(db)
+                    // Reconcile all confirmed released schema drift outside numbered migrations.
+                    reconcileKnownLegacySchemaDrift(db)
                 }
 
                 override fun onUpgrade(db: SupportSQLiteDatabase, oldVersion: Int, newVersion: Int) {
@@ -450,11 +445,6 @@ actual class DriverFactory(private val context: Context) {
                             "ALTER TABLE WorkoutSession ADD COLUMN dominantSide TEXT",
                             "ALTER TABLE WorkoutSession ADD COLUMN strengthProfile TEXT"
                         )
-                        18 -> listOf(
-                            // Migration 18: Phase 4 Routine Programming columns
-                            "ALTER TABLE RoutineExercise ADD COLUMN setEchoLevels TEXT NOT NULL DEFAULT ''",
-                            "ALTER TABLE RoutineExercise ADD COLUMN warmupSets TEXT NOT NULL DEFAULT ''"
-                        )
                         else -> emptyList()
                     }
                 }
@@ -593,92 +583,18 @@ actual class DriverFactory(private val context: Context) {
                     Log.d(TAG, "Gamification tables verified/created")
                 }
 
-                /**
-                 * Backfill missing RoutineExercise columns introduced in 0.5.0.
-                 * Some users upgraded from 0.4.5->0.5.0 without these columns due a missed migration.
-                 */
-                private fun ensureRoutineExerciseBehaviorColumns(db: SupportSQLiteDatabase) {
-                    safeAddColumn(
-                        db,
-                        table = "RoutineExercise",
-                        column = "stallDetectionEnabled",
-                        definition = "INTEGER NOT NULL DEFAULT 1"
-                    )
-                    safeAddColumn(
-                        db,
-                        table = "RoutineExercise",
-                        column = "stopAtTop",
-                        definition = "INTEGER NOT NULL DEFAULT 0"
-                    )
-                    safeAddColumn(
-                        db,
-                        table = "RoutineExercise",
-                        column = "repCountTiming",
-                        definition = "TEXT NOT NULL DEFAULT 'TOP'"
-                    )
-                    // Migration 18: Phase 4 Routine Programming columns
-                    safeAddColumn(
-                        db,
-                        table = "RoutineExercise",
-                        column = "setEchoLevels",
-                        definition = "TEXT NOT NULL DEFAULT ''"
-                    )
-                    safeAddColumn(
-                        db,
-                        table = "RoutineExercise",
-                        column = "warmupSets",
-                        definition = "TEXT NOT NULL DEFAULT ''"
-                    )
-                }
-
-                private fun ensureWorkoutSessionCableCountColumn(db: SupportSQLiteDatabase) {
-                    val result = com.devil.phoenixproject.data.local.ensureWorkoutSessionCableCountColumn(createTempDriver(db))
-                    when (result.status) {
-                        SchemaHealStatus.ADDED ->
-                            Log.i(TAG, "Schema heal: added WorkoutSession.cableCount")
-                        SchemaHealStatus.ALREADY_PRESENT ->
-                            Log.d(TAG, "Schema heal: WorkoutSession.cableCount already present")
-                        SchemaHealStatus.TABLE_MISSING ->
-                            Log.w(TAG, "Schema heal: WorkoutSession missing while repairing cableCount")
-                        SchemaHealStatus.FAILED ->
-                            Log.w(TAG, "Schema heal failed for WorkoutSession.cableCount: ${result.detail}")
-                    }
-                }
-
-                private fun safeAddColumn(
-                    db: SupportSQLiteDatabase,
-                    table: String,
-                    column: String,
-                    definition: String
-                ) {
-                    if (columnExists(db, table, column)) return
-
-                    try {
-                        db.execSQL("ALTER TABLE $table ADD COLUMN $column $definition")
-                        Log.i(TAG, "Schema heal: added $table.$column")
-                    } catch (e: SQLiteException) {
-                        if (e.message?.contains("duplicate column") == true) {
-                            Log.d(TAG, "Schema heal: $table.$column already exists")
-                        } else {
-                            Log.w(TAG, "Schema heal failed for $table.$column: ${e.message}")
+                private fun reconcileKnownLegacySchemaDrift(db: SupportSQLiteDatabase) {
+                    for (result in com.devil.phoenixproject.data.local.reconcileKnownLegacySchema(createTempDriver(db))) {
+                        when (result.status) {
+                            SchemaHealStatus.ADDED ->
+                                Log.i(TAG, "Schema heal: added ${result.operation.target}")
+                            SchemaHealStatus.ALREADY_PRESENT ->
+                                Log.d(TAG, "Schema heal: ${result.operation.target} already present")
+                            SchemaHealStatus.TABLE_MISSING ->
+                                Log.w(TAG, "Schema heal: table missing while repairing ${result.operation.target}")
+                            SchemaHealStatus.FAILED ->
+                                Log.w(TAG, "Schema heal failed for ${result.operation.target}: ${result.detail}")
                         }
-                    }
-                }
-
-                private fun columnExists(db: SupportSQLiteDatabase, table: String, column: String): Boolean {
-                    return try {
-                        val cursor = db.query("PRAGMA table_info($table)")
-                        cursor.use {
-                            val nameIndex = cursor.getColumnIndex("name")
-                            while (cursor.moveToNext()) {
-                                val existing = if (nameIndex >= 0) cursor.getString(nameIndex) else cursor.getString(1)
-                                if (existing == column) return true
-                            }
-                        }
-                        false
-                    } catch (e: Exception) {
-                        Log.w(TAG, "Schema heal: failed table_info($table): ${e.message}")
-                        false
                     }
                 }
             }

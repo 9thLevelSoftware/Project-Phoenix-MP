@@ -1,11 +1,9 @@
 -- Migration 20: Add per-exercise behavior overrides and performance index
--- These columns were added to VitruvianDatabase.sq (RoutineExercise table, PR #245)
--- but no migration file was created. Users upgrading from schema version 20 would
--- have missing columns.
-
-ALTER TABLE RoutineExercise ADD COLUMN stallDetectionEnabled INTEGER NOT NULL DEFAULT 1;
-ALTER TABLE RoutineExercise ADD COLUMN stopAtTop INTEGER NOT NULL DEFAULT 0;
-ALTER TABLE RoutineExercise ADD COLUMN repCountTiming TEXT NOT NULL DEFAULT 'TOP';
+-- RoutineExercise.stallDetectionEnabled / stopAtTop / repCountTiming are
+-- intentionally healed outside this numbered migration. These columns were
+-- released through schema/create paths before this migration existed, so
+-- replaying ALTER TABLE here can crash existing installs with duplicate-column
+-- errors while later-version installs may still be missing the columns.
 
 -- Performance: index on WorkoutSession.timestamp for history queries (R-42)
 CREATE INDEX IF NOT EXISTS idx_workout_session_timestamp ON WorkoutSession(timestamp);

@@ -112,7 +112,7 @@ actual class DriverFactory {
             recoverByDeletingDatabase()
         }
 
-        val readyDriver = healKnownLegacyWorkoutSessionSchema(driver)
+        val readyDriver = reconcileKnownLegacySchemaDrift(driver)
 
         // Post-creation pragmas
         applyPragmas(readyDriver)
@@ -166,31 +166,30 @@ actual class DriverFactory {
     }
 
     /**
-     * Heal the historical cableCount split created around migration 13.
+     * Reconcile all confirmed released schema drift before repository code touches the DB.
      *
-     * There are two real install cohorts in the field:
-     * 1. iOS builds that wrote WorkoutSession.cableCount while still stamping schema
-     *    version 13 during the manual-driver era.
-     * 2. installs that had already crossed migration 13 before cableCount was retrofitted
-     *    into the numbered migration, leaving newer user_version values without the column.
-     *
-     * We heal outside the numbered migration file using a replay-safe ALTER TABLE so both
-     * cohorts converge before SQLDelight starts reading WorkoutSession rows.
+     * This intentionally heals outside numbered migrations so both cohorts converge:
+     * installs where a column is already present before its migration runs, and later-version
+     * installs that never replay that migration but are still missing the column.
      */
-    private fun healKnownLegacyWorkoutSessionSchema(driver: SqlDriver): SqlDriver {
-        val result = ensureWorkoutSessionCableCountColumn(driver)
-        when (result.status) {
-            SchemaHealStatus.ADDED -> {
-                NSLog("iOS DB: Legacy repair added WorkoutSession.cableCount")
-            }
-            SchemaHealStatus.ALREADY_PRESENT -> {
-                NSLog("iOS DB: WorkoutSession.cableCount already present")
-            }
-            SchemaHealStatus.TABLE_MISSING -> {
-                NSLog("iOS DB: WorkoutSession missing while repairing cableCount")
-            }
-            SchemaHealStatus.FAILED -> {
-                NSLog("iOS DB: cableCount repair warning: ${result.detail?.take(120) ?: "unknown"}")
+    private fun reconcileKnownLegacySchemaDrift(driver: SqlDriver): SqlDriver {
+        for (result in reconcileKnownLegacySchema(driver)) {
+            when (result.status) {
+                SchemaHealStatus.ADDED -> {
+                    NSLog("iOS DB: Legacy repair added ${result.operation.target}")
+                }
+                SchemaHealStatus.ALREADY_PRESENT -> {
+                    NSLog("iOS DB: Legacy repair confirmed ${result.operation.target}")
+                }
+                SchemaHealStatus.TABLE_MISSING -> {
+                    NSLog("iOS DB: Legacy repair deferred for ${result.operation.target} (table missing)")
+                }
+                SchemaHealStatus.FAILED -> {
+                    NSLog(
+                        "iOS DB: Legacy repair warning for ${result.operation.target}: " +
+                            (result.detail?.take(120) ?: "unknown")
+                    )
+                }
             }
         }
         return driver
