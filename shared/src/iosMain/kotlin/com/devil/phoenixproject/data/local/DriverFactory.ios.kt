@@ -112,7 +112,7 @@ actual class DriverFactory {
             recoverByDeletingDatabase()
         }
 
-        val readyDriver = repairKnownLegacySchemaOrRecover(driver)
+        val readyDriver = healKnownLegacyWorkoutSessionSchema(driver)
 
         // Post-creation pragmas
         applyPragmas(readyDriver)
@@ -166,33 +166,32 @@ actual class DriverFactory {
     }
 
     /**
-     * Repair the known legacy iOS schema drift from TestFlight build 20260315120.
+     * Heal the historical cableCount split created around migration 13.
      *
-     * That build stamped user_version=13 but omitted WorkoutSession.cableCount from the
-     * physical schema. Newer builds migrate from 13→current successfully, but SQLDelight
-     * still expects cableCount to exist when mapping WorkoutSession rows on startup.
+     * There are two real install cohorts in the field:
+     * 1. iOS builds that wrote WorkoutSession.cableCount while still stamping schema
+     *    version 13 during the manual-driver era.
+     * 2. installs that had already crossed migration 13 before cableCount was retrofitted
+     *    into the numbered migration, leaving newer user_version values without the column.
      *
-     * ## Root cause of previous crash-on-launch (March 2026):
-     *
-     * NativeSqliteDriver uses SEPARATE connection pools for reads and writes.
-     * `executeQuery()` (PRAGMA table_info) → reader pool.
-     * `execute()` (ALTER TABLE) → writer pool.
-     *
-     * After migrations add cableCount on the writer, the reader's schema cache is stale.
-     * `columnExists()` returned false → `ALTER TABLE ADD COLUMN` → "duplicate column" →
-     * nuclear recovery → fresh DB already has cableCount → same error on loop → crash.
-     *
-     * Fix: skip `columnExists()` entirely. Just attempt the ALTER TABLE and treat
-     * "duplicate column" as success. This avoids the reader/writer pool mismatch.
+     * We heal outside the numbered migration file using a replay-safe ALTER TABLE so both
+     * cohorts converge before SQLDelight starts reading WorkoutSession rows.
      */
-    private fun repairKnownLegacySchemaOrRecover(driver: SqlDriver): SqlDriver {
-        try {
-            driver.execute(null, "ALTER TABLE WorkoutSession ADD COLUMN cableCount INTEGER", 0)
-            NSLog("iOS DB: Legacy repair added WorkoutSession.cableCount")
-        } catch (e: Exception) {
-            // "duplicate column" = column already exists = nothing to do.
-            // Any other error = schema is unknown, but don't nuclear-delete (causes loop).
-            NSLog("iOS DB: cableCount repair: ${e.message?.take(120) ?: "unknown"}")
+    private fun healKnownLegacyWorkoutSessionSchema(driver: SqlDriver): SqlDriver {
+        val result = ensureWorkoutSessionCableCountColumn(driver)
+        when (result.status) {
+            SchemaHealStatus.ADDED -> {
+                NSLog("iOS DB: Legacy repair added WorkoutSession.cableCount")
+            }
+            SchemaHealStatus.ALREADY_PRESENT -> {
+                NSLog("iOS DB: WorkoutSession.cableCount already present")
+            }
+            SchemaHealStatus.TABLE_MISSING -> {
+                NSLog("iOS DB: WorkoutSession missing while repairing cableCount")
+            }
+            SchemaHealStatus.FAILED -> {
+                NSLog("iOS DB: cableCount repair warning: ${result.detail?.take(120) ?: "unknown"}")
+            }
         }
         return driver
     }

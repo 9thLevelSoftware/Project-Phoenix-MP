@@ -1,8 +1,11 @@
 -- Migration 13: MetricSample performance index
 -- Adds index on sessionId to accelerate session detail queries
 -- (selectMetricsBySession: WHERE sessionId = ? ORDER BY timestamp ASC)
+--
+-- NOTE:
+-- WorkoutSession.cableCount is intentionally healed outside this numbered migration.
+-- Migration 13 originally shipped as index-only. Retroactively adding cableCount here
+-- split existing installs into incompatible states, so platform drivers now repair the
+-- column idempotently on open instead.
 
 CREATE INDEX IF NOT EXISTS idx_metric_sample_session ON MetricSample(sessionId);
-
--- Add cable-count context for fallback session volume calculations.
-ALTER TABLE WorkoutSession ADD COLUMN cableCount INTEGER;

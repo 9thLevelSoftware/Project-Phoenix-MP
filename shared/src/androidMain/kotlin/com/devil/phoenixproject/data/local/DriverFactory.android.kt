@@ -29,6 +29,10 @@ actual class DriverFactory(private val context: Context) {
                     // Issue #246: 0.5.0 added RoutineExercise columns without a migration.
                     // Heal older v11 databases in-place so routines load correctly.
                     ensureRoutineExerciseBehaviorColumns(db)
+                    // Migration 13 was retroactively edited after release to add cableCount.
+                    // Heal the column here so both "version 13 + cableCount" and
+                    // "version 14+ without cableCount" installs converge safely.
+                    ensureWorkoutSessionCableCountColumn(db)
                 }
 
                 override fun onUpgrade(db: SupportSQLiteDatabase, oldVersion: Int, newVersion: Int) {
@@ -625,6 +629,20 @@ actual class DriverFactory(private val context: Context) {
                         column = "warmupSets",
                         definition = "TEXT NOT NULL DEFAULT ''"
                     )
+                }
+
+                private fun ensureWorkoutSessionCableCountColumn(db: SupportSQLiteDatabase) {
+                    val result = com.devil.phoenixproject.data.local.ensureWorkoutSessionCableCountColumn(createTempDriver(db))
+                    when (result.status) {
+                        SchemaHealStatus.ADDED ->
+                            Log.i(TAG, "Schema heal: added WorkoutSession.cableCount")
+                        SchemaHealStatus.ALREADY_PRESENT ->
+                            Log.d(TAG, "Schema heal: WorkoutSession.cableCount already present")
+                        SchemaHealStatus.TABLE_MISSING ->
+                            Log.w(TAG, "Schema heal: WorkoutSession missing while repairing cableCount")
+                        SchemaHealStatus.FAILED ->
+                            Log.w(TAG, "Schema heal failed for WorkoutSession.cableCount: ${result.detail}")
+                    }
                 }
 
                 private fun safeAddColumn(
