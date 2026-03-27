@@ -3,8 +3,8 @@ package com.devil.phoenixproject.testutil
 import com.devil.phoenixproject.data.repository.TrainingCycleRepository
 import com.devil.phoenixproject.domain.model.CycleDay
 import com.devil.phoenixproject.domain.model.CycleItem
-import com.devil.phoenixproject.domain.model.CycleProgression
 import com.devil.phoenixproject.domain.model.CycleProgress
+import com.devil.phoenixproject.domain.model.CycleProgression
 import com.devil.phoenixproject.domain.model.TrainingCycle
 import com.devil.phoenixproject.domain.model.currentTimeMillis
 import com.devil.phoenixproject.domain.model.generateUUID
@@ -50,11 +50,11 @@ class FakeTrainingCycleRepository : TrainingCycleRepository {
 
     // ========== TrainingCycleRepository interface implementation ==========
 
-    override fun getAllCycles(): Flow<List<TrainingCycle>> = _cyclesFlow
+    override fun getAllCycles(profileId: String): Flow<List<TrainingCycle>> = _cyclesFlow
 
     override suspend fun getCycleById(cycleId: String): TrainingCycle? = cycles[cycleId]
 
-    override fun getActiveCycle(): Flow<TrainingCycle?> = _activeCycleFlow
+    override fun getActiveCycle(profileId: String): Flow<TrainingCycle?> = _activeCycleFlow
 
     override suspend fun getCycleWithProgress(cycleId: String): Pair<TrainingCycle, CycleProgress?>? {
         val cycle = cycles[cycleId] ?: return null
@@ -73,7 +73,7 @@ class FakeTrainingCycleRepository : TrainingCycleRepository {
         updateFlows()
     }
 
-    override suspend fun setActiveCycle(cycleId: String) {
+    override suspend fun setActiveCycle(cycleId: String, profileId: String) {
         activeCycleId = cycleId
         // Reset progress on activation so deactivate/reactivate starts fresh
         if (cycleProgress.containsKey(cycleId)) {
@@ -95,9 +95,7 @@ class FakeTrainingCycleRepository : TrainingCycleRepository {
         updateFlows()
     }
 
-    override suspend fun getCycleDays(cycleId: String): List<CycleDay> {
-        return cycleDays[cycleId]?.sortedBy { it.dayNumber } ?: emptyList()
-    }
+    override suspend fun getCycleDays(cycleId: String): List<CycleDay> = cycleDays[cycleId]?.sortedBy { it.dayNumber } ?: emptyList()
 
     override suspend fun addCycleDay(day: CycleDay) {
         cycleDays.getOrPut(day.cycleId) { mutableListOf() }.add(day)
@@ -128,9 +126,7 @@ class FakeTrainingCycleRepository : TrainingCycleRepository {
         }
     }
 
-    override suspend fun getCycleProgress(cycleId: String): CycleProgress? {
-        return cycleProgress[cycleId]
-    }
+    override suspend fun getCycleProgress(cycleId: String): CycleProgress? = cycleProgress[cycleId]
 
     override suspend fun initializeProgress(cycleId: String): CycleProgress {
         val now = currentTimeMillis()
@@ -143,7 +139,7 @@ class FakeTrainingCycleRepository : TrainingCycleRepository {
             lastAdvancedAt = null,
             completedDays = emptySet(),
             missedDays = emptySet(),
-            rotationCount = 0
+            rotationCount = 0,
         )
         cycleProgress[cycleId] = progress
         return progress
@@ -168,7 +164,7 @@ class FakeTrainingCycleRepository : TrainingCycleRepository {
                 lastAdvancedAt = null,
                 completedDays = emptySet(),
                 missedDays = emptySet(),
-                rotationCount = 0
+                rotationCount = 0,
             )
         }
     }
@@ -176,7 +172,7 @@ class FakeTrainingCycleRepository : TrainingCycleRepository {
     override suspend fun jumpToDay(cycleId: String, dayNumber: Int) {
         cycleProgress[cycleId]?.let { progress ->
             cycleProgress[cycleId] = progress.copy(
-                currentDayNumber = dayNumber
+                currentDayNumber = dayNumber,
             )
         }
     }
@@ -209,9 +205,7 @@ class FakeTrainingCycleRepository : TrainingCycleRepository {
         return updated
     }
 
-    override suspend fun getCycleProgression(cycleId: String): CycleProgression? {
-        return cycleProgressions[cycleId]
-    }
+    override suspend fun getCycleProgression(cycleId: String): CycleProgression? = cycleProgressions[cycleId]
 
     override suspend fun saveCycleProgression(progression: CycleProgression) {
         cycleProgressions[progression.cycleId] = progression
@@ -228,12 +222,12 @@ class FakeTrainingCycleRepository : TrainingCycleRepository {
             CycleItem.fromCycleDay(
                 day = day,
                 routineName = day.routineId,
-                exerciseCount = 0
+                exerciseCount = 0,
             )
         }
     }
 
-    override suspend fun clearActiveCycle() {
+    override suspend fun clearActiveCycle(profileId: String) {
         activeCycleId = null
         updateFlows()
     }

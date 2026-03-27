@@ -21,6 +21,9 @@
     <!-- Internet permission -->
     <uses-permission android:name="android.permission.INTERNET" />
 
+    <!-- Network state permission for connectivity checks -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+
     <!-- Foreground service permissions -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
