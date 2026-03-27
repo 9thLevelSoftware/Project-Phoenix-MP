@@ -102,13 +102,12 @@ actual class DriverFactory {
             // to the last successful step, but NativeSqliteDriver would overwrite it to
             // targetVersion if we returned normally. By throwing, we land here instead.
             NSLog("iOS DB: Migration failed at version ${e.stoppedAtVersion} (target ${e.targetVersion})")
-            NSLog("iOS DB: Falling back to nuclear recovery (database delete + recreate)")
-            NSLog("iOS DB: Data will be recovered via Supabase sync on next login")
+            NSLog("iOS DB: Falling back to nuclear recovery (backup + delete + recreate)")
             recoverByDeletingDatabase()
         } catch (e: Exception) {
             // Something more fundamental went wrong (corrupt DB, disk I/O, etc.)
             NSLog("iOS DB: Driver creation failed (${e::class.simpleName}: ${e.message?.take(200)})")
-            NSLog("iOS DB: Falling back to nuclear recovery (database delete + recreate)")
+            NSLog("iOS DB: Falling back to nuclear recovery (backup + delete + recreate)")
             recoverByDeletingDatabase()
         }
 
@@ -125,12 +124,16 @@ actual class DriverFactory {
     }
 
     /**
-     * Nuclear recovery: delete the database and all associated files, then create fresh.
+     * Nuclear recovery: back up the database, then delete and recreate fresh.
      * This is the LAST RESORT when the SAVEPOINT mechanism itself fails -- meaning the
-     * database is likely corrupted beyond repair. Data can be recovered via Supabase sync.
+     * database is likely corrupted beyond repair.
+     *
+     * The backup is preserved at `vitruvian.db.backup` in the same directory so data
+     * can be recovered manually or restored once cloud sync is available.
      */
     private fun recoverByDeletingDatabase(): SqlDriver {
-        NSLog("iOS DB: NUCLEAR RECOVERY - Deleting database for fresh creation")
+        NSLog("iOS DB: NUCLEAR RECOVERY - Backing up database before fresh creation")
+        backupDatabaseFiles()
         deleteAllDatabaseFiles()
 
         return try {
@@ -232,6 +235,37 @@ actual class DriverFactory {
     }
 
     // ==================== File Operations ====================
+
+    /**
+     * Copy the main database file to a .backup suffix before nuclear recovery.
+     * This preserves user workout data on disk even when the active database is
+     * deleted and recreated. The backup can be restored manually or via a future
+     * recovery feature once cloud sync is available.
+     */
+    @OptIn(ExperimentalForeignApi::class)
+    private fun backupDatabaseFiles() {
+        val dbPath = getDatabasePath()
+        val backupPath = "$dbPath.backup"
+        val fileManager = NSFileManager.defaultManager
+
+        if (!fileManager.fileExistsAtPath(dbPath)) {
+            NSLog("iOS DB: No database file to back up")
+            return
+        }
+
+        try {
+            // Remove any previous backup so copy doesn't fail with "file exists"
+            if (fileManager.fileExistsAtPath(backupPath)) {
+                fileManager.removeItemAtPath(backupPath, null)
+            }
+            fileManager.copyItemAtPath(dbPath, toPath = backupPath, error = null)
+            NSLog("iOS DB: Database backed up to $backupPath")
+        } catch (e: Exception) {
+            NSLog("iOS DB: WARNING - Failed to back up database: ${e.message?.take(120)}")
+            // Continue with nuclear recovery even if backup fails — a fresh DB
+            // is better than a perpetually crashing app.
+        }
+    }
 
     /**
      * Delete all database files (main, WAL, SHM).
@@ -393,7 +427,11 @@ private class SavepointMigratingSchema(
         when (targetStep) {
             10L -> preFlightMigration10(driver)
             11L -> ensureGamificationTablesExist(driver)
-            22L -> ensureGamificationTablesExist(driver)
+            21L -> preFlightMigration21(driver)
+            22L -> {
+                ensureGamificationTablesExist(driver)
+                preFlightMigration22(driver)
+            }
         }
     }
 
@@ -426,6 +464,66 @@ private class SavepointMigratingSchema(
                     // Expected on replay — column already exists from prior migration 4 or 7
                 } else {
                     NSLog("iOS DB: Pre-flight ALTER warning: ${e.message?.take(80)}")
+                }
+            }
+        }
+    }
+
+    /**
+     * Migration 21 creates indexes on profile_id for 6 tables, but the profile_id
+     * columns themselves are added via schema healing which runs AFTER migrations.
+     * For upgrade users whose DB is at version ≤20, the columns don't exist yet
+     * when migration 21 runs, causing "no such column: profile_id" failures.
+     *
+     * This pre-flight adds the columns before migration 21's index creation,
+     * matching the established pattern from preFlightMigration10.
+     */
+    private fun preFlightMigration21(driver: SqlDriver) {
+        val columns = listOf(
+            "ALTER TABLE WorkoutSession ADD COLUMN profile_id TEXT NOT NULL DEFAULT 'default'",
+            "ALTER TABLE PersonalRecord ADD COLUMN profile_id TEXT NOT NULL DEFAULT 'default'",
+            "ALTER TABLE Routine ADD COLUMN profile_id TEXT NOT NULL DEFAULT 'default'",
+            "ALTER TABLE TrainingCycle ADD COLUMN profile_id TEXT NOT NULL DEFAULT 'default'",
+            "ALTER TABLE AssessmentResult ADD COLUMN profile_id TEXT NOT NULL DEFAULT 'default'",
+            "ALTER TABLE ProgressionEvent ADD COLUMN profile_id TEXT NOT NULL DEFAULT 'default'",
+        )
+        for (sql in columns) {
+            try {
+                driver.execute(null, sql, 0)
+                NSLog("iOS DB: Pre-flight profile_id added: ${sql.substringAfter("ALTER TABLE ").substringBefore(" ADD")}")
+            } catch (e: Exception) {
+                val msg = e.message?.lowercase() ?: ""
+                if (msg.contains("duplicate column") || msg.contains("already exists")) {
+                    // Expected — column already present from healing or fresh install
+                } else {
+                    NSLog("iOS DB: Pre-flight ALTER warning (migration 21): ${e.message?.take(80)}")
+                }
+            }
+        }
+    }
+
+    /**
+     * Migration 22 creates indexes on profile_id for gamification tables.
+     * Same timing issue as migration 21 — the columns don't exist yet for
+     * upgrade users. This pre-flight adds them before the index creation.
+     */
+    private fun preFlightMigration22(driver: SqlDriver) {
+        val columns = listOf(
+            "ALTER TABLE EarnedBadge ADD COLUMN profile_id TEXT NOT NULL DEFAULT 'default'",
+            "ALTER TABLE StreakHistory ADD COLUMN profile_id TEXT NOT NULL DEFAULT 'default'",
+            "ALTER TABLE RpgAttributes ADD COLUMN profile_id TEXT NOT NULL DEFAULT 'default'",
+            "ALTER TABLE GamificationStats ADD COLUMN profile_id TEXT NOT NULL DEFAULT 'default'",
+        )
+        for (sql in columns) {
+            try {
+                driver.execute(null, sql, 0)
+                NSLog("iOS DB: Pre-flight profile_id added: ${sql.substringAfter("ALTER TABLE ").substringBefore(" ADD")}")
+            } catch (e: Exception) {
+                val msg = e.message?.lowercase() ?: ""
+                if (msg.contains("duplicate column") || msg.contains("already exists")) {
+                    // Expected — column already present from healing or fresh install
+                } else {
+                    NSLog("iOS DB: Pre-flight ALTER warning (migration 22): ${e.message?.take(80)}")
                 }
             }
         }

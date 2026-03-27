@@ -474,6 +474,25 @@ actual class DriverFactory(private val context: Context) {
                             "ALTER TABLE RoutineExercise ADD COLUMN prTypeForScaling TEXT NOT NULL DEFAULT 'MAX_WEIGHT'",
                             "ALTER TABLE RoutineExercise ADD COLUMN setWeightsPercentOfPR TEXT"
                         )
+                        21 -> listOf(
+                            // Migration 21 creates indexes on profile_id, but the columns are
+                            // added via schema healing which runs AFTER migrations. For upgrade
+                            // users at version ≤20, profile_id doesn't exist yet — add it here.
+                            "ALTER TABLE WorkoutSession ADD COLUMN profile_id TEXT NOT NULL DEFAULT 'default'",
+                            "ALTER TABLE PersonalRecord ADD COLUMN profile_id TEXT NOT NULL DEFAULT 'default'",
+                            "ALTER TABLE Routine ADD COLUMN profile_id TEXT NOT NULL DEFAULT 'default'",
+                            "ALTER TABLE TrainingCycle ADD COLUMN profile_id TEXT NOT NULL DEFAULT 'default'",
+                            "ALTER TABLE AssessmentResult ADD COLUMN profile_id TEXT NOT NULL DEFAULT 'default'",
+                            "ALTER TABLE ProgressionEvent ADD COLUMN profile_id TEXT NOT NULL DEFAULT 'default'"
+                        )
+                        22 -> listOf(
+                            // Migration 22 creates indexes on profile_id for gamification tables.
+                            // Same timing issue as migration 21.
+                            "ALTER TABLE EarnedBadge ADD COLUMN profile_id TEXT NOT NULL DEFAULT 'default'",
+                            "ALTER TABLE StreakHistory ADD COLUMN profile_id TEXT NOT NULL DEFAULT 'default'",
+                            "ALTER TABLE RpgAttributes ADD COLUMN profile_id TEXT NOT NULL DEFAULT 'default'",
+                            "ALTER TABLE GamificationStats ADD COLUMN profile_id TEXT NOT NULL DEFAULT 'default'"
+                        )
                         else -> emptyList()
                     }
 
@@ -584,7 +603,7 @@ actual class DriverFactory(private val context: Context) {
                 }
 
                 private fun reconcileKnownLegacySchemaDrift(db: SupportSQLiteDatabase) {
-                    for (result in com.devil.phoenixproject.data.local.reconcileKnownLegacySchema(createTempDriver(db))) {
+                    for (result in reconcileKnownLegacySchema(createTempDriver(db))) {
                         when (result.status) {
                             SchemaHealStatus.ADDED ->
                                 Log.i(TAG, "Schema heal: added ${result.operation.target}")
