@@ -37,14 +37,8 @@ object BlePacketCapture {
 
     private val log = Logger.withTag("BlePacketCapture")
 
-    data class CapturedPacket(
-        val timestampMs: Long,
-        val rawBytes: ByteArray,
-        val hex: String,
-        val size: Int
-    ) {
-        override fun equals(other: Any?): Boolean =
-            other is CapturedPacket && timestampMs == other.timestampMs && hex == other.hex
+    data class CapturedPacket(val timestampMs: Long, val rawBytes: ByteArray, val hex: String, val size: Int) {
+        override fun equals(other: Any?): Boolean = other is CapturedPacket && timestampMs == other.timestampMs && hex == other.hex
         override fun hashCode(): Int = 31 * timestampMs.hashCode() + hex.hashCode()
     }
 
@@ -53,7 +47,7 @@ object BlePacketCapture {
     private var knownWeight = 0.0f
     private var description = ""
     private val packets = mutableListOf<CapturedPacket>()
-    private var maxPackets = 500  // Safety limit
+    private var maxPackets = 500 // Safety limit
     private var startTime = 0L
 
     /**
@@ -83,7 +77,9 @@ object BlePacketCapture {
         val result = packets.toList()
 
         log.i { "=== CAPTURE STOPPED === ${result.size} packets in ${elapsed}ms" }
-        log.i { "Average rate: ${if (elapsed > 0) result.size * 1000 / elapsed else 0} packets/sec" }
+        log.i {
+            "Average rate: ${if (elapsed > 0) result.size * 1000 / elapsed else 0} packets/sec"
+        }
 
         // Log size distribution
         val sizes = result.groupBy { it.size }.mapValues { it.value.size }
@@ -94,7 +90,9 @@ object BlePacketCapture {
         for ((index, pkt) in result.withIndex()) {
             val relTime = pkt.timestampMs - startTime
             log.i { "CAPTURE_HEX[$index] t=${relTime}ms size=${pkt.size}: ${pkt.hex}" }
-            log.i { "CapturedSample(\"${pkt.hex}\", ${knownWeight}f, \"$description #$index at ${relTime}ms\")," }
+            log.i {
+                "CapturedSample(\"${pkt.hex}\", ${knownWeight}f, \"$description #$index at ${relTime}ms\"),"
+            }
         }
         log.i { "=== END CAPTURE DATA ===" }
 
@@ -119,7 +117,7 @@ object BlePacketCapture {
             timestampMs = currentTimeMillis(),
             rawBytes = data.copyOf(),
             hex = hex,
-            size = data.size
+            size = data.size,
         )
         packets.add(packet)
 
@@ -143,19 +141,21 @@ object BlePacketCapture {
         val ticksHigh = getUInt16LE(data, 2)
         val ticks = ticksLow + (ticksHigh shl 16)
         val pPosA = getInt16LE(data, 4) / 10.0f
-        val skippedA = getInt16LE(data, 6)   // Firmware velocity A
+        val skippedA = getInt16LE(data, 6) // Firmware velocity A
         val pLoadA = getUInt16LE(data, 8) / 100.0f
-        val skippedB = getInt16LE(data, 12)  // Firmware velocity B
+        val skippedB = getInt16LE(data, 12) // Firmware velocity B
 
         // Extra bytes (18+) — unknown, log for investigation
         val extraHex = if (data.size > 18) {
             data.copyOfRange(18, data.size).toHex(" ")
-        } else "none"
+        } else {
+            "none"
+        }
 
         log.d {
             "CAPTURE[$index] ${data.size}B | " +
-            "t=$ticks posA=${pPosA}mm velA=$skippedA velB=$skippedB loadA=${pLoadA}kg | " +
-            "extra=[${extraHex}]"
+                "t=$ticks posA=${pPosA}mm velA=$skippedA velB=$skippedB loadA=${pLoadA}kg | " +
+                "extra=[$extraHex]"
         }
     }
 
@@ -166,6 +166,5 @@ object BlePacketCapture {
     val packetCount: Int get() = packets.size
 
     /** KMP-compatible hex conversion for ByteArray. */
-    private fun ByteArray.toHex(separator: String = ""): String =
-        joinToString(separator) { (it.toInt() and 0xFF).toString(16).padStart(2, '0').uppercase() }
+    private fun ByteArray.toHex(separator: String = ""): String = joinToString(separator) { (it.toInt() and 0xFF).toString(16).padStart(2, '0').uppercase() }
 }

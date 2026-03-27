@@ -23,10 +23,7 @@ class AssessmentEngine {
      * @param config Assessment configuration parameters
      * @return Assessment result with estimated 1RM, or null if insufficient/invalid data
      */
-    fun estimateOneRepMax(
-        points: List<LoadVelocityPoint>,
-        config: AssessmentConfig = AssessmentConfig()
-    ): AssessmentResult? {
+    fun estimateOneRepMax(points: List<LoadVelocityPoint>, config: AssessmentConfig = AssessmentConfig()): AssessmentResult? {
         if (points.size < config.minSets) return null
 
         val n = points.size.toDouble()
@@ -64,7 +61,7 @@ class AssessmentEngine {
             estimatedOneRepMaxKg = estimatedLoad.toFloat(),
             loadVelocityPoints = points,
             r2 = r2,
-            velocityAt1RM = config.oneRmVelocityMs
+            velocityAt1RM = config.oneRmVelocityMs,
         )
     }
 
@@ -75,12 +72,7 @@ class AssessmentEngine {
      * @param config Assessment configuration parameters
      * @return true if velocity is at or below the stop threshold
      */
-    fun shouldStopAssessment(
-        latestVelocity: Float,
-        config: AssessmentConfig = AssessmentConfig()
-    ): Boolean {
-        return latestVelocity <= config.velocityThresholdMs
-    }
+    fun shouldStopAssessment(latestVelocity: Float, config: AssessmentConfig = AssessmentConfig()): Boolean = latestVelocity <= config.velocityThresholdMs
 
     /**
      * Suggest the next weight for the assessment based on current velocity.
@@ -98,11 +90,7 @@ class AssessmentEngine {
      * @param config Assessment configuration parameters
      * @return Suggested weight for next set in kilograms
      */
-    fun suggestNextWeight(
-        currentLoadKg: Float,
-        currentVelocity: Float,
-        config: AssessmentConfig = AssessmentConfig()
-    ): Float {
+    fun suggestNextWeight(currentLoadKg: Float, currentVelocity: Float, config: AssessmentConfig = AssessmentConfig()): Float {
         val increment = when {
             currentVelocity > 0.8f -> config.weightIncrementKg * 2f
             currentVelocity > 0.5f -> config.weightIncrementKg

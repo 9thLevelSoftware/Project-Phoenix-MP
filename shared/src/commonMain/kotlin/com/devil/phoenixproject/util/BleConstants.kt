@@ -8,7 +8,7 @@ import kotlin.uuid.Uuid
  * BLE Constants - UUIDs and configuration values for Vitruvian device communication
  * Based on Phoenix Backend (deobfuscated official app)
  */
-@Suppress("unused")  // Protocol reference constants - many are kept for documentation
+@Suppress("unused") // Protocol reference constants - many are kept for documentation
 @OptIn(ExperimentalUuidApi::class)
 object BleConstants {
     // Service UUIDs (String)
@@ -43,7 +43,7 @@ object BleConstants {
         REPS_CHAR_UUID_STRING,
         HEURISTIC_CHAR_UUID_STRING,
         BLE_UPDATE_REQUEST_CHAR_UUID_STRING,
-        UNKNOWN_AUTH_CHAR_UUID_STRING  // Web apps subscribe to this
+        UNKNOWN_AUTH_CHAR_UUID_STRING, // Web apps subscribe to this
     )
 
     // Device name pattern for filtering - matches "Vitruvian*" devices
@@ -52,10 +52,10 @@ object BleConstants {
 
     // Command IDs (Official Protocol from Phoenix Backend)
     object Commands {
-        const val STOP_COMMAND: Byte = 0x50        // Stop/halt (official app)
-        const val RESET_COMMAND: Byte = 0x0A       // Reset/init (web app stop) - recovery fallback
-        const val REGULAR_COMMAND: Byte = 0x4F    // 25-byte packet (79 decimal)
-        const val ECHO_COMMAND: Byte = 0x4E       // 29-byte packet (78 decimal)
+        const val STOP_COMMAND: Byte = 0x50 // Stop/halt (official app)
+        const val RESET_COMMAND: Byte = 0x0A // Reset/init (web app stop) - recovery fallback
+        const val REGULAR_COMMAND: Byte = 0x4F // 25-byte packet (79 decimal)
+        const val ECHO_COMMAND: Byte = 0x4E // 29-byte packet (78 decimal)
         const val ACTIVATION_COMMAND: Byte = 0x04 // 96-byte packet
         const val DEFAULT_ROM_REP_COUNT: Byte = 3
     }
@@ -83,29 +83,36 @@ object BleConstants {
      */
     object ActivationPacket {
         const val SIZE = 96
-        const val OFFSET_MODE_PROFILE = 0x30   // 32 bytes (concentric + eccentric phases)
+        const val OFFSET_MODE_PROFILE = 0x30 // 32 bytes (concentric + eccentric phases)
+
         // Firmware force config (overlaps end of mode profile — write AFTER profile copy)
-        const val OFFSET_SOFT_MAX = 0x48       // Weight ceiling (float LE) — caps progression
-        const val OFFSET_INCREMENT = 0x4C      // Per-rep progression kg (float LE)
+        const val OFFSET_SOFT_MAX = 0x48 // Weight ceiling (float LE) — caps progression
+        const val OFFSET_INCREMENT = 0x4C // Per-rep progression kg (float LE)
+
         // Force config block
-        const val OFFSET_FORCE_MIN = 0x50      // 0.0f in activation packets
-        const val OFFSET_FORCE_MAX = 0x54      // adjustedWeight + 10.0f (force ceiling)
-        const val OFFSET_TARGET_WEIGHT = 0x58  // adjustedWeight (actual operating weight)
-        const val OFFSET_PROGRESSION = 0x5C    // progressionRegressionKg
+        const val OFFSET_FORCE_MIN = 0x50 // 0.0f in activation packets
+        const val OFFSET_FORCE_MAX = 0x54 // adjustedWeight + 10.0f (force ceiling)
+        const val OFFSET_TARGET_WEIGHT = 0x58 // adjustedWeight (actual operating weight)
+        const val OFFSET_PROGRESSION = 0x5C // progressionRegressionKg
     }
 
     // Legacy aliases for backward compatibility
-    @Suppress("unused") const val CMD_REGULAR = 0x4F
-    @Suppress("unused") const val CMD_ECHO = 0x4E
-    @Suppress("unused") const val CMD_STOP = 0x50
+    @Suppress("unused")
+    const val CMD_REGULAR = 0x4F
+
+    @Suppress("unused")
+    const val CMD_ECHO = 0x4E
+
+    @Suppress("unused")
+    const val CMD_STOP = 0x50
 
     // Data Protocol Constants (from Phoenix Backend)
-    @Suppress("unused")  // Protocol reference documentation
+    @Suppress("unused") // Protocol reference documentation
     object DataProtocol {
         // Scaling factors for cable data
-        const val POSITION_SCALE = 10.0  // divide raw by 10 for mm
-        const val VELOCITY_SCALE = 10.0  // divide raw by 10 for mm/s
-        const val FORCE_SCALE = 100.0    // divide raw by 100 for percentage
+        const val POSITION_SCALE = 10.0 // divide raw by 10 for mm
+        const val VELOCITY_SCALE = 10.0 // divide raw by 10 for mm/s
+        const val FORCE_SCALE = 100.0 // divide raw by 100 for percentage
 
         // Valid ranges
         const val POSITION_MIN = -1000.0
@@ -116,8 +123,8 @@ object BleConstants {
         const val FORCE_MAX = 100.0
 
         // Data sizes
-        const val CABLE_DATA_SIZE = 6     // 3 x Int16
-        const val SAMPLE_DATA_SIZE = 28   // 2 cables + timestamp + status
+        const val CABLE_DATA_SIZE = 6 // 3 x Int16
+        const val SAMPLE_DATA_SIZE = 28 // 2 cables + timestamp + status
         const val REPS_DATA_SIZE = 24
     }
 
@@ -137,8 +144,8 @@ object BleConstants {
     val NUS_SERVICE_UUID = Uuid.parse(NUS_SERVICE_UUID_STRING)
 
     // Primary Characteristic UUIDs
-    val NUS_TX_UUID = Uuid.parse(NUS_RX_CHAR_UUID_STRING)  // Write to device (app TX = device RX, hence NUS_RX_CHAR_UUID_STRING for 6e400002)
-    val NUS_RX_UUID = Uuid.parse("6e400003-b5a3-f393-e0a9-e50e24dcca9e")  // Standard NUS RX (not used by Vitruvian)
+    val NUS_TX_UUID = Uuid.parse(NUS_RX_CHAR_UUID_STRING) // Write to device (app TX = device RX, hence NUS_RX_CHAR_UUID_STRING for 6e400002)
+    val NUS_RX_UUID = Uuid.parse("6e400003-b5a3-f393-e0a9-e50e24dcca9e") // Standard NUS RX (not used by Vitruvian)
     val MONITOR_UUID = Uuid.parse(SAMPLE_CHAR_UUID_STRING)
     val REPS_UUID = Uuid.parse(REPS_CHAR_UUID_STRING)
 
@@ -160,14 +167,14 @@ object BleConstants {
     // -------------------------------------------------------------------------
     object Timing {
         const val CONNECTION_RETRY_COUNT = 3
-        const val CONNECTION_RETRY_DELAY_MS = 1500L  // Android BLE needs 1-2s between GATT retries
-        const val DESIRED_MTU = 247  // Match parent repo (needs 100+ for 96-byte program frames)
+        const val CONNECTION_RETRY_DELAY_MS = 1500L // Android BLE needs 1-2s between GATT retries
+        const val DESIRED_MTU = 247 // Match parent repo (needs 100+ for 96-byte program frames)
         const val HEARTBEAT_INTERVAL_MS = 2000L
         const val HEARTBEAT_READ_TIMEOUT_MS = 1500L
         const val DELOAD_EVENT_DEBOUNCE_MS = 2000L
-        const val DIAGNOSTIC_POLL_INTERVAL_MS = 500L  // Keep-alive polling (matching parent)
-        const val HEURISTIC_POLL_INTERVAL_MS = 250L   // Force telemetry polling (4Hz - matching parent repo)
-        const val DIAGNOSTIC_LOG_EVERY = 20L          // Log diagnostic poll success every N reads
+        const val DIAGNOSTIC_POLL_INTERVAL_MS = 500L // Keep-alive polling (matching parent)
+        const val HEURISTIC_POLL_INTERVAL_MS = 250L // Force telemetry polling (4Hz - matching parent repo)
+        const val DIAGNOSTIC_LOG_EVERY = 20L // Log diagnostic poll success every N reads
         const val STATE_TRANSITION_DWELL_MS = 200L
         const val WAITING_FOR_REST_TIMEOUT_MS = 3000L
         const val MAX_CONSECUTIVE_TIMEOUTS = 5
@@ -179,27 +186,28 @@ object BleConstants {
     object Thresholds {
         // Handle detection thresholds (from parent repo - proven working)
         // Position values are in mm (raw / 10.0f), so thresholds are in mm
-        const val HANDLE_GRABBED_THRESHOLD = 8.0    // Position > 8.0mm = handles grabbed
-        const val HANDLE_REST_THRESHOLD = 5.0       // Position < 5.0mm = handles at rest
+        const val HANDLE_GRABBED_THRESHOLD = 8.0 // Position > 8.0mm = handles grabbed
+        const val HANDLE_REST_THRESHOLD = 5.0 // Position < 5.0mm = handles at rest
+
         // Velocity is in mm/s (calculated from mm positions)
-        const val VELOCITY_THRESHOLD = 50.0         // Velocity > 50 mm/s = significant movement
-        const val AUTO_START_VELOCITY_THRESHOLD = 20.0  // Lower threshold for auto-start grab detection
+        const val VELOCITY_THRESHOLD = 50.0 // Velocity > 50 mm/s = significant movement
+        const val AUTO_START_VELOCITY_THRESHOLD = 20.0 // Lower threshold for auto-start grab detection
 
         // Velocity smoothing (Issue #204, #214)
         // EMA alpha: 0.3 = balanced smoothing (faster response during direction changes)
         const val VELOCITY_SMOOTHING_ALPHA = 0.3
 
         // Sample validation
-        const val POSITION_SPIKE_THRESHOLD = 50000  // BLE error filter
-        const val MIN_POSITION = -1000              // Valid position range
-        const val MAX_POSITION = 1000               // Valid position range
-        const val POSITION_JUMP_THRESHOLD = 20.0f   // Max allowed position change between samples (mm)
+        const val POSITION_SPIKE_THRESHOLD = 50000 // BLE error filter
+        const val MIN_POSITION = -1000 // Valid position range
+        const val MAX_POSITION = 1000 // Valid position range
+        const val POSITION_JUMP_THRESHOLD = 20.0f // Max allowed position change between samples (mm)
 
         // Load validation
-        const val MAX_WEIGHT_KG = 220.0f  // Trainer+ hardware limit
+        const val MAX_WEIGHT_KG = 220.0f // Trainer+ hardware limit
 
         // Handle state hysteresis - Issue #176: Dynamic baseline threshold for overhead pulley setups
-        const val GRAB_DELTA_THRESHOLD = 10.0   // Position change (mm) to detect grab
+        const val GRAB_DELTA_THRESHOLD = 10.0 // Position change (mm) to detect grab
         const val RELEASE_DELTA_THRESHOLD = 5.0 // Position must return within 5mm of baseline
     }
 

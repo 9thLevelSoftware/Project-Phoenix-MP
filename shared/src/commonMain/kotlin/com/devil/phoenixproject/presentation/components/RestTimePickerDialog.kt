@@ -16,8 +16,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import org.jetbrains.compose.resources.stringResource
-import vitruvianprojectphoenix.shared.generated.resources.Res
 import vitruvianprojectphoenix.shared.generated.resources.*
+import vitruvianprojectphoenix.shared.generated.resources.Res
 
 /**
  * Dialog for selecting rest time from chip options.
@@ -32,7 +32,7 @@ fun RestTimePickerDialog(
     onDismiss: () -> Unit,
     options: List<Int> = listOf(0, 5, 10, 15, 20, 25, 30),
     title: String = stringResource(Res.string.rest_between_exercises),
-    formatLabel: (Int) -> String = { "${it}s" }
+    formatLabel: (Int) -> String = { "${it}s" },
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -40,27 +40,29 @@ fun RestTimePickerDialog(
         text = {
             FlowRow(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
+                verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 options.forEach { seconds ->
                     val isSelected = seconds == currentRestSeconds
                     Surface(
                         modifier = Modifier.clickable { onSelect(seconds) },
                         shape = RoundedCornerShape(20.dp),
-                        color = if (isSelected)
+                        color = if (isSelected) {
                             MaterialTheme.colorScheme.primaryContainer
-                        else
+                        } else {
                             MaterialTheme.colorScheme.surfaceVariant
+                        },
                     ) {
                         Text(
                             text = formatLabel(seconds),
                             style = MaterialTheme.typography.bodyLarge,
                             fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                            color = if (isSelected)
+                            color = if (isSelected) {
                                 MaterialTheme.colorScheme.onPrimaryContainer
-                            else
-                                MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp)
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            },
+                            modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp),
                         )
                     }
                 }
@@ -71,6 +73,6 @@ fun RestTimePickerDialog(
             TextButton(onClick = onDismiss) {
                 Text(stringResource(Res.string.action_cancel))
             }
-        }
+        },
     )
 }

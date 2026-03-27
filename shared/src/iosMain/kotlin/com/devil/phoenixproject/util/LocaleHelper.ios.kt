@@ -12,7 +12,9 @@ actual fun applyAppLocale(languageCode: String) {
     } else {
         // Set preferred language. Takes effect on next app launch.
         defaults.setObject(listOf(languageCode), forKey = "AppleLanguages")
-        Logger.d("LocaleHelper") { "Set AppleLanguages to [$languageCode] (effective on next launch)" }
+        Logger.d("LocaleHelper") {
+            "Set AppleLanguages to [$languageCode] (effective on next launch)"
+        }
     }
     defaults.synchronize()
 }

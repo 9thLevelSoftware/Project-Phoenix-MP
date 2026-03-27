@@ -14,9 +14,7 @@ import org.junit.runner.Description
  * Sets up the Main dispatcher for ViewModel testing.
  */
 @OptIn(ExperimentalCoroutinesApi::class)
-class TestCoroutineRule(
-    val dispatcher: TestDispatcher = StandardTestDispatcher()
-) : TestWatcher() {
+class TestCoroutineRule(val dispatcher: TestDispatcher = StandardTestDispatcher()) : TestWatcher() {
 
     override fun starting(description: Description) {
         super.starting(description)

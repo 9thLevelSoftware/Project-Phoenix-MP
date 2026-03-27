@@ -1,15 +1,14 @@
 package com.devil.phoenixproject.presentation.manager
 
 import co.touchlab.kermit.Logger
-import com.devil.phoenixproject.getPlatform
 import com.devil.phoenixproject.data.integration.ExternalActivityRepository
 import com.devil.phoenixproject.data.integration.HealthIntegration
 import com.devil.phoenixproject.data.preferences.PreferencesManager
+import com.devil.phoenixproject.data.repository.BiomechanicsRepository
 import com.devil.phoenixproject.data.repository.BleRepository
+import com.devil.phoenixproject.data.repository.CompletedSetRepository
 import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.data.repository.PersonalRecordRepository
-import com.devil.phoenixproject.data.repository.CompletedSetRepository
-import com.devil.phoenixproject.data.repository.BiomechanicsRepository
 import com.devil.phoenixproject.data.repository.RepMetricRepository
 import com.devil.phoenixproject.data.repository.TrainingCycleRepository
 import com.devil.phoenixproject.data.repository.UserProfileRepository
@@ -18,11 +17,11 @@ import com.devil.phoenixproject.data.sync.SyncTriggerManager
 import com.devil.phoenixproject.domain.model.*
 import com.devil.phoenixproject.domain.usecase.RepCounterFromMachine
 import com.devil.phoenixproject.domain.usecase.ResolveRoutineWeightsUseCase
+import com.devil.phoenixproject.getPlatform
 import com.devil.phoenixproject.util.DataBackupManager
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.launch
 
@@ -38,8 +37,8 @@ data class JustLiftDefaults(
     val eccentricLoadPercentage: Int = 100,
     val echoLevelValue: Int = 1, // 0=Hard, 1=Harder, 2=Hardest, 3=Epic
     val stallDetectionEnabled: Boolean = true, // Stall detection auto-stop toggle
-    val repCountTimingName: String = "TOP",  // RepCountTiming enum name for persistence
-    val restSeconds: Int = 60  // Rest timer between sets (0 = off, 5-300 in 5s increments)
+    val repCountTimingName: String = "TOP", // RepCountTiming enum name for persistence
+    val restSeconds: Int = 60, // Rest timer between sets (0 = off, 5-300 in 5s increments)
 ) {
     /**
      * Convert stored mode ID to ProgramMode
@@ -94,19 +93,14 @@ data class ResumableProgressInfo(
     val currentSet: Int,
     val totalSets: Int,
     val currentExercise: Int,
-    val totalExercises: Int
+    val totalExercises: Int,
 )
 
 /**
  * Event emitted when a training cycle day is completed after a workout.
  * Consumed by TrainingCyclesScreen to show completion feedback.
  */
-data class CycleDayCompletionEvent(
-    val dayNumber: Int,
-    val dayName: String?,
-    val isRotationComplete: Boolean,
-    val rotationCount: Int
-)
+data class CycleDayCompletionEvent(val dayNumber: Int, val dayName: String?, val isRotationComplete: Boolean, val rotationCount: Int)
 
 // ===== DefaultWorkoutSessionManager =====
 
@@ -142,8 +136,8 @@ class DefaultWorkoutSessionManager(
     private val scope: CoroutineScope,
     private val _hapticEvents: MutableSharedFlow<HapticEvent> = MutableSharedFlow(
         extraBufferCapacity = 10,
-        onBufferOverflow = kotlinx.coroutines.channels.BufferOverflow.DROP_OLDEST
-    )
+        onBufferOverflow = kotlinx.coroutines.channels.BufferOverflow.DROP_OLDEST,
+    ),
 ) : WorkoutStateProvider {
     private val isIosPlatform = getPlatform().name.startsWith("iOS")
     private var summaryAutoAdvanceJob: Job? = null
@@ -160,14 +154,24 @@ class DefaultWorkoutSessionManager(
         completedSetRepository = completedSetRepository,
         settingsManager = settingsManager,
         userProfileRepository = userProfileRepository,
-        scope = scope
+        scope = scope,
     ).also { rfm ->
         rfm.lifecycleDelegate = object : RoutineFlowManager.WorkoutLifecycleDelegate {
-            override fun resetRepCounter() { repCounter.reset() }
-            override fun startWorkout(skipCountdown: Boolean) { this@DefaultWorkoutSessionManager.startWorkout(skipCountdown = skipCountdown) }
-            override suspend fun sendStopCommand() { bleRepository.sendStopCommand() }
-            override suspend fun stopMachineWorkout() { bleRepository.stopWorkout() }
-            override fun setWorkoutParametersInternal(params: WorkoutParameters) { this@DefaultWorkoutSessionManager.setWorkoutParametersInternal(params) }
+            override fun resetRepCounter() {
+                repCounter.reset()
+            }
+            override fun startWorkout(skipCountdown: Boolean) {
+                this@DefaultWorkoutSessionManager.startWorkout(skipCountdown = skipCountdown)
+            }
+            override suspend fun sendStopCommand() {
+                bleRepository.sendStopCommand()
+            }
+            override suspend fun stopMachineWorkout() {
+                bleRepository.stopWorkout()
+            }
+            override fun setWorkoutParametersInternal(params: WorkoutParameters) {
+                this@DefaultWorkoutSessionManager.setWorkoutParametersInternal(params)
+            }
         }
     }
 
@@ -192,7 +196,7 @@ class DefaultWorkoutSessionManager(
         detectionManager = detectionManager,
         dataBackupManager = dataBackupManager,
         healthIntegration = healthIntegration,
-        externalActivityRepository = externalActivityRepository
+        externalActivityRepository = externalActivityRepository,
     )
 
     companion object {
@@ -215,15 +219,16 @@ class DefaultWorkoutSessionManager(
             override fun skipCurrentExerciseAndEnterNextStep(): Boolean = routineFlowManager.skipCurrentExerciseAndEnterNextStep()
             override fun showRoutineComplete() = routineFlowManager.showRoutineComplete()
             override fun getCurrentExercise(): RoutineExercise? = routineFlowManager.getCurrentExercise()
-            override fun getNextStep(routine: Routine, exerciseIndex: Int, setIndex: Int): Pair<Int, Int>? =
-                routineFlowManager.getNextStep(routine, exerciseIndex, setIndex)
+            override fun getNextStep(routine: Routine, exerciseIndex: Int, setIndex: Int): Pair<Int, Int>? = routineFlowManager.getNextStep(routine, exerciseIndex, setIndex)
             override fun isInSuperset(): Boolean = routineFlowManager.isInSuperset()
             override fun isAtEndOfSupersetCycle(): Boolean = routineFlowManager.isAtEndOfSupersetCycle()
             override fun getSupersetRestSeconds(): Int = routineFlowManager.getSupersetRestSeconds()
-            override fun calculateNextExerciseName(isSingleExercise: Boolean, currentExercise: RoutineExercise?, routine: Routine?): String? =
-                routineFlowManager.calculateNextExerciseName(isSingleExercise, currentExercise, routine)
-            override fun calculateIsLastExercise(isSingleExercise: Boolean, currentExercise: RoutineExercise?, routine: Routine?): Boolean =
-                routineFlowManager.calculateIsLastExercise(isSingleExercise, currentExercise, routine)
+            override fun calculateNextExerciseName(
+                isSingleExercise: Boolean,
+                currentExercise: RoutineExercise?,
+                routine: Routine?,
+            ): String? = routineFlowManager.calculateNextExerciseName(isSingleExercise, currentExercise, routine)
+            override fun calculateIsLastExercise(isSingleExercise: Boolean, currentExercise: RoutineExercise?, routine: Routine?): Boolean = routineFlowManager.calculateIsLastExercise(isSingleExercise, currentExercise, routine)
             override fun clearCycleContext() = routineFlowManager.clearCycleContext()
         }
 
@@ -242,7 +247,7 @@ class DefaultWorkoutSessionManager(
                     val params = coordinator._workoutParameters.value
                     val shouldAutoAdvanceInManager =
                         isIosPlatform &&
-                        summaryCountdownSeconds > 0 &&
+                            summaryCountdownSeconds > 0 &&
                             !params.isJustLift &&
                             !params.isAMRAP
 
@@ -285,6 +290,7 @@ class DefaultWorkoutSessionManager(
     fun deleteRoutine(routineId: String) = routineFlowManager.deleteRoutine(routineId)
     fun deleteRoutines(routineIds: Set<String>) = routineFlowManager.deleteRoutines(routineIds)
     fun loadRoutine(routine: Routine) = routineFlowManager.loadRoutine(routine)
+
     /** Issue #2 Fix: Suspend version that completes after routine is fully loaded */
     suspend fun loadRoutineAsync(routine: Routine) = routineFlowManager.loadRoutineAsync(routine)
     fun loadRoutineById(routineId: String) = routineFlowManager.loadRoutineById(routineId)
@@ -294,8 +300,7 @@ class DefaultWorkoutSessionManager(
 
     fun selectExerciseInOverview(index: Int) = routineFlowManager.selectExerciseInOverview(index)
     fun enterSetReady(exerciseIndex: Int, setIndex: Int) = routineFlowManager.enterSetReady(exerciseIndex, setIndex)
-    fun enterSetReadyWithAdjustments(exerciseIndex: Int, setIndex: Int, adjustedWeight: Float, adjustedReps: Int) =
-        routineFlowManager.enterSetReadyWithAdjustments(exerciseIndex, setIndex, adjustedWeight, adjustedReps)
+    fun enterSetReadyWithAdjustments(exerciseIndex: Int, setIndex: Int, adjustedWeight: Float, adjustedReps: Int) = routineFlowManager.enterSetReadyWithAdjustments(exerciseIndex, setIndex, adjustedWeight, adjustedReps)
     fun updateSetReadyWeight(weight: Float) = routineFlowManager.updateSetReadyWeight(weight)
     fun updateSetReadyReps(reps: Int) = routineFlowManager.updateSetReadyReps(reps)
     fun updateSetReadyEchoLevel(level: EchoLevel) = routineFlowManager.updateSetReadyEchoLevel(level)
@@ -329,11 +334,7 @@ class DefaultWorkoutSessionManager(
 
     // ===== Superset CRUD — delegated to RoutineFlowManager =====
 
-    suspend fun createSuperset(
-        routineId: String,
-        name: String? = null,
-        exercises: List<RoutineExercise> = emptyList()
-    ): Superset = routineFlowManager.createSuperset(routineId, name, exercises)
+    suspend fun createSuperset(routineId: String, name: String? = null, exercises: List<RoutineExercise> = emptyList()): Superset = routineFlowManager.createSuperset(routineId, name, exercises)
 
     suspend fun updateSuperset(routineId: String, superset: Superset) = routineFlowManager.updateSuperset(routineId, superset)
     suspend fun deleteSuperset(routineId: String, supersetId: String) = routineFlowManager.deleteSuperset(routineId, supersetId)
@@ -419,7 +420,9 @@ class DefaultWorkoutSessionManager(
             }
 
             Logger.d { "proceedFromSummary: routine=${routine?.name ?: "NULL"}, isJustLift=$isJustLift, autoplay=$autoplay" }
-            Logger.d { "  currentExerciseIndex=${coordinator._currentExerciseIndex.value}, currentSetIndex=${coordinator._currentSetIndex.value}" }
+            Logger.d {
+                "  currentExerciseIndex=${coordinator._currentExerciseIndex.value}, currentSetIndex=${coordinator._currentSetIndex.value}"
+            }
 
             // Check if routine is complete (for routine mode, not Just Lift)
             if (routine != null && !isJustLift) {
@@ -432,7 +435,11 @@ class DefaultWorkoutSessionManager(
                 }
 
                 // Check if there are ANY more steps using superset-aware navigation
-                val nextStep = routineFlowManager.getNextStep(routine, coordinator._currentExerciseIndex.value, coordinator._currentSetIndex.value)
+                val nextStep = routineFlowManager.getNextStep(
+                    routine,
+                    coordinator._currentExerciseIndex.value,
+                    coordinator._currentSetIndex.value,
+                )
 
                 // If no more steps in the entire routine, show completion screen
                 if (nextStep == null) {
@@ -470,9 +477,11 @@ class DefaultWorkoutSessionManager(
                         progressionRegressionKg = nextExercise.progressionKg,
                         selectedExerciseId = nextExercise.exercise.id,
                         isAMRAP = nextIsAMRAP,
-                        stallDetectionEnabled = nextExercise.stallDetectionEnabled
+                        stallDetectionEnabled = nextExercise.stallDetectionEnabled,
                     )
-                    Logger.d { "proceedFromSummary: Issue #203 - Updated params for next set: ${nextExercise.exercise.name}, setIdx=$nextSetIdx, isAMRAP=$nextIsAMRAP" }
+                    Logger.d {
+                        "proceedFromSummary: Issue #203 - Updated params for next set: ${nextExercise.exercise.name}, setIdx=$nextSetIdx, isAMRAP=$nextIsAMRAP"
+                    }
 
                     // Reset counters for next set
                     repCounter.resetCountsOnly()

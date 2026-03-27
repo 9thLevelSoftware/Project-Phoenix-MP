@@ -12,7 +12,9 @@ val localPropsMap: Map<String, String> = if (localPropsFile.exists()) {
             val (key, value) = line.split("=", limit = 2)
             key.trim() to value.trim()
         }
-} else emptyMap()
+} else {
+    emptyMap()
+}
 val supabaseUrl: String = localPropsMap["supabase.url"] ?: ""
 val supabaseAnonKey: String = localPropsMap["supabase.anon.key"] ?: ""
 
@@ -21,19 +23,19 @@ val skipSupabaseCheck = providers.gradleProperty("skip.supabase.check").orNull?.
 if (!skipSupabaseCheck && (supabaseUrl.isBlank() || supabaseAnonKey.isBlank())) {
     throw GradleException(
         "Missing Supabase credentials in local.properties. " +
-        "Set supabase.url and supabase.anon.key, or pass -Pskip.supabase.check=true for test-only builds."
+            "Set supabase.url and supabase.anon.key, or pass -Pskip.supabase.check=true for test-only builds.",
     )
 }
 
 val injectedVersionCode = providers.gradleProperty("version.code").orNull?.let { raw ->
     val parsed = raw.toIntOrNull()
         ?: throw GradleException(
-            "Invalid -Pversion.code='$raw'. Expected an integer between 1 and 2100000000."
+            "Invalid -Pversion.code='$raw'. Expected an integer between 1 and 2100000000.",
         )
 
     if (parsed !in 1..2_100_000_000) {
         throw GradleException(
-            "Invalid -Pversion.code='$raw'. Expected an integer between 1 and 2100000000."
+            "Invalid -Pversion.code='$raw'. Expected an integer between 1 and 2100000000.",
         )
     }
 
@@ -82,7 +84,7 @@ android {
             isMinifyEnabled = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
-                "proguard-rules.pro"
+                "proguard-rules.pro",
             )
             ndk {
                 debugSymbolLevel = "FULL"
@@ -110,13 +112,12 @@ android {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }
     }
-
 }
 
 dependencies {
     // Shared module
     implementation(project(":shared"))
-    
+
     // Core Android
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime)

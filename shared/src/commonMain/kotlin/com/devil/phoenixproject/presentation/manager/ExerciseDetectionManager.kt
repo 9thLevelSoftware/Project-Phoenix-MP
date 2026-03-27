@@ -27,7 +27,7 @@ data class DetectionState(
     /** User dismissed without confirming (prevents re-trigger for this set) */
     val isDismissed: Boolean = false,
     /** High-confidence auto-accept: classification confirmed without showing sheet */
-    val isAutoAccepted: Boolean = false
+    val isAutoAccepted: Boolean = false,
 )
 
 /**
@@ -45,7 +45,7 @@ class ExerciseDetectionManager(
     private val signatureExtractor: SignatureExtractor,
     private val exerciseClassifier: ExerciseClassifier,
     private val signatureRepository: ExerciseSignatureRepository,
-    private val exerciseRepository: ExerciseRepository
+    private val exerciseRepository: ExerciseRepository,
 ) {
     companion object {
         /** Minimum working reps before triggering detection */
@@ -74,12 +74,7 @@ class ExerciseDetectionManager(
      * @param scope CoroutineScope to launch detection work
      * @param hasExerciseAssigned True if workout already has an exercise selected
      */
-    fun onRepCompleted(
-        repNumber: Int,
-        metrics: List<WorkoutMetric>,
-        scope: CoroutineScope,
-        hasExerciseAssigned: Boolean = false
-    ) {
+    fun onRepCompleted(repNumber: Int, metrics: List<WorkoutMetric>, scope: CoroutineScope, hasExerciseAssigned: Boolean = false) {
         // Skip if user dismissed
         if (_detectionState.value.isDismissed) {
             return
@@ -105,7 +100,9 @@ class ExerciseDetectionManager(
                 // Extract signature from metrics
                 val signature = signatureExtractor.extractSignature(metrics)
                 if (signature == null) {
-                    Logger.d("ExerciseDetectionManager") { "Insufficient data for signature extraction" }
+                    Logger.d("ExerciseDetectionManager") {
+                        "Insufficient data for signature extraction"
+                    }
                     return@launch
                 }
 
@@ -128,7 +125,7 @@ class ExerciseDetectionManager(
                 // High-confidence auto-accept: skip showing the sheet when we have
                 // a valid exerciseId and confidence >= threshold
                 val canAutoAccept = classification.confidence >= AUTO_ACCEPT_THRESHOLD &&
-                        !classification.exerciseId.isNullOrBlank()
+                    !classification.exerciseId.isNullOrBlank()
 
                 if (canAutoAccept) {
                     Logger.d("ExerciseDetectionManager") {
@@ -139,7 +136,7 @@ class ExerciseDetectionManager(
                         classification = classification,
                         signature = signature,
                         isDismissed = false,
-                        isAutoAccepted = true
+                        isAutoAccepted = true,
                     )
                 } else {
                     // Show the detection sheet for manual confirmation
@@ -147,7 +144,7 @@ class ExerciseDetectionManager(
                         isActive = true,
                         classification = classification,
                         signature = signature,
-                        isDismissed = false
+                        isDismissed = false,
                     )
                 }
             } catch (e: Exception) {

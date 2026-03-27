@@ -2,10 +2,10 @@ package com.devil.phoenixproject.data.ble
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertNull
-import kotlin.test.assertNotNull
-import kotlin.test.assertTrue
 import kotlin.test.assertFalse
+import kotlin.test.assertNotNull
+import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 /**
  * Unit tests for ProtocolParser byte utility functions.
@@ -160,14 +160,14 @@ class ProtocolParserTest {
     @Test
     fun `parseRepPacket returns null for short data`() {
         // Less than 6 bytes should return null
-        val data = byteArrayOf(0x05, 0x00, 0x00, 0x00, 0x03)  // Only 5 bytes
+        val data = byteArrayOf(0x05, 0x00, 0x00, 0x00, 0x03) // Only 5 bytes
         assertNull(parseRepPacket(data, hasOpcodePrefix = false, timestamp = 0L))
     }
 
     @Test
     fun `parseRepPacket returns null for short data with opcode prefix`() {
         // 6 bytes total but first is opcode, so only 5 bytes effective
-        val data = byteArrayOf(0x02, 0x05, 0x00, 0x00, 0x00, 0x03)  // 6 bytes, first is opcode
+        val data = byteArrayOf(0x02, 0x05, 0x00, 0x00, 0x00, 0x03) // 6 bytes, first is opcode
         assertNull(parseRepPacket(data, hasOpcodePrefix = true, timestamp = 0L))
     }
 
@@ -207,7 +207,7 @@ class ProtocolParserTest {
             // repsSetCount (u16 LE): 7
             0x07, 0x00,
             // repsSetTotal (u16 LE): 10
-            0x0A, 0x00
+            0x0A, 0x00,
         )
 
         val result = parseRepPacket(data, hasOpcodePrefix = false, timestamp = 2000L)
@@ -230,7 +230,7 @@ class ProtocolParserTest {
         // With opcode prefix (0x02), the rep data starts at index 1
         // 25 bytes total: 1 opcode + 24 rep data
         val data = byteArrayOf(
-            0x02,  // opcode
+            0x02, // opcode
             // up (u32 LE): 5
             0x05, 0x00, 0x00, 0x00,
             // down (u32 LE): 4
@@ -246,7 +246,7 @@ class ProtocolParserTest {
             // repsSetCount: 3
             0x03, 0x00,
             // repsSetTotal: 4
-            0x04, 0x00
+            0x04, 0x00,
         )
 
         val result = parseRepPacket(data, hasOpcodePrefix = true, timestamp = 3000L)
@@ -264,7 +264,7 @@ class ProtocolParserTest {
 
     @Test
     fun `parseMonitorPacket returns null for short data`() {
-        val data = byteArrayOf(0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00)  // 15 bytes
+        val data = byteArrayOf(0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00) // 15 bytes
         assertNull(parseMonitorPacket(data))
     }
 
@@ -323,7 +323,7 @@ class ProtocolParserTest {
 
     @Test
     fun `parseMonitorPacket returns zero status for 16-byte packet`() {
-        val data = ByteArray(16)  // No status bytes
+        val data = ByteArray(16) // No status bytes
 
         val result = parseMonitorPacket(data)
 
@@ -354,7 +354,7 @@ class ProtocolParserTest {
 
     @Test
     fun `parseDiagnosticPacket returns null for short data`() {
-        val data = ByteArray(19)  // Need 20 bytes minimum
+        val data = ByteArray(19) // Need 20 bytes minimum
         assertNull(parseDiagnosticPacket(data))
     }
 
@@ -376,7 +376,7 @@ class ProtocolParserTest {
 
     @Test
     fun `parseDiagnosticPacket parses no faults`() {
-        val data = ByteArray(20)  // All zeros
+        val data = ByteArray(20) // All zeros
 
         val result = parseDiagnosticPacket(data)
 
@@ -425,7 +425,7 @@ class ProtocolParserTest {
 
     @Test
     fun `parseHeuristicPacket returns null for short data`() {
-        val data = ByteArray(47)  // Need 48 bytes minimum
+        val data = ByteArray(47) // Need 48 bytes minimum
         assertNull(parseHeuristicPacket(data, timestamp = 0L))
     }
 
@@ -491,7 +491,7 @@ class ProtocolParserTest {
         val result = parseMonitorPacket(data)
 
         assertNotNull(result)
-        assertEquals(0, result.status)  // No status bytes
+        assertEquals(0, result.status) // No status bytes
     }
 
     @Test

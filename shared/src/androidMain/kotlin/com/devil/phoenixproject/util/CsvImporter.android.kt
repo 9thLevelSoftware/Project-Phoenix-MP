@@ -1,7 +1,7 @@
 package com.devil.phoenixproject.util
 
 import android.content.Context
-import android.net.Uri
+import androidx.core.net.toUri
 import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.data.repository.WorkoutRepository
 import kotlinx.coroutines.Dispatchers
@@ -16,28 +16,29 @@ import kotlinx.coroutines.withContext
  * Duplicate detection: for each parsed session we check if any existing session
  * has the same timestamp and exercise name. If so, the row is skipped.
  */
-class AndroidCsvImporter(
-    private val context: Context,
-    private val workoutRepository: WorkoutRepository
-) : CsvImporter {
+class AndroidCsvImporter(private val context: Context, private val workoutRepository: WorkoutRepository) : CsvImporter {
 
     override suspend fun importFromCsv(uri: String, profileId: String): CsvImportResult {
         return withContext(Dispatchers.IO) {
             try {
-                val contentUri = Uri.parse(uri)
+                val contentUri = uri.toUri()
                 val csvContent = context.contentResolver.openInputStream(contentUri)?.use { stream ->
                     stream.bufferedReader().readText()
                 } ?: return@withContext CsvImportResult(
-                    imported = 0, skipped = 0, failed = 0,
-                    errors = listOf("Could not open file: $uri")
+                    imported = 0,
+                    skipped = 0,
+                    failed = 0,
+                    errors = listOf("Could not open file: $uri"),
                 )
 
                 val (sessions, parseErrors) = CsvParser.parseWorkoutHistory(csvContent)
 
                 if (sessions.isEmpty() && parseErrors.isNotEmpty()) {
                     return@withContext CsvImportResult(
-                        imported = 0, skipped = 0, failed = parseErrors.size,
-                        errors = parseErrors
+                        imported = 0,
+                        skipped = 0,
+                        failed = parseErrors.size,
+                        errors = parseErrors,
                     )
                 }
 
@@ -71,7 +72,7 @@ class AndroidCsvImporter(
                             skipped++
                         } else {
                             importErrors.add(
-                                "Failed to save session (${session.exerciseName}): ${e.message}"
+                                "Failed to save session (${session.exerciseName}): ${e.message}",
                             )
                         }
                     }
@@ -83,13 +84,15 @@ class AndroidCsvImporter(
                     imported = imported,
                     skipped = skipped,
                     failed = parseErrors.size,
-                    errors = importErrors
+                    errors = importErrors,
                 )
             } catch (e: Exception) {
                 Logger.e("CsvImporter", e) { "Import failed" }
                 CsvImportResult(
-                    imported = 0, skipped = 0, failed = 0,
-                    errors = listOf("Import failed: ${e.message}")
+                    imported = 0,
+                    skipped = 0,
+                    failed = 0,
+                    errors = listOf("Import failed: ${e.message}"),
                 )
             }
         }

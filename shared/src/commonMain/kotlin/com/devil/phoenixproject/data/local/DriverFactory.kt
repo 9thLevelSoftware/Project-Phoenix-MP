@@ -6,11 +6,7 @@ expect class DriverFactory {
     fun createDriver(): SqlDriver
 }
 
-internal data class SchemaHealOperation(
-    val table: String,
-    val column: String,
-    val sql: String,
-) {
+internal data class SchemaHealOperation(val table: String, val column: String, val sql: String) {
     val target: String get() = "$table.$column"
 }
 
@@ -21,11 +17,7 @@ internal enum class SchemaHealStatus {
     FAILED,
 }
 
-internal data class SchemaHealResult(
-    val operation: SchemaHealOperation,
-    val status: SchemaHealStatus,
-    val detail: String? = null,
-)
+internal data class SchemaHealResult(val operation: SchemaHealOperation, val status: SchemaHealStatus, val detail: String? = null)
 
 /**
  * Reconcile known released schema drift using blind, replay-safe ALTER TABLE calls.
@@ -125,28 +117,27 @@ private val knownLegacySchemaHeals = listOf(
     ),
 )
 
-private fun applySchemaHeal(driver: SqlDriver, operation: SchemaHealOperation): SchemaHealResult {
-    return try {
-        driver.execute(
-            identifier = null,
-            sql = operation.sql,
-            parameters = 0,
-        )
-        SchemaHealResult(operation, SchemaHealStatus.ADDED)
-    } catch (e: Exception) {
-        val message = e.message.orEmpty()
-        val normalized = message.lowercase()
-        when {
-            normalized.contains("duplicate column") || normalized.contains("already exists") -> {
-                SchemaHealResult(operation, SchemaHealStatus.ALREADY_PRESENT, message)
-            }
-            normalized.contains("no such table") -> {
-                SchemaHealResult(operation, SchemaHealStatus.TABLE_MISSING, message)
-            }
-            else -> SchemaHealResult(operation, SchemaHealStatus.FAILED, message)
+private fun applySchemaHeal(driver: SqlDriver, operation: SchemaHealOperation): SchemaHealResult = try {
+    driver.execute(
+        identifier = null,
+        sql = operation.sql,
+        parameters = 0,
+    )
+    SchemaHealResult(operation, SchemaHealStatus.ADDED)
+} catch (e: Exception) {
+    val message = e.message.orEmpty()
+    val normalized = message.lowercase()
+    when {
+        normalized.contains("duplicate column") || normalized.contains("already exists") -> {
+            SchemaHealResult(operation, SchemaHealStatus.ALREADY_PRESENT, message)
         }
+
+        normalized.contains("no such table") -> {
+            SchemaHealResult(operation, SchemaHealStatus.TABLE_MISSING, message)
+        }
+
+        else -> SchemaHealResult(operation, SchemaHealStatus.FAILED, message)
     }
 }
 
-internal fun reconcileKnownLegacySchema(driver: SqlDriver): List<SchemaHealResult> =
-    knownLegacySchemaHeals.map { applySchemaHeal(driver, it) }
+internal fun reconcileKnownLegacySchema(driver: SqlDriver): List<SchemaHealResult> = knownLegacySchemaHeals.map { applySchemaHeal(driver, it) }

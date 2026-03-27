@@ -2,7 +2,6 @@ package com.devil.phoenixproject.data.sync
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
@@ -136,7 +135,7 @@ class PortalPullAdapterTest {
     fun `toRoutineSyncDto maps name and description`() {
         val pullRoutine = makePullRoutineDto(
             name = "Leg Day",
-            description = "Heavy squats and accessories"
+            description = "Heavy squats and accessories",
         )
 
         val result = PortalPullAdapter.toRoutineSyncDto(pullRoutine)
@@ -228,7 +227,7 @@ class PortalPullAdapterTest {
             totalReps = 1250,
             totalVolumeKg = 50000.5f,
             longestStreak = 14,
-            currentStreak = 3
+            currentStreak = 3,
         )
 
         val result = PortalPullAdapter.toGamificationStatsSyncDto(stats)
@@ -273,7 +272,7 @@ class PortalPullAdapterTest {
         id: String = "routine-1",
         name: String = "Test Routine",
         description: String = "",
-        exercises: List<PullRoutineExerciseDto> = emptyList()
+        exercises: List<PullRoutineExerciseDto> = emptyList(),
     ) = PullRoutineDto(
         id = id,
         userId = "user-1",
@@ -283,19 +282,16 @@ class PortalPullAdapterTest {
         estimatedDuration = 3600,
         timesCompleted = 0,
         isFavorite = false,
-        exercises = exercises
+        exercises = exercises,
     )
 
-    private fun makePullBadgeDto(
-        badgeId: String = "badge-1",
-        earnedAt: String = "2026-01-01T00:00:00Z"
-    ) = PullBadgeDto(
+    private fun makePullBadgeDto(badgeId: String = "badge-1", earnedAt: String = "2026-01-01T00:00:00Z") = PullBadgeDto(
         userId = "user-1",
         badgeId = badgeId,
         badgeName = "First Workout",
         badgeDescription = "Complete your first workout",
         badgeTier = "bronze",
-        earnedAt = earnedAt
+        earnedAt = earnedAt,
     )
 
     private fun makePullGamificationStatsDto(
@@ -303,7 +299,7 @@ class PortalPullAdapterTest {
         totalReps: Int = 500,
         totalVolumeKg: Float = 10000f,
         longestStreak: Int = 7,
-        currentStreak: Int = 2
+        currentStreak: Int = 2,
     ) = PullGamificationStatsDto(
         userId = "user-1",
         totalWorkouts = totalWorkouts,
@@ -311,7 +307,7 @@ class PortalPullAdapterTest {
         totalVolumeKg = totalVolumeKg,
         longestStreak = longestStreak,
         currentStreak = currentStreak,
-        totalTimeSeconds = 36000
+        totalTimeSeconds = 36000,
     )
 
     /**

@@ -2,49 +2,46 @@ package com.devil.phoenixproject.presentation.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.data.repository.PersonalRecordRepository
-import com.devil.phoenixproject.domain.model.PersonalRecord
 import com.devil.phoenixproject.domain.model.EccentricLoad
 import com.devil.phoenixproject.domain.model.EchoLevel
 import com.devil.phoenixproject.domain.model.PRType
+import com.devil.phoenixproject.domain.model.PersonalRecord
 import com.devil.phoenixproject.domain.model.RepCountTiming
 import com.devil.phoenixproject.domain.model.RoutineExercise
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.domain.model.WorkoutMode
 import com.devil.phoenixproject.domain.model.toWorkoutMode
-// import dagger.hilt.android.lifecycle.HiltViewModel
-// import javax.inject.Inject
+import com.devil.phoenixproject.util.KmpUtils
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
-import com.devil.phoenixproject.util.KmpUtils
-import co.touchlab.kermit.Logger
-
 
 // These are tightly coupled with the ExerciseEditDialog, so keeping them here is reasonable.
 // They could be moved to a dedicated file in the `presentation.screen` package if used elsewhere.
 enum class ExerciseType {
     BODYWEIGHT,
-    STANDARD
+    STANDARD,
 }
 
 enum class SetMode {
     REPS,
-    DURATION
+    DURATION,
 }
 
 data class SetConfiguration(
     val id: String = com.devil.phoenixproject.domain.model.generateUUID(), // Stable ID for Compose keys
     val setNumber: Int,
-    val reps: Int? = 10,  // Nullable to support AMRAP (null = AMRAP)
+    val reps: Int? = 10, // Nullable to support AMRAP (null = AMRAP)
     val weightPerCable: Float = 15.0f,
     val duration: Int = 30,
-    val restSeconds: Int = 60 // Add this
+    val restSeconds: Int = 60, // Add this
 )
 
 class ExerciseConfigViewModel constructor(
-    private val personalRecordRepository: PersonalRecordRepository? = null
+    private val personalRecordRepository: PersonalRecordRepository? = null,
 ) : ViewModel() {
 
     private val log = Logger.withTag("ExerciseConfigViewModel")
@@ -112,7 +109,6 @@ class ExerciseConfigViewModel constructor(
     val prTypeForScaling: StateFlow<PRType> = _prTypeForScaling.asStateFlow()
 
     init {
-
     }
 
     fun initialize(
@@ -120,8 +116,8 @@ class ExerciseConfigViewModel constructor(
         unit: WeightUnit,
         toDisplay: (Float, WeightUnit) -> Float,
         toKg: (Float, WeightUnit) -> Float,
-        prWeightKg: Float? = null,  // Optional PR weight to use as default
-        profileId: String = "default"
+        prWeightKg: Float? = null, // Optional PR weight to use as default
+        profileId: String = "default",
     ) {
         if (_initialized.value && originalExercise.id == exercise.id && activeProfileId == profileId) {
             return
@@ -170,13 +166,13 @@ class ExerciseConfigViewModel constructor(
                 reps = reps, // Preserve null for AMRAP sets
                 weightPerCable = kgToDisplay(perSetWeightKg, weightUnit),
                 duration = defaultDuration,
-                restSeconds = perSetRest
+                restSeconds = perSetRest,
             )
         }.ifEmpty {
             listOf(
                 SetConfiguration(id = generateUUID(), setNumber = 1, reps = 10, weightPerCable = kgToDisplay(defaultWeightKg, weightUnit), restSeconds = 60),
                 SetConfiguration(id = generateUUID(), setNumber = 2, reps = 10, weightPerCable = kgToDisplay(defaultWeightKg, weightUnit), restSeconds = 60),
-                SetConfiguration(id = generateUUID(), setNumber = 3, reps = 10, weightPerCable = kgToDisplay(defaultWeightKg, weightUnit), restSeconds = 60)
+                SetConfiguration(id = generateUUID(), setNumber = 3, reps = 10, weightPerCable = kgToDisplay(defaultWeightKg, weightUnit), restSeconds = 60),
             )
         }
 
@@ -328,9 +324,7 @@ class ExerciseConfigViewModel constructor(
         return (pr.weightPerCableKg * percent / 100f).roundToHalfKg()
     }
 
-    private fun Float.roundToHalfKg(): Float {
-        return (this * 2).toInt() / 2f
-    }
+    private fun Float.roundToHalfKg(): Float = (this * 2).toInt() / 2f
 
     fun updateReps(setId: String, reps: Int?) {
         _sets.value = _sets.value.map { set ->
@@ -363,7 +357,7 @@ class ExerciseConfigViewModel constructor(
             reps = lastSet?.reps ?: 10,
             weightPerCable = lastSet?.weightPerCable ?: kgToDisplay(15f, weightUnit),
             duration = lastSet?.duration ?: 30,
-            restSeconds = lastSet?.restSeconds ?: 60
+            restSeconds = lastSet?.restSeconds ?: 60,
         )
         _sets.value = _sets.value + newSet
     }
@@ -427,7 +421,9 @@ class ExerciseConfigViewModel constructor(
             setRestSeconds = restTimes,
             duration = if (_setMode.value == SetMode.DURATION) {
                 _sets.value.firstOrNull()?.duration ?: 30 // Default to 30 seconds if not set
-            } else null,
+            } else {
+                null
+            },
             perSetRestTime = _perSetRestTime.value,
             isAMRAP = isAMRAP,
             stallDetectionEnabled = _stallDetectionEnabled.value,
@@ -437,7 +433,7 @@ class ExerciseConfigViewModel constructor(
             usePercentOfPR = _usePercentOfPR.value,
             weightPercentOfPR = _weightPercentOfPR.value,
             prTypeForScaling = _prTypeForScaling.value,
-            setWeightsPercentOfPR = resolvedSetWeightsPercentOfPR
+            setWeightsPercentOfPR = resolvedSetWeightsPercentOfPR,
         )
 
         logDebug("Updated exercise to save:")

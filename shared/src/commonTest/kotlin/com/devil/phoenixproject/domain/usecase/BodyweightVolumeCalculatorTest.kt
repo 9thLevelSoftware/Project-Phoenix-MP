@@ -33,7 +33,7 @@ class BodyweightVolumeCalculatorTest {
     fun getPercentage_unknownExercise_returnsDefault() {
         assertEquals(
             BodyweightVolumeCalculator.DEFAULT_PERCENTAGE,
-            BodyweightVolumeCalculator.getPercentageForExercise("Unknown Exercise")
+            BodyweightVolumeCalculator.getPercentageForExercise("Unknown Exercise"),
         )
     }
 

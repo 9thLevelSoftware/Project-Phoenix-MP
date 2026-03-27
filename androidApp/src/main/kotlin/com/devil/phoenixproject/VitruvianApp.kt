@@ -20,7 +20,9 @@ import org.koin.android.ext.koin.androidContext
 import org.koin.android.ext.koin.androidLogger
 import org.koin.dsl.module
 
-class VitruvianApp : Application(), SingletonImageLoader.Factory {
+class VitruvianApp :
+    Application(),
+    SingletonImageLoader.Factory {
 
     private val migrationManager: MigrationManager by inject()
 
@@ -35,20 +37,22 @@ class VitruvianApp : Application(), SingletonImageLoader.Factory {
         // Initialize DeviceInfo with BuildConfig values
         DeviceInfo.initialize(
             versionCode = BuildConfig.VERSION_CODE,
-            isDebug = BuildConfig.DEBUG
+            isDebug = BuildConfig.DEBUG,
         )
 
         initKoin {
             androidLogger()
             androidContext(this@VitruvianApp)
-            modules(module {
-                single {
-                    SupabaseConfig(
-                        url = BuildConfig.SUPABASE_URL,
-                        anonKey = BuildConfig.SUPABASE_ANON_KEY
-                    )
-                }
-            })
+            modules(
+                module {
+                    single {
+                        SupabaseConfig(
+                            url = BuildConfig.SUPABASE_URL,
+                            anonKey = BuildConfig.SUPABASE_ANON_KEY,
+                        )
+                    }
+                },
+            )
         }
 
         // Run migrations after Koin is initialized
@@ -79,13 +83,11 @@ class VitruvianApp : Application(), SingletonImageLoader.Factory {
         Logger.d("VitruvianApp") { "Application initialized" }
     }
 
-    override fun newImageLoader(context: coil3.PlatformContext): ImageLoader {
-        return ImageLoader.Builder(context)
-            .components {
-                add(KtorNetworkFetcherFactory())
-            }
-            .crossfade(true)
-            .apply { if (BuildConfig.DEBUG) logger(DebugLogger()) }
-            .build()
-    }
+    override fun newImageLoader(context: coil3.PlatformContext): ImageLoader = ImageLoader.Builder(context)
+        .components {
+            add(KtorNetworkFetcherFactory())
+        }
+        .crossfade(true)
+        .apply { if (BuildConfig.DEBUG) logger(DebugLogger()) }
+        .build()
 }

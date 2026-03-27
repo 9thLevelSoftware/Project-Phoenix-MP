@@ -16,25 +16,22 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import com.devil.phoenixproject.domain.assessment.LoadVelocityPoint
 import com.devil.phoenixproject.domain.model.WorkoutMetric
 import com.devil.phoenixproject.presentation.components.VideoPlayer
 import com.devil.phoenixproject.presentation.viewmodel.AssessmentStep
 import com.devil.phoenixproject.presentation.viewmodel.AssessmentViewModel
 import com.devil.phoenixproject.ui.theme.AccessibilityTheme
 import com.devil.phoenixproject.ui.theme.Spacing
-import com.devil.phoenixproject.util.KmpUtils
 import com.devil.phoenixproject.ui.theme.ThemeMode
 import com.devil.phoenixproject.ui.theme.screenBackgroundBrush
+import com.devil.phoenixproject.util.KmpUtils
 import kotlinx.coroutines.flow.StateFlow
 import org.jetbrains.compose.resources.stringResource
-import vitruvianprojectphoenix.shared.generated.resources.Res
 import vitruvianprojectphoenix.shared.generated.resources.*
+import vitruvianprojectphoenix.shared.generated.resources.Res
 
 /**
  * Multi-step assessment wizard screen for guided VBT strength testing.
@@ -59,7 +56,7 @@ fun AssessmentWizardScreen(
     exerciseId: String? = null,
     themeMode: ThemeMode,
     onNavigateBack: () -> Unit,
-    metricsFlow: StateFlow<WorkoutMetric?>? = null
+    metricsFlow: StateFlow<WorkoutMetric?>? = null,
 ) {
     val currentStep by viewModel.currentStep.collectAsState()
     val exercises by viewModel.exercises.collectAsState()
@@ -76,37 +73,42 @@ fun AssessmentWizardScreen(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(backgroundGradient)
+            .background(backgroundGradient),
     ) {
         when (val step = currentStep) {
             is AssessmentStep.ExerciseSelection -> ExerciseSelectionContent(
                 step = step,
                 exercises = exercises,
                 onSearchQueryChange = viewModel::updateSearchQuery,
-                onExerciseSelected = viewModel::selectExercise
+                onExerciseSelected = viewModel::selectExercise,
             )
+
             is AssessmentStep.Instruction -> InstructionContent(
                 step = step,
                 onStartAssessment = viewModel::startAssessment,
-                onBack = viewModel::reset
+                onBack = viewModel::reset,
             )
+
             is AssessmentStep.ProgressiveLoading -> ProgressiveLoadingContent(
                 step = step,
                 onRecordSet = viewModel::recordSet,
                 onStartCapture = { metricsFlow?.let { viewModel.startVelocityCapture(it) } },
                 onStopCapture = { viewModel.stopVelocityCapture() },
                 hasBleMetrics = metricsFlow != null,
-                onCancel = viewModel::reset
+                onCancel = viewModel::reset,
             )
+
             is AssessmentStep.Results -> ResultsContent(
                 step = step,
                 onAccept = viewModel::acceptResult,
-                onDiscard = viewModel::reset
+                onDiscard = viewModel::reset,
             )
+
             is AssessmentStep.Saving -> SavingContent()
+
             is AssessmentStep.Complete -> CompleteContent(
                 step = step,
-                onDone = onNavigateBack
+                onDone = onNavigateBack,
             )
         }
     }
@@ -119,23 +121,26 @@ private fun ExerciseSelectionContent(
     step: AssessmentStep.ExerciseSelection,
     exercises: List<com.devil.phoenixproject.domain.model.Exercise>,
     onSearchQueryChange: (String) -> Unit,
-    onExerciseSelected: (com.devil.phoenixproject.domain.model.Exercise) -> Unit
+    onExerciseSelected: (com.devil.phoenixproject.domain.model.Exercise) -> Unit,
 ) {
     val filteredExercises = remember(exercises, step.searchQuery) {
-        if (step.searchQuery.isBlank()) exercises
-        else exercises.filter { it.name.contains(step.searchQuery, ignoreCase = true) }
+        if (step.searchQuery.isBlank()) {
+            exercises
+        } else {
+            exercises.filter { it.name.contains(step.searchQuery, ignoreCase = true) }
+        }
     }
 
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(horizontal = Spacing.medium, vertical = Spacing.medium)
+            .padding(horizontal = Spacing.medium, vertical = Spacing.medium),
     ) {
         Text(
             text = "Strength Assessment",
             style = MaterialTheme.typography.headlineMedium,
             fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.onBackground
+            color = MaterialTheme.colorScheme.onBackground,
         )
 
         Spacer(modifier = Modifier.height(Spacing.extraSmall))
@@ -143,7 +148,7 @@ private fun ExerciseSelectionContent(
         Text(
             text = "Select an exercise to test your 1RM",
             style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
 
         Spacer(modifier = Modifier.height(Spacing.medium))
@@ -156,7 +161,7 @@ private fun ExerciseSelectionContent(
             leadingIcon = { Icon(Icons.Default.Search, contentDescription = stringResource(Res.string.cd_search)) },
             modifier = Modifier.fillMaxWidth(),
             singleLine = true,
-            shape = RoundedCornerShape(12.dp)
+            shape = RoundedCornerShape(12.dp),
         )
 
         Spacer(modifier = Modifier.height(Spacing.small))
@@ -164,7 +169,7 @@ private fun ExerciseSelectionContent(
         // Exercise list
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
-            verticalArrangement = Arrangement.spacedBy(Spacing.small)
+            verticalArrangement = Arrangement.spacedBy(Spacing.small),
         ) {
             items(filteredExercises, key = { it.id ?: it.name }) { exercise ->
                 Card(
@@ -172,20 +177,20 @@ private fun ExerciseSelectionContent(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(12.dp),
                     colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
-                    )
+                        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    ),
                 ) {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(Spacing.medium),
-                        verticalAlignment = Alignment.CenterVertically
+                        verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Icon(
                             Icons.Default.FitnessCenter,
                             contentDescription = null,
                             tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(24.dp)
+                            modifier = Modifier.size(24.dp),
                         )
                         Spacer(modifier = Modifier.width(Spacing.medium))
                         Column(modifier = Modifier.weight(1f)) {
@@ -193,19 +198,19 @@ private fun ExerciseSelectionContent(
                                 text = exercise.displayName,
                                 style = MaterialTheme.typography.titleSmall,
                                 fontWeight = FontWeight.SemiBold,
-                                color = MaterialTheme.colorScheme.onSurface
+                                color = MaterialTheme.colorScheme.onSurface,
                             )
                             Text(
                                 text = exercise.muscleGroup,
                                 style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
                         if (exercise.oneRepMaxKg != null) {
                             Text(
                                 text = "${exercise.oneRepMaxKg} kg",
                                 style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.tertiary
+                                color = MaterialTheme.colorScheme.tertiary,
                             )
                         }
                     }
@@ -218,22 +223,18 @@ private fun ExerciseSelectionContent(
 // ---------- Step 2: Instruction ----------
 
 @Composable
-private fun InstructionContent(
-    step: AssessmentStep.Instruction,
-    onStartAssessment: () -> Unit,
-    onBack: () -> Unit
-) {
+private fun InstructionContent(step: AssessmentStep.Instruction, onStartAssessment: () -> Unit, onBack: () -> Unit) {
     Column(
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(Spacing.medium)
+            .padding(Spacing.medium),
     ) {
         Text(
             text = step.exercise.displayName,
             style = MaterialTheme.typography.headlineMedium,
             fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.onBackground
+            color = MaterialTheme.colorScheme.onBackground,
         )
 
         Spacer(modifier = Modifier.height(Spacing.medium))
@@ -246,11 +247,11 @@ private fun InstructionContent(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(220.dp),
-                shape = RoundedCornerShape(16.dp)
+                shape = RoundedCornerShape(16.dp),
             ) {
                 VideoPlayer(
                     videoUrl = videoToShow.videoUrl,
-                    modifier = Modifier.fillMaxSize()
+                    modifier = Modifier.fillMaxSize(),
                 )
             }
             Spacer(modifier = Modifier.height(Spacing.medium))
@@ -261,25 +262,25 @@ private fun InstructionContent(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(16.dp),
             colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
-            )
+                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+            ),
         ) {
             Column(
                 modifier = Modifier.padding(Spacing.medium),
-                verticalArrangement = Arrangement.spacedBy(Spacing.small)
+                verticalArrangement = Arrangement.spacedBy(Spacing.small),
             ) {
                 Text(
                     text = "Assessment Protocol",
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface
+                    color = MaterialTheme.colorScheme.onSurface,
                 )
 
                 val instructions = listOf(
                     "You will perform 3-5 sets at progressively heavier weights.",
                     "Perform 3 reps per set with maximum intent on the concentric (lifting) phase.",
                     "The system will track your velocity to estimate your one-rep max.",
-                    "Start light (~40% of estimated max) and increase weight each set."
+                    "Start light (~40% of estimated max) and increase weight each set.",
                 )
 
                 instructions.forEachIndexed { index, instruction ->
@@ -289,12 +290,12 @@ private fun InstructionContent(
                             style = MaterialTheme.typography.bodyMedium,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.width(24.dp)
+                            modifier = Modifier.width(24.dp),
                         )
                         Text(
                             text = instruction,
                             style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurface
+                            color = MaterialTheme.colorScheme.onSurface,
                         )
                     }
                 }
@@ -309,12 +310,12 @@ private fun InstructionContent(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(56.dp),
-            shape = RoundedCornerShape(16.dp)
+            shape = RoundedCornerShape(16.dp),
         ) {
             Text(
                 "Begin Assessment",
                 style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold
+                fontWeight = FontWeight.Bold,
             )
         }
 
@@ -322,7 +323,7 @@ private fun InstructionContent(
 
         TextButton(
             onClick = onBack,
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier.fillMaxWidth(),
         ) {
             Text(stringResource(Res.string.action_back))
         }
@@ -338,7 +339,7 @@ private fun ProgressiveLoadingContent(
     onStartCapture: () -> Unit,
     onStopCapture: () -> Unit,
     hasBleMetrics: Boolean,
-    onCancel: () -> Unit
+    onCancel: () -> Unit,
 ) {
     var weightInput by remember(step.currentSetNumber) { mutableStateOf(step.suggestedWeightKg.toString()) }
     // Manual fallback fields only used when BLE metrics are unavailable
@@ -348,14 +349,14 @@ private fun ProgressiveLoadingContent(
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(Spacing.medium)
+            .padding(Spacing.medium),
     ) {
         // Step indicator
         Text(
             text = "Set ${step.currentSetNumber} of up to 5",
             style = MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.onBackground
+            color = MaterialTheme.colorScheme.onBackground,
         )
 
         Spacer(modifier = Modifier.height(Spacing.medium))
@@ -365,25 +366,25 @@ private fun ProgressiveLoadingContent(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(16.dp),
             colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.primaryContainer
-            )
+                containerColor = MaterialTheme.colorScheme.primaryContainer,
+            ),
         ) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(Spacing.large),
-                horizontalAlignment = Alignment.CenterHorizontally
+                horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 Text(
                     text = "Suggested Weight (Total)",
                     style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.onPrimaryContainer
+                    color = MaterialTheme.colorScheme.onPrimaryContainer,
                 )
                 Text(
                     text = "${step.suggestedWeightKg} kg",
                     style = MaterialTheme.typography.displaySmall,
                     fontWeight = FontWeight.Black,
-                    color = MaterialTheme.colorScheme.onPrimaryContainer
+                    color = MaterialTheme.colorScheme.onPrimaryContainer,
                 )
             }
         }
@@ -396,7 +397,7 @@ private fun ProgressiveLoadingContent(
                 text = "Completed Sets",
                 style = MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onBackground
+                color = MaterialTheme.colorScheme.onBackground,
             )
             Spacer(modifier = Modifier.height(Spacing.small))
 
@@ -415,31 +416,31 @@ private fun ProgressiveLoadingContent(
                         .padding(vertical = 2.dp),
                     shape = RoundedCornerShape(8.dp),
                     colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
-                    )
+                        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    ),
                 ) {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(horizontal = Spacing.medium, vertical = Spacing.small),
-                        verticalAlignment = Alignment.CenterVertically
+                        verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Text(
                             text = "Set ${set.setNumber}",
                             style = MaterialTheme.typography.bodyMedium,
                             fontWeight = FontWeight.Bold,
-                            modifier = Modifier.width(60.dp)
+                            modifier = Modifier.width(60.dp),
                         )
                         Text(
                             text = "${set.loadKg} kg",
                             style = MaterialTheme.typography.bodyMedium,
-                            modifier = Modifier.weight(1f)
+                            modifier = Modifier.weight(1f),
                         )
                         Text(
                             text = "${KmpUtils.formatFloat(set.meanVelocityMs, 2)} m/s",
                             style = MaterialTheme.typography.bodyMedium,
                             fontWeight = FontWeight.Bold,
-                            color = velocityColor
+                            color = velocityColor,
                         )
                     }
                 }
@@ -454,15 +455,15 @@ private fun ProgressiveLoadingContent(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(12.dp),
                 colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.errorContainer
-                )
+                    containerColor = MaterialTheme.colorScheme.errorContainer,
+                ),
             ) {
                 Text(
                     text = "Velocity threshold reached - assessment complete",
                     style = MaterialTheme.typography.bodyMedium,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onErrorContainer,
-                    modifier = Modifier.padding(Spacing.medium)
+                    modifier = Modifier.padding(Spacing.medium),
                 )
             }
             Spacer(modifier = Modifier.height(Spacing.medium))
@@ -477,7 +478,7 @@ private fun ProgressiveLoadingContent(
                     liveVelocityMs = step.liveVelocityMs,
                     suggestedWeight = step.suggestedWeightKg,
                     onStartCapture = onStartCapture,
-                    onStopCapture = onStopCapture
+                    onStopCapture = onStopCapture,
                 )
             } else {
                 // Manual fallback mode: user types weight and velocity
@@ -486,7 +487,7 @@ private fun ProgressiveLoadingContent(
                     velocityInput = velocityInput,
                     onWeightChange = { weightInput = it },
                     onVelocityChange = { velocityInput = it },
-                    onRecordSet = onRecordSet
+                    onRecordSet = onRecordSet,
                 )
             }
         }
@@ -496,7 +497,7 @@ private fun ProgressiveLoadingContent(
         TextButton(
             onClick = onCancel,
             modifier = Modifier.fillMaxWidth(),
-            enabled = !step.isCapturing
+            enabled = !step.isCapturing,
         ) {
             Text(stringResource(Res.string.cancel_assessment))
         }
@@ -512,20 +513,20 @@ private fun BleVelocityCaptureSection(
     liveVelocityMs: Float?,
     suggestedWeight: Float,
     onStartCapture: () -> Unit,
-    onStopCapture: () -> Unit
+    onStopCapture: () -> Unit,
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
-        )
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+        ),
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(Spacing.medium),
-            horizontalAlignment = Alignment.CenterHorizontally
+            horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             if (!isCapturing) {
                 // Pre-set instructions
@@ -533,13 +534,13 @@ private fun BleVelocityCaptureSection(
                     text = "Set the machine to ${KmpUtils.formatFloat(suggestedWeight, 1)} kg",
                     style = MaterialTheme.typography.bodyMedium,
                     fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.onSurface
+                    color = MaterialTheme.colorScheme.onSurface,
                 )
                 Spacer(modifier = Modifier.height(Spacing.extraSmall))
                 Text(
                     text = "Perform 3 reps with maximum concentric intent.\nTap Start Set, then begin lifting.",
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 Spacer(modifier = Modifier.height(Spacing.medium))
 
@@ -548,12 +549,12 @@ private fun BleVelocityCaptureSection(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(56.dp),
-                    shape = RoundedCornerShape(16.dp)
+                    shape = RoundedCornerShape(16.dp),
                 ) {
                     Text(
                         "Start Set",
                         style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold
+                        fontWeight = FontWeight.Bold,
                     )
                 }
             } else {
@@ -562,7 +563,7 @@ private fun BleVelocityCaptureSection(
                     text = "Capturing velocity...",
                     style = MaterialTheme.typography.labelLarge,
                     color = MaterialTheme.colorScheme.primary,
-                    fontWeight = FontWeight.Bold
+                    fontWeight = FontWeight.Bold,
                 )
 
                 Spacer(modifier = Modifier.height(Spacing.small))
@@ -573,13 +574,13 @@ private fun BleVelocityCaptureSection(
                     text = "$displayVelocity m/s",
                     style = MaterialTheme.typography.displaySmall,
                     fontWeight = FontWeight.Black,
-                    color = MaterialTheme.colorScheme.primary
+                    color = MaterialTheme.colorScheme.primary,
                 )
 
                 Text(
                     text = "Mean concentric velocity",
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
 
                 Spacer(modifier = Modifier.height(Spacing.small))
@@ -588,7 +589,7 @@ private fun BleVelocityCaptureSection(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(4.dp),
-                    color = MaterialTheme.colorScheme.primary
+                    color = MaterialTheme.colorScheme.primary,
                 )
 
                 Spacer(modifier = Modifier.height(Spacing.medium))
@@ -600,13 +601,13 @@ private fun BleVelocityCaptureSection(
                         .height(56.dp),
                     shape = RoundedCornerShape(16.dp),
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.tertiary
-                    )
+                        containerColor = MaterialTheme.colorScheme.tertiary,
+                    ),
                 ) {
                     Text(
                         "End Set",
                         style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold
+                        fontWeight = FontWeight.Bold,
                     )
                 }
             }
@@ -623,13 +624,13 @@ private fun ManualInputSection(
     velocityInput: String,
     onWeightChange: (String) -> Unit,
     onVelocityChange: (String) -> Unit,
-    onRecordSet: (Float, Int, Float, Float) -> Unit
+    onRecordSet: (Float, Int, Float, Float) -> Unit,
 ) {
     Text(
         text = "Log This Set",
         style = MaterialTheme.typography.titleSmall,
         fontWeight = FontWeight.Bold,
-        color = MaterialTheme.colorScheme.onBackground
+        color = MaterialTheme.colorScheme.onBackground,
     )
     Spacer(modifier = Modifier.height(Spacing.small))
 
@@ -640,7 +641,7 @@ private fun ManualInputSection(
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
         modifier = Modifier.fillMaxWidth(),
         singleLine = true,
-        shape = RoundedCornerShape(12.dp)
+        shape = RoundedCornerShape(12.dp),
     )
 
     Spacer(modifier = Modifier.height(Spacing.small))
@@ -652,7 +653,7 @@ private fun ManualInputSection(
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
         modifier = Modifier.fillMaxWidth(),
         singleLine = true,
-        shape = RoundedCornerShape(12.dp)
+        shape = RoundedCornerShape(12.dp),
     )
 
     Spacer(modifier = Modifier.height(Spacing.medium))
@@ -671,12 +672,12 @@ private fun ManualInputSection(
         modifier = Modifier
             .fillMaxWidth()
             .height(56.dp),
-        shape = RoundedCornerShape(16.dp)
+        shape = RoundedCornerShape(16.dp),
     ) {
         Text(
             "Log Set",
             style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.Bold
+            fontWeight = FontWeight.Bold,
         )
     }
 }
@@ -684,24 +685,20 @@ private fun ManualInputSection(
 // ---------- Step 4: Results ----------
 
 @Composable
-private fun ResultsContent(
-    step: AssessmentStep.Results,
-    onAccept: (Float?) -> Unit,
-    onDiscard: () -> Unit
-) {
+private fun ResultsContent(step: AssessmentStep.Results, onAccept: (Float?) -> Unit, onDiscard: () -> Unit) {
     var overrideText by remember { mutableStateOf(step.overrideValueKg) }
 
     Column(
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(Spacing.medium)
+            .padding(Spacing.medium),
     ) {
         Text(
             text = "Assessment Complete",
             style = MaterialTheme.typography.headlineMedium,
             fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.onBackground
+            color = MaterialTheme.colorScheme.onBackground,
         )
 
         Spacer(modifier = Modifier.height(Spacing.medium))
@@ -711,25 +708,25 @@ private fun ResultsContent(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(16.dp),
             colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.primaryContainer
-            )
+                containerColor = MaterialTheme.colorScheme.primaryContainer,
+            ),
         ) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(Spacing.large),
-                horizontalAlignment = Alignment.CenterHorizontally
+                horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 Text(
                     text = "Estimated 1RM",
                     style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.onPrimaryContainer
+                    color = MaterialTheme.colorScheme.onPrimaryContainer,
                 )
                 Text(
                     text = "${KmpUtils.formatFloat(step.estimatedOneRepMaxKg, 1)} kg",
                     style = MaterialTheme.typography.displayMedium,
                     fontWeight = FontWeight.Black,
-                    color = MaterialTheme.colorScheme.onPrimaryContainer
+                    color = MaterialTheme.colorScheme.onPrimaryContainer,
                 )
             }
         }
@@ -752,26 +749,26 @@ private fun ResultsContent(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(12.dp),
             colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
-            )
+                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+            ),
         ) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(Spacing.medium),
-                verticalAlignment = Alignment.CenterVertically
+                verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
                     text = "Regression Quality:",
                     style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurface
+                    color = MaterialTheme.colorScheme.onSurface,
                 )
                 Spacer(modifier = Modifier.width(Spacing.small))
                 Text(
                     text = "$confidenceText (R² = ${KmpUtils.formatFloat(step.r2, 2)})",
                     style = MaterialTheme.typography.bodyMedium,
                     fontWeight = FontWeight.Bold,
-                    color = confidenceColor
+                    color = confidenceColor,
                 )
             }
         }
@@ -783,7 +780,7 @@ private fun ResultsContent(
             text = "Load-Velocity Profile",
             style = MaterialTheme.typography.titleSmall,
             fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.onBackground
+            color = MaterialTheme.colorScheme.onBackground,
         )
         Spacer(modifier = Modifier.height(Spacing.small))
 
@@ -794,24 +791,24 @@ private fun ResultsContent(
                     .padding(vertical = 2.dp),
                 shape = RoundedCornerShape(8.dp),
                 colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
-                )
+                    containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                ),
             ) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = Spacing.medium, vertical = Spacing.small),
-                    horizontalArrangement = Arrangement.SpaceBetween
+                    horizontalArrangement = Arrangement.SpaceBetween,
                 ) {
                     Text(
                         text = "${point.loadKg} kg",
                         style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = FontWeight.Bold
+                        fontWeight = FontWeight.Bold,
                     )
                     Text(
                         text = "${point.meanVelocityMs} m/s",
                         style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
             }
@@ -824,7 +821,7 @@ private fun ResultsContent(
             text = "Override 1RM",
             style = MaterialTheme.typography.titleSmall,
             fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.onBackground
+            color = MaterialTheme.colorScheme.onBackground,
         )
         Spacer(modifier = Modifier.height(Spacing.extraSmall))
 
@@ -836,7 +833,7 @@ private fun ResultsContent(
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
             modifier = Modifier.fillMaxWidth(),
             singleLine = true,
-            shape = RoundedCornerShape(12.dp)
+            shape = RoundedCornerShape(12.dp),
         )
 
         Spacer(modifier = Modifier.height(Spacing.medium))
@@ -850,12 +847,12 @@ private fun ResultsContent(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(56.dp),
-            shape = RoundedCornerShape(16.dp)
+            shape = RoundedCornerShape(16.dp),
         ) {
             Text(
                 "Accept & Save",
                 style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold
+                fontWeight = FontWeight.Bold,
             )
         }
 
@@ -864,7 +861,7 @@ private fun ResultsContent(
         // Discard button
         OutlinedButton(
             onClick = onDiscard,
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier.fillMaxWidth(),
         ) {
             Text(stringResource(Res.string.action_discard))
         }
@@ -877,20 +874,20 @@ private fun ResultsContent(
 private fun SavingContent() {
     Box(
         modifier = Modifier.fillMaxSize(),
-        contentAlignment = Alignment.Center
+        contentAlignment = Alignment.Center,
     ) {
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(Spacing.medium)
+            verticalArrangement = Arrangement.spacedBy(Spacing.medium),
         ) {
             CircularProgressIndicator(
                 modifier = Modifier.size(48.dp),
-                color = MaterialTheme.colorScheme.primary
+                color = MaterialTheme.colorScheme.primary,
             )
             Text(
                 text = "Saving assessment...",
                 style = MaterialTheme.typography.bodyLarge,
-                color = MaterialTheme.colorScheme.onBackground
+                color = MaterialTheme.colorScheme.onBackground,
             )
         }
     }
@@ -899,38 +896,35 @@ private fun SavingContent() {
 // ---------- Step 6: Complete ----------
 
 @Composable
-private fun CompleteContent(
-    step: AssessmentStep.Complete,
-    onDone: () -> Unit
-) {
+private fun CompleteContent(step: AssessmentStep.Complete, onDone: () -> Unit) {
     Box(
         modifier = Modifier.fillMaxSize(),
-        contentAlignment = Alignment.Center
+        contentAlignment = Alignment.Center,
     ) {
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(Spacing.medium),
-            modifier = Modifier.padding(Spacing.large)
+            modifier = Modifier.padding(Spacing.large),
         ) {
             // Success icon
             Icon(
                 Icons.Default.Check,
                 contentDescription = stringResource(Res.string.cd_success),
                 tint = AccessibilityTheme.colors.success,
-                modifier = Modifier.size(72.dp)
+                modifier = Modifier.size(72.dp),
             )
 
             Text(
                 text = "1RM Updated!",
                 style = MaterialTheme.typography.headlineMedium,
                 fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onBackground
+                color = MaterialTheme.colorScheme.onBackground,
             )
 
             Text(
                 text = "${step.exerciseName}: ${KmpUtils.formatFloat(step.finalOneRepMaxKg, 1)} kg",
                 style = MaterialTheme.typography.titleLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
 
             Spacer(modifier = Modifier.height(Spacing.large))
@@ -940,12 +934,12 @@ private fun CompleteContent(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(56.dp),
-                shape = RoundedCornerShape(16.dp)
+                shape = RoundedCornerShape(16.dp),
             ) {
                 Text(
                     "Done",
                     style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold
+                    fontWeight = FontWeight.Bold,
                 )
             }
         }

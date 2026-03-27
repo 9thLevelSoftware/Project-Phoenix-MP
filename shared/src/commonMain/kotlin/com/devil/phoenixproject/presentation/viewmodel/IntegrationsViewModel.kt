@@ -3,9 +3,8 @@ package com.devil.phoenixproject.presentation.viewmodel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import co.touchlab.kermit.Logger
-import com.devil.phoenixproject.isIosPlatform
-import com.devil.phoenixproject.data.integration.CsvImporter
 import com.devil.phoenixproject.data.integration.CsvImportPreview
+import com.devil.phoenixproject.data.integration.CsvImporter
 import com.devil.phoenixproject.data.integration.ExternalActivityRepository
 import com.devil.phoenixproject.data.integration.HealthIntegration
 import com.devil.phoenixproject.data.integration.IntegrationManager
@@ -17,13 +16,14 @@ import com.devil.phoenixproject.domain.model.ExternalActivity
 import com.devil.phoenixproject.domain.model.IntegrationProvider
 import com.devil.phoenixproject.domain.model.IntegrationStatus
 import com.devil.phoenixproject.domain.model.WeightUnit
-import kotlinx.coroutines.flow.MutableStateFlow
+import com.devil.phoenixproject.isIosPlatform
 import kotlinx.coroutines.flow.MutableSharedFlow
-import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
@@ -42,7 +42,7 @@ data class IntegrationsUiState(
     val importPreview: CsvImportPreview? = null,
     val csvContent: String? = null,
     val errorMessage: String? = null,
-    val successMessage: String? = null
+    val successMessage: String? = null,
 )
 
 class IntegrationsViewModel(
@@ -51,7 +51,7 @@ class IntegrationsViewModel(
     private val workoutRepository: WorkoutRepository,
     private val healthIntegration: HealthIntegration,
     private val userProfileRepository: UserProfileRepository,
-    private val portalTokenStorage: PortalTokenStorage
+    private val portalTokenStorage: PortalTokenStorage,
 ) : ViewModel() {
 
     /** Resolved active profile ID, reactive to profile switches. */
@@ -66,7 +66,7 @@ class IntegrationsViewModel(
      */
     val isPaidUser: StateFlow<Boolean> = combine(
         userProfileRepository.activeProfile,
-        portalTokenStorage.currentUser
+        portalTokenStorage.currentUser,
     ) { profile, portalUser ->
         val localPaid = profile?.subscriptionStatus == SubscriptionStatus.ACTIVE
         val portalPaid = portalUser?.isPremium == true
@@ -114,7 +114,7 @@ class IntegrationsViewModel(
                 val csv = com.devil.phoenixproject.data.integration.CsvExporter.generateStrongCsv(sessions, weightUnit)
                 _uiState.value = _uiState.value.copy(
                     csvContent = csv,
-                    successMessage = "Exported ${sessions.size} session(s) to CSV"
+                    successMessage = "Exported ${sessions.size} session(s) to CSV",
                 )
                 log.d { "CSV export complete: ${sessions.size} sessions" }
             } catch (e: Exception) {
@@ -139,7 +139,7 @@ class IntegrationsViewModel(
      */
     fun previewCsvImport(
         content: String,
-        weightUnit: WeightUnit
+        weightUnit: WeightUnit,
     ) {
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isImporting = true, errorMessage = null)
@@ -170,7 +170,7 @@ class IntegrationsViewModel(
                 externalActivityRepo.upsertActivities(preview.activities)
                 _uiState.value = _uiState.value.copy(
                     importPreview = null,
-                    successMessage = "Imported ${preview.activities.size} workout(s)"
+                    successMessage = "Imported ${preview.activities.size} workout(s)",
                 )
                 log.i { "CSV import committed: ${preview.activities.size} activities" }
             } catch (e: Exception) {
@@ -195,7 +195,7 @@ class IntegrationsViewModel(
      */
     fun connectProvider(
         provider: IntegrationProvider,
-        apiKey: String
+        apiKey: String,
     ) {
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isSyncing = true, errorMessage = null)
@@ -203,13 +203,13 @@ class IntegrationsViewModel(
                 integrationManager.connectProvider(provider, apiKey, activeProfileId.value, isPaidUser.value)
                     .onSuccess { activities ->
                         _uiState.value = _uiState.value.copy(
-                            successMessage = "Connected to ${provider.displayName}: ${activities.size} activities imported"
+                            successMessage = "Connected to ${provider.displayName}: ${activities.size} activities imported",
                         )
                         log.i { "Connected ${provider.key}: ${activities.size} activities" }
                     }
                     .onFailure { error ->
                         _uiState.value = _uiState.value.copy(
-                            errorMessage = "Connect failed: ${error.message}"
+                            errorMessage = "Connect failed: ${error.message}",
                         )
                         log.w { "Connect to ${provider.key} failed: ${error.message}" }
                     }
@@ -232,13 +232,13 @@ class IntegrationsViewModel(
                 integrationManager.syncProvider(provider, activeProfileId.value, isPaidUser.value)
                     .onSuccess { activities ->
                         _uiState.value = _uiState.value.copy(
-                            successMessage = "Synced ${provider.displayName}: ${activities.size} new activities"
+                            successMessage = "Synced ${provider.displayName}: ${activities.size} new activities",
                         )
                         log.i { "Synced ${provider.key}: ${activities.size} activities" }
                     }
                     .onFailure { error ->
                         _uiState.value = _uiState.value.copy(
-                            errorMessage = "Sync failed: ${error.message}"
+                            errorMessage = "Sync failed: ${error.message}",
                         )
                         log.w { "Sync ${provider.key} failed: ${error.message}" }
                     }
@@ -261,13 +261,13 @@ class IntegrationsViewModel(
                 integrationManager.disconnectProvider(provider, activeProfileId.value)
                     .onSuccess {
                         _uiState.value = _uiState.value.copy(
-                            successMessage = "Disconnected from ${provider.displayName}"
+                            successMessage = "Disconnected from ${provider.displayName}",
                         )
                         log.i { "Disconnected ${provider.key}" }
                     }
                     .onFailure { error ->
                         _uiState.value = _uiState.value.copy(
-                            errorMessage = "Disconnect failed: ${error.message}"
+                            errorMessage = "Disconnect failed: ${error.message}",
                         )
                         log.w { "Disconnect ${provider.key} failed: ${error.message}" }
                     }
@@ -303,10 +303,10 @@ class IntegrationsViewModel(
                     externalActivityRepo.updateIntegrationStatus(
                         provider = provider,
                         status = com.devil.phoenixproject.domain.model.ConnectionStatus.DISCONNECTED,
-                        profileId = profileId
+                        profileId = profileId,
                     )
                     _uiState.value = _uiState.value.copy(
-                        successMessage = "Health integration disabled"
+                        successMessage = "Health integration disabled",
                     )
                     log.i { "Health integration disabled for ${provider.key}" }
                     return@launch
@@ -315,7 +315,7 @@ class IntegrationsViewModel(
                 val available = healthIntegration.isAvailable()
                 if (!available) {
                     _uiState.value = _uiState.value.copy(
-                        errorMessage = "Health app is not available on this device"
+                        errorMessage = "Health app is not available on this device",
                     )
                     return@launch
                 }
@@ -357,7 +357,7 @@ class IntegrationsViewModel(
     private suspend fun applyHealthPermissionResult(
         provider: IntegrationProvider,
         profileId: String,
-        granted: Boolean
+        granted: Boolean,
     ) {
         val hasPerms = healthIntegration.hasPermissions()
         log.d { "Health permission result: granted=$granted, hasPermissions=$hasPerms for ${provider.key}" }
@@ -368,10 +368,10 @@ class IntegrationsViewModel(
                 provider = provider,
                 status = com.devil.phoenixproject.domain.model.ConnectionStatus.ERROR,
                 profileId = profileId,
-                errorMessage = "Permission not granted"
+                errorMessage = "Permission not granted",
             )
             _uiState.value = _uiState.value.copy(
-                errorMessage = "Health permissions were not granted. Please enable Health Connect permissions in your device's Health Connect settings."
+                errorMessage = "Health permissions were not granted. Please enable Health Connect permissions in your device's Health Connect settings.",
             )
             log.w { "Health permissions not granted for ${provider.key} (granted=$granted, hasPerms=$hasPerms)" }
         }
@@ -379,15 +379,15 @@ class IntegrationsViewModel(
 
     private suspend fun markHealthIntegrationConnected(
         provider: IntegrationProvider,
-        profileId: String
+        profileId: String,
     ) {
         externalActivityRepo.updateIntegrationStatus(
             provider = provider,
             status = com.devil.phoenixproject.domain.model.ConnectionStatus.CONNECTED,
-            profileId = profileId
+            profileId = profileId,
         )
         _uiState.value = _uiState.value.copy(
-            successMessage = "Health integration enabled"
+            successMessage = "Health integration enabled",
         )
         log.i { "Health integration enabled for ${provider.key}" }
     }
@@ -398,6 +398,5 @@ class IntegrationsViewModel(
      *
      * Uses the project-wide [isIosPlatform] expect/actual boolean defined in Platform.kt.
      */
-    private fun platformHealthProvider(): IntegrationProvider =
-        if (isIosPlatform) IntegrationProvider.APPLE_HEALTH else IntegrationProvider.GOOGLE_HEALTH
+    private fun platformHealthProvider(): IntegrationProvider = if (isIosPlatform) IntegrationProvider.APPLE_HEALTH else IntegrationProvider.GOOGLE_HEALTH
 }

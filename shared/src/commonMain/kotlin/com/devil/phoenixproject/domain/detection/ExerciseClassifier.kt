@@ -48,7 +48,7 @@ class ExerciseClassifier {
     fun classify(
         signature: ExerciseSignature,
         history: Map<String, ExerciseSignature>,
-        exerciseNames: Map<String, String> = emptyMap()
+        exerciseNames: Map<String, String> = emptyMap(),
     ): ExerciseClassification {
         // First, try history matching
         if (history.isNotEmpty()) {
@@ -60,7 +60,7 @@ class ExerciseClassifier {
                     exerciseName = exerciseNames[exerciseId] ?: exerciseId,
                     confidence = historyMatch.second,
                     alternates = emptyList(),
-                    source = ClassificationSource.HISTORY_MATCH
+                    source = ClassificationSource.HISTORY_MATCH,
                 )
             }
         }
@@ -73,10 +73,7 @@ class ExerciseClassifier {
      * Find the best matching exercise from history.
      * @return Pair of exerciseId and similarity, or null if history is empty
      */
-    private fun findBestHistoryMatch(
-        signature: ExerciseSignature,
-        history: Map<String, ExerciseSignature>
-    ): Pair<String, Float>? {
+    private fun findBestHistoryMatch(signature: ExerciseSignature, history: Map<String, ExerciseSignature>): Pair<String, Float>? {
         if (history.isEmpty()) return null
 
         return history
@@ -93,7 +90,7 @@ class ExerciseClassifier {
         val duration = signature.durationMs
         val isExplosive = signature.velocityProfile == VelocityShape.EXPLOSIVE_START
         val isSingleCable = signature.cableConfig == CableUsage.SINGLE_LEFT ||
-                signature.cableConfig == CableUsage.SINGLE_RIGHT
+            signature.cableConfig == CableUsage.SINGLE_RIGHT
         val isDualSymmetric = signature.cableConfig == CableUsage.DUAL_SYMMETRIC
 
         // Single cable exercises
@@ -104,22 +101,25 @@ class ExerciseClassifier {
                     exerciseName = "Bicep Curl",
                     confidence = 0.6f,
                     alternates = listOf("Hammer Curl", "Concentration Curl"),
-                    source = ClassificationSource.RULE_BASED
+                    source = ClassificationSource.RULE_BASED,
                 )
+
                 rom in SINGLE_MEDIUM_ROM_LOWER..SINGLE_MEDIUM_ROM_UPPER -> ExerciseClassification(
                     exerciseId = null,
                     exerciseName = "Lateral Raise",
                     confidence = 0.5f,
                     alternates = listOf("Front Raise", "Cable Fly"),
-                    source = ClassificationSource.RULE_BASED
+                    source = ClassificationSource.RULE_BASED,
                 )
+
                 rom > SINGLE_MEDIUM_ROM_UPPER -> ExerciseClassification(
                     exerciseId = null,
                     exerciseName = "Single Arm Row",
                     confidence = 0.5f,
                     alternates = listOf("Single Arm Pulldown"),
-                    source = ClassificationSource.RULE_BASED
+                    source = ClassificationSource.RULE_BASED,
                 )
+
                 else -> unknownClassification()
             }
         }
@@ -134,7 +134,7 @@ class ExerciseClassifier {
                         exerciseName = "Chest Press",
                         confidence = 0.7f,
                         alternates = listOf("Incline Press", "Decline Press"),
-                        source = ClassificationSource.RULE_BASED
+                        source = ClassificationSource.RULE_BASED,
                     )
 
                 // Short ROM + Fast + Not Explosive -> Shoulder Press
@@ -144,7 +144,7 @@ class ExerciseClassifier {
                         exerciseName = "Shoulder Press",
                         confidence = 0.65f,
                         alternates = listOf("Military Press", "Arnold Press"),
-                        source = ClassificationSource.RULE_BASED
+                        source = ClassificationSource.RULE_BASED,
                     )
 
                 // Short ROM + Slow -> Bicep Curl (dual cable version)
@@ -154,7 +154,7 @@ class ExerciseClassifier {
                         exerciseName = "Bicep Curl",
                         confidence = 0.6f,
                         alternates = listOf("Hammer Curl"),
-                        source = ClassificationSource.RULE_BASED
+                        source = ClassificationSource.RULE_BASED,
                     )
 
                 // Medium ROM -> Bent-Over Row
@@ -164,7 +164,7 @@ class ExerciseClassifier {
                         exerciseName = "Bent-Over Row",
                         confidence = 0.6f,
                         alternates = listOf("Seated Row", "Upright Row"),
-                        source = ClassificationSource.RULE_BASED
+                        source = ClassificationSource.RULE_BASED,
                     )
 
                 // Long ROM -> Squat
@@ -174,7 +174,7 @@ class ExerciseClassifier {
                         exerciseName = "Squat",
                         confidence = 0.6f,
                         alternates = listOf("Deadlift", "Romanian Deadlift"),
-                        source = ClassificationSource.RULE_BASED
+                        source = ClassificationSource.RULE_BASED,
                     )
 
                 else -> unknownClassification()
@@ -188,15 +188,13 @@ class ExerciseClassifier {
     /**
      * Return an unknown classification for ambiguous signatures.
      */
-    private fun unknownClassification(): ExerciseClassification {
-        return ExerciseClassification(
-            exerciseId = null,
-            exerciseName = "Unknown",
-            confidence = 0.3f,
-            alternates = emptyList(),
-            source = ClassificationSource.RULE_BASED
-        )
-    }
+    private fun unknownClassification(): ExerciseClassification = ExerciseClassification(
+        exerciseId = null,
+        exerciseName = "Unknown",
+        confidence = 0.3f,
+        alternates = emptyList(),
+        source = ClassificationSource.RULE_BASED,
+    )
 
     /**
      * Compute similarity between two signatures using weighted components.
@@ -230,9 +228,9 @@ class ExerciseClassifier {
 
         // Weighted sum
         return ROM_WEIGHT * romSimilarity +
-                DURATION_WEIGHT * durationSimilarity +
-                SYMMETRY_WEIGHT * symmetrySimilarity +
-                SHAPE_WEIGHT * shapeSimilarity
+            DURATION_WEIGHT * durationSimilarity +
+            SYMMETRY_WEIGHT * symmetrySimilarity +
+            SHAPE_WEIGHT * shapeSimilarity
     }
 
     /**
@@ -245,11 +243,7 @@ class ExerciseClassifier {
      * @param alpha EMA smoothing factor (default 0.3)
      * @return Updated signature combining old and new data
      */
-    fun evolveSignature(
-        existing: ExerciseSignature,
-        newObservation: ExerciseSignature,
-        alpha: Float = 0.3f
-    ): ExerciseSignature {
+    fun evolveSignature(existing: ExerciseSignature, newObservation: ExerciseSignature, alpha: Float = 0.3f): ExerciseSignature {
         val beta = 1f - alpha
 
         return ExerciseSignature(
@@ -266,7 +260,7 @@ class ExerciseClassifier {
             sampleCount = existing.sampleCount + 1,
 
             // Confidence could be updated based on sample count, but keeping it simple for now
-            confidence = existing.confidence
+            confidence = existing.confidence,
         )
     }
 }

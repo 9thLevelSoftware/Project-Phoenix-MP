@@ -31,13 +31,13 @@ fun ForceSparkline(
     peakIndex: Int?,
     modifier: Modifier = Modifier,
     lineColor: Color = MaterialTheme.colorScheme.primary,
-    peakMarkerColor: Color = MaterialTheme.colorScheme.tertiary
+    peakMarkerColor: Color = MaterialTheme.colorScheme.tertiary,
 ) {
     Canvas(
         modifier = modifier
             .fillMaxWidth()
             .height(40.dp)
-            .padding(4.dp)
+            .padding(4.dp),
     ) {
         // Handle empty data gracefully
         if (forceData.isEmpty()) return@Canvas
@@ -49,7 +49,7 @@ fun ForceSparkline(
                 color = lineColor,
                 start = Offset(0f, y),
                 end = Offset(size.width, y),
-                strokeWidth = 1.5.dp.toPx()
+                strokeWidth = 1.5.dp.toPx(),
             )
             return@Canvas
         }
@@ -76,7 +76,7 @@ fun ForceSparkline(
         drawPath(
             path = path,
             color = lineColor,
-            style = Stroke(width = 1.5.dp.toPx())
+            style = Stroke(width = 1.5.dp.toPx()),
         )
 
         // Draw peak marker if provided
@@ -88,7 +88,7 @@ fun ForceSparkline(
                 drawCircle(
                     color = peakMarkerColor,
                     radius = 3.dp.toPx(),
-                    center = Offset(peakX, peakY)
+                    center = Offset(peakX, peakY),
                 )
             }
         }

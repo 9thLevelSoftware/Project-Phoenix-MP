@@ -42,54 +42,52 @@ interface SmartSuggestionsRepository {
  * Maps generated query result types to [SessionSummary] domain models,
  * handling NULL values from LEFT JOINs gracefully.
  */
-class SqlDelightSmartSuggestionsRepository(
-    private val database: VitruvianDatabase
-) : SmartSuggestionsRepository {
+class SqlDelightSmartSuggestionsRepository(private val database: VitruvianDatabase) : SmartSuggestionsRepository {
 
     private val queries = database.vitruvianDatabaseQueries
 
-    override suspend fun getSessionSummariesSince(sinceTimestamp: Long, profileId: String): List<SessionSummary> =
-        withContext(Dispatchers.IO) {
-            queries.selectSessionSummariesSince(sinceTimestamp, profileId = profileId).executeAsList().map { row ->
-                SessionSummary(
-                    exerciseId = row.exerciseId,
-                    exerciseName = row.exerciseName ?: "Unknown",
-                    muscleGroup = row.muscleGroup ?: row.exerciseName ?: "Unknown",
-                    timestamp = row.timestamp,
-                    weightPerCableKg = row.weightPerCableKg.toFloat(),
-                    totalReps = row.totalReps.toInt(),
-                    workingReps = row.workingReps.toInt()
-                )
-            }
+    override suspend fun getSessionSummariesSince(sinceTimestamp: Long, profileId: String): List<SessionSummary> = withContext(Dispatchers.IO) {
+        queries.selectSessionSummariesSince(
+            sinceTimestamp,
+            profileId = profileId,
+        ).executeAsList().map { row ->
+            SessionSummary(
+                exerciseId = row.exerciseId,
+                exerciseName = row.exerciseName ?: "Unknown",
+                muscleGroup = row.muscleGroup ?: row.exerciseName ?: "Unknown",
+                timestamp = row.timestamp,
+                weightPerCableKg = row.weightPerCableKg.toFloat(),
+                totalReps = row.totalReps.toInt(),
+                workingReps = row.workingReps.toInt(),
+            )
         }
+    }
 
-    override suspend fun getExerciseLastPerformed(profileId: String): List<SessionSummary> =
-        withContext(Dispatchers.IO) {
-            queries.selectExerciseLastPerformed(profileId = profileId).executeAsList().map { row ->
-                SessionSummary(
-                    exerciseId = row.exerciseId,
-                    exerciseName = row.exerciseName,
-                    muscleGroup = row.muscleGroup,
-                    timestamp = row.lastPerformed ?: 0L,
-                    weightPerCableKg = 0f,
-                    totalReps = 0,
-                    workingReps = 0
-                )
-            }
+    override suspend fun getExerciseLastPerformed(profileId: String): List<SessionSummary> = withContext(Dispatchers.IO) {
+        queries.selectExerciseLastPerformed(profileId = profileId).executeAsList().map { row ->
+            SessionSummary(
+                exerciseId = row.exerciseId,
+                exerciseName = row.exerciseName,
+                muscleGroup = row.muscleGroup,
+                timestamp = row.lastPerformed ?: 0L,
+                weightPerCableKg = 0f,
+                totalReps = 0,
+                workingReps = 0,
+            )
         }
+    }
 
-    override suspend fun getExerciseWeightHistory(profileId: String): List<SessionSummary> =
-        withContext(Dispatchers.IO) {
-            queries.selectExerciseWeightHistory(profileId = profileId).executeAsList().map { row ->
-                SessionSummary(
-                    exerciseId = row.exerciseId,
-                    exerciseName = row.exerciseName ?: "Unknown",
-                    muscleGroup = row.exerciseName ?: "Unknown",
-                    timestamp = row.timestamp,
-                    weightPerCableKg = row.achievedWeightKg.toFloat(),
-                    totalReps = 0,
-                    workingReps = 0
-                )
-            }
+    override suspend fun getExerciseWeightHistory(profileId: String): List<SessionSummary> = withContext(Dispatchers.IO) {
+        queries.selectExerciseWeightHistory(profileId = profileId).executeAsList().map { row ->
+            SessionSummary(
+                exerciseId = row.exerciseId,
+                exerciseName = row.exerciseName ?: "Unknown",
+                muscleGroup = row.exerciseName ?: "Unknown",
+                timestamp = row.timestamp,
+                weightPerCableKg = row.achievedWeightKg.toFloat(),
+                totalReps = 0,
+                workingReps = 0,
+            )
         }
+    }
 }

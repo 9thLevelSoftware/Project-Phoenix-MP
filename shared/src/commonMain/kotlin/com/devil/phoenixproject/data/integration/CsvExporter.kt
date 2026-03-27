@@ -197,12 +197,10 @@ object CsvExporter {
      * - Routine sessions use [WorkoutSession.routineName] (or "Routine" as fallback).
      * - Standalone sessions use the exercise name, or `"Workout"` as last resort.
      */
-    internal fun resolveWorkoutName(session: WorkoutSession): String {
-        return when {
-            session.routineSessionId != null -> session.routineName ?: "Routine"
-            session.exerciseName != null -> session.exerciseName
-            else -> "Workout"
-        }
+    internal fun resolveWorkoutName(session: WorkoutSession): String = when {
+        session.routineSessionId != null -> session.routineName ?: "Routine"
+        session.exerciseName != null -> session.exerciseName
+        else -> "Workout"
     }
 
     /**

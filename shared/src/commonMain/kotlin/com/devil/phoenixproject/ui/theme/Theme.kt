@@ -52,7 +52,7 @@ private val DarkColorScheme = darkColorScheme(
     onError = Color.White,
 
     outline = Slate400,
-    outlineVariant = Slate700
+    outlineVariant = Slate700,
 )
 
 private val LightColorScheme = lightColorScheme(
@@ -97,14 +97,11 @@ private val LightColorScheme = lightColorScheme(
     onError = Color.White,
 
     outline = Slate400,
-    outlineVariant = Slate200
+    outlineVariant = Slate200,
 )
 
 @Composable
-fun VitruvianTheme(
-    themeMode: ThemeMode = ThemeMode.SYSTEM,
-    content: @Composable () -> Unit
-) {
+fun VitruvianTheme(themeMode: ThemeMode = ThemeMode.SYSTEM, content: @Composable () -> Unit) {
     val useDarkColors = when (themeMode) {
         ThemeMode.SYSTEM -> isSystemInDarkTheme()
         ThemeMode.LIGHT -> false
@@ -118,7 +115,7 @@ fun VitruvianTheme(
     ) {
         CompositionLocalProvider(
             LocalAccessibilityColors provides StandardPalette,
-            content = content
+            content = content,
         )
     }
 }

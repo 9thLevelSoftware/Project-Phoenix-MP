@@ -55,7 +55,7 @@ object RpgAttributeEngine {
             stamina = sta,
             consistency = con,
             mastery = mas,
-            characterClass = characterClass
+            characterClass = characterClass,
         )
     }
 

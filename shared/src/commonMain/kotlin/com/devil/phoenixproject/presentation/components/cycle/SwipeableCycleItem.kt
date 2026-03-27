@@ -24,7 +24,7 @@ fun SwipeableCycleItem(
     onDuplicate: () -> Unit,
     onTap: () -> Unit,
     dragModifier: Modifier = Modifier,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
 ) {
     @Suppress("DEPRECATION")
     val dismissState = rememberSwipeToDismissBoxState(
@@ -34,14 +34,16 @@ fun SwipeableCycleItem(
                     onDelete()
                     false // Don't actually dismiss, we handle removal ourselves
                 }
+
                 SwipeToDismissBoxValue.StartToEnd -> {
                     onDuplicate()
                     false // Don't dismiss
                 }
+
                 SwipeToDismissBoxValue.Settled -> false
             }
         },
-        positionalThreshold = { it * 0.4f }
+        positionalThreshold = { it * 0.4f },
     )
 
     SwipeToDismissBox(
@@ -55,7 +57,7 @@ fun SwipeableCycleItem(
                     SwipeToDismissBoxValue.StartToEnd -> MaterialTheme.colorScheme.tertiary
                     else -> Color.Transparent
                 },
-                label = "swipe_color"
+                label = "swipe_color",
             )
             val alignment = when (direction) {
                 SwipeToDismissBoxValue.EndToStart -> Alignment.CenterEnd
@@ -78,12 +80,12 @@ fun SwipeableCycleItem(
                     .fillMaxSize()
                     .background(color)
                     .padding(horizontal = 20.dp),
-                contentAlignment = alignment
+                contentAlignment = alignment,
             ) {
                 if (icon != null) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
                         if (direction == SwipeToDismissBoxValue.StartToEnd) {
                             Icon(icon, contentDescription = label, tint = Color.White)
@@ -101,14 +103,15 @@ fun SwipeableCycleItem(
                 is CycleItem.Workout -> WorkoutDayRow(
                     workout = item,
                     onTap = onTap,
-                    dragModifier = dragModifier
+                    dragModifier = dragModifier,
                 )
+
                 is CycleItem.Rest -> RestDayRow(
                     rest = item,
                     onTap = onTap,
-                    dragModifier = dragModifier
+                    dragModifier = dragModifier,
                 )
             }
-        }
+        },
     )
 }

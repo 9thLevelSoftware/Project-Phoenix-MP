@@ -32,11 +32,11 @@ import platform.Speech.SFSpeechRecognitionTaskStateCanceling
 import platform.Speech.SFSpeechRecognitionTaskStateCompleted
 import platform.Speech.SFSpeechRecognizer
 import platform.Speech.SFSpeechRecognizerAuthorizationStatus
+import platform.darwin.DISPATCH_TIME_NOW
 import platform.darwin.dispatch_after
 import platform.darwin.dispatch_async
 import platform.darwin.dispatch_get_main_queue
 import platform.darwin.dispatch_time
-import platform.darwin.DISPATCH_TIME_NOW
 
 /**
  * iOS implementation of [SafeWordListener] using SFSpeechRecognizer.
@@ -47,12 +47,11 @@ import platform.darwin.DISPATCH_TIME_NOW
  * - Coexists with music via AVAudioSession .playAndRecord + .mixWithOthers
  * - Processes partial results to detect the safe word with minimal latency
  */
-actual class SafeWordListener(
-    private val safeWord: String,
-) {
+actual class SafeWordListener(private val safeWord: String) {
     private companion object {
         const val TAG = "SafeWordListener"
         const val RESTART_DELAY_NS = 500_000_000L // 500ms in nanoseconds
+
         /** Minimum interval between emissions to prevent partial+final double-counting. */
         const val DEBOUNCE_MS = 1000L
     }
@@ -88,6 +87,7 @@ actual class SafeWordListener(
         val authStatus = SFSpeechRecognizer.authorizationStatus()
         when (authStatus) {
             SFSpeechRecognizerAuthorizationStatus.SFSpeechRecognizerAuthorizationStatusAuthorized -> { /* proceed */ }
+
             SFSpeechRecognizerAuthorizationStatus.SFSpeechRecognizerAuthorizationStatusNotDetermined -> {
                 SFSpeechRecognizer.requestAuthorization { newStatus ->
                     if (newStatus == SFSpeechRecognizerAuthorizationStatus.SFSpeechRecognizerAuthorizationStatusAuthorized) {
@@ -100,6 +100,7 @@ actual class SafeWordListener(
                 }
                 return // Wait for callback
             }
+
             else -> {
                 NSLog("$TAG: Speech recognition not authorized (status=$authStatus)")
                 _isListening.value = false
@@ -200,10 +201,7 @@ actual class SafeWordListener(
         }
     }
 
-    private fun handleRecognitionResult(
-        result: SFSpeechRecognitionResult?,
-        error: NSError?,
-    ) {
+    private fun handleRecognitionResult(result: SFSpeechRecognitionResult?, error: NSError?) {
         if (result != null) {
             val text = result.bestTranscription.formattedString
             if (matchesSafeWord(text)) {
@@ -233,8 +231,7 @@ actual class SafeWordListener(
      * Checks result text for the safe word (case-insensitive).
      * Splits on whitespace so "stop now" matches a safeWord of "stop".
      */
-    private fun matchesSafeWord(text: String): Boolean =
-        text.split("\\s+".toRegex()).any { it.equals(safeWord, ignoreCase = true) }
+    private fun matchesSafeWord(text: String): Boolean = text.split("\\s+".toRegex()).any { it.equals(safeWord, ignoreCase = true) }
 
     private fun cancelExistingTask() {
         val taskState = recognitionTask?.state

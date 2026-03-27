@@ -1,12 +1,12 @@
 package com.devil.phoenixproject.presentation.manager
 
+import kotlin.test.Test
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.runTest
-import kotlin.test.Test
-import kotlin.test.assertTrue
-import kotlin.test.assertFalse
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class MotionStartDetectorTest {
@@ -23,7 +23,12 @@ class MotionStartDetectorTest {
             detector.onMetricReceived(load = 10f, timestampMs = i * 100L)
         }
 
-        assertTrue(events.any { it is MotionStartEvent.Started }, "Should emit Started after sustained load")
+        assertTrue(
+            events.any {
+                it is MotionStartEvent.Started
+            },
+            "Should emit Started after sustained load",
+        )
         job.cancel()
     }
 
@@ -41,7 +46,12 @@ class MotionStartDetectorTest {
         // Continue with no load
         repeat(10) { i -> detector.onMetricReceived(load = 2f, timestampMs = 1100L + i * 100L) }
 
-        assertFalse(events.any { it is MotionStartEvent.Started }, "Should not emit Started if load dropped")
+        assertFalse(
+            events.any {
+                it is MotionStartEvent.Started
+            },
+            "Should not emit Started if load dropped",
+        )
         job.cancel()
     }
 
@@ -57,7 +67,12 @@ class MotionStartDetectorTest {
         repeat(5) { i -> detector.onMetricReceived(load = 10f, timestampMs = i * 100L) }
         detector.onMetricReceived(load = 2f, timestampMs = 500L)
 
-        assertTrue(events.any { it is MotionStartEvent.Cancelled }, "Should emit Cancelled when load drops")
+        assertTrue(
+            events.any {
+                it is MotionStartEvent.Cancelled
+            },
+            "Should emit Cancelled when load drops",
+        )
         job.cancel()
     }
 
@@ -74,7 +89,12 @@ class MotionStartDetectorTest {
 
         val ticks = events.filterIsInstance<MotionStartEvent.CountdownTick>()
         assertTrue(ticks.isNotEmpty(), "Should emit countdown ticks during hold")
-        assertTrue(ticks.all { it.remainingMs > 0 }, "All ticks should have positive remaining time")
+        assertTrue(
+            ticks.all {
+                it.remainingMs > 0
+            },
+            "All ticks should have positive remaining time",
+        )
         job.cancel()
     }
 
@@ -94,7 +114,12 @@ class MotionStartDetectorTest {
         repeat(10) { i -> detector.onMetricReceived(load = 10f, timestampMs = i * 100L) }
 
         // Should NOT have emitted Started because after reset, the hold only went 1000ms (10*100), not 1500ms
-        assertFalse(events.any { it is MotionStartEvent.Started }, "Should need full hold duration after reset")
+        assertFalse(
+            events.any {
+                it is MotionStartEvent.Started
+            },
+            "Should need full hold duration after reset",
+        )
         job.cancel()
     }
 }

@@ -66,40 +66,32 @@ actual object DeviceInfo {
 
     // ==================== Formatted Output ====================
 
-    actual fun getFormattedInfo(): String {
-        return buildString {
-            appendLine("App: VitruvianPhoenix v$appVersionName (build $appVersionCode)")
-            appendLine("Build Type: $buildType")
-            appendLine()
-            appendLine("Device: $manufacturer $model")
-            appendLine("Model Name: $device")
-            appendLine("OS: $platformVersionFull")
-            appendLine("Build: ${Build.DISPLAY}")
-        }
+    actual fun getFormattedInfo(): String = buildString {
+        appendLine("App: VitruvianPhoenix v$appVersionName (build $appVersionCode)")
+        appendLine("Build Type: $buildType")
+        appendLine()
+        appendLine("Device: $manufacturer $model")
+        appendLine("Model Name: $device")
+        appendLine("OS: $platformVersionFull")
+        appendLine("Build: ${Build.DISPLAY}")
     }
 
-    actual fun getCompactInfo(): String {
-        return "$manufacturer $model (Android $osVersion, SDK $sdkInt)"
-    }
+    actual fun getCompactInfo(): String = "$manufacturer $model (Android $osVersion, SDK $sdkInt)"
 
-    actual fun getAppVersionInfo(): String {
-        return "v$appVersionName ($buildType)"
-    }
+    actual fun getAppVersionInfo(): String = "v$appVersionName ($buildType)"
 
-    actual fun toJson(): String {
-        return buildString {
-            append("{")
-            append("\"appVersion\":\"$appVersionName\",")
-            append("\"appVersionCode\":$appVersionCode,")
-            append("\"buildType\":\"$buildType\",")
-            append("\"manufacturer\":\"$manufacturer\",")
-            append("\"model\":\"$model\",")
-            append("\"device\":\"$device\",")
-            append("\"osVersion\":\"$osVersion\",")
-            append("\"sdkInt\":$sdkInt,")
-            append("\"fingerprint\":\"$fingerprint\"")
-            append("}")
-        }
+    actual fun toJson(): String = buildString {
+        append("{")
+        append("\"appVersion\":\"$appVersionName\",")
+        append("\"appVersionCode\":$appVersionCode,")
+        append("\"buildType\":\"$buildType\",")
+        append("\"manufacturer\":\"$manufacturer\",")
+        append("\"model\":\"$model\",")
+        append("\"device\":\"$device\",")
+        append("\"osVersion\":\"$osVersion\",")
+        append("\"sdkInt\":$sdkInt,")
+        append("\"fingerprint\":\"$fingerprint\"")
+        append("}")
     }
 
     // ==================== Android-Specific Helpers ====================

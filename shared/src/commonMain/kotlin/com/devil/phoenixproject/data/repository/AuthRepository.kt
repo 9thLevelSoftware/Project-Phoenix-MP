@@ -2,11 +2,7 @@ package com.devil.phoenixproject.data.repository
 
 import kotlinx.coroutines.flow.StateFlow
 
-data class AuthUser(
-    val id: String,
-    val email: String?,
-    val displayName: String?
-)
+data class AuthUser(val id: String, val email: String?, val displayName: String?)
 
 sealed class AuthState {
     data object Loading : AuthState()

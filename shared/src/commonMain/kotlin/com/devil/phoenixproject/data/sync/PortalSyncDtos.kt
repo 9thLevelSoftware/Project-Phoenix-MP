@@ -58,7 +58,7 @@ data class PortalWorkoutSessionDto(
     val eccentricLoad: Int? = null,
     val echoLevel: Int? = null,
     val warmupReps: Int? = null,
-    val workingReps: Int? = null
+    val workingReps: Int? = null,
 )
 
 // ─── Level 2: Exercise (within a session) ───────────────────────────
@@ -74,7 +74,7 @@ data class PortalExerciseDto(
     val name: String,
     val muscleGroup: String = "General",
     val orderIndex: Int = 0,
-    val sets: List<PortalSetDto> = emptyList()
+    val sets: List<PortalSetDto> = emptyList(),
 )
 
 // ─── Level 3: Set (within an exercise) ──────────────────────────────
@@ -99,7 +99,7 @@ data class PortalSetDto(
     val prVolume: Float? = null, // total volume (weight × reps) for volume PRs
     val notes: String? = null,
     val workoutMode: String? = null, // SCREAMING_SNAKE
-    val repSummaries: List<PortalRepSummaryDto> = emptyList()
+    val repSummaries: List<PortalRepSummaryDto> = emptyList(),
 )
 
 // ─── Level 4: Rep Summary ───────────────────────────────────────────
@@ -123,7 +123,7 @@ data class PortalRepSummaryDto(
     val leftForceAvg: Float? = null, // cable A → left
     val rightForceAvg: Float? = null, // cable B → right
     val asymmetryPct: Float? = null,
-    val vbtZone: String? = null // e.g., "EXPLOSIVE", "STRENGTH"
+    val vbtZone: String? = null, // e.g., "EXPLOSIVE", "STRENGTH"
 )
 
 // ─── Level 4b: Rep Telemetry (raw force curves) ────────────────────
@@ -140,7 +140,7 @@ data class PortalRepTelemetryDto(
     val forceN: Float? = null,
     val velocityMps: Float? = null,
     val positionMm: Float? = null,
-    val cable: String? = null // "left" or "right"
+    val cable: String? = null, // "left" or "right"
 )
 
 // ─── Routine Sync DTOs ──────────────────────────────────────────────
@@ -159,7 +159,7 @@ data class PortalRoutineSyncDto(
     val estimatedDuration: Int = 0,
     val timesCompleted: Int = 0,
     val isFavorite: Boolean = false,
-    val exercises: List<PortalRoutineExerciseSyncDto> = emptyList()
+    val exercises: List<PortalRoutineExerciseSyncDto> = emptyList(),
 )
 
 @Serializable
@@ -189,7 +189,7 @@ data class PortalRoutineExerciseSyncDto(
     val eccentricLoad: String? = null,
     val echoLevel: String? = null,
     val perSetEchoLevels: String? = null, // JSON array of echo level names
-    val warmupSets: String? = null // JSON array of {reps, percentOfWorking}
+    val warmupSets: String? = null, // JSON array of {reps, percentOfWorking}
 )
 
 // ─── Training Cycle Sync DTOs ─────────────────────────────────────
@@ -214,7 +214,7 @@ data class PortalTrainingCycleSyncDto(
     val lastUsedAt: String? = null, // ISO 8601
     val progressionSettings: String? = null, // JSON
     val deloadSettings: String? = null, // JSON
-    val days: List<PortalCycleDaySyncDto> = emptyList()
+    val days: List<PortalCycleDaySyncDto> = emptyList(),
 )
 
 /**
@@ -233,7 +233,7 @@ data class PortalCycleDaySyncDto(
     val repModifier: Int = 0,
     val restOverride: Int? = null,
     val restType: String? = null,
-    val notes: String? = null
+    val notes: String? = null,
 )
 
 // ─── RPG/Gamification Sync DTOs ─────────────────────────────────────
@@ -248,7 +248,7 @@ data class PortalRpgAttributesSyncDto(
     val mastery: Int = 0,
     val characterClass: String? = null,
     val level: Int = 1,
-    val experiencePoints: Int = 0
+    val experiencePoints: Int = 0,
 )
 
 @Serializable
@@ -258,7 +258,7 @@ data class PortalEarnedBadgeSyncDto(
     val badgeName: String,
     val badgeDescription: String? = null,
     val badgeTier: String = "bronze",
-    val earnedAt: String // ISO 8601
+    val earnedAt: String, // ISO 8601
 )
 
 @Serializable
@@ -269,7 +269,7 @@ data class PortalGamificationStatsSyncDto(
     val totalVolumeKg: Float = 0f,
     val longestStreak: Int = 0,
     val currentStreak: Int = 0,
-    val totalTimeSeconds: Int = 0
+    val totalTimeSeconds: Int = 0,
 )
 
 // ─── Phase Statistics (GAP 7) ───────────────────────────────────────
@@ -293,7 +293,7 @@ data class PortalPhaseStatisticsDto(
     val eccentricVelAvg: Float = 0f, // m/s
     val eccentricVelMax: Float = 0f,
     val eccentricWattAvg: Float = 0f,
-    val eccentricWattMax: Float = 0f
+    val eccentricWattMax: Float = 0f,
 )
 
 // ─── Exercise Signatures (GAP 8) ───────────────────────────────────
@@ -313,7 +313,7 @@ data class PortalExerciseSignatureDto(
     val cableConfig: String = "DUAL_SYMMETRIC",
     val sampleCount: Int = 1,
     val confidence: Float = 0f,
-    val updatedAt: String? = null // ISO 8601
+    val updatedAt: String? = null, // ISO 8601
 )
 
 // ─── VBT Assessment Results (GAP 9) ────────────────────────────────
@@ -330,7 +330,7 @@ data class PortalAssessmentResultDto(
     val loadVelocityData: String, // JSON array of {loadKg, meanVelocityMs}
     val assessmentSessionId: String? = null,
     val userOverrideKg: Float? = null,
-    val createdAt: String // ISO 8601
+    val createdAt: String, // ISO 8601
 )
 
 // ─── Local Profile (profile data separation) ──────────────────────
@@ -341,11 +341,7 @@ data class PortalAssessmentResultDto(
  * profile-scoped filtering in the web dashboard.
  */
 @Serializable
-data class LocalProfileDto(
-    val id: String,
-    val name: String,
-    val colorIndex: Int
-)
+data class LocalProfileDto(val id: String, val name: String, val colorIndex: Int)
 
 // ─── Push Response ──────────────────────────────────────────────────
 
@@ -356,7 +352,7 @@ data class LocalProfileDto(
  */
 @Serializable
 data class PortalSyncPushResponse(
-    val syncTime: String,  // ISO 8601 from Edge Function
+    val syncTime: String, // ISO 8601 from Edge Function
     val sessionsInserted: Int = 0,
     val exercisesInserted: Int = 0,
     val setsInserted: Int = 0,
@@ -372,14 +368,11 @@ data class PortalSyncPushResponse(
     val assessmentsInserted: Int = 0,
     val externalActivitiesUpserted: Int = 0,
     val externalActivityIds: List<String> = emptyList(),
-    val externalActivityKeys: List<ExternalActivityAckDto> = emptyList()
+    val externalActivityKeys: List<ExternalActivityAckDto> = emptyList(),
 )
 
 @Serializable
-data class ExternalActivityAckDto(
-    val externalId: String,
-    val provider: String
-)
+data class ExternalActivityAckDto(val externalId: String, val provider: String)
 
 // ─── Composite Sync Payload ─────────────────────────────────────────
 
@@ -408,7 +401,7 @@ data class PortalSyncPayload(
     val profileName: String? = null,
     val allProfiles: List<LocalProfileDto>? = null,
     // External integration activities (paid users only)
-    val externalActivities: List<ExternalActivitySyncDto> = emptyList()
+    val externalActivities: List<ExternalActivitySyncDto> = emptyList(),
 )
 
 // ─── External Activities (Integration sync) ──────────────────────────
@@ -420,7 +413,7 @@ data class ExternalActivitySyncDto(
     val provider: String,
     val name: String,
     val activityType: String = "strength",
-    val startedAt: String,  // ISO-8601
+    val startedAt: String, // ISO-8601
     val durationSeconds: Int = 0,
     val distanceMeters: Double? = null,
     val calories: Int? = null,
@@ -428,7 +421,7 @@ data class ExternalActivitySyncDto(
     val maxHeartRate: Int? = null,
     val elevationGainMeters: Double? = null,
     val rawData: String? = null,
-    val syncedAt: String  // ISO-8601
+    val syncedAt: String, // ISO-8601
 )
 
 // ─── Pull Response DTOs (camelCase — NO @SerialName) ──────────────────
@@ -442,11 +435,7 @@ data class ExternalActivitySyncDto(
  * "different element types" error with heterogeneous maps.
  */
 @Serializable
-data class PortalSyncPullRequest(
-    val deviceId: String,
-    val lastSync: Long,
-    val profileId: String? = null
-)
+data class PortalSyncPullRequest(val deviceId: String, val lastSync: Long, val profileId: String? = null)
 
 /**
  * Response from the mobile-sync-pull Edge Function.
@@ -464,7 +453,7 @@ data class PortalSyncPullResponse(
     // Profile data separation: profile list from portal (round-trip)
     val localProfiles: List<LocalProfileDto>? = null,
     // External integration activities (paid users only)
-    val externalActivities: List<ExternalActivitySyncDto> = emptyList()
+    val externalActivities: List<ExternalActivitySyncDto> = emptyList(),
 )
 
 /**
@@ -486,7 +475,7 @@ data class PullWorkoutSessionDto(
     val routineName: String? = null,
     val workoutMode: String? = null,
     val routineSessionId: String? = null,
-    val exercises: List<PullExerciseDto> = emptyList()
+    val exercises: List<PullExerciseDto> = emptyList(),
 )
 
 @Serializable
@@ -496,7 +485,7 @@ data class PullExerciseDto(
     val name: String = "",
     val muscleGroup: String = "General",
     val orderIndex: Int = 0,
-    val sets: List<PullSetDto> = emptyList()
+    val sets: List<PullSetDto> = emptyList(),
 )
 
 @Serializable
@@ -511,7 +500,7 @@ data class PullSetDto(
     val isPr: Boolean = false,
     val notes: String? = null,
     val workoutMode: String? = null,
-    val repSummaries: List<PullRepSummaryDto> = emptyList()
+    val repSummaries: List<PullRepSummaryDto> = emptyList(),
 )
 
 @Serializable
@@ -529,7 +518,7 @@ data class PullRepSummaryDto(
     val leftForceAvg: Float? = null,
     val rightForceAvg: Float? = null,
     val asymmetryPct: Float? = null,
-    val vbtZone: String? = null
+    val vbtZone: String? = null,
 )
 
 /**
@@ -545,7 +534,7 @@ data class PullRoutineDto(
     val estimatedDuration: Int = 0,
     val timesCompleted: Int = 0,
     val isFavorite: Boolean = false,
-    val exercises: List<PullRoutineExerciseDto> = emptyList()
+    val exercises: List<PullRoutineExerciseDto> = emptyList(),
 )
 
 @Serializable
@@ -573,7 +562,7 @@ data class PullRoutineExerciseDto(
     val eccentricLoad: String? = null,
     val echoLevel: String? = null,
     val perSetEchoLevels: String? = null, // JSON array of echo level names
-    val warmupSets: String? = null // JSON array of {reps, percentOfWorking}
+    val warmupSets: String? = null, // JSON array of {reps, percentOfWorking}
 )
 
 /**
@@ -594,7 +583,7 @@ data class PullTrainingCycleDto(
     val lastUsedAt: String? = null,
     val progressionSettings: String? = null,
     val deloadSettings: String? = null,
-    val days: List<PullCycleDayDto> = emptyList()
+    val days: List<PullCycleDayDto> = emptyList(),
 )
 
 @Serializable
@@ -608,7 +597,7 @@ data class PullCycleDayDto(
     val repModifier: Int = 0,
     val restOverride: Int? = null,
     val restType: String? = null,
-    val notes: String? = null
+    val notes: String? = null,
 )
 
 @Serializable
@@ -621,7 +610,7 @@ data class PullRpgAttributesDto(
     val mastery: Int = 0,
     val characterClass: String? = null,
     val level: Int = 1,
-    val experiencePoints: Int = 0
+    val experiencePoints: Int = 0,
 )
 
 @Serializable
@@ -631,7 +620,7 @@ data class PullBadgeDto(
     val badgeName: String = "",
     val badgeDescription: String? = null,
     val badgeTier: String = "bronze",
-    val earnedAt: String = "" // ISO 8601
+    val earnedAt: String = "", // ISO 8601
 )
 
 @Serializable
@@ -642,5 +631,5 @@ data class PullGamificationStatsDto(
     val totalVolumeKg: Float = 0f,
     val longestStreak: Int = 0,
     val currentStreak: Int = 0,
-    val totalTimeSeconds: Int = 0
+    val totalTimeSeconds: Int = 0,
 )

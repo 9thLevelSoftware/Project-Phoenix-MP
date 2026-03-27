@@ -10,9 +10,7 @@ class FakeBiomechanicsRepository : BiomechanicsRepository {
         savedBiomechanics[sessionId] = (savedBiomechanics[sessionId] ?: emptyList()) + results
     }
 
-    override suspend fun getRepBiomechanics(sessionId: String): List<BiomechanicsRepResult> {
-        return savedBiomechanics[sessionId] ?: emptyList()
-    }
+    override suspend fun getRepBiomechanics(sessionId: String): List<BiomechanicsRepResult> = savedBiomechanics[sessionId] ?: emptyList()
 
     override suspend fun deleteRepBiomechanics(sessionId: String) {
         savedBiomechanics.remove(sessionId)

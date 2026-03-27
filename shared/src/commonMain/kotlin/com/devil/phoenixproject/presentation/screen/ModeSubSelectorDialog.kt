@@ -11,8 +11,8 @@ import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.domain.model.*
 import com.devil.phoenixproject.ui.theme.Spacing
 import org.jetbrains.compose.resources.stringResource
-import vitruvianprojectphoenix.shared.generated.resources.Res
 import vitruvianprojectphoenix.shared.generated.resources.*
+import vitruvianprojectphoenix.shared.generated.resources.Res
 
 /**
  * Mode Sub-Selector Dialog for hierarchical workout modes (TUT and Echo)
@@ -23,28 +23,34 @@ fun ModeSubSelectorDialog(
     type: String,
     workoutParameters: WorkoutParameters,
     onDismiss: () -> Unit,
-    onSelect: (WorkoutMode, EccentricLoad?) -> Unit
+    onSelect: (WorkoutMode, EccentricLoad?) -> Unit,
 ) {
     when (type) {
         "TUT" -> {
             AlertDialog(
                 onDismissRequest = onDismiss,
-                title = { Text(stringResource(Res.string.select_tut_variant), style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold) },
+                title = {
+                    Text(
+                        stringResource(Res.string.select_tut_variant),
+                        style = MaterialTheme.typography.headlineSmall,
+                        fontWeight = FontWeight.Bold,
+                    )
+                },
                 containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
                 shape = RoundedCornerShape(28.dp),
                 text = {
                     Column(
-                        verticalArrangement = Arrangement.spacedBy(Spacing.small)
+                        verticalArrangement = Arrangement.spacedBy(Spacing.small),
                     ) {
                         OutlinedButton(
                             onClick = { onSelect(WorkoutMode.TUT, null) },
-                            modifier = Modifier.fillMaxWidth()
+                            modifier = Modifier.fillMaxWidth(),
                         ) {
                             Text(stringResource(Res.string.mode_tut))
                         }
                         OutlinedButton(
                             onClick = { onSelect(WorkoutMode.TUTBeast, null) },
-                            modifier = Modifier.fillMaxWidth()
+                            modifier = Modifier.fillMaxWidth(),
                         ) {
                             Text(stringResource(Res.string.mode_tut_beast))
                         }
@@ -54,9 +60,10 @@ fun ModeSubSelectorDialog(
                     TextButton(onClick = onDismiss) {
                         Text(stringResource(Res.string.action_cancel))
                     }
-                }
+                },
             )
         }
+
         "Echo" -> {
             var selectedEchoLevel by remember {
                 mutableStateOf(
@@ -64,7 +71,7 @@ fun ModeSubSelectorDialog(
                         workoutParameters.echoLevel
                     } else {
                         EchoLevel.HARD
-                    }
+                    },
                 )
             }
             var selectedEccentricLoad by remember {
@@ -73,7 +80,7 @@ fun ModeSubSelectorDialog(
                         workoutParameters.eccentricLoad
                     } else {
                         EccentricLoad.LOAD_100
-                    }
+                    },
                 )
             }
             var showEchoLevelMenu by remember { mutableStateOf(false) }
@@ -81,23 +88,29 @@ fun ModeSubSelectorDialog(
 
             AlertDialog(
                 onDismissRequest = onDismiss,
-                title = { Text(stringResource(Res.string.echo_mode_configuration), style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold) },
+                title = {
+                    Text(
+                        stringResource(Res.string.echo_mode_configuration),
+                        style = MaterialTheme.typography.headlineSmall,
+                        fontWeight = FontWeight.Bold,
+                    )
+                },
                 containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
                 shape = RoundedCornerShape(28.dp),
                 text = {
                     Column(
-                        verticalArrangement = Arrangement.spacedBy(Spacing.small)
+                        verticalArrangement = Arrangement.spacedBy(Spacing.small),
                     ) {
                         Text(
                             "Echo adapts resistance to your output",
-                            style = MaterialTheme.typography.bodyMedium
+                            style = MaterialTheme.typography.bodyMedium,
                         )
                         Spacer(modifier = Modifier.height(Spacing.small))
 
                         // Echo Level Dropdown
                         ExposedDropdownMenuBox(
                             expanded = showEchoLevelMenu,
-                            onExpandedChange = { showEchoLevelMenu = !showEchoLevelMenu }
+                            onExpandedChange = { showEchoLevelMenu = !showEchoLevelMenu },
                         ) {
                             OutlinedTextField(
                                 value = selectedEchoLevel.displayName,
@@ -105,23 +118,32 @@ fun ModeSubSelectorDialog(
                                 readOnly = true,
                                 label = { Text(stringResource(Res.string.echo_level)) },
                                 trailingIcon = {
-                                    ExposedDropdownMenuDefaults.TrailingIcon(expanded = showEchoLevelMenu)
+                                    ExposedDropdownMenuDefaults.TrailingIcon(
+                                        expanded = showEchoLevelMenu,
+                                    )
                                 },
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .menuAnchor(type = ExposedDropdownMenuAnchorType.PrimaryNotEditable)
+                                    .menuAnchor(
+                                        type = ExposedDropdownMenuAnchorType.PrimaryNotEditable,
+                                    ),
                             )
                             ExposedDropdownMenu(
                                 expanded = showEchoLevelMenu,
-                                onDismissRequest = { showEchoLevelMenu = false }
+                                onDismissRequest = { showEchoLevelMenu = false },
                             ) {
-                                listOf(EchoLevel.HARD, EchoLevel.HARDER, EchoLevel.HARDEST, EchoLevel.EPIC).forEach { level ->
+                                listOf(
+                                    EchoLevel.HARD,
+                                    EchoLevel.HARDER,
+                                    EchoLevel.HARDEST,
+                                    EchoLevel.EPIC,
+                                ).forEach { level ->
                                     DropdownMenuItem(
                                         text = { Text(level.displayName) },
                                         onClick = {
                                             selectedEchoLevel = level
                                             showEchoLevelMenu = false
-                                        }
+                                        },
                                     )
                                 }
                             }
@@ -130,7 +152,7 @@ fun ModeSubSelectorDialog(
                         // Eccentric Load Dropdown
                         ExposedDropdownMenuBox(
                             expanded = showEccentricMenu,
-                            onExpandedChange = { showEccentricMenu = !showEccentricMenu }
+                            onExpandedChange = { showEccentricMenu = !showEccentricMenu },
                         ) {
                             OutlinedTextField(
                                 value = selectedEccentricLoad.displayName,
@@ -138,15 +160,19 @@ fun ModeSubSelectorDialog(
                                 readOnly = true,
                                 label = { Text(stringResource(Res.string.eccentric_load)) },
                                 trailingIcon = {
-                                    ExposedDropdownMenuDefaults.TrailingIcon(expanded = showEccentricMenu)
+                                    ExposedDropdownMenuDefaults.TrailingIcon(
+                                        expanded = showEccentricMenu,
+                                    )
                                 },
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .menuAnchor(type = ExposedDropdownMenuAnchorType.PrimaryNotEditable)
+                                    .menuAnchor(
+                                        type = ExposedDropdownMenuAnchorType.PrimaryNotEditable,
+                                    ),
                             )
                             ExposedDropdownMenu(
                                 expanded = showEccentricMenu,
-                                onDismissRequest = { showEccentricMenu = false }
+                                onDismissRequest = { showEccentricMenu = false },
                             ) {
                                 listOf(
                                     EccentricLoad.LOAD_0,
@@ -154,14 +180,14 @@ fun ModeSubSelectorDialog(
                                     EccentricLoad.LOAD_75,
                                     EccentricLoad.LOAD_100,
                                     EccentricLoad.LOAD_120,
-                                    EccentricLoad.LOAD_150
+                                    EccentricLoad.LOAD_150,
                                 ).forEach { load ->
                                     DropdownMenuItem(
                                         text = { Text(load.displayName) },
                                         onClick = {
                                             selectedEccentricLoad = load
                                             showEccentricMenu = false
-                                        }
+                                        },
                                     )
                                 }
                             }
@@ -172,7 +198,7 @@ fun ModeSubSelectorDialog(
                     Button(
                         onClick = {
                             onSelect(WorkoutMode.Echo(selectedEchoLevel), selectedEccentricLoad)
-                        }
+                        },
                     ) {
                         Text(stringResource(Res.string.action_select))
                     }
@@ -181,7 +207,7 @@ fun ModeSubSelectorDialog(
                     TextButton(onClick = onDismiss) {
                         Text(stringResource(Res.string.action_cancel))
                     }
-                }
+                },
             )
         }
     }

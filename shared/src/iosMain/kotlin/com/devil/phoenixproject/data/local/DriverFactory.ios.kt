@@ -8,8 +8,9 @@ import app.cash.sqldelight.driver.native.NativeSqliteDriver
 import co.touchlab.sqliter.DatabaseConfiguration
 import com.devil.phoenixproject.database.VitruvianDatabase
 import kotlinx.cinterop.ExperimentalForeignApi
-import kotlinx.cinterop.memScoped
+import kotlinx.cinterop.ObjCObjectVar
 import kotlinx.cinterop.alloc
+import kotlinx.cinterop.memScoped
 import kotlinx.cinterop.ptr
 import kotlinx.cinterop.value
 import platform.Foundation.NSError
@@ -20,7 +21,6 @@ import platform.Foundation.NSNumber
 import platform.Foundation.NSURL
 import platform.Foundation.NSURLIsExcludedFromBackupKey
 import platform.Foundation.NSUserDomainMask
-import kotlinx.cinterop.ObjCObjectVar
 
 /**
  * Custom exception thrown when a migration step fails with a non-recoverable error.
@@ -28,14 +28,11 @@ import kotlinx.cinterop.ObjCObjectVar
  * [NativeSqliteDriver] that migration did NOT complete successfully, preventing
  * the driver from advancing PRAGMA user_version to the target version.
  */
-private class MigrationFailedException(
-    val stoppedAtVersion: Long,
-    val targetVersion: Long,
-    cause: Exception
-) : RuntimeException(
-    "Migration stopped at version $stoppedAtVersion (target $targetVersion): ${cause.message}",
-    cause
-)
+private class MigrationFailedException(val stoppedAtVersion: Long, val targetVersion: Long, cause: Exception) :
+    RuntimeException(
+        "Migration stopped at version $stoppedAtVersion (target $targetVersion): ${cause.message}",
+        cause,
+    )
 
 /**
  * iOS DriverFactory - delegates schema creation to SQLDelight and wraps migrations
@@ -92,10 +89,10 @@ actual class DriverFactory {
                 onConfiguration = { config ->
                     config.copy(
                         extendedConfig = DatabaseConfiguration.Extended(
-                            foreignKeyConstraints = false  // Disable during create/migrate; enabled below
-                        )
+                            foreignKeyConstraints = false, // Disable during create/migrate; enabled below
+                        ),
                     )
-                }
+                },
             )
         } catch (e: MigrationFailedException) {
             // A migration step failed and was rolled back. The SAVEPOINT set user_version
@@ -115,6 +112,14 @@ actual class DriverFactory {
 
         // Post-creation pragmas
         applyPragmas(readyDriver)
+
+        // Verify schema integrity. If NativeSqliteDriver advanced user_version despite
+        // a migration failure (crash-loop scenario), the schema is incomplete. Detect
+        // this and force nuclear recovery so the app doesn't crash on every launch.
+        if (!verifySchemaIntegrity(readyDriver)) {
+            NSLog("iOS DB: Schema verification FAILED — forcing nuclear recovery")
+            return recoverByDeletingDatabase()
+        }
 
         // Exclude database files from iCloud backup to prevent restoring stale schemas
         excludeDatabaseFromBackup()
@@ -143,10 +148,10 @@ actual class DriverFactory {
                 onConfiguration = { config ->
                     config.copy(
                         extendedConfig = DatabaseConfiguration.Extended(
-                            foreignKeyConstraints = false
-                        )
+                            foreignKeyConstraints = false,
+                        ),
                     )
-                }
+                },
             )
         } catch (e: Exception) {
             // If fresh creation also fails, something is fundamentally wrong
@@ -181,21 +186,79 @@ actual class DriverFactory {
                 SchemaHealStatus.ADDED -> {
                     NSLog("iOS DB: Legacy repair added ${result.operation.target}")
                 }
+
                 SchemaHealStatus.ALREADY_PRESENT -> {
                     NSLog("iOS DB: Legacy repair confirmed ${result.operation.target}")
                 }
+
                 SchemaHealStatus.TABLE_MISSING -> {
                     NSLog("iOS DB: Legacy repair deferred for ${result.operation.target} (table missing)")
                 }
+
                 SchemaHealStatus.FAILED -> {
                     NSLog(
                         "iOS DB: Legacy repair warning for ${result.operation.target}: " +
-                            (result.detail?.take(120) ?: "unknown")
+                            (result.detail?.take(120) ?: "unknown"),
                     )
                 }
             }
         }
         return driver
+    }
+
+    // ==================== Schema Integrity Verification ====================
+
+    /**
+     * Verify that critical columns exist in the database schema.
+     *
+     * This catches the crash-loop scenario where NativeSqliteDriver advances
+     * PRAGMA user_version to the target despite a migration failure. The DB appears
+     * "fully migrated" but is missing columns, causing every subsequent launch to
+     * crash on the first query that references a missing column.
+     *
+     * Returns true if the schema looks healthy, false if nuclear recovery is needed.
+     */
+    private fun verifySchemaIntegrity(driver: SqlDriver): Boolean {
+        val checks = listOf(
+            "WorkoutSession" to "profile_id",
+            "EarnedBadge" to "updatedAt",
+            "PersonalRecord" to "profile_id",
+        )
+        for ((table, column) in checks) {
+            if (!columnExists(driver, table, column)) {
+                NSLog("iOS DB: Schema verification FAILED — $table.$column is missing")
+                return false
+            }
+        }
+        NSLog("iOS DB: Schema verification passed")
+        return true
+    }
+
+    /**
+     * Check if a column exists in a table using PRAGMA table_info.
+     */
+    private fun columnExists(driver: SqlDriver, table: String, column: String): Boolean {
+        return try {
+            var found = false
+            driver.executeQuery(
+                identifier = null,
+                sql = "PRAGMA table_info($table)",
+                mapper = { cursor ->
+                    while (cursor.next().value) {
+                        val name = cursor.getString(1)
+                        if (name == column) {
+                            found = true
+                        }
+                    }
+                    app.cash.sqldelight.db.QueryResult.Value(found)
+                },
+                parameters = 0,
+            )
+            found
+        } catch (e: Exception) {
+            NSLog("iOS DB: Schema check failed for $table.$column: ${e.message?.take(80)}")
+            false
+        }
     }
 
     // ==================== iCloud Backup Exclusion ====================
@@ -221,7 +284,7 @@ actual class DriverFactory {
                     val success = url.setResourceValue(
                         NSNumber(bool = true),
                         forKey = NSURLIsExcludedFromBackupKey,
-                        error = errorPtr.ptr
+                        error = errorPtr.ptr,
                     )
                     if (!success) {
                         val error = errorPtr.value
@@ -294,6 +357,7 @@ actual class DriverFactory {
     private fun getDatabasePath(): String {
         val fileManager = NSFileManager.defaultManager
         val urls = fileManager.URLsForDirectory(NSLibraryDirectory, NSUserDomainMask)
+
         @Suppress("UNCHECKED_CAST")
         val libraryUrl = (urls as List<NSURL>).firstOrNull()
         val libraryPath = libraryUrl?.path ?: ""
@@ -324,22 +388,13 @@ actual class DriverFactory {
  * The thrown [MigrationFailedException] is caught by [DriverFactory.createDriver],
  * which triggers nuclear recovery (delete DB + recreate from schema + Supabase sync).
  */
-private class SavepointMigratingSchema(
-    private val delegate: SqlSchema<QueryResult.Value<Unit>>
-) : SqlSchema<QueryResult.Value<Unit>> {
+private class SavepointMigratingSchema(private val delegate: SqlSchema<QueryResult.Value<Unit>>) : SqlSchema<QueryResult.Value<Unit>> {
 
     override val version: Long get() = delegate.version
 
-    override fun create(driver: SqlDriver): QueryResult.Value<Unit> {
-        return delegate.create(driver)
-    }
+    override fun create(driver: SqlDriver): QueryResult.Value<Unit> = delegate.create(driver)
 
-    override fun migrate(
-        driver: SqlDriver,
-        oldVersion: Long,
-        newVersion: Long,
-        vararg callbacks: AfterVersion
-    ): QueryResult.Value<Unit> {
+    override fun migrate(driver: SqlDriver, oldVersion: Long, newVersion: Long, vararg callbacks: AfterVersion): QueryResult.Value<Unit> {
         if (oldVersion >= newVersion) {
             return QueryResult.Value(Unit)
         }
@@ -349,7 +404,7 @@ private class SavepointMigratingSchema(
         for (version in oldVersion until newVersion) {
             val stepFrom = version
             val stepTo = version + 1
-            val savepointName = "migration_v${stepTo}"
+            val savepointName = "migration_v$stepTo"
 
             // Pre-flight: ensure tables/columns exist before this migration runs.
             // This runs OUTSIDE the savepoint so failures don't affect migration state.
@@ -419,15 +474,26 @@ private class SavepointMigratingSchema(
      * ensure dependencies exist; if they already exist, that's fine.
      */
     private fun runPreFlight(driver: SqlDriver, targetStep: Long) {
-        // Ensure all tables exist before any migration step. This is a no-op for
-        // tables that already exist (IF NOT EXISTS), but guarantees the schema is
-        // complete for iOS upgrade paths that may have skipped table creation.
-        ensureAllTablesExist(driver)
+        // NOTE: ensureAllTablesExist() was previously called here before every step.
+        // This was REMOVED because it creates ALL tables with ALL columns from the
+        // current schema, which poisons future ALTER TABLE ADD COLUMN migrations.
+        // Tables that don't exist yet get created with columns that migrations
+        // expect to ADD, causing "duplicate column" failures.
+        // See: crash reports 7/8 (iPad7,11, build 20260327147).
 
         when (targetStep) {
             10L -> preFlightMigration10(driver)
-            11L -> ensureGamificationTablesExist(driver)
+
+            11L -> {
+                // Gamification tables have no creation migration — bootstrap them
+                // with the BASE shape (without sync/profile columns) so migration 11
+                // can ALTER TABLE ADD COLUMN on them.
+                ensureGamificationTablesExist(driver)
+                preFlightMigration11(driver)
+            }
+
             21L -> preFlightMigration21(driver)
+
             22L -> {
                 ensureGamificationTablesExist(driver)
                 preFlightMigration22(driver)
@@ -464,6 +530,43 @@ private class SavepointMigratingSchema(
                     // Expected on replay — column already exists from prior migration 4 or 7
                 } else {
                     NSLog("iOS DB: Pre-flight ALTER warning: ${e.message?.take(80)}")
+                }
+            }
+        }
+    }
+
+    /**
+     * Migration 11 adds sync columns (updatedAt, serverId, deletedAt) to gamification
+     * tables. If these tables were bootstrapped by a previous build's
+     * ensureGamificationTablesExist() or ensureAllTablesExist() with extra columns,
+     * the ALTER TABLE ADD COLUMN will fail with "duplicate column".
+     *
+     * This preflight adds the sync columns defensively before migration 11 runs.
+     */
+    private fun preFlightMigration11(driver: SqlDriver) {
+        val columns = listOf(
+            // EarnedBadge sync columns (migration 11, step 6)
+            "ALTER TABLE EarnedBadge ADD COLUMN updatedAt INTEGER",
+            "ALTER TABLE EarnedBadge ADD COLUMN serverId TEXT",
+            "ALTER TABLE EarnedBadge ADD COLUMN deletedAt INTEGER",
+            // GamificationStats sync columns (migration 11, step 7)
+            "ALTER TABLE GamificationStats ADD COLUMN updatedAt INTEGER",
+            "ALTER TABLE GamificationStats ADD COLUMN serverId TEXT",
+        )
+        for (sql in columns) {
+            try {
+                driver.execute(null, sql, 0)
+                NSLog("iOS DB: Pre-flight sync column added: ${sql.substringAfter("ADD COLUMN ").take(30)}")
+            } catch (e: Exception) {
+                val msg = e.message?.lowercase() ?: ""
+                if (msg.contains("duplicate column") || msg.contains("already exists")) {
+                    // Expected — column present from prior bootstrap or healing
+                } else if (msg.contains("no such table")) {
+                    // Table doesn't exist yet — ensureGamificationTablesExist should have
+                    // created it, but if it didn't, migration 11 will handle it
+                    NSLog("iOS DB: Pre-flight migration 11: table missing (${e.message?.take(60)})")
+                } else {
+                    NSLog("iOS DB: Pre-flight ALTER warning (migration 11): ${e.message?.take(80)}")
                 }
             }
         }

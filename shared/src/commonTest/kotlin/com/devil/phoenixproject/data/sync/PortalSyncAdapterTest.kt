@@ -4,8 +4,8 @@ import com.devil.phoenixproject.domain.model.EccentricLoad
 import com.devil.phoenixproject.domain.model.EchoLevel
 import com.devil.phoenixproject.domain.model.Exercise
 import com.devil.phoenixproject.domain.model.ProgramMode
-import com.devil.phoenixproject.domain.model.RepMetricData
 import com.devil.phoenixproject.domain.model.RepCountTiming
+import com.devil.phoenixproject.domain.model.RepMetricData
 import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.domain.model.RoutineExercise
 import com.devil.phoenixproject.domain.model.Superset
@@ -25,8 +25,12 @@ class PortalSyncAdapterTest {
     @Test
     fun `standalone sessions each become separate portal workouts`() {
         val sessions = listOf(
-            makeSessionWithReps(sessionId = "s1", routineSessionId = null, exerciseName = "Bench Press"),
-            makeSessionWithReps(sessionId = "s2", routineSessionId = null, exerciseName = "Squat")
+            makeSessionWithReps(
+                sessionId = "s1",
+                routineSessionId = null,
+                exerciseName = "Bench Press",
+            ),
+            makeSessionWithReps(sessionId = "s2", routineSessionId = null, exerciseName = "Squat"),
         )
 
         val result = PortalSyncAdapter.toPortalWorkoutSessions(sessions, "user-1")
@@ -40,9 +44,21 @@ class PortalSyncAdapterTest {
     @Test
     fun `sessions with same routineSessionId are grouped into one portal workout`() {
         val sessions = listOf(
-            makeSessionWithReps(sessionId = "s1", routineSessionId = "routine-run-1", exerciseName = "Bench Press"),
-            makeSessionWithReps(sessionId = "s2", routineSessionId = "routine-run-1", exerciseName = "Incline Press"),
-            makeSessionWithReps(sessionId = "s3", routineSessionId = "routine-run-1", exerciseName = "Cable Fly")
+            makeSessionWithReps(
+                sessionId = "s1",
+                routineSessionId = "routine-run-1",
+                exerciseName = "Bench Press",
+            ),
+            makeSessionWithReps(
+                sessionId = "s2",
+                routineSessionId = "routine-run-1",
+                exerciseName = "Incline Press",
+            ),
+            makeSessionWithReps(
+                sessionId = "s3",
+                routineSessionId = "routine-run-1",
+                exerciseName = "Cable Fly",
+            ),
         )
 
         val result = PortalSyncAdapter.toPortalWorkoutSessions(sessions, "user-1")
@@ -59,7 +75,7 @@ class PortalSyncAdapterTest {
             makeSessionWithReps(sessionId = "standalone-1", routineSessionId = null),
             makeSessionWithReps(sessionId = "routine-ex-1", routineSessionId = "run-1"),
             makeSessionWithReps(sessionId = "routine-ex-2", routineSessionId = "run-1"),
-            makeSessionWithReps(sessionId = "standalone-2", routineSessionId = null)
+            makeSessionWithReps(sessionId = "standalone-2", routineSessionId = null),
         )
 
         val result = PortalSyncAdapter.toPortalWorkoutSessions(sessions, "user-1")
@@ -78,7 +94,7 @@ class PortalSyncAdapterTest {
     fun `portal session aggregates duration from ms to seconds`() {
         val sessions = listOf(
             makeSessionWithReps(durationMs = 60000), // 60s
-            makeSessionWithReps(durationMs = 30000)  // 30s
+            makeSessionWithReps(durationMs = 30000), // 30s
         )
         // Put both in same routine group
         val groupedSessions = sessions.map {
@@ -96,12 +112,12 @@ class PortalSyncAdapterTest {
         val s1 = makeSessionWithReps(
             totalVolumeKg = 500f,
             weightPerCableKg = 25f,
-            totalReps = 10
+            totalReps = 10,
         )
         val s2 = makeSessionWithReps(
             totalVolumeKg = 300f,
             weightPerCableKg = 15f,
-            totalReps = 10
+            totalReps = 10,
         )
         val grouped = listOf(s1, s2).map {
             it.copy(session = it.session.copy(routineSessionId = "group-1"))
@@ -118,8 +134,8 @@ class PortalSyncAdapterTest {
             makeSessionWithReps(
                 totalVolumeKg = null,
                 weightPerCableKg = 20f,
-                totalReps = 10
-            )
+                totalReps = 10,
+            ),
         )
 
         val result = PortalSyncAdapter.toPortalWorkoutSessions(sessions, "user-1")
@@ -133,7 +149,7 @@ class PortalSyncAdapterTest {
         val grouped = listOf(
             makeSessionWithReps(routineSessionId = "g1"),
             makeSessionWithReps(routineSessionId = "g1"),
-            makeSessionWithReps(routineSessionId = "g1")
+            makeSessionWithReps(routineSessionId = "g1"),
         )
 
         val result = PortalSyncAdapter.toPortalWorkoutSessions(grouped, "user-1")
@@ -145,7 +161,7 @@ class PortalSyncAdapterTest {
     fun `portal session exerciseCount equals number of exercises`() {
         val grouped = listOf(
             makeSessionWithReps(routineSessionId = "g1"),
-            makeSessionWithReps(routineSessionId = "g1")
+            makeSessionWithReps(routineSessionId = "g1"),
         )
 
         val result = PortalSyncAdapter.toPortalWorkoutSessions(grouped, "user-1")
@@ -160,7 +176,7 @@ class PortalSyncAdapterTest {
         val grouped = listOf(
             makeSessionWithReps(routineSessionId = "g1", exerciseName = "Ex A", timestamp = 1000L),
             makeSessionWithReps(routineSessionId = "g1", exerciseName = "Ex B", timestamp = 2000L),
-            makeSessionWithReps(routineSessionId = "g1", exerciseName = "Ex C", timestamp = 3000L)
+            makeSessionWithReps(routineSessionId = "g1", exerciseName = "Ex C", timestamp = 3000L),
         )
 
         val result = PortalSyncAdapter.toPortalWorkoutSessions(grouped, "user-1")
@@ -196,7 +212,7 @@ class PortalSyncAdapterTest {
         val swr = makeSessionWithReps(
             weightPerCableKg = 30f,
             reps = 10,
-            totalReps = 8
+            totalReps = 8,
         )
 
         val result = PortalSyncAdapter.toPortalWorkoutSessions(listOf(swr), "user-1")
@@ -223,7 +239,7 @@ class PortalSyncAdapterTest {
     fun `rep summary converts velocity from mm-s to m-s`() {
         val repMetric = makeRepMetricData(
             avgVelocityConcentric = 500f, // 500 mm/s
-            peakVelocity = 1000f // 1000 mm/s
+            peakVelocity = 1000f, // 1000 mm/s
         )
         val swr = makeSessionWithReps(repMetrics = listOf(repMetric))
 
@@ -240,7 +256,7 @@ class PortalSyncAdapterTest {
             avgForceConcentricA = 10f,
             avgForceConcentricB = 10f,
             peakForceA = 15f,
-            peakForceB = 15f
+            peakForceB = 15f,
         )
         val swr = makeSessionWithReps(repMetrics = listOf(repMetric))
 
@@ -257,7 +273,7 @@ class PortalSyncAdapterTest {
     fun `rep summary calculates TUT as concentric plus eccentric duration`() {
         val repMetric = makeRepMetricData(
             concentricDurationMs = 800L,
-            eccentricDurationMs = 1200L
+            eccentricDurationMs = 1200L,
         )
         val swr = makeSessionWithReps(repMetrics = listOf(repMetric))
 
@@ -271,7 +287,7 @@ class PortalSyncAdapterTest {
     fun `rep summary maps cable forces as left and right in Newtons`() {
         val repMetric = makeRepMetricData(
             avgForceConcentricA = 20f, // Cable A = left
-            avgForceConcentricB = 18f  // Cable B = right
+            avgForceConcentricB = 18f, // Cable B = right
         )
         val swr = makeSessionWithReps(repMetrics = listOf(repMetric))
 
@@ -288,7 +304,7 @@ class PortalSyncAdapterTest {
     fun `rep summary maps power and ROM directly`() {
         val repMetric = makeRepMetricData(
             avgPowerWatts = 250f,
-            rangeOfMotionMm = 400f
+            rangeOfMotionMm = 400f,
         )
         val swr = makeSessionWithReps(repMetrics = listOf(repMetric))
 
@@ -310,11 +326,11 @@ class PortalSyncAdapterTest {
             asymmetryPercent = 5.2f,
             dominantSide = "left",
             avgLoadA = 25f,
-            avgLoadB = 23f
+            avgLoadB = 23f,
         )
         val swr = makeSessionWithReps(
             repMetrics = listOf(repMetric),
-            repBiomechanics = listOf(bio)
+            repBiomechanics = listOf(bio),
         )
 
         val result = PortalSyncAdapter.toPortalWorkoutSessions(listOf(swr), "user-1")
@@ -351,7 +367,7 @@ class PortalSyncAdapterTest {
         val sessions = listOf(
             makeSessionWithReps(routineSessionId = "g1", mode = "Old School"),
             makeSessionWithReps(routineSessionId = "g1", mode = "Old School"),
-            makeSessionWithReps(routineSessionId = "g1", mode = "Pump")
+            makeSessionWithReps(routineSessionId = "g1", mode = "Pump"),
         )
 
         val result = PortalSyncAdapter.toPortalWorkoutSessions(sessions, "user-1")
@@ -365,14 +381,17 @@ class PortalSyncAdapterTest {
     fun `portal session startedAt is ISO 8601 format from earliest session timestamp`() {
         val sessions = listOf(
             makeSessionWithReps(routineSessionId = "g1", timestamp = 1700000000000L),
-            makeSessionWithReps(routineSessionId = "g1", timestamp = 1700000060000L)
+            makeSessionWithReps(routineSessionId = "g1", timestamp = 1700000060000L),
         )
 
         val result = PortalSyncAdapter.toPortalWorkoutSessions(sessions, "user-1")
 
         // Should be ISO 8601 format - kotlinx.datetime.Instant.toString()
         // 1700000000000 = 2023-11-14T22:13:20Z
-        assertTrue(result[0].startedAt.contains("2023-11-14"), "startedAt should be ISO 8601: ${result[0].startedAt}")
+        assertTrue(
+            result[0].startedAt.contains("2023-11-14"),
+            "startedAt should be ISO 8601: ${result[0].startedAt}",
+        )
         assertTrue(result[0].startedAt.contains("T"), "startedAt should contain 'T' separator")
     }
 
@@ -384,7 +403,7 @@ class PortalSyncAdapterTest {
             id = "routine-1",
             name = "Push Day",
             description = "Chest and triceps",
-            useCount = 5
+            useCount = 5,
         )
 
         val result = PortalSyncAdapter.toPortalRoutine(routine, "user-1")
@@ -416,8 +435,8 @@ class PortalSyncAdapterTest {
                 reps = 10,
                 weightPerCableKg = 25f,
                 orderIndex = 0,
-                mode = ProgramMode.OldSchool
-            )
+                mode = ProgramMode.OldSchool,
+            ),
         )
         val routine = makeRoutine(id = "r-1", exercises = exercises)
 
@@ -442,23 +461,23 @@ class PortalSyncAdapterTest {
             routineId = "r-1",
             name = "Superset 1",
             colorIndex = SupersetColors.PINK,
-            orderIndex = 0
+            orderIndex = 0,
         )
         val exercises = listOf(
             makeRoutineExercise(
                 supersetId = "ss-1",
-                orderInSuperset = 0
+                orderInSuperset = 0,
             ),
             makeRoutineExercise(
                 id = "ex-2",
                 supersetId = "ss-1",
-                orderInSuperset = 1
-            )
+                orderInSuperset = 1,
+            ),
         )
         val routine = makeRoutine(
             id = "r-1",
             exercises = exercises,
-            supersets = listOf(superset)
+            supersets = listOf(superset),
         )
 
         val result = PortalSyncAdapter.toPortalRoutine(routine, "user-1")
@@ -473,8 +492,8 @@ class PortalSyncAdapterTest {
     fun `toPortalRoutine maps per-set weights as JSON`() {
         val exercises = listOf(
             makeRoutineExercise(
-                setWeightsPerCableKg = listOf(20f, 25f, 30f)
-            )
+                setWeightsPerCableKg = listOf(20f, 25f, 30f),
+            ),
         )
         val routine = makeRoutine(exercises = exercises)
 
@@ -490,8 +509,8 @@ class PortalSyncAdapterTest {
     fun `toPortalRoutine maps per-set rest as JSON`() {
         val exercises = listOf(
             makeRoutineExercise(
-                setRestSeconds = listOf(60, 90, 120)
-            )
+                setRestSeconds = listOf(60, 90, 120),
+            ),
         )
         val routine = makeRoutine(exercises = exercises)
 
@@ -506,7 +525,7 @@ class PortalSyncAdapterTest {
     @Test
     fun `toPortalRoutine perSetWeights is null when empty`() {
         val exercises = listOf(
-            makeRoutineExercise(setWeightsPerCableKg = emptyList())
+            makeRoutineExercise(setWeightsPerCableKg = emptyList()),
         )
         val routine = makeRoutine(exercises = exercises)
 
@@ -521,8 +540,8 @@ class PortalSyncAdapterTest {
             makeRoutineExercise(
                 mode = ProgramMode.Echo,
                 eccentricLoad = EccentricLoad.LOAD_130,
-                echoLevel = EchoLevel.HARDEST
-            )
+                echoLevel = EchoLevel.HARDEST,
+            ),
         )
         val routine = makeRoutine(exercises = exercises)
 
@@ -537,7 +556,7 @@ class PortalSyncAdapterTest {
     @Test
     fun `toPortalRoutine omits Echo settings for non-Echo modes`() {
         val exercises = listOf(
-            makeRoutineExercise(mode = ProgramMode.OldSchool)
+            makeRoutineExercise(mode = ProgramMode.OldSchool),
         )
         val routine = makeRoutine(exercises = exercises)
 
@@ -551,7 +570,7 @@ class PortalSyncAdapterTest {
     @Test
     fun `toPortalRoutine maps rest seconds from first element of setRestSeconds`() {
         val exercises = listOf(
-            makeRoutineExercise(setRestSeconds = listOf(45, 60, 90))
+            makeRoutineExercise(setRestSeconds = listOf(45, 60, 90)),
         )
         val routine = makeRoutine(exercises = exercises)
 
@@ -563,7 +582,7 @@ class PortalSyncAdapterTest {
     @Test
     fun `toPortalRoutine defaults rest to 60 when setRestSeconds is empty`() {
         val exercises = listOf(
-            makeRoutineExercise(setRestSeconds = emptyList())
+            makeRoutineExercise(setRestSeconds = emptyList()),
         )
         val routine = makeRoutine(exercises = exercises)
 
@@ -575,7 +594,7 @@ class PortalSyncAdapterTest {
     @Test
     fun `toPortalRoutine maps AMRAP flag`() {
         val exercises = listOf(
-            makeRoutineExercise(isAMRAP = true)
+            makeRoutineExercise(isAMRAP = true),
         )
         val routine = makeRoutine(exercises = exercises)
 
@@ -601,7 +620,7 @@ class PortalSyncAdapterTest {
     @Test
     fun `toPortalRoutine maps stall detection flag`() {
         val exercises = listOf(
-            makeRoutineExercise(stallDetectionEnabled = false)
+            makeRoutineExercise(stallDetectionEnabled = false),
         )
         val routine = makeRoutine(exercises = exercises)
 
@@ -615,8 +634,8 @@ class PortalSyncAdapterTest {
         val exercises = listOf(
             makeRoutineExercise(
                 usePercentOfPR = true,
-                weightPercentOfPR = 85
-            )
+                weightPercentOfPR = 85,
+            ),
         )
         val routine = makeRoutine(exercises = exercises)
 
@@ -628,7 +647,7 @@ class PortalSyncAdapterTest {
     @Test
     fun `toPortalRoutine prPercentage is null when usePercentOfPR is false`() {
         val exercises = listOf(
-            makeRoutineExercise(usePercentOfPR = false)
+            makeRoutineExercise(usePercentOfPR = false),
         )
         val routine = makeRoutine(exercises = exercises)
 
@@ -640,7 +659,7 @@ class PortalSyncAdapterTest {
     @Test
     fun `toPortalRoutine maps repCountTiming`() {
         val exercises = listOf(
-            makeRoutineExercise(repCountTiming = RepCountTiming.BOTTOM)
+            makeRoutineExercise(repCountTiming = RepCountTiming.BOTTOM),
         )
         val routine = makeRoutine(exercises = exercises)
 
@@ -654,8 +673,8 @@ class PortalSyncAdapterTest {
         val exercises = listOf(
             makeRoutineExercise(
                 sets = 3,
-                setRestSeconds = listOf(60, 60, 60) // 3 sets * 120s + 180s rest = 540s
-            )
+                setRestSeconds = listOf(60, 60, 60), // 3 sets * 120s + 180s rest = 540s
+            ),
         )
         val routine = makeRoutine(exercises = exercises)
 
@@ -683,7 +702,10 @@ class PortalSyncAdapterTest {
         val repMetric = makeRepMetricData(repNumber = 1)
         val swr = makeSessionWithReps(repMetrics = listOf(repMetric))
 
-        val buildResult = PortalSyncAdapter.toPortalWorkoutSessionsWithTelemetry(listOf(swr), "user-1")
+        val buildResult = PortalSyncAdapter.toPortalWorkoutSessionsWithTelemetry(
+            listOf(swr),
+            "user-1",
+        )
 
         // The exercise's set ID
         val setId = buildResult.sessions[0].exercises[0].sets[0].id
@@ -699,7 +721,10 @@ class PortalSyncAdapterTest {
         val repMetric = makeRepMetricData(repNumber = 1)
         val swr = makeSessionWithReps(repMetrics = listOf(repMetric))
 
-        val buildResult = PortalSyncAdapter.toPortalWorkoutSessionsWithTelemetry(listOf(swr), "user-1")
+        val buildResult = PortalSyncAdapter.toPortalWorkoutSessionsWithTelemetry(
+            listOf(swr),
+            "user-1",
+        )
 
         assertEquals(1, buildResult.sessions.size)
         assertTrue(buildResult.telemetry.isNotEmpty())
@@ -710,7 +735,10 @@ class PortalSyncAdapterTest {
         // Rep metric with empty concentric/eccentric timestamps
         val swr = makeSessionWithReps(repMetrics = emptyList())
 
-        val buildResult = PortalSyncAdapter.toPortalWorkoutSessionsWithTelemetry(listOf(swr), "user-1")
+        val buildResult = PortalSyncAdapter.toPortalWorkoutSessionsWithTelemetry(
+            listOf(swr),
+            "user-1",
+        )
 
         assertEquals(1, buildResult.sessions.size)
         assertTrue(buildResult.telemetry.isEmpty())
@@ -723,7 +751,7 @@ class PortalSyncAdapterTest {
         val sessions = listOf(
             makeSessionWithReps(routineSessionId = "g1", isPr = true),
             makeSessionWithReps(routineSessionId = "g1", isPr = false),
-            makeSessionWithReps(routineSessionId = "g1", isPr = true)
+            makeSessionWithReps(routineSessionId = "g1", isPr = true),
         )
 
         val result = PortalSyncAdapter.toPortalWorkoutSessions(sessions, "user-1")
@@ -735,7 +763,7 @@ class PortalSyncAdapterTest {
     fun `portal session prCount is zero when no PRs`() {
         val sessions = listOf(
             makeSessionWithReps(routineSessionId = "g1", isPr = false),
-            makeSessionWithReps(routineSessionId = "g1", isPr = false)
+            makeSessionWithReps(routineSessionId = "g1", isPr = false),
         )
 
         val result = PortalSyncAdapter.toPortalWorkoutSessions(sessions, "user-1")
@@ -755,7 +783,7 @@ class PortalSyncAdapterTest {
             assessmentSessionId = "sess-1",
             userOverrideKg = null,
             createdAt = 1700000000000L,
-            profile_id = "default"
+            profile_id = "default",
         )
 
         val dto1 = PortalSyncAdapter.toPortalAssessmentResult(result1)
@@ -812,7 +840,7 @@ class PortalSyncAdapterTest {
         muscleGroup: String = "General",
         isPr: Boolean = false,
         repMetrics: List<RepMetricData> = emptyList(),
-        repBiomechanics: List<PortalSyncAdapter.RepBiomechanicsData> = emptyList()
+        repBiomechanics: List<PortalSyncAdapter.RepBiomechanicsData> = emptyList(),
     ): PortalSyncAdapter.SessionWithReps {
         val session = WorkoutSession(
             id = sessionId,
@@ -826,14 +854,14 @@ class PortalSyncAdapterTest {
             routineSessionId = routineSessionId,
             routineName = routineName,
             totalVolumeKg = totalVolumeKg,
-            rpe = rpe
+            rpe = rpe,
         )
         return PortalSyncAdapter.SessionWithReps(
             session = session,
             repMetrics = repMetrics,
             repBiomechanics = repBiomechanics,
             muscleGroup = muscleGroup,
-            isPr = isPr
+            isPr = isPr,
         )
     }
 
@@ -848,7 +876,7 @@ class PortalSyncAdapterTest {
         avgPowerWatts: Float = 200f,
         rangeOfMotionMm: Float = 300f,
         concentricDurationMs: Long = 1000L,
-        eccentricDurationMs: Long = 1500L
+        eccentricDurationMs: Long = 1500L,
     ): RepMetricData = RepMetricData(
         repNumber = repNumber,
         isWarmup = false,
@@ -878,7 +906,7 @@ class PortalSyncAdapterTest {
         avgVelocityEccentric = 350f,
         rangeOfMotionMm = rangeOfMotionMm,
         peakPowerWatts = avgPowerWatts * 1.5f,
-        avgPowerWatts = avgPowerWatts
+        avgPowerWatts = avgPowerWatts,
     )
 
     private fun makeRoutineExercise(
@@ -901,7 +929,7 @@ class PortalSyncAdapterTest {
         supersetId: String? = null,
         orderInSuperset: Int = 0,
         eccentricLoad: EccentricLoad = EccentricLoad.LOAD_100,
-        echoLevel: EchoLevel = EchoLevel.HARDER
+        echoLevel: EchoLevel = EchoLevel.HARDER,
     ): RoutineExercise = RoutineExercise(
         id = id,
         exercise = Exercise(name = name, muscleGroup = muscleGroup),
@@ -920,7 +948,7 @@ class PortalSyncAdapterTest {
         usePercentOfPR = usePercentOfPR,
         weightPercentOfPR = weightPercentOfPR,
         supersetId = supersetId,
-        orderInSuperset = orderInSuperset
+        orderInSuperset = orderInSuperset,
     )
 
     private fun makeRoutine(
@@ -934,20 +962,20 @@ class PortalSyncAdapterTest {
         } else {
             listOf(makeRoutineExercise())
         },
-        supersets: List<Superset> = emptyList()
+        supersets: List<Superset> = emptyList(),
     ): Routine = Routine(
         id = id,
         name = name,
         description = description,
         exercises = exercises,
         supersets = supersets,
-        useCount = useCount
+        useCount = useCount,
     )
 
     private fun assertFloatEquals(expected: Float, actual: Float, tolerance: Float = 0.01f) {
         assertTrue(
             abs(expected - actual) < tolerance,
-            "Expected $expected but got $actual (tolerance $tolerance)"
+            "Expected $expected but got $actual (tolerance $tolerance)",
         )
     }
 

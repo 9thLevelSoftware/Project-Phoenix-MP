@@ -1,11 +1,11 @@
 package com.devil.phoenixproject.domain.premium
 
 import com.devil.phoenixproject.domain.model.*
-import kotlinx.datetime.TimeZone
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import kotlinx.datetime.TimeZone
 
 class SmartSuggestionsEngineTest {
 
@@ -24,7 +24,7 @@ class SmartSuggestionsEngineTest {
         timestamp: Long = NOW,
         weightPerCableKg: Float = 50f,
         totalReps: Int = 10,
-        workingReps: Int = 8
+        workingReps: Int = 8,
     ) = SessionSummary(
         exerciseId = exerciseId,
         exerciseName = exerciseName,
@@ -32,7 +32,7 @@ class SmartSuggestionsEngineTest {
         timestamp = timestamp,
         weightPerCableKg = weightPerCableKg,
         totalReps = totalReps,
-        workingReps = workingReps
+        workingReps = workingReps,
     )
 
     // ==========================================================
@@ -50,7 +50,7 @@ class SmartSuggestionsEngineTest {
         val sessions = listOf(
             session(timestamp = NOW - ONE_DAY_MS * 1),
             session(timestamp = NOW - ONE_DAY_MS * 2),
-            session(timestamp = NOW - ONE_DAY_MS * 3)
+            session(timestamp = NOW - ONE_DAY_MS * 3),
         )
         val report = SmartSuggestionsEngine.computeWeeklyVolume(sessions, NOW)
         assertEquals(1, report.volumes.size)
@@ -65,8 +65,8 @@ class SmartSuggestionsEngineTest {
     @Test
     fun volumeExcludesOutsideWeek() {
         val sessions = listOf(
-            session(timestamp = NOW - ONE_DAY_MS * 1),  // inside
-            session(timestamp = NOW - ONE_DAY_MS * 10)  // outside 7-day window
+            session(timestamp = NOW - ONE_DAY_MS * 1), // inside
+            session(timestamp = NOW - ONE_DAY_MS * 10), // outside 7-day window
         )
         val report = SmartSuggestionsEngine.computeWeeklyVolume(sessions, NOW)
         assertEquals(1, report.volumes.size)
@@ -77,7 +77,7 @@ class SmartSuggestionsEngineTest {
     fun volumeMultipleMuscleGroups() {
         val sessions = listOf(
             session(muscleGroup = "Chest", timestamp = NOW - ONE_DAY_MS),
-            session(muscleGroup = "Back", exerciseName = "Row", timestamp = NOW - ONE_DAY_MS * 2)
+            session(muscleGroup = "Back", exerciseName = "Row", timestamp = NOW - ONE_DAY_MS * 2),
         )
         val report = SmartSuggestionsEngine.computeWeeklyVolume(sessions, NOW)
         assertEquals(2, report.volumes.size)
@@ -112,7 +112,7 @@ class SmartSuggestionsEngineTest {
         val sessions = listOf(
             session(muscleGroup = "Chest", timestamp = NOW - ONE_DAY_MS),
             session(muscleGroup = "Back", exerciseName = "Row", timestamp = NOW - ONE_DAY_MS * 2),
-            session(muscleGroup = "Legs", exerciseName = "Squat", timestamp = NOW - ONE_DAY_MS * 3)
+            session(muscleGroup = "Legs", exerciseName = "Squat", timestamp = NOW - ONE_DAY_MS * 3),
         )
         val analysis = SmartSuggestionsEngine.analyzeBalance(sessions, NOW)
         assertTrue(analysis.imbalances.isEmpty())
@@ -125,7 +125,7 @@ class SmartSuggestionsEngineTest {
             session(muscleGroup = "Back", exerciseName = "Row", timestamp = NOW - ONE_DAY_MS * 2),
             session(muscleGroup = "Legs", exerciseName = "Squat", timestamp = NOW - ONE_DAY_MS * 3),
             session(muscleGroup = "Core", exerciseName = "Plank", timestamp = NOW - ONE_DAY_MS * 4),
-            session(muscleGroup = "Core", exerciseName = "Crunch", timestamp = NOW - ONE_DAY_MS * 5)
+            session(muscleGroup = "Core", exerciseName = "Crunch", timestamp = NOW - ONE_DAY_MS * 5),
         )
         val analysis = SmartSuggestionsEngine.analyzeBalance(sessions, NOW)
         // Core sessions should not cause imbalance in push/pull/legs
@@ -139,7 +139,7 @@ class SmartSuggestionsEngineTest {
     @Test
     fun neglectedExerciseFlagged() {
         val sessions = listOf(
-            session(exerciseId = "ex1", timestamp = NOW - ONE_DAY_MS * 20) // 20 days ago
+            session(exerciseId = "ex1", timestamp = NOW - ONE_DAY_MS * 20), // 20 days ago
         )
         val neglected = SmartSuggestionsEngine.findNeglectedExercises(sessions, NOW)
         assertEquals(1, neglected.size)
@@ -150,7 +150,7 @@ class SmartSuggestionsEngineTest {
     @Test
     fun recentExerciseNotFlagged() {
         val sessions = listOf(
-            session(exerciseId = "ex1", timestamp = NOW - ONE_DAY_MS * 5) // 5 days ago
+            session(exerciseId = "ex1", timestamp = NOW - ONE_DAY_MS * 5), // 5 days ago
         )
         val neglected = SmartSuggestionsEngine.findNeglectedExercises(sessions, NOW)
         assertTrue(neglected.isEmpty())
@@ -161,7 +161,7 @@ class SmartSuggestionsEngineTest {
         val sessions = listOf(
             session(exerciseId = "ex1", exerciseName = "Bench", timestamp = NOW - ONE_DAY_MS * 20),
             session(exerciseId = "ex2", exerciseName = "Squat", muscleGroup = "Legs", timestamp = NOW - ONE_DAY_MS * 30),
-            session(exerciseId = "ex3", exerciseName = "Row", muscleGroup = "Back", timestamp = NOW - ONE_DAY_MS * 5) // recent
+            session(exerciseId = "ex3", exerciseName = "Row", muscleGroup = "Back", timestamp = NOW - ONE_DAY_MS * 5), // recent
         )
         val neglected = SmartSuggestionsEngine.findNeglectedExercises(sessions, NOW)
         assertEquals(2, neglected.size)
@@ -174,7 +174,7 @@ class SmartSuggestionsEngineTest {
         // Exercise done 20 days ago AND 5 days ago -> uses 5 days (most recent)
         val sessions = listOf(
             session(exerciseId = "ex1", timestamp = NOW - ONE_DAY_MS * 20),
-            session(exerciseId = "ex1", timestamp = NOW - ONE_DAY_MS * 5)
+            session(exerciseId = "ex1", timestamp = NOW - ONE_DAY_MS * 5),
         )
         val neglected = SmartSuggestionsEngine.findNeglectedExercises(sessions, NOW)
         assertTrue(neglected.isEmpty()) // 5 days < 14 day threshold
@@ -190,7 +190,7 @@ class SmartSuggestionsEngineTest {
             session(
                 exerciseId = "ex1",
                 weightPerCableKg = 50f,
-                timestamp = NOW - ONE_DAY_MS * (5 - i)
+                timestamp = NOW - ONE_DAY_MS * (5 - i),
             )
         }
         val plateaus = SmartSuggestionsEngine.detectPlateaus(sessions)
@@ -206,7 +206,7 @@ class SmartSuggestionsEngineTest {
             session(
                 exerciseId = "ex1",
                 weightPerCableKg = 50f,
-                timestamp = NOW - ONE_DAY_MS * (3 - i)
+                timestamp = NOW - ONE_DAY_MS * (3 - i),
             )
         }
         val plateaus = SmartSuggestionsEngine.detectPlateaus(sessions)
@@ -219,7 +219,7 @@ class SmartSuggestionsEngineTest {
             session(
                 exerciseId = "ex1",
                 weightPerCableKg = 50f + i * 2.5f, // Increasing weight
-                timestamp = NOW - ONE_DAY_MS * (5 - i)
+                timestamp = NOW - ONE_DAY_MS * (5 - i),
             )
         }
         val plateaus = SmartSuggestionsEngine.detectPlateaus(sessions)
@@ -234,7 +234,7 @@ class SmartSuggestionsEngineTest {
             session(
                 exerciseId = "ex1",
                 weightPerCableKg = w,
-                timestamp = NOW - ONE_DAY_MS * (5 - i)
+                timestamp = NOW - ONE_DAY_MS * (5 - i),
             )
         }
         val plateaus = SmartSuggestionsEngine.detectPlateaus(sessions)
@@ -267,7 +267,7 @@ class SmartSuggestionsEngineTest {
             session(timestamp = baseTime - 2 * ONE_DAY_MS + 17 * ONE_HOUR_MS, weightPerCableKg = 80f),
             session(timestamp = baseTime - 3 * ONE_DAY_MS + 17 * ONE_HOUR_MS, weightPerCableKg = 80f),
             // 1 morning session (lower volume)
-            session(timestamp = baseTime + 8 * ONE_HOUR_MS, weightPerCableKg = 40f)
+            session(timestamp = baseTime + 8 * ONE_HOUR_MS, weightPerCableKg = 40f),
         )
         val analysis = SmartSuggestionsEngine.analyzeTimeOfDay(sessions, TimeZone.UTC)
         assertEquals(TimeWindow.EVENING, analysis.optimalWindow)
@@ -283,7 +283,7 @@ class SmartSuggestionsEngineTest {
             // 3 evening sessions (meets threshold)
             session(timestamp = baseTime + 17 * ONE_HOUR_MS, weightPerCableKg = 40f),
             session(timestamp = baseTime - ONE_DAY_MS + 17 * ONE_HOUR_MS, weightPerCableKg = 40f),
-            session(timestamp = baseTime - 2 * ONE_DAY_MS + 17 * ONE_HOUR_MS, weightPerCableKg = 40f)
+            session(timestamp = baseTime - 2 * ONE_DAY_MS + 17 * ONE_HOUR_MS, weightPerCableKg = 40f),
         )
         val analysis = SmartSuggestionsEngine.analyzeTimeOfDay(sessions, TimeZone.UTC)
         // Morning has higher volume per session but only 2 sessions -> not eligible

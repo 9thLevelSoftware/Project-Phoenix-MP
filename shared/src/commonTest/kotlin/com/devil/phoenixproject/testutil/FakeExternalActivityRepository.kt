@@ -8,7 +8,6 @@ import com.devil.phoenixproject.domain.model.IntegrationProvider
 import com.devil.phoenixproject.domain.model.IntegrationStatus
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.map
 
 class FakeExternalActivityRepository : ExternalActivityRepository {
 
@@ -23,18 +22,19 @@ class FakeExternalActivityRepository : ExternalActivityRepository {
         val status: ConnectionStatus,
         val profileId: String,
         val lastSyncAt: Long?,
-        val errorMessage: String?
+        val errorMessage: String?,
     )
     val statusUpdates = mutableListOf<StatusUpdate>()
 
-    override fun getAll(profileId: String, provider: IntegrationProvider?): Flow<List<ExternalActivity>> {
-        return MutableStateFlow(
-            activities.filter { it.profileId == profileId && (provider == null || it.provider == provider) }
-        )
-    }
+    override fun getAll(profileId: String, provider: IntegrationProvider?): Flow<List<ExternalActivity>> = MutableStateFlow(
+        activities.filter {
+            it.profileId == profileId &&
+                (provider == null || it.provider == provider)
+        },
+    )
 
-    override suspend fun getUnsyncedActivities(profileId: String): List<ExternalActivity> {
-        return activities.filter { it.profileId == profileId && it.needsSync }
+    override suspend fun getUnsyncedActivities(profileId: String): List<ExternalActivity> = activities.filter {
+        it.profileId == profileId && it.needsSync
     }
 
     override suspend fun upsertActivities(activities: List<ExternalActivity>) {
@@ -50,7 +50,7 @@ class FakeExternalActivityRepository : ExternalActivityRepository {
                 val existing = this.activities[existingIndex]
                 this.activities[existingIndex] = activity.copy(
                     id = existing.id,
-                    needsSync = existing.needsSync
+                    needsSync = existing.needsSync,
                 )
             } else {
                 this.activities.add(activity)
@@ -70,20 +70,16 @@ class FakeExternalActivityRepository : ExternalActivityRepository {
         activities.removeAll { it.provider == provider && it.profileId == profileId }
     }
 
-    override fun getIntegrationStatus(provider: IntegrationProvider, profileId: String): Flow<IntegrationStatus?> {
-        return MutableStateFlow(null)
-    }
+    override fun getIntegrationStatus(provider: IntegrationProvider, profileId: String): Flow<IntegrationStatus?> = MutableStateFlow(null)
 
-    override fun getAllIntegrationStatuses(profileId: String): Flow<List<IntegrationStatus>> {
-        return MutableStateFlow(emptyList())
-    }
+    override fun getAllIntegrationStatuses(profileId: String): Flow<List<IntegrationStatus>> = MutableStateFlow(emptyList())
 
     override suspend fun updateIntegrationStatus(
         provider: IntegrationProvider,
         status: ConnectionStatus,
         profileId: String,
         lastSyncAt: Long?,
-        errorMessage: String?
+        errorMessage: String?,
     ) {
         statusUpdates += StatusUpdate(provider, status, profileId, lastSyncAt, errorMessage)
     }

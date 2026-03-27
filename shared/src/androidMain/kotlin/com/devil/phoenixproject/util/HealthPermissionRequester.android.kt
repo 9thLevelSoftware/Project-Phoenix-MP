@@ -13,14 +13,14 @@ private val log = Logger.withTag("HealthPermissionRequester")
 actual class HealthPermissionRequester {
 
     @Composable
-    actual fun LaunchPermissionRequest(
-        onPermissionsResult: (Boolean) -> Unit
-    ) {
+    actual fun LaunchPermissionRequest(onPermissionsResult: (Boolean) -> Unit) {
         val launcher = rememberLauncherForActivityResult(
-            contract = PermissionController.createRequestPermissionResultContract()
+            contract = PermissionController.createRequestPermissionResultContract(),
         ) { grantedPermissions ->
             val allGranted = grantedPermissions.containsAll(requiredHealthPermissions)
-            log.d { "Health Connect permission contract returned: granted=$allGranted, received=${grantedPermissions.size} permissions: $grantedPermissions" }
+            log.d {
+                "Health Connect permission contract returned: granted=$allGranted, received=${grantedPermissions.size} permissions: $grantedPermissions"
+            }
             log.d { "Required permissions: $requiredHealthPermissions" }
             onPermissionsResult(allGranted)
         }
@@ -33,6 +33,6 @@ actual class HealthPermissionRequester {
 }
 
 @Composable
-actual fun rememberHealthPermissionRequester(): HealthPermissionRequester {
-    return remember { HealthPermissionRequester() }
+actual fun rememberHealthPermissionRequester(): HealthPermissionRequester = remember {
+    HealthPermissionRequester()
 }

@@ -33,11 +33,7 @@ import com.devil.phoenixproject.util.KmpUtils
  * Hero Strength Score Card - Primary metric showing overall fitness level
  */
 @Composable
-fun StrengthScoreCard(
-    personalRecords: List<PersonalRecord>,
-    workoutSessions: List<WorkoutSession>,
-    modifier: Modifier = Modifier
-) {
+fun StrengthScoreCard(personalRecords: List<PersonalRecord>, workoutSessions: List<WorkoutSession>, modifier: Modifier = Modifier) {
     val strengthScore = remember(personalRecords, workoutSessions) {
         calculateStrengthScore(personalRecords, workoutSessions)
     }
@@ -49,7 +45,7 @@ fun StrengthScoreCard(
             },
             workoutSessions.filter {
                 it.timestamp < currentTimeMillis() - (7 * 24 * 60 * 60 * 1000)
-            }
+            },
         )
     }
 
@@ -57,7 +53,7 @@ fun StrengthScoreCard(
     val animatedScore by animateFloatAsState(
         targetValue = strengthScore.toFloat(),
         animationSpec = tween(1000),
-        label = "strength score"
+        label = "strength score",
     )
 
     Card(
@@ -65,10 +61,10 @@ fun StrengthScoreCard(
             .fillMaxWidth()
             .shadow(12.dp, RoundedCornerShape(24.dp)),
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.primaryContainer
+            containerColor = MaterialTheme.colorScheme.primaryContainer,
         ),
         shape = RoundedCornerShape(24.dp),
-        border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.3f))
+        border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.3f)),
     ) {
         Box(
             modifier = Modifier
@@ -77,32 +73,32 @@ fun StrengthScoreCard(
                     Brush.verticalGradient(
                         colors = listOf(
                             MaterialTheme.colorScheme.primaryContainer,
-                            MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.7f)
-                        )
-                    )
+                            MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.7f),
+                        ),
+                    ),
                 )
-                .padding(24.dp)
+                .padding(24.dp),
         ) {
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier.fillMaxWidth(),
             ) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.Center
+                    horizontalArrangement = Arrangement.Center,
                 ) {
                     Icon(
                         imageVector = Icons.Default.Star,
                         contentDescription = null,
                         tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(32.dp)
+                        modifier = Modifier.size(32.dp),
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
                         text = "Strength Score",
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                        color = MaterialTheme.colorScheme.onPrimaryContainer,
                     )
                 }
 
@@ -113,25 +109,43 @@ fun StrengthScoreCard(
                     style = MaterialTheme.typography.displayLarge,
                     fontWeight = FontWeight.Black,
                     color = MaterialTheme.colorScheme.primary,
-                    fontSize = 72.sp
+                    fontSize = 72.sp,
                 )
 
                 if (scoreDiff != 0) {
                     Row(
-                        verticalAlignment = Alignment.CenterVertically
+                        verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Icon(
-                            imageVector = if (scoreDiff > 0) Icons.AutoMirrored.Filled.TrendingUp else Icons.AutoMirrored.Filled.TrendingDown,
+                            imageVector = if (scoreDiff >
+                                0
+                            ) {
+                                Icons.AutoMirrored.Filled.TrendingUp
+                            } else {
+                                Icons.AutoMirrored.Filled.TrendingDown
+                            },
                             contentDescription = null,
-                            tint = if (scoreDiff > 0) AccessibilityTheme.colors.success else AccessibilityTheme.colors.error,
-                            modifier = Modifier.size(20.dp)
+                            tint = if (scoreDiff >
+                                0
+                            ) {
+                                AccessibilityTheme.colors.success
+                            } else {
+                                AccessibilityTheme.colors.error
+                            },
+                            modifier = Modifier.size(20.dp),
                         )
                         Spacer(modifier = Modifier.width(4.dp))
                         Text(
                             text = "${if (scoreDiff > 0) "+" else ""}$scoreDiff from last week",
                             style = MaterialTheme.typography.bodyMedium,
-                            color = if (scoreDiff > 0) AccessibilityTheme.colors.success else AccessibilityTheme.colors.error,
-                            fontWeight = FontWeight.SemiBold
+                            color = if (scoreDiff >
+                                0
+                            ) {
+                                AccessibilityTheme.colors.success
+                            } else {
+                                AccessibilityTheme.colors.error
+                            },
+                            fontWeight = FontWeight.SemiBold,
                         )
                     }
                 }
@@ -149,7 +163,7 @@ fun ThisWeekStatsCard(
     personalRecords: List<PersonalRecord>,
     weightUnit: WeightUnit,
     formatWeight: (Float, WeightUnit) -> String,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
 ) {
     val weekStart = remember {
         // Simplified week start calculation for KMP
@@ -177,26 +191,26 @@ fun ThisWeekStatsCard(
             .fillMaxWidth()
             .shadow(8.dp, RoundedCornerShape(20.dp)),
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceContainerHighest
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
         ),
-        shape = RoundedCornerShape(20.dp)
+        shape = RoundedCornerShape(20.dp),
     ) {
         Column(modifier = Modifier.padding(20.dp)) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier.fillMaxWidth(),
             ) {
                 Icon(
                     imageVector = Icons.Default.CalendarToday,
                     contentDescription = null,
                     tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(28.dp)
+                    modifier = Modifier.size(28.dp),
                 )
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
                     text = "This Week",
                     style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold
+                    fontWeight = FontWeight.Bold,
                 )
             }
 
@@ -204,22 +218,22 @@ fun ThisWeekStatsCard(
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceEvenly
+                horizontalArrangement = Arrangement.SpaceEvenly,
             ) {
                 WeekStatItem(
                     icon = Icons.Default.FitnessCenter,
                     label = "Workouts",
-                    value = thisWeekSessions.size.toString()
+                    value = thisWeekSessions.size.toString(),
                 )
                 WeekStatItem(
                     icon = Icons.AutoMirrored.Filled.TrendingUp,
                     label = "PRs",
-                    value = thisWeekPRs.size.toString()
+                    value = thisWeekPRs.size.toString(),
                 )
                 WeekStatItem(
                     icon = Icons.Default.MonitorWeight,
                     label = "Volume",
-                    value = formatWeight(thisWeekVolume, weightUnit)
+                    value = formatWeight(thisWeekVolume, weightUnit),
                 )
             }
         }
@@ -227,31 +241,27 @@ fun ThisWeekStatsCard(
 }
 
 @Composable
-private fun WeekStatItem(
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    label: String,
-    value: String
-) {
+private fun WeekStatItem(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String, value: String) {
     Column(
-        horizontalAlignment = Alignment.CenterHorizontally
+        horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Icon(
             imageVector = icon,
             contentDescription = label,
             tint = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.size(32.dp)
+            modifier = Modifier.size(32.dp),
         )
         Spacer(modifier = Modifier.height(4.dp))
         Text(
             text = value,
             style = MaterialTheme.typography.headlineMedium,
             fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.onSurface
+            color = MaterialTheme.colorScheme.onSurface,
         )
         Text(
             text = label,
             style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
 }
@@ -265,7 +275,7 @@ fun RecentPRsCard(
     exerciseNames: Map<String, String>,
     weightUnit: WeightUnit,
     formatWeight: (Float, WeightUnit) -> String,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
 ) {
     val recentPRs = remember(personalRecords) {
         personalRecords.sortedByDescending { it.timestamp }.take(5)
@@ -276,25 +286,25 @@ fun RecentPRsCard(
             .fillMaxWidth()
             .shadow(8.dp, RoundedCornerShape(20.dp)),
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceContainerHighest
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
         ),
-        shape = RoundedCornerShape(20.dp)
+        shape = RoundedCornerShape(20.dp),
     ) {
         Column(modifier = Modifier.padding(20.dp)) {
             Row(
-                verticalAlignment = Alignment.CenterVertically
+                verticalAlignment = Alignment.CenterVertically,
             ) {
                 Icon(
                     imageVector = Icons.Default.EmojiEvents,
                     contentDescription = null,
                     tint = Color(0xFFFFD700), // Gold
-                    modifier = Modifier.size(28.dp)
+                    modifier = Modifier.size(28.dp),
                 )
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
                     text = "Recent PRs",
                     style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold
+                    fontWeight = FontWeight.Bold,
                 )
             }
 
@@ -303,7 +313,7 @@ fun RecentPRsCard(
                 Text(
                     text = "No PRs yet. Start lifting!",
                     style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             } else {
                 Spacer(modifier = Modifier.height(12.dp))
@@ -313,7 +323,7 @@ fun RecentPRsCard(
                         pr = pr,
                         weightUnit = weightUnit,
                         formatWeight = formatWeight,
-                        isFirst = index == 0
+                        isFirst = index == 0,
                     )
                     if (index < recentPRs.size - 1) {
                         Spacer(modifier = Modifier.height(8.dp))
@@ -330,41 +340,45 @@ private fun PRListItem(
     pr: PersonalRecord,
     weightUnit: WeightUnit,
     formatWeight: (Float, WeightUnit) -> String,
-    isFirst: Boolean
+    isFirst: Boolean,
 ) {
     Surface(
         modifier = Modifier.fillMaxWidth(),
-        color = if (isFirst)
+        color = if (isFirst) {
             MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.3f)
-        else
-            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-        shape = RoundedCornerShape(12.dp)
+        } else {
+            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+        },
+        shape = RoundedCornerShape(12.dp),
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(12.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
+            verticalAlignment = Alignment.CenterVertically,
         ) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = exerciseName,
                     style = MaterialTheme.typography.bodyLarge,
                     fontWeight = FontWeight.SemiBold,
-                    maxLines = 1
+                    maxLines = 1,
                 )
                 Text(
-                    text = "${pr.reps} reps • ${KmpUtils.formatTimestamp(pr.timestamp, "MMM dd, yyyy")}",
+                    text = "${pr.reps} reps • ${KmpUtils.formatTimestamp(
+                        pr.timestamp,
+                        "MMM dd, yyyy",
+                    )}",
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
             Text(
                 text = formatWeight(pr.weightPerCableKg, weightUnit),
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurface
+                color = MaterialTheme.colorScheme.onSurface,
             )
         }
     }
@@ -379,7 +393,7 @@ fun TopExercisesCard(
     exerciseNames: Map<String, String>,
     weightUnit: WeightUnit,
     formatWeight: (Float, WeightUnit) -> String,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
 ) {
     val topExercises = remember(personalRecords) {
         personalRecords
@@ -395,25 +409,25 @@ fun TopExercisesCard(
             .fillMaxWidth()
             .shadow(8.dp, RoundedCornerShape(20.dp)),
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceContainerHighest
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
         ),
-        shape = RoundedCornerShape(20.dp)
+        shape = RoundedCornerShape(20.dp),
     ) {
         Column(modifier = Modifier.padding(20.dp)) {
             Row(
-                verticalAlignment = Alignment.CenterVertically
+                verticalAlignment = Alignment.CenterVertically,
             ) {
                 Icon(
                     imageVector = Icons.Default.EmojiEvents,
                     contentDescription = null,
                     tint = MaterialTheme.colorScheme.tertiary,
-                    modifier = Modifier.size(28.dp)
+                    modifier = Modifier.size(28.dp),
                 )
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
                     text = "Top Exercises",
                     style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold
+                    fontWeight = FontWeight.Bold,
                 )
             }
 
@@ -422,7 +436,7 @@ fun TopExercisesCard(
                 Text(
                     text = "Complete workouts to see your top exercises",
                     style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             } else {
                 Spacer(modifier = Modifier.height(12.dp))
@@ -433,7 +447,7 @@ fun TopExercisesCard(
                             exerciseName = exerciseNames[exerciseId] ?: "Unknown",
                             pr = it,
                             weightUnit = weightUnit,
-                            formatWeight = formatWeight
+                            formatWeight = formatWeight,
                         )
                         if (index < topExercises.size - 1) {
                             Spacer(modifier = Modifier.height(8.dp))
@@ -451,43 +465,49 @@ private fun TopExerciseItem(
     exerciseName: String,
     pr: PersonalRecord,
     weightUnit: WeightUnit,
-    formatWeight: (Float, WeightUnit) -> String
+    formatWeight: (Float, WeightUnit) -> String,
 ) {
     val medalColor = when (rank) {
-        1 -> Color(0xFFFFD700) // Gold
-        2 -> Color(0xFFC0C0C0) // Silver
-        3 -> Color(0xFFCD7F32) // Bronze
+        1 -> Color(0xFFFFD700)
+
+        // Gold
+        2 -> Color(0xFFC0C0C0)
+
+        // Silver
+        3 -> Color(0xFFCD7F32)
+
+        // Bronze
         else -> MaterialTheme.colorScheme.onSurfaceVariant
     }
 
     Surface(
         modifier = Modifier.fillMaxWidth(),
         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-        shape = RoundedCornerShape(12.dp)
+        shape = RoundedCornerShape(12.dp),
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(12.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
+            verticalAlignment = Alignment.CenterVertically,
         ) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.weight(1f)
+                modifier = Modifier.weight(1f),
             ) {
                 Box(
                     modifier = Modifier
                         .size(32.dp)
                         .clip(CircleShape)
                         .background(medalColor.copy(alpha = 0.2f)),
-                    contentAlignment = Alignment.Center
+                    contentAlignment = Alignment.Center,
                 ) {
                     Text(
                         text = "#$rank",
                         style = MaterialTheme.typography.labelLarge,
                         fontWeight = FontWeight.Bold,
-                        color = medalColor
+                        color = medalColor,
                     )
                 }
                 Spacer(modifier = Modifier.width(12.dp))
@@ -496,12 +516,12 @@ private fun TopExerciseItem(
                         text = exerciseName,
                         style = MaterialTheme.typography.bodyLarge,
                         fontWeight = FontWeight.SemiBold,
-                        maxLines = 1
+                        maxLines = 1,
                     )
                     Text(
                         text = "${pr.reps} reps",
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
             }
@@ -509,7 +529,7 @@ private fun TopExerciseItem(
                 text = formatWeight(pr.weightPerCableKg, weightUnit),
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.primary
+                color = MaterialTheme.colorScheme.primary,
             )
         }
     }
@@ -518,10 +538,7 @@ private fun TopExerciseItem(
 /**
  * Calculate Strength Score based on PRs and volume
  */
-private fun calculateStrengthScore(
-    personalRecords: List<PersonalRecord>,
-    workoutSessions: List<WorkoutSession>
-): Int {
+private fun calculateStrengthScore(personalRecords: List<PersonalRecord>, workoutSessions: List<WorkoutSession>): Int {
     if (personalRecords.isEmpty() && workoutSessions.isEmpty()) return 0
 
     // PR Score: Sum of top weights per exercise (normalized)

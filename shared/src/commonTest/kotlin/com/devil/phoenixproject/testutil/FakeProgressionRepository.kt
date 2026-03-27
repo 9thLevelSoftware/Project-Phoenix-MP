@@ -15,7 +15,8 @@ class FakeProgressionRepository : ProgressionRepository {
 
     private val events = mutableMapOf<String, ProgressionEvent>()
     private val eventsByExercise = mutableMapOf<String, MutableList<String>>()
-    private val eventsFlowByExercise = mutableMapOf<String, MutableStateFlow<List<ProgressionEvent>>>()
+    private val eventsFlowByExercise =
+        mutableMapOf<String, MutableStateFlow<List<ProgressionEvent>>>()
     private val pendingFlow = MutableStateFlow<List<ProgressionEvent>>(emptyList())
 
     fun reset() {
@@ -25,12 +26,10 @@ class FakeProgressionRepository : ProgressionRepository {
         pendingFlow.value = emptyList()
     }
 
-    override suspend fun getProgressionEvents(exerciseId: String, profileId: String): List<ProgressionEvent> {
-        return eventsByExercise[exerciseId]
-            ?.mapNotNull { events[it] }
-            ?.sortedByDescending { it.timestamp }
-            ?: emptyList()
-    }
+    override suspend fun getProgressionEvents(exerciseId: String, profileId: String): List<ProgressionEvent> = eventsByExercise[exerciseId]
+        ?.mapNotNull { events[it] }
+        ?.sortedByDescending { it.timestamp }
+        ?: emptyList()
 
     override fun getProgressionEventsFlow(exerciseId: String, profileId: String): Flow<List<ProgressionEvent>> {
         val flow = eventsFlowByExercise.getOrPut(exerciseId) {
@@ -39,24 +38,18 @@ class FakeProgressionRepository : ProgressionRepository {
         return flow.asStateFlow()
     }
 
-    override suspend fun getLatestProgressionEvent(exerciseId: String, profileId: String): ProgressionEvent? {
-        return getProgressionEvents(exerciseId, profileId).firstOrNull()
-    }
+    override suspend fun getLatestProgressionEvent(exerciseId: String, profileId: String): ProgressionEvent? = getProgressionEvents(exerciseId, profileId).firstOrNull()
 
-    override suspend fun getPendingProgressions(profileId: String): List<ProgressionEvent> {
-        return events.values.filter { it.isPending() }.sortedByDescending { it.timestamp }
-    }
+    override suspend fun getPendingProgressions(profileId: String): List<ProgressionEvent> = events.values.filter {
+        it.isPending()
+    }.sortedByDescending { it.timestamp }
 
-    override fun getPendingProgressionsFlow(profileId: String): Flow<List<ProgressionEvent>> {
-        return pendingFlow.asStateFlow()
-    }
+    override fun getPendingProgressionsFlow(profileId: String): Flow<List<ProgressionEvent>> = pendingFlow.asStateFlow()
 
-    override suspend fun hasPendingProgression(exerciseId: String, profileId: String): Boolean {
-        return eventsByExercise[exerciseId]
-            ?.mapNotNull { events[it] }
-            ?.any { it.isPending() }
-            ?: false
-    }
+    override suspend fun hasPendingProgression(exerciseId: String, profileId: String): Boolean = eventsByExercise[exerciseId]
+        ?.mapNotNull { events[it] }
+        ?.any { it.isPending() }
+        ?: false
 
     override suspend fun createProgressionSuggestion(event: ProgressionEvent) {
         events[event.id] = event
@@ -66,11 +59,7 @@ class FakeProgressionRepository : ProgressionRepository {
         updatePendingFlow()
     }
 
-    override suspend fun recordResponse(
-        eventId: String,
-        response: ProgressionResponse,
-        actualWeight: Float?
-    ) {
+    override suspend fun recordResponse(eventId: String, response: ProgressionResponse, actualWeight: Float?) {
         val current = events[eventId] ?: return
         events[eventId] = current.copy(userResponse = response, actualWeightKg = actualWeight)
         updateExerciseFlow(current.exerciseId)
@@ -93,11 +82,11 @@ class FakeProgressionRepository : ProgressionRepository {
     private fun updateExerciseFlow(exerciseId: String) {
         eventsFlowByExercise.getOrPut(exerciseId) { MutableStateFlow(emptyList()) }
             .value = run {
-                eventsByExercise[exerciseId]
-                    ?.mapNotNull { events[it] }
-                    ?.sortedByDescending { it.timestamp }
-                    ?: emptyList()
-            }
+            eventsByExercise[exerciseId]
+                ?.mapNotNull { events[it] }
+                ?.sortedByDescending { it.timestamp }
+                ?: emptyList()
+        }
     }
 
     private fun updatePendingFlow() {

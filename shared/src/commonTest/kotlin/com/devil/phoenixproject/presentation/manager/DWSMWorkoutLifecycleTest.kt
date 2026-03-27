@@ -7,24 +7,24 @@ import com.devil.phoenixproject.domain.model.PersonalRecord
 import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.RepCount
 import com.devil.phoenixproject.domain.model.RoutineFlowState
-import com.devil.phoenixproject.domain.model.WorkoutParameters
 import com.devil.phoenixproject.domain.model.WorkoutMetric
+import com.devil.phoenixproject.domain.model.WorkoutParameters
 import com.devil.phoenixproject.domain.model.WorkoutState
 import com.devil.phoenixproject.domain.model.currentTimeMillis
 import com.devil.phoenixproject.testutil.DWSMTestHarness
 import com.devil.phoenixproject.testutil.TestFixtures
 import com.devil.phoenixproject.testutil.WorkoutStateFixtures.activeDWSM
 import com.devil.phoenixproject.testutil.WorkoutStateFixtures.createTestRoutine
-import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.test.advanceTimeBy
-import kotlinx.coroutines.test.advanceUntilIdle
-import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.test.advanceTimeBy
+import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.runTest
 
 /**
  * Characterization tests for DefaultWorkoutSessionManager workout lifecycle.
@@ -48,8 +48,10 @@ class DWSMWorkoutLifecycleTest {
         harness.dwsm.startWorkout(skipCountdown = true)
 
         // Before advancing, state should be Initializing (set synchronously in startWorkout)
-        assertIs<WorkoutState.Initializing>(harness.dwsm.coordinator.workoutState.value,
-            "State should be Initializing immediately after startWorkout call")
+        assertIs<WorkoutState.Initializing>(
+            harness.dwsm.coordinator.workoutState.value,
+            "State should be Initializing immediately after startWorkout call",
+        )
         harness.cleanup()
     }
 
@@ -61,8 +63,10 @@ class DWSMWorkoutLifecycleTest {
         harness.dwsm.startWorkout(skipCountdown = true)
         advanceUntilIdle()
 
-        assertIs<WorkoutState.Active>(harness.dwsm.coordinator.workoutState.value,
-            "State should be Active after skipCountdown=true and coroutine completes")
+        assertIs<WorkoutState.Active>(
+            harness.dwsm.coordinator.workoutState.value,
+            "State should be Active after skipCountdown=true and coroutine completes",
+        )
         harness.cleanup()
     }
 
@@ -109,8 +113,10 @@ class DWSMWorkoutLifecycleTest {
         advanceUntilIdle()
 
         // DWSM sends CONFIG command + START command (for non-Echo mode)
-        assertTrue(harness.fakeBleRepo.commandsReceived.isNotEmpty(),
-            "Should have sent at least one BLE command (CONFIG)")
+        assertTrue(
+            harness.fakeBleRepo.commandsReceived.isNotEmpty(),
+            "Should have sent at least one BLE command (CONFIG)",
+        )
         harness.cleanup()
     }
 
@@ -125,8 +131,8 @@ class DWSMWorkoutLifecycleTest {
                     programMode = mode,
                     reps = 8,
                     weightPerCableKg = 30f,
-                    progressionRegressionKg = 2f
-                )
+                    progressionRegressionKg = 2f,
+                ),
             )
 
             harness.dwsm.startWorkout(skipCountdown = true)
@@ -137,7 +143,7 @@ class DWSMWorkoutLifecycleTest {
             assertEquals(0x03.toByte(), harness.fakeBleRepo.commandsReceived[1][0], "Expected start packet for $mode")
             assertFalse(
                 harness.fakeBleRepo.commandsReceived.any { it.firstOrNull() == 0x4F.toByte() },
-                "Workout start should not send a regular packet for $mode"
+                "Workout start should not send a regular packet for $mode",
             )
             harness.cleanup()
         }
@@ -152,8 +158,10 @@ class DWSMWorkoutLifecycleTest {
         harness.dwsm.stopWorkout(exitingWorkout = true)
         advanceUntilIdle()
 
-        assertIs<WorkoutState.Idle>(harness.dwsm.coordinator.workoutState.value,
-            "stopWorkout(exitingWorkout=true) should transition to Idle")
+        assertIs<WorkoutState.Idle>(
+            harness.dwsm.coordinator.workoutState.value,
+            "stopWorkout(exitingWorkout=true) should transition to Idle",
+        )
         harness.cleanup()
     }
 
@@ -164,8 +172,10 @@ class DWSMWorkoutLifecycleTest {
         harness.dwsm.stopWorkout(exitingWorkout = false)
         advanceUntilIdle()
 
-        assertIs<WorkoutState.SetSummary>(harness.dwsm.coordinator.workoutState.value,
-            "stopWorkout(exitingWorkout=false) should transition to SetSummary")
+        assertIs<WorkoutState.SetSummary>(
+            harness.dwsm.coordinator.workoutState.value,
+            "stopWorkout(exitingWorkout=false) should transition to SetSummary",
+        )
         harness.cleanup()
     }
 
@@ -185,8 +195,10 @@ class DWSMWorkoutLifecycleTest {
 
         // Characterization: The second stopWorkout is silently ignored due to
         // stopWorkoutInProgress guard flag. State remains SetSummary.
-        assertIs<WorkoutState.SetSummary>(harness.dwsm.coordinator.workoutState.value,
-            "Second stopWorkout should be silently ignored (guard flag)")
+        assertIs<WorkoutState.SetSummary>(
+            harness.dwsm.coordinator.workoutState.value,
+            "Second stopWorkout should be silently ignored (guard flag)",
+        )
         harness.cleanup()
     }
 
@@ -225,7 +237,7 @@ class DWSMWorkoutLifecycleTest {
         val flowState = harness.dwsm.coordinator.routineFlowState.value
         assertIs<RoutineFlowState.SetReady>(
             flowState,
-            "stopAndSkipCurrentExercise should return to SetReady instead of ending the routine"
+            "stopAndSkipCurrentExercise should return to SetReady instead of ending the routine",
         )
         assertEquals(1, flowState.exerciseIndex, "Should advance to the next exercise")
         assertEquals(0, flowState.setIndex, "Next exercise should start at set 1")
@@ -248,10 +260,16 @@ class DWSMWorkoutLifecycleTest {
         // Now reset
         harness.dwsm.resetForNewWorkout()
 
-        assertEquals(WorkoutState.Idle, harness.dwsm.coordinator.workoutState.value,
-            "resetForNewWorkout should set state to Idle")
-        assertEquals(RepCount(), harness.dwsm.coordinator.repCount.value,
-            "resetForNewWorkout should reset rep count to default")
+        assertEquals(
+            WorkoutState.Idle,
+            harness.dwsm.coordinator.workoutState.value,
+            "resetForNewWorkout should set state to Idle",
+        )
+        assertEquals(
+            RepCount(),
+            harness.dwsm.coordinator.repCount.value,
+            "resetForNewWorkout should reset rep count to default",
+        )
         harness.cleanup()
     }
 
@@ -262,8 +280,11 @@ class DWSMWorkoutLifecycleTest {
         harness.dwsm.resetForNewWorkout()
 
         // repRanges should be cleared to null
-        assertEquals(null, harness.dwsm.coordinator.repRanges.value,
-            "resetForNewWorkout should clear repRanges to null")
+        assertEquals(
+            null,
+            harness.dwsm.coordinator.repRanges.value,
+            "resetForNewWorkout should clear repRanges to null",
+        )
         harness.cleanup()
     }
 
@@ -277,7 +298,7 @@ class DWSMWorkoutLifecycleTest {
             programMode = ProgramMode.Pump,
             reps = 12,
             weightPerCableKg = 30f,
-            progressionRegressionKg = 0.5f
+            progressionRegressionKg = 0.5f,
         )
         harness.dwsm.updateWorkoutParameters(newParams)
 
@@ -297,7 +318,7 @@ class DWSMWorkoutLifecycleTest {
         val params = WorkoutParameters(
             programMode = ProgramMode.OldSchool,
             reps = 8,
-            weightPerCableKg = 20f
+            weightPerCableKg = 20f,
         )
         harness.dwsm.updateWorkoutParameters(params)
         advanceUntilIdle()
@@ -305,7 +326,6 @@ class DWSMWorkoutLifecycleTest {
         assertEquals(8, harness.dwsm.coordinator.workoutParameters.value.reps)
         harness.cleanup()
     }
-
 
     @Test
     fun `routine next-set weight applies when user did not manually edit`() = runTest {
@@ -316,9 +336,9 @@ class DWSMWorkoutLifecycleTest {
                 base.exercises.first().copy(
                     setReps = listOf(8, 6),
                     setWeightsPerCableKg = listOf(20f, 30f),
-                    weightPerCableKg = 20f
-                )
-            )
+                    weightPerCableKg = 20f,
+                ),
+            ),
         )
         routine.exercises.forEach { harness.fakeExerciseRepo.addExercise(it.exercise) }
 
@@ -330,7 +350,7 @@ class DWSMWorkoutLifecycleTest {
             nextExerciseName = "",
             isLastExercise = true,
             currentSet = 1,
-            totalSets = 2
+            totalSets = 2,
         )
         harness.dwsm.startNextSet()
         advanceUntilIdle()
@@ -350,9 +370,9 @@ class DWSMWorkoutLifecycleTest {
                 base.exercises.first().copy(
                     setReps = listOf(8, 6),
                     setWeightsPerCableKg = listOf(20f, 30f),
-                    weightPerCableKg = 20f
-                )
-            )
+                    weightPerCableKg = 20f,
+                ),
+            ),
         )
         routine.exercises.forEach { harness.fakeExerciseRepo.addExercise(it.exercise) }
 
@@ -364,13 +384,13 @@ class DWSMWorkoutLifecycleTest {
             nextExerciseName = "",
             isLastExercise = true,
             currentSet = 1,
-            totalSets = 2
+            totalSets = 2,
         )
         harness.dwsm.updateWorkoutParameters(
             harness.dwsm.coordinator.workoutParameters.value.copy(
                 weightPerCableKg = 42f,
-                reps = 11
-            )
+                reps = 11,
+            ),
         )
 
         harness.dwsm.startNextSet()
@@ -391,14 +411,14 @@ class DWSMWorkoutLifecycleTest {
                 base.exercises[0].copy(
                     setReps = listOf(8),
                     setWeightsPerCableKg = listOf(20f),
-                    weightPerCableKg = 20f
+                    weightPerCableKg = 20f,
                 ),
                 base.exercises[1].copy(
                     setReps = listOf(10),
                     setWeightsPerCableKg = listOf(55f),
-                    weightPerCableKg = 55f
-                )
-            )
+                    weightPerCableKg = 55f,
+                ),
+            ),
         )
         routine.exercises.forEach { harness.fakeExerciseRepo.addExercise(it.exercise) }
 
@@ -415,7 +435,7 @@ class DWSMWorkoutLifecycleTest {
             nextExerciseName = routine.exercises[1].exercise.displayName,
             isLastExercise = false,
             currentSet = 1,
-            totalSets = 1
+            totalSets = 1,
         )
         harness.dwsm.startNextSet()
         advanceUntilIdle()
@@ -467,8 +487,8 @@ class DWSMWorkoutLifecycleTest {
                 weightPerCableKg = 35f,
                 stallDetectionEnabled = true,
                 isAMRAP = false,
-                isJustLift = false
-            )
+                isJustLift = false,
+            ),
         )
         harness.dwsm.startWorkout(skipCountdown = true)
         advanceUntilIdle()
@@ -481,7 +501,7 @@ class DWSMWorkoutLifecycleTest {
         assertEquals(
             null,
             harness.dwsm.coordinator.stallStartTime,
-            "DELOAD should be ignored until warmup reps are complete"
+            "DELOAD should be ignored until warmup reps are complete",
         )
         assertFalse(harness.dwsm.coordinator.isCurrentlyStalled)
         harness.cleanup()
@@ -500,8 +520,8 @@ class DWSMWorkoutLifecycleTest {
                 weightPerCableKg = 35f,
                 stallDetectionEnabled = true,
                 isAMRAP = false,
-                isJustLift = false
-            )
+                isJustLift = false,
+            ),
         )
         harness.dwsm.startWorkout(skipCountdown = true)
         advanceUntilIdle()
@@ -517,7 +537,7 @@ class DWSMWorkoutLifecycleTest {
         assertEquals(
             null,
             harness.dwsm.coordinator.stallStartTime,
-            "DELOAD should be ignored until at least one working rep is confirmed"
+            "DELOAD should be ignored until at least one working rep is confirmed",
         )
         assertFalse(harness.dwsm.coordinator.isCurrentlyStalled)
         harness.cleanup()
@@ -536,8 +556,8 @@ class DWSMWorkoutLifecycleTest {
                 weightPerCableKg = 35f,
                 stallDetectionEnabled = true,
                 isAMRAP = false,
-                isJustLift = false
-            )
+                isJustLift = false,
+            ),
         )
         harness.dwsm.startWorkout(skipCountdown = true)
         advanceUntilIdle()
@@ -553,7 +573,7 @@ class DWSMWorkoutLifecycleTest {
 
         assertNotNull(
             harness.dwsm.coordinator.stallStartTime,
-            "DELOAD should start stall timer once working reps are in progress"
+            "DELOAD should start stall timer once working reps are in progress",
         )
         assertTrue(harness.dwsm.coordinator.isCurrentlyStalled)
         harness.cleanup()
@@ -572,8 +592,8 @@ class DWSMWorkoutLifecycleTest {
                 weightPerCableKg = 35f,
                 stallDetectionEnabled = true,
                 isAMRAP = false,
-                isJustLift = false
-            )
+                isJustLift = false,
+            ),
         )
         harness.dwsm.startWorkout(skipCountdown = true)
         advanceUntilIdle()
@@ -588,8 +608,8 @@ class DWSMWorkoutLifecycleTest {
                 velocityA = 0.0,
                 velocityB = 0.0,
                 loadA = 0f,
-                loadB = 0f
-            )
+                loadB = 0f,
+            ),
         )
         advanceUntilIdle()
 
@@ -611,8 +631,8 @@ class DWSMWorkoutLifecycleTest {
                 weightPerCableKg = 35f,
                 stallDetectionEnabled = true,
                 isAMRAP = false,
-                isJustLift = false
-            )
+                isJustLift = false,
+            ),
         )
         harness.dwsm.startWorkout(skipCountdown = true)
         advanceUntilIdle()
@@ -634,8 +654,8 @@ class DWSMWorkoutLifecycleTest {
                 velocityA = 0.0,
                 velocityB = 0.0,
                 loadA = 10f,
-                loadB = 10f
-            )
+                loadB = 10f,
+            ),
         )
         advanceUntilIdle()
 
@@ -656,8 +676,8 @@ class DWSMWorkoutLifecycleTest {
                 weightPerCableKg = 35f,
                 stallDetectionEnabled = true,
                 isAMRAP = false,
-                isJustLift = false
-            )
+                isJustLift = false,
+            ),
         )
         harness.dwsm.startWorkout(skipCountdown = true)
         advanceUntilIdle()
@@ -672,22 +692,22 @@ class DWSMWorkoutLifecycleTest {
         // Simulate starting the first rep (pending at TOP = failed bench press scenario)
         harness.fakeBleRepo.emitRepNotification(
             RepNotification(
-                topCounter = 4,       // warmup(3) + working(1) = 4th up counter
-                completeCounter = 3,  // Only 3 downs (first working rep not completed)
+                topCounter = 4, // warmup(3) + working(1) = 4th up counter
+                completeCounter = 3, // Only 3 downs (first working rep not completed)
                 repsRomCount = 3,
                 repsRomTotal = 3,
-                repsSetCount = 0,     // Still 0 completed working reps
+                repsSetCount = 0, // Still 0 completed working reps
                 repsSetTotal = 8,
                 rangeTop = 800f,
                 rangeBottom = 0f,
                 rawData = ByteArray(24),
-                timestamp = 100L
-            )
+                timestamp = 100L,
+            ),
         )
         advanceUntilIdle()
         assertTrue(
             harness.dwsm.coordinator.repCount.value.hasPendingRep,
-            "Rep should be pending at TOP (failed lift scenario)"
+            "Rep should be pending at TOP (failed lift scenario)",
         )
 
         // Emit DELOAD_OCCURRED while pending - previously this was ignored (Issue #256)
@@ -696,7 +716,7 @@ class DWSMWorkoutLifecycleTest {
 
         assertNotNull(
             harness.dwsm.coordinator.stallStartTime,
-            "Issue #256: DELOAD should start stall timer even with a pending rep"
+            "Issue #256: DELOAD should start stall timer even with a pending rep",
         )
         assertTrue(harness.dwsm.coordinator.isCurrentlyStalled)
         harness.cleanup()
@@ -715,8 +735,8 @@ class DWSMWorkoutLifecycleTest {
                 weightPerCableKg = 35f,
                 stallDetectionEnabled = true,
                 isAMRAP = false,
-                isJustLift = false
-            )
+                isJustLift = false,
+            ),
         )
         harness.dwsm.startWorkout(skipCountdown = true)
         advanceUntilIdle()
@@ -737,8 +757,8 @@ class DWSMWorkoutLifecycleTest {
                 rangeTop = 800f,
                 rangeBottom = 0f,
                 rawData = ByteArray(24),
-                timestamp = 100L
-            )
+                timestamp = 100L,
+            ),
         )
         advanceUntilIdle()
         assertTrue(harness.dwsm.coordinator.repCount.value.hasPendingRep)
@@ -755,14 +775,14 @@ class DWSMWorkoutLifecycleTest {
                 velocityA = 0.0,
                 velocityB = 0.0,
                 loadA = 10f,
-                loadB = 10f
-            )
+                loadB = 10f,
+            ),
         )
         advanceUntilIdle()
 
         assertIs<WorkoutState.SetSummary>(
             harness.dwsm.coordinator.workoutState.value,
-            "Issue #256: Velocity stall should auto-stop even with a pending rep"
+            "Issue #256: Velocity stall should auto-stop even with a pending rep",
         )
         harness.cleanup()
     }
@@ -781,8 +801,8 @@ class DWSMWorkoutLifecycleTest {
                 progressionRegressionKg = 0f,
                 stallDetectionEnabled = true,
                 isAMRAP = false,
-                isJustLift = true
-            )
+                isJustLift = true,
+            ),
         )
         harness.dwsm.startWorkout(skipCountdown = true)
         advanceUntilIdle()
@@ -820,7 +840,7 @@ class DWSMWorkoutLifecycleTest {
                     positionA = 120f,
                     positionB = 120f,
                     velocityA = 80.0,
-                    velocityB = 80.0
+                    velocityB = 80.0,
                 ),
                 WorkoutMetric(
                     timestamp = 200L,
@@ -829,13 +849,13 @@ class DWSMWorkoutLifecycleTest {
                     positionA = 100f,
                     positionB = 100f,
                     velocityA = -60.0,
-                    velocityB = -60.0
-                )
+                    velocityB = -60.0,
+                ),
             ),
             repCount = 8,
             fallbackWeightKg = 12f,
             configuredWeightKgPerCable = 12f,
-            isEchoMode = false
+            isEchoMode = false,
         )
 
         assertEquals(24f, summary.heaviestLiftKgPerCable)
@@ -858,8 +878,8 @@ class DWSMWorkoutLifecycleTest {
                 reps = 8,
                 warmupReps = 0,
                 weightPerCableKg = 12f,
-                selectedExerciseId = TestFixtures.benchPress.id
-            )
+                selectedExerciseId = TestFixtures.benchPress.id,
+            ),
         )
         harness.dwsm.startWorkout(skipCountdown = true)
         advanceUntilIdle()
@@ -868,27 +888,27 @@ class DWSMWorkoutLifecycleTest {
             warmupReps = 0,
             workingReps = 8,
             totalReps = 8,
-            isWarmupComplete = true
+            isWarmupComplete = true,
         )
         harness.dwsm.coordinator.collectedMetrics.value = listOf(
-                WorkoutMetric(
-                    timestamp = 100L,
-                    loadA = 22f,
-                    loadB = 26f,
-                    positionA = 120f,
-                    positionB = 120f,
-                    velocityA = 80.0,
-                    velocityB = 80.0
-                ),
-                WorkoutMetric(
-                    timestamp = 200L,
-                    loadA = 18f,
-                    loadB = 20f,
-                    positionA = 100f,
-                    positionB = 100f,
-                    velocityA = -60.0,
-                    velocityB = -60.0
-                )
+            WorkoutMetric(
+                timestamp = 100L,
+                loadA = 22f,
+                loadB = 26f,
+                positionA = 120f,
+                positionB = 120f,
+                velocityA = 80.0,
+                velocityB = 80.0,
+            ),
+            WorkoutMetric(
+                timestamp = 200L,
+                loadA = 18f,
+                loadB = 20f,
+                positionA = 100f,
+                positionB = 100f,
+                velocityA = -60.0,
+                velocityB = -60.0,
+            ),
         )
 
         harness.activeSessionEngine.handleSetCompletion()
@@ -922,8 +942,8 @@ class DWSMWorkoutLifecycleTest {
                 timestamp = currentTimeMillis() - 10_000L,
                 workoutMode = "OldSchool",
                 prType = PRType.MAX_WEIGHT,
-                volume = 557.3f
-            )
+                volume = 557.3f,
+            ),
         )
 
         harness.dwsm.updateWorkoutParameters(
@@ -932,8 +952,8 @@ class DWSMWorkoutLifecycleTest {
                 reps = 10,
                 warmupReps = 0,
                 weightPerCableKg = 50f,
-                selectedExerciseId = deadliftId
-            )
+                selectedExerciseId = deadliftId,
+            ),
         )
         harness.dwsm.startWorkout(skipCountdown = true)
         advanceUntilIdle()
@@ -942,27 +962,27 @@ class DWSMWorkoutLifecycleTest {
             warmupReps = 0,
             workingReps = 10,
             totalReps = 10,
-            isWarmupComplete = true
+            isWarmupComplete = true,
         )
         harness.dwsm.coordinator.collectedMetrics.value = listOf(
-                WorkoutMetric(
-                    timestamp = 100L,
-                    loadA = 60f,
-                    loadB = 60f,
-                    positionA = 120f,
-                    positionB = 120f,
-                    velocityA = 80.0,
-                    velocityB = 80.0
-                ),
-                WorkoutMetric(
-                    timestamp = 200L,
-                    loadA = 54f,
-                    loadB = 56f,
-                    positionA = 90f,
-                    positionB = 90f,
-                    velocityA = -60.0,
-                    velocityB = -60.0
-                )
+            WorkoutMetric(
+                timestamp = 100L,
+                loadA = 60f,
+                loadB = 60f,
+                positionA = 120f,
+                positionB = 120f,
+                velocityA = 80.0,
+                velocityB = 80.0,
+            ),
+            WorkoutMetric(
+                timestamp = 200L,
+                loadA = 54f,
+                loadB = 56f,
+                positionA = 90f,
+                positionB = 90f,
+                velocityA = -60.0,
+                velocityB = -60.0,
+            ),
         )
 
         harness.activeSessionEngine.handleSetCompletion()
@@ -992,8 +1012,10 @@ class DWSMWorkoutLifecycleTest {
         val sessions = harness.fakeWorkoutRepo.getAllSessions("default").first()
 
         // Characterization: stopWorkout always saves a session even with 0 reps
-        assertTrue(sessions.isNotEmpty(),
-            "stopWorkout should save a workout session to the repository")
+        assertTrue(
+            sessions.isNotEmpty(),
+            "stopWorkout should save a workout session to the repository",
+        )
         harness.cleanup()
     }
 
@@ -1008,8 +1030,10 @@ class DWSMWorkoutLifecycleTest {
         val sessions = harness.fakeWorkoutRepo.getAllSessions("default").first()
 
         // Characterization: stopWorkout(exitingWorkout=true) saves session THEN sets Idle
-        assertTrue(sessions.isNotEmpty(),
-            "stopWorkout(exitingWorkout=true) should still save a session before going to Idle")
+        assertTrue(
+            sessions.isNotEmpty(),
+            "stopWorkout(exitingWorkout=true) should still save a session before going to Idle",
+        )
         harness.cleanup()
     }
 
@@ -1032,12 +1056,12 @@ class DWSMWorkoutLifecycleTest {
         val session = harness.fakeWorkoutRepo.getAllSessions("default").first().first()
         assertTrue(
             session.routineSessionId?.isNotBlank() == true,
-            "Routine workout sessions should include a non-empty routineSessionId"
+            "Routine workout sessions should include a non-empty routineSessionId",
         )
         assertEquals(
             routine.name,
             session.routineName,
-            "Routine workout sessions should include the routine name"
+            "Routine workout sessions should include the routine name",
         )
         harness.cleanup()
     }
@@ -1048,7 +1072,7 @@ class DWSMWorkoutLifecycleTest {
         harness.fakeBleRepo.simulateConnect("Vee_Test")
 
         val tempRoutine = createTestRoutine(exerciseCount = 1, setsPerExercise = 1).copy(
-            id = "${DefaultWorkoutSessionManager.TEMP_SINGLE_EXERCISE_PREFIX}test"
+            id = "${DefaultWorkoutSessionManager.TEMP_SINGLE_EXERCISE_PREFIX}test",
         )
         tempRoutine.exercises.forEach { harness.fakeExerciseRepo.addExercise(it.exercise) }
 
@@ -1064,28 +1088,24 @@ class DWSMWorkoutLifecycleTest {
         assertEquals(
             null,
             session.routineSessionId,
-            "Single-exercise temp routines should not set routineSessionId"
+            "Single-exercise temp routines should not set routineSessionId",
         )
         assertEquals(
             null,
             session.routineName,
-            "Single-exercise temp routines should not set routineName"
+            "Single-exercise temp routines should not set routineName",
         )
         harness.cleanup()
     }
 
-    private suspend fun completeWarmupReps(
-        harness: DWSMTestHarness,
-        warmupTarget: Int = 3,
-        workingTarget: Int = 8
-    ) {
+    private suspend fun completeWarmupReps(harness: DWSMTestHarness, warmupTarget: Int = 3, workingTarget: Int = 8) {
         val activeMetric = WorkoutMetric(
             positionA = 120f,
             positionB = 120f,
             velocityA = 80.0,
             velocityB = 80.0,
             loadA = 10f,
-            loadB = 10f
+            loadB = 10f,
         )
 
         for (warmupRep in 1..warmupTarget) {
@@ -1101,24 +1121,20 @@ class DWSMWorkoutLifecycleTest {
                     rangeTop = 800f,
                     rangeBottom = 0f,
                     rawData = ByteArray(24),
-                    timestamp = warmupRep.toLong()
-                )
+                    timestamp = warmupRep.toLong(),
+                ),
             )
         }
     }
 
-    private suspend fun completeFirstWorkingRep(
-        harness: DWSMTestHarness,
-        warmupTarget: Int = 3,
-        workingTarget: Int = 8
-    ) {
+    private suspend fun completeFirstWorkingRep(harness: DWSMTestHarness, warmupTarget: Int = 3, workingTarget: Int = 8) {
         val activeMetric = WorkoutMetric(
             positionA = 120f,
             positionB = 120f,
             velocityA = 80.0,
             velocityB = 80.0,
             loadA = 10f,
-            loadB = 10f
+            loadB = 10f,
         )
 
         harness.fakeBleRepo.emitMetric(activeMetric)
@@ -1133,8 +1149,8 @@ class DWSMWorkoutLifecycleTest {
                 rangeTop = 800f,
                 rangeBottom = 0f,
                 rawData = ByteArray(24),
-                timestamp = (warmupTarget + 1).toLong()
-            )
+                timestamp = (warmupTarget + 1).toLong(),
+            ),
         )
     }
 }

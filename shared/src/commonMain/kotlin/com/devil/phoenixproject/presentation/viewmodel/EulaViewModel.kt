@@ -5,10 +5,10 @@ import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.util.Constants
 import com.russhwolf.settings.Settings
 import com.russhwolf.settings.set
+import kotlin.time.Clock
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlin.time.Clock
 
 /**
  * ViewModel for managing EULA/Terms of Service acceptance.
@@ -19,9 +19,7 @@ import kotlin.time.Clock
  * - Timestamp tracking for audit trail
  * - Re-prompts user when EULA version is incremented
  */
-class EulaViewModel(
-    private val settings: Settings
-) : ViewModel() {
+class EulaViewModel(private val settings: Settings) : ViewModel() {
 
     private val log = Logger.withTag("EulaViewModel")
 
@@ -38,7 +36,9 @@ class EulaViewModel(
         val isAccepted = acceptedVersion >= currentVersion
 
         if (!isAccepted && acceptedVersion > 0) {
-            log.i { "EULA version updated: user accepted v$acceptedVersion, current is v$currentVersion" }
+            log.i {
+                "EULA version updated: user accepted v$acceptedVersion, current is v$currentVersion"
+            }
         }
 
         return isAccepted
@@ -64,18 +64,14 @@ class EulaViewModel(
      * Returns null if EULA was never accepted.
      */
     @Suppress("unused") // Reserved for future audit/settings UI
-    fun getAcceptanceTimestamp(): Long? {
-        return settings.getLongOrNull(EULA_ACCEPTED_TIMESTAMP_KEY)
-    }
+    fun getAcceptanceTimestamp(): Long? = settings.getLongOrNull(EULA_ACCEPTED_TIMESTAMP_KEY)
 
     /**
      * Get the version of EULA that was accepted.
      * Returns 0 if EULA was never accepted.
      */
     @Suppress("unused") // Reserved for future audit/settings UI
-    fun getAcceptedVersion(): Int {
-        return settings.getIntOrNull(EULA_ACCEPTED_VERSION_KEY) ?: 0
-    }
+    fun getAcceptedVersion(): Int = settings.getIntOrNull(EULA_ACCEPTED_VERSION_KEY) ?: 0
 
     companion object {
         private const val EULA_ACCEPTED_VERSION_KEY = "eula_accepted_version"

@@ -90,8 +90,7 @@ class FakeWorkoutRepository : WorkoutRepository {
         updateSessionsFlow()
     }
 
-    override fun getRecentSessions(profileId: String, limit: Int): Flow<List<WorkoutSession>> =
-        _sessionsFlow.map { it.take(limit) }
+    override fun getRecentSessions(profileId: String, limit: Int): Flow<List<WorkoutSession>> = _sessionsFlow.map { it.take(limit) }
 
     override suspend fun getSession(sessionId: String): WorkoutSession? = sessions[sessionId]
 
@@ -118,7 +117,7 @@ class FakeWorkoutRepository : WorkoutRepository {
         routines[routineId]?.let { routine ->
             routines[routineId] = routine.copy(
                 lastUsed = currentTimeMillis(),
-                useCount = routine.useCount + 1
+                useCount = routine.useCount + 1,
             )
             updateRoutinesFlow()
         }
@@ -140,7 +139,7 @@ class FakeWorkoutRepository : WorkoutRepository {
                 weightPerCableKg = weightKg,
                 reps = reps,
                 timestamp = currentTimeMillis(),
-                workoutMode = mode
+                workoutMode = mode,
             )
             updatePersonalRecordsFlow()
         }
@@ -150,17 +149,13 @@ class FakeWorkoutRepository : WorkoutRepository {
         this.metrics[sessionId] = metrics
     }
 
-    override fun getMetricsForSession(sessionId: String): Flow<List<WorkoutMetric>> {
-        return MutableStateFlow(metrics[sessionId] ?: emptyList())
-    }
+    override fun getMetricsForSession(sessionId: String): Flow<List<WorkoutMetric>> = MutableStateFlow(metrics[sessionId] ?: emptyList())
 
-    override suspend fun getMetricsForSessionSync(sessionId: String): List<WorkoutMetric> {
-        return metrics[sessionId] ?: emptyList()
-    }
+    override suspend fun getMetricsForSessionSync(sessionId: String): List<WorkoutMetric> = metrics[sessionId] ?: emptyList()
 
-    override suspend fun getRecentSessionsSync(profileId: String, limit: Int): List<WorkoutSession> {
-        return sessions.values.sortedByDescending { it.timestamp }.take(limit)
-    }
+    override suspend fun getRecentSessionsSync(profileId: String, limit: Int): List<WorkoutSession> = sessions.values.sortedByDescending {
+        it.timestamp
+    }.take(limit)
 
     override suspend fun savePhaseStatistics(sessionId: String, stats: HeuristicStatistics) {
         phaseStatistics[sessionId] = PhaseStatisticsData(
@@ -178,7 +173,7 @@ class FakeWorkoutRepository : WorkoutRepository {
             eccentricVelMax = stats.eccentric.velMax,
             eccentricWattAvg = stats.eccentric.wattAvg,
             eccentricWattMax = stats.eccentric.wattMax,
-            timestamp = currentTimeMillis()
+            timestamp = currentTimeMillis(),
         )
         updatePhaseStatisticsFlow()
     }

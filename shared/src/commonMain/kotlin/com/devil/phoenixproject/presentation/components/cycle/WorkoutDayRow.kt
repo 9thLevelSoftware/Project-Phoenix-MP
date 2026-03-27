@@ -14,50 +14,45 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.domain.model.CycleItem
 import org.jetbrains.compose.resources.stringResource
-import vitruvianprojectphoenix.shared.generated.resources.Res
 import vitruvianprojectphoenix.shared.generated.resources.*
+import vitruvianprojectphoenix.shared.generated.resources.Res
 
 @Composable
-fun WorkoutDayRow(
-    workout: CycleItem.Workout,
-    onTap: () -> Unit,
-    dragModifier: Modifier = Modifier,
-    modifier: Modifier = Modifier
-) {
+fun WorkoutDayRow(workout: CycleItem.Workout, onTap: () -> Unit, dragModifier: Modifier = Modifier, modifier: Modifier = Modifier) {
     Card(
         modifier = modifier
             .fillMaxWidth()
             .clickable(onClick = onTap),
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
-        )
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+        ),
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 12.dp, vertical = 12.dp),
-            verticalAlignment = Alignment.CenterVertically
+            verticalAlignment = Alignment.CenterVertically,
         ) {
             // Drag handle
             Icon(
                 imageVector = Icons.Default.DragHandle,
                 contentDescription = stringResource(Res.string.cd_reorder),
                 modifier = dragModifier.size(24.dp),
-                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
             )
 
             Spacer(modifier = Modifier.width(12.dp))
 
             // Content
             Column(
-                modifier = Modifier.weight(1f)
+                modifier = Modifier.weight(1f),
             ) {
                 Text(
                     text = "Day ${workout.dayNumber}: ${workout.routineName}",
                     style = MaterialTheme.typography.bodyLarge,
                     fontWeight = FontWeight.SemiBold,
                     maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
+                    overflow = TextOverflow.Ellipsis,
                 )
                 if (workout.exerciseNames.isNotEmpty()) {
                     Text(
@@ -65,16 +60,16 @@ fun WorkoutDayRow(
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
+                        overflow = TextOverflow.Ellipsis,
                     )
                 }
                 Text(
                     text = buildString {
                         append("${workout.exerciseCount} exercises")
-                        workout.estimatedMinutes?.let { append(" • ~${it} min") }
+                        workout.estimatedMinutes?.let { append(" • ~$it min") }
                     },
                     style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
                 )
             }
 
@@ -82,7 +77,7 @@ fun WorkoutDayRow(
             Icon(
                 imageVector = Icons.Default.ChevronRight,
                 contentDescription = stringResource(Res.string.cd_edit),
-                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
     }

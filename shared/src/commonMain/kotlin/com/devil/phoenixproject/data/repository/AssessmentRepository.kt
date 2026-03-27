@@ -13,7 +13,7 @@ data class AssessmentResultEntity(
     val assessmentSessionId: String?,
     val userOverrideKg: Float?,
     val createdAt: Long,
-    val profileId: String = "default"
+    val profileId: String = "default",
 )
 
 /**
@@ -41,7 +41,7 @@ interface AssessmentRepository {
         loadVelocityDataJson: String,
         sessionId: String?,
         userOverrideKg: Float? = null,
-        profileId: String = "default"
+        profileId: String = "default",
     ): Long
 
     /**
@@ -91,6 +91,6 @@ interface AssessmentRepository {
         totalReps: Int,
         durationMs: Long,
         weightPerCableKg: Float,
-        profileId: String = "default"
+        profileId: String = "default",
     ): String
 }

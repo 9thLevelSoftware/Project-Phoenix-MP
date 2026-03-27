@@ -4,8 +4,6 @@ import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.domain.model.WorkoutSession
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertFalse
-import kotlin.test.assertTrue
 
 class CsvExporterTest {
 
@@ -34,7 +32,7 @@ class CsvExporterTest {
             totalReps = 10,
             warmupReps = 0,
             workingReps = 10,
-            exerciseName = "Bench Press"
+            exerciseName = "Bench Press",
         )
 
         val csv = CsvExporter.generateStrongCsv(listOf(session), WeightUnit.KG)
@@ -61,7 +59,7 @@ class CsvExporterTest {
             id = "s1",
             timestamp = 1_700_000_000_000L,
             weightPerCableKg = 10f,
-            exerciseName = "Squat"
+            exerciseName = "Squat",
         )
 
         val csv = CsvExporter.generateStrongCsv(listOf(session), WeightUnit.LB)
@@ -142,7 +140,7 @@ class CsvExporterTest {
                 weightPerCableKg = 10f,
                 exerciseName = "Bench Press",
                 routineSessionId = routineId,
-                routineName = "Push Day"
+                routineName = "Push Day",
             ),
             WorkoutSession(
                 id = "s2",
@@ -150,8 +148,8 @@ class CsvExporterTest {
                 weightPerCableKg = 20f,
                 exerciseName = "Overhead Press",
                 routineSessionId = routineId,
-                routineName = "Push Day"
-            )
+                routineName = "Push Day",
+            ),
         )
 
         val csv = CsvExporter.generateStrongCsv(sessions, WeightUnit.KG)
@@ -180,7 +178,7 @@ class CsvExporterTest {
                 weightPerCableKg = 10f,
                 exerciseName = "Bench Press",
                 routineSessionId = "routine-1",
-                routineName = "Push Day"
+                routineName = "Push Day",
             ),
             WorkoutSession(
                 id = "s2",
@@ -188,8 +186,8 @@ class CsvExporterTest {
                 weightPerCableKg = 20f,
                 exerciseName = "Squat",
                 routineSessionId = "routine-2",
-                routineName = "Leg Day"
-            )
+                routineName = "Leg Day",
+            ),
         )
 
         val csv = CsvExporter.generateStrongCsv(sessions, WeightUnit.KG)
@@ -212,7 +210,7 @@ class CsvExporterTest {
                 weightPerCableKg = 10f,
                 exerciseName = "Bicep Curl",
                 routineSessionId = routineId,
-                routineName = "Arms"
+                routineName = "Arms",
             ),
             WorkoutSession(
                 id = "s2",
@@ -220,7 +218,7 @@ class CsvExporterTest {
                 weightPerCableKg = 12f,
                 exerciseName = "Bicep Curl",
                 routineSessionId = routineId,
-                routineName = "Arms"
+                routineName = "Arms",
             ),
             WorkoutSession(
                 id = "s3",
@@ -228,8 +226,8 @@ class CsvExporterTest {
                 weightPerCableKg = 14f,
                 exerciseName = "Bicep Curl",
                 routineSessionId = routineId,
-                routineName = "Arms"
-            )
+                routineName = "Arms",
+            ),
         )
 
         val csv = CsvExporter.generateStrongCsv(sessions, WeightUnit.KG)
@@ -246,7 +244,7 @@ class CsvExporterTest {
             id = "s1",
             timestamp = 1_700_000_000_000L,
             weightPerCableKg = 10f,
-            exerciseName = "Deadlift"
+            exerciseName = "Deadlift",
         )
 
         val csv = CsvExporter.generateStrongCsv(listOf(session), WeightUnit.KG)
@@ -288,7 +286,7 @@ class CsvExporterTest {
             WorkoutSession(id = "s1", timestamp = 1000L, routineSessionId = "r1"),
             WorkoutSession(id = "s2", timestamp = 2000L, routineSessionId = "r1"),
             WorkoutSession(id = "s3", timestamp = 3000L, routineSessionId = null),
-            WorkoutSession(id = "s4", timestamp = 4000L, routineSessionId = "r2")
+            WorkoutSession(id = "s4", timestamp = 4000L, routineSessionId = "r2"),
         )
 
         val groups = CsvExporter.groupSessions(sessions)
@@ -309,7 +307,7 @@ class CsvExporterTest {
         val session = WorkoutSession(
             id = "s1",
             routineSessionId = "r1",
-            routineName = "Push Day"
+            routineName = "Push Day",
         )
         assertEquals("Push Day", CsvExporter.resolveWorkoutName(session))
     }
@@ -319,7 +317,7 @@ class CsvExporterTest {
         val session = WorkoutSession(
             id = "s1",
             routineSessionId = "r1",
-            routineName = null
+            routineName = null,
         )
         assertEquals("Routine", CsvExporter.resolveWorkoutName(session))
     }
@@ -329,7 +327,7 @@ class CsvExporterTest {
         val session = WorkoutSession(
             id = "s1",
             routineSessionId = null,
-            exerciseName = "Squat"
+            exerciseName = "Squat",
         )
         assertEquals("Squat", CsvExporter.resolveWorkoutName(session))
     }
@@ -339,7 +337,7 @@ class CsvExporterTest {
         val session = WorkoutSession(
             id = "s1",
             routineSessionId = null,
-            exerciseName = null
+            exerciseName = null,
         )
         assertEquals("Workout", CsvExporter.resolveWorkoutName(session))
     }

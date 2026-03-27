@@ -1,9 +1,8 @@
 package com.devil.phoenixproject.domain.premium
 
 import com.devil.phoenixproject.domain.model.StrengthProfile
-import com.devil.phoenixproject.domain.model.currentTimeMillis
 import com.devil.phoenixproject.domain.model.WorkoutMetric
-import kotlin.math.abs
+import com.devil.phoenixproject.domain.model.currentTimeMillis
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
@@ -25,13 +24,13 @@ class ForceCurveEngineTest {
         positionB: Float = positionA,
         loadA: Float,
         loadB: Float = loadA,
-        timestamp: Long = 0L
+        timestamp: Long = 0L,
     ): WorkoutMetric = WorkoutMetric(
         timestamp = timestamp,
         loadA = loadA,
         loadB = loadB,
         positionA = positionA,
-        positionB = positionB
+        positionB = positionB,
     )
 
     // ========== FORCE-01: Force Curve Construction ==========
@@ -42,7 +41,7 @@ class ForceCurveEngineTest {
         val metrics = listOf(
             createMetric(positionA = 100f, loadA = 50f, loadB = 50f, timestamp = 0),
             createMetric(positionA = 200f, loadA = 60f, loadB = 60f, timestamp = 100),
-            createMetric(positionA = 300f, loadA = 70f, loadB = 70f, timestamp = 200)
+            createMetric(positionA = 300f, loadA = 70f, loadB = 70f, timestamp = 200),
         )
 
         val result = engine.computeForceCurve(repNumber = 1, concentricMetrics = metrics)
@@ -57,15 +56,23 @@ class ForceCurveEngineTest {
         val engine = BiomechanicsEngine()
         val metrics = listOf(
             createMetric(positionA = 100f, loadA = 50f, loadB = 50f),
-            createMetric(positionA = 200f, loadA = 60f, loadB = 60f)
+            createMetric(positionA = 200f, loadA = 60f, loadB = 60f),
         )
 
         val result = engine.computeForceCurve(repNumber = 1, concentricMetrics = metrics)
 
         assertEquals(0, result.normalizedForceN.size, "Empty curve for insufficient samples")
-        assertEquals(0, result.normalizedPositionPct.size, "Empty positions for insufficient samples")
+        assertEquals(
+            0,
+            result.normalizedPositionPct.size,
+            "Empty positions for insufficient samples",
+        )
         assertNull(result.stickingPointPct, "No sticking point for empty curve")
-        assertEquals(StrengthProfile.FLAT, result.strengthProfile, "Default to FLAT for empty curve")
+        assertEquals(
+            StrengthProfile.FLAT,
+            result.strengthProfile,
+            "Default to FLAT for empty curve",
+        )
     }
 
     @Test
@@ -86,7 +93,7 @@ class ForceCurveEngineTest {
         val metrics = listOf(
             createMetric(positionA = 100f, loadA = 30f, loadB = 20f, timestamp = 0),
             createMetric(positionA = 150f, loadA = 35f, loadB = 25f, timestamp = 100),
-            createMetric(positionA = 200f, loadA = 40f, loadB = 30f, timestamp = 200)
+            createMetric(positionA = 200f, loadA = 40f, loadB = 30f, timestamp = 200),
         )
 
         val result = engine.computeForceCurve(repNumber = 1, concentricMetrics = metrics)
@@ -94,7 +101,12 @@ class ForceCurveEngineTest {
         // First point (0% ROM) should have force = 30 + 20 = 50
         assertEquals(50f, result.normalizedForceN[0], 0.1f, "Force at 0% should be loadA + loadB")
         // Last point (100% ROM) should have force = 40 + 30 = 70
-        assertEquals(70f, result.normalizedForceN[100], 0.1f, "Force at 100% should be loadA + loadB")
+        assertEquals(
+            70f,
+            result.normalizedForceN[100],
+            0.1f,
+            "Force at 100% should be loadA + loadB",
+        )
     }
 
     @Test
@@ -102,9 +114,27 @@ class ForceCurveEngineTest {
         val engine = BiomechanicsEngine()
         // positionB is always higher in this test
         val metrics = listOf(
-            createMetric(positionA = 50f, positionB = 100f, loadA = 50f, loadB = 50f, timestamp = 0),
-            createMetric(positionA = 100f, positionB = 200f, loadA = 60f, loadB = 60f, timestamp = 100),
-            createMetric(positionA = 150f, positionB = 300f, loadA = 70f, loadB = 70f, timestamp = 200)
+            createMetric(
+                positionA = 50f,
+                positionB = 100f,
+                loadA = 50f,
+                loadB = 50f,
+                timestamp = 0,
+            ),
+            createMetric(
+                positionA = 100f,
+                positionB = 200f,
+                loadA = 60f,
+                loadB = 60f,
+                timestamp = 100,
+            ),
+            createMetric(
+                positionA = 150f,
+                positionB = 300f,
+                loadA = 70f,
+                loadB = 70f,
+                timestamp = 200,
+            ),
         )
 
         val result = engine.computeForceCurve(repNumber = 1, concentricMetrics = metrics)
@@ -121,7 +151,7 @@ class ForceCurveEngineTest {
         val metrics = listOf(
             createMetric(positionA = 100f, loadA = 50f, loadB = 50f, timestamp = 0),
             createMetric(positionA = 200f, loadA = 60f, loadB = 60f, timestamp = 100),
-            createMetric(positionA = 300f, loadA = 70f, loadB = 70f, timestamp = 200)
+            createMetric(positionA = 300f, loadA = 70f, loadB = 70f, timestamp = 200),
         )
 
         val result = engine.computeForceCurve(repNumber = 1, concentricMetrics = metrics)
@@ -140,7 +170,7 @@ class ForceCurveEngineTest {
         val metrics = listOf(
             createMetric(positionA = 0f, loadA = 50f, loadB = 50f, timestamp = 0),
             createMetric(positionA = 100f, loadA = 75f, loadB = 75f, timestamp = 100),
-            createMetric(positionA = 200f, loadA = 100f, loadB = 100f, timestamp = 200)
+            createMetric(positionA = 200f, loadA = 100f, loadB = 100f, timestamp = 200),
         )
 
         val result = engine.computeForceCurve(repNumber = 1, concentricMetrics = metrics)
@@ -166,7 +196,7 @@ class ForceCurveEngineTest {
         val metrics = listOf(
             createMetric(positionA = 100f, loadA = 50f, loadB = 50f, timestamp = 0),
             createMetric(positionA = 100.3f, loadA = 51f, loadB = 51f, timestamp = 100),
-            createMetric(positionA = 100.5f, loadA = 52f, loadB = 52f, timestamp = 200)
+            createMetric(positionA = 100.5f, loadA = 52f, loadB = 52f, timestamp = 200),
         )
 
         val result = engine.computeForceCurve(repNumber = 1, concentricMetrics = metrics)
@@ -185,10 +215,20 @@ class ForceCurveEngineTest {
             val position = i * 100f // 0, 100, 200, ..., 1000mm
             // Create a V-shaped force curve with minimum around 400mm (40% of 1000mm ROM)
             val force = when {
-                i <= 4 -> 100f - (i * 10f)  // 100, 90, 80, 70, 60 (decreasing)
-                else -> 60f + ((i - 4) * 10f)  // 60, 70, 80, 90, 100, 110 (increasing)
+                i <= 4 -> 100f - (i * 10f)
+
+                // 100, 90, 80, 70, 60 (decreasing)
+                else -> 60f + ((i - 4) * 10f) // 60, 70, 80, 90, 100, 110 (increasing)
             }
-            metrics.add(createMetric(positionA = position, loadA = force / 2, loadB = force / 2, timestamp = i.toLong() * 100))
+            metrics.add(
+                createMetric(
+                    positionA = position,
+                    loadA = force / 2,
+                    loadB = force / 2,
+                    timestamp =
+                        i.toLong() * 100,
+                ),
+            )
         }
 
         val result = engine.computeForceCurve(repNumber = 1, concentricMetrics = metrics)
@@ -197,7 +237,7 @@ class ForceCurveEngineTest {
         assertTrue(result.stickingPointPct != null, "Sticking point should be detected")
         assertTrue(
             result.stickingPointPct!! in 35f..45f,
-            "Sticking point ${result.stickingPointPct} should be around 40% ROM"
+            "Sticking point ${result.stickingPointPct} should be around 40% ROM",
         )
     }
 
@@ -211,10 +251,21 @@ class ForceCurveEngineTest {
             // Force dips at position 20mm (2% of 1000mm) but rises after
             val force = when (i) {
                 0 -> 100f
-                1 -> 50f  // Absolute minimum at 50mm (5% ROM - on boundary)
+
+                1 -> 50f
+
+                // Absolute minimum at 50mm (5% ROM - on boundary)
                 else -> 100f + i * 2f
             }
-            metrics.add(createMetric(positionA = position, loadA = force / 2, loadB = force / 2, timestamp = i.toLong() * 100))
+            metrics.add(
+                createMetric(
+                    positionA = position,
+                    loadA = force / 2,
+                    loadB = force / 2,
+                    timestamp =
+                        i.toLong() * 100,
+                ),
+            )
         }
 
         val result = engine.computeForceCurve(repNumber = 1, concentricMetrics = metrics)
@@ -224,7 +275,7 @@ class ForceCurveEngineTest {
         assertTrue(result.stickingPointPct != null, "Sticking point should exist")
         assertTrue(
             result.stickingPointPct!! >= 5f,
-            "Sticking point ${result.stickingPointPct} should be >= 5%"
+            "Sticking point ${result.stickingPointPct} should be >= 5%",
         )
     }
 
@@ -237,11 +288,23 @@ class ForceCurveEngineTest {
             val position = i * 50f // 0, 50, 100, ..., 1000mm
             // Force is constant except dips at position 980mm (98% of 1000mm)
             val force = when (i) {
-                19 -> 50f  // Absolute minimum near end (950mm = 95% - on boundary)
-                20 -> 40f  // Even lower at end
+                19 -> 50f
+
+                // Absolute minimum near end (950mm = 95% - on boundary)
+                20 -> 40f
+
+                // Even lower at end
                 else -> 100f
             }
-            metrics.add(createMetric(positionA = position, loadA = force / 2, loadB = force / 2, timestamp = i.toLong() * 100))
+            metrics.add(
+                createMetric(
+                    positionA = position,
+                    loadA = force / 2,
+                    loadB = force / 2,
+                    timestamp =
+                        i.toLong() * 100,
+                ),
+            )
         }
 
         val result = engine.computeForceCurve(repNumber = 1, concentricMetrics = metrics)
@@ -250,7 +313,7 @@ class ForceCurveEngineTest {
         assertTrue(result.stickingPointPct != null, "Sticking point should exist")
         assertTrue(
             result.stickingPointPct!! <= 95f,
-            "Sticking point ${result.stickingPointPct} should be <= 95%"
+            "Sticking point ${result.stickingPointPct} should be <= 95%",
         )
     }
 
@@ -263,7 +326,7 @@ class ForceCurveEngineTest {
         val metrics = listOf(
             createMetric(positionA = 100f, loadA = 50f, loadB = 50f),
             createMetric(positionA = 110f, loadA = 50f, loadB = 50f),
-            createMetric(positionA = 120f, loadA = 50f, loadB = 50f)
+            createMetric(positionA = 120f, loadA = 50f, loadB = 50f),
         )
 
         val result = engine.computeForceCurve(repNumber = 1, concentricMetrics = metrics)
@@ -284,8 +347,16 @@ class ForceCurveEngineTest {
         for (i in 0..30) {
             val position = i * 100f / 3f // 0 to ~1000mm
             // Linear increase
-            val force = 50f + (i * 3f)  // 50 to 140
-            metrics.add(createMetric(positionA = position, loadA = force / 2, loadB = force / 2, timestamp = i.toLong() * 100))
+            val force = 50f + (i * 3f) // 50 to 140
+            metrics.add(
+                createMetric(
+                    positionA = position,
+                    loadA = force / 2,
+                    loadB = force / 2,
+                    timestamp =
+                        i.toLong() * 100,
+                ),
+            )
         }
 
         val result = engine.computeForceCurve(repNumber = 1, concentricMetrics = metrics)
@@ -293,7 +364,7 @@ class ForceCurveEngineTest {
         assertEquals(
             StrengthProfile.ASCENDING,
             result.strengthProfile,
-            "Force increasing through ROM should be ASCENDING"
+            "Force increasing through ROM should be ASCENDING",
         )
     }
 
@@ -305,8 +376,16 @@ class ForceCurveEngineTest {
         for (i in 0..30) {
             val position = i * 100f / 3f // 0 to ~1000mm
             // Linear decrease
-            val force = 140f - (i * 3f)  // 140 to 50
-            metrics.add(createMetric(positionA = position, loadA = force / 2, loadB = force / 2, timestamp = i.toLong() * 100))
+            val force = 140f - (i * 3f) // 140 to 50
+            metrics.add(
+                createMetric(
+                    positionA = position,
+                    loadA = force / 2,
+                    loadB = force / 2,
+                    timestamp =
+                        i.toLong() * 100,
+                ),
+            )
         }
 
         val result = engine.computeForceCurve(repNumber = 1, concentricMetrics = metrics)
@@ -314,7 +393,7 @@ class ForceCurveEngineTest {
         assertEquals(
             StrengthProfile.DESCENDING,
             result.strengthProfile,
-            "Force decreasing through ROM should be DESCENDING"
+            "Force decreasing through ROM should be DESCENDING",
         )
     }
 
@@ -327,10 +406,18 @@ class ForceCurveEngineTest {
         for (i in 0..20) {
             val position = i * 50f // 0 to 1000mm
             // Bell-shaped: low at ends, high in middle
-            val t = i.toFloat() / 20f  // 0 to 1
+            val t = i.toFloat() / 20f // 0 to 1
             // Quadratic: peaks at 0.5, low at 0 and 1
             val force = 60f + 80f * (1f - 4f * (t - 0.5f) * (t - 0.5f))
-            metrics.add(createMetric(positionA = position, loadA = force / 2, loadB = force / 2, timestamp = i.toLong() * 100))
+            metrics.add(
+                createMetric(
+                    positionA = position,
+                    loadA = force / 2,
+                    loadB = force / 2,
+                    timestamp =
+                        i.toLong() * 100,
+                ),
+            )
         }
 
         val result = engine.computeForceCurve(repNumber = 1, concentricMetrics = metrics)
@@ -338,7 +425,7 @@ class ForceCurveEngineTest {
         assertEquals(
             StrengthProfile.BELL_SHAPED,
             result.strengthProfile,
-            "Force peaking in middle should be BELL_SHAPED"
+            "Force peaking in middle should be BELL_SHAPED",
         )
     }
 
@@ -350,8 +437,16 @@ class ForceCurveEngineTest {
         for (i in 0..20) {
             val position = i * 50f // 0 to 1000mm
             // Small variations around 100N (all within 15%)
-            val force = 100f + (i % 3) * 3f  // 100, 103, 106, 100, 103, 106...
-            metrics.add(createMetric(positionA = position, loadA = force / 2, loadB = force / 2, timestamp = i.toLong() * 100))
+            val force = 100f + (i % 3) * 3f // 100, 103, 106, 100, 103, 106...
+            metrics.add(
+                createMetric(
+                    positionA = position,
+                    loadA = force / 2,
+                    loadB = force / 2,
+                    timestamp =
+                        i.toLong() * 100,
+                ),
+            )
         }
 
         val result = engine.computeForceCurve(repNumber = 1, concentricMetrics = metrics)
@@ -359,7 +454,7 @@ class ForceCurveEngineTest {
         assertEquals(
             StrengthProfile.FLAT,
             result.strengthProfile,
-            "Relatively constant force should be FLAT"
+            "Relatively constant force should be FLAT",
         )
     }
 
@@ -372,8 +467,16 @@ class ForceCurveEngineTest {
         for (i in 0..30) {
             val position = i * 100f / 3f // 0 to ~1000mm
             // Bottom third avg: 100, Middle: 107.5, Top: 115 (exactly 15% higher)
-            val force = 100f + (i * 0.5f)  // 100 to 115
-            metrics.add(createMetric(positionA = position, loadA = force / 2, loadB = force / 2, timestamp = i.toLong() * 100))
+            val force = 100f + (i * 0.5f) // 100 to 115
+            metrics.add(
+                createMetric(
+                    positionA = position,
+                    loadA = force / 2,
+                    loadB = force / 2,
+                    timestamp =
+                        i.toLong() * 100,
+                ),
+            )
         }
 
         val result = engine.computeForceCurve(repNumber = 1, concentricMetrics = metrics)
@@ -381,8 +484,9 @@ class ForceCurveEngineTest {
         // At exactly 15%, it could go either way - document actual behavior
         // The important thing is that >15% triggers ASCENDING
         assertTrue(
-            result.strengthProfile == StrengthProfile.ASCENDING || result.strengthProfile == StrengthProfile.FLAT,
-            "At 15% threshold, profile should be ASCENDING or FLAT"
+            result.strengthProfile == StrengthProfile.ASCENDING ||
+                result.strengthProfile == StrengthProfile.FLAT,
+            "At 15% threshold, profile should be ASCENDING or FLAT",
         )
     }
 
@@ -395,20 +499,31 @@ class ForceCurveEngineTest {
         for (i in 0..10) {
             val position = i * 100f
             val force = 100f + i * 5f
-            metrics.add(createMetric(positionA = position, loadA = force / 2, loadB = force / 2, timestamp = i.toLong() * 100))
+            metrics.add(
+                createMetric(
+                    positionA = position,
+                    loadA = force / 2,
+                    loadB = force / 2,
+                    timestamp =
+                        i.toLong() * 100,
+                ),
+            )
         }
 
         val result = engine.processRep(
             repNumber = 2,
             concentricMetrics = metrics,
             allRepMetrics = metrics,
-            timestamp = 1000L
+            timestamp = 1000L,
         )
 
         assertEquals(2, result.forceCurve.repNumber)
         assertEquals(101, result.forceCurve.normalizedForceN.size)
         assertEquals(101, result.forceCurve.normalizedPositionPct.size)
-        assertTrue(result.forceCurve.strengthProfile != StrengthProfile.FLAT || result.forceCurve.normalizedForceN.isEmpty())
+        assertTrue(
+            result.forceCurve.strengthProfile != StrengthProfile.FLAT ||
+                result.forceCurve.normalizedForceN.isEmpty(),
+        )
     }
 
     @Test
@@ -420,8 +535,16 @@ class ForceCurveEngineTest {
             val metrics = mutableListOf<WorkoutMetric>()
             for (i in 0..10) {
                 val position = i * 100f
-                val force = 50f + i * 10f  // Ascending
-                metrics.add(createMetric(positionA = position, loadA = force / 2, loadB = force / 2, timestamp = i.toLong() * 100))
+                val force = 50f + i * 10f // Ascending
+                metrics.add(
+                    createMetric(
+                        positionA = position,
+                        loadA = force / 2,
+                        loadB = force / 2,
+                        timestamp =
+                            i.toLong() * 100,
+                    ),
+                )
             }
             engine.processRep(repNum + 1, metrics, metrics, currentTimeMillis())
         }

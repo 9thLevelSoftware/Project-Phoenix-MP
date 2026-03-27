@@ -1,10 +1,10 @@
 package com.devil.phoenixproject.util
 
-import kotlin.time.Instant
-import kotlinx.datetime.*
 import kotlin.math.roundToInt
 import kotlin.random.Random
 import kotlin.time.Clock
+import kotlin.time.Instant
+import kotlinx.datetime.*
 
 // Helper to get current instant
 private fun currentInstant(): Instant = Clock.System.now()
@@ -12,11 +12,7 @@ private fun currentInstant(): Instant = Clock.System.now()
 /**
  * Represents a date for streak calculations (KMP-compatible)
  */
-data class KmpLocalDate(
-    val year: Int,
-    val month: Int,
-    val dayOfMonth: Int
-) : Comparable<KmpLocalDate> {
+data class KmpLocalDate(val year: Int, val month: Int, val dayOfMonth: Int) : Comparable<KmpLocalDate> {
 
     fun minusDays(days: Int): KmpLocalDate {
         val localDate = LocalDate(year, month, dayOfMonth)
@@ -30,13 +26,9 @@ data class KmpLocalDate(
         return KmpLocalDate(result.year, result.month.number, result.day)
     }
 
-    fun isBefore(other: KmpLocalDate): Boolean {
-        return this < other
-    }
+    fun isBefore(other: KmpLocalDate): Boolean = this < other
 
-    fun isAfter(other: KmpLocalDate): Boolean {
-        return this > other
-    }
+    fun isAfter(other: KmpLocalDate): Boolean = this > other
 
     override fun compareTo(other: KmpLocalDate): Int {
         val yearCmp = year.compareTo(other.year)
@@ -83,40 +75,56 @@ object KmpUtils {
 
         return when (pattern) {
             "MMM dd, yyyy" -> {
-                val monthName = dateTime.month.name.take(3).lowercase().replaceFirstChar { it.uppercase() }
+                val monthName = dateTime.month.name.take(3).lowercase().replaceFirstChar {
+                    it.uppercase()
+                }
                 val day = dateTime.day.toString().padStart(2, '0')
                 val year = dateTime.year
                 "$monthName $day, $year"
             }
+
             "MM/dd/yyyy" -> {
                 val month = dateTime.month.number.toString().padStart(2, '0')
                 val day = dateTime.day.toString().padStart(2, '0')
                 val year = dateTime.year
                 "$month/$day/$year"
             }
+
             "yyyy-MM-dd" -> {
                 val month = dateTime.month.number.toString().padStart(2, '0')
                 val day = dateTime.day.toString().padStart(2, '0')
                 val year = dateTime.year
                 "$year-$month-$day"
             }
+
             "HH:mm" -> {
                 val hour = dateTime.hour.toString().padStart(2, '0')
                 val minute = dateTime.minute.toString().padStart(2, '0')
                 "$hour:$minute"
             }
+
             "h:mm a" -> {
-                val hour = if (dateTime.hour == 0) 12 else if (dateTime.hour > 12) dateTime.hour - 12 else dateTime.hour
+                val hour = if (dateTime.hour ==
+                    0
+                ) {
+                    12
+                } else if (dateTime.hour > 12) {
+                    dateTime.hour - 12
+                } else {
+                    dateTime.hour
+                }
                 val minute = dateTime.minute.toString().padStart(2, '0')
                 val amPm = if (dateTime.hour < 12) "AM" else "PM"
                 "$hour:$minute $amPm"
             }
+
             "HH:mm:ss" -> {
                 val hour = dateTime.hour.toString().padStart(2, '0')
                 val minute = dateTime.minute.toString().padStart(2, '0')
                 val second = dateTime.second.toString().padStart(2, '0')
                 "$hour:$minute:$second"
             }
+
             "HH:mm:ss.SSS" -> {
                 val hour = dateTime.hour.toString().padStart(2, '0')
                 val minute = dateTime.minute.toString().padStart(2, '0')
@@ -124,12 +132,15 @@ object KmpUtils {
                 val millis = (instant.toEpochMilliseconds() % 1000).toString().padStart(3, '0')
                 "$hour:$minute:$second.$millis"
             }
+
             "EEE" -> {
                 dateTime.dayOfWeek.name.take(3).lowercase().replaceFirstChar { it.uppercase() }
             }
+
             "EEEE" -> {
                 dateTime.dayOfWeek.name.lowercase().replaceFirstChar { it.uppercase() }
             }
+
             else -> {
                 // Default fallback
                 val month = dateTime.month.number.toString().padStart(2, '0')
@@ -166,9 +177,7 @@ object KmpUtils {
      * Get current time in milliseconds
      * @return Current Unix timestamp in milliseconds
      */
-    fun currentTimeMillis(): Long {
-        return currentInstant().toEpochMilliseconds()
-    }
+    fun currentTimeMillis(): Long = currentInstant().toEpochMilliseconds()
 
     /**
      * Get current day of week (ISO-8601: 1=Monday, 7=Sunday)
@@ -225,9 +234,7 @@ object KmpUtils {
      * @param decimals Number of decimal places
      * @return Formatted string
      */
-    fun formatDouble(value: Double, decimals: Int): String {
-        return formatFloat(value.toFloat(), decimals)
-    }
+    fun formatDouble(value: Double, decimals: Int): String = formatFloat(value.toFloat(), decimals)
 
     /**
      * Generate a random UUID string (KMP-compatible)
@@ -242,8 +249,13 @@ object KmpUtils {
         for (i in 0 until 36) {
             when (i) {
                 8, 13, 18, 23 -> sb.append('-')
-                14 -> sb.append('4') // Version 4
-                19 -> sb.append(hexChars[Random.nextInt(4) + 8]) // 8, 9, a, b
+
+                14 -> sb.append('4')
+
+                // Version 4
+                19 -> sb.append(hexChars[Random.nextInt(4) + 8])
+
+                // 8, 9, a, b
                 else -> sb.append(hexChars[Random.nextInt(16)])
             }
         }

@@ -28,7 +28,7 @@ expect fun CompactNumberPicker(
     modifier: Modifier = Modifier,
     label: String = "",
     suffix: String = "",
-    step: Float = 1.0f
+    step: Float = 1.0f,
 )
 
 /**
@@ -41,5 +41,5 @@ expect fun CompactNumberPicker(
     range: IntRange,
     modifier: Modifier = Modifier,
     label: String = "",
-    suffix: String = ""
+    suffix: String = "",
 )

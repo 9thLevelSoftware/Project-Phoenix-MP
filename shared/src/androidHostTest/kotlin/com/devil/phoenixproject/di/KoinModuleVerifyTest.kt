@@ -36,7 +36,7 @@ class KoinModuleVerifyTest {
                 HealthIntegration::class,
                 // Lambda types used in constructor injection (e.g. PortalApiClient tokenProvider)
                 Function0::class,
-            )
+            ),
         )
     }
 }

@@ -17,20 +17,15 @@ import com.devil.phoenixproject.data.repository.UserProfileRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.stringResource
-import vitruvianprojectphoenix.shared.generated.resources.Res
 import vitruvianprojectphoenix.shared.generated.resources.*
+import vitruvianprojectphoenix.shared.generated.resources.Res
 
 /**
  * Dialog for editing an existing user profile.
  * Allows changing name and color.
  */
 @Composable
-fun EditProfileDialog(
-    profile: UserProfile,
-    profileRepository: UserProfileRepository,
-    scope: CoroutineScope,
-    onDismiss: () -> Unit
-) {
+fun EditProfileDialog(profile: UserProfile, profileRepository: UserProfileRepository, scope: CoroutineScope, onDismiss: () -> Unit) {
     var name by remember { mutableStateOf(profile.name) }
     var selectedColorIndex by remember { mutableStateOf(profile.colorIndex) }
 
@@ -39,25 +34,25 @@ fun EditProfileDialog(
         title = { Text(stringResource(Res.string.edit_profile)) },
         text = {
             Column(
-                verticalArrangement = Arrangement.spacedBy(16.dp)
+                verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
                 OutlinedTextField(
                     value = name,
                     onValueChange = { name = it },
                     label = { Text(stringResource(Res.string.label_name)) },
                     singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth(),
                 )
 
                 Text(
                     "Color",
                     style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
 
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceEvenly
+                    horizontalArrangement = Arrangement.SpaceEvenly,
                 ) {
                     ProfileColors.forEachIndexed { index, color ->
                         Box(
@@ -67,19 +62,23 @@ fun EditProfileDialog(
                                 .background(color)
                                 .then(
                                     if (index == selectedColorIndex) {
-                                        Modifier.border(3.dp, MaterialTheme.colorScheme.primary, CircleShape)
+                                        Modifier.border(
+                                            3.dp,
+                                            MaterialTheme.colorScheme.primary,
+                                            CircleShape,
+                                        )
                                     } else {
                                         Modifier
-                                    }
+                                    },
                                 )
                                 .clickable { selectedColorIndex = index },
-                            contentAlignment = Alignment.Center
+                            contentAlignment = Alignment.Center,
                         ) {
                             if (index == selectedColorIndex) {
                                 Box(
                                     modifier = Modifier
                                         .size(12.dp)
-                                        .background(Color.White, CircleShape)
+                                        .background(Color.White, CircleShape),
                                 )
                             }
                         }
@@ -92,12 +91,16 @@ fun EditProfileDialog(
                 onClick = {
                     if (name.isNotBlank()) {
                         scope.launch {
-                            profileRepository.updateProfile(profile.id, name.trim(), selectedColorIndex)
+                            profileRepository.updateProfile(
+                                profile.id,
+                                name.trim(),
+                                selectedColorIndex,
+                            )
                         }
                         onDismiss()
                     }
                 },
-                enabled = name.isNotBlank()
+                enabled = name.isNotBlank(),
             ) {
                 Text(stringResource(Res.string.action_save))
             }
@@ -106,6 +109,6 @@ fun EditProfileDialog(
             TextButton(onClick = onDismiss) {
                 Text(stringResource(Res.string.action_cancel))
             }
-        }
+        },
     )
 }

@@ -15,37 +15,34 @@ import com.devil.phoenixproject.ui.theme.AccessibilityTheme
 import com.devil.phoenixproject.ui.theme.Spacing
 
 @Composable
-fun SafetyEventsCard(
-    summary: SafetyEventSummary,
-    modifier: Modifier = Modifier
-) {
+fun SafetyEventsCard(summary: SafetyEventSummary, modifier: Modifier = Modifier) {
     if (!summary.hasSafetyEvents) return
 
     Card(
         modifier = modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.3f)
-        )
+            containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.3f),
+        ),
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(Spacing.medium)
+                .padding(Spacing.medium),
         ) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(Spacing.small)
+                horizontalArrangement = Arrangement.spacedBy(Spacing.small),
             ) {
                 Icon(
                     Icons.Default.Warning,
                     contentDescription = null,
-                    tint = MaterialTheme.colorScheme.error
+                    tint = MaterialTheme.colorScheme.error,
                 )
                 Text(
                     "Safety Events",
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.error
+                    color = MaterialTheme.colorScheme.error,
                 )
             }
 
@@ -55,7 +52,7 @@ fun SafetyEventsCard(
                 SafetyEventRow(
                     label = "Deload Warnings",
                     count = summary.deloadWarnings,
-                    color = AccessibilityTheme.colors.warning
+                    color = AccessibilityTheme.colors.warning,
                 )
             }
 
@@ -63,7 +60,7 @@ fun SafetyEventsCard(
                 SafetyEventRow(
                     label = "ROM Violations",
                     count = summary.romViolations,
-                    color = AccessibilityTheme.colors.error
+                    color = AccessibilityTheme.colors.error,
                 )
             }
 
@@ -71,7 +68,7 @@ fun SafetyEventsCard(
                 SafetyEventRow(
                     label = "Spotter Activations",
                     count = summary.spotterActivations,
-                    color = Color(0xFF2196F3) // Blue
+                    color = Color(0xFF2196F3), // Blue
                 )
             }
         }
@@ -79,28 +76,24 @@ fun SafetyEventsCard(
 }
 
 @Composable
-private fun SafetyEventRow(
-    label: String,
-    count: Int,
-    color: Color
-) {
+private fun SafetyEventRow(label: String, count: Int, color: Color) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .padding(vertical = 4.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
+        verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
             label,
             style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurface
+            color = MaterialTheme.colorScheme.onSurface,
         )
         Text(
             "$count",
             style = MaterialTheme.typography.bodyLarge,
             fontWeight = FontWeight.Bold,
-            color = color
+            color = color,
         )
     }
 }

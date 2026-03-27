@@ -51,11 +51,7 @@ interface ProgressionRepository {
      * @param response User's response (ACCEPTED, MODIFIED, REJECTED)
      * @param actualWeight The weight the user actually used (may differ from suggested)
      */
-    suspend fun recordResponse(
-        eventId: String,
-        response: ProgressionResponse,
-        actualWeight: Float?
-    )
+    suspend fun recordResponse(eventId: String, response: ProgressionResponse, actualWeight: Float?)
 
     /**
      * Delete a progression event.

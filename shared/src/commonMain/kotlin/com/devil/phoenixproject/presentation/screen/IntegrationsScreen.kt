@@ -7,6 +7,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -23,10 +24,10 @@ import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.isIosPlatform
 import com.devil.phoenixproject.presentation.viewmodel.IntegrationsViewModel
 import com.devil.phoenixproject.ui.theme.Spacing
-import com.devil.phoenixproject.util.rememberHealthPermissionRequester
 import com.devil.phoenixproject.util.KmpUtils
 import com.devil.phoenixproject.util.readUriContent
 import com.devil.phoenixproject.util.rememberFilePicker
+import com.devil.phoenixproject.util.rememberHealthPermissionRequester
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 import org.koin.compose.viewmodel.koinViewModel
@@ -37,7 +38,7 @@ fun IntegrationsScreen(
     weightUnit: WeightUnit = WeightUnit.KG,
     onNavigateToExternalActivities: () -> Unit = {},
     onSetTitle: (String) -> Unit = {},
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
 ) {
     val viewModel: IntegrationsViewModel = koinViewModel()
     val uiState by viewModel.uiState.collectAsState()
@@ -100,7 +101,7 @@ fun IntegrationsScreen(
                         snackbarHostState.showSnackbar("CSV saved successfully")
                     }
                 }
-            }
+            },
         )
     }
 
@@ -118,7 +119,7 @@ fun IntegrationsScreen(
                     if (content != null) {
                         viewModel.previewCsvImport(
                             content = content,
-                            weightUnit = importWeightUnit
+                            weightUnit = importWeightUnit,
                         )
                     } else {
                         snackbarHostState.showSnackbar("Could not read file")
@@ -140,7 +141,7 @@ fun IntegrationsScreen(
                     preview.dateRange?.let { (earliest, latest) ->
                         Text(
                             "Date range: ${KmpUtils.formatTimestamp(earliest)} – ${KmpUtils.formatTimestamp(latest)}",
-                            style = MaterialTheme.typography.bodyMedium
+                            style = MaterialTheme.typography.bodyMedium,
                         )
                     }
                     val totalMins = preview.totalDurationSeconds / 60
@@ -152,7 +153,7 @@ fun IntegrationsScreen(
                         Text(
                             "${preview.errors.size} row(s) could not be parsed",
                             style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.error
+                            color = MaterialTheme.colorScheme.error,
                         )
                     }
                 }
@@ -160,7 +161,7 @@ fun IntegrationsScreen(
             confirmButton = {
                 Button(
                     onClick = { viewModel.confirmImport() },
-                    enabled = !uiState.isImporting
+                    enabled = !uiState.isImporting,
                 ) {
                     if (uiState.isImporting) {
                         CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
@@ -173,7 +174,7 @@ fun IntegrationsScreen(
                 TextButton(onClick = { viewModel.cancelImport() }) {
                     Text("Cancel")
                 }
-            }
+            },
         )
     }
 
@@ -196,7 +197,7 @@ fun IntegrationsScreen(
             onDismiss = {
                 showHevyApiKeyDialog = false
                 apiKeyInput = ""
-            }
+            },
         )
     }
 
@@ -214,7 +215,7 @@ fun IntegrationsScreen(
             onDismiss = {
                 showLiftosaurApiKeyDialog = false
                 apiKeyInput = ""
-            }
+            },
         )
     }
 
@@ -225,7 +226,7 @@ fun IntegrationsScreen(
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         containerColor = MaterialTheme.colorScheme.background,
-        modifier = modifier
+        modifier = modifier,
     ) { innerPadding ->
         Column(
             modifier = Modifier
@@ -233,13 +234,13 @@ fun IntegrationsScreen(
                 .verticalScroll(rememberScrollState())
                 .padding(innerPadding)
                 .padding(Spacing.medium),
-            verticalArrangement = Arrangement.spacedBy(Spacing.medium)
+            verticalArrangement = Arrangement.spacedBy(Spacing.medium),
         ) {
             // ── Health Apps section ───────────────────────────────────────────
             SectionHeader(
                 icon = Icons.Default.Favorite,
                 title = "Health Apps",
-                iconGradient = listOf(Color(0xFFEF4444), Color(0xFFEC4899))
+                iconGradient = listOf(Color(0xFFEF4444), Color(0xFFEC4899)),
             )
 
             val healthProvider = if (isIosPlatform) IntegrationProvider.APPLE_HEALTH else IntegrationProvider.GOOGLE_HEALTH
@@ -255,16 +256,16 @@ fun IntegrationsScreen(
                         checked = healthConnected,
                         onCheckedChange = { enabled ->
                             viewModel.toggleHealthIntegration(enabled)
-                        }
+                        },
                     )
-                }
+                },
             )
 
             // ── Workout Trackers section ──────────────────────────────────────
             SectionHeader(
                 icon = Icons.Default.FitnessCenter,
                 title = "Workout Trackers",
-                iconGradient = listOf(Color(0xFFFF6B35), Color(0xFFDC2626))
+                iconGradient = listOf(Color(0xFFFF6B35), Color(0xFFDC2626)),
             )
 
             // Hevy card
@@ -277,7 +278,7 @@ fun IntegrationsScreen(
                 trailingContent = {
                     Column(
                         horizontalAlignment = Alignment.End,
-                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                        verticalArrangement = Arrangement.spacedBy(4.dp),
                     ) {
                         if (hevyConnected) {
                             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -287,7 +288,7 @@ fun IntegrationsScreen(
                                     },
                                     enabled = !uiState.isSyncing,
                                     shape = RoundedCornerShape(12.dp),
-                                    modifier = Modifier.height(36.dp)
+                                    modifier = Modifier.height(36.dp),
                                 ) {
                                     if (uiState.isSyncing) {
                                         CircularProgressIndicator(Modifier.size(14.dp), strokeWidth = 2.dp)
@@ -299,12 +300,12 @@ fun IntegrationsScreen(
                                     onClick = {
                                         viewModel.disconnectProvider(IntegrationProvider.HEVY)
                                     },
-                                    modifier = Modifier.height(36.dp)
+                                    modifier = Modifier.height(36.dp),
                                 ) {
                                     Text(
                                         "Disconnect",
                                         style = MaterialTheme.typography.labelMedium,
-                                        color = MaterialTheme.colorScheme.error
+                                        color = MaterialTheme.colorScheme.error,
                                     )
                                 }
                             }
@@ -315,13 +316,13 @@ fun IntegrationsScreen(
                                     showHevyApiKeyDialog = true
                                 },
                                 shape = RoundedCornerShape(12.dp),
-                                modifier = Modifier.height(36.dp)
+                                modifier = Modifier.height(36.dp),
                             ) {
                                 Text("Connect", style = MaterialTheme.typography.labelMedium)
                             }
                         }
                     }
-                }
+                },
             )
 
             // Liftosaur card
@@ -334,7 +335,7 @@ fun IntegrationsScreen(
                 trailingContent = {
                     Column(
                         horizontalAlignment = Alignment.End,
-                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                        verticalArrangement = Arrangement.spacedBy(4.dp),
                     ) {
                         if (liftosaurConnected) {
                             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -344,7 +345,7 @@ fun IntegrationsScreen(
                                     },
                                     enabled = !uiState.isSyncing,
                                     shape = RoundedCornerShape(12.dp),
-                                    modifier = Modifier.height(36.dp)
+                                    modifier = Modifier.height(36.dp),
                                 ) {
                                     if (uiState.isSyncing) {
                                         CircularProgressIndicator(Modifier.size(14.dp), strokeWidth = 2.dp)
@@ -356,12 +357,12 @@ fun IntegrationsScreen(
                                     onClick = {
                                         viewModel.disconnectProvider(IntegrationProvider.LIFTOSAUR)
                                     },
-                                    modifier = Modifier.height(36.dp)
+                                    modifier = Modifier.height(36.dp),
                                 ) {
                                     Text(
                                         "Disconnect",
                                         style = MaterialTheme.typography.labelMedium,
-                                        color = MaterialTheme.colorScheme.error
+                                        color = MaterialTheme.colorScheme.error,
                                     )
                                 }
                             }
@@ -372,13 +373,13 @@ fun IntegrationsScreen(
                                     showLiftosaurApiKeyDialog = true
                                 },
                                 shape = RoundedCornerShape(12.dp),
-                                modifier = Modifier.height(36.dp)
+                                modifier = Modifier.height(36.dp),
                             ) {
                                 Text("Connect", style = MaterialTheme.typography.labelMedium)
                             }
                         }
                     }
-                }
+                },
             )
 
             // Strong / CSV card (no connection state — always available)
@@ -387,65 +388,65 @@ fun IntegrationsScreen(
                     .fillMaxWidth()
                     .shadow(8.dp, RoundedCornerShape(20.dp)),
                 colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceContainerHighest
+                    containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
                 ),
                 shape = RoundedCornerShape(20.dp),
                 elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
-                border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f))
+                border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)),
             ) {
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(Spacing.medium),
-                    verticalArrangement = Arrangement.spacedBy(Spacing.small)
+                    verticalArrangement = Arrangement.spacedBy(Spacing.small),
                 ) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(Spacing.small)
+                        horizontalArrangement = Arrangement.spacedBy(Spacing.small),
                     ) {
                         Icon(
                             Icons.Default.TableChart,
                             contentDescription = null,
                             tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(20.dp)
+                            modifier = Modifier.size(20.dp),
                         )
                         Text(
                             "Strong / CSV",
                             style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold
+                            fontWeight = FontWeight.Bold,
                         )
                     }
                     Text(
                         "Import or export workouts in Strong-compatible CSV format",
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
 
                     // Weight unit toggle for CSV
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
                         Text(
                             "Weight unit:",
                             style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                         FilterChip(
                             selected = csvWeightUnit == WeightUnit.KG,
                             onClick = { csvWeightUnit = WeightUnit.KG },
-                            label = { Text("kg", style = MaterialTheme.typography.labelSmall) }
+                            label = { Text("kg", style = MaterialTheme.typography.labelSmall) },
                         )
                         FilterChip(
                             selected = csvWeightUnit == WeightUnit.LB,
                             onClick = { csvWeightUnit = WeightUnit.LB },
-                            label = { Text("lbs", style = MaterialTheme.typography.labelSmall) }
+                            label = { Text("lbs", style = MaterialTheme.typography.labelSmall) },
                         )
                     }
 
                     Row(
                         horizontalArrangement = Arrangement.spacedBy(Spacing.small),
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier.fillMaxWidth(),
                     ) {
                         OutlinedButton(
                             onClick = {
@@ -454,7 +455,7 @@ fun IntegrationsScreen(
                             },
                             enabled = !uiState.isExporting,
                             shape = RoundedCornerShape(12.dp),
-                            modifier = Modifier.weight(1f)
+                            modifier = Modifier.weight(1f),
                         ) {
                             if (uiState.isExporting) {
                                 CircularProgressIndicator(Modifier.size(14.dp), strokeWidth = 2.dp)
@@ -462,7 +463,7 @@ fun IntegrationsScreen(
                                 Icon(
                                     Icons.Default.Upload,
                                     contentDescription = null,
-                                    modifier = Modifier.size(16.dp)
+                                    modifier = Modifier.size(16.dp),
                                 )
                                 Spacer(Modifier.width(4.dp))
                                 Text("Export CSV", style = MaterialTheme.typography.labelMedium)
@@ -475,7 +476,7 @@ fun IntegrationsScreen(
                             },
                             enabled = !uiState.isImporting,
                             shape = RoundedCornerShape(12.dp),
-                            modifier = Modifier.weight(1f)
+                            modifier = Modifier.weight(1f),
                         ) {
                             if (uiState.isImporting) {
                                 CircularProgressIndicator(Modifier.size(14.dp), strokeWidth = 2.dp)
@@ -483,7 +484,7 @@ fun IntegrationsScreen(
                                 Icon(
                                     Icons.Default.Download,
                                     contentDescription = null,
-                                    modifier = Modifier.size(16.dp)
+                                    modifier = Modifier.size(16.dp),
                                 )
                                 Spacer(Modifier.width(4.dp))
                                 Text("Import CSV", style = MaterialTheme.typography.labelMedium)
@@ -499,60 +500,60 @@ fun IntegrationsScreen(
                     .fillMaxWidth()
                     .shadow(8.dp, RoundedCornerShape(20.dp)),
                 colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceContainerHighest
+                    containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
                 ),
                 shape = RoundedCornerShape(20.dp),
                 elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
                 border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)),
-                onClick = onNavigateToExternalActivities
+                onClick = onNavigateToExternalActivities,
             ) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(Spacing.medium),
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
+                    horizontalArrangement = Arrangement.SpaceBetween,
                 ) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(Spacing.small)
+                        horizontalArrangement = Arrangement.spacedBy(Spacing.small),
                     ) {
                         Box(
                             modifier = Modifier
                                 .size(40.dp)
                                 .background(
                                     Brush.linearGradient(
-                                        colors = listOf(Color(0xFF10B981), Color(0xFF06B6D4))
+                                        colors = listOf(Color(0xFF10B981), Color(0xFF06B6D4)),
                                     ),
-                                    RoundedCornerShape(12.dp)
+                                    RoundedCornerShape(12.dp),
                                 ),
-                            contentAlignment = Alignment.Center
+                            contentAlignment = Alignment.Center,
                         ) {
                             Icon(
-                                Icons.Default.List,
+                                Icons.AutoMirrored.Filled.List,
                                 contentDescription = null,
                                 tint = Color.White,
-                                modifier = Modifier.size(20.dp)
+                                modifier = Modifier.size(20.dp),
                             )
                         }
                         Column {
                             Text(
                                 "External Activities",
                                 style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold
+                                fontWeight = FontWeight.Bold,
                             )
                             val count = uiState.externalActivities.size
                             Text(
                                 if (count == 0) "No activities imported" else "$count imported",
                                 style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
                     }
                     Icon(
                         Icons.Default.ChevronRight,
                         contentDescription = "View external activities",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
             }
@@ -565,96 +566,91 @@ fun IntegrationsScreen(
 // ─── Shared private components ──────────────────────────────────────────────
 
 @Composable
-private fun SectionHeader(
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    title: String,
-    iconGradient: List<Color>
-) {
+private fun SectionHeader(icon: androidx.compose.ui.graphics.vector.ImageVector, title: String, iconGradient: List<Color>) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(Spacing.small)
+        horizontalArrangement = Arrangement.spacedBy(Spacing.small),
     ) {
         Box(
             modifier = Modifier
                 .size(36.dp)
                 .background(
                     Brush.linearGradient(iconGradient),
-                    RoundedCornerShape(10.dp)
+                    RoundedCornerShape(10.dp),
                 ),
-            contentAlignment = Alignment.Center
+            contentAlignment = Alignment.Center,
         ) {
             Icon(
                 icon,
                 contentDescription = null,
                 tint = Color.White,
-                modifier = Modifier.size(18.dp)
+                modifier = Modifier.size(18.dp),
             )
         }
         Text(
             title,
             style = MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.onSurface
+            color = MaterialTheme.colorScheme.onSurface,
         )
     }
 }
 
 @Composable
-private fun IntegrationCard(
-    title: String,
-    subtitle: String,
-    statusConnected: Boolean,
-    trailingContent: @Composable () -> Unit
-) {
+private fun IntegrationCard(title: String, subtitle: String, statusConnected: Boolean, trailingContent: @Composable () -> Unit) {
     Card(
         modifier = Modifier
             .fillMaxWidth()
             .shadow(8.dp, RoundedCornerShape(20.dp)),
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceContainerHighest
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
         ),
         shape = RoundedCornerShape(20.dp),
         elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
-        border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f))
+        border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)),
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(Spacing.medium),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
+            horizontalArrangement = Arrangement.SpaceBetween,
         ) {
             Column(modifier = Modifier.weight(1f)) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
                     Text(
                         title,
                         style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold
+                        fontWeight = FontWeight.Bold,
                     )
                     // Status badge
                     Surface(
                         shape = RoundedCornerShape(6.dp),
-                        color = if (statusConnected)
+                        color = if (statusConnected) {
                             Color(0xFF10B981).copy(alpha = 0.15f)
-                        else
+                        } else {
                             MaterialTheme.colorScheme.surfaceVariant
+                        },
                     ) {
                         Text(
                             if (statusConnected) "Connected" else "Not connected",
                             style = MaterialTheme.typography.labelSmall,
-                            color = if (statusConnected) Color(0xFF10B981)
-                            else MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                            color = if (statusConnected) {
+                                Color(0xFF10B981)
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            },
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
                         )
                     }
                 }
                 Text(
                     subtitle,
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
             Spacer(Modifier.width(Spacing.small))
@@ -670,7 +666,7 @@ private fun ApiKeyInputDialog(
     value: String,
     onValueChange: (String) -> Unit,
     onConfirm: () -> Unit,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -680,7 +676,7 @@ private fun ApiKeyInputDialog(
                 Text(
                     "Enter your API key to enable automatic sync",
                     style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 OutlinedTextField(
                     value = value,
@@ -688,14 +684,14 @@ private fun ApiKeyInputDialog(
                     label = { Text(hint) },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp)
+                    shape = RoundedCornerShape(12.dp),
                 )
             }
         },
         confirmButton = {
             Button(
                 onClick = onConfirm,
-                enabled = value.isNotBlank()
+                enabled = value.isNotBlank(),
             ) {
                 Text("Connect")
             }
@@ -704,6 +700,6 @@ private fun ApiKeyInputDialog(
             TextButton(onClick = onDismiss) {
                 Text("Cancel")
             }
-        }
+        },
     )
 }

@@ -18,17 +18,14 @@ import com.devil.phoenixproject.data.sync.SyncState
 import com.devil.phoenixproject.ui.sync.LinkAccountUiState
 import com.devil.phoenixproject.ui.sync.LinkAccountViewModel
 import com.devil.phoenixproject.util.KmpUtils
-import org.koin.compose.koinInject
 import org.jetbrains.compose.resources.stringResource
-import vitruvianprojectphoenix.shared.generated.resources.Res
+import org.koin.compose.koinInject
 import vitruvianprojectphoenix.shared.generated.resources.*
+import vitruvianprojectphoenix.shared.generated.resources.Res
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun LinkAccountScreen(
-    viewModel: LinkAccountViewModel = koinInject(),
-    onNavigateBack: () -> Unit
-) {
+fun LinkAccountScreen(viewModel: LinkAccountViewModel = koinInject(), onNavigateBack: () -> Unit) {
     val uiState by viewModel.uiState.collectAsState()
     val isAuthenticated by viewModel.isAuthenticated.collectAsState()
     val currentUser by viewModel.currentUser.collectAsState()
@@ -43,24 +40,24 @@ fun LinkAccountScreen(
                     IconButton(onClick = onNavigateBack) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = stringResource(Res.string.cd_back)
+                            contentDescription = stringResource(Res.string.cd_back),
                         )
                     }
-                }
+                },
             )
-        }
+        },
     ) { paddingValues ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)
                 .padding(16.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
+            horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Text(
                 text = "Sync your workouts across devices",
                 style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
 
             Spacer(modifier = Modifier.height(24.dp))
@@ -72,14 +69,14 @@ fun LinkAccountScreen(
                     syncState = syncState,
                     lastSyncTime = lastSyncTime,
                     onSync = { viewModel.sync() },
-                    onLogout = { viewModel.logout() }
+                    onLogout = { viewModel.logout() },
                 )
             } else {
                 // Login form (sign up happens via Phoenix Portal)
                 LoginForm(
                     uiState = uiState,
                     onLogin = { email, password -> viewModel.login(email, password) },
-                    onClearError = { viewModel.clearError() }
+                    onClearError = { viewModel.clearError() },
                 )
             }
         }
@@ -92,17 +89,17 @@ private fun LinkedAccountContent(
     syncState: SyncState,
     lastSyncTime: Long,
     onSync: () -> Unit,
-    onLogout: () -> Unit
+    onLogout: () -> Unit,
 ) {
     Card(
-        modifier = Modifier.fillMaxWidth()
+        modifier = Modifier.fillMaxWidth(),
     ) {
         Column(
-            modifier = Modifier.padding(16.dp)
+            modifier = Modifier.padding(16.dp),
         ) {
             Text(
                 text = "Linked Account",
-                style = MaterialTheme.typography.titleMedium
+                style = MaterialTheme.typography.titleMedium,
             )
 
             Spacer(modifier = Modifier.height(8.dp))
@@ -111,7 +108,7 @@ private fun LinkedAccountContent(
             user.displayName?.let { name ->
                 Text(
                     text = name,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
 
@@ -119,7 +116,7 @@ private fun LinkedAccountContent(
                 Spacer(modifier = Modifier.height(8.dp))
                 AssistChip(
                     onClick = {},
-                    label = { Text(stringResource(Res.string.label_premium)) }
+                    label = { Text(stringResource(Res.string.label_premium)) },
                 )
             }
 
@@ -131,27 +128,32 @@ private fun LinkedAccountContent(
                     LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
                     Text(stringResource(Res.string.syncing))
                 }
+
                 is SyncState.Success -> {
                     Text(stringResource(Res.string.last_synced, formatSyncTimestamp(syncState.syncTime)))
                 }
+
                 is SyncState.Error -> {
                     Text(
                         text = "Sync error: ${syncState.message}",
-                        color = MaterialTheme.colorScheme.error
+                        color = MaterialTheme.colorScheme.error,
                     )
                 }
+
                 is SyncState.NotPremium -> {
                     Text(
                         text = "Premium subscription required for sync",
-                        color = MaterialTheme.colorScheme.error
+                        color = MaterialTheme.colorScheme.error,
                     )
                 }
+
                 is SyncState.NotAuthenticated -> {
                     Text(
                         text = "Authentication failed — please sign out and sign back in",
-                        color = MaterialTheme.colorScheme.error
+                        color = MaterialTheme.colorScheme.error,
                     )
                 }
+
                 is SyncState.Idle -> {
                     if (lastSyncTime > 0) {
                         Text(stringResource(Res.string.last_synced, formatSyncTimestamp(lastSyncTime)))
@@ -165,7 +167,7 @@ private fun LinkedAccountContent(
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween
+                horizontalArrangement = Arrangement.SpaceBetween,
             ) {
                 OutlinedButton(onClick = onLogout) {
                     Text(stringResource(Res.string.unlink_account))
@@ -173,7 +175,7 @@ private fun LinkedAccountContent(
 
                 Button(
                     onClick = onSync,
-                    enabled = syncState !is SyncState.Syncing
+                    enabled = syncState !is SyncState.Syncing,
                 ) {
                     Text(stringResource(Res.string.sync_now))
                 }
@@ -183,41 +185,43 @@ private fun LinkedAccountContent(
 }
 
 @Composable
-private fun LoginForm(
-    uiState: LinkAccountUiState,
-    onLogin: (String, String) -> Unit,
-    onClearError: () -> Unit
-) {
+private fun LoginForm(uiState: LinkAccountUiState, onLogin: (String, String) -> Unit, onClearError: () -> Unit) {
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var showPassword by remember { mutableStateOf(false) }
 
     Card(
-        modifier = Modifier.fillMaxWidth()
+        modifier = Modifier.fillMaxWidth(),
     ) {
         Column(
-            modifier = Modifier.padding(16.dp)
+            modifier = Modifier.padding(16.dp),
         ) {
             Text(
                 text = stringResource(Res.string.action_login),
                 style = MaterialTheme.typography.titleMedium,
-                modifier = Modifier.padding(bottom = 16.dp)
+                modifier = Modifier.padding(bottom = 16.dp),
             )
 
             OutlinedTextField(
                 value = email,
-                onValueChange = { email = it; onClearError() },
+                onValueChange = {
+                    email = it
+                    onClearError()
+                },
                 label = { Text(stringResource(Res.string.label_email)) },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email)
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
             )
 
             Spacer(modifier = Modifier.height(8.dp))
 
             OutlinedTextField(
                 value = password,
-                onValueChange = { password = it; onClearError() },
+                onValueChange = {
+                    password = it
+                    onClearError()
+                },
                 label = { Text(stringResource(Res.string.label_password)) },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
@@ -227,10 +231,10 @@ private fun LoginForm(
                     IconButton(onClick = { showPassword = !showPassword }) {
                         Icon(
                             imageVector = if (showPassword) Icons.Default.VisibilityOff else Icons.Default.Visibility,
-                            contentDescription = if (showPassword) "Hide password" else "Show password"
+                            contentDescription = if (showPassword) "Hide password" else "Show password",
                         )
                     }
-                }
+                },
             )
 
             // Error message
@@ -239,7 +243,7 @@ private fun LoginForm(
                 Text(
                     text = uiState.message,
                     color = MaterialTheme.colorScheme.error,
-                    style = MaterialTheme.typography.bodySmall
+                    style = MaterialTheme.typography.bodySmall,
                 )
             }
 
@@ -249,12 +253,12 @@ private fun LoginForm(
                 onClick = { onLogin(email, password) },
                 modifier = Modifier.fillMaxWidth(),
                 enabled = email.isNotBlank() && password.isNotBlank() &&
-                        uiState !is LinkAccountUiState.Loading
+                    uiState !is LinkAccountUiState.Loading,
             ) {
                 if (uiState is LinkAccountUiState.Loading) {
                     CircularProgressIndicator(
                         modifier = Modifier.size(24.dp),
-                        color = MaterialTheme.colorScheme.onPrimary
+                        color = MaterialTheme.colorScheme.onPrimary,
                     )
                 } else {
                     Text(stringResource(Res.string.action_login))
@@ -267,7 +271,7 @@ private fun LoginForm(
                 text = "Log in with your existing Phoenix Portal account to sync workouts across devices.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier.fillMaxWidth(),
             )
         }
     }

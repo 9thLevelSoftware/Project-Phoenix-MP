@@ -13,7 +13,7 @@ class TrainingCycleModelsTest {
         val day = CycleDay.restDay(
             cycleId = "cycle-1",
             dayNumber = 2,
-            name = "Recovery"
+            name = "Recovery",
         )
 
         val item = CycleItem.fromCycleDay(day, routineName = "Ignored", exerciseCount = 3)
@@ -33,7 +33,7 @@ class TrainingCycleModelsTest {
             cycleStartDate = currentTimeMillis(),
             completedDays = setOf(1, 2),
             missedDays = setOf(3),
-            rotationCount = 0
+            rotationCount = 0,
         )
 
         val updated = progress.advanceToNextDay(totalDays = 3, markMissed = true)
@@ -51,7 +51,7 @@ class TrainingCycleModelsTest {
             cycleId = "cycle-1",
             currentDayNumber = 1,
             lastCompletedDate = null,
-            cycleStartDate = currentTimeMillis()
+            cycleStartDate = currentTimeMillis(),
         )
 
         val updated = progress.markDayCompleted(dayNumber = 1)
@@ -72,7 +72,7 @@ class TrainingCycleModelsTest {
             currentDayNumber = 1,
             lastCompletedDate = null,
             cycleStartDate = now,
-            lastAdvancedAt = now - (25 * 60 * 60 * 1000L)
+            lastAdvancedAt = now - (25 * 60 * 60 * 1000L),
         )
 
         assertTrue(progress.shouldAutoAdvance())
@@ -87,7 +87,7 @@ class TrainingCycleModelsTest {
             currentDayNumber = 1,
             lastCompletedDate = null,
             cycleStartDate = now - (2 * 24 * 60 * 60 * 1000L),
-            lastAdvancedAt = null
+            lastAdvancedAt = null,
         )
 
         assertTrue(progress.pendingAutoAdvanceDays() >= 2)
@@ -105,7 +105,7 @@ class TrainingCycleModelsTest {
             actualWeightKg = 100f,
             loggedRpe = null,
             isPr = false,
-            completedAt = 0L
+            completedAt = 0L,
         )
 
         val estimated = set.estimatedOneRepMax()
@@ -125,7 +125,7 @@ class TrainingCycleModelsTest {
                 actualWeightKg = 20f,
                 loggedRpe = null,
                 isPr = false,
-                completedAt = 1L
+                completedAt = 1L,
             ),
             CompletedSet(
                 id = "set-2",
@@ -137,8 +137,8 @@ class TrainingCycleModelsTest {
                 actualWeightKg = 40f,
                 loggedRpe = null,
                 isPr = false,
-                completedAt = 2L
-            )
+                completedAt = 2L,
+            ),
         )
 
         assertEquals(420f, sets.totalVolume())
@@ -159,7 +159,7 @@ class TrainingCycleModelsTest {
                 actualWeightKg = 30f,
                 loggedRpe = null,
                 isPr = false,
-                completedAt = 1L
+                completedAt = 1L,
             ),
             CompletedSet(
                 id = "set-2",
@@ -171,8 +171,8 @@ class TrainingCycleModelsTest {
                 actualWeightKg = 30f,
                 loggedRpe = null,
                 isPr = false,
-                completedAt = 2L
-            )
+                completedAt = 2L,
+            ),
         )
 
         val summary = sets.toCompactString { weight -> "${weight}kg" }
@@ -192,7 +192,7 @@ class TemplateModelsTest {
     fun `calculateSetWeight uses training max and rounds to half kg`() {
         val weight = calculateSetWeight(
             oneRepMaxKg = 100f,
-            percentageSet = PercentageSet(percent = 0.75f, targetReps = 5)
+            percentageSet = PercentageSet(percent = 0.75f, targetReps = 5),
         )
 
         assertEquals(67.5f, weight)

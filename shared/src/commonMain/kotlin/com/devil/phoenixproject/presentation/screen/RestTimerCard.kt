@@ -25,15 +25,14 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.devil.phoenixproject.domain.model.EccentricLoad
 import com.devil.phoenixproject.domain.model.EchoLevel
 import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.presentation.components.SliderWithButtons
 import com.devil.phoenixproject.ui.theme.*
 import org.jetbrains.compose.resources.stringResource
-import vitruvianprojectphoenix.shared.generated.resources.Res
 import vitruvianprojectphoenix.shared.generated.resources.*
+import vitruvianprojectphoenix.shared.generated.resources.Res
 
 /**
  * Rest Timer Card Component
@@ -77,7 +76,7 @@ fun RestTimerCard(
     onUpdateEccentricLoad: ((Int) -> Unit)? = null,
     // Issue #222: Flag to indicate next exercise is bodyweight (no config card needed)
     isNextExerciseBodyweight: Boolean = false,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
 ) {
     // Local state for editing parameters
     var editedReps by remember(nextExerciseReps) { mutableStateOf(nextExerciseReps ?: 10) }
@@ -124,12 +123,12 @@ fun RestTimerCard(
                     colors = listOf(
                         MaterialTheme.colorScheme.background,
                         MaterialTheme.colorScheme.surface,
-                        MaterialTheme.colorScheme.surfaceVariant
-                    )
-                )
+                        MaterialTheme.colorScheme.surfaceVariant,
+                    ),
+                ),
             )
             .systemBarsPadding()
-            .padding(20.dp)
+            .padding(20.dp),
     ) {
         // Subtle pulsing overlay to create an immersive feel
         val infinite = rememberInfiniteTransition(label = "rest-pulse")
@@ -138,9 +137,9 @@ fun RestTimerCard(
             targetValue = 1.06f,
             animationSpec = infiniteRepeatable(
                 animation = tween(durationMillis = 1600, easing = FastOutSlowInEasing),
-                repeatMode = RepeatMode.Reverse
+                repeatMode = RepeatMode.Reverse,
             ),
-            label = "pulse"
+            label = "pulse",
         )
 
         // Accessibility: hidden node that announces countdown at key intervals.
@@ -152,14 +151,14 @@ fun RestTimerCard(
                 .semantics {
                     liveRegion = LiveRegionMode.Polite
                     contentDescription = lastAnnouncedText
-                }
+                },
         )
 
         Column(
             modifier = Modifier
                 .fillMaxSize(),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.SpaceBetween
+            verticalArrangement = Arrangement.SpaceBetween,
         ) {
             Spacer(modifier = Modifier.height(8.dp))
             // REST TIME Header - shows superset info if applicable
@@ -168,14 +167,14 @@ fun RestTimerCard(
                     // Show superset badge
                     Surface(
                         shape = RoundedCornerShape(8.dp),
-                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
+                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
                     ) {
                         Text(
                             text = supersetLabel,
                             style = MaterialTheme.typography.labelMedium,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
                         )
                     }
                     Spacer(modifier = Modifier.height(4.dp))
@@ -184,11 +183,12 @@ fun RestTimerCard(
                     text = if (isSupersetTransition) stringResource(Res.string.rest_quick_rest) else stringResource(Res.string.rest_time),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
-                    color = if (isSupersetTransition)
+                    color = if (isSupersetTransition) {
                         MaterialTheme.colorScheme.primary
-                    else
-                        MaterialTheme.colorScheme.onSurfaceVariant,
-                    letterSpacing = 1.5.sp
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    },
+                    letterSpacing = 1.5.sp,
                 )
             }
 
@@ -198,7 +198,7 @@ fun RestTimerCard(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(180.dp),
-                contentAlignment = Alignment.Center
+                contentAlignment = Alignment.Center,
             ) {
                 // Circular background with pulse effect (static when paused)
                 Box(
@@ -206,12 +206,13 @@ fun RestTimerCard(
                         .size(180.dp)
                         .scale(if (isRestPaused) 1f else pulse)
                         .background(
-                            color = if (isRestPaused)
+                            color = if (isRestPaused) {
                                 MaterialTheme.colorScheme.surfaceContainerHigh
-                            else
-                                MaterialTheme.colorScheme.surfaceContainerHighest,
-                            shape = RoundedCornerShape(200.dp)
-                        )
+                            } else {
+                                MaterialTheme.colorScheme.surfaceContainerHighest
+                            },
+                            shape = RoundedCornerShape(200.dp),
+                        ),
                 )
 
                 // Timer text - dimmed when paused
@@ -220,10 +221,11 @@ fun RestTimerCard(
                         text = formatRestTime(restSecondsRemaining),
                         style = MaterialTheme.typography.displayLarge.copy(fontSize = 64.sp),
                         fontWeight = FontWeight.ExtraBold,
-                        color = if (isRestPaused)
+                        color = if (isRestPaused) {
                             MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)
-                        else
+                        } else {
                             MaterialTheme.colorScheme.primary
+                        },
                     )
                     if (isRestPaused) {
                         Text(
@@ -231,7 +233,7 @@ fun RestTimerCard(
                             style = MaterialTheme.typography.labelMedium,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.secondary,
-                            letterSpacing = 2.sp
+                            letterSpacing = 2.sp,
                         )
                     }
                 }
@@ -241,23 +243,23 @@ fun RestTimerCard(
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceEvenly,
-                verticalAlignment = Alignment.CenterVertically
+                verticalAlignment = Alignment.CenterVertically,
             ) {
                 // +30s button
                 FilledTonalButton(
                     onClick = { onExtendRest(30) },
-                    shape = RoundedCornerShape(16.dp)
+                    shape = RoundedCornerShape(16.dp),
                 ) {
                     Icon(
                         Icons.Default.Add,
                         contentDescription = stringResource(Res.string.cd_add_30_seconds),
-                        modifier = Modifier.size(18.dp)
+                        modifier = Modifier.size(18.dp),
                     )
                     Spacer(modifier = Modifier.width(4.dp))
                     Text(
                         text = "30s",
                         style = MaterialTheme.typography.labelLarge,
-                        fontWeight = FontWeight.Bold
+                        fontWeight = FontWeight.Bold,
                     )
                 }
 
@@ -265,41 +267,48 @@ fun RestTimerCard(
                 FilledTonalButton(
                     onClick = onToggleRestPause,
                     shape = RoundedCornerShape(16.dp),
-                    colors = if (isRestPaused)
+                    colors = if (isRestPaused) {
                         ButtonDefaults.filledTonalButtonColors(
-                            containerColor = MaterialTheme.colorScheme.secondaryContainer
+                            containerColor = MaterialTheme.colorScheme.secondaryContainer,
                         )
-                    else
+                    } else {
                         ButtonDefaults.filledTonalButtonColors()
+                    },
                 ) {
                     Icon(
                         if (isRestPaused) Icons.Default.PlayArrow else Icons.Default.Pause,
-                        contentDescription = if (isRestPaused) stringResource(Res.string.rest_resume) else stringResource(Res.string.rest_pause),
-                        modifier = Modifier.size(20.dp)
+                        contentDescription = if (isRestPaused) {
+                            stringResource(
+                                Res.string.rest_resume,
+                            )
+                        } else {
+                            stringResource(Res.string.rest_pause)
+                        },
+                        modifier = Modifier.size(20.dp),
                     )
                     Spacer(modifier = Modifier.width(4.dp))
                     Text(
                         text = if (isRestPaused) stringResource(Res.string.rest_resume) else stringResource(Res.string.rest_pause),
                         style = MaterialTheme.typography.labelLarge,
-                        fontWeight = FontWeight.Bold
+                        fontWeight = FontWeight.Bold,
                     )
                 }
 
                 // Reset button
                 FilledTonalButton(
                     onClick = onResetRest,
-                    shape = RoundedCornerShape(16.dp)
+                    shape = RoundedCornerShape(16.dp),
                 ) {
                     Icon(
                         Icons.Default.Refresh,
                         contentDescription = stringResource(Res.string.cd_reset_timer),
-                        modifier = Modifier.size(18.dp)
+                        modifier = Modifier.size(18.dp),
                     )
                     Spacer(modifier = Modifier.width(4.dp))
                     Text(
                         text = stringResource(Res.string.rest_reset),
                         style = MaterialTheme.typography.labelLarge,
-                        fontWeight = FontWeight.Bold
+                        fontWeight = FontWeight.Bold,
                     )
                 }
             }
@@ -307,14 +316,14 @@ fun RestTimerCard(
             // UP NEXT section with exercise info
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(4.dp)
+                verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
                 Text(
                     text = stringResource(Res.string.rest_up_next),
                     style = MaterialTheme.typography.labelLarge,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    letterSpacing = 1.2.sp
+                    letterSpacing = 1.2.sp,
                 )
 
                 // Next exercise name or completion message
@@ -322,11 +331,12 @@ fun RestTimerCard(
                     text = if (isLastExercise) stringResource(Res.string.rest_workout_complete) else nextExerciseName,
                     style = MaterialTheme.typography.headlineSmall,
                     fontWeight = FontWeight.Bold,
-                    color = if (isLastExercise)
+                    color = if (isLastExercise) {
                         MaterialTheme.colorScheme.primary
-                    else
-                        MaterialTheme.colorScheme.onSurface,
-                    textAlign = TextAlign.Center
+                    } else {
+                        MaterialTheme.colorScheme.onSurface
+                    },
+                    textAlign = TextAlign.Center,
                 )
 
                 // Mode display (moved from parameters card)
@@ -336,7 +346,7 @@ fun RestTimerCard(
                         text = stringResource(Res.string.rest_mode, nextExerciseMode),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.secondary,
-                        fontWeight = FontWeight.Medium
+                        fontWeight = FontWeight.Medium,
                     )
                 }
 
@@ -345,7 +355,7 @@ fun RestTimerCard(
                     Text(
                         text = stringResource(Res.string.rest_set_of, currentSet + 1, totalSets),
                         style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
             }
@@ -355,8 +365,8 @@ fun RestTimerCard(
             // Issue #222: Never show for bodyweight exercises
             val showConfigCard = !isLastExercise && !isNextExerciseBodyweight && (
                 (isEchoMode && (echoLevel != null || nextExerciseReps != null)) ||
-                (!isEchoMode && (nextExerciseWeight != null || nextExerciseReps != null))
-            )
+                    (!isEchoMode && (nextExerciseWeight != null || nextExerciseReps != null))
+                )
 
             if (showConfigCard) {
                 Spacer(modifier = Modifier.height(Spacing.small))
@@ -366,20 +376,20 @@ fun RestTimerCard(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(20.dp),
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
+                    elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
                 ) {
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(Spacing.medium),
-                        verticalArrangement = Arrangement.spacedBy(Spacing.medium)
+                        verticalArrangement = Arrangement.spacedBy(Spacing.medium),
                     ) {
                         Text(
                             stringResource(Res.string.rest_next_set_config),
                             style = MaterialTheme.typography.labelLarge,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            letterSpacing = 1.sp
+                            letterSpacing = 1.sp,
                         )
 
                         // Reps adjuster with hybrid slider (shown for all modes)
@@ -393,7 +403,7 @@ fun RestTimerCard(
                                 valueRange = 1f..50f,
                                 step = 1f,
                                 label = stringResource(Res.string.rest_target_reps),
-                                formatValue = { it.toInt().toString() }
+                                formatValue = { it.toInt().toString() },
                             )
                         }
 
@@ -404,7 +414,7 @@ fun RestTimerCard(
                                 onLevelChange = { newLevel ->
                                     editedEchoLevel = newLevel
                                     onUpdateEchoLevel?.invoke(newLevel)
-                                }
+                                },
                             )
 
                             RestTimerEccentricLoadSlider(
@@ -412,13 +422,13 @@ fun RestTimerCard(
                                 onPercentChange = { newPercent ->
                                     editedEccentricPercent = newPercent
                                     onUpdateEccentricLoad?.invoke(newPercent)
-                                }
+                                },
                             )
                         } else {
                             // Non-Echo modes: Show weight adjuster
                             if (nextExerciseWeight != null && formatWeightWithUnit != null) {
-                                val maxWeight = if (weightUnit == WeightUnit.LB) 242f else 110f  // 110kg per cable max
-                                val weightStep = if (weightUnit == WeightUnit.LB) 0.5f else 0.25f  // Match other weight selectors
+                                val maxWeight = if (weightUnit == WeightUnit.LB) 242f else 110f // 110kg per cable max
+                                val weightStep = if (weightUnit == WeightUnit.LB) 0.5f else 0.25f // Match other weight selectors
 
                                 SliderWithButtons(
                                     value = editedWeight,
@@ -429,7 +439,7 @@ fun RestTimerCard(
                                     valueRange = 0f..maxWeight,
                                     step = weightStep,
                                     label = stringResource(Res.string.rest_weight_per_cable),
-                                    formatValue = { formatWeightWithUnit(it, weightUnit) }
+                                    formatValue = { formatWeightWithUnit(it, weightUnit) },
                                 )
                             }
                         }
@@ -443,12 +453,12 @@ fun RestTimerCard(
 
                 Column(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalAlignment = Alignment.CenterHorizontally
+                    horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
                     Text(
                         stringResource(Res.string.rest_exercise_of, currentExerciseIndex + 1, totalExercises),
                         style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     Spacer(modifier = Modifier.height(4.dp))
                     LinearProgressIndicator(
@@ -468,7 +478,7 @@ fun RestTimerCard(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(bottom = 8.dp),
-                verticalArrangement = Arrangement.spacedBy(Spacing.small)
+                verticalArrangement = Arrangement.spacedBy(Spacing.small),
             ) {
                 // Skip Rest button (primary action)
                 Button(
@@ -478,24 +488,24 @@ fun RestTimerCard(
                         .height(56.dp),
                     colors = ButtonDefaults.buttonColors(
                         containerColor = MaterialTheme.colorScheme.primary,
-                        contentColor = MaterialTheme.colorScheme.onPrimary
+                        contentColor = MaterialTheme.colorScheme.onPrimary,
                     ),
                     shape = RoundedCornerShape(20.dp),
                     elevation = ButtonDefaults.buttonElevation(
                         defaultElevation = 4.dp,
-                        pressedElevation = 2.dp
-                    )
+                        pressedElevation = 2.dp,
+                    ),
                 ) {
                     Icon(
                         Icons.Default.PlayArrow,
                         contentDescription = stringResource(Res.string.cd_skip_rest),
-                        modifier = Modifier.size(24.dp)
+                        modifier = Modifier.size(24.dp),
                     )
                     Spacer(modifier = Modifier.width(Spacing.small))
                     Text(
                         text = if (isLastExercise) stringResource(Res.string.rest_continue) else stringResource(Res.string.rest_skip),
                         style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Bold
+                        fontWeight = FontWeight.Bold,
                     )
                 }
 
@@ -505,20 +515,20 @@ fun RestTimerCard(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(48.dp),
-                    shape = RoundedCornerShape(20.dp)
+                    shape = RoundedCornerShape(20.dp),
                 ) {
                     Icon(
                         Icons.Default.Close,
                         contentDescription = stringResource(Res.string.cd_end_workout),
                         modifier = Modifier.size(18.dp),
-                        tint = MaterialTheme.colorScheme.error
+                        tint = MaterialTheme.colorScheme.error,
                     )
                     Spacer(modifier = Modifier.width(Spacing.small))
                     Text(
                         text = stringResource(Res.string.rest_end_workout),
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.error
+                        color = MaterialTheme.colorScheme.error,
                     )
                 }
             }
@@ -536,33 +546,28 @@ private fun formatRestTime(seconds: Int): String {
 }
 
 @Composable
-fun WorkoutParamItem(
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    label: String,
-    value: String,
-    modifier: Modifier = Modifier
-) {
+fun WorkoutParamItem(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String, value: String, modifier: Modifier = Modifier) {
     Column(
         modifier = modifier,
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(4.dp)
+        verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
         Icon(
             icon,
             contentDescription = stringResource(Res.string.cd_rest_timer),
             modifier = Modifier.size(20.dp),
-            tint = MaterialTheme.colorScheme.primary
+            tint = MaterialTheme.colorScheme.primary,
         )
         Text(
             value,
             style = MaterialTheme.typography.titleSmall,
             fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.onSurface
+            color = MaterialTheme.colorScheme.onSurface,
         )
         Text(
             label,
             style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
 }
@@ -571,16 +576,13 @@ fun WorkoutParamItem(
  * Echo Level selector for Rest Timer - Row of 4 buttons (Hard/Harder/Hardest/Epic)
  */
 @Composable
-private fun RestTimerEchoLevelSelector(
-    selectedLevel: EchoLevel,
-    onLevelChange: (EchoLevel) -> Unit
-) {
+private fun RestTimerEchoLevelSelector(selectedLevel: EchoLevel, onLevelChange: (EchoLevel) -> Unit) {
     Column {
         Text(
             text = stringResource(Res.string.rest_echo_level),
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
-            letterSpacing = 1.sp
+            letterSpacing = 1.sp,
         )
 
         Spacer(modifier = Modifier.height(Spacing.small))
@@ -590,10 +592,10 @@ private fun RestTimerEchoLevelSelector(
                 .fillMaxWidth()
                 .background(
                     MaterialTheme.colorScheme.surfaceContainerLowest,
-                    RoundedCornerShape(Spacing.medium)
+                    RoundedCornerShape(Spacing.medium),
                 )
                 .padding(Spacing.extraSmall),
-            horizontalArrangement = Arrangement.spacedBy(Spacing.extraSmall)
+            horizontalArrangement = Arrangement.spacedBy(Spacing.extraSmall),
         ) {
             EchoLevel.entries.forEach { level ->
                 val isSelected = level == selectedLevel
@@ -606,7 +608,7 @@ private fun RestTimerEchoLevelSelector(
                     } else {
                         MaterialTheme.colorScheme.surfaceContainerLowest
                     },
-                    onClick = { onLevelChange(level) }
+                    onClick = { onLevelChange(level) },
                 ) {
                     Text(
                         text = level.displayName,
@@ -620,7 +622,7 @@ private fun RestTimerEchoLevelSelector(
                         } else {
                             MaterialTheme.colorScheme.onSurfaceVariant
                         },
-                        textAlign = TextAlign.Center
+                        textAlign = TextAlign.Center,
                     )
                 }
             }
@@ -632,27 +634,24 @@ private fun RestTimerEchoLevelSelector(
  * Eccentric Load slider for Rest Timer (100-150%)
  */
 @Composable
-private fun RestTimerEccentricLoadSlider(
-    percent: Int,
-    onPercentChange: (Int) -> Unit
-) {
+private fun RestTimerEccentricLoadSlider(percent: Int, onPercentChange: (Int) -> Unit) {
     Column {
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
+            verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
                 text = stringResource(Res.string.rest_eccentric_load),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                letterSpacing = 1.sp
+                letterSpacing = 1.sp,
             )
             Text(
                 text = "$percent%",
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.primary
+                color = MaterialTheme.colorScheme.primary,
             )
         }
 
@@ -664,7 +663,7 @@ private fun RestTimerEccentricLoadSlider(
             onValueChange = { onPercentChange(it.toInt()) },
             valueRange = 0f..150f,
             steps = 29, // 5% increments: 0, 5, 10, ... 150
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier.fillMaxWidth(),
         )
     }
 }

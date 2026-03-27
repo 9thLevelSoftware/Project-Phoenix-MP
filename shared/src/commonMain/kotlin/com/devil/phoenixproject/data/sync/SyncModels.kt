@@ -15,14 +15,11 @@ data class SyncPushRequest(
     val routines: List<RoutineSyncDto> = emptyList(),
     val exercises: List<CustomExerciseSyncDto> = emptyList(),
     val badges: List<EarnedBadgeSyncDto> = emptyList(),
-    val gamificationStats: GamificationStatsSyncDto? = null
+    val gamificationStats: GamificationStatsSyncDto? = null,
 )
 
 @Serializable
-data class SyncPushResponse(
-    val syncTime: Long,
-    val idMappings: IdMappings
-)
+data class SyncPushResponse(val syncTime: Long, val idMappings: IdMappings)
 
 @Serializable
 data class IdMappings(
@@ -30,16 +27,13 @@ data class IdMappings(
     val records: Map<String, String> = emptyMap(),
     val routines: Map<String, String> = emptyMap(),
     val exercises: Map<String, String> = emptyMap(),
-    val badges: Map<String, String> = emptyMap()
+    val badges: Map<String, String> = emptyMap(),
 )
 
 // === Pull Request/Response ===
 
 @Serializable
-data class SyncPullRequest(
-    val deviceId: String,
-    val lastSync: Long
-)
+data class SyncPullRequest(val deviceId: String, val lastSync: Long)
 
 @Serializable
 data class SyncPullResponse(
@@ -49,30 +43,19 @@ data class SyncPullResponse(
     val routines: List<RoutineSyncDto> = emptyList(),
     val exercises: List<CustomExerciseSyncDto> = emptyList(),
     val badges: List<EarnedBadgeSyncDto> = emptyList(),
-    val gamificationStats: GamificationStatsSyncDto? = null
+    val gamificationStats: GamificationStatsSyncDto? = null,
 )
 
 // === Auth DTOs ===
 
 @Serializable
-data class PortalLoginRequest(
-    val email: String,
-    val password: String
-)
+data class PortalLoginRequest(val email: String, val password: String)
 
 @Serializable
-data class PortalAuthResponse(
-    val token: String,
-    val user: PortalUser
-)
+data class PortalAuthResponse(val token: String, val user: PortalUser)
 
 @Serializable
-data class PortalUser(
-    val id: String,
-    val email: String,
-    val displayName: String?,
-    val isPremium: Boolean
-)
+data class PortalUser(val id: String, val email: String, val displayName: String?, val isPremium: Boolean)
 
 // === Entity DTOs ===
 
@@ -90,7 +73,7 @@ data class WorkoutSessionSyncDto(
     val exerciseName: String? = null,
     val deletedAt: Long? = null,
     val createdAt: Long,
-    val updatedAt: Long
+    val updatedAt: Long,
 )
 
 @Serializable
@@ -109,7 +92,7 @@ data class PersonalRecordSyncDto(
     val volume: Float = 0f,
     val deletedAt: Long? = null,
     val createdAt: Long,
-    val updatedAt: Long
+    val updatedAt: Long,
 )
 
 @Serializable
@@ -120,7 +103,7 @@ data class RoutineSyncDto(
     val description: String = "",
     val deletedAt: Long? = null,
     val createdAt: Long,
-    val updatedAt: Long
+    val updatedAt: Long,
 )
 
 @Serializable
@@ -133,7 +116,7 @@ data class CustomExerciseSyncDto(
     val defaultCableConfig: String,
     val deletedAt: Long? = null,
     val createdAt: Long,
-    val updatedAt: Long
+    val updatedAt: Long,
 )
 
 @Serializable
@@ -144,7 +127,7 @@ data class EarnedBadgeSyncDto(
     val earnedAt: Long,
     val deletedAt: Long? = null,
     val createdAt: Long,
-    val updatedAt: Long
+    val updatedAt: Long,
 )
 
 @Serializable
@@ -155,12 +138,10 @@ data class GamificationStatsSyncDto(
     val totalVolumeKg: Float = 0f,
     val longestStreak: Int = 0,
     val currentStreak: Int = 0,
-    val updatedAt: Long
+    val updatedAt: Long,
 )
 
 // === Error Response ===
 
 @Serializable
-data class PortalErrorResponse(
-    val error: String
-)
+data class PortalErrorResponse(val error: String)

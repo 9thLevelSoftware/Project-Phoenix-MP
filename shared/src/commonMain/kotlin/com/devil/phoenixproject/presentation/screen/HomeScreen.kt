@@ -26,23 +26,23 @@ import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.domain.model.TrainingCycle
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.domain.model.WorkoutSession
-import com.devil.phoenixproject.presentation.components.ConnectionErrorDialog
-import com.devil.phoenixproject.presentation.navigation.NavigationRoutes
-import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
 import com.devil.phoenixproject.presentation.components.AnimatedActionButton
+import com.devil.phoenixproject.presentation.components.ConnectionErrorDialog
 import com.devil.phoenixproject.presentation.components.IconAnimation
+import com.devil.phoenixproject.presentation.navigation.NavigationRoutes
 import com.devil.phoenixproject.presentation.util.LocalWindowSizeClass
 import com.devil.phoenixproject.presentation.util.WindowWidthSizeClass
+import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
 import com.devil.phoenixproject.ui.theme.ThemeMode
+import kotlin.time.Clock
 import kotlin.time.Instant
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
-import org.koin.compose.koinInject
-import kotlin.time.Clock
 import org.jetbrains.compose.resources.stringResource
-import vitruvianprojectphoenix.shared.generated.resources.Res
+import org.koin.compose.koinInject
 import vitruvianprojectphoenix.shared.generated.resources.*
+import vitruvianprojectphoenix.shared.generated.resources.Res
 
 /**
  * Home Screen Redesign - "The Command Deck"
@@ -54,12 +54,7 @@ import vitruvianprojectphoenix.shared.generated.resources.*
  * - Context-Aware: FAB adapts to active cycle state
  */
 @Composable
-fun HomeScreen(
-    navController: NavController,
-    viewModel: MainViewModel,
-    themeMode: ThemeMode,
-    isLandscape: Boolean = false
-) {
+fun HomeScreen(navController: NavController, viewModel: MainViewModel, themeMode: ThemeMode, isLandscape: Boolean = false) {
     // State collection
     val connectionError by viewModel.connectionError.collectAsState()
     val routines by viewModel.routines.collectAsState()
@@ -80,7 +75,6 @@ fun HomeScreen(
             cycleProgress = cycleRepository.getCycleProgress(cycle.id)
         }
     }
-
 
     // Determine actual theme for custom coloring
     val isDark = when (themeMode) {
@@ -103,25 +97,25 @@ fun HomeScreen(
     }
 
     Scaffold(
-        containerColor = Color.Transparent
+        containerColor = Color.Transparent,
     ) { paddingValues ->
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .background(MaterialTheme.colorScheme.background)
-                .padding(paddingValues)
+                .padding(paddingValues),
         ) {
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 4.dp, bottom = 16.dp),
-                verticalArrangement = Arrangement.spacedBy(24.dp)
+                verticalArrangement = Arrangement.spacedBy(24.dp),
             ) {
                 // 1. Weekly Compliance Strip (Top of screen)
                 item(key = "weekly-compliance") {
                     WeeklyComplianceStrip(
                         history = recentSessions,
                         isDark = isDark,
-                        workoutStreak = workoutStreak
+                        workoutStreak = workoutStreak,
                     )
                 }
 
@@ -132,7 +126,7 @@ fun HomeScreen(
                             cycle = activeCycle!!,
                             progress = cycleProgress,
                             routines = routines,
-                            onViewSchedule = { navController.navigate(NavigationRoutes.TrainingCycles.route) }
+                            onViewSchedule = { navController.navigate(NavigationRoutes.TrainingCycles.route) },
                         )
                     }
                 }
@@ -142,19 +136,19 @@ fun HomeScreen(
                     OutlinedCard(
                         onClick = { navController.navigate(NavigationRoutes.StrengthAssessmentPicker.route) },
                         modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(16.dp)
+                        shape = RoundedCornerShape(16.dp),
                     ) {
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .padding(16.dp),
-                            verticalAlignment = Alignment.CenterVertically
+                            verticalAlignment = Alignment.CenterVertically,
                         ) {
                             Icon(
                                 Icons.Outlined.FitnessCenter,
                                 contentDescription = "Strength Assessment",
                                 tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(32.dp)
+                                modifier = Modifier.size(32.dp),
                             )
                             Spacer(Modifier.width(16.dp))
                             Column(modifier = Modifier.weight(1f)) {
@@ -162,18 +156,18 @@ fun HomeScreen(
                                     "Strength Assessment",
                                     style = MaterialTheme.typography.titleSmall,
                                     fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.onSurface
+                                    color = MaterialTheme.colorScheme.onSurface,
                                 )
                                 Text(
                                     "Find your 1RM",
                                     style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
                             }
                             Icon(
                                 Icons.Default.ChevronRight,
                                 contentDescription = null,
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
                     }
@@ -186,7 +180,7 @@ fun HomeScreen(
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurface,
-                        modifier = Modifier.padding(bottom = 8.dp)
+                        modifier = Modifier.padding(bottom = 8.dp),
                     )
                     RecentActivitySummary(recentSessions, weightUnit)
                 }
@@ -203,40 +197,40 @@ fun HomeScreen(
                     .align(Alignment.BottomCenter)
                     .fillMaxWidth()
                     .padding(horizontal = 12.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 // Left column: Cycles & Routines
                 Column(
                     modifier = Modifier.weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     AnimatedActionButton(
                         label = "Cycles",
                         icon = Icons.Default.Loop,
                         onClick = { navController.navigate(NavigationRoutes.TrainingCycles.route) },
                         isPrimary = false,
-                        iconAnimation = IconAnimation.ROTATE
+                        iconAnimation = IconAnimation.ROTATE,
                     )
                     AnimatedActionButton(
                         label = "Routines",
                         icon = Icons.AutoMirrored.Filled.FormatListBulleted,
                         onClick = { navController.navigate(NavigationRoutes.DailyRoutines.route) },
                         isPrimary = false,
-                        iconAnimation = IconAnimation.NONE
+                        iconAnimation = IconAnimation.NONE,
                     )
                 }
 
                 // Right column: Single Exercise & Just Lift
                 Column(
                     modifier = Modifier.weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     AnimatedActionButton(
                         label = "Single Exercise",
                         icon = Icons.Outlined.FitnessCenter,
                         onClick = { navController.navigate(NavigationRoutes.SingleExercise.route) },
                         isPrimary = false,
-                        iconAnimation = IconAnimation.TILT
+                        iconAnimation = IconAnimation.TILT,
                     )
                     AnimatedActionButton(
                         label = "Just Lift",
@@ -245,8 +239,8 @@ fun HomeScreen(
                             navController.navigate(NavigationRoutes.JustLift.route)
                         },
                         isPrimary = true,
-                        isFireButton = true,  // Fire animation effect
-                        iconAnimation = IconAnimation.NONE
+                        isFireButton = true, // Fire animation effect
+                        iconAnimation = IconAnimation.NONE,
                     )
                 }
             }
@@ -255,7 +249,7 @@ fun HomeScreen(
             connectionError?.let { error ->
                 ConnectionErrorDialog(
                     message = error,
-                    onDismiss = { viewModel.clearConnectionError() }
+                    onDismiss = { viewModel.clearConnectionError() },
                 )
             }
         }
@@ -267,11 +261,7 @@ fun HomeScreen(
 // ============================================================================
 
 @Composable
-private fun WeeklyComplianceStrip(
-    history: List<WorkoutSession>,
-    isDark: Boolean,
-    workoutStreak: Int?
-) {
+private fun WeeklyComplianceStrip(history: List<WorkoutSession>, isDark: Boolean, workoutStreak: Int?) {
     // Get current week's Monday
     val today = Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault()).date
     val mondayOffset = today.dayOfWeek.ordinal
@@ -280,12 +270,12 @@ private fun WeeklyComplianceStrip(
 
     Column(
         modifier = Modifier.fillMaxWidth(),
-        horizontalAlignment = Alignment.CenterHorizontally
+        horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         // Week days row
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween
+            horizontalArrangement = Arrangement.SpaceBetween,
         ) {
             weekDays.forEach { date ->
                 val hasWorkout = history.any { session ->
@@ -298,7 +288,7 @@ private fun WeeklyComplianceStrip(
                 ComplianceDot(
                     letter = date.dayOfWeek.name.take(1),
                     isActive = hasWorkout,
-                    isToday = isToday
+                    isToday = isToday,
                 )
             }
         }
@@ -307,20 +297,20 @@ private fun WeeklyComplianceStrip(
         if (workoutStreak != null && workoutStreak > 0) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.padding(top = 8.dp)
+                modifier = Modifier.padding(top = 8.dp),
             ) {
                 Icon(
                     Icons.Default.LocalFireDepartment,
                     contentDescription = stringResource(Res.string.cd_streak),
                     tint = Color(0xFFFF6B00),
-                    modifier = Modifier.size(24.dp)
+                    modifier = Modifier.size(24.dp),
                 )
                 Spacer(Modifier.width(4.dp))
                 Text(
                     "$workoutStreak",
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface
+                    color = MaterialTheme.colorScheme.onSurface,
                 )
             }
         }
@@ -333,9 +323,12 @@ private fun ComplianceDot(letter: String, isActive: Boolean, isToday: Boolean) {
         Text(
             text = letter,
             style = MaterialTheme.typography.labelSmall,
-            color = if (isToday) MaterialTheme.colorScheme.primary
-                    else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-            fontWeight = if (isToday) FontWeight.Bold else FontWeight.Normal
+            color = if (isToday) {
+                MaterialTheme.colorScheme.primary
+            } else {
+                MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+            },
+            fontWeight = if (isToday) FontWeight.Bold else FontWeight.Normal,
         )
         Spacer(Modifier.height(4.dp))
         Box(
@@ -344,16 +337,22 @@ private fun ComplianceDot(letter: String, isActive: Boolean, isToday: Boolean) {
                 .clip(CircleShape)
                 .background(
                     when {
-                        isActive -> MaterialTheme.colorScheme.primary // Workout done
-                        isToday -> MaterialTheme.colorScheme.primary.copy(alpha = 0.3f) // Today empty
+                        isActive -> MaterialTheme.colorScheme.primary
+
+                        // Workout done
+                        isToday -> MaterialTheme.colorScheme.primary.copy(alpha = 0.3f)
+
+                        // Today empty
                         else -> MaterialTheme.colorScheme.surfaceVariant // Past/Future empty
-                    }
+                    },
                 )
                 .then(
-                    if (isToday && !isActive)
+                    if (isToday && !isActive) {
                         Modifier.border(1.dp, MaterialTheme.colorScheme.primary, CircleShape)
-                    else Modifier
-                )
+                    } else {
+                        Modifier
+                    },
+                ),
         )
     }
 }
@@ -363,12 +362,7 @@ private fun ComplianceDot(letter: String, isActive: Boolean, isToday: Boolean) {
 // ============================================================================
 
 @Composable
-private fun ActiveCycleHero(
-    cycle: TrainingCycle,
-    progress: CycleProgress?,
-    routines: List<Routine>,
-    onViewSchedule: () -> Unit
-) {
+private fun ActiveCycleHero(cycle: TrainingCycle, progress: CycleProgress?, routines: List<Routine>, onViewSchedule: () -> Unit) {
     val currentDayNum = progress?.currentDayNumber ?: 1
     val cycleDay = cycle.days.find { it.dayNumber == currentDayNum }
     val routine = cycleDay?.routineId?.let { id -> routines.find { it.id == id } }
@@ -391,7 +385,7 @@ private fun ActiveCycleHero(
         onClick = onViewSchedule,
         modifier = Modifier.fillMaxWidth().height(heroCardHeight),
         shape = RoundedCornerShape(28.dp), // Expressive shape
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
     ) {
         Box(modifier = Modifier.fillMaxSize()) {
             // Background Image/Icon Placeholder (Right aligned, subtle)
@@ -402,24 +396,24 @@ private fun ActiveCycleHero(
                 modifier = Modifier
                     .size(heroImageSize)
                     .align(Alignment.BottomEnd)
-                    .offset(x = 40.dp, y = 40.dp)
+                    .offset(x = 40.dp, y = 40.dp),
             )
 
             Column(
                 modifier = Modifier
                     .padding(24.dp)
-                    .align(Alignment.TopStart)
+                    .align(Alignment.TopStart),
             ) {
                 Surface(
                     color = MaterialTheme.colorScheme.surface.copy(alpha = 0.3f),
-                    shape = RoundedCornerShape(8.dp)
+                    shape = RoundedCornerShape(8.dp),
                 ) {
                     Text(
                         text = if (isRest) "REST DAY" else "UP NEXT",
                         style = MaterialTheme.typography.labelSmall,
                         fontWeight = FontWeight.Bold,
                         modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                        color = MaterialTheme.colorScheme.onPrimaryContainer,
                     )
                 }
 
@@ -429,20 +423,20 @@ private fun ActiveCycleHero(
                     text = cycleDay?.name ?: "Day $currentDayNum",
                     style = MaterialTheme.typography.headlineSmall,
                     fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onPrimaryContainer
+                    color = MaterialTheme.colorScheme.onPrimaryContainer,
                 )
 
                 if (routine != null) {
                     Text(
                         text = routine.name,
                         style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
+                        color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f),
                     )
                 } else if (isRest) {
                     Text(
                         text = "Take it easy today.",
                         style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
+                        color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f),
                     )
                 }
             }
@@ -458,7 +452,7 @@ private fun ActiveCycleHero(
                         .align(Alignment.BottomCenter),
                     color = MaterialTheme.colorScheme.onPrimaryContainer,
                     trackColor = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.2f),
-                    drawStopIndicator = {}
+                    drawStopIndicator = {},
                 )
             }
         }
@@ -475,7 +469,7 @@ private fun RecentActivitySummary(history: List<WorkoutSession>, weightUnit: Wei
         Text(
             "No recent workouts recorded.",
             style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     } else {
         // Simple list of last 3 workouts
@@ -484,32 +478,35 @@ private fun RecentActivitySummary(history: List<WorkoutSession>, weightUnit: Wei
                 Surface(
                     color = MaterialTheme.colorScheme.surfaceContainer,
                     shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth(),
                 ) {
                     Row(
                         modifier = Modifier.padding(12.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                        verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Box(
                             modifier = Modifier
                                 .size(8.dp)
                                 .clip(CircleShape)
-                                .background(MaterialTheme.colorScheme.primary)
+                                .background(MaterialTheme.colorScheme.primary),
                         )
                         Spacer(Modifier.width(12.dp))
                         Column {
-                            val displayWeight = if (weightUnit == WeightUnit.LB)
-                                (session.weightPerCableKg * 2.20462f).toInt() else session.weightPerCableKg.toInt()
+                            val displayWeight = if (weightUnit == WeightUnit.LB) {
+                                (session.weightPerCableKg * 2.20462f).toInt()
+                            } else {
+                                session.weightPerCableKg.toInt()
+                            }
                             val unitLabel = if (weightUnit == WeightUnit.LB) "lbs" else "kg"
                             Text(
                                 session.exerciseName ?: "Workout Session",
                                 style = MaterialTheme.typography.labelLarge,
-                                fontWeight = FontWeight.SemiBold
+                                fontWeight = FontWeight.SemiBold,
                             )
                             Text(
                                 "${session.workingReps} reps • $displayWeight $unitLabel/cable",
                                 style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
                     }

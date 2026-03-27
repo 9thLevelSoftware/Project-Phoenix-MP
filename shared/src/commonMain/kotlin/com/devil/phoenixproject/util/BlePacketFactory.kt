@@ -16,7 +16,7 @@ object BlePacketFactory {
 
     enum class ForceConfigVariant {
         NON_OVERLAP,
-        OVERLAP
+        OVERLAP,
     }
 
     @Volatile
@@ -47,25 +47,21 @@ object BlePacketFactory {
      * Creates an INIT/Reset command (0x0A) - 4 bytes.
      * Used to initialize or reset the device state.
      */
-    fun createInitCommand(): ByteArray {
-        return byteArrayOf(0x0A, 0x00, 0x00, 0x00)
-    }
+    fun createInitCommand(): ByteArray = byteArrayOf(0x0A, 0x00, 0x00, 0x00)
 
     /**
      * Build the INIT preset frame with coefficient table (34 bytes)
      */
-    fun createInitPreset(): ByteArray {
-        return byteArrayOf(
-            0x11, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-            0x00, 0x00, 0x00, 0x00,
-            0xCD.toByte(), 0xCC.toByte(), 0xCC.toByte(), 0x3E.toByte(), // 0.4 as float32 LE
-            0xFF.toByte(), 0x00, 0x4C, 0xFF.toByte(),
-            0x23, 0x8C.toByte(), 0xFF.toByte(), 0x8C.toByte(),
-            0x8C.toByte(), 0xFF.toByte(), 0x00, 0x4C,
-            0xFF.toByte(), 0x23, 0x8C.toByte(), 0xFF.toByte(),
-            0x8C.toByte(), 0x8C.toByte()
-        )
-    }
+    fun createInitPreset(): ByteArray = byteArrayOf(
+        0x11, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00,
+        0xCD.toByte(), 0xCC.toByte(), 0xCC.toByte(), 0x3E.toByte(), // 0.4 as float32 LE
+        0xFF.toByte(), 0x00, 0x4C, 0xFF.toByte(),
+        0x23, 0x8C.toByte(), 0xFF.toByte(), 0x8C.toByte(),
+        0x8C.toByte(), 0xFF.toByte(), 0x00, 0x4C,
+        0xFF.toByte(), 0x23, 0x8C.toByte(), 0xFF.toByte(),
+        0x8C.toByte(), 0x8C.toByte(),
+    )
 
     // ========== Control Commands ==========
 
@@ -73,17 +69,13 @@ object BlePacketFactory {
      * Creates a START command (4 bytes).
      * Signals the device to begin the configured workout.
      */
-    fun createStartCommand(): ByteArray {
-        return byteArrayOf(0x03, 0x00, 0x00, 0x00)
-    }
+    fun createStartCommand(): ByteArray = byteArrayOf(0x03, 0x00, 0x00, 0x00)
 
     /**
      * Creates the primary STOP command (4 bytes).
      * NOTE: v0.5.0-beta used 0x05 and it WORKED for Just Lift autostop
      */
-    fun createStopCommand(): ByteArray {
-        return byteArrayOf(0x05, 0x00, 0x00, 0x00)
-    }
+    fun createStopCommand(): ByteArray = byteArrayOf(0x05, 0x00, 0x00, 0x00)
 
     /**
      * Creates the Official App STOP_PACKET command (2 bytes).
@@ -91,18 +83,14 @@ object BlePacketFactory {
      * - Uses StopPacket (0x50 0x00) to end sessions and CLEAR FAULTS
      * - This is a "soft stop" that releases tension and clears the blinking red light fault state
      */
-    fun createOfficialStopPacket(): ByteArray {
-        return byteArrayOf(0x50, 0x00)
-    }
+    fun createOfficialStopPacket(): ByteArray = byteArrayOf(0x50, 0x00)
 
     /**
      * Creates the RESET command (4 bytes).
      * This is what web apps use for stop (0x0A) - same as init command.
      * Use for recovery if device gets stuck.
      */
-    fun createResetCommand(): ByteArray {
-        return byteArrayOf(0x0A, 0x00, 0x00, 0x00)
-    }
+    fun createResetCommand(): ByteArray = byteArrayOf(0x0A, 0x00, 0x00, 0x00)
 
     // ========== Legacy Workout Command (backward compatibility) ==========
 
@@ -110,11 +98,7 @@ object BlePacketFactory {
      * Creates a simplified workout command for backward compatibility.
      * For full protocol support, use createProgramParams() instead.
      */
-    fun createWorkoutCommand(
-        programMode: ProgramMode,
-        weightPerCableKg: Float,
-        targetReps: Int
-    ): ByteArray {
+    fun createWorkoutCommand(programMode: ProgramMode, weightPerCableKg: Float, targetReps: Int): ByteArray {
         val buffer = ByteArray(25)
         buffer[0] = BleConstants.Commands.REGULAR_COMMAND
         buffer[1] = programMode.modeValue.toByte()
@@ -142,10 +126,7 @@ object BlePacketFactory {
      * block (0x30-0x4F), so we overwrite the last 8 bytes of the eccentric phase
      * with the correct force config values after copying the profile.
      */
-    fun createProgramParams(
-        params: WorkoutParameters,
-        variant: ForceConfigVariant = defaultForceConfigVariant
-    ): ByteArray {
+    fun createProgramParams(params: WorkoutParameters, variant: ForceConfigVariant = defaultForceConfigVariant): ByteArray {
         val frame = ByteArray(96)
 
         // Header section - Command 0x04 for PROGRAM mode
@@ -155,7 +136,14 @@ object BlePacketFactory {
         frame[3] = 0x00
 
         // Reps field at offset 0x04
-        frame[0x04] = if (params.isJustLift || params.isAMRAP) 0xFF.toByte() else (params.reps + params.warmupReps).toByte()
+        frame[0x04] =
+            if (params.isJustLift ||
+                params.isAMRAP
+            ) {
+                0xFF.toByte()
+            } else {
+                (params.reps + params.warmupReps).toByte()
+            }
 
         frame[5] = 0x03
         frame[6] = 0x03
@@ -187,7 +175,7 @@ object BlePacketFactory {
         // Eccentric mode uses bottom.inner.mmPerM = 50 (vs default 250) for
         // more sensitive bottom-of-rep detection during eccentric-focused training.
         if (params.programMode is ProgramMode.EccentricOnly) {
-            putShortLE(frame, 0x24, 50)  // bottom.inner.mmPerM = 50
+            putShortLE(frame, 0x24, 50) // bottom.inner.mmPerM = 50
         }
 
         frame[0x2c] = 0xFA.toByte()
@@ -196,7 +184,13 @@ object BlePacketFactory {
         frame[0x2f] = 0x00
 
         // Get the mode profile block (32 bytes for offsets 0x30-0x4F)
-        val profileMode = if (params.isJustLift || params.isEchoMode) ProgramMode.OldSchool else params.programMode
+        val profileMode = if (params.isJustLift ||
+            params.isEchoMode
+        ) {
+            ProgramMode.OldSchool
+        } else {
+            params.programMode
+        }
         val profile = getActivationPhases(profileMode)
         profile.copyInto(frame, 0x30)
 
@@ -217,36 +211,74 @@ object BlePacketFactory {
             // interprets them as force config, not mode data. Write them AFTER the
             // profile copy so they take priority.
             putFloatLE(frame, BleConstants.ActivationPacket.OFFSET_SOFT_MAX, softMax)
-            putFloatLE(frame, BleConstants.ActivationPacket.OFFSET_INCREMENT, params.progressionRegressionKg)
+            putFloatLE(
+                frame,
+                BleConstants.ActivationPacket.OFFSET_INCREMENT,
+                params.progressionRegressionKg,
+            )
         }
 
         // Force config block at 0x50-0x5F
         putFloatLE(frame, BleConstants.ActivationPacket.OFFSET_FORCE_MIN, 0.0f)
         putFloatLE(frame, BleConstants.ActivationPacket.OFFSET_FORCE_MAX, effectiveKg)
-        putFloatLE(frame, BleConstants.ActivationPacket.OFFSET_TARGET_WEIGHT, adjustedWeightPerCable)
-        putFloatLE(frame, BleConstants.ActivationPacket.OFFSET_PROGRESSION, params.progressionRegressionKg)
+        putFloatLE(
+            frame,
+            BleConstants.ActivationPacket.OFFSET_TARGET_WEIGHT,
+            adjustedWeightPerCable,
+        )
+        putFloatLE(
+            frame,
+            BleConstants.ActivationPacket.OFFSET_PROGRESSION,
+            params.progressionRegressionKg,
+        )
 
         // Diagnostic logging
-        Logger.d("BlePacket") { "=== MODE: ${params.programMode}, Weight: ${params.weightPerCableKg}kg ===" }
-        Logger.d("BlePacket") { "adjustedWeight=${adjustedWeightPerCable}kg, effectiveKg=$effectiveKg" }
+        Logger.d("BlePacket") {
+            "=== MODE: ${params.programMode}, Weight: ${params.weightPerCableKg}kg ==="
+        }
+        Logger.d("BlePacket") {
+            "adjustedWeight=${adjustedWeightPerCable}kg, effectiveKg=$effectiveKg"
+        }
         if (variant == ForceConfigVariant.OVERLAP) {
             Logger.d("BlePacket") {
-                "softMax[0x48]=${readFloatLE(frame, BleConstants.ActivationPacket.OFFSET_SOFT_MAX)}kg, " +
-                    "increment[0x4C]=${readFloatLE(frame, BleConstants.ActivationPacket.OFFSET_INCREMENT)}kg/rep"
+                "softMax[0x48]=${readFloatLE(
+                    frame,
+                    BleConstants.ActivationPacket.OFFSET_SOFT_MAX,
+                )}kg, " +
+                    "increment[0x4C]=${readFloatLE(
+                        frame,
+                        BleConstants.ActivationPacket.OFFSET_INCREMENT,
+                    )}kg/rep"
             }
         } else {
-            Logger.d("BlePacket") { "non-overlap layout active (0x48..0x4F preserved as profile bytes)" }
+            Logger.d("BlePacket") {
+                "non-overlap layout active (0x48..0x4F preserved as profile bytes)"
+            }
         }
         Logger.d("BlePacket") {
-            "forceMin[0x50]=${readFloatLE(frame, BleConstants.ActivationPacket.OFFSET_FORCE_MIN)}kg, " +
-                "forceMax[0x54]=${readFloatLE(frame, BleConstants.ActivationPacket.OFFSET_FORCE_MAX)}kg"
+            "forceMin[0x50]=${readFloatLE(
+                frame,
+                BleConstants.ActivationPacket.OFFSET_FORCE_MIN,
+            )}kg, " +
+                "forceMax[0x54]=${readFloatLE(
+                    frame,
+                    BleConstants.ActivationPacket.OFFSET_FORCE_MAX,
+                )}kg"
         }
         Logger.d("BlePacket") {
-            "targetWeight[0x58]=${readFloatLE(frame, BleConstants.ActivationPacket.OFFSET_TARGET_WEIGHT)}kg, " +
-                "progression[0x5C]=${readFloatLE(frame, BleConstants.ActivationPacket.OFFSET_PROGRESSION)}kg/rep"
+            "targetWeight[0x58]=${readFloatLE(
+                frame,
+                BleConstants.ActivationPacket.OFFSET_TARGET_WEIGHT,
+            )}kg, " +
+                "progression[0x5C]=${readFloatLE(
+                    frame,
+                    BleConstants.ActivationPacket.OFFSET_PROGRESSION,
+                )}kg/rep"
         }
         val repsHex = frame[0x04].toUByte().toString(16).padStart(2, '0').uppercase()
-        Logger.d("BlePacket") { "reps[0x04]=0x$repsHex (isAMRAP=${params.isAMRAP}, isJustLift=${params.isJustLift})" }
+        Logger.d("BlePacket") {
+            "reps[0x04]=0x$repsHex (isAMRAP=${params.isAMRAP}, isJustLift=${params.isJustLift})"
+        }
 
         return frame
     }
@@ -274,7 +306,7 @@ object BlePacketFactory {
         targetReps: Int = 2,
         isJustLift: Boolean = false,
         isAMRAP: Boolean = false,
-        eccentricPct: Int = 75
+        eccentricPct: Int = 75,
     ): ByteArray {
         // Defensive clamping: Machine hardware limit is 150% eccentric load
         // Values > 150% can cause machine faults (yellow light)
@@ -297,7 +329,9 @@ object BlePacketFactory {
 
         val echoParams = getEchoParams(level, safeEccentricPct)
 
-        Logger.d("BlePacketFactory") { "=== ECHO: ${level.displayName}, eccentric: $safeEccentricPct% ===" }
+        Logger.d("BlePacketFactory") {
+            "=== ECHO: ${level.displayName}, eccentric: $safeEccentricPct% ==="
+        }
 
         putShortLE(frame, 0x08, echoParams.eccentricOverload)
         putShortLE(frame, 0x0a, echoParams.referenceMapBlend)
@@ -349,9 +383,9 @@ object BlePacketFactory {
 
     private fun readFloatLE(buffer: ByteArray, offset: Int): Float {
         val bits = (buffer[offset].toInt() and 0xFF) or
-                ((buffer[offset + 1].toInt() and 0xFF) shl 8) or
-                ((buffer[offset + 2].toInt() and 0xFF) shl 16) or
-                ((buffer[offset + 3].toInt() and 0xFF) shl 24)
+            ((buffer[offset + 1].toInt() and 0xFF) shl 8) or
+            ((buffer[offset + 2].toInt() and 0xFF) shl 16) or
+            ((buffer[offset + 3].toInt() and 0xFF) shl 24)
         return Float.fromBits(bits)
     }
 
@@ -379,6 +413,7 @@ object BlePacketFactory {
                 putShortLE(buffer, 0x1a, -110)
                 putFloatLE(buffer, 0x1c, 0.0f)
             }
+
             is ProgramMode.Pump -> {
                 putShortLE(buffer, 0x00, 50)
                 putShortLE(buffer, 0x02, 450)
@@ -393,6 +428,7 @@ object BlePacketFactory {
                 putShortLE(buffer, 0x1a, -50)
                 putFloatLE(buffer, 0x1c, 1.0f)
             }
+
             is ProgramMode.TUT -> {
                 putShortLE(buffer, 0x00, 250)
                 putShortLE(buffer, 0x02, 350)
@@ -407,6 +443,7 @@ object BlePacketFactory {
                 putShortLE(buffer, 0x1a, -50)
                 putFloatLE(buffer, 0x1c, 14.0f)
             }
+
             is ProgramMode.TUTBeast -> {
                 putShortLE(buffer, 0x00, 150)
                 putShortLE(buffer, 0x02, 250)
@@ -421,6 +458,7 @@ object BlePacketFactory {
                 putShortLE(buffer, 0x1a, -50)
                 putFloatLE(buffer, 0x1c, 28.0f)
             }
+
             is ProgramMode.EccentricOnly -> {
                 putShortLE(buffer, 0x00, 50)
                 putShortLE(buffer, 0x02, 550)
@@ -435,6 +473,7 @@ object BlePacketFactory {
                 putShortLE(buffer, 0x1a, -50)
                 putFloatLE(buffer, 0x1c, 20.0f)
             }
+
             // Echo mode uses a different BLE command (0x4E), so this profile is never used.
             // But we need to handle it for exhaustive when expression.
             is ProgramMode.Echo -> {
@@ -471,14 +510,29 @@ object BlePacketFactory {
             eccentricDurationSeconds = 0.0f,
             eccentricMaxVelocity = -200.0f,
             concentricDurationSeconds = 1.0f,
-            concentricMaxVelocity = 50.0f
+            concentricMaxVelocity = 50.0f,
         )
 
         return when (level) {
-            EchoLevel.HARD -> params.copy(concentricDurationSeconds = 1.0f, concentricMaxVelocity = 50.0f)
-            EchoLevel.HARDER -> params.copy(concentricDurationSeconds = 1.25f, concentricMaxVelocity = 40.0f)
-            EchoLevel.HARDEST -> params.copy(concentricDurationSeconds = 1.667f, concentricMaxVelocity = 30.0f)
-            EchoLevel.EPIC -> params.copy(concentricDurationSeconds = 3.333f, concentricMaxVelocity = 15.0f)
+            EchoLevel.HARD -> params.copy(
+                concentricDurationSeconds = 1.0f,
+                concentricMaxVelocity = 50.0f,
+            )
+
+            EchoLevel.HARDER -> params.copy(
+                concentricDurationSeconds = 1.25f,
+                concentricMaxVelocity = 40.0f,
+            )
+
+            EchoLevel.HARDEST -> params.copy(
+                concentricDurationSeconds = 1.667f,
+                concentricMaxVelocity = 30.0f,
+            )
+
+            EchoLevel.EPIC -> params.copy(
+                concentricDurationSeconds = 3.333f,
+                concentricMaxVelocity = 15.0f,
+            )
         }
     }
 }

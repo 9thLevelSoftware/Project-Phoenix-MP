@@ -1,13 +1,10 @@
 package com.devil.phoenixproject.presentation.components
 
-import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -17,8 +14,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
@@ -29,8 +24,8 @@ import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.ui.theme.Spacing
 import org.jetbrains.compose.resources.stringResource
-import vitruvianprojectphoenix.shared.generated.resources.Res
 import vitruvianprojectphoenix.shared.generated.resources.*
+import vitruvianprojectphoenix.shared.generated.resources.Res
 
 // Conversion constants
 private const val KG_TO_LB = 2.20462f
@@ -51,7 +46,7 @@ fun WeightAdjustmentControls(
     enabled: Boolean = true,
     showPresets: Boolean = false,
     lastUsedWeight: Float? = null,
-    prWeight: Float? = null
+    prWeight: Float? = null,
 ) {
     var showWeightPicker by remember { mutableStateOf(false) }
 
@@ -64,19 +59,19 @@ fun WeightAdjustmentControls(
     Column(
         modifier = modifier,
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(Spacing.small)
+        verticalArrangement = Arrangement.spacedBy(Spacing.small),
     ) {
         // Main weight adjustment row
         Row(
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(Spacing.medium)
+            horizontalArrangement = Arrangement.spacedBy(Spacing.medium),
         ) {
             // Decrease button
             WeightButton(
                 icon = Icons.Default.Remove,
                 onClick = { onWeightChange((currentWeightKg - incrementKg).coerceAtLeast(0f)) },
                 enabled = enabled && currentWeightKg > 0,
-                contentDescription = stringResource(Res.string.cd_decrease_weight)
+                contentDescription = stringResource(Res.string.cd_decrease_weight),
             )
 
             // Current weight display (tappable)
@@ -90,21 +85,22 @@ fun WeightAdjustmentControls(
                     }
                     .clip(RoundedCornerShape(12.dp))
                     .clickable(enabled = enabled) { showWeightPicker = true }
-                    .padding(horizontal = Spacing.medium, vertical = Spacing.small)
+                    .padding(horizontal = Spacing.medium, vertical = Spacing.small),
             ) {
                 Text(
                     text = formatWeight(currentWeightKg, weightUnit),
                     style = MaterialTheme.typography.headlineMedium,
                     fontWeight = FontWeight.Bold,
-                    color = if (enabled)
+                    color = if (enabled) {
                         MaterialTheme.colorScheme.onSurface
-                    else
+                    } else {
                         MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                    },
                 )
                 Text(
                     text = "per cable",
                     style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
 
@@ -113,31 +109,31 @@ fun WeightAdjustmentControls(
                 icon = Icons.Default.Add,
                 onClick = { onWeightChange((currentWeightKg + incrementKg).coerceAtMost(MAX_WEIGHT_KG)) },
                 enabled = enabled && currentWeightKg < MAX_WEIGHT_KG,
-                contentDescription = stringResource(Res.string.cd_increase_weight)
+                contentDescription = stringResource(Res.string.cd_increase_weight),
             )
         }
 
         // Total weight for 2 cables indicator
         Surface(
             shape = RoundedCornerShape(Spacing.small),
-            color = MaterialTheme.colorScheme.surfaceContainerHigh
+            color = MaterialTheme.colorScheme.surfaceContainerHigh,
         ) {
             Row(
                 modifier = Modifier.padding(horizontal = Spacing.medium, vertical = Spacing.small),
                 horizontalArrangement = Arrangement.Center,
-                verticalAlignment = Alignment.CenterVertically
+                verticalAlignment = Alignment.CenterVertically,
             ) {
                 Icon(
                     imageVector = Icons.Default.Info,
                     contentDescription = null,
                     modifier = Modifier.size(16.dp),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 Spacer(modifier = Modifier.width(Spacing.small))
                 Text(
                     text = "Total weight for 2 cables: ${formatWeight(currentWeightKg * 2, weightUnit)}",
                     style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
         }
@@ -151,7 +147,7 @@ fun WeightAdjustmentControls(
                 prWeight = prWeight,
                 formatWeight = { formatWeight(it, weightUnit) },
                 onSelectPreset = onWeightChange,
-                enabled = enabled
+                enabled = enabled,
             )
         }
     }
@@ -166,7 +162,7 @@ fun WeightAdjustmentControls(
                 onWeightChange(weight)
                 showWeightPicker = false
             },
-            onDismiss = { showWeightPicker = false }
+            onDismiss = { showWeightPicker = false },
         )
     }
 }
@@ -176,12 +172,12 @@ private fun WeightButton(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     onClick: () -> Unit,
     enabled: Boolean,
-    contentDescription: String
+    contentDescription: String,
 ) {
     val scale by animateFloatAsState(
         targetValue = if (enabled) 1f else 0.9f,
         animationSpec = spring(stiffness = Spring.StiffnessLow),
-        label = "button_scale"
+        label = "button_scale",
     )
 
     FilledIconButton(
@@ -194,13 +190,13 @@ private fun WeightButton(
             containerColor = MaterialTheme.colorScheme.primaryContainer,
             contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
             disabledContainerColor = MaterialTheme.colorScheme.surfaceVariant,
-            disabledContentColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
-        )
+            disabledContentColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+        ),
     ) {
         Icon(
             imageVector = icon,
             contentDescription = contentDescription,
-            modifier = Modifier.size(28.dp)
+            modifier = Modifier.size(28.dp),
         )
     }
 }
@@ -212,11 +208,11 @@ private fun WeightPresets(
     prWeight: Float?,
     formatWeight: (Float) -> String,
     onSelectPreset: (Float) -> Unit,
-    enabled: Boolean
+    enabled: Boolean,
 ) {
     Row(
         horizontalArrangement = Arrangement.spacedBy(Spacing.small),
-        verticalAlignment = Alignment.CenterVertically
+        verticalAlignment = Alignment.CenterVertically,
     ) {
         // Last used weight preset
         lastUsedWeight?.let { weight ->
@@ -225,7 +221,7 @@ private fun WeightPresets(
                     label = "Last: ${formatWeight(weight)}",
                     icon = Icons.Default.History,
                     onClick = { onSelectPreset(weight) },
-                    enabled = enabled
+                    enabled = enabled,
                 )
             }
         }
@@ -238,7 +234,7 @@ private fun WeightPresets(
                     icon = Icons.Default.EmojiEvents,
                     onClick = { onSelectPreset(weight) },
                     enabled = enabled,
-                    isHighlighted = true
+                    isHighlighted = true,
                 )
             }
         }
@@ -248,12 +244,12 @@ private fun WeightPresets(
             PresetChip(
                 label = "-5%",
                 onClick = { onSelectPreset(currentWeightKg * 0.95f) },
-                enabled = enabled
+                enabled = enabled,
             )
             PresetChip(
                 label = "+5%",
                 onClick = { onSelectPreset(currentWeightKg * 1.05f) },
-                enabled = enabled
+                enabled = enabled,
             )
         }
     }
@@ -265,7 +261,7 @@ private fun PresetChip(
     onClick: () -> Unit,
     enabled: Boolean,
     icon: androidx.compose.ui.graphics.vector.ImageVector? = null,
-    isHighlighted: Boolean = false
+    isHighlighted: Boolean = false,
 ) {
     AssistChip(
         onClick = onClick,
@@ -276,18 +272,18 @@ private fun PresetChip(
                 Icon(
                     imageVector = it,
                     contentDescription = null,
-                    modifier = Modifier.size(16.dp)
+                    modifier = Modifier.size(16.dp),
                 )
             }
         },
         colors = if (isHighlighted) {
             AssistChipDefaults.assistChipColors(
                 containerColor = MaterialTheme.colorScheme.tertiaryContainer,
-                labelColor = MaterialTheme.colorScheme.onTertiaryContainer
+                labelColor = MaterialTheme.colorScheme.onTertiaryContainer,
             )
         } else {
             AssistChipDefaults.assistChipColors()
-        }
+        },
     )
 }
 
@@ -298,7 +294,7 @@ private fun WeightPickerDialog(
     weightUnit: WeightUnit,
     formatWeight: (Float, WeightUnit) -> String,
     onWeightSelected: (Float) -> Unit,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
 ) {
     var selectedWeightKg by remember { mutableStateOf(currentWeightKg) }
 
@@ -320,19 +316,19 @@ private fun WeightPickerDialog(
         text = {
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier.fillMaxWidth(),
             ) {
                 // Large weight display
                 Text(
                     text = formatWeight(selectedWeightKg, weightUnit),
                     style = MaterialTheme.typography.displayMedium,
                     fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.primary
+                    color = MaterialTheme.colorScheme.primary,
                 )
                 Text(
                     text = "per cable",
                     style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
 
                 Spacer(modifier = Modifier.height(Spacing.small))
@@ -340,24 +336,24 @@ private fun WeightPickerDialog(
                 // Total weight for 2 cables indicator
                 Surface(
                     shape = RoundedCornerShape(Spacing.small),
-                    color = MaterialTheme.colorScheme.surfaceContainerHigh
+                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
                 ) {
                     Row(
                         modifier = Modifier.padding(horizontal = Spacing.medium, vertical = Spacing.small),
                         horizontalArrangement = Arrangement.Center,
-                        verticalAlignment = Alignment.CenterVertically
+                        verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Icon(
                             imageVector = Icons.Default.Info,
                             contentDescription = null,
                             modifier = Modifier.size(16.dp),
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                         Spacer(modifier = Modifier.width(Spacing.small))
                         Text(
                             text = "Total weight for 2 cables: ${formatWeight(selectedWeightKg * 2, weightUnit)}",
                             style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
                 }
@@ -379,7 +375,7 @@ private fun WeightPickerDialog(
                     },
                     valueRange = 0f..maxWeightDisplay.toFloat(),
                     steps = sliderSteps,
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth(),
                 )
 
                 Spacer(modifier = Modifier.height(Spacing.medium))
@@ -387,7 +383,7 @@ private fun WeightPickerDialog(
                 // Quick adjustment buttons (in display units)
                 Row(
                     horizontalArrangement = Arrangement.SpaceEvenly,
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth(),
                 ) {
                     quickAdjustments.forEach { delta ->
                         val sign = if (delta > 0) "+" else ""
@@ -397,11 +393,11 @@ private fun WeightPickerDialog(
                                 val deltaKg = if (isLbs) delta * LB_TO_KG else delta.toFloat()
                                 selectedWeightKg = (selectedWeightKg + deltaKg).coerceIn(0f, MAX_WEIGHT_KG)
                             },
-                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
                         ) {
                             Text(
                                 text = "$sign$delta",
-                                style = MaterialTheme.typography.labelSmall
+                                style = MaterialTheme.typography.labelSmall,
                             )
                         }
                     }
@@ -417,7 +413,7 @@ private fun WeightPickerDialog(
             TextButton(onClick = onDismiss) {
                 Text(stringResource(Res.string.action_cancel))
             }
-        }
+        },
     )
 }
 
@@ -432,7 +428,7 @@ fun CompactWeightAdjustment(
     formatWeight: (Float, WeightUnit) -> String,
     onWeightChange: (Float) -> Unit,
     modifier: Modifier = Modifier,
-    enabled: Boolean = true
+    enabled: Boolean = true,
 ) {
     // Unit-aware increment: 0.5kg or 1lb (converted to kg)
     val incrementKg = when (weightUnit) {
@@ -443,21 +439,21 @@ fun CompactWeightAdjustment(
     Surface(
         modifier = modifier,
         shape = RoundedCornerShape(24.dp),
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f)
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f),
     ) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+            modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp),
         ) {
             IconButton(
                 onClick = { onWeightChange((currentWeightKg - incrementKg).coerceAtLeast(0f)) },
                 enabled = enabled && currentWeightKg > 0,
-                modifier = Modifier.size(32.dp)
+                modifier = Modifier.size(32.dp),
             ) {
                 Icon(
                     imageVector = Icons.Default.Remove,
                     contentDescription = stringResource(Res.string.cd_decrease),
-                    modifier = Modifier.size(16.dp)
+                    modifier = Modifier.size(16.dp),
                 )
             }
 
@@ -471,18 +467,18 @@ fun CompactWeightAdjustment(
                     .padding(horizontal = 8.dp)
                     .semantics {
                         contentDescription = weightDescription
-                    }
+                    },
             )
 
             IconButton(
                 onClick = { onWeightChange((currentWeightKg + incrementKg).coerceAtMost(MAX_WEIGHT_KG)) },
                 enabled = enabled && currentWeightKg < MAX_WEIGHT_KG,
-                modifier = Modifier.size(32.dp)
+                modifier = Modifier.size(32.dp),
             ) {
                 Icon(
                     imageVector = Icons.Default.Add,
                     contentDescription = stringResource(Res.string.cd_increase),
-                    modifier = Modifier.size(16.dp)
+                    modifier = Modifier.size(16.dp),
                 )
             }
         }

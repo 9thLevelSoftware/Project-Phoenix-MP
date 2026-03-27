@@ -12,7 +12,7 @@ class WorkoutParametersTest {
     fun `default values are set correctly for Program mode`() {
         val params = WorkoutParameters(
             programMode = ProgramMode.OldSchool,
-            reps = 10
+            reps = 10,
         )
 
         assertEquals(10, params.reps)
@@ -37,7 +37,7 @@ class WorkoutParametersTest {
             weightPerCableKg = 30f,
             isJustLift = true,
             useAutoStart = true,
-            isAMRAP = true
+            isAMRAP = true,
         )
 
         assertTrue(params.isJustLift)
@@ -53,7 +53,7 @@ class WorkoutParametersTest {
             reps = 8,
             selectedExerciseId = "squat-001",
             echoLevel = EchoLevel.HARDEST,
-            eccentricLoad = EccentricLoad.LOAD_120
+            eccentricLoad = EccentricLoad.LOAD_120,
         )
 
         assertEquals(ProgramMode.Echo, params.programMode)
@@ -67,13 +67,13 @@ class WorkoutParametersTest {
         val paramsBottom = WorkoutParameters(
             programMode = ProgramMode.OldSchool,
             reps = 10,
-            stopAtTop = false
+            stopAtTop = false,
         )
 
         val paramsTop = WorkoutParameters(
             programMode = ProgramMode.OldSchool,
             reps = 10,
-            stopAtTop = true
+            stopAtTop = true,
         )
 
         assertFalse(paramsBottom.stopAtTop)
@@ -85,7 +85,7 @@ class WorkoutParametersTest {
         val params = WorkoutParameters(
             programMode = ProgramMode.OldSchool,
             reps = 10,
-            warmupReps = 5
+            warmupReps = 5,
         )
 
         assertEquals(5, params.warmupReps)
@@ -96,7 +96,7 @@ class WorkoutParametersTest {
         val params = WorkoutParameters(
             programMode = ProgramMode.OldSchool,
             reps = 10,
-            stallDetectionEnabled = false
+            stallDetectionEnabled = false,
         )
 
         assertFalse(params.stallDetectionEnabled)
@@ -108,7 +108,7 @@ class WorkoutParametersTest {
             programMode = ProgramMode.OldSchool,
             reps = 10,
             lastUsedWeightKg = 40f,
-            prWeightKg = 50f
+            prWeightKg = 50f,
         )
 
         assertEquals(40f, params.lastUsedWeightKg)
@@ -121,7 +121,7 @@ class WorkoutParametersTest {
             programMode = ProgramMode.OldSchool,
             reps = 10,
             weightPerCableKg = 25f,
-            progressionRegressionKg = 2.5f
+            progressionRegressionKg = 2.5f,
         )
 
         assertEquals(2.5f, params.progressionRegressionKg)

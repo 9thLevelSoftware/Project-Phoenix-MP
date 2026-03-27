@@ -1,8 +1,8 @@
 package com.devil.phoenixproject.data.ble
 
 import com.devil.phoenixproject.data.repository.RepNotification
-import com.devil.phoenixproject.domain.model.HeuristicStatistics
 import com.devil.phoenixproject.domain.model.HeuristicPhaseStatistics
+import com.devil.phoenixproject.domain.model.HeuristicStatistics
 
 /**
  * Pure byte parsing utility functions for the Vitruvian BLE protocol.
@@ -23,10 +23,8 @@ import com.devil.phoenixproject.domain.model.HeuristicPhaseStatistics
  * @param offset The starting position in the array
  * @return Unsigned value in range [0, 65535]
  */
-fun getUInt16LE(data: ByteArray, offset: Int): Int {
-    return (data[offset].toInt() and 0xFF) or
-           ((data[offset + 1].toInt() and 0xFF) shl 8)
-}
+fun getUInt16LE(data: ByteArray, offset: Int): Int = (data[offset].toInt() and 0xFF) or
+    ((data[offset + 1].toInt() and 0xFF) shl 8)
 
 /**
  * Read signed 16-bit integer in LITTLE-ENDIAN format (LSB first).
@@ -38,7 +36,7 @@ fun getUInt16LE(data: ByteArray, offset: Int): Int {
  */
 fun getInt16LE(data: ByteArray, offset: Int): Int {
     val unsigned = (data[offset].toInt() and 0xFF) or
-                   ((data[offset + 1].toInt() and 0xFF) shl 8)
+        ((data[offset + 1].toInt() and 0xFF) shl 8)
     // Sign-extend from 16-bit to 32-bit
     return if (unsigned >= 0x8000) unsigned - 0x10000 else unsigned
 }
@@ -51,10 +49,8 @@ fun getInt16LE(data: ByteArray, offset: Int): Int {
  * @param offset The starting position in the array
  * @return Unsigned value in range [0, 65535]
  */
-fun getUInt16BE(data: ByteArray, offset: Int): Int {
-    return ((data[offset].toInt() and 0xFF) shl 8) or
-           (data[offset + 1].toInt() and 0xFF)
-}
+fun getUInt16BE(data: ByteArray, offset: Int): Int = ((data[offset].toInt() and 0xFF) shl 8) or
+    (data[offset + 1].toInt() and 0xFF)
 
 /**
  * Read signed 32-bit integer in LITTLE-ENDIAN format.
@@ -64,12 +60,10 @@ fun getUInt16BE(data: ByteArray, offset: Int): Int {
  * @param offset The starting position in the array
  * @return Signed 32-bit value
  */
-fun getInt32LE(data: ByteArray, offset: Int): Int {
-    return (data[offset].toInt() and 0xFF) or
-           ((data[offset + 1].toInt() and 0xFF) shl 8) or
-           ((data[offset + 2].toInt() and 0xFF) shl 16) or
-           ((data[offset + 3].toInt() and 0xFF) shl 24)
-}
+fun getInt32LE(data: ByteArray, offset: Int): Int = (data[offset].toInt() and 0xFF) or
+    ((data[offset + 1].toInt() and 0xFF) shl 8) or
+    ((data[offset + 2].toInt() and 0xFF) shl 16) or
+    ((data[offset + 3].toInt() and 0xFF) shl 24)
 
 /**
  * Read 32-bit float in LITTLE-ENDIAN format (IEEE 754).
@@ -139,7 +133,7 @@ fun parseRepPacket(data: ByteArray, hasOpcodePrefix: Boolean, timestamp: Long): 
             rangeBottom = rangeBottom,
             rawData = data,
             timestamp = timestamp,
-            isLegacyFormat = false
+            isLegacyFormat = false,
         )
     } else {
         // LEGACY 6-byte format - u16 counters only
@@ -157,7 +151,7 @@ fun parseRepPacket(data: ByteArray, hasOpcodePrefix: Boolean, timestamp: Long): 
             rangeBottom = 0f,
             rawData = data,
             timestamp = timestamp,
-            isLegacyFormat = true
+            isLegacyFormat = true,
         )
     }
 }
@@ -183,13 +177,13 @@ fun parseRepPacket(data: ByteArray, hasOpcodePrefix: Boolean, timestamp: Long): 
 fun parseMonitorPacket(data: ByteArray): MonitorPacket? {
     if (data.size < 16) return null
 
-    val f0 = getUInt16LE(data, 0)  // ticks low
-    val f1 = getUInt16LE(data, 2)  // ticks high
-    val posARaw = getInt16LE(data, 4)  // Signed 16-bit for position
-    val velARaw = if (data.size >= 8) getInt16LE(data, 6) else 0  // Firmware velocity A
+    val f0 = getUInt16LE(data, 0) // ticks low
+    val f1 = getUInt16LE(data, 2) // ticks high
+    val posARaw = getInt16LE(data, 4) // Signed 16-bit for position
+    val velARaw = if (data.size >= 8) getInt16LE(data, 6) else 0 // Firmware velocity A
     val loadARaw = getUInt16LE(data, 8)
-    val posBRaw = getInt16LE(data, 10)  // Signed 16-bit for position
-    val velBRaw = if (data.size >= 14) getInt16LE(data, 12) else 0  // Firmware velocity B
+    val posBRaw = getInt16LE(data, 10) // Signed 16-bit for position
+    val velBRaw = if (data.size >= 14) getInt16LE(data, 12) else 0 // Firmware velocity B
     val loadBRaw = getUInt16LE(data, 14)
 
     // Reconstruct 32-bit tick counter
@@ -218,7 +212,7 @@ fun parseMonitorPacket(data: ByteArray): MonitorPacket? {
         status = status,
         firmwareVelA = velARaw,
         firmwareVelB = velBRaw,
-        extraBytes = extra
+        extraBytes = extra,
     )
 }
 
@@ -242,8 +236,10 @@ fun parseDiagnosticPacket(data: ByteArray): DiagnosticPacket? {
     val faults = mutableListOf<Short>()
     for (i in 0 until 4) {
         val offset = 4 + (i * 2)
-        val fault = ((data[offset].toInt() and 0xFF) or
-                ((data[offset + 1].toInt() and 0xFF) shl 8)).toShort()
+        val fault = (
+            (data[offset].toInt() and 0xFF) or
+                ((data[offset + 1].toInt() and 0xFF) shl 8)
+            ).toShort()
         faults.add(fault)
     }
 
@@ -259,7 +255,7 @@ fun parseDiagnosticPacket(data: ByteArray): DiagnosticPacket? {
         seconds = seconds,
         faults = faults.toList(),
         temps = temps.toList(),
-        hasFaults = hasFaults
+        hasFaults = hasFaults,
     )
 }
 
@@ -284,7 +280,7 @@ fun parseHeuristicPacket(data: ByteArray, timestamp: Long): HeuristicStatistics?
         velAvg = getFloatLE(data, 8),
         velMax = getFloatLE(data, 12),
         wattAvg = getFloatLE(data, 16),
-        wattMax = getFloatLE(data, 20)
+        wattMax = getFloatLE(data, 20),
     )
 
     // Parse 6 floats for eccentric stats (24 bytes)
@@ -294,12 +290,12 @@ fun parseHeuristicPacket(data: ByteArray, timestamp: Long): HeuristicStatistics?
         velAvg = getFloatLE(data, 32),
         velMax = getFloatLE(data, 36),
         wattAvg = getFloatLE(data, 40),
-        wattMax = getFloatLE(data, 44)
+        wattMax = getFloatLE(data, 44),
     )
 
     return HeuristicStatistics(
         concentric = concentric,
         eccentric = eccentric,
-        timestamp = timestamp
+        timestamp = timestamp,
     )
 }

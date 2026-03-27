@@ -15,7 +15,7 @@ val syncModule = module {
     single {
         PortalApiClient(
             supabaseConfig = get<SupabaseConfig>(),
-            tokenStorage = get<PortalTokenStorage>()
+            tokenStorage = get<PortalTokenStorage>(),
         )
     }
     single<SyncRepository> { SqlDelightSyncRepository(get()) }
@@ -27,7 +27,7 @@ val syncModule = module {
             gamificationRepository = get(),
             repMetricRepository = get(),
             userProfileRepository = get(),
-            externalActivityRepository = get()
+            externalActivityRepository = get(),
         )
     }
     single { SyncTriggerManager(get(), get()) }

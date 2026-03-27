@@ -27,9 +27,7 @@ import kotlinx.coroutines.flow.asStateFlow
  *
  * @param velocityLossThresholdPercent Velocity loss percentage to trigger shouldStopSet (default 20%)
  */
-class BiomechanicsEngine(
-    private val velocityLossThresholdPercent: Float = 20f
-) {
+class BiomechanicsEngine(private val velocityLossThresholdPercent: Float = 20f) {
     private val _latestRepResult = MutableStateFlow<BiomechanicsRepResult?>(null)
 
     /**
@@ -59,7 +57,7 @@ class BiomechanicsEngine(
         repNumber: Int,
         concentricMetrics: List<WorkoutMetric>,
         allRepMetrics: List<WorkoutMetric>,
-        timestamp: Long
+        timestamp: Long,
     ): BiomechanicsRepResult {
         val velocity = computeVelocity(repNumber, concentricMetrics)
         val forceCurve = computeForceCurve(repNumber, concentricMetrics)
@@ -70,7 +68,7 @@ class BiomechanicsEngine(
             forceCurve = forceCurve,
             asymmetry = asymmetry,
             repNumber = repNumber,
-            timestamp = timestamp
+            timestamp = timestamp,
         )
 
         repResults.value = repResults.value + result
@@ -96,7 +94,9 @@ class BiomechanicsEngine(
             val firstMcv = results.first().velocity.meanConcentricVelocityMmS
             val lastMcv = results.last().velocity.meanConcentricVelocityMmS
             if (firstMcv > 0) ((firstMcv - lastMcv) / firstMcv * 100f) else null
-        } else null
+        } else {
+            null
+        }
 
         val zoneDistribution = results
             .map { it.velocity.zone }
@@ -149,7 +149,7 @@ class BiomechanicsEngine(
                 normalizedPositionPct = positions,
                 stickingPointPct = stickingPt,
                 strengthProfile = profile,
-                repNumber = 0  // 0 indicates set-level average
+                repNumber = 0, // 0 indicates set-level average
             )
         }
 
@@ -162,7 +162,7 @@ class BiomechanicsEngine(
             avgAsymmetryPercent = avgAsymmetry,
             dominantSide = dominantSide,
             strengthProfile = strengthProfile,
-            avgForceCurve = avgForceCurve
+            avgForceCurve = avgForceCurve,
         )
     }
 
@@ -203,7 +203,7 @@ class BiomechanicsEngine(
         val sampleVelocities = concentricMetrics.map { metric ->
             maxOf(
                 kotlin.math.abs(metric.velocityA.toFloat()),
-                kotlin.math.abs(metric.velocityB.toFloat())
+                kotlin.math.abs(metric.velocityB.toFloat()),
             )
         }
 
@@ -241,7 +241,7 @@ class BiomechanicsEngine(
         // Estimate remaining reps based on velocity decay rate
         val estimatedRepsRemaining: Int? = calculateEstimatedRepsRemaining(
             repNumber = repNumber,
-            currentLossPercent = velocityLossPercent
+            currentLossPercent = velocityLossPercent,
         )
 
         // VBT-05: Auto-stop recommendation
@@ -256,7 +256,7 @@ class BiomechanicsEngine(
             velocityLossPercent = velocityLossPercent,
             estimatedRepsRemaining = estimatedRepsRemaining,
             shouldStopSet = shouldStopSet,
-            repNumber = repNumber
+            repNumber = repNumber,
         )
     }
 
@@ -269,10 +269,7 @@ class BiomechanicsEngine(
      * @param currentLossPercent Current velocity loss percentage (null for rep 1)
      * @return Estimated reps remaining (0-99), or null if projection is not valid
      */
-    private fun calculateEstimatedRepsRemaining(
-        repNumber: Int,
-        currentLossPercent: Float?
-    ): Int? {
+    private fun calculateEstimatedRepsRemaining(repNumber: Int, currentLossPercent: Float?): Int? {
         // Can't project from rep 1 (no decay data yet)
         if (repNumber < 2 || currentLossPercent == null) return null
 
@@ -318,7 +315,7 @@ class BiomechanicsEngine(
                 normalizedPositionPct = FloatArray(0),
                 stickingPointPct = null,
                 strengthProfile = StrengthProfile.FLAT,
-                repNumber = repNumber
+                repNumber = repNumber,
             )
         }
 
@@ -342,7 +339,7 @@ class BiomechanicsEngine(
                 normalizedPositionPct = FloatArray(0),
                 stickingPointPct = null,
                 strengthProfile = StrengthProfile.FLAT,
-                repNumber = repNumber
+                repNumber = repNumber,
             )
         }
 
@@ -367,7 +364,7 @@ class BiomechanicsEngine(
             normalizedPositionPct = normalizedPosition,
             stickingPointPct = stickingPointPct,
             strengthProfile = strengthProfile,
-            repNumber = repNumber
+            repNumber = repNumber,
         )
     }
 
@@ -490,7 +487,7 @@ class BiomechanicsEngine(
                 dominantSide = "BALANCED",
                 avgLoadA = 0f,
                 avgLoadB = 0f,
-                repNumber = repNumber
+                repNumber = repNumber,
             )
         }
 
@@ -506,7 +503,7 @@ class BiomechanicsEngine(
                 dominantSide = "BALANCED",
                 avgLoadA = avgLoadA,
                 avgLoadB = avgLoadB,
-                repNumber = repNumber
+                repNumber = repNumber,
             )
         }
 
@@ -519,7 +516,7 @@ class BiomechanicsEngine(
             asymmetry < 2f -> "BALANCED"
             avgLoadA > avgLoadB -> "A"
             avgLoadB > avgLoadA -> "B"
-            else -> "BALANCED"  // Exactly equal
+            else -> "BALANCED" // Exactly equal
         }
 
         return AsymmetryResult(
@@ -527,7 +524,7 @@ class BiomechanicsEngine(
             dominantSide = dominantSide,
             avgLoadA = avgLoadA,
             avgLoadB = avgLoadB,
-            repNumber = repNumber
+            repNumber = repNumber,
         )
     }
 }

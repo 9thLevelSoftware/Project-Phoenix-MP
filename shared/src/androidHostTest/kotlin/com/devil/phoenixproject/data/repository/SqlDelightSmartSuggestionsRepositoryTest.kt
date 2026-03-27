@@ -2,10 +2,10 @@ package com.devil.phoenixproject.data.repository
 
 import com.devil.phoenixproject.database.VitruvianDatabase
 import com.devil.phoenixproject.testutil.createTestDatabase
+import kotlin.test.assertEquals
 import kotlinx.coroutines.test.runTest
 import org.junit.Before
 import org.junit.Test
-import kotlin.test.assertEquals
 
 class SqlDelightSmartSuggestionsRepositoryTest {
 
@@ -27,7 +27,7 @@ class SqlDelightSmartSuggestionsRepositoryTest {
             timestamp = 1_000L,
             weightPerCableKg = 5.0,
             heaviestLiftKg = 22.5,
-            profileId = "default"
+            profileId = "default",
         )
         insertWorkoutSession(
             id = "session-fallback",
@@ -36,7 +36,7 @@ class SqlDelightSmartSuggestionsRepositoryTest {
             timestamp = 2_000L,
             weightPerCableKg = 7.5,
             heaviestLiftKg = null,
-            profileId = "default"
+            profileId = "default",
         )
 
         val history = repository.getExerciseWeightHistory("default")
@@ -55,7 +55,7 @@ class SqlDelightSmartSuggestionsRepositoryTest {
             timestamp = 1_000L,
             weightPerCableKg = 5.0,
             heaviestLiftKg = 22.5,
-            profileId = "default"
+            profileId = "default",
         )
         insertWorkoutSession(
             id = "session-profile-b",
@@ -64,7 +64,7 @@ class SqlDelightSmartSuggestionsRepositoryTest {
             timestamp = 2_000L,
             weightPerCableKg = 5.0,
             heaviestLiftKg = 40.0,
-            profileId = "profile-b"
+            profileId = "profile-b",
         )
 
         val defaultHistory = repository.getExerciseWeightHistory("default")
@@ -81,7 +81,7 @@ class SqlDelightSmartSuggestionsRepositoryTest {
         timestamp: Long,
         weightPerCableKg: Double,
         heaviestLiftKg: Double?,
-        profileId: String
+        profileId: String,
     ) {
         database.vitruvianDatabaseQueries.insertSession(
             id = id,
@@ -130,7 +130,7 @@ class SqlDelightSmartSuggestionsRepositoryTest {
             dominantSide = null,
             strengthProfile = null,
             formScore = null,
-            profile_id = profileId
+            profile_id = profileId,
         )
     }
 }

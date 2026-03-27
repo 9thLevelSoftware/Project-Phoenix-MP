@@ -232,7 +232,8 @@ class PortalMappingsTest {
 
     @Test
     fun `portalCategories contains all expected categories`() {
-        val expected = listOf("Chest", "Back", "Shoulders", "Arms", "Legs", "Glutes", "Core", "Full Body")
+        val expected =
+            listOf("Chest", "Back", "Shoulders", "Arms", "Legs", "Glutes", "Core", "Full Body")
         assertEquals(expected, PortalMappings.portalCategories)
     }
 
@@ -241,7 +242,7 @@ class PortalMappingsTest {
     private fun assertFloatEquals(expected: Float, actual: Float, tolerance: Float = 0.001f) {
         assertTrue(
             abs(expected - actual) < tolerance,
-            "Expected $expected but got $actual (tolerance $tolerance)"
+            "Expected $expected but got $actual (tolerance $tolerance)",
         )
     }
 }

@@ -40,31 +40,27 @@ object BlePermissions {
     /**
      * Get the list of permissions required based on Android version.
      */
-    fun getRequiredPermissions(): List<String> {
-        return buildList {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                // Android 12+ requires BLUETOOTH_SCAN and BLUETOOTH_CONNECT
-                add(Manifest.permission.BLUETOOTH_SCAN)
-                add(Manifest.permission.BLUETOOTH_CONNECT)
-            } else {
-                // Older versions need location for BLE scanning
-                add(Manifest.permission.ACCESS_FINE_LOCATION)
-            }
+    fun getRequiredPermissions(): List<String> = buildList {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            // Android 12+ requires BLUETOOTH_SCAN and BLUETOOTH_CONNECT
+            add(Manifest.permission.BLUETOOTH_SCAN)
+            add(Manifest.permission.BLUETOOTH_CONNECT)
+        } else {
+            // Older versions need location for BLE scanning
+            add(Manifest.permission.ACCESS_FINE_LOCATION)
+        }
 
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                // Android 13+ requires POST_NOTIFICATIONS for workout notifications
-                add(Manifest.permission.POST_NOTIFICATIONS)
-            }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            // Android 13+ requires POST_NOTIFICATIONS for workout notifications
+            add(Manifest.permission.POST_NOTIFICATIONS)
         }
     }
 
     /**
      * Check if all required BLE permissions are granted.
      */
-    fun arePermissionsGranted(context: Context): Boolean {
-        return getRequiredPermissions().all { permission ->
-            ContextCompat.checkSelfPermission(context, permission) == PackageManager.PERMISSION_GRANTED
-        }
+    fun arePermissionsGranted(context: Context): Boolean = getRequiredPermissions().all { permission ->
+        ContextCompat.checkSelfPermission(context, permission) == PackageManager.PERMISSION_GRANTED
     }
 }
 
@@ -84,9 +80,7 @@ sealed class BlePermissionState {
  * @param content The composable content to show when permissions are granted
  */
 @Composable
-fun RequireBlePermissions(
-    content: @Composable () -> Unit
-) {
+fun RequireBlePermissions(content: @Composable () -> Unit) {
     val context = LocalContext.current
     var permissionState by remember {
         mutableStateOf(
@@ -94,12 +88,12 @@ fun RequireBlePermissions(
                 BlePermissionState.Granted
             } else {
                 BlePermissionState.NotGranted
-            }
+            },
         )
     }
 
     val permissionLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.RequestMultiplePermissions()
+        contract = ActivityResultContracts.RequestMultiplePermissions(),
     ) { permissions ->
         val allGranted = permissions.values.all { it }
         permissionState = if (allGranted) {
@@ -113,16 +107,18 @@ fun RequireBlePermissions(
         is BlePermissionState.Granted -> {
             content()
         }
+
         is BlePermissionState.NotGranted -> {
             // Wrap permission screens in a basic theme
             PermissionScreenTheme {
                 BlePermissionRequestScreen(
                     onRequestPermission = {
                         permissionLauncher.launch(BlePermissions.getRequiredPermissions().toTypedArray())
-                    }
+                    },
                 )
             }
         }
+
         is BlePermissionState.Denied -> {
             val activity = context as? Activity
 
@@ -161,7 +157,7 @@ fun RequireBlePermissions(
                             data = Uri.fromParts("package", context.packageName, null)
                         }
                         context.startActivity(intent)
-                    }
+                    },
                 )
             }
         }
@@ -182,25 +178,23 @@ private fun PermissionScreenTheme(content: @Composable () -> Unit) {
  * Screen shown when BLE permissions need to be requested.
  */
 @Composable
-private fun BlePermissionRequestScreen(
-    onRequestPermission: () -> Unit
-) {
+private fun BlePermissionRequestScreen(onRequestPermission: () -> Unit) {
     Surface(
         modifier = Modifier.fillMaxSize(),
-        color = MaterialTheme.colorScheme.background
+        color = MaterialTheme.colorScheme.background,
     ) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(32.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center
+            verticalArrangement = Arrangement.Center,
         ) {
             Icon(
                 imageVector = Icons.Default.Bluetooth,
                 contentDescription = null,
                 modifier = Modifier.size(80.dp),
-                tint = MaterialTheme.colorScheme.primary
+                tint = MaterialTheme.colorScheme.primary,
             )
 
             Spacer(modifier = Modifier.height(24.dp))
@@ -209,7 +203,7 @@ private fun BlePermissionRequestScreen(
                 text = "Bluetooth Permission Required",
                 style = MaterialTheme.typography.headlineSmall,
                 fontWeight = FontWeight.Bold,
-                textAlign = TextAlign.Center
+                textAlign = TextAlign.Center,
             )
 
             Spacer(modifier = Modifier.height(16.dp))
@@ -218,7 +212,7 @@ private fun BlePermissionRequestScreen(
                 text = "Project Phoenix needs Bluetooth permission to scan for and connect to your Vitruvian Trainer machine.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                textAlign = TextAlign.Center
+                textAlign = TextAlign.Center,
             )
 
             Spacer(modifier = Modifier.height(32.dp))
@@ -227,12 +221,12 @@ private fun BlePermissionRequestScreen(
                 onClick = onRequestPermission,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(56.dp)
+                    .height(56.dp),
             ) {
                 Text(
                     text = "Grant Permission",
                     style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold
+                    fontWeight = FontWeight.Bold,
                 )
             }
         }
@@ -249,27 +243,23 @@ private fun BlePermissionRequestScreen(
  * @param onOpenSettings Open the app's Settings page so the user can toggle permissions manually.
  */
 @Composable
-private fun BlePermissionDeniedScreen(
-    canRetry: Boolean,
-    onRetry: () -> Unit,
-    onOpenSettings: () -> Unit
-) {
+private fun BlePermissionDeniedScreen(canRetry: Boolean, onRetry: () -> Unit, onOpenSettings: () -> Unit) {
     Surface(
         modifier = Modifier.fillMaxSize(),
-        color = MaterialTheme.colorScheme.background
+        color = MaterialTheme.colorScheme.background,
     ) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(32.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center
+            verticalArrangement = Arrangement.Center,
         ) {
             Icon(
                 imageVector = if (canRetry) Icons.Default.Warning else Icons.Default.Settings,
                 contentDescription = null,
                 modifier = Modifier.size(80.dp),
-                tint = MaterialTheme.colorScheme.error
+                tint = MaterialTheme.colorScheme.error,
             )
 
             Spacer(modifier = Modifier.height(24.dp))
@@ -278,7 +268,7 @@ private fun BlePermissionDeniedScreen(
                 text = "Permission Denied",
                 style = MaterialTheme.typography.headlineSmall,
                 fontWeight = FontWeight.Bold,
-                textAlign = TextAlign.Center
+                textAlign = TextAlign.Center,
             )
 
             Spacer(modifier = Modifier.height(16.dp))
@@ -291,7 +281,7 @@ private fun BlePermissionDeniedScreen(
                 },
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                textAlign = TextAlign.Center
+                textAlign = TextAlign.Center,
             )
 
             Spacer(modifier = Modifier.height(32.dp))
@@ -301,12 +291,12 @@ private fun BlePermissionDeniedScreen(
                     onClick = onRetry,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(56.dp)
+                        .height(56.dp),
                 ) {
                     Text(
                         text = "Try Again",
                         style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold
+                        fontWeight = FontWeight.Bold,
                     )
                 }
             } else {
@@ -314,18 +304,18 @@ private fun BlePermissionDeniedScreen(
                     onClick = onOpenSettings,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(56.dp)
+                        .height(56.dp),
                 ) {
                     Icon(
                         imageVector = Icons.Default.Settings,
                         contentDescription = null,
-                        modifier = Modifier.size(20.dp)
+                        modifier = Modifier.size(20.dp),
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
                         text = "Open Settings",
                         style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold
+                        fontWeight = FontWeight.Bold,
                     )
                 }
             }
@@ -340,7 +330,7 @@ private fun BlePermissionDeniedScreen(
                 },
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                textAlign = TextAlign.Center
+                textAlign = TextAlign.Center,
             )
         }
     }

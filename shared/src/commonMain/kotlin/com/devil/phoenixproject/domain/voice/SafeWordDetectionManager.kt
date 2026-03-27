@@ -24,10 +24,7 @@ import kotlinx.coroutines.launch
  *
  * Issue #141: Voice-activated emergency stop.
  */
-class SafeWordDetectionManager(
-    private val preferencesManager: PreferencesManager,
-    private val listenerFactory: SafeWordListenerFactory,
-) {
+class SafeWordDetectionManager(private val preferencesManager: PreferencesManager, private val listenerFactory: SafeWordListenerFactory) {
     private companion object {
         const val TAG = "SafeWordDetectionManager"
     }

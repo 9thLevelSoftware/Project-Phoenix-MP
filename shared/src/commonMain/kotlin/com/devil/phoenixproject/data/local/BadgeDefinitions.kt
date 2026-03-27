@@ -2,8 +2,8 @@ package com.devil.phoenixproject.data.local
 
 import com.devil.phoenixproject.domain.model.*
 import com.devil.phoenixproject.domain.model.BadgeCategory.*
-import com.devil.phoenixproject.domain.model.BadgeTier.*
 import com.devil.phoenixproject.domain.model.BadgeRequirement.*
+import com.devil.phoenixproject.domain.model.BadgeTier.*
 
 /**
  * All badge definitions for the gamification system.
@@ -23,7 +23,7 @@ object BadgeDefinitions {
             category = CONSISTENCY,
             iconResource = "fire",
             tier = BRONZE,
-            requirement = StreakDays(3)
+            requirement = StreakDays(3),
         ),
         Badge(
             id = "streak_7",
@@ -32,7 +32,7 @@ object BadgeDefinitions {
             category = CONSISTENCY,
             iconResource = "fire",
             tier = SILVER,
-            requirement = StreakDays(7)
+            requirement = StreakDays(7),
         ),
         Badge(
             id = "streak_14",
@@ -41,7 +41,7 @@ object BadgeDefinitions {
             category = CONSISTENCY,
             iconResource = "fire",
             tier = SILVER,
-            requirement = StreakDays(14)
+            requirement = StreakDays(14),
         ),
         Badge(
             id = "streak_30",
@@ -50,7 +50,7 @@ object BadgeDefinitions {
             category = CONSISTENCY,
             iconResource = "fire",
             tier = GOLD,
-            requirement = StreakDays(30)
+            requirement = StreakDays(30),
         ),
         Badge(
             id = "streak_60",
@@ -59,7 +59,7 @@ object BadgeDefinitions {
             category = CONSISTENCY,
             iconResource = "fire",
             tier = GOLD,
-            requirement = StreakDays(60)
+            requirement = StreakDays(60),
         ),
         Badge(
             id = "streak_100",
@@ -68,7 +68,7 @@ object BadgeDefinitions {
             category = CONSISTENCY,
             iconResource = "fire",
             tier = PLATINUM,
-            requirement = StreakDays(100)
+            requirement = StreakDays(100),
         ),
         Badge(
             id = "streak_365",
@@ -78,7 +78,7 @@ object BadgeDefinitions {
             iconResource = "fire",
             tier = PLATINUM,
             requirement = StreakDays(365),
-            isSecret = true
+            isSecret = true,
         ),
 
         // ==================== DEDICATION BADGES (Workout count) ====================
@@ -89,7 +89,7 @@ object BadgeDefinitions {
             category = DEDICATION,
             iconResource = "dumbbell",
             tier = BRONZE,
-            requirement = TotalWorkouts(1)
+            requirement = TotalWorkouts(1),
         ),
         Badge(
             id = "workouts_10",
@@ -98,7 +98,7 @@ object BadgeDefinitions {
             category = DEDICATION,
             iconResource = "dumbbell",
             tier = BRONZE,
-            requirement = TotalWorkouts(10)
+            requirement = TotalWorkouts(10),
         ),
         Badge(
             id = "workouts_25",
@@ -107,7 +107,7 @@ object BadgeDefinitions {
             category = DEDICATION,
             iconResource = "dumbbell",
             tier = SILVER,
-            requirement = TotalWorkouts(25)
+            requirement = TotalWorkouts(25),
         ),
         Badge(
             id = "workouts_50",
@@ -116,7 +116,7 @@ object BadgeDefinitions {
             category = DEDICATION,
             iconResource = "dumbbell",
             tier = SILVER,
-            requirement = TotalWorkouts(50)
+            requirement = TotalWorkouts(50),
         ),
         Badge(
             id = "workouts_100",
@@ -125,7 +125,7 @@ object BadgeDefinitions {
             category = DEDICATION,
             iconResource = "dumbbell",
             tier = GOLD,
-            requirement = TotalWorkouts(100)
+            requirement = TotalWorkouts(100),
         ),
         Badge(
             id = "workouts_250",
@@ -134,7 +134,7 @@ object BadgeDefinitions {
             category = DEDICATION,
             iconResource = "dumbbell",
             tier = GOLD,
-            requirement = TotalWorkouts(250)
+            requirement = TotalWorkouts(250),
         ),
         Badge(
             id = "workouts_500",
@@ -143,7 +143,7 @@ object BadgeDefinitions {
             category = DEDICATION,
             iconResource = "dumbbell",
             tier = PLATINUM,
-            requirement = TotalWorkouts(500)
+            requirement = TotalWorkouts(500),
         ),
         Badge(
             id = "workouts_1000",
@@ -153,7 +153,7 @@ object BadgeDefinitions {
             iconResource = "dumbbell",
             tier = PLATINUM,
             requirement = TotalWorkouts(1000),
-            isSecret = true
+            isSecret = true,
         ),
 
         // ==================== STRENGTH BADGES (PR-based) ====================
@@ -164,7 +164,7 @@ object BadgeDefinitions {
             category = STRENGTH,
             iconResource = "trophy",
             tier = BRONZE,
-            requirement = PRsAchieved(1)
+            requirement = PRsAchieved(1),
         ),
         Badge(
             id = "pr_5",
@@ -173,7 +173,7 @@ object BadgeDefinitions {
             category = STRENGTH,
             iconResource = "trophy",
             tier = BRONZE,
-            requirement = PRsAchieved(5)
+            requirement = PRsAchieved(5),
         ),
         Badge(
             id = "pr_10",
@@ -182,7 +182,7 @@ object BadgeDefinitions {
             category = STRENGTH,
             iconResource = "trophy",
             tier = SILVER,
-            requirement = PRsAchieved(10)
+            requirement = PRsAchieved(10),
         ),
         Badge(
             id = "pr_25",
@@ -191,7 +191,7 @@ object BadgeDefinitions {
             category = STRENGTH,
             iconResource = "trophy",
             tier = SILVER,
-            requirement = PRsAchieved(25)
+            requirement = PRsAchieved(25),
         ),
         Badge(
             id = "pr_50",
@@ -200,7 +200,7 @@ object BadgeDefinitions {
             category = STRENGTH,
             iconResource = "trophy",
             tier = GOLD,
-            requirement = PRsAchieved(50)
+            requirement = PRsAchieved(50),
         ),
         Badge(
             id = "pr_100",
@@ -209,7 +209,7 @@ object BadgeDefinitions {
             category = STRENGTH,
             iconResource = "trophy",
             tier = PLATINUM,
-            requirement = PRsAchieved(100)
+            requirement = PRsAchieved(100),
         ),
 
         // ==================== VOLUME BADGES (Rep count) ====================
@@ -220,7 +220,7 @@ object BadgeDefinitions {
             category = VOLUME,
             iconResource = "repeat",
             tier = BRONZE,
-            requirement = TotalReps(100)
+            requirement = TotalReps(100),
         ),
         Badge(
             id = "reps_500",
@@ -229,7 +229,7 @@ object BadgeDefinitions {
             category = VOLUME,
             iconResource = "repeat",
             tier = BRONZE,
-            requirement = TotalReps(500)
+            requirement = TotalReps(500),
         ),
         Badge(
             id = "reps_1000",
@@ -238,7 +238,7 @@ object BadgeDefinitions {
             category = VOLUME,
             iconResource = "repeat",
             tier = SILVER,
-            requirement = TotalReps(1000)
+            requirement = TotalReps(1000),
         ),
         Badge(
             id = "reps_5000",
@@ -247,7 +247,7 @@ object BadgeDefinitions {
             category = VOLUME,
             iconResource = "repeat",
             tier = SILVER,
-            requirement = TotalReps(5000)
+            requirement = TotalReps(5000),
         ),
         Badge(
             id = "reps_10000",
@@ -256,7 +256,7 @@ object BadgeDefinitions {
             category = VOLUME,
             iconResource = "repeat",
             tier = GOLD,
-            requirement = TotalReps(10000)
+            requirement = TotalReps(10000),
         ),
         Badge(
             id = "reps_50000",
@@ -265,7 +265,7 @@ object BadgeDefinitions {
             category = VOLUME,
             iconResource = "repeat",
             tier = GOLD,
-            requirement = TotalReps(50000)
+            requirement = TotalReps(50000),
         ),
         Badge(
             id = "reps_100000",
@@ -274,7 +274,7 @@ object BadgeDefinitions {
             category = VOLUME,
             iconResource = "repeat",
             tier = PLATINUM,
-            requirement = TotalReps(100000)
+            requirement = TotalReps(100000),
         ),
 
         // ==================== EXPLORER BADGES (Exercise variety) ====================
@@ -285,7 +285,7 @@ object BadgeDefinitions {
             category = EXPLORER,
             iconResource = "compass",
             tier = BRONZE,
-            requirement = UniqueExercises(5)
+            requirement = UniqueExercises(5),
         ),
         Badge(
             id = "exercises_10",
@@ -294,7 +294,7 @@ object BadgeDefinitions {
             category = EXPLORER,
             iconResource = "compass",
             tier = BRONZE,
-            requirement = UniqueExercises(10)
+            requirement = UniqueExercises(10),
         ),
         Badge(
             id = "exercises_20",
@@ -303,7 +303,7 @@ object BadgeDefinitions {
             category = EXPLORER,
             iconResource = "compass",
             tier = SILVER,
-            requirement = UniqueExercises(20)
+            requirement = UniqueExercises(20),
         ),
         Badge(
             id = "exercises_35",
@@ -312,7 +312,7 @@ object BadgeDefinitions {
             category = EXPLORER,
             iconResource = "compass",
             tier = SILVER,
-            requirement = UniqueExercises(35)
+            requirement = UniqueExercises(35),
         ),
         Badge(
             id = "exercises_50",
@@ -321,7 +321,7 @@ object BadgeDefinitions {
             category = EXPLORER,
             iconResource = "compass",
             tier = GOLD,
-            requirement = UniqueExercises(50)
+            requirement = UniqueExercises(50),
         ),
         Badge(
             id = "exercises_75",
@@ -330,7 +330,7 @@ object BadgeDefinitions {
             category = EXPLORER,
             iconResource = "compass",
             tier = PLATINUM,
-            requirement = UniqueExercises(75)
+            requirement = UniqueExercises(75),
         ),
 
         // ==================== SECRET BADGES (Hidden until earned) ====================
@@ -342,7 +342,7 @@ object BadgeDefinitions {
             iconResource = "sun",
             tier = GOLD,
             requirement = WorkoutAtTime(0, 6),
-            isSecret = true
+            isSecret = true,
         ),
         Badge(
             id = "night_owl",
@@ -352,7 +352,7 @@ object BadgeDefinitions {
             iconResource = "moon",
             tier = GOLD,
             requirement = WorkoutAtTime(22, 24),
-            isSecret = true
+            isSecret = true,
         ),
         Badge(
             id = "weekend_warrior",
@@ -362,7 +362,7 @@ object BadgeDefinitions {
             iconResource = "calendar",
             tier = SILVER,
             requirement = WorkoutsInWeek(5),
-            isSecret = true
+            isSecret = true,
         ),
         Badge(
             id = "marathon_session",
@@ -372,7 +372,7 @@ object BadgeDefinitions {
             iconResource = "weight",
             tier = GOLD,
             requirement = SingleWorkoutVolume(5000),
-            isSecret = true
+            isSecret = true,
         ),
 
         // ==================== LIFETIME VOLUME BADGES (Total kg lifted) ====================
@@ -383,7 +383,7 @@ object BadgeDefinitions {
             category = VOLUME,
             iconResource = "weight",
             tier = BRONZE,
-            requirement = TotalVolume(1_000)
+            requirement = TotalVolume(1_000),
         ),
         Badge(
             id = "volume_10000",
@@ -392,7 +392,7 @@ object BadgeDefinitions {
             category = VOLUME,
             iconResource = "weight",
             tier = BRONZE,
-            requirement = TotalVolume(10_000)
+            requirement = TotalVolume(10_000),
         ),
         Badge(
             id = "volume_50000",
@@ -401,7 +401,7 @@ object BadgeDefinitions {
             category = VOLUME,
             iconResource = "weight",
             tier = SILVER,
-            requirement = TotalVolume(50_000)
+            requirement = TotalVolume(50_000),
         ),
         Badge(
             id = "volume_100000",
@@ -410,7 +410,7 @@ object BadgeDefinitions {
             category = VOLUME,
             iconResource = "weight",
             tier = SILVER,
-            requirement = TotalVolume(100_000)
+            requirement = TotalVolume(100_000),
         ),
         Badge(
             id = "volume_200000",
@@ -419,7 +419,7 @@ object BadgeDefinitions {
             category = VOLUME,
             iconResource = "weight",
             tier = GOLD,
-            requirement = TotalVolume(200_000)
+            requirement = TotalVolume(200_000),
         ),
         Badge(
             id = "volume_500000",
@@ -428,7 +428,7 @@ object BadgeDefinitions {
             category = VOLUME,
             iconResource = "weight",
             tier = GOLD,
-            requirement = TotalVolume(500_000)
+            requirement = TotalVolume(500_000),
         ),
         Badge(
             id = "volume_1000000",
@@ -438,7 +438,7 @@ object BadgeDefinitions {
             iconResource = "weight",
             tier = PLATINUM,
             requirement = TotalVolume(1_000_000),
-            isSecret = true
+            isSecret = true,
         ),
 
         // ==================== WORKOUT MODE BADGES ====================
@@ -449,7 +449,7 @@ object BadgeDefinitions {
             category = DEDICATION,
             iconResource = "dumbbell",
             tier = SILVER,
-            requirement = WorkoutModeCount("Old School", 25)
+            requirement = WorkoutModeCount("Old School", 25),
         ),
         Badge(
             id = "mode_pump_25",
@@ -458,7 +458,7 @@ object BadgeDefinitions {
             category = DEDICATION,
             iconResource = "dumbbell",
             tier = SILVER,
-            requirement = WorkoutModeCount("Pump", 25)
+            requirement = WorkoutModeCount("Pump", 25),
         ),
         Badge(
             id = "mode_tut_25",
@@ -467,7 +467,7 @@ object BadgeDefinitions {
             category = DEDICATION,
             iconResource = "dumbbell",
             tier = SILVER,
-            requirement = WorkoutModeCount("TUT", 25)
+            requirement = WorkoutModeCount("TUT", 25),
         ),
         Badge(
             id = "mode_tutbeast_25",
@@ -476,7 +476,7 @@ object BadgeDefinitions {
             category = DEDICATION,
             iconResource = "dumbbell",
             tier = GOLD,
-            requirement = WorkoutModeCount("TUT Beast", 25)
+            requirement = WorkoutModeCount("TUT Beast", 25),
         ),
         Badge(
             id = "mode_eccentric_25",
@@ -485,7 +485,7 @@ object BadgeDefinitions {
             category = DEDICATION,
             iconResource = "dumbbell",
             tier = SILVER,
-            requirement = WorkoutModeCount("Eccentric Only", 25)
+            requirement = WorkoutModeCount("Eccentric Only", 25),
         ),
         Badge(
             id = "mode_echo_25",
@@ -494,7 +494,7 @@ object BadgeDefinitions {
             category = DEDICATION,
             iconResource = "dumbbell",
             tier = SILVER,
-            requirement = WorkoutModeCount("Echo", 25)
+            requirement = WorkoutModeCount("Echo", 25),
         ),
         Badge(
             id = "mode_explorer",
@@ -504,7 +504,7 @@ object BadgeDefinitions {
             iconResource = "compass",
             tier = GOLD,
             requirement = AllWorkoutModes,
-            isSecret = true
+            isSecret = true,
         ),
 
         // ==================== POWER BADGES ====================
@@ -515,7 +515,7 @@ object BadgeDefinitions {
             category = STRENGTH,
             iconResource = "lightning",
             tier = SILVER,
-            requirement = PeakPower(500)
+            requirement = PeakPower(500),
         ),
         Badge(
             id = "power_750",
@@ -524,7 +524,7 @@ object BadgeDefinitions {
             category = STRENGTH,
             iconResource = "lightning",
             tier = GOLD,
-            requirement = PeakPower(750)
+            requirement = PeakPower(750),
         ),
         Badge(
             id = "power_1000",
@@ -534,7 +534,7 @@ object BadgeDefinitions {
             iconResource = "lightning",
             tier = PLATINUM,
             requirement = PeakPower(1000),
-            isSecret = true
+            isSecret = true,
         ),
 
         // ==================== MUSCLE GROUP BADGES ====================
@@ -545,7 +545,7 @@ object BadgeDefinitions {
             category = EXPLORER,
             iconResource = "body",
             tier = BRONZE,
-            requirement = UniqueMuscleGroups(6)
+            requirement = UniqueMuscleGroups(6),
         ),
         Badge(
             id = "muscles_12",
@@ -554,7 +554,7 @@ object BadgeDefinitions {
             category = EXPLORER,
             iconResource = "body",
             tier = GOLD,
-            requirement = UniqueMuscleGroups(12)
+            requirement = UniqueMuscleGroups(12),
         ),
 
         // ==================== COMEBACK/RESILIENCE BADGES ====================
@@ -566,7 +566,7 @@ object BadgeDefinitions {
             iconResource = "phoenix",
             tier = SILVER,
             requirement = ComebackAfterBreak(7),
-            isSecret = true
+            isSecret = true,
         ),
         Badge(
             id = "streak_saved",
@@ -576,7 +576,7 @@ object BadgeDefinitions {
             iconResource = "shield",
             tier = SILVER,
             requirement = StreakSaved,
-            isSecret = true
+            isSecret = true,
         ),
         Badge(
             id = "streak_rebuilt_7",
@@ -586,7 +586,7 @@ object BadgeDefinitions {
             iconResource = "fire",
             tier = GOLD,
             requirement = StreakRebuilt(7),
-            isSecret = true
+            isSecret = true,
         ),
 
         // ==================== ADDITIONAL TIME-BASED BADGES ====================
@@ -597,7 +597,7 @@ object BadgeDefinitions {
             category = DEDICATION,
             iconResource = "sun",
             tier = GOLD,
-            requirement = WorkoutsAtTimeCount(0, 7, 10)
+            requirement = WorkoutsAtTimeCount(0, 7, 10),
         ),
         Badge(
             id = "lunch_lifter",
@@ -607,7 +607,7 @@ object BadgeDefinitions {
             iconResource = "sun",
             tier = BRONZE,
             requirement = WorkoutAtTime(11, 13),
-            isSecret = true
+            isSecret = true,
         ),
         Badge(
             id = "weekend_workouts_10",
@@ -616,7 +616,7 @@ object BadgeDefinitions {
             category = DEDICATION,
             iconResource = "calendar",
             tier = GOLD,
-            requirement = WeekendWorkouts(10)
+            requirement = WeekendWorkouts(10),
         ),
 
         // ==================== ROUTINE BADGES ====================
@@ -627,7 +627,7 @@ object BadgeDefinitions {
             category = DEDICATION,
             iconResource = "list",
             tier = SILVER,
-            requirement = RoutinesCompleted(10)
+            requirement = RoutinesCompleted(10),
         ),
         Badge(
             id = "routines_completed_50",
@@ -636,7 +636,7 @@ object BadgeDefinitions {
             category = DEDICATION,
             iconResource = "list",
             tier = GOLD,
-            requirement = RoutinesCompleted(50)
+            requirement = RoutinesCompleted(50),
         ),
         Badge(
             id = "routines_created_5",
@@ -645,7 +645,7 @@ object BadgeDefinitions {
             category = EXPLORER,
             iconResource = "list",
             tier = SILVER,
-            requirement = RoutinesCreated(5)
+            requirement = RoutinesCreated(5),
         ),
 
         // ==================== INTERMEDIATE MILESTONES (Fill gaps) ====================
@@ -656,7 +656,7 @@ object BadgeDefinitions {
             category = CONSISTENCY,
             iconResource = "fire",
             tier = GOLD,
-            requirement = StreakDays(45)
+            requirement = StreakDays(45),
         ),
         Badge(
             id = "workouts_75",
@@ -665,7 +665,7 @@ object BadgeDefinitions {
             category = DEDICATION,
             iconResource = "dumbbell",
             tier = SILVER,
-            requirement = TotalWorkouts(75)
+            requirement = TotalWorkouts(75),
         ),
         Badge(
             id = "workouts_150",
@@ -674,7 +674,7 @@ object BadgeDefinitions {
             category = DEDICATION,
             iconResource = "dumbbell",
             tier = GOLD,
-            requirement = TotalWorkouts(150)
+            requirement = TotalWorkouts(150),
         ),
 
         // ==================== FORM MASTER BADGES (Quality streak) ====================
@@ -685,7 +685,7 @@ object BadgeDefinitions {
             category = CONSISTENCY,
             iconResource = "fire",
             tier = BRONZE,
-            requirement = QualityStreak(sets = 3, minScore = 85)
+            requirement = QualityStreak(sets = 3, minScore = 85),
         ),
         Badge(
             id = "form_master_silver",
@@ -694,7 +694,7 @@ object BadgeDefinitions {
             category = CONSISTENCY,
             iconResource = "fire",
             tier = SILVER,
-            requirement = QualityStreak(sets = 5, minScore = 85)
+            requirement = QualityStreak(sets = 5, minScore = 85),
         ),
         Badge(
             id = "form_master_gold",
@@ -703,8 +703,8 @@ object BadgeDefinitions {
             category = CONSISTENCY,
             iconResource = "fire",
             tier = GOLD,
-            requirement = QualityStreak(sets = 10, minScore = 90)
-        )
+            requirement = QualityStreak(sets = 10, minScore = 90),
+        ),
     )
 
     /**
@@ -715,14 +715,12 @@ object BadgeDefinitions {
     /**
      * Get badges by category
      */
-    fun getBadgesByCategory(category: BadgeCategory): List<Badge> =
-        allBadges.filter { it.category == category }
+    fun getBadgesByCategory(category: BadgeCategory): List<Badge> = allBadges.filter { it.category == category }
 
     /**
      * Get badges by tier
      */
-    fun getBadgesByTier(tier: BadgeTier): List<Badge> =
-        allBadges.filter { it.tier == tier }
+    fun getBadgesByTier(tier: BadgeTier): List<Badge> = allBadges.filter { it.tier == tier }
 
     /**
      * Get non-secret badges (visible when locked)

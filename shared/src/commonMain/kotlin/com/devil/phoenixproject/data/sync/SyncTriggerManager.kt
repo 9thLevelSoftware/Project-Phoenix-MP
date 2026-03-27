@@ -3,10 +3,10 @@ package com.devil.phoenixproject.data.sync
 import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.util.ConnectivityChecker
 import com.devil.phoenixproject.util.withPlatformLock
+import kotlin.time.Clock
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlin.time.Clock
 
 /**
  * Manages automatic sync triggers with throttling and failure tracking.
@@ -25,10 +25,7 @@ import kotlin.time.Clock
  * - Exposes hasPersistentError after 3 failures
  * - Resets on successful sync
  */
-class SyncTriggerManager(
-    private val syncManager: SyncManager,
-    private val connectivityChecker: ConnectivityChecker
-) {
+class SyncTriggerManager(private val syncManager: SyncManager, private val connectivityChecker: ConnectivityChecker) {
     companion object {
         private const val THROTTLE_MILLIS = 5 * 60 * 1000L // 5 minutes
         private const val MAX_CONSECUTIVE_FAILURES = 3
@@ -116,7 +113,9 @@ class SyncTriggerManager(
             Logger.w { "SyncTrigger: Sync failed (attempt $failures)" }
             if (failures >= MAX_CONSECUTIVE_FAILURES) {
                 _hasPersistentError.value = true
-                Logger.e { "SyncTrigger: Persistent error - $MAX_CONSECUTIVE_FAILURES consecutive failures" }
+                Logger.e {
+                    "SyncTrigger: Persistent error - $MAX_CONSECUTIVE_FAILURES consecutive failures"
+                }
             }
         }
     }

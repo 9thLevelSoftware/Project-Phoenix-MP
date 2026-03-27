@@ -12,36 +12,31 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.domain.model.CycleItem
 import org.jetbrains.compose.resources.stringResource
-import vitruvianprojectphoenix.shared.generated.resources.Res
 import vitruvianprojectphoenix.shared.generated.resources.*
+import vitruvianprojectphoenix.shared.generated.resources.Res
 
 @Composable
-fun RestDayRow(
-    rest: CycleItem.Rest,
-    onTap: (() -> Unit)? = null,
-    dragModifier: Modifier = Modifier,
-    modifier: Modifier = Modifier
-) {
+fun RestDayRow(rest: CycleItem.Rest, onTap: (() -> Unit)? = null, dragModifier: Modifier = Modifier, modifier: Modifier = Modifier) {
     Card(
         modifier = modifier.fillMaxWidth().let { m ->
             if (onTap != null) m.clickable(onClick = onTap) else m
         },
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.15f)
-        )
+            containerColor = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.15f),
+        ),
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 12.dp, vertical = 14.dp),
-            verticalAlignment = Alignment.CenterVertically
+            verticalAlignment = Alignment.CenterVertically,
         ) {
             // Drag handle
             Icon(
                 imageVector = Icons.Default.DragHandle,
                 contentDescription = stringResource(Res.string.cd_reorder),
                 modifier = dragModifier.size(24.dp),
-                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
             )
 
             Spacer(modifier = Modifier.width(12.dp))
@@ -51,14 +46,14 @@ fun RestDayRow(
                 text = "Day ${rest.dayNumber}: ${rest.note ?: "Rest"}",
                 style = MaterialTheme.typography.bodyLarge,
                 color = MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier.weight(1f)
+                modifier = Modifier.weight(1f),
             )
 
             // Moon icon
             Icon(
                 imageVector = Icons.Default.NightsStay,
                 contentDescription = stringResource(Res.string.cd_rest_day),
-                tint = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.7f)
+                tint = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.7f),
             )
         }
     }

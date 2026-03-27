@@ -9,7 +9,7 @@ enum class RpgAttribute(val displayName: String, val description: String) {
     POWER("Power", "Explosive force generation"),
     STAMINA("Stamina", "Training volume endurance"),
     CONSISTENCY("Consistency", "Training regularity"),
-    MASTERY("Mastery", "Exercise variety and technique")
+    MASTERY("Mastery", "Exercise variety and technique"),
 }
 
 /**
@@ -21,7 +21,7 @@ enum class CharacterClass(val displayName: String, val description: String) {
     ATHLETE("Athlete", "Dominant in explosive power"),
     IRONMAN("Ironman", "Dominant in volume endurance"),
     MONK("Monk", "Dominant in training discipline"),
-    PHOENIX("Phoenix", "Balanced across all attributes")
+    PHOENIX("Phoenix", "Balanced across all attributes"),
 }
 
 /**
@@ -35,7 +35,7 @@ data class RpgProfile(
     val consistency: Int,
     val mastery: Int,
     val characterClass: CharacterClass,
-    val lastComputed: Long = 0
+    val lastComputed: Long = 0,
 ) {
     companion object {
         val EMPTY = RpgProfile(0, 0, 0, 0, 0, CharacterClass.PHOENIX)
@@ -59,5 +59,5 @@ data class RpgInput(
     val currentStreak: Int,
     val longestStreak: Int,
     val trainingDays: Int,
-    val badgesEarned: Int
+    val badgesEarned: Int,
 )

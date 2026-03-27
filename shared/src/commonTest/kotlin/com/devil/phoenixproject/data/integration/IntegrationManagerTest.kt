@@ -7,12 +7,12 @@ import com.devil.phoenixproject.domain.model.ConnectionStatus
 import com.devil.phoenixproject.domain.model.IntegrationProvider
 import com.devil.phoenixproject.testutil.FakeExternalActivityRepository
 import com.devil.phoenixproject.testutil.FakePortalApiClient
-import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
+import kotlinx.coroutines.test.runTest
 
 /**
  * Unit tests for [IntegrationManager].
@@ -26,7 +26,7 @@ class IntegrationManagerTest {
 
     private fun createManager() = IntegrationManager(
         apiClient = fakeApi,
-        repository = fakeRepo
+        repository = fakeRepo,
     )
 
     // ===== connectProvider — happy path (paid user) =====
@@ -41,16 +41,16 @@ class IntegrationManagerTest {
                         externalId = "hevy-1",
                         provider = "hevy",
                         name = "Push Day",
-                        startedAt = "2026-03-20T10:00:00Z"
+                        startedAt = "2026-03-20T10:00:00Z",
                     ),
                     IntegrationActivityDto(
                         externalId = "hevy-2",
                         provider = "hevy",
                         name = "Pull Day",
-                        startedAt = "2026-03-21T10:00:00Z"
-                    )
-                )
-            )
+                        startedAt = "2026-03-21T10:00:00Z",
+                    ),
+                ),
+            ),
         )
         val manager = createManager()
 
@@ -58,14 +58,24 @@ class IntegrationManagerTest {
             provider = IntegrationProvider.HEVY,
             apiKey = "test-api-key",
             profileId = "profile-1",
-            isPaidUser = true
+            isPaidUser = true,
         )
 
         assertTrue(result.isSuccess, "Connect should succeed")
         val activities = result.getOrThrow()
         assertEquals(2, activities.size, "Should return 2 activities")
-        assertTrue(activities.all { it.needsSync }, "Paid user activities should have needsSync=true")
-        assertTrue(activities.all { it.provider == IntegrationProvider.HEVY }, "Provider should be HEVY")
+        assertTrue(
+            activities.all {
+                it.needsSync
+            },
+            "Paid user activities should have needsSync=true",
+        )
+        assertTrue(
+            activities.all {
+                it.provider == IntegrationProvider.HEVY
+            },
+            "Provider should be HEVY",
+        )
         assertTrue(activities.all { it.profileId == "profile-1" }, "ProfileId should match")
 
         // Verify activities were upserted to the repository
@@ -100,10 +110,10 @@ class IntegrationManagerTest {
                         externalId = "lift-1",
                         provider = "liftosaur",
                         name = "Leg Day",
-                        startedAt = "2026-03-20T14:00:00Z"
-                    )
-                )
-            )
+                        startedAt = "2026-03-20T14:00:00Z",
+                    ),
+                ),
+            ),
         )
         val manager = createManager()
 
@@ -111,13 +121,16 @@ class IntegrationManagerTest {
             provider = IntegrationProvider.LIFTOSAUR,
             apiKey = "free-key",
             profileId = "profile-free",
-            isPaidUser = false
+            isPaidUser = false,
         )
 
         assertTrue(result.isSuccess)
         val activities = result.getOrThrow()
         assertEquals(1, activities.size)
-        assertFalse(activities.single().needsSync, "Free user activities should have needsSync=false")
+        assertFalse(
+            activities.single().needsSync,
+            "Free user activities should have needsSync=false",
+        )
 
         // Status should still be CONNECTED
         val statusUpdate = fakeRepo.statusUpdates.last()
@@ -131,8 +144,8 @@ class IntegrationManagerTest {
         fakeApi.integrationSyncResult = Result.success(
             IntegrationSyncResponse(
                 status = "error",
-                error = "Invalid API key"
-            )
+                error = "Invalid API key",
+            ),
         )
         val manager = createManager()
 
@@ -140,7 +153,7 @@ class IntegrationManagerTest {
             provider = IntegrationProvider.HEVY,
             apiKey = "bad-key",
             profileId = "profile-1",
-            isPaidUser = true
+            isPaidUser = true,
         )
 
         assertTrue(result.isFailure, "Connect should fail when API returns error status")
@@ -162,7 +175,7 @@ class IntegrationManagerTest {
     @Test
     fun connectProviderNetworkFailureSetsStatusToError() = runTest {
         fakeApi.integrationSyncResult = Result.failure(
-            PortalApiException("Network timeout", null, 500)
+            PortalApiException("Network timeout", null, 500),
         )
         val manager = createManager()
 
@@ -170,7 +183,7 @@ class IntegrationManagerTest {
             provider = IntegrationProvider.LIFTOSAUR,
             apiKey = "some-key",
             profileId = "profile-1",
-            isPaidUser = true
+            isPaidUser = true,
         )
 
         assertTrue(result.isFailure)
@@ -196,17 +209,17 @@ class IntegrationManagerTest {
                         name = "Shoulder Press",
                         startedAt = "2026-03-22T09:00:00Z",
                         durationSeconds = 3600,
-                        calories = 250
-                    )
-                )
-            )
+                        calories = 250,
+                    ),
+                ),
+            ),
         )
         val manager = createManager()
 
         val result = manager.syncProvider(
             provider = IntegrationProvider.HEVY,
             profileId = "profile-1",
-            isPaidUser = true
+            isPaidUser = true,
         )
 
         assertTrue(result.isSuccess)
@@ -241,15 +254,15 @@ class IntegrationManagerTest {
         fakeApi.integrationSyncResult = Result.success(
             IntegrationSyncResponse(
                 status = "ok",
-                activities = emptyList()
-            )
+                activities = emptyList(),
+            ),
         )
         val manager = createManager()
 
         val result = manager.syncProvider(
             provider = IntegrationProvider.HEVY,
             profileId = "profile-1",
-            isPaidUser = true
+            isPaidUser = true,
         )
 
         assertTrue(result.isSuccess)
@@ -275,7 +288,7 @@ class IntegrationManagerTest {
             name = "Push Day",
             startedAt = 1000L,
             profileId = "profile-1",
-            needsSync = true
+            needsSync = true,
         )
         fakeRepo.activities += com.devil.phoenixproject.domain.model.ExternalActivity(
             externalId = "hevy-2",
@@ -283,7 +296,7 @@ class IntegrationManagerTest {
             name = "Pull Day",
             startedAt = 2000L,
             profileId = "profile-1",
-            needsSync = false
+            needsSync = false,
         )
         // Also add an activity from a different provider that should NOT be deleted
         fakeRepo.activities += com.devil.phoenixproject.domain.model.ExternalActivity(
@@ -292,17 +305,17 @@ class IntegrationManagerTest {
             name = "Leg Day",
             startedAt = 3000L,
             profileId = "profile-1",
-            needsSync = true
+            needsSync = true,
         )
 
         fakeApi.integrationSyncResult = Result.success(
-            IntegrationSyncResponse(status = "ok")
+            IntegrationSyncResponse(status = "ok"),
         )
         val manager = createManager()
 
         val result = manager.disconnectProvider(
             provider = IntegrationProvider.HEVY,
-            profileId = "profile-1"
+            profileId = "profile-1",
         )
 
         assertTrue(result.isSuccess)
@@ -331,24 +344,27 @@ class IntegrationManagerTest {
             provider = IntegrationProvider.HEVY,
             name = "Push Day",
             startedAt = 1000L,
-            profileId = "profile-1"
+            profileId = "profile-1",
         )
 
         fakeApi.integrationSyncResult = Result.failure(
-            PortalApiException("Server down", null, 503)
+            PortalApiException("Server down", null, 503),
         )
         val manager = createManager()
 
         val result = manager.disconnectProvider(
             provider = IntegrationProvider.HEVY,
-            profileId = "profile-1"
+            profileId = "profile-1",
         )
 
         // Disconnect should still succeed (portal failure is non-critical)
         assertTrue(result.isSuccess, "Disconnect should succeed even when API call fails")
 
         // Local cleanup should still happen
-        assertTrue(fakeRepo.activities.isEmpty(), "Activities should be deleted despite API failure")
+        assertTrue(
+            fakeRepo.activities.isEmpty(),
+            "Activities should be deleted despite API failure",
+        )
         val statusUpdate = fakeRepo.statusUpdates.last()
         assertEquals(ConnectionStatus.DISCONNECTED, statusUpdate.status)
     }
@@ -362,8 +378,8 @@ class IntegrationManagerTest {
         fakeApi.integrationSyncResult = Result.success(
             IntegrationSyncResponse(
                 status = "error",
-                error = "API key is required"
-            )
+                error = "API key is required",
+            ),
         )
         val manager = createManager()
 
@@ -371,7 +387,7 @@ class IntegrationManagerTest {
             provider = IntegrationProvider.HEVY,
             apiKey = "",
             profileId = "profile-1",
-            isPaidUser = true
+            isPaidUser = true,
         )
 
         assertTrue(result.isFailure, "Connect with empty API key should fail")
@@ -405,10 +421,10 @@ class IntegrationManagerTest {
                         avgHeartRate = 145,
                         maxHeartRate = 175,
                         elevationGainMeters = 50.0,
-                        rawData = """{"source":"hevy"}"""
-                    )
-                )
-            )
+                        rawData = """{"source":"hevy"}""",
+                    ),
+                ),
+            ),
         )
         val manager = createManager()
 
@@ -416,7 +432,7 @@ class IntegrationManagerTest {
             provider = IntegrationProvider.HEVY,
             apiKey = "key",
             profileId = "profile-1",
-            isPaidUser = false
+            isPaidUser = false,
         )
 
         assertTrue(result.isSuccess)
@@ -441,15 +457,15 @@ class IntegrationManagerTest {
         fakeApi.integrationSyncResult = Result.success(
             IntegrationSyncResponse(
                 status = "error",
-                error = "Token expired"
-            )
+                error = "Token expired",
+            ),
         )
         val manager = createManager()
 
         val result = manager.syncProvider(
             provider = IntegrationProvider.LIFTOSAUR,
             profileId = "profile-1",
-            isPaidUser = true
+            isPaidUser = true,
         )
 
         assertTrue(result.isFailure)

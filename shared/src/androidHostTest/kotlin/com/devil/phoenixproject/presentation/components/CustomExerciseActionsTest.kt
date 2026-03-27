@@ -2,11 +2,11 @@ package com.devil.phoenixproject.presentation.components
 
 import com.devil.phoenixproject.domain.model.Exercise
 import com.devil.phoenixproject.testutil.FakeExerciseRepository
+import kotlin.test.assertEquals
+import kotlin.test.assertIs
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import org.junit.Test
-import kotlin.test.assertEquals
-import kotlin.test.assertIs
 
 class CustomExerciseActionsTest {
 
@@ -17,12 +17,12 @@ class CustomExerciseActionsTest {
             muscleGroup = "Chest",
             muscleGroups = "Chest",
             equipment = "",
-            isCustom = true
+            isCustom = true,
         )
 
         val action = resolveCustomExerciseSaveAction(
             draftExercise = draft,
-            editingExerciseId = "custom_123"
+            editingExerciseId = "custom_123",
         )
 
         val update = assertIs<CustomExerciseSaveAction.Update>(action)
@@ -40,8 +40,8 @@ class CustomExerciseActionsTest {
                 muscleGroup = "Chest",
                 muscleGroups = "Chest",
                 equipment = "",
-                isCustom = true
-            )
+                isCustom = true,
+            ),
         )
 
         var exerciseToEditId: String? = "custom_1"
@@ -54,9 +54,9 @@ class CustomExerciseActionsTest {
                 muscleGroup = "Chest",
                 muscleGroups = "Chest",
                 equipment = "",
-                isCustom = true
+                isCustom = true,
             ),
-            editingExerciseId = capturedEditId
+            editingExerciseId = capturedEditId,
         )
 
         when (action) {
@@ -81,8 +81,8 @@ class CustomExerciseActionsTest {
                 muscleGroup = "Chest",
                 muscleGroups = "Chest",
                 equipment = "",
-                isCustom = true
-            )
+                isCustom = true,
+            ),
         )
 
         var exerciseToEditId: String? = "custom_1"
@@ -97,4 +97,3 @@ class CustomExerciseActionsTest {
         assertEquals(null, exerciseToEditId)
     }
 }
-

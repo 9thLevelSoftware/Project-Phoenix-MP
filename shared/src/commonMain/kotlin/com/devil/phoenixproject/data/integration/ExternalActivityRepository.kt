@@ -5,10 +5,7 @@ import com.devil.phoenixproject.domain.model.IntegrationProvider
 import com.devil.phoenixproject.domain.model.IntegrationStatus
 import kotlinx.coroutines.flow.Flow
 
-data class ExternalActivitySyncKey(
-    val externalId: String,
-    val provider: IntegrationProvider
-)
+data class ExternalActivitySyncKey(val externalId: String, val provider: IntegrationProvider)
 
 /**
  * Repository for external activity data from third-party integrations (Hevy, Liftosaur, Strong, etc.)
@@ -73,6 +70,6 @@ interface ExternalActivityRepository {
         status: com.devil.phoenixproject.domain.model.ConnectionStatus,
         profileId: String,
         lastSyncAt: Long? = null,
-        errorMessage: String? = null
+        errorMessage: String? = null,
     )
 }

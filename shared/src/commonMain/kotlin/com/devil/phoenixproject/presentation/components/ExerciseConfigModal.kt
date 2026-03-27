@@ -20,8 +20,8 @@ import com.devil.phoenixproject.domain.model.ExerciseConfig
 import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.ui.theme.Spacing
 import org.jetbrains.compose.resources.stringResource
-import vitruvianprojectphoenix.shared.generated.resources.Res
 import vitruvianprojectphoenix.shared.generated.resources.*
+import vitruvianprojectphoenix.shared.generated.resources.Res
 
 /**
  * Modal dialog for configuring a single exercise's mode and mode-specific settings.
@@ -45,7 +45,7 @@ fun ExerciseConfigModal(
     prWeight: Float? = null,
     initialConfig: ExerciseConfig,
     onConfirm: (ExerciseConfig) -> Unit,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
 ) {
     var config by remember { mutableStateOf(initialConfig) }
 
@@ -56,19 +56,19 @@ fun ExerciseConfigModal(
                 .wrapContentHeight(),
             shape = RoundedCornerShape(Spacing.large),
             color = MaterialTheme.colorScheme.surfaceContainer,
-            tonalElevation = 6.dp
+            tonalElevation = 6.dp,
         ) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .verticalScroll(rememberScrollState())
+                    .verticalScroll(rememberScrollState()),
             ) {
                 // Header
                 ExerciseConfigHeader(
                     exerciseName = exerciseName,
                     templateSets = templateSets,
                     templateReps = templateReps,
-                    oneRepMaxKg = oneRepMaxKg
+                    oneRepMaxKg = oneRepMaxKg,
                 )
 
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
@@ -79,7 +79,7 @@ fun ExerciseConfigModal(
                         selectedMode = config.mode,
                         onModeSelected = { newMode ->
                             config = config.copy(mode = newMode)
-                        }
+                        },
                     )
                 }
 
@@ -90,13 +90,13 @@ fun ExerciseConfigModal(
                     targetState = config.mode,
                     transitionSpec = {
                         fadeIn() + slideInVertically { it / 4 } togetherWith
-                        fadeOut() + slideOutVertically { -it / 4 }
+                            fadeOut() + slideOutVertically { -it / 4 }
                     },
-                    label = "mode_panel"
+                    label = "mode_panel",
                 ) { mode ->
                     Column(
                         modifier = Modifier.padding(Spacing.medium),
-                        verticalArrangement = Arrangement.spacedBy(Spacing.medium)
+                        verticalArrangement = Arrangement.spacedBy(Spacing.medium),
                     ) {
                         // For TUT/TUTBeast, we show the same panel with Beast Mode toggle
                         val effectiveMode = if (mode == ProgramMode.TUTBeast) ProgramMode.TUT else mode
@@ -105,37 +105,42 @@ fun ExerciseConfigModal(
                             ProgramMode.OldSchool -> OldSchoolConfigPanel(
                                 weight = config.weightPerCableKg,
                                 onWeightChange = { config = config.copy(weightPerCableKg = it) },
-                                prWeight = prWeight
+                                prWeight = prWeight,
                             )
+
                             ProgramMode.TUT -> TutConfigPanel(
                                 weight = config.weightPerCableKg,
                                 onWeightChange = { config = config.copy(weightPerCableKg = it) },
                                 isBeastMode = config.mode == ProgramMode.TUTBeast,
                                 onBeastModeChange = { enabled ->
                                     config = config.copy(
-                                        mode = if (enabled) ProgramMode.TUTBeast else ProgramMode.TUT
+                                        mode = if (enabled) ProgramMode.TUTBeast else ProgramMode.TUT,
                                     )
                                 },
-                                prWeight = prWeight
+                                prWeight = prWeight,
                             )
+
                             ProgramMode.TUTBeast -> { /* Handled by TUT case above */ }
+
                             ProgramMode.Pump -> PumpConfigPanel(
                                 weight = config.weightPerCableKg,
                                 onWeightChange = { config = config.copy(weightPerCableKg = it) },
-                                prWeight = prWeight
+                                prWeight = prWeight,
                             )
+
                             ProgramMode.EccentricOnly -> EccentricConfigPanel(
                                 weight = config.weightPerCableKg,
                                 onWeightChange = { config = config.copy(weightPerCableKg = it) },
                                 eccentricPercent = config.eccentricLoadPercent,
                                 onEccentricPercentChange = { config = config.copy(eccentricLoadPercent = it) },
-                                prWeight = prWeight
+                                prWeight = prWeight,
                             )
+
                             ProgramMode.Echo -> EchoConfigPanel(
                                 echoLevel = config.echoLevel,
                                 onEchoLevelChange = { config = config.copy(echoLevel = it) },
                                 eccentricPercent = config.eccentricLoadPercent,
-                                onEccentricPercentChange = { config = config.copy(eccentricLoadPercent = it) }
+                                onEccentricPercentChange = { config = config.copy(eccentricLoadPercent = it) },
                             )
                         }
                     }
@@ -148,18 +153,18 @@ fun ExerciseConfigModal(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(Spacing.medium),
-                    horizontalArrangement = Arrangement.spacedBy(Spacing.small)
+                    horizontalArrangement = Arrangement.spacedBy(Spacing.small),
                 ) {
                     OutlinedButton(
                         onClick = onDismiss,
-                        modifier = Modifier.weight(1f)
+                        modifier = Modifier.weight(1f),
                     ) {
                         Text(stringResource(Res.string.action_cancel))
                     }
 
                     Button(
                         onClick = { onConfirm(config) },
-                        modifier = Modifier.weight(1f)
+                        modifier = Modifier.weight(1f),
                     ) {
                         Text(stringResource(Res.string.action_apply))
                     }
@@ -170,23 +175,18 @@ fun ExerciseConfigModal(
 }
 
 @Composable
-private fun ExerciseConfigHeader(
-    exerciseName: String,
-    templateSets: Int,
-    templateReps: Int?,
-    oneRepMaxKg: Float?
-) {
+private fun ExerciseConfigHeader(exerciseName: String, templateSets: Int, templateReps: Int?, oneRepMaxKg: Float?) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .background(MaterialTheme.colorScheme.surfaceContainerHigh)
-            .padding(Spacing.medium)
+            .padding(Spacing.medium),
     ) {
         Text(
             text = exerciseName,
             style = MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.onSurface
+            color = MaterialTheme.colorScheme.onSurface,
         )
 
         Spacer(modifier = Modifier.height(Spacing.extraSmall))
@@ -205,18 +205,18 @@ private fun ExerciseConfigHeader(
 private fun MetaChip(label: String, value: String) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(Spacing.extraSmall)
+        horizontalArrangement = Arrangement.spacedBy(Spacing.extraSmall),
     ) {
         Text(
             text = label,
             style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Text(
             text = value,
             style = MaterialTheme.typography.labelMedium,
             fontWeight = FontWeight.SemiBold,
-            color = MaterialTheme.colorScheme.primary
+            color = MaterialTheme.colorScheme.primary,
         )
     }
 }
@@ -224,20 +224,16 @@ private fun MetaChip(label: String, value: String) {
 // ==================== MODE-SPECIFIC PANELS ====================
 
 @Composable
-private fun OldSchoolConfigPanel(
-    weight: Float,
-    onWeightChange: (Float) -> Unit,
-    prWeight: Float? = null
-) {
+private fun OldSchoolConfigPanel(weight: Float, onWeightChange: (Float) -> Unit, prWeight: Float? = null) {
     WeightStepper(
         weight = weight,
         onWeightChange = onWeightChange,
         label = stringResource(Res.string.starting_weight),
-        prWeight = prWeight
+        prWeight = prWeight,
     )
     ModeInfoCard(
         title = stringResource(Res.string.mode_old_school),
-        description = stringResource(Res.string.config_mode_old_school_desc)
+        description = stringResource(Res.string.config_mode_old_school_desc),
     )
 }
 
@@ -247,7 +243,7 @@ private fun TutConfigPanel(
     onWeightChange: (Float) -> Unit,
     isBeastMode: Boolean,
     onBeastModeChange: (Boolean) -> Unit,
-    prWeight: Float? = null
+    prWeight: Float? = null,
 ) {
     WeightStepper(weight = weight, onWeightChange = onWeightChange, label = stringResource(Res.string.starting_weight), prWeight = prWeight)
 
@@ -255,19 +251,25 @@ private fun TutConfigPanel(
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
+        verticalAlignment = Alignment.CenterVertically,
     ) {
         Column {
             Text(
                 text = stringResource(Res.string.config_beast_mode),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                letterSpacing = 1.sp
+                letterSpacing = 1.sp,
             )
             Text(
-                text = if (isBeastMode) stringResource(Res.string.config_extended_difficulty) else stringResource(Res.string.config_standard_tut),
+                text = if (isBeastMode) {
+                    stringResource(
+                        Res.string.config_extended_difficulty,
+                    )
+                } else {
+                    stringResource(Res.string.config_standard_tut)
+                },
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
             )
         }
         Switch(
@@ -277,31 +279,33 @@ private fun TutConfigPanel(
                 checkedThumbColor = MaterialTheme.colorScheme.primary,
                 checkedTrackColor = MaterialTheme.colorScheme.primaryContainer,
                 uncheckedThumbColor = MaterialTheme.colorScheme.outline,
-                uncheckedTrackColor = MaterialTheme.colorScheme.surfaceContainerHighest
-            )
+                uncheckedTrackColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+            ),
         )
     }
 
     ModeInfoCard(
-        title = if (isBeastMode) stringResource(Res.string.config_mode_tut_beast_title) else stringResource(Res.string.config_mode_tut_title),
+        title = if (isBeastMode) {
+            stringResource(
+                Res.string.config_mode_tut_beast_title,
+            )
+        } else {
+            stringResource(Res.string.config_mode_tut_title)
+        },
         description = if (isBeastMode) {
             stringResource(Res.string.config_mode_tut_beast_desc)
         } else {
             stringResource(Res.string.config_mode_tut_desc)
-        }
+        },
     )
 }
 
 @Composable
-private fun PumpConfigPanel(
-    weight: Float,
-    onWeightChange: (Float) -> Unit,
-    prWeight: Float? = null
-) {
+private fun PumpConfigPanel(weight: Float, onWeightChange: (Float) -> Unit, prWeight: Float? = null) {
     WeightStepper(weight = weight, onWeightChange = onWeightChange, label = stringResource(Res.string.starting_weight), prWeight = prWeight)
     ModeInfoCard(
         title = stringResource(Res.string.config_mode_pump_title),
-        description = stringResource(Res.string.config_mode_pump_desc)
+        description = stringResource(Res.string.config_mode_pump_desc),
     )
 }
 
@@ -311,10 +315,14 @@ private fun EccentricConfigPanel(
     onWeightChange: (Float) -> Unit,
     eccentricPercent: Int,
     onEccentricPercentChange: (Int) -> Unit,
-    prWeight: Float? = null
+    prWeight: Float? = null,
 ) {
     WeightStepper(weight = weight, onWeightChange = onWeightChange, label = stringResource(Res.string.starting_weight), prWeight = prWeight)
-    EccentricSlider(percent = eccentricPercent, onPercentChange = onEccentricPercentChange, label = stringResource(Res.string.eccentric_overload))
+    EccentricSlider(
+        percent = eccentricPercent,
+        onPercentChange = onEccentricPercentChange,
+        label = stringResource(Res.string.eccentric_overload),
+    )
 }
 
 @Composable
@@ -322,7 +330,7 @@ private fun EchoConfigPanel(
     echoLevel: EchoLevel,
     onEchoLevelChange: (EchoLevel) -> Unit,
     eccentricPercent: Int,
-    onEccentricPercentChange: (Int) -> Unit
+    onEccentricPercentChange: (Int) -> Unit,
 ) {
     // Echo Level selector
     Column {
@@ -330,7 +338,7 @@ private fun EchoConfigPanel(
             text = stringResource(Res.string.config_echo_level),
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
-            letterSpacing = 1.sp
+            letterSpacing = 1.sp,
         )
 
         Spacer(modifier = Modifier.height(Spacing.small))
@@ -340,10 +348,10 @@ private fun EchoConfigPanel(
                 .fillMaxWidth()
                 .background(
                     MaterialTheme.colorScheme.surfaceContainerLowest,
-                    RoundedCornerShape(Spacing.medium)
+                    RoundedCornerShape(Spacing.medium),
                 )
                 .padding(Spacing.extraSmall),
-            horizontalArrangement = Arrangement.spacedBy(Spacing.extraSmall)
+            horizontalArrangement = Arrangement.spacedBy(Spacing.extraSmall),
         ) {
             listOf(EchoLevel.HARD, EchoLevel.HARDER, EchoLevel.HARDEST, EchoLevel.EPIC).forEach { level ->
                 val isSelected = level == echoLevel
@@ -356,7 +364,7 @@ private fun EchoConfigPanel(
                     } else {
                         MaterialTheme.colorScheme.surfaceContainerLowest
                     },
-                    onClick = { onEchoLevelChange(level) }
+                    onClick = { onEchoLevelChange(level) },
                 ) {
                     Text(
                         text = level.displayName,
@@ -370,39 +378,39 @@ private fun EchoConfigPanel(
                         } else {
                             MaterialTheme.colorScheme.onSurfaceVariant
                         },
-                        textAlign = TextAlign.Center
+                        textAlign = TextAlign.Center,
                     )
                 }
             }
         }
     }
 
-    EccentricSlider(percent = eccentricPercent, onPercentChange = onEccentricPercentChange, label = stringResource(Res.string.eccentric_load))
+    EccentricSlider(
+        percent = eccentricPercent,
+        onPercentChange = onEccentricPercentChange,
+        label = stringResource(Res.string.eccentric_load),
+    )
 }
 
 @Composable
-private fun EccentricSlider(
-    percent: Int,
-    onPercentChange: (Int) -> Unit,
-    label: String
-) {
+private fun EccentricSlider(percent: Int, onPercentChange: (Int) -> Unit, label: String) {
     Column {
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
+            verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
                 text = label.uppercase(),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                letterSpacing = 1.sp
+                letterSpacing = 1.sp,
             )
             Text(
                 text = "$percent%",
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.primary
+                color = MaterialTheme.colorScheme.primary,
             )
         }
 
@@ -413,12 +421,12 @@ private fun EccentricSlider(
             onValueChange = { onPercentChange(it.toInt()) },
             valueRange = 100f..150f,
             steps = 9,
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier.fillMaxWidth(),
         )
 
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween
+            horizontalArrangement = Arrangement.SpaceBetween,
         ) {
             Text(text = "100%", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Text(text = "150%", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -431,20 +439,20 @@ private fun ModeInfoCard(title: String, description: String) {
     Surface(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(Spacing.medium),
-        color = MaterialTheme.colorScheme.surfaceContainerLow
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
     ) {
         Column(modifier = Modifier.padding(Spacing.medium)) {
             Text(
                 text = title,
                 style = MaterialTheme.typography.labelMedium,
                 fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.primary
+                color = MaterialTheme.colorScheme.primary,
             )
             Spacer(modifier = Modifier.height(Spacing.extraSmall))
             Text(
                 text = description,
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
     }

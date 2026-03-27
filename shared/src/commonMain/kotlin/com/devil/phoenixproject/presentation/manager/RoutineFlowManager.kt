@@ -11,7 +11,6 @@ import com.devil.phoenixproject.domain.usecase.ResolveRoutineWeightsUseCase
 import com.devil.phoenixproject.util.Constants
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
@@ -35,7 +34,7 @@ class RoutineFlowManager(
     private val completedSetRepository: CompletedSetRepository,
     private val settingsManager: SettingsManager,
     private val userProfileRepository: UserProfileRepository,
-    private val scope: CoroutineScope
+    private val scope: CoroutineScope,
 ) {
 
     /**
@@ -46,12 +45,16 @@ class RoutineFlowManager(
     interface WorkoutLifecycleDelegate {
         /** Reset the rep counter state */
         fun resetRepCounter()
+
         /** Start a workout with optional countdown skip */
         fun startWorkout(skipCountdown: Boolean = false)
+
         /** Send BLE stop command to clear fault state */
         suspend fun sendStopCommand()
+
         /** Send BLE stop/reset to put machine in BASELINE mode */
         suspend fun stopMachineWorkout()
+
         /** Update workout parameters for internal manager transitions (no user-adjusted side-effects) */
         fun setWorkoutParametersInternal(params: WorkoutParameters)
     }
@@ -112,9 +115,7 @@ class RoutineFlowManager(
     /**
      * Check if the current exercise is part of a superset.
      */
-    internal fun isInSuperset(): Boolean {
-        return getCurrentExercise()?.supersetId != null
-    }
+    internal fun isInSuperset(): Boolean = getCurrentExercise()?.supersetId != null
 
     /**
      * Get the next exercise index in the superset rotation.
@@ -328,11 +329,7 @@ class RoutineFlowManager(
     /**
      * Calculate the name of the next exercise/set for display during rest.
      */
-    internal fun calculateNextExerciseName(
-        isSingleExercise: Boolean,
-        currentExercise: RoutineExercise?,
-        routine: Routine?
-    ): String {
+    internal fun calculateNextExerciseName(isSingleExercise: Boolean, currentExercise: RoutineExercise?, routine: Routine?): String {
         if (isSingleExercise || currentExercise == null) {
             return currentExercise?.exercise?.name ?: "Next Set"
         }
@@ -358,11 +355,7 @@ class RoutineFlowManager(
     /**
      * Check if current exercise is the last one in the routine.
      */
-    internal fun calculateIsLastExercise(
-        isSingleExercise: Boolean,
-        currentExercise: RoutineExercise?,
-        routine: Routine?
-    ): Boolean {
+    internal fun calculateIsLastExercise(isSingleExercise: Boolean, currentExercise: RoutineExercise?, routine: Routine?): Boolean {
         if (isSingleExercise) {
             return coordinator._currentSetIndex.value >= (currentExercise?.setReps?.size ?: 1) - 1
         }
@@ -370,15 +363,13 @@ class RoutineFlowManager(
         return getNextStep(
             routine = routine,
             currentExIndex = coordinator._currentExerciseIndex.value,
-            currentSetIndex = coordinator._currentSetIndex.value
+            currentSetIndex = coordinator._currentSetIndex.value,
         ) == null
     }
 
     // ===== Routine CRUD =====
 
-    fun getRoutineById(routineId: String): Routine? {
-        return coordinator._routines.value.find { it.id == routineId }
-    }
+    fun getRoutineById(routineId: String): Routine? = coordinator._routines.value.find { it.id == routineId }
 
     fun saveRoutine(routine: Routine) {
         scope.launch { workoutRepository.saveRoutine(routine) }
@@ -415,11 +406,13 @@ class RoutineFlowManager(
                 if (resolved.fallbackReason != null) {
                     Logger.w { "PR weight fallback for ${exercise.exercise.name}: ${resolved.fallbackReason}" }
                 } else if (resolved.isFromPR) {
-                    Logger.d { "Resolved ${exercise.exercise.name} weight from PR: ${resolved.percentOfPR}% of ${resolved.usedPR}kg = ${resolved.baseWeight}kg" }
+                    Logger.d {
+                        "Resolved ${exercise.exercise.name} weight from PR: ${resolved.percentOfPR}% of ${resolved.usedPR}kg = ${resolved.baseWeight}kg"
+                    }
                 }
                 exercise.copy(
                     weightPerCableKg = resolved.baseWeight,
-                    setWeightsPerCableKg = resolved.setWeights
+                    setWeightsPerCableKg = resolved.setWeights,
                 )
             } else {
                 exercise
@@ -469,14 +462,14 @@ class RoutineFlowManager(
             reps = firstSetReps ?: 0, // AMRAP sets have null reps, use 0 as placeholder
             weightPerCableKg = firstSetWeight,
             progressionRegressionKg = firstExercise.progressionKg,
-            isJustLift = false,  // CRITICAL: Routines are NOT just lift mode
+            isJustLift = false, // CRITICAL: Routines are NOT just lift mode
             useAutoStart = false,
             stopAtTop = firstExercise.stopAtTop,
             warmupReps = if (isFirstBodyweight) 0 else Constants.DEFAULT_WARMUP_REPS,
             isAMRAP = firstIsAMRAP, // Issue #203: Check both per-set (null reps) and exercise-level flag
             selectedExerciseId = firstExercise.exercise.id,
             stallDetectionEnabled = firstExercise.stallDetectionEnabled,
-            repCountTiming = firstExercise.repCountTiming
+            repCountTiming = firstExercise.repCountTiming,
         )
 
         // Phase 35C: Initialize warm-up phase for first exercise if it has warmupSets
@@ -544,7 +537,7 @@ class RoutineFlowManager(
             coordinator._workoutState.value = WorkoutState.Idle
             coordinator._routineFlowState.value = RoutineFlowState.Overview(
                 routine = resolvedRoutine,
-                selectedExerciseIndex = 0
+                selectedExerciseIndex = 0,
             )
         }
     }
@@ -574,12 +567,14 @@ class RoutineFlowManager(
             adjustedWeight = setWeight,
             adjustedReps = setReps,
             echoLevel = if (exercise.programMode is ProgramMode.Echo) exercise.echoLevel else null,
-            eccentricLoadPercent = if (exercise.programMode is ProgramMode.Echo) exercise.eccentricLoad.percentage else null
+            eccentricLoadPercent = if (exercise.programMode is ProgramMode.Echo) exercise.eccentricLoad.percentage else null,
         )
 
         // Issue #129: Determine if this specific set is AMRAP (null reps = AMRAP)
         val isSetAmrap = rawSetReps == null
-        Logger.d { "enterSetReady: exercise=${exercise.exercise.name}, set=$setIndex, isAMRAP=$isSetAmrap, stallDetection=${exercise.stallDetectionEnabled}" }
+        Logger.d {
+            "enterSetReady: exercise=${exercise.exercise.name}, set=$setIndex, isAMRAP=$isSetAmrap, stallDetection=${exercise.stallDetectionEnabled}"
+        }
 
         // Update workout parameters for this set
         // Issue #209: Explicitly set isJustLift=false and useAutoStart=false
@@ -596,7 +591,7 @@ class RoutineFlowManager(
             isAMRAP = isSetAmrap,
             progressionRegressionKg = exercise.progressionKg,
             isJustLift = false,
-            useAutoStart = false
+            useAutoStart = false,
         )
     }
 
@@ -616,13 +611,15 @@ class RoutineFlowManager(
             adjustedWeight = adjustedWeight,
             adjustedReps = adjustedReps,
             echoLevel = if (exercise.programMode is ProgramMode.Echo) exercise.echoLevel else null,
-            eccentricLoadPercent = if (exercise.programMode is ProgramMode.Echo) exercise.eccentricLoad.percentage else null
+            eccentricLoadPercent = if (exercise.programMode is ProgramMode.Echo) exercise.eccentricLoad.percentage else null,
         )
 
         // Issue #129: Check raw value for AMRAP - null reps in setReps list = AMRAP
         val rawSetReps = exercise.setReps.getOrNull(setIndex)
         val isSetAmrap = rawSetReps == null
-        Logger.d { "enterSetReadyWithAdjustments: exercise=${exercise.exercise.name}, set=$setIndex, isAMRAP=$isSetAmrap, stallDetection=${exercise.stallDetectionEnabled}" }
+        Logger.d {
+            "enterSetReadyWithAdjustments: exercise=${exercise.exercise.name}, set=$setIndex, isAMRAP=$isSetAmrap, stallDetection=${exercise.stallDetectionEnabled}"
+        }
 
         // Update workout parameters with adjusted values
         // Issue #209: Explicitly set isJustLift=false and useAutoStart=false
@@ -639,7 +636,7 @@ class RoutineFlowManager(
             isAMRAP = isSetAmrap,
             progressionRegressionKg = exercise.progressionKg,
             isJustLift = false,
-            useAutoStart = false
+            useAutoStart = false,
         )
     }
 
@@ -710,7 +707,7 @@ class RoutineFlowManager(
         coordinator._workoutParameters.value = coordinator._workoutParameters.value.copy(
             weightPerCableKg = state.adjustedWeight,
             reps = state.adjustedReps,
-            isJustLift = false
+            isJustLift = false,
         )
 
         // Start the workout directly (skip countdown since user already configured on SetReady)
@@ -724,7 +721,7 @@ class RoutineFlowManager(
         val routine = coordinator._loadedRoutine.value ?: return
         coordinator._routineFlowState.value = RoutineFlowState.Overview(
             routine = routine,
-            selectedExerciseIndex = coordinator._currentExerciseIndex.value
+            selectedExerciseIndex = coordinator._currentExerciseIndex.value,
         )
     }
 
@@ -753,7 +750,7 @@ class RoutineFlowManager(
             routineName = routine.name,
             totalSets = routine.exercises.sumOf { it.setReps.size },
             totalExercises = routine.exercises.size,
-            totalDurationMs = duration
+            totalDurationMs = duration,
         )
     }
 
@@ -798,7 +795,7 @@ class RoutineFlowManager(
                 selectedExerciseId = exercise.exercise.id,
                 stallDetectionEnabled = exercise.stallDetectionEnabled,
                 repCountTiming = exercise.repCountTiming,
-                stopAtTop = exercise.stopAtTop
+                stopAtTop = exercise.stopAtTop,
             )
         }
 
@@ -809,7 +806,9 @@ class RoutineFlowManager(
         if (exercise.warmupSets.isNotEmpty() && !isBodyweight) {
             coordinator._currentWarmupSetIndex.value = 0
             coordinator._totalWarmupSets.value = exercise.warmupSets.size
-            Logger.d("RoutineFlowManager") { "Phase 35C: Entering warm-up phase for ${exercise.exercise.name}: ${exercise.warmupSets.size} warm-up sets" }
+            Logger.d("RoutineFlowManager") {
+                "Phase 35C: Entering warm-up phase for ${exercise.exercise.name}: ${exercise.warmupSets.size} warm-up sets"
+            }
         } else {
             coordinator._currentWarmupSetIndex.value = -1
             coordinator._totalWarmupSets.value = 0
@@ -851,7 +850,9 @@ class RoutineFlowManager(
         val currentRepCount = coordinator._repCount.value
         if (currentRepCount.workingReps > 0 && coordinator._workoutState.value !is WorkoutState.Completed) {
             coordinator._completedExercises.update { it + coordinator._currentExerciseIndex.value }
-            Logger.d("RoutineFlowManager") { "Saving progress for exercise ${coordinator._currentExerciseIndex.value}: ${currentRepCount.workingReps} reps" }
+            Logger.d("RoutineFlowManager") {
+                "Saving progress for exercise ${coordinator._currentExerciseIndex.value}: ${currentRepCount.workingReps} reps"
+            }
         } else if (coordinator._workoutState.value !is WorkoutState.Completed) {
             coordinator._skippedExercises.update { it + coordinator._currentExerciseIndex.value }
             Logger.d("RoutineFlowManager") { "Skipping exercise ${coordinator._currentExerciseIndex.value}" }
@@ -924,18 +925,14 @@ class RoutineFlowManager(
         }
     }
 
-    fun canGoBack(): Boolean {
-        return coordinator._loadedRoutine.value != null && coordinator._currentExerciseIndex.value > 0
-    }
+    fun canGoBack(): Boolean = coordinator._loadedRoutine.value != null && coordinator._currentExerciseIndex.value > 0
 
     fun canSkipForward(): Boolean {
         val routine = coordinator._loadedRoutine.value ?: return false
         return coordinator._currentExerciseIndex.value < routine.exercises.size - 1
     }
 
-    fun getRoutineExerciseNames(): List<String> {
-        return coordinator._loadedRoutine.value?.exercises?.map { it.exercise.name } ?: emptyList()
-    }
+    fun getRoutineExerciseNames(): List<String> = coordinator._loadedRoutine.value?.exercises?.map { it.exercise.name } ?: emptyList()
 
     /**
      * Navigate to previous set/exercise in set-ready.
@@ -968,11 +965,7 @@ class RoutineFlowManager(
     /**
      * Create a new superset in a routine.
      */
-    suspend fun createSuperset(
-        routineId: String,
-        name: String? = null,
-        exercises: List<RoutineExercise> = emptyList()
-    ): Superset {
+    suspend fun createSuperset(routineId: String, name: String? = null, exercises: List<RoutineExercise> = emptyList()): Superset {
         val routine = getRoutineById(routineId) ?: throw IllegalArgumentException("Routine not found")
         val existingColors = routine.supersets.map { it.colorIndex }.toSet()
         val colorIndex = SupersetColors.next(existingColors)
@@ -986,7 +979,7 @@ class RoutineFlowManager(
             name = autoName,
             colorIndex = colorIndex,
             restBetweenSeconds = 10,
-            orderIndex = orderIndex
+            orderIndex = orderIndex,
         )
 
         val updatedSupersets = routine.supersets + superset
@@ -1096,7 +1089,7 @@ class RoutineFlowManager(
             currentSet = coordinator._currentSetIndex.value + 1,
             totalSets = exercise.setReps.size,
             currentExercise = coordinator._currentExerciseIndex.value + 1,
-            totalExercises = routine.exercises.size
+            totalExercises = routine.exercises.size,
         )
     }
 
@@ -1142,13 +1135,13 @@ class RoutineFlowManager(
  *
  * Top-level function accessible to both RoutineFlowManager and DWSM/ActiveSessionEngine.
  */
-internal fun isBodyweightExercise(exercise: RoutineExercise?): Boolean {
-    return exercise?.let {
-        val isBodyweight = !it.exercise.hasCableAccessory
-        Logger.d { "isBodyweightExercise: exercise=${it.exercise.name}, equipment='${it.exercise.equipment}', hasCableAccessory=${it.exercise.hasCableAccessory}, result=$isBodyweight" }
-        isBodyweight
-    } ?: false
-}
+internal fun isBodyweightExercise(exercise: RoutineExercise?): Boolean = exercise?.let {
+    val isBodyweight = !it.exercise.hasCableAccessory
+    Logger.d {
+        "isBodyweightExercise: exercise=${it.exercise.name}, equipment='${it.exercise.equipment}', hasCableAccessory=${it.exercise.hasCableAccessory}, result=$isBodyweight"
+    }
+    isBodyweight
+} ?: false
 
 /**
  * Check if current workout is in single exercise mode.

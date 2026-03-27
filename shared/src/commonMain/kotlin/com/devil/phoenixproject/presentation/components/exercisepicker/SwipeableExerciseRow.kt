@@ -27,8 +27,8 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.domain.model.Exercise
-import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
+import kotlinx.coroutines.launch
 
 private val REVEAL_WIDTH = 56.dp
 private val THRESHOLD_RATIO = 0.4f // Drag 40% of reveal width to trigger
@@ -52,7 +52,7 @@ fun SwipeableExerciseRow(
     onThumbnailClick: (() -> Unit)? = null,
     isRevealed: Boolean = false,
     onRevealChange: (Boolean) -> Unit = {},
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
 ) {
     val density = LocalDensity.current
     val revealWidthPx = with(density) { REVEAL_WIDTH.toPx() }
@@ -82,16 +82,16 @@ fun SwipeableExerciseRow(
                         MaterialTheme.colorScheme.primaryContainer
                     } else {
                         MaterialTheme.colorScheme.secondaryContainer
-                    }
+                    },
                 ),
-            contentAlignment = Alignment.Center
+            contentAlignment = Alignment.Center,
         ) {
             IconButton(
                 onClick = {
                     onToggleFavorite()
                     onRevealChange(false)
                 },
-                modifier = Modifier.size(48.dp)
+                modifier = Modifier.size(48.dp),
             ) {
                 Icon(
                     imageVector = if (exercise.isFavorite) {
@@ -109,7 +109,7 @@ fun SwipeableExerciseRow(
                     } else {
                         MaterialTheme.colorScheme.onSecondaryContainer
                     },
-                    modifier = Modifier.size(28.dp)
+                    modifier = Modifier.size(28.dp),
                 )
             }
         }
@@ -138,12 +138,15 @@ fun SwipeableExerciseRow(
                         },
                         onHorizontalDrag = { _, dragAmount ->
                             scope.launch {
-                                val newValue = (offsetX.value + dragAmount).coerceIn(0f, revealWidthPx)
+                                val newValue = (offsetX.value + dragAmount).coerceIn(
+                                    0f,
+                                    revealWidthPx,
+                                )
                                 offsetX.snapTo(newValue)
                             }
-                        }
+                        },
                     )
-                }
+                },
         ) {
             ExerciseRowContent(
                 exercise = exercise,
@@ -160,7 +163,7 @@ fun SwipeableExerciseRow(
                     }
                 },
                 onLongPress = onLongPress,
-                onThumbnailClick = onThumbnailClick
+                onThumbnailClick = onThumbnailClick,
             )
         }
     }

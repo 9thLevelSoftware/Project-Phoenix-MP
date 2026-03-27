@@ -67,6 +67,9 @@ truth = "1.4.5"
 koin-test = "4.1.1"
 multiplatform-settings-test = "1.3.0"
 
+# Code Quality
+spotless = "8.4.0"
+
 [libraries]
 mockk = { module = "io.mockk:mockk", version.ref = "mockk" }
 mockk-android = { module = "io.mockk:mockk-android", version.ref = "mockk" }
@@ -187,3 +190,6 @@ compose-multiplatform = { id = "org.jetbrains.compose", version.ref = "compose-m
 
 # SQLDelight
 sqldelight = { id = "app.cash.sqldelight", version.ref = "sqldelight" }
+
+# Code Quality
+spotless = { id = "com.diffplug.spotless", version.ref = "spotless" }

@@ -5,15 +5,11 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import org.jetbrains.compose.resources.stringResource
-import vitruvianprojectphoenix.shared.generated.resources.Res
 import vitruvianprojectphoenix.shared.generated.resources.*
+import vitruvianprojectphoenix.shared.generated.resources.Res
 
 @Composable
-fun DisconnectConfirmationDialog(
-    deviceName: String,
-    onConfirm: () -> Unit,
-    onDismiss: () -> Unit
-) {
+fun DisconnectConfirmationDialog(deviceName: String, onConfirm: () -> Unit, onDismiss: () -> Unit) {
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(text = "Disconnect Device?") },
@@ -27,6 +23,6 @@ fun DisconnectConfirmationDialog(
             TextButton(onClick = onDismiss) {
                 Text(stringResource(Res.string.action_cancel))
             }
-        }
+        },
     )
 }

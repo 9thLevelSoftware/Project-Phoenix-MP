@@ -14,8 +14,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -35,6 +33,8 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.devil.phoenixproject.domain.model.RepPhase
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 /**
  * Issue #163: Animated Rep Counter
@@ -68,7 +68,7 @@ fun AnimatedRepCounter(
     targetReps: Int,
     showStableCounter: Boolean = true,
     size: Dp = 120.dp,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
 ) {
     // Primary color for both outline stroke and fill
     val fillColor = MaterialTheme.colorScheme.primary
@@ -94,18 +94,18 @@ fun AnimatedRepCounter(
             launch {
                 celebrationScale.animateTo(
                     targetValue = 1.5f, // Scale up slightly first
-                    animationSpec = tween(durationMillis = 100)
+                    animationSpec = tween(durationMillis = 100),
                 )
                 celebrationScale.animateTo(
                     targetValue = 0f, // Then scale down to nothing
-                    animationSpec = tween(durationMillis = 200)
+                    animationSpec = tween(durationMillis = 200),
                 )
             }
             launch {
                 delay(50) // Slight delay before fade
                 celebrationAlpha.animateTo(
                     targetValue = 0f,
-                    animationSpec = tween(durationMillis = 250)
+                    animationSpec = tween(durationMillis = 250),
                 )
                 showingCelebration = 0 // Clear celebration state
             }
@@ -115,7 +115,7 @@ fun AnimatedRepCounter(
 
     Box(
         contentAlignment = Alignment.Center,
-        modifier = modifier.size(size)
+        modifier = modifier.size(size),
     ) {
         // Show celebration animation if a rep was just completed
         // During celebration, ONLY the celebration is shown (no phase animation)
@@ -124,7 +124,7 @@ fun AnimatedRepCounter(
                 text = showingCelebration.toString(),
                 style = MaterialTheme.typography.displayLarge.copy(
                     fontSize = (size.value * 0.7f).sp,
-                    fontWeight = FontWeight.Black
+                    fontWeight = FontWeight.Black,
                 ),
                 color = fillColor,
                 textAlign = TextAlign.Center,
@@ -132,7 +132,7 @@ fun AnimatedRepCounter(
                     scaleX = celebrationScale.value
                     scaleY = celebrationScale.value
                     alpha = celebrationAlpha.value
-                }
+                },
             )
         } else {
             // Only show phase animation when NOT celebrating
@@ -144,7 +144,7 @@ fun AnimatedRepCounter(
                 val animatedProgress by animateFloatAsState(
                     targetValue = phaseProgress,
                     animationSpec = tween(durationMillis = 100),
-                    label = "phase_progress"
+                    label = "phase_progress",
                 )
 
                 when (phase) {
@@ -153,103 +153,103 @@ fun AnimatedRepCounter(
                     }
 
                     RepPhase.CONCENTRIC -> {
-                    // Stroke-only outline reveals from bottom to top
-                    // Progress 0.0 = nothing visible, 1.0 = full outline visible
-                    val strokeWidth = size.value * 0.04f  // Stroke width proportional to size
-                    Box(
-                        contentAlignment = Alignment.Center,
-                        modifier = Modifier.fillMaxSize()
-                    ) {
-                        // Stroke-only text (just the outline edges, no fill)
-                        Text(
-                            text = nextRepNumber.toString(),
-                            style = MaterialTheme.typography.displayLarge.copy(
-                                fontSize = (size.value * 0.7f).sp,
-                                fontWeight = FontWeight.Black,
-                                drawStyle = Stroke(
-                                    width = strokeWidth,
-                                    cap = StrokeCap.Round,
-                                    join = StrokeJoin.Round
-                                )
-                            ),
-                            color = fillColor,  // Use primary color for the outline
-                            textAlign = TextAlign.Center,
-                            modifier = Modifier
-                                .graphicsLayer {
-                                    compositingStrategy = CompositingStrategy.Offscreen
-                                    // Clip from bottom up based on progress
-                                    // At progress 0: clip = 0 (show nothing from bottom)
-                                    // At progress 1: clip = 1 (show everything)
-                                    clip = true
-                                }
-                                .drawWithContent {
-                                    // Draw into canvas with clip rect
-                                    drawContext.canvas.save()
-                                    val visibleFromBottom = this.size.height * animatedProgress
-                                    val clipTop = this.size.height - visibleFromBottom
-                                    drawContext.canvas.clipRect(
-                                        Rect(0f, clipTop, this.size.width, this.size.height)
-                                    )
-                                    drawContent()
-                                    drawContext.canvas.restore()
-                                }
-                        )
+                        // Stroke-only outline reveals from bottom to top
+                        // Progress 0.0 = nothing visible, 1.0 = full outline visible
+                        val strokeWidth = size.value * 0.04f // Stroke width proportional to size
+                        Box(
+                            contentAlignment = Alignment.Center,
+                            modifier = Modifier.fillMaxSize(),
+                        ) {
+                            // Stroke-only text (just the outline edges, no fill)
+                            Text(
+                                text = nextRepNumber.toString(),
+                                style = MaterialTheme.typography.displayLarge.copy(
+                                    fontSize = (size.value * 0.7f).sp,
+                                    fontWeight = FontWeight.Black,
+                                    drawStyle = Stroke(
+                                        width = strokeWidth,
+                                        cap = StrokeCap.Round,
+                                        join = StrokeJoin.Round,
+                                    ),
+                                ),
+                                color = fillColor, // Use primary color for the outline
+                                textAlign = TextAlign.Center,
+                                modifier = Modifier
+                                    .graphicsLayer {
+                                        compositingStrategy = CompositingStrategy.Offscreen
+                                        // Clip from bottom up based on progress
+                                        // At progress 0: clip = 0 (show nothing from bottom)
+                                        // At progress 1: clip = 1 (show everything)
+                                        clip = true
+                                    }
+                                    .drawWithContent {
+                                        // Draw into canvas with clip rect
+                                        drawContext.canvas.save()
+                                        val visibleFromBottom = this.size.height * animatedProgress
+                                        val clipTop = this.size.height - visibleFromBottom
+                                        drawContext.canvas.clipRect(
+                                            Rect(0f, clipTop, this.size.width, this.size.height),
+                                        )
+                                        drawContent()
+                                        drawContext.canvas.restore()
+                                    },
+                            )
+                        }
+                    }
+
+                    RepPhase.ECCENTRIC -> {
+                        // Fill reveals from top to bottom over the stroke outline
+                        // Progress 0.0 = outline only, 1.0 = fully filled
+                        val strokeWidth = size.value * 0.04f
+                        Box(
+                            contentAlignment = Alignment.Center,
+                            modifier = Modifier.fillMaxSize(),
+                        ) {
+                            // Stroke outline as background (always visible)
+                            Text(
+                                text = nextRepNumber.toString(),
+                                style = MaterialTheme.typography.displayLarge.copy(
+                                    fontSize = (size.value * 0.7f).sp,
+                                    fontWeight = FontWeight.Black,
+                                    drawStyle = Stroke(
+                                        width = strokeWidth,
+                                        cap = StrokeCap.Round,
+                                        join = StrokeJoin.Round,
+                                    ),
+                                ),
+                                color = fillColor,
+                                textAlign = TextAlign.Center,
+                            )
+
+                            // Filled text (revealed top-to-bottom based on progress)
+                            Text(
+                                text = nextRepNumber.toString(),
+                                style = MaterialTheme.typography.displayLarge.copy(
+                                    fontSize = (size.value * 0.7f).sp,
+                                    fontWeight = FontWeight.Black,
+                                ),
+                                color = fillColor,
+                                textAlign = TextAlign.Center,
+                                modifier = Modifier
+                                    .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
+                                    .drawWithContent {
+                                        drawContent()
+                                        // Mask: hide from bottom up based on inverse progress
+                                        // At progress 0: hide everything (clip entire area)
+                                        // At progress 1: show everything (no clip)
+                                        val visibleHeight = this.size.height * animatedProgress
+                                        val clipTop = visibleHeight
+                                        drawRect(
+                                            color = Color.Transparent,
+                                            topLeft = Offset(0f, clipTop),
+                                            size = this.size.copy(height = this.size.height - clipTop),
+                                            blendMode = BlendMode.Clear,
+                                        )
+                                    },
+                            )
+                        }
                     }
                 }
-
-                RepPhase.ECCENTRIC -> {
-                    // Fill reveals from top to bottom over the stroke outline
-                    // Progress 0.0 = outline only, 1.0 = fully filled
-                    val strokeWidth = size.value * 0.04f
-                    Box(
-                        contentAlignment = Alignment.Center,
-                        modifier = Modifier.fillMaxSize()
-                    ) {
-                        // Stroke outline as background (always visible)
-                        Text(
-                            text = nextRepNumber.toString(),
-                            style = MaterialTheme.typography.displayLarge.copy(
-                                fontSize = (size.value * 0.7f).sp,
-                                fontWeight = FontWeight.Black,
-                                drawStyle = Stroke(
-                                    width = strokeWidth,
-                                    cap = StrokeCap.Round,
-                                    join = StrokeJoin.Round
-                                )
-                            ),
-                            color = fillColor,
-                            textAlign = TextAlign.Center
-                        )
-
-                        // Filled text (revealed top-to-bottom based on progress)
-                        Text(
-                            text = nextRepNumber.toString(),
-                            style = MaterialTheme.typography.displayLarge.copy(
-                                fontSize = (size.value * 0.7f).sp,
-                                fontWeight = FontWeight.Black
-                            ),
-                            color = fillColor,
-                            textAlign = TextAlign.Center,
-                            modifier = Modifier
-                                .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
-                                .drawWithContent {
-                                    drawContent()
-                                    // Mask: hide from bottom up based on inverse progress
-                                    // At progress 0: hide everything (clip entire area)
-                                    // At progress 1: show everything (no clip)
-                                    val visibleHeight = this.size.height * animatedProgress
-                                    val clipTop = visibleHeight
-                                    drawRect(
-                                        color = Color.Transparent,
-                                        topLeft = Offset(0f, clipTop),
-                                        size = this.size.copy(height = this.size.height - clipTop),
-                                        blendMode = BlendMode.Clear
-                                    )
-                                }
-                        )
-                    }
-                }
-            }
             }
         }
     }
@@ -260,17 +260,13 @@ fun AnimatedRepCounter(
  * Example: "3 / 10"
  */
 @Composable
-fun StableRepProgress(
-    confirmedReps: Int,
-    targetReps: Int,
-    modifier: Modifier = Modifier
-) {
+fun StableRepProgress(confirmedReps: Int, targetReps: Int, modifier: Modifier = Modifier) {
     Text(
         text = "$confirmedReps / $targetReps",
         style = MaterialTheme.typography.titleLarge,
         fontWeight = FontWeight.Medium,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
         textAlign = TextAlign.Center,
-        modifier = modifier
+        modifier = modifier,
     )
 }

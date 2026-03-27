@@ -3,8 +3,8 @@ package com.devil.phoenixproject.domain.premium
 import com.devil.phoenixproject.domain.model.*
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertTrue
 import kotlin.test.assertIs
+import kotlin.test.assertTrue
 
 class ReadinessEngineTest {
 
@@ -23,7 +23,7 @@ class ReadinessEngineTest {
         timestamp: Long = NOW,
         weightPerCableKg: Float = 50f,
         totalReps: Int = 10,
-        workingReps: Int = 8
+        workingReps: Int = 8,
     ) = SessionSummary(
         exerciseId = exerciseId,
         exerciseName = exerciseName,
@@ -31,7 +31,7 @@ class ReadinessEngineTest {
         timestamp = timestamp,
         weightPerCableKg = weightPerCableKg,
         totalReps = totalReps,
-        workingReps = workingReps
+        workingReps = workingReps,
     )
 
     /**
@@ -43,16 +43,14 @@ class ReadinessEngineTest {
         days: Int,
         count: Int,
         weightPerCableKg: Float = 50f,
-        workingReps: Int = 8
-    ): List<SessionSummary> {
-        return (0 until count).map { i ->
-            val dayOffset = (days.toLong() * i) / count
-            session(
-                timestamp = NOW - dayOffset * ONE_DAY_MS,
-                weightPerCableKg = weightPerCableKg,
-                workingReps = workingReps
-            )
-        }
+        workingReps: Int = 8,
+    ): List<SessionSummary> = (0 until count).map { i ->
+        val dayOffset = (days.toLong() * i) / count
+        session(
+            timestamp = NOW - dayOffset * ONE_DAY_MS,
+            weightPerCableKg = weightPerCableKg,
+            workingReps = workingReps,
+        )
     }
 
     // ==========================================================
@@ -73,7 +71,7 @@ class ReadinessEngineTest {
             session(timestamp = NOW - 15 * ONE_DAY_MS),
             session(timestamp = NOW - 10 * ONE_DAY_MS),
             session(timestamp = NOW - 5 * ONE_DAY_MS),
-            session(timestamp = NOW - 1 * ONE_DAY_MS)
+            session(timestamp = NOW - 1 * ONE_DAY_MS),
         )
         val result = ReadinessEngine.computeReadiness(sessions, NOW)
         assertIs<ReadinessResult.InsufficientData>(result)
@@ -89,7 +87,7 @@ class ReadinessEngineTest {
             session(timestamp = NOW - 20 * ONE_DAY_MS),
             // Only 2 recent sessions (need 3)
             session(timestamp = NOW - 10 * ONE_DAY_MS),
-            session(timestamp = NOW - 5 * ONE_DAY_MS)
+            session(timestamp = NOW - 5 * ONE_DAY_MS),
         )
         val result = ReadinessEngine.computeReadiness(sessions, NOW)
         assertIs<ReadinessResult.InsufficientData>(result)
@@ -104,7 +102,7 @@ class ReadinessEngineTest {
             session(timestamp = NOW - 20 * ONE_DAY_MS, workingReps = 0),
             session(timestamp = NOW - 10 * ONE_DAY_MS, workingReps = 0),
             session(timestamp = NOW - 5 * ONE_DAY_MS, workingReps = 0),
-            session(timestamp = NOW - 1 * ONE_DAY_MS, workingReps = 0)
+            session(timestamp = NOW - 1 * ONE_DAY_MS, workingReps = 0),
         )
         val result = ReadinessEngine.computeReadiness(sessions, NOW)
         assertIs<ReadinessResult.InsufficientData>(result)
@@ -122,7 +120,7 @@ class ReadinessEngineTest {
             session(
                 timestamp = NOW - (i * 2L) * ONE_DAY_MS,
                 weightPerCableKg = 50f,
-                workingReps = 8
+                workingReps = 8,
             )
         }
         // With consistent training across 4 weeks, ACWR should be near 1.0
@@ -145,7 +143,7 @@ class ReadinessEngineTest {
             session(
                 timestamp = NOW - (8 + i * 2L) * ONE_DAY_MS, // Days 8-36 ago
                 weightPerCableKg = 80f,
-                workingReps = 10
+                workingReps = 10,
             )
         }
         val acuteSessions = listOf(
@@ -153,8 +151,8 @@ class ReadinessEngineTest {
             session(
                 timestamp = NOW - 2 * ONE_DAY_MS,
                 weightPerCableKg = 20f,
-                workingReps = 3
-            )
+                workingReps = 3,
+            ),
         )
         val sessions = chronicSessions + acuteSessions
         val result = ReadinessEngine.computeReadiness(sessions, NOW)
@@ -175,14 +173,14 @@ class ReadinessEngineTest {
             session(timestamp = NOW - 35 * ONE_DAY_MS, weightPerCableKg = 30f, workingReps = 5),
             session(timestamp = NOW - 28 * ONE_DAY_MS, weightPerCableKg = 30f, workingReps = 5),
             session(timestamp = NOW - 21 * ONE_DAY_MS, weightPerCableKg = 30f, workingReps = 5),
-            session(timestamp = NOW - 14 * ONE_DAY_MS, weightPerCableKg = 30f, workingReps = 5)
+            session(timestamp = NOW - 14 * ONE_DAY_MS, weightPerCableKg = 30f, workingReps = 5),
         )
         // Heavy acute week -- high volume spike
         val acuteSessions = (0 until 6).map { i ->
             session(
                 timestamp = NOW - i * ONE_DAY_MS,
                 weightPerCableKg = 80f,
-                workingReps = 12
+                workingReps = 12,
             )
         }
         val sessions = chronicSessions + acuteSessions
@@ -203,14 +201,14 @@ class ReadinessEngineTest {
         val chronicSessions = listOf(
             session(timestamp = NOW - 35 * ONE_DAY_MS, weightPerCableKg = 20f, workingReps = 3),
             session(timestamp = NOW - 28 * ONE_DAY_MS, weightPerCableKg = 20f, workingReps = 3),
-            session(timestamp = NOW - 21 * ONE_DAY_MS, weightPerCableKg = 20f, workingReps = 3)
+            session(timestamp = NOW - 21 * ONE_DAY_MS, weightPerCableKg = 20f, workingReps = 3),
         )
         // Massive acute spike
         val acuteSessions = (0 until 7).map { i ->
             session(
                 timestamp = NOW - i * ONE_DAY_MS,
                 weightPerCableKg = 100f,
-                workingReps = 15
+                workingReps = 15,
             )
         }
         val sessions = chronicSessions + acuteSessions
@@ -270,7 +268,7 @@ class ReadinessEngineTest {
             session(
                 timestamp = NOW - (i * 2L) * ONE_DAY_MS,
                 weightPerCableKg = 50f,
-                workingReps = 8
+                workingReps = 8,
             )
         }
         val result = ReadinessEngine.computeReadiness(sessions, NOW)

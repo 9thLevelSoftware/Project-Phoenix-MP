@@ -3,8 +3,6 @@ package com.devil.phoenixproject.data.repository
 import com.devil.phoenixproject.domain.model.PRType
 import com.devil.phoenixproject.domain.model.PersonalRecord
 import com.devil.phoenixproject.testutil.FakePersonalRecordRepository
-import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.test.runTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -12,6 +10,8 @@ import kotlin.test.assertNotEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.test.runTest
 
 /**
  * Tests for PersonalRecordRepository mode-specific PR tracking.
@@ -44,7 +44,7 @@ class PersonalRecordRepositoryTest {
             reps = 10,
             workoutMode = "OldSchool",
             timestamp = 1000L,
-            profileId = profileId
+            profileId = profileId,
         )
         assertTrue(oldSchoolResult.isSuccess)
 
@@ -55,7 +55,7 @@ class PersonalRecordRepositoryTest {
             reps = 8,
             workoutMode = "Echo",
             timestamp = 2000L,
-            profileId = profileId
+            profileId = profileId,
         )
         assertTrue(echoResult.isSuccess)
 
@@ -195,10 +195,22 @@ class PersonalRecordRepositoryTest {
         repository.updatePRsIfBetter(exerciseId, 50f, 10, "Pump", 2000L, profileId)
 
         // Verify only Pump changed
-        assertEquals(30f, repository.getBestWeightPR(exerciseId, "OldSchool", profileId)?.weightPerCableKg)
-        assertEquals(50f, repository.getBestWeightPR(exerciseId, "Pump", profileId)?.weightPerCableKg) // Updated
-        assertEquals(40f, repository.getBestWeightPR(exerciseId, "TUT", profileId)?.weightPerCableKg)
-        assertEquals(45f, repository.getBestWeightPR(exerciseId, "Echo", profileId)?.weightPerCableKg)
+        assertEquals(
+            30f,
+            repository.getBestWeightPR(exerciseId, "OldSchool", profileId)?.weightPerCableKg,
+        )
+        assertEquals(
+            50f,
+            repository.getBestWeightPR(exerciseId, "Pump", profileId)?.weightPerCableKg,
+        ) // Updated
+        assertEquals(
+            40f,
+            repository.getBestWeightPR(exerciseId, "TUT", profileId)?.weightPerCableKg,
+        )
+        assertEquals(
+            45f,
+            repository.getBestWeightPR(exerciseId, "Echo", profileId)?.weightPerCableKg,
+        )
     }
 
     @Test
@@ -283,14 +295,28 @@ class PersonalRecordRepositoryTest {
     @Test
     fun `updatePRsIfBetter returns list of broken PR types`() = runTest {
         // First PR should break both types
-        val result1 = repository.updatePRsIfBetter(exerciseId, 40f, 10, "OldSchool", 1000L, profileId)
+        val result1 = repository.updatePRsIfBetter(
+            exerciseId,
+            40f,
+            10,
+            "OldSchool",
+            1000L,
+            profileId,
+        )
         assertTrue(result1.isSuccess)
         val broken1 = result1.getOrNull()!!
         assertTrue(broken1.contains(PRType.MAX_WEIGHT))
         assertTrue(broken1.contains(PRType.MAX_VOLUME))
 
         // Higher weight but lower per-cable volume = only weight PR
-        val result2 = repository.updatePRsIfBetter(exerciseId, 45f, 8, "OldSchool", 2000L, profileId)
+        val result2 = repository.updatePRsIfBetter(
+            exerciseId,
+            45f,
+            8,
+            "OldSchool",
+            2000L,
+            profileId,
+        )
         val broken2 = result2.getOrNull()!!
         assertTrue(broken2.contains(PRType.MAX_WEIGHT))
         // Per-cable volume: 45 * 8 = 360 < 40 * 10 = 400, so no volume PR
@@ -308,10 +334,22 @@ class PersonalRecordRepositoryTest {
         repository.updatePRsIfBetter(exercise2, 80f, 6, "Echo", 1000L, profileId)
 
         // Verify each exercise has its own mode-specific PRs
-        assertEquals(40f, repository.getBestWeightPR(exercise1, "OldSchool", profileId)?.weightPerCableKg)
-        assertEquals(50f, repository.getBestWeightPR(exercise1, "Echo", profileId)?.weightPerCableKg)
-        assertEquals(60f, repository.getBestWeightPR(exercise2, "OldSchool", profileId)?.weightPerCableKg)
-        assertEquals(80f, repository.getBestWeightPR(exercise2, "Echo", profileId)?.weightPerCableKg)
+        assertEquals(
+            40f,
+            repository.getBestWeightPR(exercise1, "OldSchool", profileId)?.weightPerCableKg,
+        )
+        assertEquals(
+            50f,
+            repository.getBestWeightPR(exercise1, "Echo", profileId)?.weightPerCableKg,
+        )
+        assertEquals(
+            60f,
+            repository.getBestWeightPR(exercise2, "OldSchool", profileId)?.weightPerCableKg,
+        )
+        assertEquals(
+            80f,
+            repository.getBestWeightPR(exercise2, "Echo", profileId)?.weightPerCableKg,
+        )
     }
 
     @Test
@@ -328,8 +366,8 @@ class PersonalRecordRepositoryTest {
                 timestamp = 1000L,
                 workoutMode = "OldSchool",
                 prType = PRType.MAX_WEIGHT,
-                volume = 700f
-            )
+                volume = 700f,
+            ),
         )
         repository.addRecord(
             PersonalRecord(
@@ -342,8 +380,8 @@ class PersonalRecordRepositoryTest {
                 timestamp = 2000L,
                 workoutMode = "Echo",
                 prType = PRType.MAX_WEIGHT,
-                volume = 880f
-            )
+                volume = 880f,
+            ),
         )
 
         val oldSchoolPR = repository.getBestWeightPR(exerciseId, "OldSchool", profileId)

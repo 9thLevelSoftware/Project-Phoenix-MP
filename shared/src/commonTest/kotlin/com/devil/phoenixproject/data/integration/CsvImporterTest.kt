@@ -71,7 +71,7 @@ class CsvImporterTest {
     fun strongCsv_singleWorkout_createsOneActivity() {
         val csv = strongCsv(
             "2023-10-15 09:30:00,Push Day,1h 0m,Bench Press,1,80,10,,,, \n" +
-            "2023-10-15 09:30:00,Push Day,1h 0m,Overhead Press,2,60,10,,,, "
+                "2023-10-15 09:30:00,Push Day,1h 0m,Overhead Press,2,60,10,,,, ",
         )
         val preview = CsvImporter.parse(csv, WeightUnit.KG, "user1", isPaidUser = true)
         assertEquals(CsvFormat.STRONG, preview.format)
@@ -88,7 +88,7 @@ class CsvImporterTest {
     fun strongCsv_multipleWorkouts_createsOneActivityEach() {
         val csv = strongCsv(
             "2023-10-15 09:30:00,Push Day,1h 0m,Bench Press,1,80,10,,,, \n" +
-            "2023-10-16 07:00:00,Leg Day,45m,Squat,1,100,8,,,, "
+                "2023-10-16 07:00:00,Leg Day,45m,Squat,1,100,8,,,, ",
         )
         val preview = CsvImporter.parse(csv, WeightUnit.KG)
         assertEquals(2, preview.activities.size)
@@ -99,7 +99,7 @@ class CsvImporterTest {
     @Test
     fun strongCsv_externalId_isDeterministic() {
         val csv = strongCsv(
-            "2023-10-15 09:30:00,Push Day,1h 0m,Bench Press,1,80,10,,,, "
+            "2023-10-15 09:30:00,Push Day,1h 0m,Bench Press,1,80,10,,,, ",
         )
         val preview1 = CsvImporter.parse(csv, WeightUnit.KG)
         val preview2 = CsvImporter.parse(csv, WeightUnit.KG)
@@ -108,12 +108,12 @@ class CsvImporterTest {
         assertEquals(
             preview1.activities[0].externalId,
             preview2.activities[0].externalId,
-            "externalId must be deterministic"
+            "externalId must be deterministic",
         )
         // Format: strong-{slug}-{epochSec}
         assertTrue(
             preview1.activities[0].externalId.startsWith("strong-push_day-"),
-            "externalId should start with 'strong-push_day-'"
+            "externalId should start with 'strong-push_day-'",
         )
     }
 
@@ -149,7 +149,7 @@ class CsvImporterTest {
     fun strongCsv_dateRange_coversAllActivities() {
         val csv = strongCsv(
             "2023-10-15 09:30:00,Push Day,1h 0m,Bench Press,1,80,10,,,, \n" +
-            "2023-10-20 07:00:00,Leg Day,30m,Squat,1,100,8,,,, "
+                "2023-10-20 07:00:00,Leg Day,30m,Squat,1,100,8,,,, ",
         )
         val preview = CsvImporter.parse(csv, WeightUnit.KG)
         assertNotNull(preview.dateRange)
@@ -161,7 +161,7 @@ class CsvImporterTest {
     fun strongCsv_totalDuration_sumsAllActivities() {
         val csv = strongCsv(
             "2023-10-15 09:30:00,Push Day,1h 0m,Bench Press,1,80,10,,,, \n" +
-            "2023-10-20 07:00:00,Leg Day,30m,Squat,1,100,8,,,, "
+                "2023-10-20 07:00:00,Leg Day,30m,Squat,1,100,8,,,, ",
         )
         val preview = CsvImporter.parse(csv, WeightUnit.KG)
         // 1h = 3600s, 30m = 1800s, total = 5400s
@@ -176,7 +176,7 @@ class CsvImporterTest {
     fun hevyCsv_singleWorkout_createsOneActivity() {
         val csv = hevyCsv(
             "Push Day,2023-10-15T09:30:00Z,2023-10-15T10:30:00Z,,Bench Press,,,,80,10,,,\n" +
-            "Push Day,2023-10-15T09:30:00Z,2023-10-15T10:30:00Z,,Overhead Press,,,,60,10,,,"
+                "Push Day,2023-10-15T09:30:00Z,2023-10-15T10:30:00Z,,Overhead Press,,,,60,10,,,",
         )
         val preview = CsvImporter.parse(csv, WeightUnit.KG, "user2", isPaidUser = true)
         assertEquals(CsvFormat.HEVY, preview.format)

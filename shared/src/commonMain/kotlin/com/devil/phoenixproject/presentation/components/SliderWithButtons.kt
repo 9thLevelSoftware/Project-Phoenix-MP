@@ -14,8 +14,8 @@ import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.ui.theme.Spacing
 import kotlin.math.roundToInt
 import org.jetbrains.compose.resources.stringResource
-import vitruvianprojectphoenix.shared.generated.resources.Res
 import vitruvianprojectphoenix.shared.generated.resources.*
+import vitruvianprojectphoenix.shared.generated.resources.Res
 
 /**
  * Hybrid slider with fine-tuning +/- buttons
@@ -30,7 +30,7 @@ fun SliderWithButtons(
     label: String,
     formatValue: (Float) -> String,
     modifier: Modifier = Modifier,
-    enabled: Boolean = true
+    enabled: Boolean = true,
 ) {
     // Calculate number of discrete steps for the slider
     // steps = number of intervals - 1 (excluding start and end)
@@ -38,24 +38,24 @@ fun SliderWithButtons(
     val sliderSteps = ((range / step).roundToInt() - 1).coerceAtLeast(0)
     Column(
         modifier = modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(Spacing.small)
+        verticalArrangement = Arrangement.spacedBy(Spacing.small),
     ) {
         // Label and current value
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
+            verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
                 text = label,
                 style = MaterialTheme.typography.bodyLarge,
-                color = MaterialTheme.colorScheme.onSurface
+                color = MaterialTheme.colorScheme.onSurface,
             )
             Text(
                 text = formatValue(value),
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.primary
+                color = MaterialTheme.colorScheme.primary,
             )
         }
 
@@ -63,7 +63,7 @@ fun SliderWithButtons(
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(Spacing.small)
+            horizontalArrangement = Arrangement.spacedBy(Spacing.small),
         ) {
             // Decrease button
             FilledIconButton(
@@ -74,14 +74,14 @@ fun SliderWithButtons(
                 modifier = Modifier.size(36.dp),
                 enabled = enabled && value > valueRange.start,
                 colors = IconButtonDefaults.filledIconButtonColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
+                    containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
                 ),
-                shape = CircleShape
+                shape = CircleShape,
             ) {
                 Icon(
                     Icons.Default.Remove,
                     contentDescription = stringResource(Res.string.cd_decrease),
-                    modifier = Modifier.size(18.dp)
+                    modifier = Modifier.size(18.dp),
                 )
             }
 
@@ -109,14 +109,14 @@ fun SliderWithButtons(
                 modifier = Modifier.size(36.dp),
                 enabled = enabled && value < valueRange.endInclusive,
                 colors = IconButtonDefaults.filledIconButtonColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
+                    containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
                 ),
-                shape = CircleShape
+                shape = CircleShape,
             ) {
                 Icon(
                     Icons.Default.Add,
                     contentDescription = stringResource(Res.string.cd_increase),
-                    modifier = Modifier.size(18.dp)
+                    modifier = Modifier.size(18.dp),
                 )
             }
         }

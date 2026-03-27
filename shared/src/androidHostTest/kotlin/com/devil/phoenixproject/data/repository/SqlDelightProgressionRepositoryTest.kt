@@ -5,12 +5,12 @@ import com.devil.phoenixproject.domain.model.ProgressionEvent
 import com.devil.phoenixproject.domain.model.ProgressionReason
 import com.devil.phoenixproject.domain.model.ProgressionResponse
 import com.devil.phoenixproject.testutil.createTestDatabase
-import kotlinx.coroutines.test.runTest
-import org.junit.Before
-import org.junit.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
+import kotlinx.coroutines.test.runTest
+import org.junit.Before
+import org.junit.Test
 
 class SqlDelightProgressionRepositoryTest {
 
@@ -28,7 +28,7 @@ class SqlDelightProgressionRepositoryTest {
         val event = ProgressionEvent.create(
             exerciseId = "bench",
             previousWeightKg = 50f,
-            reason = ProgressionReason.REPS_ACHIEVED
+            reason = ProgressionReason.REPS_ACHIEVED,
         )
 
         repository.createProgressionSuggestion(event)
@@ -43,7 +43,7 @@ class SqlDelightProgressionRepositoryTest {
         val event = ProgressionEvent.create(
             exerciseId = "bench",
             previousWeightKg = 50f,
-            reason = ProgressionReason.LOW_RPE
+            reason = ProgressionReason.LOW_RPE,
         )
         repository.createProgressionSuggestion(event)
 

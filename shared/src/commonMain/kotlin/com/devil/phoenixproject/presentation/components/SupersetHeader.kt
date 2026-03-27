@@ -14,8 +14,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ColorLens
 import androidx.compose.material.icons.filled.ContentCopy
-import androidx.compose.material.icons.filled.DragHandle
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.DragHandle
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.DropdownMenu
@@ -37,8 +37,8 @@ import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.domain.model.Superset
 import com.devil.phoenixproject.ui.theme.SupersetTheme
 import org.jetbrains.compose.resources.stringResource
-import vitruvianprojectphoenix.shared.generated.resources.Res
 import vitruvianprojectphoenix.shared.generated.resources.*
+import vitruvianprojectphoenix.shared.generated.resources.Res
 
 /**
  * Header component for a superset showing name, exercise count, and rest time.
@@ -59,7 +59,7 @@ fun SupersetHeader(
     onDelete: () -> Unit,
     modifier: Modifier = Modifier,
     showDragHandle: Boolean = true,
-    dragModifier: Modifier = Modifier
+    dragModifier: Modifier = Modifier,
 ) {
     val color = SupersetTheme.colorForIndex(superset.colorIndex)
     var showMenu by remember { mutableStateOf(false) }
@@ -68,31 +68,31 @@ fun SupersetHeader(
         modifier = modifier.fillMaxWidth(),
         shape = RoundedCornerShape(8.dp),
         color = SupersetTheme.backgroundTint(superset.colorIndex, false),
-        tonalElevation = 1.dp
+        tonalElevation = 1.dp,
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 12.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
+            horizontalArrangement = Arrangement.SpaceBetween,
         ) {
             // Name and count (tappable for rename)
             Column(
                 modifier = Modifier
                     .weight(1f)
-                    .clickable { onRename() }
+                    .clickable { onRename() },
             ) {
                 Text(
                     text = superset.name,
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.SemiBold,
-                    color = color
+                    color = color,
                 )
                 Text(
                     text = "${superset.exerciseCount} exercise${if (superset.exerciseCount != 1) "s" else ""}",
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
 
@@ -100,14 +100,14 @@ fun SupersetHeader(
             Surface(
                 modifier = Modifier.clickable { onChangeRestTime() },
                 shape = RoundedCornerShape(16.dp),
-                color = color.copy(alpha = 0.15f)
+                color = color.copy(alpha = 0.15f),
             ) {
                 Text(
                     text = "${superset.restBetweenSeconds}s rest",
                     style = MaterialTheme.typography.labelMedium,
                     color = color,
                     fontWeight = FontWeight.Medium,
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
                 )
             }
 
@@ -118,7 +118,7 @@ fun SupersetHeader(
                     Icons.Default.DragHandle,
                     contentDescription = stringResource(Res.string.cd_reorder_superset),
                     tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-                    modifier = Modifier.size(20.dp).then(dragModifier)
+                    modifier = Modifier.size(20.dp).then(dragModifier),
                 )
 
                 Spacer(Modifier.width(4.dp))
@@ -129,13 +129,13 @@ fun SupersetHeader(
                 Icon(
                     Icons.Default.MoreVert,
                     contentDescription = stringResource(Res.string.cd_menu),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
 
             DropdownMenu(
                 expanded = showMenu,
-                onDismissRequest = { showMenu = false }
+                onDismissRequest = { showMenu = false },
             ) {
                 DropdownMenuItem(
                     text = { Text(stringResource(Res.string.action_rename)) },
@@ -143,7 +143,7 @@ fun SupersetHeader(
                         showMenu = false
                         onRename()
                     },
-                    leadingIcon = { Icon(Icons.Default.Edit, null) }
+                    leadingIcon = { Icon(Icons.Default.Edit, null) },
                 )
                 DropdownMenuItem(
                     text = { Text(stringResource(Res.string.change_color)) },
@@ -151,7 +151,7 @@ fun SupersetHeader(
                         showMenu = false
                         onChangeColor()
                     },
-                    leadingIcon = { Icon(Icons.Default.ColorLens, null) }
+                    leadingIcon = { Icon(Icons.Default.ColorLens, null) },
                 )
                 DropdownMenuItem(
                     text = { Text(stringResource(Res.string.add_exercise)) },
@@ -159,7 +159,7 @@ fun SupersetHeader(
                         showMenu = false
                         onAddExercise()
                     },
-                    leadingIcon = { Icon(Icons.Default.Add, null) }
+                    leadingIcon = { Icon(Icons.Default.Add, null) },
                 )
                 DropdownMenuItem(
                     text = { Text(stringResource(Res.string.copy_superset)) },
@@ -167,7 +167,7 @@ fun SupersetHeader(
                         showMenu = false
                         onCopy()
                     },
-                    leadingIcon = { Icon(Icons.Default.ContentCopy, null) }
+                    leadingIcon = { Icon(Icons.Default.ContentCopy, null) },
                 )
                 DropdownMenuItem(
                     text = { Text(stringResource(Res.string.delete_superset)) },
@@ -179,9 +179,9 @@ fun SupersetHeader(
                         Icon(
                             Icons.Default.Delete,
                             null,
-                            tint = MaterialTheme.colorScheme.error
+                            tint = MaterialTheme.colorScheme.error,
                         )
-                    }
+                    },
                 )
             }
         }

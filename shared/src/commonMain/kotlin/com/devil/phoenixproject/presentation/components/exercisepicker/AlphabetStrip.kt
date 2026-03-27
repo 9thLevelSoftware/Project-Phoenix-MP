@@ -21,19 +21,15 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import org.jetbrains.compose.resources.stringResource
-import vitruvianprojectphoenix.shared.generated.resources.Res
 import vitruvianprojectphoenix.shared.generated.resources.*
+import vitruvianprojectphoenix.shared.generated.resources.Res
 
 /**
  * Vertical alphabet strip for quick navigation to exercise sections.
  * Only shows letters that have exercises.
  */
 @Composable
-fun AlphabetStrip(
-    letters: List<Char>,
-    onLetterTap: (Char) -> Unit,
-    modifier: Modifier = Modifier
-) {
+fun AlphabetStrip(letters: List<Char>, onLetterTap: (Char) -> Unit, modifier: Modifier = Modifier) {
     val alphabetNavDesc = stringResource(Res.string.cd_alphabet_nav)
     Box(
         modifier = modifier
@@ -42,11 +38,11 @@ fun AlphabetStrip(
             .padding(horizontal = 4.dp, vertical = 8.dp)
             .semantics {
                 contentDescription = alphabetNavDesc
-            }
+            },
     ) {
         Column(
             verticalArrangement = Arrangement.spacedBy(2.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
+            horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             letters.forEach { letter ->
                 val letterDesc = stringResource(Res.string.cd_jump_to_letter, letter.toString())
@@ -61,9 +57,9 @@ fun AlphabetStrip(
                         .padding(horizontal = 6.dp, vertical = 2.dp),
                     style = MaterialTheme.typography.labelSmall.copy(
                         fontSize = 11.sp,
-                        fontWeight = FontWeight.Medium
+                        fontWeight = FontWeight.Medium,
                     ),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
         }

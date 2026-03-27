@@ -4,12 +4,12 @@ import app.cash.turbine.test
 import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.testutil.FakeExerciseRepository
 import com.devil.phoenixproject.testutil.createTestDatabase
-import kotlinx.coroutines.test.runTest
-import org.junit.Before
-import org.junit.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import kotlinx.coroutines.test.runTest
+import org.junit.Before
+import org.junit.Test
 
 class SqlDelightWorkoutRepositoryTest {
 
@@ -71,7 +71,13 @@ class SqlDelightWorkoutRepositoryTest {
     @Test
     fun `getRecentSessions respects limit`() = runTest {
         repeat(5) { i ->
-            repository.saveSession(createTestSession(id = "session-$i", timestamp = i.toLong() * 1000))
+            repository.saveSession(
+                createTestSession(
+                    id = "session-$i",
+                    timestamp =
+                        i.toLong() * 1000,
+                ),
+            )
         }
 
         repository.getRecentSessions("default", 3).test {
@@ -138,7 +144,7 @@ class SqlDelightWorkoutRepositoryTest {
             workingAvgWeightKg = 35f,
             burnoutAvgWeightKg = 30f,
             peakWeightKg = 40f,
-            rpe = 8
+            rpe = 8,
         )
 
         repository.saveSession(session)
@@ -175,10 +181,7 @@ class SqlDelightWorkoutRepositoryTest {
 
     // ========== Helper Methods ==========
 
-    private fun createTestSession(
-        id: String = "test-session",
-        timestamp: Long = System.currentTimeMillis()
-    ) = WorkoutSession(
+    private fun createTestSession(id: String = "test-session", timestamp: Long = System.currentTimeMillis()) = WorkoutSession(
         id = id,
         timestamp = timestamp,
         mode = "OldSchool",
@@ -187,6 +190,6 @@ class SqlDelightWorkoutRepositoryTest {
         totalReps = 10,
         workingReps = 10,
         exerciseId = "test-exercise",
-        exerciseName = "Test Exercise"
+        exerciseName = "Test Exercise",
     )
 }

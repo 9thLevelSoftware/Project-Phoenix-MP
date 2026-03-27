@@ -14,19 +14,16 @@ import androidx.compose.ui.unit.dp
  * Semi-transparent background so content shows through slightly.
  */
 @Composable
-fun LetterHeader(
-    letter: String,
-    modifier: Modifier = Modifier
-) {
+fun LetterHeader(letter: String, modifier: Modifier = Modifier) {
     Surface(
         color = MaterialTheme.colorScheme.surface.copy(alpha = 0.95f),
-        modifier = modifier.fillMaxWidth()
+        modifier = modifier.fillMaxWidth(),
     ) {
         Text(
             text = letter,
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
             style = MaterialTheme.typography.labelLarge,
-            color = MaterialTheme.colorScheme.primary
+            color = MaterialTheme.colorScheme.primary,
         )
     }
 }

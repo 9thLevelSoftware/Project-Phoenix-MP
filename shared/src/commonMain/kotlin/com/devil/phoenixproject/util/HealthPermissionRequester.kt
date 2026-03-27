@@ -10,9 +10,7 @@ import androidx.compose.runtime.Composable
  */
 expect class HealthPermissionRequester {
     @Composable
-    fun LaunchPermissionRequest(
-        onPermissionsResult: (Boolean) -> Unit
-    )
+    fun LaunchPermissionRequest(onPermissionsResult: (Boolean) -> Unit)
 }
 
 @Composable

@@ -21,18 +21,14 @@ import com.devil.phoenixproject.ui.theme.Spacing
  * TUTBeast is internally mapped to TUT pill - beast toggle is shown in the config panel.
  */
 @Composable
-fun ModeSelector(
-    selectedMode: ProgramMode,
-    onModeSelected: (ProgramMode) -> Unit,
-    modifier: Modifier = Modifier
-) {
+fun ModeSelector(selectedMode: ProgramMode, onModeSelected: (ProgramMode) -> Unit, modifier: Modifier = Modifier) {
     // Only show 5 modes in the selector - Beast Mode is a TUT sub-option
     val modes = listOf(
         ProgramMode.OldSchool,
         ProgramMode.TUT,
         ProgramMode.Pump,
         ProgramMode.EccentricOnly,
-        ProgramMode.Echo
+        ProgramMode.Echo,
     )
 
     Column(modifier = modifier) {
@@ -40,7 +36,7 @@ fun ModeSelector(
             text = "WORKOUT MODE",
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
-            letterSpacing = 1.sp
+            letterSpacing = 1.sp,
         )
 
         Spacer(modifier = Modifier.height(Spacing.small))
@@ -50,10 +46,10 @@ fun ModeSelector(
                 .fillMaxWidth()
                 .background(
                     MaterialTheme.colorScheme.surfaceContainerLowest,
-                    RoundedCornerShape(Spacing.medium)
+                    RoundedCornerShape(Spacing.medium),
                 )
                 .padding(Spacing.extraSmall),
-            horizontalArrangement = Arrangement.spacedBy(Spacing.extraSmall)
+            horizontalArrangement = Arrangement.spacedBy(Spacing.extraSmall),
         ) {
             modes.forEach { mode ->
                 // TUTBeast should highlight TUT pill
@@ -69,11 +65,11 @@ fun ModeSelector(
                                 MaterialTheme.colorScheme.surfaceContainerHigh
                             } else {
                                 MaterialTheme.colorScheme.surfaceContainerLowest
-                            }
+                            },
                         )
                         .clickable { onModeSelected(mode) }
                         .padding(vertical = Spacing.small, horizontal = Spacing.extraSmall),
-                    contentAlignment = Alignment.Center
+                    contentAlignment = Alignment.Center,
                 ) {
                     Text(
                         text = getModeAbbreviation(mode),
@@ -85,7 +81,7 @@ fun ModeSelector(
                             MaterialTheme.colorScheme.onSurfaceVariant
                         },
                         textAlign = TextAlign.Center,
-                        maxLines = 1
+                        maxLines = 1,
                     )
                 }
             }

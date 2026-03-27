@@ -1,7 +1,7 @@
 package com.devil.phoenixproject.di
 
-import com.devil.phoenixproject.data.migration.MigrationManager
 import co.touchlab.kermit.Logger
+import com.devil.phoenixproject.data.migration.MigrationManager
 import org.koin.core.context.startKoin
 import org.koin.dsl.KoinAppDeclaration
 import org.koin.mp.KoinPlatform

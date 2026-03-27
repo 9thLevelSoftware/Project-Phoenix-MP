@@ -19,7 +19,7 @@ import com.devil.phoenixproject.ui.theme.VitruvianTheme as SharedVitruvianTheme
 fun VitruvianTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
     dynamicColor: Boolean = false, // Disabled - breaks brand identity
-    content: @Composable () -> Unit
+    content: @Composable () -> Unit,
 ) {
     val themeMode = if (darkTheme) SharedThemeMode.DARK else SharedThemeMode.LIGHT
 
@@ -30,7 +30,8 @@ fun VitruvianTheme(
             SideEffect {
                 val window = (view.context as Activity).window
                 // Set status bar icon colors (light icons for dark theme, dark icons for light theme)
-                WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = !darkTheme
+                WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars =
+                    !darkTheme
             }
         }
 

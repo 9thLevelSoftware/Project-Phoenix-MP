@@ -1,7 +1,7 @@
 package com.devil.phoenixproject.domain.model
 
-import kotlinx.serialization.Serializable
 import kotlin.math.roundToInt
+import kotlinx.serialization.Serializable
 
 /**
  * A single warm-up set definition for a routine exercise.
@@ -16,7 +16,8 @@ import kotlin.math.roundToInt
 @Serializable
 data class WarmupSet(
     val reps: Int,
-    val percentOfWorking: Int // e.g., 50 = 50% of working weight
+    /** e.g., 50 = 50% of working weight */
+    val percentOfWorking: Int,
 )
 
 /**
@@ -27,11 +28,11 @@ data class Routine(
     val name: String,
     val description: String = "",
     val exercises: List<RoutineExercise> = emptyList(),
-    val supersets: List<Superset> = emptyList(),  // Superset containers
+    val supersets: List<Superset> = emptyList(), // Superset containers
     val createdAt: Long = currentTimeMillis(),
     val lastUsed: Long? = null,
     val useCount: Int = 0,
-    val profileId: String = "default"
+    val profileId: String = "default",
 ) {
     /**
      * Get all items (supersets + standalone exercises) in display order.
@@ -39,8 +40,10 @@ data class Routine(
     fun getItems(): List<RoutineItem> {
         val supersetItems = supersets.map { superset ->
             RoutineItem.SupersetItem(
-                superset.copy(exercises = exercises.filter { it.supersetId == superset.id }
-                    .sortedBy { it.orderInSuperset })
+                superset.copy(
+                    exercises = exercises.filter { it.supersetId == superset.id }
+                        .sortedBy { it.orderInSuperset },
+                ),
             )
         }
 
@@ -89,33 +92,30 @@ data class RoutineExercise(
     // Stop at top (contracted position) — applies to fixed-rep sets only, not AMRAP/Just Lift
     val stopAtTop: Boolean = false,
     // Superset configuration (container model)
-    val supersetId: String? = null,       // Reference to parent Superset container
-    val orderInSuperset: Int = 0,         // Position within the superset
+    val supersetId: String? = null, // Reference to parent Superset container
+    val orderInSuperset: Int = 0, // Position within the superset
     // PR percentage scaling (Issue #57)
-    val usePercentOfPR: Boolean = false,           // Toggle: use % instead of absolute weight
-    val weightPercentOfPR: Int = 80,               // Percentage (e.g., 80 = 80%)
-    val prTypeForScaling: PRType = PRType.MAX_WEIGHT,  // Which PR type to scale from
+    val usePercentOfPR: Boolean = false, // Toggle: use % instead of absolute weight
+    val weightPercentOfPR: Int = 80, // Percentage (e.g., 80 = 80%)
+    val prTypeForScaling: PRType = PRType.MAX_WEIGHT, // Which PR type to scale from
     val setWeightsPercentOfPR: List<Int> = emptyList(), // Per-set percentages
     // Variable warm-up sets (Phase 35C: Issue #30)
     // Each WarmupSet defines reps and a percentage of working weight.
     // Executed before working sets as separate BLE stop/start cycles.
-    val warmupSets: List<WarmupSet> = emptyList()
+    val warmupSets: List<WarmupSet> = emptyList(),
 ) {
     /** Returns true if this exercise is part of a superset */
     val isInSuperset: Boolean get() = supersetId != null
+
     // Computed property for backwards compatibility
     val sets: Int get() = setReps.size
     val reps: Int get() = setReps.firstOrNull() ?: 10
 
     // Helper to get rest time for specific set (with fallback to 60s default)
-    fun getRestForSet(setIndex: Int): Int {
-        return setRestSeconds.getOrNull(setIndex) ?: 60
-    }
+    fun getRestForSet(setIndex: Int): Int = setRestSeconds.getOrNull(setIndex) ?: 60
 
     // Helper to get echo level for specific set (with fallback to exercise-level echoLevel)
-    fun getEchoLevelForSet(setIndex: Int): EchoLevel {
-        return setEchoLevels.getOrNull(setIndex) ?: echoLevel
-    }
+    fun getEchoLevelForSet(setIndex: Int): EchoLevel = setEchoLevels.getOrNull(setIndex) ?: echoLevel
 
     // Helper to ensure rest times array matches number of sets
     fun withNormalizedRestTimes(): RoutineExercise {
@@ -138,12 +138,10 @@ data class RoutineExercise(
      * @param currentPR The current PR value in kg (from PersonalRecord based on prTypeForScaling)
      * @return The resolved weight in kg, rounded to nearest 0.5kg increment
      */
-    fun resolveWeight(currentPR: Float?): Float {
-        return if (usePercentOfPR && currentPR != null && currentPR > 0 && weightPercentOfPR > 0) {
-            (currentPR * weightPercentOfPR / 100f).roundToHalfKg()
-        } else {
-            weightPerCableKg
-        }
+    fun resolveWeight(currentPR: Float?): Float = if (usePercentOfPR && currentPR != null && currentPR > 0 && weightPercentOfPR > 0) {
+        (currentPR * weightPercentOfPR / 100f).roundToHalfKg()
+    } else {
+        weightPerCableKg
     }
 
     /**
@@ -177,9 +175,7 @@ data class RoutineExercise(
  * Round to nearest 0.5kg increment.
  * Vitruvian machines use 0.5kg increments, so this ensures valid weight values.
  */
-private fun Float.roundToHalfKg(): Float {
-    return (this * 2).roundToInt() / 2f
-}
+private fun Float.roundToHalfKg(): Float = (this * 2).roundToInt() / 2f
 
 /**
  * Round to nearest given increment.
@@ -196,10 +192,10 @@ fun Float.roundToIncrement(increment: Float): Float {
  * Superset colors for visual distinction
  */
 object SupersetColors {
-    const val INDIGO = 0   // #6366F1
-    const val PINK = 1     // #EC4899
-    const val GREEN = 2    // #10B981
-    const val AMBER = 3    // #F59E0B
+    const val INDIGO = 0 // #6366F1
+    const val PINK = 1 // #EC4899
+    const val GREEN = 2 // #10B981
+    const val AMBER = 3 // #F59E0B
 
     fun next(existingIndices: Set<Int>): Int {
         for (i in 0..3) {
@@ -221,7 +217,7 @@ data class Superset(
     val restBetweenSeconds: Int = 10,
     val orderIndex: Int = 0,
     val exercises: List<RoutineExercise> = emptyList(),
-    val isCollapsed: Boolean = false  // UI state only, not persisted
+    val isCollapsed: Boolean = false, // UI state only, not persisted
 ) {
     val isEmpty: Boolean get() = exercises.isEmpty()
     val exerciseCount: Int get() = exercises.size
@@ -261,9 +257,6 @@ fun Routine.hasSupersets(): Boolean = supersets.isNotEmpty()
 /**
  * Get exercises in a specific superset
  */
-fun Routine.getExercisesInSuperset(supersetId: String): List<RoutineExercise> {
-    return exercises
-        .filter { it.supersetId == supersetId }
-        .sortedBy { it.orderInSuperset }
-}
-
+fun Routine.getExercisesInSuperset(supersetId: String): List<RoutineExercise> = exercises
+    .filter { it.supersetId == supersetId }
+    .sortedBy { it.orderInSuperset }

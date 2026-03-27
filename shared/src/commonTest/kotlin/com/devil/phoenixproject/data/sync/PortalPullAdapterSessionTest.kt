@@ -29,10 +29,10 @@ class PortalPullAdapterSessionTest {
                     sets = listOf(
                         PullSetDto(id = "set-1", exerciseId = "ex-1", setNumber = 1, actualReps = 10, weightKg = 50f),
                         PullSetDto(id = "set-2", exerciseId = "ex-1", setNumber = 2, actualReps = 10, weightKg = 55f),
-                        PullSetDto(id = "set-3", exerciseId = "ex-1", setNumber = 3, actualReps = 8, weightKg = 60f)
-                    )
-                )
-            )
+                        PullSetDto(id = "set-3", exerciseId = "ex-1", setNumber = 3, actualReps = 8, weightKg = 60f),
+                    ),
+                ),
+            ),
         )
 
         val sessions = PortalPullAdapter.toWorkoutSessions(portalSession, "default")
@@ -61,20 +61,26 @@ class PortalPullAdapterSessionTest {
             workoutMode = "OLD_SCHOOL",
             exercises = listOf(
                 PullExerciseDto(
-                    id = "ex-1", sessionId = "portal-session-2", name = "Bench Press",
-                    muscleGroup = "Chest", orderIndex = 0,
+                    id = "ex-1",
+                    sessionId = "portal-session-2",
+                    name = "Bench Press",
+                    muscleGroup = "Chest",
+                    orderIndex = 0,
                     sets = listOf(
-                        PullSetDto(id = "s1", exerciseId = "ex-1", setNumber = 1, actualReps = 10, weightKg = 50f)
-                    )
+                        PullSetDto(id = "s1", exerciseId = "ex-1", setNumber = 1, actualReps = 10, weightKg = 50f),
+                    ),
                 ),
                 PullExerciseDto(
-                    id = "ex-2", sessionId = "portal-session-2", name = "Shoulder Press",
-                    muscleGroup = "Shoulders", orderIndex = 1,
+                    id = "ex-2",
+                    sessionId = "portal-session-2",
+                    name = "Shoulder Press",
+                    muscleGroup = "Shoulders",
+                    orderIndex = 1,
                     sets = listOf(
-                        PullSetDto(id = "s2", exerciseId = "ex-2", setNumber = 1, actualReps = 12, weightKg = 30f)
-                    )
-                )
-            )
+                        PullSetDto(id = "s2", exerciseId = "ex-2", setNumber = 1, actualReps = 12, weightKg = 30f),
+                    ),
+                ),
+            ),
         )
 
         val sessions = PortalPullAdapter.toWorkoutSessions(portalSession, "default")
@@ -92,7 +98,7 @@ class PortalPullAdapterSessionTest {
         val portalSession = PullWorkoutSessionDto(
             id = "portal-session-3",
             startedAt = "2026-03-20T10:00:00Z",
-            exercises = emptyList()
+            exercises = emptyList(),
         )
 
         val sessions = PortalPullAdapter.toWorkoutSessions(portalSession, "default")
@@ -106,10 +112,12 @@ class PortalPullAdapterSessionTest {
             startedAt = null,
             exercises = listOf(
                 PullExerciseDto(
-                    id = "ex-1", sessionId = "portal-session-4", name = "Deadlift",
-                    sets = listOf(PullSetDto(id = "s1", exerciseId = "ex-1", setNumber = 1, actualReps = 5, weightKg = 100f))
-                )
-            )
+                    id = "ex-1",
+                    sessionId = "portal-session-4",
+                    name = "Deadlift",
+                    sets = listOf(PullSetDto(id = "s1", exerciseId = "ex-1", setNumber = 1, actualReps = 5, weightKg = 100f)),
+                ),
+            ),
         )
 
         val sessions = PortalPullAdapter.toWorkoutSessions(portalSession, "default")
@@ -124,13 +132,25 @@ class PortalPullAdapterSessionTest {
             durationSeconds = 600,
             exerciseCount = 3,
             exercises = listOf(
-                PullExerciseDto(id = "ex-1", sessionId = "s5", name = "Ex1",
-                    sets = listOf(PullSetDto(id = "s1", exerciseId = "ex-1", setNumber = 1, actualReps = 10, weightKg = 50f))),
-                PullExerciseDto(id = "ex-2", sessionId = "s5", name = "Ex2",
-                    sets = listOf(PullSetDto(id = "s2", exerciseId = "ex-2", setNumber = 1, actualReps = 10, weightKg = 50f))),
-                PullExerciseDto(id = "ex-3", sessionId = "s5", name = "Ex3",
-                    sets = listOf(PullSetDto(id = "s3", exerciseId = "ex-3", setNumber = 1, actualReps = 10, weightKg = 50f)))
-            )
+                PullExerciseDto(
+                    id = "ex-1",
+                    sessionId = "s5",
+                    name = "Ex1",
+                    sets = listOf(PullSetDto(id = "s1", exerciseId = "ex-1", setNumber = 1, actualReps = 10, weightKg = 50f)),
+                ),
+                PullExerciseDto(
+                    id = "ex-2",
+                    sessionId = "s5",
+                    name = "Ex2",
+                    sets = listOf(PullSetDto(id = "s2", exerciseId = "ex-2", setNumber = 1, actualReps = 10, weightKg = 50f)),
+                ),
+                PullExerciseDto(
+                    id = "ex-3",
+                    sessionId = "s5",
+                    name = "Ex3",
+                    sets = listOf(PullSetDto(id = "s3", exerciseId = "ex-3", setNumber = 1, actualReps = 10, weightKg = 50f)),
+                ),
+            ),
         )
 
         val sessions = PortalPullAdapter.toWorkoutSessions(portalSession, "default")
@@ -145,8 +165,8 @@ class PortalPullAdapterSessionTest {
             startedAt = "2026-03-20T10:00:00Z",
             exerciseCount = 1,
             exercises = listOf(
-                PullExerciseDto(id = "ex-1", sessionId = "s6", name = "Empty Exercise", sets = emptyList())
-            )
+                PullExerciseDto(id = "ex-1", sessionId = "s6", name = "Empty Exercise", sets = emptyList()),
+            ),
         )
 
         val sessions = PortalPullAdapter.toWorkoutSessions(portalSession, "default")

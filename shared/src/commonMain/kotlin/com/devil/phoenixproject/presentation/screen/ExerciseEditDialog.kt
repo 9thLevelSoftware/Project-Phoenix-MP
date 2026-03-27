@@ -19,8 +19,8 @@ import com.devil.phoenixproject.data.repository.PersonalRecordRepository
 import com.devil.phoenixproject.domain.model.*
 import com.devil.phoenixproject.presentation.viewmodel.ExerciseConfigViewModel
 import org.jetbrains.compose.resources.stringResource
-import vitruvianprojectphoenix.shared.generated.resources.Res
 import vitruvianprojectphoenix.shared.generated.resources.*
+import vitruvianprojectphoenix.shared.generated.resources.Res
 
 /**
  * Bottom sheet for editing exercise configuration in a routine.
@@ -40,7 +40,7 @@ fun ExerciseEditBottomSheet(
     onSave: (RoutineExercise) -> Unit,
     onDismiss: () -> Unit,
     buttonText: String = "Save",
-    viewModel: ExerciseConfigViewModel
+    viewModel: ExerciseConfigViewModel,
 ) {
     // State for editable fields
     var setReps by remember { mutableStateOf(exercise.setReps.toMutableList()) }
@@ -56,7 +56,7 @@ fun ExerciseEditBottomSheet(
     val isEchoMode = exercise.programMode == ProgramMode.Echo
 
     ModalBottomSheet(
-        onDismissRequest = onDismiss
+        onDismissRequest = onDismiss,
     ) {
         Column(
             modifier = Modifier
@@ -64,17 +64,17 @@ fun ExerciseEditBottomSheet(
                 .padding(horizontal = 16.dp)
                 .padding(bottom = 32.dp)
                 .verticalScroll(rememberScrollState()),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+            verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             // Header
             Text(
                 text = "Configure Exercise",
-                style = MaterialTheme.typography.titleLarge
+                style = MaterialTheme.typography.titleLarge,
             )
             Text(
                 text = exercise.exercise.name,
                 style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.primary
+                color = MaterialTheme.colorScheme.primary,
             )
 
             HorizontalDivider()
@@ -82,19 +82,19 @@ fun ExerciseEditBottomSheet(
             // Sets and Reps Section
             Text(
                 text = "Sets & Reps",
-                style = MaterialTheme.typography.titleSmall
+                style = MaterialTheme.typography.titleSmall,
             )
 
             // Number of sets control
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
+                verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(stringResource(Res.string.label_sets), modifier = Modifier.weight(0.3f))
                 Row(
                     modifier = Modifier.weight(0.7f),
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     IconButton(
                         onClick = {
@@ -102,23 +102,30 @@ fun ExerciseEditBottomSheet(
                                 setReps = setReps.dropLast(1).toMutableList()
                             }
                         },
-                        enabled = setReps.size > 1
+                        enabled = setReps.size > 1,
                     ) {
-                        Icon(Icons.Default.Remove, contentDescription = stringResource(Res.string.cd_remove_set))
+                        Icon(
+                            Icons.Default.Remove,
+                            contentDescription = stringResource(Res.string.cd_remove_set),
+                        )
                     }
                     Text(
                         text = "${setReps.size}",
-                        style = MaterialTheme.typography.titleMedium
+                        style = MaterialTheme.typography.titleMedium,
                     )
                     IconButton(
                         onClick = {
                             if (setReps.size < 10) {
-                                setReps = (setReps + listOf(setReps.lastOrNull() ?: 10)).toMutableList()
+                                setReps =
+                                    (setReps + listOf(setReps.lastOrNull() ?: 10)).toMutableList()
                             }
                         },
-                        enabled = setReps.size < 10
+                        enabled = setReps.size < 10,
                     ) {
-                        Icon(Icons.Default.Add, contentDescription = stringResource(Res.string.cd_add_set))
+                        Icon(
+                            Icons.Default.Add,
+                            contentDescription = stringResource(Res.string.cd_add_set),
+                        )
                     }
                 }
             }
@@ -127,12 +134,12 @@ fun ExerciseEditBottomSheet(
             setReps.forEachIndexed { index, reps ->
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(
                         "Set ${index + 1}:",
                         modifier = Modifier.weight(0.3f),
-                        style = MaterialTheme.typography.bodyMedium
+                        style = MaterialTheme.typography.bodyMedium,
                     )
 
                     if (isAMRAP && index == setReps.lastIndex) {
@@ -140,7 +147,7 @@ fun ExerciseEditBottomSheet(
                             "AMRAP",
                             modifier = Modifier.weight(0.7f),
                             style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.primary
+                            color = MaterialTheme.colorScheme.primary,
                         )
                     } else {
                         OutlinedTextField(
@@ -154,7 +161,7 @@ fun ExerciseEditBottomSheet(
                             label = { Text(stringResource(Res.string.label_reps)) },
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                             modifier = Modifier.weight(0.7f),
-                            singleLine = true
+                            singleLine = true,
                         )
                     }
                 }
@@ -163,15 +170,15 @@ fun ExerciseEditBottomSheet(
             // AMRAP toggle
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier.fillMaxWidth(),
             ) {
                 Text(
                     "Last set AMRAP",
-                    modifier = Modifier.weight(1f)
+                    modifier = Modifier.weight(1f),
                 )
                 Switch(
                     checked = isAMRAP,
-                    onCheckedChange = { isAMRAP = it }
+                    onCheckedChange = { isAMRAP = it },
                 )
             }
 
@@ -180,7 +187,7 @@ fun ExerciseEditBottomSheet(
             // Weight Section
             Text(
                 text = "Weight",
-                style = MaterialTheme.typography.titleSmall
+                style = MaterialTheme.typography.titleSmall,
             )
 
             OutlinedTextField(
@@ -189,12 +196,18 @@ fun ExerciseEditBottomSheet(
                     newValue.toFloatOrNull()?.let { weightPerCable = it }
                 },
                 label = {
-                    val unitLabel = if (weightUnit == WeightUnit.KG) stringResource(Res.string.label_kg) else stringResource(Res.string.label_lbs)
+                    val unitLabel = if (weightUnit ==
+                        WeightUnit.KG
+                    ) {
+                        stringResource(Res.string.label_kg)
+                    } else {
+                        stringResource(Res.string.label_lbs)
+                    }
                     Text(stringResource(Res.string.weight_per_cable, unitLabel))
                 },
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                 modifier = Modifier.fillMaxWidth(),
-                singleLine = true
+                singleLine = true,
             )
 
             HorizontalDivider()
@@ -202,12 +215,12 @@ fun ExerciseEditBottomSheet(
             // Rest Time
             Text(
                 text = "Rest Time",
-                style = MaterialTheme.typography.titleSmall
+                style = MaterialTheme.typography.titleSmall,
             )
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
+                verticalAlignment = Alignment.CenterVertically,
             ) {
                 OutlinedTextField(
                     value = restSeconds.toString(),
@@ -217,7 +230,7 @@ fun ExerciseEditBottomSheet(
                     label = { Text(stringResource(Res.string.label_seconds)) },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     modifier = Modifier.weight(0.35f),
-                    singleLine = true
+                    singleLine = true,
                 )
 
                 Spacer(modifier = Modifier.width(8.dp))
@@ -225,13 +238,13 @@ fun ExerciseEditBottomSheet(
                 // Quick select buttons
                 Row(
                     modifier = Modifier.weight(0.65f),
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
                     listOf(30, 60, 90, 120).forEach { seconds ->
                         FilterChip(
                             selected = restSeconds == seconds,
                             onClick = { restSeconds = seconds },
-                            label = { Text(stringResource(Res.string.seconds_label, seconds)) }
+                            label = { Text(stringResource(Res.string.seconds_label, seconds)) },
                         )
                     }
                 }
@@ -243,33 +256,37 @@ fun ExerciseEditBottomSheet(
 
                 Text(
                     text = "Echo Mode Settings",
-                    style = MaterialTheme.typography.titleSmall
+                    style = MaterialTheme.typography.titleSmall,
                 )
 
                 // Eccentric Load
                 Text(
                     text = "Eccentric Load",
-                    style = MaterialTheme.typography.bodyMedium
+                    style = MaterialTheme.typography.bodyMedium,
                 )
 
                 var eccentricLoadExpanded by remember { mutableStateOf(false) }
                 ExposedDropdownMenuBox(
                     expanded = eccentricLoadExpanded,
-                    onExpandedChange = { eccentricLoadExpanded = it }
+                    onExpandedChange = { eccentricLoadExpanded = it },
                 ) {
                     OutlinedTextField(
                         value = selectedEccentricLoad.displayName,
                         onValueChange = {},
                         readOnly = true,
-                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = eccentricLoadExpanded) },
+                        trailingIcon = {
+                            ExposedDropdownMenuDefaults.TrailingIcon(
+                                expanded = eccentricLoadExpanded,
+                            )
+                        },
                         modifier = Modifier
                             .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable)
                             .fillMaxWidth(),
-                        colors = ExposedDropdownMenuDefaults.outlinedTextFieldColors()
+                        colors = ExposedDropdownMenuDefaults.outlinedTextFieldColors(),
                     )
                     ExposedDropdownMenu(
                         expanded = eccentricLoadExpanded,
-                        onDismissRequest = { eccentricLoadExpanded = false }
+                        onDismissRequest = { eccentricLoadExpanded = false },
                     ) {
                         EccentricLoad.entries.forEach { load ->
                             DropdownMenuItem(
@@ -278,7 +295,7 @@ fun ExerciseEditBottomSheet(
                                     selectedEccentricLoad = load
                                     eccentricLoadExpanded = false
                                 },
-                                contentPadding = ExposedDropdownMenuDefaults.ItemContentPadding
+                                contentPadding = ExposedDropdownMenuDefaults.ItemContentPadding,
                             )
                         }
                     }
@@ -289,17 +306,17 @@ fun ExerciseEditBottomSheet(
                 // Echo Level
                 Text(
                     text = "Echo Level",
-                    style = MaterialTheme.typography.bodyMedium
+                    style = MaterialTheme.typography.bodyMedium,
                 )
 
                 Row(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     EchoLevel.entries.forEach { level ->
                         FilterChip(
                             selected = selectedEchoLevel == level,
                             onClick = { selectedEchoLevel = level },
-                            label = { Text(level.displayName) }
+                            label = { Text(level.displayName) },
                         )
                     }
                 }
@@ -310,11 +327,11 @@ fun ExerciseEditBottomSheet(
             // Action Buttons
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 OutlinedButton(
                     onClick = onDismiss,
-                    modifier = Modifier.weight(1f)
+                    modifier = Modifier.weight(1f),
                 ) {
                     Text(stringResource(Res.string.action_cancel))
                 }
@@ -327,11 +344,11 @@ fun ExerciseEditBottomSheet(
                             setRestSeconds = listOf(restSeconds),
                             eccentricLoad = selectedEccentricLoad,
                             echoLevel = selectedEchoLevel,
-                            isAMRAP = isAMRAP
+                            isAMRAP = isAMRAP,
                         )
                         onSave(updatedExercise)
                     },
-                    modifier = Modifier.weight(1f)
+                    modifier = Modifier.weight(1f),
                 ) {
                     Text(buttonText)
                 }

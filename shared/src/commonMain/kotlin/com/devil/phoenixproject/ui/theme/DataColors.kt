@@ -27,6 +27,7 @@ object DataColors {
     val Power = Color(0xFF06B6D4)
 
     // Workout metrics chart colors (for WorkoutMetricsDetailChart)
+
     /** Load A (left cable) - Blue */
     val LoadA = Color(0xFF3B82F6)
 

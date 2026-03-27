@@ -1,7 +1,6 @@
 package com.devil.phoenixproject.data.repository
 
 import co.touchlab.kermit.Logger
-import com.devil.phoenixproject.database.VitruvianDatabase
 import com.devil.phoenixproject.data.sync.CustomExerciseSyncDto
 import com.devil.phoenixproject.data.sync.EarnedBadgeSyncDto
 import com.devil.phoenixproject.data.sync.GamificationStatsSyncDto
@@ -13,6 +12,7 @@ import com.devil.phoenixproject.data.sync.PullRoutineDto
 import com.devil.phoenixproject.data.sync.PullTrainingCycleDto
 import com.devil.phoenixproject.data.sync.RoutineSyncDto
 import com.devil.phoenixproject.data.sync.WorkoutSessionSyncDto
+import com.devil.phoenixproject.database.VitruvianDatabase
 import com.devil.phoenixproject.domain.model.CycleDay
 import com.devil.phoenixproject.domain.model.CycleProgress
 import com.devil.phoenixproject.domain.model.CycleProgression
@@ -22,13 +22,13 @@ import com.devil.phoenixproject.domain.model.Exercise
 import com.devil.phoenixproject.domain.model.PRType
 import com.devil.phoenixproject.domain.model.PersonalRecord
 import com.devil.phoenixproject.domain.model.ProgramMode
-import com.devil.phoenixproject.domain.model.WorkoutPhase
 import com.devil.phoenixproject.domain.model.RepCountTiming
 import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.domain.model.RoutineExercise
 import com.devil.phoenixproject.domain.model.Superset
 import com.devil.phoenixproject.domain.model.TrainingCycle
 import com.devil.phoenixproject.domain.model.WarmupSet
+import com.devil.phoenixproject.domain.model.WorkoutPhase
 import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.domain.model.currentTimeMillis
 import kotlinx.coroutines.Dispatchers
@@ -40,124 +40,110 @@ import kotlinx.serialization.json.Json
  * SQLDelight implementation of SyncRepository.
  * Provides database operations for syncing data with the Phoenix Portal.
  */
-class SqlDelightSyncRepository(
-    private val db: VitruvianDatabase
-) : SyncRepository {
+class SqlDelightSyncRepository(private val db: VitruvianDatabase) : SyncRepository {
 
     private val queries = db.vitruvianDatabaseQueries
     private val json = Json { ignoreUnknownKeys = true }
 
     // === Push Operations ===
 
-    override suspend fun getSessionsModifiedSince(timestamp: Long, profileId: String): List<WorkoutSessionSyncDto> {
-        return withContext(Dispatchers.IO) {
-            queries.selectSessionsModifiedSince(timestamp, profileId = profileId).executeAsList().map { row ->
-                WorkoutSessionSyncDto(
-                    clientId = row.id,
-                    serverId = row.serverId,
-                    timestamp = row.timestamp,
-                    mode = row.mode,
-                    targetReps = row.targetReps.toInt(),
-                    weightPerCableKg = row.weightPerCableKg.toFloat(),
-                    duration = row.duration.toInt(),
-                    totalReps = row.totalReps.toInt(),
-                    exerciseId = row.exerciseId,
-                    exerciseName = row.exerciseName,
-                    deletedAt = row.deletedAt,
-                    createdAt = row.timestamp, // Use timestamp as createdAt
-                    updatedAt = row.updatedAt ?: row.timestamp
-                )
-            }
+    override suspend fun getSessionsModifiedSince(timestamp: Long, profileId: String): List<WorkoutSessionSyncDto> = withContext(Dispatchers.IO) {
+        queries.selectSessionsModifiedSince(timestamp, profileId = profileId).executeAsList().map { row ->
+            WorkoutSessionSyncDto(
+                clientId = row.id,
+                serverId = row.serverId,
+                timestamp = row.timestamp,
+                mode = row.mode,
+                targetReps = row.targetReps.toInt(),
+                weightPerCableKg = row.weightPerCableKg.toFloat(),
+                duration = row.duration.toInt(),
+                totalReps = row.totalReps.toInt(),
+                exerciseId = row.exerciseId,
+                exerciseName = row.exerciseName,
+                deletedAt = row.deletedAt,
+                createdAt = row.timestamp, // Use timestamp as createdAt
+                updatedAt = row.updatedAt ?: row.timestamp,
+            )
         }
     }
 
-    override suspend fun getPRsModifiedSince(timestamp: Long, profileId: String): List<PersonalRecordSyncDto> {
-        return withContext(Dispatchers.IO) {
-            queries.selectPRsModifiedSince(timestamp, profileId = profileId).executeAsList().map { row ->
-                PersonalRecordSyncDto(
-                    clientId = row.id.toString(),
-                    serverId = row.serverId,
-                    exerciseId = row.exerciseId,
-                    exerciseName = row.exerciseName,
-                    weight = row.weight.toFloat(),
-                    reps = row.reps.toInt(),
-                    oneRepMax = row.oneRepMax.toFloat(),
-                    achievedAt = row.achievedAt,
-                    workoutMode = row.workoutMode,
-                    prType = row.prType,
-                    phase = row.phase,
-                    volume = row.volume.toFloat(),
-                    deletedAt = row.deletedAt,
-                    createdAt = row.achievedAt,
-                    updatedAt = row.updatedAt ?: row.achievedAt
-                )
-            }
+    override suspend fun getPRsModifiedSince(timestamp: Long, profileId: String): List<PersonalRecordSyncDto> = withContext(Dispatchers.IO) {
+        queries.selectPRsModifiedSince(timestamp, profileId = profileId).executeAsList().map { row ->
+            PersonalRecordSyncDto(
+                clientId = row.id.toString(),
+                serverId = row.serverId,
+                exerciseId = row.exerciseId,
+                exerciseName = row.exerciseName,
+                weight = row.weight.toFloat(),
+                reps = row.reps.toInt(),
+                oneRepMax = row.oneRepMax.toFloat(),
+                achievedAt = row.achievedAt,
+                workoutMode = row.workoutMode,
+                prType = row.prType,
+                phase = row.phase,
+                volume = row.volume.toFloat(),
+                deletedAt = row.deletedAt,
+                createdAt = row.achievedAt,
+                updatedAt = row.updatedAt ?: row.achievedAt,
+            )
         }
     }
 
-    override suspend fun getRoutinesModifiedSince(timestamp: Long, profileId: String): List<RoutineSyncDto> {
-        return withContext(Dispatchers.IO) {
-            queries.selectRoutinesModifiedSince(timestamp, profileId = profileId).executeAsList().map { row ->
-                RoutineSyncDto(
-                    clientId = row.id,
-                    serverId = row.serverId,
-                    name = row.name,
-                    description = row.description,
-                    deletedAt = row.deletedAt,
-                    createdAt = row.createdAt,
-                    updatedAt = row.updatedAt ?: row.createdAt
-                )
-            }
+    override suspend fun getRoutinesModifiedSince(timestamp: Long, profileId: String): List<RoutineSyncDto> = withContext(Dispatchers.IO) {
+        queries.selectRoutinesModifiedSince(timestamp, profileId = profileId).executeAsList().map { row ->
+            RoutineSyncDto(
+                clientId = row.id,
+                serverId = row.serverId,
+                name = row.name,
+                description = row.description,
+                deletedAt = row.deletedAt,
+                createdAt = row.createdAt,
+                updatedAt = row.updatedAt ?: row.createdAt,
+            )
         }
     }
 
-    override suspend fun getCustomExercisesModifiedSince(timestamp: Long): List<CustomExerciseSyncDto> {
-        return withContext(Dispatchers.IO) {
-            queries.selectCustomExercisesModifiedSince(timestamp).executeAsList().map { row ->
-                CustomExerciseSyncDto(
-                    clientId = row.id,
-                    serverId = row.serverId,
-                    name = row.name,
-                    muscleGroup = row.muscleGroup,
-                    equipment = row.equipment,
-                    defaultCableConfig = row.defaultCableConfig,
-                    deletedAt = row.deletedAt,
-                    createdAt = row.created,
-                    updatedAt = row.updatedAt ?: row.created
-                )
-            }
+    override suspend fun getCustomExercisesModifiedSince(timestamp: Long): List<CustomExerciseSyncDto> = withContext(Dispatchers.IO) {
+        queries.selectCustomExercisesModifiedSince(timestamp).executeAsList().map { row ->
+            CustomExerciseSyncDto(
+                clientId = row.id,
+                serverId = row.serverId,
+                name = row.name,
+                muscleGroup = row.muscleGroup,
+                equipment = row.equipment,
+                defaultCableConfig = row.defaultCableConfig,
+                deletedAt = row.deletedAt,
+                createdAt = row.created,
+                updatedAt = row.updatedAt ?: row.created,
+            )
         }
     }
 
-    override suspend fun getBadgesModifiedSince(timestamp: Long, profileId: String): List<EarnedBadgeSyncDto> {
-        return withContext(Dispatchers.IO) {
-            queries.selectBadgesModifiedSince(timestamp, profileId = profileId).executeAsList().map { row ->
-                EarnedBadgeSyncDto(
-                    clientId = row.id.toString(),
-                    serverId = row.serverId,
-                    badgeId = row.badgeId,
-                    earnedAt = row.earnedAt,
-                    deletedAt = row.deletedAt,
-                    createdAt = row.earnedAt,
-                    updatedAt = row.updatedAt ?: row.earnedAt
-                )
-            }
+    override suspend fun getBadgesModifiedSince(timestamp: Long, profileId: String): List<EarnedBadgeSyncDto> = withContext(Dispatchers.IO) {
+        queries.selectBadgesModifiedSince(timestamp, profileId = profileId).executeAsList().map { row ->
+            EarnedBadgeSyncDto(
+                clientId = row.id.toString(),
+                serverId = row.serverId,
+                badgeId = row.badgeId,
+                earnedAt = row.earnedAt,
+                deletedAt = row.deletedAt,
+                createdAt = row.earnedAt,
+                updatedAt = row.updatedAt ?: row.earnedAt,
+            )
         }
     }
 
-    override suspend fun getGamificationStatsForSync(profileId: String): GamificationStatsSyncDto? {
-        return withContext(Dispatchers.IO) {
-            queries.selectGamificationStatsForSync(profileId = profileId).executeAsOneOrNull()?.let { row ->
-                GamificationStatsSyncDto(
-                    clientId = row.id.toString(),
-                    totalWorkouts = row.totalWorkouts.toInt(),
-                    totalReps = row.totalReps.toInt(),
-                    totalVolumeKg = row.totalVolumeKg.toFloat(),
-                    longestStreak = row.longestStreak.toInt(),
-                    currentStreak = row.currentStreak.toInt(),
-                    updatedAt = row.updatedAt ?: row.lastUpdated
-                )
-            }
+    override suspend fun getGamificationStatsForSync(profileId: String): GamificationStatsSyncDto? = withContext(Dispatchers.IO) {
+        queries.selectGamificationStatsForSync(profileId = profileId).executeAsOneOrNull()?.let { row ->
+            GamificationStatsSyncDto(
+                clientId = row.id.toString(),
+                totalWorkouts = row.totalWorkouts.toInt(),
+                totalReps = row.totalReps.toInt(),
+                totalVolumeKg = row.totalVolumeKg.toFloat(),
+                longestStreak = row.longestStreak.toInt(),
+                currentStreak = row.currentStreak.toInt(),
+                updatedAt = row.updatedAt ?: row.lastUpdated,
+            )
         }
     }
 
@@ -200,7 +186,9 @@ class SqlDelightSyncRepository(
                     queries.updateBadgeServerId(serverId, longId)
                 }
             }
-            Logger.d { "Updated server IDs: ${mappings.sessions.size} sessions, ${mappings.records.size} PRs, ${mappings.routines.size} routines" }
+            Logger.d {
+                "Updated server IDs: ${mappings.sessions.size} sessions, ${mappings.records.size} PRs, ${mappings.routines.size} routines"
+            }
         }
     }
 
@@ -268,7 +256,7 @@ class SqlDelightSyncRepository(
                         updatedAt = dto.updatedAt,
                         serverId = dto.serverId,
                         deletedAt = dto.deletedAt,
-                        profile_id = "default"
+                        profile_id = "default",
                     )
                 }
             }
@@ -295,7 +283,7 @@ class SqlDelightSyncRepository(
                         prType = dto.prType,
                         volume = effectiveVolume.toDouble(),
                         phase = dto.phase,
-                        profile_id = "default"
+                        profile_id = "default",
                     )
                 }
             }
@@ -323,7 +311,7 @@ class SqlDelightSyncRepository(
                         createdAt = dto.createdAt,
                         lastUsed = existing?.lastUsed,
                         useCount = existing?.useCount ?: 0L,
-                        profile_id = "default"
+                        profile_id = "default",
                     )
 
                     // Update sync fields
@@ -363,7 +351,7 @@ class SqlDelightSyncRepository(
                         lastPerformed = null,
                         aliases = null,
                         defaultCableConfig = dto.defaultCableConfig,
-                        one_rep_max_kg = null
+                        one_rep_max_kg = null,
                     )
 
                     if (dto.serverId != null) {
@@ -406,7 +394,7 @@ class SqlDelightSyncRepository(
                 lastWorkoutDate = existing?.lastWorkoutDate,
                 streakStartDate = existing?.streakStartDate,
                 lastUpdated = now,
-                profileId = profileId
+                profileId = profileId,
             )
             Logger.d { "Merged gamification stats from server (profile=$profileId)" }
         }
@@ -438,7 +426,7 @@ class SqlDelightSyncRepository(
                         createdAt = existing?.createdAt ?: currentTimeMillis(),
                         lastUsed = existing?.lastUsed,
                         useCount = existing?.useCount ?: 0L,
-                        profile_id = existing?.profile_id ?: profileId
+                        profile_id = existing?.profile_id ?: profileId,
                     )
 
                     // SAFETY GUARD: Only replace exercises if the portal actually sent exercises.
@@ -465,7 +453,7 @@ class SqlDelightSyncRepository(
                                 name = "Superset ${supersetOrderIdx + 1}",
                                 colorIndex = colorIndex,
                                 restBetweenSeconds = 10L, // default
-                                orderIndex = supersetOrderIdx.toLong()
+                                orderIndex = supersetOrderIdx.toLong(),
                             )
                             supersetOrderIdx++
                         }
@@ -473,8 +461,11 @@ class SqlDelightSyncRepository(
                         for (exercise in portalRoutine.exercises) {
                             // Build setReps string: e.g., "10,10,10" for sets=3, reps=10
                             val repsList = List(exercise.sets) {
-                                if (exercise.isAmrap && it == exercise.sets - 1) "AMRAP"
-                                else exercise.reps.toString()
+                                if (exercise.isAmrap && it == exercise.sets - 1) {
+                                    "AMRAP"
+                                } else {
+                                    exercise.reps.toString()
+                                }
                             }
                             val setReps = repsList.joinToString(",")
 
@@ -483,7 +474,9 @@ class SqlDelightSyncRepository(
                                 try {
                                     val parsed = Json.decodeFromString<List<Float>>(jsonStr)
                                     parsed.joinToString(",") { it.toString() }
-                                } catch (_: Exception) { "" }
+                                } catch (_: Exception) {
+                                    ""
+                                }
                             } ?: ""
 
                             // perSetRest is already JSON array format, use as setRestSeconds
@@ -497,7 +490,9 @@ class SqlDelightSyncRepository(
                                         name?.let { PortalPullAdapter.parseEchoLevel(it).toInt() }
                                     }
                                     Json.encodeToString(ordinals)
-                                } catch (_: Exception) { "" }
+                                } catch (_: Exception) {
+                                    ""
+                                }
                             } ?: ""
 
                             val mobileMode = PortalPullAdapter.portalModeToMobileMode(exercise.mode)
@@ -538,13 +533,13 @@ class SqlDelightSyncRepository(
                                 stopAtTop = if (exercise.stopAtPosition == "TOP") 1L else 0L,
                                 repCountTiming = exercise.repCountTiming ?: "TOP",
                                 setEchoLevels = setEchoLevels,
-                                warmupSets = exercise.warmupSets ?: ""
+                                warmupSets = exercise.warmupSets ?: "",
                             )
                         }
                     } else {
                         Logger.w("SyncRepository") {
                             "Skipping exercise merge for routine '${portalRoutine.name}' (${portalRoutine.id}): " +
-                            "portal sent empty exercises list (exerciseCount=${portalRoutine.exerciseCount})"
+                                "portal sent empty exercises list (exerciseCount=${portalRoutine.exerciseCount})"
                         }
                     }
                 }
@@ -564,7 +559,7 @@ class SqlDelightSyncRepository(
                         description = portalCycle.description,
                         created_at = currentTimeMillis(),
                         is_active = if (portalCycle.status == "active") 1L else 0L,
-                        profile_id = profileId
+                        profile_id = profileId,
                     )
 
                     // For existing cycles, update metadata (updateTrainingCycle takes 4 params: name, description, is_active, id)
@@ -576,7 +571,7 @@ class SqlDelightSyncRepository(
                             name = portalCycle.name,
                             description = portalCycle.description,
                             is_active = if (portalCycle.status == "active") 1L else 0L,
-                            id = portalCycle.id
+                            id = portalCycle.id,
                         )
                     }
 
@@ -595,7 +590,7 @@ class SqlDelightSyncRepository(
                             eccentric_load_percent = null,
                             weight_progression_percent = day.weightAdjustment.toDouble(),
                             rep_modifier = day.repModifier.toLong(),
-                            rest_time_override_seconds = day.restOverride?.toLong()
+                            rest_time_override_seconds = day.restOverride?.toLong(),
                         )
                     }
 
@@ -608,7 +603,7 @@ class SqlDelightSyncRepository(
                                 frequency_cycles = map["frequencyCycles"]?.toLongOrNull() ?: 2L,
                                 weight_increase_percent = map["weightIncreasePercent"]?.toDoubleOrNull(),
                                 echo_level_increase = if (map["echoLevelIncrease"] == "true") 1L else 0L,
-                                eccentric_load_increase_percent = map["eccentricLoadIncreasePercent"]?.toLongOrNull()
+                                eccentric_load_increase_percent = map["eccentricLoadIncreasePercent"]?.toLongOrNull(),
                             )
                         } catch (e: Exception) {
                             Logger.w(e) { "Failed to parse progressionSettings for cycle ${portalCycle.id}" }
@@ -672,7 +667,7 @@ class SqlDelightSyncRepository(
                         strengthProfile = session.strengthProfile,
                         formScore = session.formScore?.toLong(),
                         updatedAt = session.timestamp, // Mark as already-synced to prevent re-push
-                        profile_id = session.profileId
+                        profile_id = session.profileId,
                     )
                 }
             }
@@ -682,192 +677,222 @@ class SqlDelightSyncRepository(
 
     // === Portal Push Operations (full domain objects) ===
 
-    override suspend fun getWorkoutSessionsModifiedSince(timestamp: Long, profileId: String): List<WorkoutSession> {
-        return withContext(Dispatchers.IO) {
-            queries.selectSessionsModifiedSince(timestamp, profileId = profileId, ::mapToWorkoutSession).executeAsList()
+    override suspend fun getWorkoutSessionsModifiedSince(timestamp: Long, profileId: String): List<WorkoutSession> = withContext(Dispatchers.IO) {
+        queries.selectSessionsModifiedSince(timestamp, profileId = profileId, ::mapToWorkoutSession).executeAsList()
+    }
+
+    override suspend fun getFullRoutinesModifiedSince(timestamp: Long, profileId: String): List<Routine> = withContext(Dispatchers.IO) {
+        val routineRows = queries.selectRoutinesModifiedSince(timestamp, profileId = profileId).executeAsList()
+        routineRows.map { row ->
+            val exerciseRows = queries.selectExercisesByRoutine(row.id).executeAsList()
+            val supersetRows = queries.selectSupersetsByRoutine(row.id).executeAsList()
+
+            val supersets = supersetRows.map { ssRow ->
+                Superset(
+                    id = ssRow.id,
+                    routineId = ssRow.routineId,
+                    name = ssRow.name,
+                    colorIndex = ssRow.colorIndex.toInt(),
+                    restBetweenSeconds = ssRow.restBetweenSeconds.toInt(),
+                    orderIndex = ssRow.orderIndex.toInt(),
+                )
+            }
+
+            val exercises = exerciseRows.mapNotNull { exRow ->
+                try {
+                    val exercise = Exercise(
+                        id = exRow.exerciseId,
+                        name = exRow.exerciseName,
+                        muscleGroup = exRow.exerciseMuscleGroup,
+                        muscleGroups = exRow.exerciseMuscleGroup,
+                        equipment = exRow.exerciseEquipment,
+                    )
+
+                    val setReps: List<Int?> = try {
+                        exRow.setReps.split(",").map { value ->
+                            val trimmed = value.trim()
+                            if (trimmed.equals("AMRAP", ignoreCase = true)) null else trimmed.toIntOrNull()
+                        }
+                    } catch (_: Exception) {
+                        listOf(10)
+                    }
+
+                    val setWeights: List<Float> = try {
+                        if (exRow.setWeights.isBlank()) {
+                            emptyList()
+                        } else {
+                            exRow.setWeights.split(",").mapNotNull { it.trim().toFloatOrNull() }
+                        }
+                    } catch (_: Exception) {
+                        emptyList()
+                    }
+
+                    val setRestSeconds: List<Int> = try {
+                        json.decodeFromString<List<Int>>(exRow.setRestSeconds)
+                    } catch (_: Exception) {
+                        emptyList()
+                    }
+
+                    val setEchoLevels: List<EchoLevel?> = try {
+                        if (exRow.setEchoLevels.isBlank()) {
+                            emptyList()
+                        } else {
+                            json.decodeFromString<List<Int?>>(exRow.setEchoLevels).map { ordinal ->
+                                ordinal?.let { EchoLevel.entries.getOrNull(it) }
+                            }
+                        }
+                    } catch (_: Exception) {
+                        emptyList()
+                    }
+
+                    val eccentricLoad = mapEccentricLoadFromDb(exRow.eccentricLoad)
+                    val echoLevel = EchoLevel.entries.getOrNull(exRow.echoLevel.toInt()) ?: EchoLevel.HARDER
+                    val programMode = parseProgramMode(exRow.mode)
+
+                    val prTypeForScaling = try {
+                        PRType.valueOf(exRow.prTypeForScaling)
+                    } catch (_: Exception) {
+                        PRType.MAX_WEIGHT
+                    }
+
+                    val setWeightsPercentOfPR: List<Int> = try {
+                        if (exRow.setWeightsPercentOfPR.isNullOrBlank()) {
+                            emptyList()
+                        } else {
+                            json.decodeFromString<List<Int>>(exRow.setWeightsPercentOfPR)
+                        }
+                    } catch (_: Exception) {
+                        emptyList()
+                    }
+
+                    val warmupSets: List<WarmupSet> = try {
+                        if (exRow.warmupSets.isBlank()) {
+                            emptyList()
+                        } else {
+                            json.decodeFromString<List<WarmupSet>>(exRow.warmupSets)
+                        }
+                    } catch (_: Exception) {
+                        emptyList()
+                    }
+
+                    RoutineExercise(
+                        id = exRow.id,
+                        exercise = exercise,
+                        orderIndex = exRow.orderIndex.toInt(),
+                        setReps = setReps,
+                        weightPerCableKg = exRow.weightPerCableKg.toFloat(),
+                        setWeightsPerCableKg = setWeights,
+                        programMode = programMode,
+                        eccentricLoad = eccentricLoad,
+                        echoLevel = echoLevel,
+                        progressionKg = exRow.progressionKg.toFloat(),
+                        setRestSeconds = setRestSeconds,
+                        setEchoLevels = setEchoLevels,
+                        duration = exRow.duration?.toInt(),
+                        isAMRAP = exRow.isAMRAP == 1L,
+                        perSetRestTime = exRow.perSetRestTime == 1L,
+                        stallDetectionEnabled = exRow.stallDetectionEnabled == 1L,
+                        repCountTiming = try {
+                            RepCountTiming.valueOf(exRow.repCountTiming)
+                        } catch (
+                            _: Exception,
+                        ) {
+                            RepCountTiming.TOP
+                        },
+                        stopAtTop = exRow.stopAtTop == 1L,
+                        supersetId = exRow.supersetId,
+                        orderInSuperset = exRow.orderInSuperset.toInt(),
+                        usePercentOfPR = exRow.usePercentOfPR == 1L,
+                        weightPercentOfPR = exRow.weightPercentOfPR.toInt(),
+                        prTypeForScaling = prTypeForScaling,
+                        setWeightsPercentOfPR = setWeightsPercentOfPR,
+                        warmupSets = warmupSets,
+                    )
+                } catch (e: Exception) {
+                    Logger.e(e) { "Failed to map routine exercise: ${exRow.exerciseId}" }
+                    null
+                }
+            }
+
+            Routine(
+                id = row.id,
+                name = row.name,
+                description = row.description,
+                exercises = exercises,
+                supersets = supersets,
+                createdAt = row.createdAt,
+                lastUsed = row.lastUsed,
+                useCount = row.useCount.toInt(),
+            )
         }
     }
 
-    override suspend fun getFullRoutinesModifiedSince(timestamp: Long, profileId: String): List<Routine> {
-        return withContext(Dispatchers.IO) {
-            val routineRows = queries.selectRoutinesModifiedSince(timestamp, profileId = profileId).executeAsList()
-            routineRows.map { row ->
-                val exerciseRows = queries.selectExercisesByRoutine(row.id).executeAsList()
-                val supersetRows = queries.selectSupersetsByRoutine(row.id).executeAsList()
+    override suspend fun getFullCyclesForSync(profileId: String): List<CycleWithContext> = withContext(Dispatchers.IO) {
+        val cycles = queries.selectTrainingCyclesByProfile(profileId = profileId).executeAsList()
+        val allDays = queries.selectAllCycleDaysSync().executeAsList()
+        val allProgress = queries.selectAllCycleProgressSync().executeAsList()
+        val allProgressions = queries.selectAllCycleProgressionsSync().executeAsList()
 
-                val supersets = supersetRows.map { ssRow ->
-                    Superset(
-                        id = ssRow.id,
-                        routineId = ssRow.routineId,
-                        name = ssRow.name,
-                        colorIndex = ssRow.colorIndex.toInt(),
-                        restBetweenSeconds = ssRow.restBetweenSeconds.toInt(),
-                        orderIndex = ssRow.orderIndex.toInt()
-                    )
-                }
+        val daysByCycle = allDays.groupBy { it.cycle_id }
+        val progressByCycle = allProgress.associateBy { it.cycle_id }
+        val progressionByCycle = allProgressions.associateBy { it.cycle_id }
 
-                val exercises = exerciseRows.mapNotNull { exRow ->
-                    try {
-                        val exercise = Exercise(
-                            id = exRow.exerciseId,
-                            name = exRow.exerciseName,
-                            muscleGroup = exRow.exerciseMuscleGroup,
-                            muscleGroups = exRow.exerciseMuscleGroup,
-                            equipment = exRow.exerciseEquipment
-                        )
+        cycles.map { row ->
+            val days = (daysByCycle[row.id] ?: emptyList()).map { d ->
+                CycleDay(
+                    id = d.id,
+                    cycleId = d.cycle_id,
+                    dayNumber = d.day_number.toInt(),
+                    name = d.name,
+                    routineId = d.routine_id,
+                    isRestDay = d.is_rest_day == 1L,
+                    echoLevel = d.echo_level?.let { lvl ->
+                        try {
+                            EchoLevel.valueOf(lvl)
+                        } catch (_: Exception) {
+                            null
+                        }
+                    },
+                    eccentricLoadPercent = d.eccentric_load_percent?.toInt(),
+                    weightProgressionPercent = d.weight_progression_percent?.toFloat(),
+                    repModifier = d.rep_modifier?.toInt(),
+                    restTimeOverrideSeconds = d.rest_time_override_seconds?.toInt(),
+                )
+            }
 
-                        val setReps: List<Int?> = try {
-                            exRow.setReps.split(",").map { value ->
-                                val trimmed = value.trim()
-                                if (trimmed.equals("AMRAP", ignoreCase = true)) null else trimmed.toIntOrNull()
-                            }
-                        } catch (_: Exception) { listOf(10) }
+            val progress = progressByCycle[row.id]?.let { p ->
+                CycleProgress(
+                    id = p.id,
+                    cycleId = p.cycle_id,
+                    currentDayNumber = p.current_day_number.toInt(),
+                    lastCompletedDate = p.last_completed_date,
+                    cycleStartDate = p.cycle_start_date,
+                    lastAdvancedAt = p.last_advanced_at,
+                )
+            }
 
-                        val setWeights: List<Float> = try {
-                            if (exRow.setWeights.isBlank()) emptyList()
-                            else exRow.setWeights.split(",").mapNotNull { it.trim().toFloatOrNull() }
-                        } catch (_: Exception) { emptyList() }
+            val progression = progressionByCycle[row.id]?.let { pg ->
+                CycleProgression(
+                    cycleId = pg.cycle_id,
+                    frequencyCycles = pg.frequency_cycles.toInt(),
+                    weightIncreasePercent = pg.weight_increase_percent?.toFloat(),
+                    echoLevelIncrease = pg.echo_level_increase != 0L,
+                    eccentricLoadIncreasePercent = pg.eccentric_load_increase_percent?.toInt(),
+                )
+            }
 
-                        val setRestSeconds: List<Int> = try {
-                            json.decodeFromString<List<Int>>(exRow.setRestSeconds)
-                        } catch (_: Exception) { emptyList() }
-
-                        val setEchoLevels: List<EchoLevel?> = try {
-                            if (exRow.setEchoLevels.isBlank()) emptyList()
-                            else json.decodeFromString<List<Int?>>(exRow.setEchoLevels).map { ordinal ->
-                                ordinal?.let { EchoLevel.entries.getOrNull(it) }
-                            }
-                        } catch (_: Exception) { emptyList() }
-
-                        val eccentricLoad = mapEccentricLoadFromDb(exRow.eccentricLoad)
-                        val echoLevel = EchoLevel.entries.getOrNull(exRow.echoLevel.toInt()) ?: EchoLevel.HARDER
-                        val programMode = parseProgramMode(exRow.mode)
-
-                        val prTypeForScaling = try {
-                            PRType.valueOf(exRow.prTypeForScaling)
-                        } catch (_: Exception) { PRType.MAX_WEIGHT }
-
-                        val setWeightsPercentOfPR: List<Int> = try {
-                            if (exRow.setWeightsPercentOfPR.isNullOrBlank()) emptyList()
-                            else json.decodeFromString<List<Int>>(exRow.setWeightsPercentOfPR)
-                        } catch (_: Exception) { emptyList() }
-
-                        val warmupSets: List<WarmupSet> = try {
-                            if (exRow.warmupSets.isBlank()) emptyList()
-                            else json.decodeFromString<List<WarmupSet>>(exRow.warmupSets)
-                        } catch (_: Exception) { emptyList() }
-
-                        RoutineExercise(
-                            id = exRow.id,
-                            exercise = exercise,
-                            orderIndex = exRow.orderIndex.toInt(),
-                            setReps = setReps,
-                            weightPerCableKg = exRow.weightPerCableKg.toFloat(),
-                            setWeightsPerCableKg = setWeights,
-                            programMode = programMode,
-                            eccentricLoad = eccentricLoad,
-                            echoLevel = echoLevel,
-                            progressionKg = exRow.progressionKg.toFloat(),
-                            setRestSeconds = setRestSeconds,
-                            setEchoLevels = setEchoLevels,
-                            duration = exRow.duration?.toInt(),
-                            isAMRAP = exRow.isAMRAP == 1L,
-                            perSetRestTime = exRow.perSetRestTime == 1L,
-                            stallDetectionEnabled = exRow.stallDetectionEnabled == 1L,
-                            repCountTiming = try { RepCountTiming.valueOf(exRow.repCountTiming) } catch (_: Exception) { RepCountTiming.TOP },
-                            stopAtTop = exRow.stopAtTop == 1L,
-                            supersetId = exRow.supersetId,
-                            orderInSuperset = exRow.orderInSuperset.toInt(),
-                            usePercentOfPR = exRow.usePercentOfPR == 1L,
-                            weightPercentOfPR = exRow.weightPercentOfPR.toInt(),
-                            prTypeForScaling = prTypeForScaling,
-                            setWeightsPercentOfPR = setWeightsPercentOfPR,
-                            warmupSets = warmupSets
-                        )
-                    } catch (e: Exception) {
-                        Logger.e(e) { "Failed to map routine exercise: ${exRow.exerciseId}" }
-                        null
-                    }
-                }
-
-                Routine(
+            CycleWithContext(
+                cycle = TrainingCycle(
                     id = row.id,
                     name = row.name,
                     description = row.description,
-                    exercises = exercises,
-                    supersets = supersets,
-                    createdAt = row.createdAt,
-                    lastUsed = row.lastUsed,
-                    useCount = row.useCount.toInt()
-                )
-            }
-        }
-    }
-
-    override suspend fun getFullCyclesForSync(profileId: String): List<CycleWithContext> {
-        return withContext(Dispatchers.IO) {
-            val cycles = queries.selectTrainingCyclesByProfile(profileId = profileId).executeAsList()
-            val allDays = queries.selectAllCycleDaysSync().executeAsList()
-            val allProgress = queries.selectAllCycleProgressSync().executeAsList()
-            val allProgressions = queries.selectAllCycleProgressionsSync().executeAsList()
-
-            val daysByCycle = allDays.groupBy { it.cycle_id }
-            val progressByCycle = allProgress.associateBy { it.cycle_id }
-            val progressionByCycle = allProgressions.associateBy { it.cycle_id }
-
-            cycles.map { row ->
-                val days = (daysByCycle[row.id] ?: emptyList()).map { d ->
-                    CycleDay(
-                        id = d.id,
-                        cycleId = d.cycle_id,
-                        dayNumber = d.day_number.toInt(),
-                        name = d.name,
-                        routineId = d.routine_id,
-                        isRestDay = d.is_rest_day == 1L,
-                        echoLevel = d.echo_level?.let { lvl ->
-                            try { EchoLevel.valueOf(lvl) } catch (_: Exception) { null }
-                        },
-                        eccentricLoadPercent = d.eccentric_load_percent?.toInt(),
-                        weightProgressionPercent = d.weight_progression_percent?.toFloat(),
-                        repModifier = d.rep_modifier?.toInt(),
-                        restTimeOverrideSeconds = d.rest_time_override_seconds?.toInt()
-                    )
-                }
-
-                val progress = progressByCycle[row.id]?.let { p ->
-                    CycleProgress(
-                        id = p.id,
-                        cycleId = p.cycle_id,
-                        currentDayNumber = p.current_day_number.toInt(),
-                        lastCompletedDate = p.last_completed_date,
-                        cycleStartDate = p.cycle_start_date,
-                        lastAdvancedAt = p.last_advanced_at
-                    )
-                }
-
-                val progression = progressionByCycle[row.id]?.let { pg ->
-                    CycleProgression(
-                        cycleId = pg.cycle_id,
-                        frequencyCycles = pg.frequency_cycles.toInt(),
-                        weightIncreasePercent = pg.weight_increase_percent?.toFloat(),
-                        echoLevelIncrease = pg.echo_level_increase != 0L,
-                        eccentricLoadIncreasePercent = pg.eccentric_load_increase_percent?.toInt()
-                    )
-                }
-
-                CycleWithContext(
-                    cycle = TrainingCycle(
-                        id = row.id,
-                        name = row.name,
-                        description = row.description,
-                        days = days,
-                        createdAt = row.created_at,
-                        isActive = row.is_active == 1L
-                    ),
-                    progress = progress,
-                    progression = progression
-                )
-            }
+                    days = days,
+                    createdAt = row.created_at,
+                    isActive = row.is_active == 1L,
+                ),
+                progress = progress,
+                progression = progression,
+            )
         }
     }
 
@@ -925,146 +950,150 @@ class SqlDelightSyncRepository(
         serverId: String?,
         deletedAt: Long?,
         // Multi-profile support (migration 21)
-        profileId: String
-    ): WorkoutSession {
-        return WorkoutSession(
-            id = id,
-            timestamp = timestamp,
-            mode = mode,
-            reps = targetReps.toInt(),
-            weightPerCableKg = weightPerCableKg.toFloat(),
-            progressionKg = progressionKg.toFloat(),
-            duration = duration,
-            totalReps = totalReps.toInt(),
-            warmupReps = warmupReps.toInt(),
-            workingReps = workingReps.toInt(),
-            isJustLift = isJustLift == 1L,
-            stopAtTop = stopAtTop == 1L,
-            eccentricLoad = eccentricLoad.toInt(),
-            echoLevel = echoLevel.toInt(),
-            exerciseId = exerciseId,
-            exerciseName = exerciseName,
-            routineSessionId = routineSessionId,
-            routineName = routineName,
-            routineId = routineId,
-            safetyFlags = safetyFlags.toInt(),
-            deloadWarningCount = deloadWarningCount.toInt(),
-            romViolationCount = romViolationCount.toInt(),
-            spotterActivations = spotterActivations.toInt(),
-            peakForceConcentricA = peakForceConcentricA?.toFloat(),
-            peakForceConcentricB = peakForceConcentricB?.toFloat(),
-            peakForceEccentricA = peakForceEccentricA?.toFloat(),
-            peakForceEccentricB = peakForceEccentricB?.toFloat(),
-            avgForceConcentricA = avgForceConcentricA?.toFloat(),
-            avgForceConcentricB = avgForceConcentricB?.toFloat(),
-            avgForceEccentricA = avgForceEccentricA?.toFloat(),
-            avgForceEccentricB = avgForceEccentricB?.toFloat(),
-            heaviestLiftKg = heaviestLiftKg?.toFloat(),
-            totalVolumeKg = totalVolumeKg?.toFloat(),
-            cableCount = cableCount?.toInt(),
-            estimatedCalories = estimatedCalories?.toFloat(),
-            warmupAvgWeightKg = warmupAvgWeightKg?.toFloat(),
-            workingAvgWeightKg = workingAvgWeightKg?.toFloat(),
-            burnoutAvgWeightKg = burnoutAvgWeightKg?.toFloat(),
-            peakWeightKg = peakWeightKg?.toFloat(),
-            rpe = rpe?.toInt(),
-            avgMcvMmS = avgMcvMmS?.toFloat(),
-            avgAsymmetryPercent = avgAsymmetryPercent?.toFloat(),
-            totalVelocityLossPercent = totalVelocityLossPercent?.toFloat(),
-            dominantSide = dominantSide,
-            strengthProfile = strengthProfile,
-            formScore = formScore?.toInt(),
-            profileId = profileId
-        )
-    }
+        profileId: String,
+    ): WorkoutSession = WorkoutSession(
+        id = id,
+        timestamp = timestamp,
+        mode = mode,
+        reps = targetReps.toInt(),
+        weightPerCableKg = weightPerCableKg.toFloat(),
+        progressionKg = progressionKg.toFloat(),
+        duration = duration,
+        totalReps = totalReps.toInt(),
+        warmupReps = warmupReps.toInt(),
+        workingReps = workingReps.toInt(),
+        isJustLift = isJustLift == 1L,
+        stopAtTop = stopAtTop == 1L,
+        eccentricLoad = eccentricLoad.toInt(),
+        echoLevel = echoLevel.toInt(),
+        exerciseId = exerciseId,
+        exerciseName = exerciseName,
+        routineSessionId = routineSessionId,
+        routineName = routineName,
+        routineId = routineId,
+        safetyFlags = safetyFlags.toInt(),
+        deloadWarningCount = deloadWarningCount.toInt(),
+        romViolationCount = romViolationCount.toInt(),
+        spotterActivations = spotterActivations.toInt(),
+        peakForceConcentricA = peakForceConcentricA?.toFloat(),
+        peakForceConcentricB = peakForceConcentricB?.toFloat(),
+        peakForceEccentricA = peakForceEccentricA?.toFloat(),
+        peakForceEccentricB = peakForceEccentricB?.toFloat(),
+        avgForceConcentricA = avgForceConcentricA?.toFloat(),
+        avgForceConcentricB = avgForceConcentricB?.toFloat(),
+        avgForceEccentricA = avgForceEccentricA?.toFloat(),
+        avgForceEccentricB = avgForceEccentricB?.toFloat(),
+        heaviestLiftKg = heaviestLiftKg?.toFloat(),
+        totalVolumeKg = totalVolumeKg?.toFloat(),
+        cableCount = cableCount?.toInt(),
+        estimatedCalories = estimatedCalories?.toFloat(),
+        warmupAvgWeightKg = warmupAvgWeightKg?.toFloat(),
+        workingAvgWeightKg = workingAvgWeightKg?.toFloat(),
+        burnoutAvgWeightKg = burnoutAvgWeightKg?.toFloat(),
+        peakWeightKg = peakWeightKg?.toFloat(),
+        rpe = rpe?.toInt(),
+        avgMcvMmS = avgMcvMmS?.toFloat(),
+        avgAsymmetryPercent = avgAsymmetryPercent?.toFloat(),
+        totalVelocityLossPercent = totalVelocityLossPercent?.toFloat(),
+        dominantSide = dominantSide,
+        strengthProfile = strengthProfile,
+        formScore = formScore?.toInt(),
+        profileId = profileId,
+    )
 
     private fun mapEccentricLoadFromDb(dbValue: Long): EccentricLoad {
         val safeValue = dbValue.toInt().coerceIn(0, 150)
         return when (safeValue) {
             0 -> EccentricLoad.LOAD_0
+
             50 -> EccentricLoad.LOAD_50
+
             75 -> EccentricLoad.LOAD_75
+
             100 -> EccentricLoad.LOAD_100
+
             110 -> EccentricLoad.LOAD_110
+
             120 -> EccentricLoad.LOAD_120
+
             130 -> EccentricLoad.LOAD_130
+
             140 -> EccentricLoad.LOAD_140
+
             150 -> EccentricLoad.LOAD_150
+
             else -> EccentricLoad.entries.minByOrNull { kotlin.math.abs(it.percentage - safeValue) }
                 ?: EccentricLoad.LOAD_100
         }
     }
 
-    private fun parseProgramMode(modeStr: String): ProgramMode {
-        return when {
-            modeStr.startsWith("Program:") -> {
-                when (modeStr.removePrefix("Program:")) {
-                    "OldSchool" -> ProgramMode.OldSchool
-                    "Pump" -> ProgramMode.Pump
-                    "TUT" -> ProgramMode.TUT
-                    "TUTBeast" -> ProgramMode.TUTBeast
-                    "EccentricOnly" -> ProgramMode.EccentricOnly
-                    "Echo" -> ProgramMode.Echo
-                    else -> ProgramMode.OldSchool
-                }
+    private fun parseProgramMode(modeStr: String): ProgramMode = when {
+        modeStr.startsWith("Program:") -> {
+            when (modeStr.removePrefix("Program:")) {
+                "OldSchool" -> ProgramMode.OldSchool
+                "Pump" -> ProgramMode.Pump
+                "TUT" -> ProgramMode.TUT
+                "TUTBeast" -> ProgramMode.TUTBeast
+                "EccentricOnly" -> ProgramMode.EccentricOnly
+                "Echo" -> ProgramMode.Echo
+                else -> ProgramMode.OldSchool
             }
-            modeStr == "Echo" || modeStr.startsWith("Echo") -> ProgramMode.Echo
-            modeStr == "Pump" -> ProgramMode.Pump
-            modeStr == "TUT" -> ProgramMode.TUT
-            modeStr == "TUTBeast" -> ProgramMode.TUTBeast
-            modeStr == "EccentricOnly" -> ProgramMode.EccentricOnly
-            modeStr == "OldSchool" -> ProgramMode.OldSchool
-            else -> ProgramMode.OldSchool
         }
+
+        modeStr == "Echo" || modeStr.startsWith("Echo") -> ProgramMode.Echo
+
+        modeStr == "Pump" -> ProgramMode.Pump
+
+        modeStr == "TUT" -> ProgramMode.TUT
+
+        modeStr == "TUTBeast" -> ProgramMode.TUTBeast
+
+        modeStr == "EccentricOnly" -> ProgramMode.EccentricOnly
+
+        modeStr == "OldSchool" -> ProgramMode.OldSchool
+
+        else -> ProgramMode.OldSchool
     }
 
     // === Extended Sync Methods (GAPs 1-9) ===
 
-    override suspend fun getFullPRsModifiedSince(timestamp: Long, profileId: String): List<PersonalRecord> {
-        return withContext(Dispatchers.IO) {
-            queries.selectPRsModifiedSince(timestamp, profileId = profileId).executeAsList().map { row ->
-                PersonalRecord(
-                    id = row.id,
-                    exerciseId = row.exerciseId,
-                    exerciseName = row.exerciseName,
-                    weightPerCableKg = row.weight.toFloat(),
-                    reps = row.reps.toInt(),
-                    oneRepMax = row.oneRepMax.toFloat(),
-                    timestamp = row.achievedAt,
-                    workoutMode = row.workoutMode,
-                    prType = when (row.prType) {
-                        "MAX_VOLUME" -> PRType.MAX_VOLUME
-                        else -> PRType.MAX_WEIGHT
-                    },
-                    volume = row.volume.toFloat(),
-                    phase = when (row.phase) {
-                        "CONCENTRIC" -> WorkoutPhase.CONCENTRIC
-                        "ECCENTRIC" -> WorkoutPhase.ECCENTRIC
-                        else -> WorkoutPhase.COMBINED
-                    }
-                )
-            }
+    override suspend fun getFullPRsModifiedSince(timestamp: Long, profileId: String): List<PersonalRecord> = withContext(Dispatchers.IO) {
+        queries.selectPRsModifiedSince(timestamp, profileId = profileId).executeAsList().map { row ->
+            PersonalRecord(
+                id = row.id,
+                exerciseId = row.exerciseId,
+                exerciseName = row.exerciseName,
+                weightPerCableKg = row.weight.toFloat(),
+                reps = row.reps.toInt(),
+                oneRepMax = row.oneRepMax.toFloat(),
+                timestamp = row.achievedAt,
+                workoutMode = row.workoutMode,
+                prType = when (row.prType) {
+                    "MAX_VOLUME" -> PRType.MAX_VOLUME
+                    else -> PRType.MAX_WEIGHT
+                },
+                volume = row.volume.toFloat(),
+                phase = when (row.phase) {
+                    "CONCENTRIC" -> WorkoutPhase.CONCENTRIC
+                    "ECCENTRIC" -> WorkoutPhase.ECCENTRIC
+                    else -> WorkoutPhase.COMBINED
+                },
+            )
         }
     }
 
-    override suspend fun getPhaseStatisticsForSessions(
-        sessionIds: List<String>
-    ): List<com.devil.phoenixproject.database.PhaseStatistics> {
+    override suspend fun getPhaseStatisticsForSessions(sessionIds: List<String>): List<com.devil.phoenixproject.database.PhaseStatistics> {
         if (sessionIds.isEmpty()) return emptyList()
         return withContext(Dispatchers.IO) {
             queries.selectPhaseStatsBySessionIds(sessionIds).executeAsList()
         }
     }
 
-    override suspend fun getAllExerciseSignatures(): List<com.devil.phoenixproject.database.ExerciseSignature> {
-        return withContext(Dispatchers.IO) {
-            queries.selectAllSignatures().executeAsList()
-        }
+    override suspend fun getAllExerciseSignatures(): List<com.devil.phoenixproject.database.ExerciseSignature> = withContext(Dispatchers.IO) {
+        queries.selectAllSignatures().executeAsList()
     }
 
-    override suspend fun getAllAssessments(profileId: String): List<com.devil.phoenixproject.database.AssessmentResult> {
-        return withContext(Dispatchers.IO) {
-            queries.selectAllAssessments(profileId = profileId).executeAsList()
-        }
+    override suspend fun getAllAssessments(profileId: String): List<com.devil.phoenixproject.database.AssessmentResult> = withContext(Dispatchers.IO) {
+        queries.selectAllAssessments(profileId = profileId).executeAsList()
     }
 }

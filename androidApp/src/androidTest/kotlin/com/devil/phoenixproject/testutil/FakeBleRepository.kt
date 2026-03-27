@@ -71,7 +71,7 @@ class FakeBleRepository : BleRepository {
     fun simulateConnect(deviceName: String, deviceAddress: String = "AA:BB:CC:DD:EE:FF") {
         _connectionState.value = ConnectionState.Connected(
             deviceName = deviceName,
-            deviceAddress = deviceAddress
+            deviceAddress = deviceAddress,
         )
     }
 
@@ -169,7 +169,7 @@ class FakeBleRepository : BleRepository {
         return if (connectResult.isSuccess) {
             _connectionState.value = ConnectionState.Connected(
                 deviceName = device.name,
-                deviceAddress = device.address
+                deviceAddress = device.address,
             )
             Result.success(Unit)
         } else {
@@ -202,31 +202,23 @@ class FakeBleRepository : BleRepository {
         }
     }
 
-    override suspend fun setColorScheme(schemeIndex: Int): Result<Unit> {
-        return Result.success(Unit)
-    }
+    override suspend fun setColorScheme(schemeIndex: Int): Result<Unit> = Result.success(Unit)
 
     override suspend fun sendWorkoutCommand(command: ByteArray): Result<Unit> {
         commandsReceived.add(command)
         return workoutCommandResult
     }
 
-    override suspend fun sendInitSequence(): Result<Unit> {
-        return Result.success(Unit)
-    }
+    override suspend fun sendInitSequence(): Result<Unit> = Result.success(Unit)
 
     override suspend fun startWorkout(params: WorkoutParameters): Result<Unit> {
         workoutParameters.add(params)
         return Result.success(Unit)
     }
 
-    override suspend fun stopWorkout(): Result<Unit> {
-        return Result.success(Unit)
-    }
+    override suspend fun stopWorkout(): Result<Unit> = Result.success(Unit)
 
-    override suspend fun sendStopCommand(): Result<Unit> {
-        return Result.success(Unit)
-    }
+    override suspend fun sendStopCommand(): Result<Unit> = Result.success(Unit)
 
     override fun enableHandleDetection(enabled: Boolean) {
         if (enabled) {

@@ -28,13 +28,11 @@ import kotlinx.coroutines.flow.asStateFlow
  * - Coexists with music via [AudioManager.AUDIOFOCUS_GAIN_TRANSIENT]
  * - All SpeechRecognizer calls dispatched to main thread (API requirement)
  */
-actual class SafeWordListener(
-    private val context: Context,
-    private val safeWord: String,
-) {
+actual class SafeWordListener(private val context: Context, private val safeWord: String) {
     private companion object {
         const val TAG = "SafeWordListener"
         const val RESTART_DELAY_MS = 500L
+
         /** Minimum interval between emissions to prevent partial+final double-counting. */
         const val DEBOUNCE_MS = 1000L
     }
@@ -102,25 +100,24 @@ actual class SafeWordListener(
         }
     }
 
-    private fun createRecognizerIntent(): Intent =
-        Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
-            putExtra(
-                RecognizerIntent.EXTRA_LANGUAGE_MODEL,
-                RecognizerIntent.LANGUAGE_MODEL_FREE_FORM,
-            )
-            putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, true)
-            putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
-            // Keep listening even during silence
-            putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS, 10_000L)
-            putExtra(
-                RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS,
-                5_000L,
-            )
-            putExtra(
-                RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS,
-                5_000L,
-            )
-        }
+    private fun createRecognizerIntent(): Intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+        putExtra(
+            RecognizerIntent.EXTRA_LANGUAGE_MODEL,
+            RecognizerIntent.LANGUAGE_MODEL_FREE_FORM,
+        )
+        putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, true)
+        putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
+        // Keep listening even during silence
+        putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS, 10_000L)
+        putExtra(
+            RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS,
+            5_000L,
+        )
+        putExtra(
+            RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS,
+            5_000L,
+        )
+    }
 
     private fun requestTransientAudioFocus() {
         try {
@@ -131,7 +128,7 @@ actual class SafeWordListener(
                     AudioAttributes.Builder()
                         .setUsage(AudioAttributes.USAGE_ASSISTANCE_SONIFICATION)
                         .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
-                        .build()
+                        .build(),
                 )
                 .setOnAudioFocusChangeListener { focusChange ->
                     if (focusChange == AudioManager.AUDIOFOCUS_LOSS) {
@@ -190,8 +187,7 @@ actual class SafeWordListener(
      * Checks partial or final result text for the safe word (case-insensitive).
      * Splits on whitespace so "stop now" matches a safeWord of "stop".
      */
-    private fun matchesSafeWord(text: String): Boolean =
-        text.split("\\s+".toRegex()).any { it.equals(safeWord, ignoreCase = true) }
+    private fun matchesSafeWord(text: String): Boolean = text.split("\\s+".toRegex()).any { it.equals(safeWord, ignoreCase = true) }
 
     private fun processResults(results: Bundle?) {
         val matches = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)

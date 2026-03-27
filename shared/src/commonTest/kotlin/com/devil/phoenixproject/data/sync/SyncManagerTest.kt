@@ -1,18 +1,15 @@
 package com.devil.phoenixproject.data.sync
 
 import com.devil.phoenixproject.data.repository.SubscriptionStatus
+import com.devil.phoenixproject.domain.model.ExternalActivity
+import com.devil.phoenixproject.domain.model.IntegrationProvider
 import com.devil.phoenixproject.testutil.FakeExternalActivityRepository
 import com.devil.phoenixproject.testutil.FakeGamificationRepository
 import com.devil.phoenixproject.testutil.FakePortalApiClient
 import com.devil.phoenixproject.testutil.FakeRepMetricRepository
 import com.devil.phoenixproject.testutil.FakeSyncRepository
 import com.devil.phoenixproject.testutil.FakeUserProfileRepository
-import com.devil.phoenixproject.domain.model.ExternalActivity
-import com.devil.phoenixproject.domain.model.IntegrationProvider
 import com.russhwolf.settings.MapSettings
-import kotlinx.coroutines.async
-import kotlinx.coroutines.test.runTest
-import kotlinx.serialization.json.JsonObject
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -20,6 +17,8 @@ import kotlin.test.assertIs
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import kotlinx.coroutines.async
+import kotlinx.coroutines.test.runTest
 
 /**
  * Integration tests for SyncManager.
@@ -44,17 +43,14 @@ class SyncManagerTest {
         gamificationRepository = fakeGamificationRepo,
         repMetricRepository = fakeRepMetricRepo,
         userProfileRepository = fakeUserProfileRepo,
-        externalActivityRepository = fakeExternalActivityRepo
+        externalActivityRepository = fakeExternalActivityRepo,
     )
 
     /**
      * Helper to simulate an authenticated user by saving GoTrue auth directly.
      * Sets a token that won't expire for 1 hour, so ensureValidToken() returns it directly.
      */
-    private fun setupAuthenticated(
-        userId: String = "user-123",
-        email: String = "test@example.com"
-    ) {
+    private fun setupAuthenticated(userId: String = "user-123", email: String = "test@example.com") {
         val nowSec = com.devil.phoenixproject.domain.model.currentTimeMillis() / 1000
         val response = GoTrueAuthResponse(
             accessToken = "fake-access-token",
@@ -64,8 +60,8 @@ class SyncManagerTest {
             refreshToken = "fake-refresh-token",
             user = GoTrueUser(
                 id = userId,
-                email = email
-            )
+                email = email,
+            ),
         )
         tokenStorage.saveGoTrueAuth(response)
     }
@@ -76,14 +72,16 @@ class SyncManagerTest {
     private fun createAuthResponse(
         userId: String = "user-456",
         email: String = "new@example.com",
-        displayName: String? = "Test User"
+        displayName: String? = "Test User",
     ): GoTrueAuthResponse {
         val nowSec = com.devil.phoenixproject.domain.model.currentTimeMillis() / 1000
         val userMetadata = if (displayName != null) {
             kotlinx.serialization.json.buildJsonObject {
                 put("display_name", kotlinx.serialization.json.JsonPrimitive(displayName))
             }
-        } else null
+        } else {
+            null
+        }
         return GoTrueAuthResponse(
             accessToken = "new-access-token",
             tokenType = "bearer",
@@ -93,8 +91,8 @@ class SyncManagerTest {
             user = GoTrueUser(
                 id = userId,
                 email = email,
-                userMetadata = userMetadata
-            )
+                userMetadata = userMetadata,
+            ),
         )
     }
 
@@ -153,7 +151,7 @@ class SyncManagerTest {
     fun syncPushesLocalChangesAndReturnsSuccess() = runTest {
         setupAuthenticated()
         fakeApi.pushResult = Result.success(
-            PortalSyncPushResponse(syncTime = "2026-03-02T12:00:00Z")
+            PortalSyncPushResponse(syncTime = "2026-03-02T12:00:00Z"),
         )
         val manager = createManager()
 
@@ -168,7 +166,7 @@ class SyncManagerTest {
     fun syncSendsCorrectPayloadWithDeviceIdAndPlatform() = runTest {
         setupAuthenticated()
         fakeApi.pushResult = Result.success(
-            PortalSyncPushResponse(syncTime = "2026-03-02T12:00:00Z")
+            PortalSyncPushResponse(syncTime = "2026-03-02T12:00:00Z"),
         )
         val manager = createManager()
 
@@ -176,12 +174,16 @@ class SyncManagerTest {
 
         val payload = fakeApi.lastPushPayload
         assertNotNull(payload, "Push payload should be captured")
-        assertEquals(tokenStorage.getDeviceId(), payload.deviceId, "deviceId should match token storage")
+        assertEquals(
+            tokenStorage.getDeviceId(),
+            payload.deviceId,
+            "deviceId should match token storage",
+        )
         // Platform should be one of the recognized platform names
         assertTrue(
             payload.platform in listOf("android", "ios") ||
-            payload.platform.isNotEmpty(),
-            "Platform should be set"
+                payload.platform.isNotEmpty(),
+            "Platform should be set",
         )
     }
 
@@ -189,7 +191,7 @@ class SyncManagerTest {
     fun pushSyncTimeIsoParsedToEpochMillis() = runTest {
         setupAuthenticated()
         fakeApi.pushResult = Result.success(
-            PortalSyncPushResponse(syncTime = "2026-03-02T12:00:00Z")
+            PortalSyncPushResponse(syncTime = "2026-03-02T12:00:00Z"),
         )
         // Make pull fail so we get push syncTime as the final time
         fakeApi.pullResult = Result.failure(PortalApiException("pull failed"))
@@ -198,10 +200,16 @@ class SyncManagerTest {
         val result = manager.sync()
 
         assertTrue(result.isSuccess)
-        val expectedEpoch = kotlinx.datetime.Instant.parse("2026-03-02T12:00:00Z").toEpochMilliseconds()
+        val expectedEpoch = kotlinx.datetime.Instant.parse(
+            "2026-03-02T12:00:00Z",
+        ).toEpochMilliseconds()
         val syncState = manager.syncState.value
         assertIs<SyncState.Success>(syncState)
-        assertEquals(expectedEpoch, syncState.syncTime, "ISO 8601 syncTime should parse to correct epoch millis")
+        assertEquals(
+            expectedEpoch,
+            syncState.syncTime,
+            "ISO 8601 syncTime should parse to correct epoch millis",
+        )
     }
 
     @Test
@@ -209,7 +217,7 @@ class SyncManagerTest {
         setupAuthenticated()
         // fakeSyncRepo already returns empty lists by default
         fakeApi.pushResult = Result.success(
-            PortalSyncPushResponse(syncTime = "2026-03-02T12:00:00Z")
+            PortalSyncPushResponse(syncTime = "2026-03-02T12:00:00Z"),
         )
         val manager = createManager()
 
@@ -232,10 +240,10 @@ class SyncManagerTest {
             name = "Push Day",
             startedAt = 1000L,
             profileId = "default",
-            needsSync = true
+            needsSync = true,
         )
         fakeApi.pushResult = Result.success(
-            PortalSyncPushResponse(syncTime = "2026-03-02T12:00:00Z")
+            PortalSyncPushResponse(syncTime = "2026-03-02T12:00:00Z"),
         )
         val manager = createManager()
 
@@ -243,7 +251,11 @@ class SyncManagerTest {
 
         val payload = fakeApi.lastPushPayload
         assertNotNull(payload, "Push payload should be captured")
-        assertEquals(1, payload.externalActivities.size, "Local paid status should allow external activity push")
+        assertEquals(
+            1,
+            payload.externalActivities.size,
+            "Local paid status should allow external activity push",
+        )
         assertEquals("hevy-activity-1", payload.externalActivities.single().externalId)
     }
 
@@ -257,7 +269,7 @@ class SyncManagerTest {
             name = "Hevy Push Day",
             startedAt = 1000L,
             profileId = "default",
-            needsSync = true
+            needsSync = true,
         )
         fakeExternalActivityRepo.activities += ExternalActivity(
             externalId = "shared-id",
@@ -265,7 +277,7 @@ class SyncManagerTest {
             name = "Liftosaur Push Day",
             startedAt = 2000L,
             profileId = "default",
-            needsSync = true
+            needsSync = true,
         )
         fakeApi.pushResult = Result.success(
             PortalSyncPushResponse(
@@ -273,10 +285,10 @@ class SyncManagerTest {
                 externalActivityKeys = listOf(
                     ExternalActivityAckDto(
                         externalId = "shared-id",
-                        provider = IntegrationProvider.HEVY.key
-                    )
-                )
-            )
+                        provider = IntegrationProvider.HEVY.key,
+                    ),
+                ),
+            ),
         )
         val manager = createManager()
 
@@ -284,10 +296,13 @@ class SyncManagerTest {
 
         assertEquals(1, fakeExternalActivityRepo.markedSyncedKeys.size)
         assertEquals("shared-id", fakeExternalActivityRepo.markedSyncedKeys.single().externalId)
-        assertEquals(IntegrationProvider.HEVY, fakeExternalActivityRepo.markedSyncedKeys.single().provider)
+        assertEquals(
+            IntegrationProvider.HEVY,
+            fakeExternalActivityRepo.markedSyncedKeys.single().provider,
+        )
         assertTrue(
             fakeExternalActivityRepo.markedSyncedIds.isEmpty(),
-            "Legacy ID-only sync stamping should not run when provider-scoped acknowledgements are present"
+            "Legacy ID-only sync stamping should not run when provider-scoped acknowledgements are present",
         )
     }
 
@@ -297,22 +312,26 @@ class SyncManagerTest {
     fun syncMergesRoutinesFromPull() = runTest {
         setupAuthenticated()
         fakeApi.pushResult = Result.success(
-            PortalSyncPushResponse(syncTime = "2026-03-02T12:00:00Z")
+            PortalSyncPushResponse(syncTime = "2026-03-02T12:00:00Z"),
         )
         fakeApi.pullResult = Result.success(
             PortalSyncPullResponse(
                 syncTime = 1740916800000L,
                 routines = listOf(
                     PullRoutineDto(id = "r1", name = "Routine 1"),
-                    PullRoutineDto(id = "r2", name = "Routine 2")
-                )
-            )
+                    PullRoutineDto(id = "r2", name = "Routine 2"),
+                ),
+            ),
         )
         val manager = createManager()
 
         manager.sync()
 
-        assertEquals(1, fakeSyncRepo.mergePortalRoutinesCallCount, "mergePortalRoutines should be called once")
+        assertEquals(
+            1,
+            fakeSyncRepo.mergePortalRoutinesCallCount,
+            "mergePortalRoutines should be called once",
+        )
         assertEquals(2, fakeSyncRepo.mergedPortalRoutines.size, "Should merge 2 routines")
     }
 
@@ -320,15 +339,19 @@ class SyncManagerTest {
     fun syncMergesBadgesFromPull() = runTest {
         setupAuthenticated()
         fakeApi.pushResult = Result.success(
-            PortalSyncPushResponse(syncTime = "2026-03-02T12:00:00Z")
+            PortalSyncPushResponse(syncTime = "2026-03-02T12:00:00Z"),
         )
         fakeApi.pullResult = Result.success(
             PortalSyncPullResponse(
                 syncTime = 1740916800000L,
                 badges = listOf(
-                    PullBadgeDto(badgeId = "badge-1", badgeName = "First Workout", earnedAt = "2026-01-01T00:00:00Z")
-                )
-            )
+                    PullBadgeDto(
+                        badgeId = "badge-1",
+                        badgeName = "First Workout",
+                        earnedAt = "2026-01-01T00:00:00Z",
+                    ),
+                ),
+            ),
         )
         val manager = createManager()
 
@@ -342,7 +365,7 @@ class SyncManagerTest {
     fun syncMergesGamificationStatsFromPull() = runTest {
         setupAuthenticated()
         fakeApi.pushResult = Result.success(
-            PortalSyncPushResponse(syncTime = "2026-03-02T12:00:00Z")
+            PortalSyncPushResponse(syncTime = "2026-03-02T12:00:00Z"),
         )
         fakeApi.pullResult = Result.success(
             PortalSyncPullResponse(
@@ -352,15 +375,19 @@ class SyncManagerTest {
                     totalReps = 1000,
                     totalVolumeKg = 50000f,
                     longestStreak = 14,
-                    currentStreak = 3
-                )
-            )
+                    currentStreak = 3,
+                ),
+            ),
         )
         val manager = createManager()
 
         manager.sync()
 
-        assertEquals(1, fakeSyncRepo.mergeGamificationStatsCallCount, "mergeGamificationStats should be called")
+        assertEquals(
+            1,
+            fakeSyncRepo.mergeGamificationStatsCallCount,
+            "mergeGamificationStats should be called",
+        )
         assertNotNull(fakeSyncRepo.mergedGamificationStats, "Gamification stats should be merged")
     }
 
@@ -368,7 +395,7 @@ class SyncManagerTest {
     fun syncSavesRpgAttributesFromPull() = runTest {
         setupAuthenticated()
         fakeApi.pushResult = Result.success(
-            PortalSyncPushResponse(syncTime = "2026-03-02T12:00:00Z")
+            PortalSyncPushResponse(syncTime = "2026-03-02T12:00:00Z"),
         )
         fakeApi.pullResult = Result.success(
             PortalSyncPullResponse(
@@ -379,9 +406,9 @@ class SyncManagerTest {
                     stamina = 28,
                     consistency = 50,
                     mastery = 20,
-                    characterClass = "TITAN"
-                )
-            )
+                    characterClass = "TITAN",
+                ),
+            ),
         )
         val manager = createManager()
 
@@ -400,7 +427,7 @@ class SyncManagerTest {
     fun syncWithEmptyPullResponseSkipsMerge() = runTest {
         setupAuthenticated()
         fakeApi.pushResult = Result.success(
-            PortalSyncPushResponse(syncTime = "2026-03-02T12:00:00Z")
+            PortalSyncPushResponse(syncTime = "2026-03-02T12:00:00Z"),
         )
         fakeApi.pullResult = Result.success(
             PortalSyncPullResponse(
@@ -408,16 +435,24 @@ class SyncManagerTest {
                 routines = emptyList(),
                 badges = emptyList(),
                 gamificationStats = null,
-                rpgAttributes = null
-            )
+                rpgAttributes = null,
+            ),
         )
         val manager = createManager()
 
         manager.sync()
 
-        assertEquals(0, fakeSyncRepo.mergePortalRoutinesCallCount, "Should not merge empty routines")
+        assertEquals(
+            0,
+            fakeSyncRepo.mergePortalRoutinesCallCount,
+            "Should not merge empty routines",
+        )
         assertEquals(0, fakeSyncRepo.mergeBadgesCallCount, "Should not merge empty badges")
-        assertEquals(0, fakeSyncRepo.mergeGamificationStatsCallCount, "Should not merge null gamification stats")
+        assertEquals(
+            0,
+            fakeSyncRepo.mergeGamificationStatsCallCount,
+            "Should not merge null gamification stats",
+        )
         assertNull(fakeGamificationRepo.savedRpgProfile, "Should not save null RPG attributes")
     }
 
@@ -454,7 +489,7 @@ class SyncManagerTest {
         setupAuthenticated()
         val pushSyncTimeIso = "2026-03-02T15:30:00Z"
         fakeApi.pushResult = Result.success(
-            PortalSyncPushResponse(syncTime = pushSyncTimeIso)
+            PortalSyncPushResponse(syncTime = pushSyncTimeIso),
         )
         fakeApi.pullResult = Result.failure(PortalApiException("Network error"))
         val manager = createManager()
@@ -487,7 +522,7 @@ class SyncManagerTest {
         setupAuthenticated()
         val pushSyncTimeIso = "2026-03-02T18:00:00Z"
         fakeApi.pushResult = Result.success(
-            PortalSyncPushResponse(syncTime = pushSyncTimeIso)
+            PortalSyncPushResponse(syncTime = pushSyncTimeIso),
         )
         // Pull fails, so final time = push time
         fakeApi.pullResult = Result.failure(PortalApiException("pull failed"))
@@ -499,7 +534,7 @@ class SyncManagerTest {
         assertEquals(
             expectedEpoch,
             tokenStorage.getLastSyncTimestamp(),
-            "lastSyncTimestamp should be updated to push syncTime"
+            "lastSyncTimestamp should be updated to push syncTime",
         )
     }
 
@@ -507,12 +542,14 @@ class SyncManagerTest {
     fun syncUsesPullSyncTimeWhenLargerThanPush() = runTest {
         setupAuthenticated()
         val pushSyncTimeIso = "2026-03-02T12:00:00Z"
-        val pullSyncTimeEpoch = kotlinx.datetime.Instant.parse("2026-03-02T13:00:00Z").toEpochMilliseconds()
+        val pullSyncTimeEpoch = kotlinx.datetime.Instant.parse(
+            "2026-03-02T13:00:00Z",
+        ).toEpochMilliseconds()
         fakeApi.pushResult = Result.success(
-            PortalSyncPushResponse(syncTime = pushSyncTimeIso)
+            PortalSyncPushResponse(syncTime = pushSyncTimeIso),
         )
         fakeApi.pullResult = Result.success(
-            PortalSyncPullResponse(syncTime = pullSyncTimeEpoch)
+            PortalSyncPullResponse(syncTime = pullSyncTimeEpoch),
         )
         val manager = createManager()
 
@@ -525,7 +562,7 @@ class SyncManagerTest {
         assertEquals(
             pullSyncTimeEpoch,
             tokenStorage.getLastSyncTimestamp(),
-            "Should use pull syncTime when pull succeeds"
+            "Should use pull syncTime when pull succeeds",
         )
     }
 
@@ -534,7 +571,7 @@ class SyncManagerTest {
         setupAuthenticated()
         val pushSyncTimeIso = "2026-03-02T12:00:00Z"
         fakeApi.pushResult = Result.success(
-            PortalSyncPushResponse(syncTime = pushSyncTimeIso)
+            PortalSyncPushResponse(syncTime = pushSyncTimeIso),
         )
         fakeApi.pullResult = Result.failure(PortalApiException("pull error"))
         val manager = createManager()
@@ -546,7 +583,7 @@ class SyncManagerTest {
         assertEquals(
             expectedEpoch,
             tokenStorage.getLastSyncTimestamp(),
-            "Should use push syncTime when pull fails"
+            "Should use push syncTime when pull fails",
         )
     }
 
@@ -592,7 +629,7 @@ class SyncManagerTest {
     fun concurrentSyncCallsAreSerializedByMutex() = runTest {
         setupAuthenticated()
         fakeApi.pushResult = Result.success(
-            PortalSyncPushResponse(syncTime = "2026-03-02T12:00:00Z")
+            PortalSyncPushResponse(syncTime = "2026-03-02T12:00:00Z"),
         )
         val manager = createManager()
 
@@ -623,7 +660,7 @@ class SyncManagerTest {
         tokenStorage.setLastSyncTimestamp(storedLastSync)
         val pushSyncTimeIso = "2026-03-02T12:00:00Z"
         fakeApi.pushResult = Result.success(
-            PortalSyncPushResponse(syncTime = pushSyncTimeIso)
+            PortalSyncPushResponse(syncTime = pushSyncTimeIso),
         )
         val manager = createManager()
 
@@ -634,7 +671,7 @@ class SyncManagerTest {
         assertEquals(
             storedLastSync,
             fakeApi.lastPullLastSync,
-            "Pull should receive stored lastSync, not push response timestamp"
+            "Pull should receive stored lastSync, not push response timestamp",
         )
     }
 }

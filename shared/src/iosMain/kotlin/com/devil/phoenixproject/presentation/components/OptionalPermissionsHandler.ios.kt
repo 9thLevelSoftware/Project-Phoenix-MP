@@ -13,17 +13,17 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.data.preferences.SettingsPreferencesManager
+import kotlin.coroutines.resume
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import org.koin.compose.koinInject
+import platform.Foundation.NSError
 import platform.HealthKit.HKHealthStore
 import platform.HealthKit.HKObjectType
 import platform.HealthKit.HKQuantityType
 import platform.HealthKit.HKQuantityTypeIdentifierActiveEnergyBurned
-import platform.Foundation.NSError
 import platform.Speech.SFSpeechRecognizer
 import platform.Speech.SFSpeechRecognizerAuthorizationStatus
-import kotlin.coroutines.resume
 
 private val log = Logger.withTag("OptionalPermissionsHandler")
 
@@ -36,9 +36,7 @@ private val log = Logger.withTag("OptionalPermissionsHandler")
  * @param content The composable content to show after permissions are handled
  */
 @Composable
-fun RequireOptionalPermissions(
-    content: @Composable () -> Unit
-) {
+fun RequireOptionalPermissions(content: @Composable () -> Unit) {
     val prefsManager = koinInject<SettingsPreferencesManager>()
     val scope = rememberCoroutineScope()
 
@@ -68,7 +66,7 @@ fun RequireOptionalPermissions(
                 log.d { "User skipped optional permissions" }
                 prefsManager.setPermissionsOnboardingShown(true)
                 onboardingShown = true
-            }
+            },
         )
     }
 }
@@ -84,7 +82,7 @@ private suspend fun requestIosPermissions(healthAvailable: Boolean) {
             val healthStore = HKHealthStore()
             val workoutType = HKObjectType.workoutType()
             val activeEnergyType = HKQuantityType.quantityTypeForIdentifier(
-                HKQuantityTypeIdentifierActiveEnergyBurned
+                HKQuantityTypeIdentifierActiveEnergyBurned,
             )
             val writeTypes = buildSet {
                 add(workoutType)
@@ -101,7 +99,7 @@ private suspend fun requestIosPermissions(healthAvailable: Boolean) {
                         }
                         log.d { "HealthKit authorization dialog shown: $success" }
                         continuation.resume(Unit)
-                    }
+                    },
                 )
             }
         } catch (e: Exception) {
@@ -112,7 +110,9 @@ private suspend fun requestIosPermissions(healthAvailable: Boolean) {
     // 2. Request Speech Recognition authorization
     try {
         val currentStatus = SFSpeechRecognizer.authorizationStatus()
-        if (currentStatus == SFSpeechRecognizerAuthorizationStatus.SFSpeechRecognizerAuthorizationStatusNotDetermined) {
+        if (currentStatus ==
+            SFSpeechRecognizerAuthorizationStatus.SFSpeechRecognizerAuthorizationStatusNotDetermined
+        ) {
             suspendCancellableCoroutine { continuation ->
                 SFSpeechRecognizer.requestAuthorization { status ->
                     log.d { "Speech recognition authorization result: $status" }
@@ -131,27 +131,23 @@ private suspend fun requestIosPermissions(healthAvailable: Boolean) {
  * Explanation screen for optional permissions (shared UI, iOS variant).
  */
 @Composable
-private fun OptionalPermissionsScreen(
-    healthAvailable: Boolean,
-    onGrantPermissions: () -> Unit,
-    onSkip: () -> Unit
-) {
+private fun OptionalPermissionsScreen(healthAvailable: Boolean, onGrantPermissions: () -> Unit, onSkip: () -> Unit) {
     Surface(
         modifier = Modifier.fillMaxSize(),
-        color = MaterialTheme.colorScheme.background
+        color = MaterialTheme.colorScheme.background,
     ) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(32.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center
+            verticalArrangement = Arrangement.Center,
         ) {
             Icon(
                 imageVector = Icons.Default.Favorite,
                 contentDescription = null,
                 modifier = Modifier.size(80.dp),
-                tint = MaterialTheme.colorScheme.primary
+                tint = MaterialTheme.colorScheme.primary,
             )
 
             Spacer(modifier = Modifier.height(24.dp))
@@ -160,7 +156,7 @@ private fun OptionalPermissionsScreen(
                 text = "Enhance Your Experience",
                 style = MaterialTheme.typography.headlineSmall,
                 fontWeight = FontWeight.Bold,
-                textAlign = TextAlign.Center
+                textAlign = TextAlign.Center,
             )
 
             Spacer(modifier = Modifier.height(16.dp))
@@ -170,14 +166,18 @@ private fun OptionalPermissionsScreen(
                     append("Project Phoenix works best with a few additional permissions:")
                     append("\n\n")
                     if (healthAvailable) {
-                        append("Apple Health -- Automatically sync your workouts to Apple Health so all your fitness data stays in one place.")
+                        append(
+                            "Apple Health -- Automatically sync your workouts to Apple Health so all your fitness data stays in one place.",
+                        )
                         append("\n\n")
                     }
-                    append("Speech Recognition -- Enable voice-activated emergency stop (\"safe word\") for hands-free workout safety.")
+                    append(
+                        "Speech Recognition -- Enable voice-activated emergency stop (\"safe word\") for hands-free workout safety.",
+                    )
                 },
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                textAlign = TextAlign.Center
+                textAlign = TextAlign.Center,
             )
 
             Spacer(modifier = Modifier.height(32.dp))
@@ -186,12 +186,12 @@ private fun OptionalPermissionsScreen(
                 onClick = onGrantPermissions,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(56.dp)
+                    .height(56.dp),
             ) {
                 Text(
                     text = "Grant Permissions",
                     style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold
+                    fontWeight = FontWeight.Bold,
                 )
             }
 
@@ -199,11 +199,11 @@ private fun OptionalPermissionsScreen(
 
             TextButton(
                 onClick = onSkip,
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier.fillMaxWidth(),
             ) {
                 Text(
                     text = "Skip for Now",
-                    style = MaterialTheme.typography.bodyLarge
+                    style = MaterialTheme.typography.bodyLarge,
                 )
             }
 
@@ -213,7 +213,7 @@ private fun OptionalPermissionsScreen(
                 text = "You can enable these permissions later in Settings.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                textAlign = TextAlign.Center
+                textAlign = TextAlign.Center,
             )
         }
     }

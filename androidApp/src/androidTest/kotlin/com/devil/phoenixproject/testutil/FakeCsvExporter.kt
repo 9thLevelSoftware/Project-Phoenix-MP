@@ -14,28 +14,22 @@ class FakeCsvExporter : CsvExporter {
         personalRecords: List<PersonalRecord>,
         exerciseNames: Map<String, String>,
         weightUnit: WeightUnit,
-        formatWeight: (Float, WeightUnit) -> String
-    ): Result<String> {
-        return Result.success("test://personal_records.csv")
-    }
+        formatWeight: (Float, WeightUnit) -> String,
+    ): Result<String> = Result.success("test://personal_records.csv")
 
     override fun exportWorkoutHistory(
         workoutSessions: List<WorkoutSession>,
         exerciseNames: Map<String, String>,
         weightUnit: WeightUnit,
-        formatWeight: (Float, WeightUnit) -> String
-    ): Result<String> {
-        return Result.success("test://workout_history.csv")
-    }
+        formatWeight: (Float, WeightUnit) -> String,
+    ): Result<String> = Result.success("test://workout_history.csv")
 
     override fun exportPRProgression(
         personalRecords: List<PersonalRecord>,
         exerciseNames: Map<String, String>,
         weightUnit: WeightUnit,
-        formatWeight: (Float, WeightUnit) -> String
-    ): Result<String> {
-        return Result.success("test://pr_progression.csv")
-    }
+        formatWeight: (Float, WeightUnit) -> String,
+    ): Result<String> = Result.success("test://pr_progression.csv")
 
     override fun shareCSV(fileUri: String, fileName: String) {
         // No-op in tests.

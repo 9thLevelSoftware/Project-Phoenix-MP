@@ -6,12 +6,12 @@ package com.devil.phoenixproject.domain.replay
  * Used by replay visualization to isolate and animate individual reps.
  */
 data class RepBoundary(
-    val repNumber: Int,              // 1-indexed
-    val startIndex: Int,             // Valley start index in position array
-    val peakIndex: Int,              // Peak position index (concentric -> eccentric transition)
-    val endIndex: Int,               // Valley end index (next rep start or array end)
+    val repNumber: Int, // 1-indexed
+    val startIndex: Int, // Valley start index in position array
+    val peakIndex: Int, // Peak position index (concentric -> eccentric transition)
+    val endIndex: Int, // Valley end index (next rep start or array end)
     val concentricIndices: IntRange, // startIndex until peakIndex
-    val eccentricIndices: IntRange   // peakIndex until endIndex
+    val eccentricIndices: IntRange, // peakIndex until endIndex
 )
 
 /**
@@ -151,11 +151,7 @@ class RepBoundaryDetector {
     /**
      * Build RepBoundary objects from detected valleys.
      */
-    private fun buildRepBoundaries(
-        rawPositions: FloatArray,
-        smoothed: FloatArray,
-        valleys: List<Int>
-    ): List<RepBoundary> {
+    private fun buildRepBoundaries(rawPositions: FloatArray, smoothed: FloatArray, valleys: List<Int>): List<RepBoundary> {
         val boundaries = mutableListOf<RepBoundary>()
 
         for (i in 0 until valleys.size - 1) {
@@ -186,8 +182,8 @@ class RepBoundaryDetector {
                     peakIndex = peakIndex,
                     endIndex = endIndex,
                     concentricIndices = concentricIndices,
-                    eccentricIndices = eccentricIndices
-                )
+                    eccentricIndices = eccentricIndices,
+                ),
             )
         }
 

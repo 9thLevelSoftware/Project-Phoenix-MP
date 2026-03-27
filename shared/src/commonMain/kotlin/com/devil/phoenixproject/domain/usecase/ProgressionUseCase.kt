@@ -16,7 +16,7 @@ import com.devil.phoenixproject.domain.model.TrendPoint
  */
 class ProgressionUseCase(
     private val completedSetRepository: CompletedSetRepository,
-    private val progressionRepository: ProgressionRepository
+    private val progressionRepository: ProgressionRepository,
 ) {
     private val log = Logger.withTag("ProgressionUseCase")
     private val trendAnalysis = TrendAnalysisUseCase()
@@ -57,7 +57,7 @@ class ProgressionUseCase(
         exerciseId: String,
         targetReps: Int? = null,
         targetRpe: Int = DEFAULT_TARGET_RPE,
-        profileId: String = "default"
+        profileId: String = "default",
     ): ProgressionEvent? {
         // Check if there's already a pending progression for this exercise
         if (progressionRepository.hasPendingProgression(exerciseId, profileId)) {
@@ -68,7 +68,7 @@ class ProgressionUseCase(
         // Get recent completed sets for this exercise
         val recentSets = completedSetRepository.getRecentCompletedSetsForExercise(
             exerciseId = exerciseId,
-            limit = 20 // Get enough history for analysis
+            limit = 20, // Get enough history for analysis
         ).filter { it.setType != SetType.WARMUP } // Exclude warmup sets
 
         if (recentSets.size < MIN_SETS_FOR_ANALYSIS) {
@@ -83,7 +83,12 @@ class ProgressionUseCase(
         val rpeProgression = checkRpeBasedProgression(recentSets, currentWeight, targetRpe)
         if (rpeProgression) {
             log.i { "RPE-based progression suggested for exercise $exerciseId" }
-            return createProgressionEvent(exerciseId, currentWeight, ProgressionReason.LOW_RPE, profileId)
+            return createProgressionEvent(
+                exerciseId,
+                currentWeight,
+                ProgressionReason.LOW_RPE,
+                profileId,
+            )
         }
 
         // Check for rep-based progression
@@ -91,7 +96,12 @@ class ProgressionUseCase(
             val repProgression = checkRepBasedProgression(recentSets, currentWeight, targetReps)
             if (repProgression) {
                 log.i { "Rep-based progression suggested for exercise $exerciseId" }
-                return createProgressionEvent(exerciseId, currentWeight, ProgressionReason.REPS_ACHIEVED, profileId)
+                return createProgressionEvent(
+                    exerciseId,
+                    currentWeight,
+                    ProgressionReason.REPS_ACHIEVED,
+                    profileId,
+                )
             }
         }
 
@@ -102,11 +112,7 @@ class ProgressionUseCase(
      * Check if recent RPE logs indicate the weight is too easy.
      * Triggers if average RPE is significantly below target.
      */
-    private fun checkRpeBasedProgression(
-        recentSets: List<CompletedSet>,
-        currentWeight: Float,
-        targetRpe: Int
-    ): Boolean {
+    private fun checkRpeBasedProgression(recentSets: List<CompletedSet>, currentWeight: Float, targetRpe: Int): Boolean {
         // Get sets at current weight with RPE logged
         val setsWithRpe = recentSets
             .filter { it.actualWeightKg == currentWeight && it.loggedRpe != null }
@@ -129,11 +135,7 @@ class ProgressionUseCase(
      * Check if user has hit target reps consistently.
      * Triggers if target reps achieved for multiple consecutive sessions.
      */
-    private fun checkRepBasedProgression(
-        recentSets: List<CompletedSet>,
-        currentWeight: Float,
-        targetReps: Int
-    ): Boolean {
+    private fun checkRepBasedProgression(recentSets: List<CompletedSet>, currentWeight: Float, targetReps: Int): Boolean {
         // Get sets at current weight
         val setsAtWeight = recentSets
             .filter { it.actualWeightKg == currentWeight }
@@ -200,11 +202,7 @@ class ProgressionUseCase(
      * @param targetReps The target reps (for missed-rep detection)
      * @return ProgressionEvent with deload suggestion, or null
      */
-    suspend fun checkForDeload(
-        exerciseId: String,
-        targetReps: Int? = null,
-        profileId: String = "default"
-    ): ProgressionEvent? {
+    suspend fun checkForDeload(exerciseId: String, targetReps: Int? = null, profileId: String = "default"): ProgressionEvent? {
         if (progressionRepository.hasPendingProgression(exerciseId, profileId)) {
             log.d { "Pending progression already exists for exercise $exerciseId" }
             return null
@@ -212,7 +210,7 @@ class ProgressionUseCase(
 
         val recentSets = completedSetRepository.getRecentCompletedSetsForExercise(
             exerciseId = exerciseId,
-            limit = 30
+            limit = 30,
         ).filter { it.setType != SetType.WARMUP }
 
         if (recentSets.size < MIN_SETS_FOR_ANALYSIS) {
@@ -224,21 +222,38 @@ class ProgressionUseCase(
         // Check missed reps (most actionable signal)
         if (targetReps != null) {
             if (checkMissedRepsDeload(recentSets, currentWeight, targetReps)) {
-                log.i { "Deload suggested for $exerciseId: missed reps $SESSIONS_FOR_MISSED_REPS_DELOAD+ sessions" }
-                return createDeloadEvent(exerciseId, currentWeight, ProgressionReason.MISSED_REPS, profileId)
+                log.i {
+                    "Deload suggested for $exerciseId: missed reps $SESSIONS_FOR_MISSED_REPS_DELOAD+ sessions"
+                }
+                return createDeloadEvent(
+                    exerciseId,
+                    currentWeight,
+                    ProgressionReason.MISSED_REPS,
+                    profileId,
+                )
             }
         }
 
         // Check high RPE
         if (checkHighRpeDeload(recentSets, currentWeight)) {
             log.i { "Deload suggested for $exerciseId: RPE consistently >= $HIGH_RPE_THRESHOLD" }
-            return createDeloadEvent(exerciseId, currentWeight, ProgressionReason.HIGH_RPE, profileId)
+            return createDeloadEvent(
+                exerciseId,
+                currentWeight,
+                ProgressionReason.HIGH_RPE,
+                profileId,
+            )
         }
 
         // Check plateau (needs more data)
         if (checkPlateauDeload(recentSets, exerciseId)) {
             log.i { "Deload suggested for $exerciseId: plateau detected" }
-            return createDeloadEvent(exerciseId, currentWeight, ProgressionReason.PLATEAU_DETECTED, profileId)
+            return createDeloadEvent(
+                exerciseId,
+                currentWeight,
+                ProgressionReason.PLATEAU_DETECTED,
+                profileId,
+            )
         }
 
         return null
@@ -247,11 +262,7 @@ class ProgressionUseCase(
     /**
      * Check if user has missed target reps for consecutive sessions.
      */
-    private fun checkMissedRepsDeload(
-        recentSets: List<CompletedSet>,
-        currentWeight: Float,
-        targetReps: Int
-    ): Boolean {
+    private fun checkMissedRepsDeload(recentSets: List<CompletedSet>, currentWeight: Float, targetReps: Int): Boolean {
         val setsAtWeight = recentSets
             .filter { it.actualWeightKg == currentWeight }
             .sortedByDescending { it.completedAt }
@@ -272,10 +283,7 @@ class ProgressionUseCase(
     /**
      * Check if RPE is consistently too high (>= 9), indicating the weight is too heavy.
      */
-    private fun checkHighRpeDeload(
-        recentSets: List<CompletedSet>,
-        currentWeight: Float
-    ): Boolean {
+    private fun checkHighRpeDeload(recentSets: List<CompletedSet>, currentWeight: Float): Boolean {
         val setsWithRpe = recentSets
             .filter { it.actualWeightKg == currentWeight && it.loggedRpe != null }
 
@@ -293,10 +301,7 @@ class ProgressionUseCase(
      * Check if a plateau has been detected using trend analysis.
      * Requires enough data points to form a meaningful trend.
      */
-    private fun checkPlateauDeload(
-        recentSets: List<CompletedSet>,
-        exerciseId: String
-    ): Boolean {
+    private fun checkPlateauDeload(recentSets: List<CompletedSet>, exerciseId: String): Boolean {
         // Convert sets to trend points (using estimated 1RM as the value)
         val sessionGroups = groupBySession(recentSets.sortedByDescending { it.completedAt })
         if (sessionGroups.size < 6) return false // Need decent history for plateau detection
@@ -305,7 +310,7 @@ class ProgressionUseCase(
             val bestSet = session.maxByOrNull { it.estimatedOneRepMax() } ?: session.first()
             TrendPoint(
                 timestamp = bestSet.completedAt,
-                value = bestSet.estimatedOneRepMax()
+                value = bestSet.estimatedOneRepMax(),
             )
         }
 
@@ -320,13 +325,13 @@ class ProgressionUseCase(
         exerciseId: String,
         currentWeight: Float,
         reason: ProgressionReason,
-        profileId: String = "default"
+        profileId: String = "default",
     ): ProgressionEvent {
         val event = ProgressionEvent.create(
             exerciseId = exerciseId,
             previousWeightKg = currentWeight,
             reason = reason,
-            profileId = profileId
+            profileId = profileId,
         )
 
         progressionRepository.createProgressionSuggestion(event)
@@ -340,13 +345,13 @@ class ProgressionUseCase(
         exerciseId: String,
         currentWeight: Float,
         reason: ProgressionReason,
-        profileId: String = "default"
+        profileId: String = "default",
     ): ProgressionEvent {
         val event = ProgressionEvent.createDeload(
             exerciseId = exerciseId,
             previousWeightKg = currentWeight,
             reason = reason,
-            profileId = profileId
+            profileId = profileId,
         )
 
         progressionRepository.createProgressionSuggestion(event)
@@ -356,11 +361,7 @@ class ProgressionUseCase(
     /**
      * Record user's response to a progression suggestion.
      */
-    suspend fun respondToProgression(
-        eventId: String,
-        response: ProgressionResponse,
-        actualWeight: Float? = null
-    ) {
+    suspend fun respondToProgression(eventId: String, response: ProgressionResponse, actualWeight: Float? = null) {
         progressionRepository.recordResponse(eventId, response, actualWeight)
         log.i { "Progression response recorded: $response for event $eventId" }
     }
@@ -380,9 +381,7 @@ class ProgressionUseCase(
     /**
      * Get all pending progressions.
      */
-    suspend fun getPendingProgressions(profileId: String = "default"): List<ProgressionEvent> {
-        return progressionRepository.getPendingProgressions(profileId)
-    }
+    suspend fun getPendingProgressions(profileId: String = "default"): List<ProgressionEvent> = progressionRepository.getPendingProgressions(profileId)
 
     /**
      * Dismiss a pending progression without accepting it.

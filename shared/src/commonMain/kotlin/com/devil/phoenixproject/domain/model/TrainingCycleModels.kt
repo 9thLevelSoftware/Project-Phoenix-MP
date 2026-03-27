@@ -1,9 +1,9 @@
 package com.devil.phoenixproject.domain.model
 
 import com.devil.phoenixproject.util.OneRepMaxCalculator
+import kotlin.time.Instant
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
-import kotlin.time.Instant
 
 /**
  * Set types for workout tracking.
@@ -12,12 +12,15 @@ import kotlin.time.Instant
 enum class SetType {
     /** Fixed rep target - auto-stops at target reps */
     STANDARD,
+
     /** As Many Reps As Possible - records actual reps achieved */
     AMRAP,
+
     /** Reduce weight mid-set, continue - multiple sub-sets */
     DROP_SET,
+
     /** Lighter preparation set - excluded from volume tracking */
-    WARMUP
+    WARMUP,
 }
 
 /**
@@ -33,7 +36,7 @@ data class TrainingCycle(
     val isActive: Boolean,
     val progressionRule: ProgressionRule? = null,
     val weekNumber: Int = 1,
-    val profileId: String = "default"
+    val profileId: String = "default",
 ) {
     companion object {
         fun create(
@@ -43,7 +46,7 @@ data class TrainingCycle(
             days: List<CycleDay> = emptyList(),
             isActive: Boolean = false,
             progressionRule: ProgressionRule? = null,
-            weekNumber: Int = 1
+            weekNumber: Int = 1,
         ) = TrainingCycle(
             id = id,
             name = name,
@@ -52,7 +55,7 @@ data class TrainingCycle(
             createdAt = currentTimeMillis(),
             isActive = isActive,
             progressionRule = progressionRule,
-            weekNumber = weekNumber
+            weekNumber = weekNumber,
         )
     }
 }
@@ -72,7 +75,7 @@ data class CycleDay(
     val eccentricLoadPercent: Int? = null,
     val weightProgressionPercent: Float? = null,
     val repModifier: Int? = null,
-    val restTimeOverrideSeconds: Int? = null
+    val restTimeOverrideSeconds: Int? = null,
 ) {
     companion object {
         fun create(
@@ -86,7 +89,7 @@ data class CycleDay(
             eccentricLoadPercent: Int? = null,
             weightProgressionPercent: Float? = null,
             repModifier: Int? = null,
-            restTimeOverrideSeconds: Int? = null
+            restTimeOverrideSeconds: Int? = null,
         ) = CycleDay(
             id = id,
             cycleId = cycleId,
@@ -98,7 +101,7 @@ data class CycleDay(
             eccentricLoadPercent = eccentricLoadPercent,
             weightProgressionPercent = weightProgressionPercent,
             repModifier = repModifier,
-            restTimeOverrideSeconds = restTimeOverrideSeconds
+            restTimeOverrideSeconds = restTimeOverrideSeconds,
         )
 
         fun restDay(
@@ -110,7 +113,7 @@ data class CycleDay(
             eccentricLoadPercent: Int? = null,
             weightProgressionPercent: Float? = null,
             repModifier: Int? = null,
-            restTimeOverrideSeconds: Int? = null
+            restTimeOverrideSeconds: Int? = null,
         ) = CycleDay(
             id = id,
             cycleId = cycleId,
@@ -122,7 +125,7 @@ data class CycleDay(
             eccentricLoadPercent = eccentricLoadPercent,
             weightProgressionPercent = weightProgressionPercent,
             repModifier = repModifier,
-            restTimeOverrideSeconds = restTimeOverrideSeconds
+            restTimeOverrideSeconds = restTimeOverrideSeconds,
         )
     }
 }
@@ -142,42 +145,31 @@ sealed class CycleItem {
         val routineName: String,
         val exerciseCount: Int,
         val estimatedMinutes: Int? = null,
-        val exerciseNames: List<String> = emptyList()
+        val exerciseNames: List<String> = emptyList(),
     ) : CycleItem()
 
-    data class Rest(
-        override val id: String,
-        override val dayNumber: Int,
-        val note: String? = null
-    ) : CycleItem()
+    data class Rest(override val id: String, override val dayNumber: Int, val note: String? = null) : CycleItem()
 
     companion object {
         /**
          * Convert a CycleDay to a CycleItem.
          * Requires routine info for workout days.
          */
-        fun fromCycleDay(
-            day: CycleDay,
-            routineName: String?,
-            exerciseCount: Int,
-            exerciseNames: List<String> = emptyList()
-        ): CycleItem {
-            return if (day.isRestDay || day.routineId == null) {
-                Rest(
-                    id = day.id,
-                    dayNumber = day.dayNumber,
-                    note = day.name
-                )
-            } else {
-                Workout(
-                    id = day.id,
-                    dayNumber = day.dayNumber,
-                    routineId = day.routineId,
-                    routineName = routineName ?: "Unknown Routine",
-                    exerciseCount = exerciseCount,
-                    exerciseNames = exerciseNames
-                )
-            }
+        fun fromCycleDay(day: CycleDay, routineName: String?, exerciseCount: Int, exerciseNames: List<String> = emptyList()): CycleItem = if (day.isRestDay || day.routineId == null) {
+            Rest(
+                id = day.id,
+                dayNumber = day.dayNumber,
+                note = day.name,
+            )
+        } else {
+            Workout(
+                id = day.id,
+                dayNumber = day.dayNumber,
+                routineId = day.routineId,
+                routineName = routineName ?: "Unknown Routine",
+                exerciseCount = exerciseCount,
+                exerciseNames = exerciseNames,
+            )
         }
     }
 }
@@ -191,7 +183,7 @@ data class CycleProgression(
     val frequencyCycles: Int = 2,
     val weightIncreasePercent: Float? = null,
     val echoLevelIncrease: Boolean = false,
-    val eccentricLoadIncreasePercent: Int? = null
+    val eccentricLoadIncreasePercent: Int? = null,
 ) {
     companion object {
         fun default(cycleId: String) = CycleProgression(cycleId = cycleId)
@@ -210,7 +202,7 @@ data class CycleProgress(
     val lastAdvancedAt: Long? = null,
     val completedDays: Set<Int> = emptySet(),
     val missedDays: Set<Int> = emptySet(),
-    val rotationCount: Int = 0
+    val rotationCount: Int = 0,
 ) {
     /**
      * Calculate days since last workout for gap detection.
@@ -236,7 +228,9 @@ data class CycleProgress(
     fun pendingAutoAdvanceDays(): Int {
         val referenceMillis = lastAdvancedAt ?: cycleStartDate
         val zone = TimeZone.currentSystemDefault()
-        val referenceDate = Instant.fromEpochMilliseconds(referenceMillis).toLocalDateTime(zone).date
+        val referenceDate = Instant.fromEpochMilliseconds(
+            referenceMillis,
+        ).toLocalDateTime(zone).date
         val today = Instant.fromEpochMilliseconds(currentTimeMillis()).toLocalDateTime(zone).date
         return (today.toEpochDays() - referenceDate.toEpochDays()).coerceAtLeast(0).toInt()
     }
@@ -267,7 +261,7 @@ data class CycleProgress(
             lastAdvancedAt = currentTimeMillis(),
             completedDays = if (isNewRotation) emptySet() else completedDays,
             missedDays = if (isNewRotation) emptySet() else updatedMissedDays,
-            rotationCount = if (isNewRotation) rotationCount + 1 else rotationCount
+            rotationCount = if (isNewRotation) rotationCount + 1 else rotationCount,
         )
     }
 
@@ -284,7 +278,7 @@ data class CycleProgress(
         return copy(
             completedDays = completedDays + dayNumber,
             lastCompletedDate = now,
-            lastAdvancedAt = now
+            lastAdvancedAt = now,
         )
     }
 
@@ -296,7 +290,7 @@ data class CycleProgress(
             lastAdvancedAt: Long? = null,
             completedDays: Set<Int> = emptySet(),
             missedDays: Set<Int> = emptySet(),
-            rotationCount: Int = 0
+            rotationCount: Int = 0,
         ) = CycleProgress(
             id = id,
             cycleId = cycleId,
@@ -306,7 +300,7 @@ data class CycleProgress(
             lastAdvancedAt = lastAdvancedAt,
             completedDays = completedDays,
             missedDays = missedDays,
-            rotationCount = rotationCount
+            rotationCount = rotationCount,
         )
     }
 }
@@ -323,7 +317,7 @@ data class PlannedSet(
     val targetReps: Int?,
     val targetWeightKg: Float?,
     val targetRpe: Int?,
-    val restSeconds: Int?
+    val restSeconds: Int?,
 ) {
     companion object {
         fun standard(
@@ -333,7 +327,7 @@ data class PlannedSet(
             targetReps: Int,
             targetWeightKg: Float,
             targetRpe: Int? = null,
-            restSeconds: Int? = null
+            restSeconds: Int? = null,
         ) = PlannedSet(
             id = id,
             routineExerciseId = routineExerciseId,
@@ -342,7 +336,7 @@ data class PlannedSet(
             targetReps = targetReps,
             targetWeightKg = targetWeightKg,
             targetRpe = targetRpe,
-            restSeconds = restSeconds
+            restSeconds = restSeconds,
         )
 
         fun amrap(
@@ -351,7 +345,7 @@ data class PlannedSet(
             setNumber: Int,
             targetWeightKg: Float,
             targetRpe: Int? = null,
-            restSeconds: Int? = null
+            restSeconds: Int? = null,
         ) = PlannedSet(
             id = id,
             routineExerciseId = routineExerciseId,
@@ -360,16 +354,10 @@ data class PlannedSet(
             targetReps = null,
             targetWeightKg = targetWeightKg,
             targetRpe = targetRpe,
-            restSeconds = restSeconds
+            restSeconds = restSeconds,
         )
 
-        fun warmup(
-            id: String = generateUUID(),
-            routineExerciseId: String,
-            setNumber: Int,
-            targetReps: Int,
-            targetWeightKg: Float
-        ) = PlannedSet(
+        fun warmup(id: String = generateUUID(), routineExerciseId: String, setNumber: Int, targetReps: Int, targetWeightKg: Float) = PlannedSet(
             id = id,
             routineExerciseId = routineExerciseId,
             setNumber = setNumber,
@@ -377,7 +365,7 @@ data class PlannedSet(
             targetReps = targetReps,
             targetWeightKg = targetWeightKg,
             targetRpe = null,
-            restSeconds = null
+            restSeconds = null,
         )
     }
 }
@@ -396,7 +384,7 @@ data class CompletedSet(
     val actualWeightKg: Float,
     val loggedRpe: Int?,
     val isPr: Boolean,
-    val completedAt: Long
+    val completedAt: Long,
 ) {
     /**
      * Calculate estimated 1RM using Epley formula.
@@ -418,7 +406,7 @@ data class CompletedSet(
             actualReps: Int,
             actualWeightKg: Float,
             loggedRpe: Int? = null,
-            isPr: Boolean = false
+            isPr: Boolean = false,
         ) = CompletedSet(
             id = id,
             sessionId = sessionId,
@@ -429,7 +417,7 @@ data class CompletedSet(
             actualWeightKg = actualWeightKg,
             loggedRpe = loggedRpe,
             isPr = isPr,
-            completedAt = currentTimeMillis()
+            completedAt = currentTimeMillis(),
         )
     }
 }
@@ -440,14 +428,20 @@ data class CompletedSet(
 enum class ProgressionReason {
     /** User hit target reps for consecutive sessions */
     REPS_ACHIEVED,
+
     /** User logged RPE below target */
     LOW_RPE,
+
     /** User missed target reps for 2+ consecutive sessions (deload) */
     MISSED_REPS,
+
     /** User logged RPE >= 9 consistently (deload) */
     HIGH_RPE,
+
     /** Plateau detected via trend analysis (deload) */
-    PLATEAU_DETECTED;
+    PLATEAU_DETECTED,
+
+    ;
 
     /** True if this reason suggests a weight decrease rather than increase */
     val isDeload: Boolean
@@ -460,10 +454,12 @@ enum class ProgressionReason {
 enum class ProgressionResponse {
     /** User accepted the suggested weight */
     ACCEPTED,
+
     /** User modified the suggested weight */
     MODIFIED,
+
     /** User rejected the suggestion (kept old weight) */
-    REJECTED
+    REJECTED,
 }
 
 /**
@@ -478,7 +474,7 @@ data class ProgressionEvent(
     val userResponse: ProgressionResponse?,
     val actualWeightKg: Float?,
     val timestamp: Long,
-    val profileId: String = "default"
+    val profileId: String = "default",
 ) {
     /**
      * Calculate the suggested increment.
@@ -496,7 +492,7 @@ data class ProgressionEvent(
             exerciseId: String,
             previousWeightKg: Float,
             reason: ProgressionReason,
-            profileId: String = "default"
+            profileId: String = "default",
         ): ProgressionEvent {
             val suggestedWeight = calculateProgressionWeight(previousWeightKg)
             return ProgressionEvent(
@@ -508,7 +504,7 @@ data class ProgressionEvent(
                 userResponse = null,
                 actualWeightKg = null,
                 timestamp = currentTimeMillis(),
-                profileId = profileId
+                profileId = profileId,
             )
         }
 
@@ -520,7 +516,7 @@ data class ProgressionEvent(
             exerciseId: String,
             previousWeightKg: Float,
             reason: ProgressionReason,
-            profileId: String = "default"
+            profileId: String = "default",
         ): ProgressionEvent {
             val suggestedWeight = calculateDeloadWeight(previousWeightKg)
             return ProgressionEvent(
@@ -532,7 +528,7 @@ data class ProgressionEvent(
                 userResponse = null,
                 actualWeightKg = null,
                 timestamp = currentTimeMillis(),
-                profileId = profileId
+                profileId = profileId,
             )
         }
 
@@ -580,25 +576,19 @@ fun List<CompletedSet>.toCompactString(formatWeight: (Float) -> String): String 
 /**
  * Get best estimated 1RM from a list of sets.
  */
-fun List<CompletedSet>.bestOneRepMax(): Float? {
-    return mapNotNull { set ->
-        if (set.actualReps > 0) set.estimatedOneRepMax() else null
-    }.maxOrNull()
-}
+fun List<CompletedSet>.bestOneRepMax(): Float? = mapNotNull { set ->
+    if (set.actualReps > 0) set.estimatedOneRepMax() else null
+}.maxOrNull()
 
 /**
  * Calculate total volume from a list of sets.
  */
-fun List<CompletedSet>.totalVolume(): Float {
-    return sumOf { it.volume().toDouble() }.toFloat()
-}
+fun List<CompletedSet>.totalVolume(): Float = sumOf { it.volume().toDouble() }.toFloat()
 
 /**
  * Filter to only working sets (exclude warmups).
  */
-fun List<CompletedSet>.workingSets(): List<CompletedSet> {
-    return filter { it.setType != SetType.WARMUP }
-}
+fun List<CompletedSet>.workingSets(): List<CompletedSet> = filter { it.setType != SetType.WARMUP }
 
 /**
  * Types of progression strategies for training cycles.
@@ -606,10 +596,12 @@ fun List<CompletedSet>.workingSets(): List<CompletedSet> {
 enum class ProgressionType {
     /** Increase weight by percentage (e.g., +2.5%) */
     PERCENTAGE,
+
     /** Increase weight by fixed amount (e.g., +2.5kg) */
     FIXED_WEIGHT,
+
     /** No automatic progression suggestions */
-    MANUAL
+    MANUAL,
 }
 
 /**
@@ -621,14 +613,14 @@ data class ProgressionRule(
     val incrementKgUpper: Float? = null,
     val incrementKgLower: Float? = null,
     val triggerCondition: String? = null,
-    val cycleWeeks: Int? = null
+    val cycleWeeks: Int? = null,
 ) {
     companion object {
         /** Standard percentage-based progression (+2.5% when all sets completed) */
         fun percentage(percent: Float = 2.5f) = ProgressionRule(
             type = ProgressionType.PERCENTAGE,
             incrementPercent = percent,
-            triggerCondition = "all_sets_completed"
+            triggerCondition = "all_sets_completed",
         )
 
         /** 5/3/1 style fixed weight progression */
@@ -637,7 +629,7 @@ data class ProgressionRule(
             incrementKgUpper = 2.5f,
             incrementKgLower = 5.0f,
             triggerCondition = "cycle_complete",
-            cycleWeeks = 4
+            cycleWeeks = 4,
         )
 
         /** No automatic progression */

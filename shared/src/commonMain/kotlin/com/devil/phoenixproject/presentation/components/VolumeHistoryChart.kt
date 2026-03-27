@@ -22,7 +22,7 @@ import com.devil.phoenixproject.ui.theme.DataColors
 // Placeholder for TrendPoint if not resolved
 data class VolumePoint(
     val label: String, // e.g., "Mon", "Tue" or Date
-    val volume: Float
+    val volume: Float,
 )
 
 /**
@@ -30,11 +30,7 @@ data class VolumePoint(
  * Uses BoxWithConstraints for KMP-compatible text label positioning.
  */
 @Composable
-fun VolumeHistoryChart(
-    data: List<VolumePoint>,
-    modifier: Modifier = Modifier.height(200.dp),
-    barColor: Color = DataColors.Volume
-) {
+fun VolumeHistoryChart(data: List<VolumePoint>, modifier: Modifier = Modifier.height(200.dp), barColor: Color = DataColors.Volume) {
     if (data.isEmpty()) return
 
     val maxVolume = data.maxOfOrNull { it.volume } ?: 1f
@@ -59,7 +55,7 @@ fun VolumeHistoryChart(
                 drawRect(
                     color = barColor,
                     topLeft = Offset(x, y),
-                    size = Size(barWidth, volumeHeight)
+                    size = Size(barWidth, volumeHeight),
                 )
             }
         }
@@ -79,9 +75,9 @@ fun VolumeHistoryChart(
                 modifier = Modifier
                     .offset(
                         x = with(density) { x.toDp() },
-                        y = maxHeight - labelHeight
+                        y = maxHeight - labelHeight,
                     )
-                    .width(with(density) { labelWidth.toDp() })
+                    .width(with(density) { labelWidth.toDp() }),
             )
         }
     }

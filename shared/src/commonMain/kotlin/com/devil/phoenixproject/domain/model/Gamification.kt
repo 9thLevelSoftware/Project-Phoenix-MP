@@ -8,11 +8,11 @@ package com.devil.phoenixproject.domain.model
  * Badge categories for organization and filtering
  */
 enum class BadgeCategory(val displayName: String, val icon: String) {
-    CONSISTENCY("Consistency", "fire"),       // Streak-based badges
-    STRENGTH("Strength", "trophy"),           // PR and weight milestones
-    VOLUME("Volume", "repeat"),               // Total reps/volume milestones
-    EXPLORER("Explorer", "compass"),          // Exercise variety badges
-    DEDICATION("Dedication", "dumbbell")      // Long-term commitment badges
+    CONSISTENCY("Consistency", "fire"), // Streak-based badges
+    STRENGTH("Strength", "trophy"), // PR and weight milestones
+    VOLUME("Volume", "repeat"), // Total reps/volume milestones
+    EXPLORER("Explorer", "compass"), // Exercise variety badges
+    DEDICATION("Dedication", "dumbbell"), // Long-term commitment badges
 }
 
 /**
@@ -22,7 +22,7 @@ enum class BadgeTier(val displayName: String, val colorHex: Long) {
     BRONZE("Bronze", 0xFFCD7F32),
     SILVER("Silver", 0xFFC0C0C0),
     GOLD("Gold", 0xFFFFD700),
-    PLATINUM("Platinum", 0xFFE5E4E2)
+    PLATINUM("Platinum", 0xFFE5E4E2),
 }
 
 /**
@@ -107,66 +107,62 @@ data class Badge(
     val iconResource: String,
     val tier: BadgeTier,
     val requirement: BadgeRequirement,
-    val isSecret: Boolean = false  // Hidden until earned
+    val isSecret: Boolean = false, // Hidden until earned
 ) {
     /**
      * Get progress description for this badge
      */
-    fun getProgressDescription(currentValue: Int): String {
-        return when (val req = requirement) {
-            is BadgeRequirement.StreakDays -> "$currentValue/${req.days} days"
-            is BadgeRequirement.TotalWorkouts -> "$currentValue/${req.count} workouts"
-            is BadgeRequirement.TotalReps -> "$currentValue/${req.count} reps"
-            is BadgeRequirement.PRsAchieved -> "$currentValue/${req.count} PRs"
-            is BadgeRequirement.UniqueExercises -> "$currentValue/${req.count} exercises"
-            is BadgeRequirement.WorkoutsInWeek -> "$currentValue/${req.count} this week"
-            is BadgeRequirement.ConsecutiveWeeks -> "$currentValue/${req.weeks} weeks"
-            is BadgeRequirement.TotalVolume -> "${currentValue}/${req.kgLifted} kg"
-            is BadgeRequirement.SingleWorkoutVolume -> "${currentValue}/${req.kgLifted} kg"
-            is BadgeRequirement.WorkoutAtTime -> if (currentValue > 0) "Completed!" else "Pending"
-            is BadgeRequirement.WorkoutsAtTimeCount -> "$currentValue/${req.count} workouts"
-            is BadgeRequirement.WorkoutModeCount -> "$currentValue/${req.count} workouts"
-            is BadgeRequirement.AllWorkoutModes -> "$currentValue/6 modes"
-            is BadgeRequirement.PeakPower -> "${currentValue}/${req.watts}W"
-            is BadgeRequirement.UniqueMuscleGroups -> "$currentValue/${req.count} groups"
-            is BadgeRequirement.ComebackAfterBreak -> if (currentValue > 0) "Completed!" else "Pending"
-            is BadgeRequirement.StreakSaved -> if (currentValue > 0) "Completed!" else "Pending"
-            is BadgeRequirement.StreakRebuilt -> "$currentValue/${req.days} days"
-            is BadgeRequirement.WeekendWorkouts -> "$currentValue/${req.count} workouts"
-            is BadgeRequirement.RoutinesCompleted -> "$currentValue/${req.count} routines"
-            is BadgeRequirement.RoutinesCreated -> "$currentValue/${req.count} routines"
-            is BadgeRequirement.QualityStreak -> "$currentValue/${req.sets} sets (>${req.minScore})"
-        }
+    fun getProgressDescription(currentValue: Int): String = when (val req = requirement) {
+        is BadgeRequirement.StreakDays -> "$currentValue/${req.days} days"
+        is BadgeRequirement.TotalWorkouts -> "$currentValue/${req.count} workouts"
+        is BadgeRequirement.TotalReps -> "$currentValue/${req.count} reps"
+        is BadgeRequirement.PRsAchieved -> "$currentValue/${req.count} PRs"
+        is BadgeRequirement.UniqueExercises -> "$currentValue/${req.count} exercises"
+        is BadgeRequirement.WorkoutsInWeek -> "$currentValue/${req.count} this week"
+        is BadgeRequirement.ConsecutiveWeeks -> "$currentValue/${req.weeks} weeks"
+        is BadgeRequirement.TotalVolume -> "$currentValue/${req.kgLifted} kg"
+        is BadgeRequirement.SingleWorkoutVolume -> "$currentValue/${req.kgLifted} kg"
+        is BadgeRequirement.WorkoutAtTime -> if (currentValue > 0) "Completed!" else "Pending"
+        is BadgeRequirement.WorkoutsAtTimeCount -> "$currentValue/${req.count} workouts"
+        is BadgeRequirement.WorkoutModeCount -> "$currentValue/${req.count} workouts"
+        is BadgeRequirement.AllWorkoutModes -> "$currentValue/6 modes"
+        is BadgeRequirement.PeakPower -> "$currentValue/${req.watts}W"
+        is BadgeRequirement.UniqueMuscleGroups -> "$currentValue/${req.count} groups"
+        is BadgeRequirement.ComebackAfterBreak -> if (currentValue > 0) "Completed!" else "Pending"
+        is BadgeRequirement.StreakSaved -> if (currentValue > 0) "Completed!" else "Pending"
+        is BadgeRequirement.StreakRebuilt -> "$currentValue/${req.days} days"
+        is BadgeRequirement.WeekendWorkouts -> "$currentValue/${req.count} workouts"
+        is BadgeRequirement.RoutinesCompleted -> "$currentValue/${req.count} routines"
+        is BadgeRequirement.RoutinesCreated -> "$currentValue/${req.count} routines"
+        is BadgeRequirement.QualityStreak -> "$currentValue/${req.sets} sets (>${req.minScore})"
     }
 
     /**
      * Get target value for this badge
      */
-    fun getTargetValue(): Int {
-        return when (val req = requirement) {
-            is BadgeRequirement.StreakDays -> req.days
-            is BadgeRequirement.TotalWorkouts -> req.count
-            is BadgeRequirement.TotalReps -> req.count
-            is BadgeRequirement.PRsAchieved -> req.count
-            is BadgeRequirement.UniqueExercises -> req.count
-            is BadgeRequirement.WorkoutsInWeek -> req.count
-            is BadgeRequirement.ConsecutiveWeeks -> req.weeks
-            is BadgeRequirement.TotalVolume -> req.kgLifted.toInt()
-            is BadgeRequirement.SingleWorkoutVolume -> req.kgLifted
-            is BadgeRequirement.WorkoutAtTime -> 1
-            is BadgeRequirement.WorkoutsAtTimeCount -> req.count
-            is BadgeRequirement.WorkoutModeCount -> req.count
-            is BadgeRequirement.AllWorkoutModes -> 6
-            is BadgeRequirement.PeakPower -> req.watts
-            is BadgeRequirement.UniqueMuscleGroups -> req.count
-            is BadgeRequirement.ComebackAfterBreak -> 1
-            is BadgeRequirement.StreakSaved -> 1
-            is BadgeRequirement.StreakRebuilt -> req.days
-            is BadgeRequirement.WeekendWorkouts -> req.count
-            is BadgeRequirement.RoutinesCompleted -> req.count
-            is BadgeRequirement.RoutinesCreated -> req.count
-            is BadgeRequirement.QualityStreak -> req.sets
-        }
+    fun getTargetValue(): Int = when (val req = requirement) {
+        is BadgeRequirement.StreakDays -> req.days
+        is BadgeRequirement.TotalWorkouts -> req.count
+        is BadgeRequirement.TotalReps -> req.count
+        is BadgeRequirement.PRsAchieved -> req.count
+        is BadgeRequirement.UniqueExercises -> req.count
+        is BadgeRequirement.WorkoutsInWeek -> req.count
+        is BadgeRequirement.ConsecutiveWeeks -> req.weeks
+        is BadgeRequirement.TotalVolume -> req.kgLifted.toInt()
+        is BadgeRequirement.SingleWorkoutVolume -> req.kgLifted
+        is BadgeRequirement.WorkoutAtTime -> 1
+        is BadgeRequirement.WorkoutsAtTimeCount -> req.count
+        is BadgeRequirement.WorkoutModeCount -> req.count
+        is BadgeRequirement.AllWorkoutModes -> 6
+        is BadgeRequirement.PeakPower -> req.watts
+        is BadgeRequirement.UniqueMuscleGroups -> req.count
+        is BadgeRequirement.ComebackAfterBreak -> 1
+        is BadgeRequirement.StreakSaved -> 1
+        is BadgeRequirement.StreakRebuilt -> req.days
+        is BadgeRequirement.WeekendWorkouts -> req.count
+        is BadgeRequirement.RoutinesCompleted -> req.count
+        is BadgeRequirement.RoutinesCreated -> req.count
+        is BadgeRequirement.QualityStreak -> req.sets
     }
 }
 
@@ -176,8 +172,8 @@ data class Badge(
 data class EarnedBadge(
     val id: Long = 0,
     val badgeId: String,
-    val earnedAt: Long,          // Timestamp when badge was earned
-    val celebratedAt: Long? = null  // Timestamp when user saw the celebration (null if not seen)
+    val earnedAt: Long, // Timestamp when badge was earned
+    val celebratedAt: Long? = null, // Timestamp when user saw the celebration (null if not seen)
 ) {
     val hasBeenCelebrated: Boolean
         get() = celebratedAt != null
@@ -191,7 +187,7 @@ data class StreakInfo(
     val longestStreak: Int,
     val streakStartDate: Long?,
     val lastWorkoutDate: Long?,
-    val isAtRisk: Boolean = false  // True if no workout today and streak would break tomorrow
+    val isAtRisk: Boolean = false, // True if no workout today and streak would break tomorrow
 ) {
     companion object {
         val EMPTY = StreakInfo(
@@ -199,7 +195,7 @@ data class StreakInfo(
             longestStreak = 0,
             streakStartDate = null,
             lastWorkoutDate = null,
-            isAtRisk = false
+            isAtRisk = false,
         )
     }
 }
@@ -216,7 +212,7 @@ data class GamificationStats(
     val uniqueExercisesUsed: Int = 0,
     val prsAchieved: Int = 0,
     val badgesEarned: Int = 0,
-    val lastUpdated: Long = 0
+    val lastUpdated: Long = 0,
 ) {
     companion object {
         val EMPTY = GamificationStats()
@@ -226,7 +222,4 @@ data class GamificationStats(
 /**
  * Event emitted when a badge is earned
  */
-data class BadgeEarnedEvent(
-    val badge: Badge,
-    val earnedAt: Long
-)
+data class BadgeEarnedEvent(val badge: Badge, val earnedAt: Long)

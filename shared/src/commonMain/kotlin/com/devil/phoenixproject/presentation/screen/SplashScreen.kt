@@ -25,12 +25,12 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlin.math.sin
+import kotlin.random.Random
 import kotlinx.coroutines.delay
 import org.jetbrains.compose.resources.painterResource
 import org.jetbrains.compose.resources.stringResource
 import vitruvianprojectphoenix.shared.generated.resources.*
-import kotlin.math.sin
-import kotlin.random.Random
 
 // Phoenix fire colors
 private val FireOrange = Color(0xFFFF6B35)
@@ -50,10 +50,7 @@ private val DeepNavy = Color(0xFF1E293B)
  * - "Project Phoenix" text fade-in
  */
 @Composable
-fun SplashScreen(
-    visible: Boolean,
-    modifier: Modifier = Modifier
-) {
+fun SplashScreen(visible: Boolean, modifier: Modifier = Modifier) {
     // Animation states
     var showLogo by remember { mutableStateOf(false) }
     var showText by remember { mutableStateOf(false) }
@@ -84,9 +81,9 @@ fun SplashScreen(
         targetValue = 1.04f,
         animationSpec = infiniteRepeatable(
             animation = tween(2000, easing = EaseInOutSine),
-            repeatMode = RepeatMode.Reverse
+            repeatMode = RepeatMode.Reverse,
         ),
-        label = "breath"
+        label = "breath",
     )
 
     // Fire glow intensity animation
@@ -95,9 +92,9 @@ fun SplashScreen(
         targetValue = 1f,
         animationSpec = infiniteRepeatable(
             animation = tween(1500, easing = EaseInOutQuad),
-            repeatMode = RepeatMode.Reverse
+            repeatMode = RepeatMode.Reverse,
         ),
-        label = "glow"
+        label = "glow",
     )
 
     // Fire flicker (faster, more erratic)
@@ -106,9 +103,9 @@ fun SplashScreen(
         targetValue = 1.2f,
         animationSpec = infiniteRepeatable(
             animation = tween(300, easing = LinearEasing),
-            repeatMode = RepeatMode.Reverse
+            repeatMode = RepeatMode.Reverse,
         ),
-        label = "flicker"
+        label = "flicker",
     )
 
     // Logo entrance animation
@@ -116,34 +113,34 @@ fun SplashScreen(
         targetValue = if (showLogo) 1f else 0.3f,
         animationSpec = spring(
             dampingRatio = Spring.DampingRatioMediumBouncy,
-            stiffness = Spring.StiffnessLow
+            stiffness = Spring.StiffnessLow,
         ),
-        label = "logoScale"
+        label = "logoScale",
     )
 
     val logoAlpha by animateFloatAsState(
         targetValue = if (showLogo) 1f else 0f,
         animationSpec = tween(600, easing = EaseOutCubic),
-        label = "logoAlpha"
+        label = "logoAlpha",
     )
 
     // Text entrance animation
     val textAlpha by animateFloatAsState(
         targetValue = if (showText) 1f else 0f,
         animationSpec = tween(800, easing = EaseOutCubic),
-        label = "textAlpha"
+        label = "textAlpha",
     )
 
     val textOffset by animateFloatAsState(
         targetValue = if (showText) 0f else 20f,
         animationSpec = tween(800, easing = EaseOutCubic),
-        label = "textOffset"
+        label = "textOffset",
     )
 
     AnimatedVisibility(
         visible = visible,
         enter = fadeIn(animationSpec = tween(300)),
-        exit = fadeOut(animationSpec = tween(400))
+        exit = fadeOut(animationSpec = tween(400)),
     ) {
         Box(
             modifier = modifier
@@ -153,17 +150,17 @@ fun SplashScreen(
                         colors = listOf(
                             DarkSlate,
                             DeepNavy,
-                            DarkSlate
-                        )
-                    )
+                            DarkSlate,
+                        ),
+                    ),
                 ),
-            contentAlignment = Alignment.Center
+            contentAlignment = Alignment.Center,
         ) {
             // Ember particles layer (behind logo)
             if (showEmbers) {
                 EmberParticles(
                     modifier = Modifier.fillMaxSize(),
-                    particleCount = 25
+                    particleCount = 25,
                 )
             }
 
@@ -180,10 +177,10 @@ fun SplashScreen(
                             colors = listOf(
                                 FireOrange.copy(alpha = fireFlicker * 0.8f),
                                 FireYellow.copy(alpha = 0.4f),
-                                Color.Transparent
-                            )
-                        )
-                    )
+                                Color.Transparent,
+                            ),
+                        ),
+                    ),
             )
 
             // Secondary inner glow
@@ -199,16 +196,16 @@ fun SplashScreen(
                             colors = listOf(
                                 FireYellow.copy(alpha = 0.9f),
                                 FireOrange.copy(alpha = 0.5f),
-                                Color.Transparent
-                            )
-                        )
-                    )
+                                Color.Transparent,
+                            ),
+                        ),
+                    ),
             )
 
             // Main content column
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Center
+                verticalArrangement = Arrangement.Center,
             ) {
                 // Phoenix logo with animations
                 Image(
@@ -219,7 +216,7 @@ fun SplashScreen(
                         .aspectRatio(1f)
                         .scale(logoScale * logoBreath)
                         .alpha(logoAlpha),
-                    contentScale = ContentScale.Fit
+                    contentScale = ContentScale.Fit,
                 )
 
                 Spacer(modifier = Modifier.height(32.dp))
@@ -235,12 +232,12 @@ fun SplashScreen(
                         shadow = Shadow(
                             color = FireYellow.copy(alpha = 0.6f),
                             offset = Offset(0f, 0f),
-                            blurRadius = 12f
-                        )
+                            blurRadius = 12f,
+                        ),
                     ),
                     modifier = Modifier
                         .alpha(textAlpha)
-                        .offset(y = textOffset.dp)
+                        .offset(y = textOffset.dp),
                 )
 
                 Spacer(modifier = Modifier.height(8.dp))
@@ -252,11 +249,11 @@ fun SplashScreen(
                         fontSize = 14.sp,
                         fontWeight = FontWeight.Light,
                         letterSpacing = 2.sp,
-                        color = Color.White.copy(alpha = 0.7f)
+                        color = Color.White.copy(alpha = 0.7f),
                     ),
                     modifier = Modifier
                         .alpha(textAlpha * 0.8f)
-                        .offset(y = textOffset.dp)
+                        .offset(y = textOffset.dp),
                 )
             }
         }
@@ -267,10 +264,7 @@ fun SplashScreen(
  * Rising ember particles effect
  */
 @Composable
-private fun EmberParticles(
-    modifier: Modifier = Modifier,
-    particleCount: Int = 20
-) {
+private fun EmberParticles(modifier: Modifier = Modifier, particleCount: Int = 20) {
     // Create stable particle data
     val particles = remember {
         List(particleCount) { EmberParticle() }
@@ -284,9 +278,9 @@ private fun EmberParticles(
         targetValue = 1f,
         animationSpec = infiniteRepeatable(
             animation = tween(4000, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart
+            repeatMode = RepeatMode.Restart,
         ),
-        label = "emberProgress"
+        label = "emberProgress",
     )
 
     Canvas(modifier = modifier) {
@@ -311,19 +305,14 @@ private class EmberParticle {
         FireOrange,
         FireYellow,
         EmberGold,
-        FireRed
+        FireRed,
     ).random()
 }
 
 /**
  * Draw a single ember particle
  */
-private fun DrawScope.drawEmber(
-    particle: EmberParticle,
-    progress: Float,
-    canvasWidth: Float,
-    canvasHeight: Float
-) {
+private fun DrawScope.drawEmber(particle: EmberParticle, progress: Float, canvasWidth: Float, canvasHeight: Float) {
     // Calculate particle position with staggered start
     val adjustedProgress = ((progress + particle.startDelay) * particle.speed) % 1f
 
@@ -353,14 +342,14 @@ private fun DrawScope.drawEmber(
     drawCircle(
         color = particle.color.copy(alpha = alpha * flicker * 0.8f),
         radius = currentSize,
-        center = Offset(x, y)
+        center = Offset(x, y),
     )
 
     // Draw glow around ember
     drawCircle(
         color = particle.color.copy(alpha = alpha * flicker * 0.3f),
         radius = currentSize * 2.5f,
-        center = Offset(x, y)
+        center = Offset(x, y),
     )
 }
 
@@ -369,17 +358,15 @@ private fun DrawScope.drawEmber(
  * Useful for instant display before main content loads.
  */
 @Composable
-fun SimpleSplashScreen(
-    modifier: Modifier = Modifier
-) {
+fun SimpleSplashScreen(modifier: Modifier = Modifier) {
     Box(
         modifier = modifier
             .fillMaxSize()
             .background(DarkSlate),
-        contentAlignment = Alignment.Center
+        contentAlignment = Alignment.Center,
     ) {
         Column(
-            horizontalAlignment = Alignment.CenterHorizontally
+            horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Image(
                 painter = painterResource(Res.drawable.vitphoe_logo),
@@ -387,7 +374,7 @@ fun SimpleSplashScreen(
                 modifier = Modifier
                     .fillMaxWidth(0.55f)
                     .aspectRatio(1f),
-                contentScale = ContentScale.Fit
+                contentScale = ContentScale.Fit,
             )
 
             Spacer(modifier = Modifier.height(32.dp))
@@ -398,8 +385,8 @@ fun SimpleSplashScreen(
                     fontSize = 28.sp,
                     fontWeight = FontWeight.Bold,
                     letterSpacing = 6.sp,
-                    color = FireOrange
-                )
+                    color = FireOrange,
+                ),
             )
         }
     }

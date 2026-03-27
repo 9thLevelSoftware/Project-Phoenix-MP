@@ -18,7 +18,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -43,7 +42,7 @@ fun CircularForceGauge(
     velocity: Double,
     label: String,
     subLabel: String? = null,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
 ) {
     // Determine phase and color
     // Velocity > 0.1 => Concentric (Lifting) -> Primary/Green
@@ -51,10 +50,13 @@ fun CircularForceGauge(
     // Else => Static/Holding -> SurfaceVariant
     val isConcentric = velocity > 0.05
     val isEccentric = velocity < -0.05
-    
+
     val phaseColor = when {
         isConcentric -> MaterialTheme.colorScheme.primary
-        isEccentric -> MaterialTheme.colorScheme.tertiary // Commonly used for Eccentric in Vitruvian context
+
+        isEccentric -> MaterialTheme.colorScheme.tertiary
+
+        // Commonly used for Eccentric in Vitruvian context
         else -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
     }
 
@@ -62,18 +64,18 @@ fun CircularForceGauge(
     val progress = (currentForce / maxForce).coerceIn(0f, 1f)
     val animatedProgress by animateFloatAsState(
         targetValue = progress,
-        animationSpec = tween(durationMillis = 100)
+        animationSpec = tween(durationMillis = 100),
     )
 
     Box(
         contentAlignment = Alignment.Center,
-        modifier = modifier.aspectRatio(1f)
+        modifier = modifier.aspectRatio(1f),
     ) {
         Canvas(modifier = Modifier.fillMaxSize().padding(16.dp)) {
             val strokeWidth = size.width * 0.08f
             val diameter = min(size.width, size.height) - strokeWidth
             val radius = diameter / 2f
-            
+
             // Background Track
             drawArc(
                 color = Color.Gray.copy(alpha = 0.2f),
@@ -82,7 +84,7 @@ fun CircularForceGauge(
                 useCenter = false,
                 topLeft = Offset((size.width - diameter) / 2f, (size.height - diameter) / 2f),
                 size = Size(diameter, diameter),
-                style = Stroke(width = strokeWidth, cap = StrokeCap.Round)
+                style = Stroke(width = strokeWidth, cap = StrokeCap.Round),
             )
 
             // Active Arc
@@ -93,7 +95,7 @@ fun CircularForceGauge(
                 useCenter = false,
                 topLeft = Offset((size.width - diameter) / 2f, (size.height - diameter) / 2f),
                 size = Size(diameter, diameter),
-                style = Stroke(width = strokeWidth, cap = StrokeCap.Round)
+                style = Stroke(width = strokeWidth, cap = StrokeCap.Round),
             )
         }
 
@@ -103,7 +105,7 @@ fun CircularForceGauge(
                 text = label,
                 style = MaterialTheme.typography.displayMedium,
                 fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurface
+                color = MaterialTheme.colorScheme.onSurface,
             )
             if (subLabel != null) {
                 Spacer(modifier = Modifier.height(4.dp))
@@ -111,7 +113,7 @@ fun CircularForceGauge(
                     text = subLabel,
                     style = MaterialTheme.typography.titleMedium,
                     color = phaseColor, // Color the label with phase color
-                    fontWeight = FontWeight.SemiBold
+                    fontWeight = FontWeight.SemiBold,
                 )
             }
         }

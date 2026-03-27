@@ -64,9 +64,7 @@ class FakePreferencesManager : PreferencesManager {
         _preferencesFlow.value = _preferencesFlow.value.copy(audioRepCountEnabled = enabled)
     }
 
-    override suspend fun getSingleExerciseDefaults(exerciseId: String): SingleExerciseDefaults? {
-        return exerciseDefaults[exerciseId]
-    }
+    override suspend fun getSingleExerciseDefaults(exerciseId: String): SingleExerciseDefaults? = exerciseDefaults[exerciseId]
 
     override suspend fun saveSingleExerciseDefaults(defaults: SingleExerciseDefaults) {
         exerciseDefaults[defaults.exerciseId] = defaults
@@ -76,9 +74,7 @@ class FakePreferencesManager : PreferencesManager {
         exerciseDefaults.clear()
     }
 
-    override suspend fun getJustLiftDefaults(): JustLiftDefaults {
-        return justLiftDefaults
-    }
+    override suspend fun getJustLiftDefaults(): JustLiftDefaults = justLiftDefaults
 
     override suspend fun saveJustLiftDefaults(defaults: JustLiftDefaults) {
         justLiftDefaults = defaults

@@ -32,7 +32,7 @@ data class CsvImportPreview(
     val workoutCount: Int,
     val dateRange: Pair<Long, Long>?,
     val totalDurationSeconds: Long,
-    val errors: List<String>
+    val errors: List<String>,
 )
 
 /**
@@ -84,23 +84,20 @@ object CsvImporter {
      * @param profileId Profile to assign to each [ExternalActivity]
      * @param isPaidUser Controls [ExternalActivity.needsSync] — only paid users sync to portal
      */
-    fun parse(
-        content: String,
-        weightUnit: WeightUnit,
-        profileId: String = "default",
-        isPaidUser: Boolean = false
-    ): CsvImportPreview {
+    fun parse(content: String, weightUnit: WeightUnit, profileId: String = "default", isPaidUser: Boolean = false): CsvImportPreview {
         val format = detectFormat(content)
         return when (format) {
             CsvFormat.STRONG -> parseStrongCsv(content, weightUnit, profileId, isPaidUser)
+
             CsvFormat.HEVY -> parseHevyCsv(content, weightUnit, profileId, isPaidUser)
+
             CsvFormat.UNKNOWN -> CsvImportPreview(
                 format = CsvFormat.UNKNOWN,
                 activities = emptyList(),
                 workoutCount = 0,
                 dateRange = null,
                 totalDurationSeconds = 0L,
-                errors = listOf("Unrecognized CSV format — expected Strong or Hevy headers")
+                errors = listOf("Unrecognized CSV format — expected Strong or Hevy headers"),
             )
         }
     }
@@ -117,12 +114,7 @@ object CsvImporter {
      *
      * Rows are grouped by `Workout Name + Date` key; one [ExternalActivity] is created per group.
      */
-    internal fun parseStrongCsv(
-        content: String,
-        weightUnit: WeightUnit,
-        profileId: String,
-        isPaidUser: Boolean
-    ): CsvImportPreview {
+    internal fun parseStrongCsv(content: String, weightUnit: WeightUnit, profileId: String, isPaidUser: Boolean): CsvImportPreview {
         val lines = content.lines().filter { it.isNotBlank() }
         if (lines.isEmpty()) return emptyPreview(CsvFormat.STRONG, "CSV is empty")
 
@@ -130,7 +122,10 @@ object CsvImporter {
         val colIdx = buildStrongColumnMap(headers)
 
         if (!colIdx.containsKey("workout_name") || !colIdx.containsKey("date")) {
-            return emptyPreview(CsvFormat.STRONG, "Missing required Strong columns: 'Workout Name' or 'Date'")
+            return emptyPreview(
+                CsvFormat.STRONG,
+                "Missing required Strong columns: 'Workout Name' or 'Date'",
+            )
         }
 
         // Group rows by (workoutName + date) key to produce one activity per workout
@@ -178,8 +173,8 @@ object CsvImporter {
                         durationSeconds = durationSec,
                         syncedAt = currentTimeMillis(),
                         profileId = profileId,
-                        needsSync = isPaidUser
-                    )
+                        needsSync = isPaidUser,
+                    ),
                 )
             } catch (e: Exception) {
                 errors.add("Workout group parse error: ${e.message ?: "unknown"}")
@@ -202,12 +197,7 @@ object CsvImporter {
      * Rows are grouped by `title + start_time` key; one [ExternalActivity] is created per group.
      * Duration is derived from `end_time - start_time`.
      */
-    internal fun parseHevyCsv(
-        content: String,
-        weightUnit: WeightUnit,
-        profileId: String,
-        isPaidUser: Boolean
-    ): CsvImportPreview {
+    internal fun parseHevyCsv(content: String, weightUnit: WeightUnit, profileId: String, isPaidUser: Boolean): CsvImportPreview {
         val lines = content.lines().filter { it.isNotBlank() }
         if (lines.isEmpty()) return emptyPreview(CsvFormat.HEVY, "CSV is empty")
 
@@ -215,7 +205,10 @@ object CsvImporter {
         val colIdx = buildHevyColumnMap(headers)
 
         if (!colIdx.containsKey("title") || !colIdx.containsKey("start_time")) {
-            return emptyPreview(CsvFormat.HEVY, "Missing required Hevy columns: 'title' or 'start_time'")
+            return emptyPreview(
+                CsvFormat.HEVY,
+                "Missing required Hevy columns: 'title' or 'start_time'",
+            )
         }
 
         val groups = LinkedHashMap<String, MutableList<List<String>>>()
@@ -267,8 +260,8 @@ object CsvImporter {
                         durationSeconds = durationSec,
                         syncedAt = currentTimeMillis(),
                         profileId = profileId,
-                        needsSync = isPaidUser
-                    )
+                        needsSync = isPaidUser,
+                    ),
                 )
             } catch (e: Exception) {
                 errors.add("Workout group parse error: ${e.message ?: "unknown"}")
@@ -438,15 +431,13 @@ object CsvImporter {
         workoutCount = 0,
         dateRange = null,
         totalDurationSeconds = 0L,
-        errors = listOf(error)
+        errors = listOf(error),
     )
 
-    private fun buildPreview(
-        format: CsvFormat,
-        activities: List<ExternalActivity>,
-        errors: List<String>
-    ): CsvImportPreview {
-        val dateRange = if (activities.isEmpty()) null else {
+    private fun buildPreview(format: CsvFormat, activities: List<ExternalActivity>, errors: List<String>): CsvImportPreview {
+        val dateRange = if (activities.isEmpty()) {
+            null
+        } else {
             val min = activities.minOf { it.startedAt }
             val max = activities.maxOf { it.startedAt }
             min to max
@@ -458,7 +449,7 @@ object CsvImporter {
             workoutCount = activities.size,
             dateRange = dateRange,
             totalDurationSeconds = totalDuration,
-            errors = errors
+            errors = errors,
         )
     }
 }

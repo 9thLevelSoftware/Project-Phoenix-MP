@@ -8,15 +8,15 @@ import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.testutil.FakeExerciseRepository
 import com.devil.phoenixproject.testutil.createTestDatabase
 import java.io.File
+import kotlin.test.assertEquals
+import kotlin.test.assertNotNull
+import kotlin.test.assertNull
+import kotlin.test.assertTrue
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import org.junit.Before
 import org.junit.Test
-import kotlin.test.assertEquals
-import kotlin.test.assertNotNull
-import kotlin.test.assertNull
-import kotlin.test.assertTrue
 
 class DataBackupManagerRoutineNameTest {
 
@@ -39,8 +39,8 @@ class DataBackupManagerRoutineNameTest {
                 routineId = "routine-upper",
                 routineName = "Upper Day",
                 exerciseId = "exercise-bench",
-                exerciseName = "Bench Press"
-            )
+                exerciseName = "Bench Press",
+            ),
         )
         workoutRepository.saveSession(
             WorkoutSession(
@@ -50,8 +50,8 @@ class DataBackupManagerRoutineNameTest {
                 routineSessionId = null,
                 routineName = "Bench Press",
                 totalReps = 10,
-                workingReps = 10
-            )
+                workingReps = 10,
+            ),
         )
 
         val backup = backupManager.exportAllData()
@@ -67,16 +67,16 @@ class DataBackupManagerRoutineNameTest {
                 routineId = "routine-a",
                 routineName = "Push A",
                 exerciseId = "exercise-shared",
-                exerciseName = "Incline Press"
-            )
+                exerciseName = "Incline Press",
+            ),
         )
         workoutRepository.saveRoutine(
             buildRoutine(
                 routineId = "routine-b",
                 routineName = "Push B",
                 exerciseId = "exercise-shared",
-                exerciseName = "Incline Press"
-            )
+                exerciseName = "Incline Press",
+            ),
         )
         workoutRepository.saveSession(
             WorkoutSession(
@@ -85,8 +85,8 @@ class DataBackupManagerRoutineNameTest {
                 exerciseName = "Incline Press",
                 routineName = "Incline Press",
                 totalReps = 8,
-                workingReps = 8
-            )
+                workingReps = 8,
+            ),
         )
 
         val backup = backupManager.exportAllData()
@@ -119,17 +119,17 @@ class DataBackupManagerRoutineNameTest {
                         exerciseName = "Row",
                         routineSessionId = null,
                         routineName = null,
-                        routineId = "routine-import"
-                    )
+                        routineId = "routine-import",
+                    ),
                 ),
                 routines = listOf(
                     RoutineBackup(
                         id = "routine-import",
                         name = "Tuesday Upper",
-                        createdAt = 1_700_000_000_000
-                    )
-                )
-            )
+                        createdAt = 1_700_000_000_000,
+                    ),
+                ),
+            ),
         )
 
         val importResult = backupManager.importFromJson(testJson.encodeToString(backup))
@@ -168,15 +168,15 @@ class DataBackupManagerRoutineNameTest {
                         exerciseName = "Bicep Curl",
                         routineSessionId = null,
                         routineName = "Bicep Curl",
-                        routineId = null
-                    )
+                        routineId = null,
+                    ),
                 ),
                 routines = listOf(
                     RoutineBackup(
                         id = "routine-arms",
                         name = "Arms Day",
-                        createdAt = 1_700_000_000_000
-                    )
+                        createdAt = 1_700_000_000_000,
+                    ),
                 ),
                 routineExercises = listOf(
                     RoutineExerciseBackup(
@@ -189,10 +189,10 @@ class DataBackupManagerRoutineNameTest {
                         cableConfig = "DOUBLE",
                         orderIndex = 0,
                         setReps = "10,10,10",
-                        weightPerCableKg = 8f
-                    )
-                )
-            )
+                        weightPerCableKg = 8f,
+                    ),
+                ),
+            ),
         )
 
         val importResult = backupManager.importFromJson(testJson.encodeToString(backup))
@@ -212,8 +212,8 @@ class DataBackupManagerRoutineNameTest {
                 routineId = "routine-upper",
                 routineName = "Upper Day",
                 exerciseId = "exercise-bench",
-                exerciseName = "Bench Press"
-            )
+                exerciseName = "Bench Press",
+            ),
         )
         workoutRepository.saveSession(
             WorkoutSession(
@@ -223,8 +223,8 @@ class DataBackupManagerRoutineNameTest {
                 routineSessionId = null,
                 routineName = "Imported Strength Training Session",
                 totalReps = 10,
-                workingReps = 10
-            )
+                workingReps = 10,
+            ),
         )
 
         val backup = backupManager.exportAllData()
@@ -244,8 +244,8 @@ class DataBackupManagerRoutineNameTest {
                 routineSessionId = null,
                 routineName = "Imported Strength Training Session",
                 totalReps = 5,
-                workingReps = 5
-            )
+                workingReps = 5,
+            ),
         )
 
         val backup = backupManager.exportAllData()
@@ -337,10 +337,10 @@ class DataBackupManagerRoutineNameTest {
                         exerciseName = "Squat",
                         routineSessionId = "legacy_session_session-import-fabricated",
                         routineName = "Leg Day",
-                        routineId = null
-                    )
-                )
-            )
+                        routineId = null,
+                    ),
+                ),
+            ),
         )
 
         val importResult = backupManager.importFromJson(testJson.encodeToString(backup))
@@ -379,10 +379,10 @@ class DataBackupManagerRoutineNameTest {
                         exerciseName = "Unknown Exercise",
                         routineSessionId = null,
                         routineName = "Imported Strength Training Session",
-                        routineId = null
-                    )
-                )
-            )
+                        routineId = null,
+                    ),
+                ),
+            ),
         )
 
         val importResult = backupManager.importFromJson(testJson.encodeToString(backup))
@@ -411,8 +411,8 @@ class DataBackupManagerRoutineNameTest {
                 weightPerCableKg = 50f,
                 duration = 120_000L,
                 totalReps = 10,
-                workingReps = 10
-            )
+                workingReps = 10,
+            ),
         )
 
         // Insert a completed set for that session
@@ -426,7 +426,7 @@ class DataBackupManagerRoutineNameTest {
             actual_weight_kg = 50.0,
             logged_rpe = null,
             is_pr = 0,
-            completed_at = 1700000060000L
+            completed_at = 1700000060000L,
         )
 
         // Export just this session
@@ -468,41 +468,33 @@ class DataBackupManagerRoutineNameTest {
         assertTrue(result.exceptionOrNull()?.message?.contains("Session not found") == true)
     }
 
-    private fun buildRoutine(
-        routineId: String,
-        routineName: String,
-        exerciseId: String,
-        exerciseName: String
-    ): Routine {
+    private fun buildRoutine(routineId: String, routineName: String, exerciseId: String, exerciseName: String): Routine {
         val exercise = Exercise(
             id = exerciseId,
             name = exerciseName,
-            muscleGroup = "Chest"
+            muscleGroup = "Chest",
         )
         val routineExercise = RoutineExercise(
             id = "$routineId-$exerciseId",
             exercise = exercise,
             orderIndex = 0,
-            weightPerCableKg = 10f
+            weightPerCableKg = 10f,
         )
         return Routine(
             id = routineId,
             name = routineName,
-            exercises = listOf(routineExercise)
+            exercises = listOf(routineExercise),
         )
     }
 
-    private class TestDataBackupManager(database: com.devil.phoenixproject.database.VitruvianDatabase) :
-        BaseDataBackupManager(database) {
+    private class TestDataBackupManager(database: com.devil.phoenixproject.database.VitruvianDatabase) : BaseDataBackupManager(database) {
 
         override fun createBackupWriter(): BackupJsonWriter {
             val tempFile = File.createTempFile("backup-test-", ".json")
             return BackupJsonWriter(tempFile.absolutePath)
         }
 
-        override suspend fun finalizeExport(tempFilePath: String): Result<String> {
-            return Result.success(tempFilePath)
-        }
+        override suspend fun finalizeExport(tempFilePath: String): Result<String> = Result.success(tempFilePath)
 
         override suspend fun saveToFile(backup: BackupData): Result<String> {
             error("Not needed for tests")

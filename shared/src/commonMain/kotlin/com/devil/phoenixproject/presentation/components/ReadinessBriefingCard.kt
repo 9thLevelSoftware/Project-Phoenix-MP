@@ -33,27 +33,24 @@ private val FlameRed = Color(0xFFDC2626)
  * - "Insufficient data" state for new users (<28 days history)
  */
 @Composable
-fun ReadinessBriefingCard(
-    readinessResult: ReadinessResult,
-    modifier: Modifier = Modifier
-) {
+fun ReadinessBriefingCard(readinessResult: ReadinessResult, modifier: Modifier = Modifier) {
     Card(
         modifier = modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceContainerHighest
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
         ),
-        shape = RoundedCornerShape(16.dp)
+        shape = RoundedCornerShape(16.dp),
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp)
+                .padding(16.dp),
         ) {
             Text(
                 "Training Readiness",
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurface
+                color = MaterialTheme.colorScheme.onSurface,
             )
             Spacer(modifier = Modifier.height(8.dp))
 
@@ -69,19 +66,19 @@ fun ReadinessBriefingCard(
 private fun InsufficientDataContent() {
     Row(
         modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically
+        verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(
             Icons.Default.Info,
             contentDescription = null,
             tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.size(20.dp)
+            modifier = Modifier.size(20.dp),
         )
         Spacer(modifier = Modifier.width(8.dp))
         Text(
             "Train for 28+ days to unlock readiness insights",
             style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
 }
@@ -109,12 +106,12 @@ private fun ReadyContent(result: ReadinessResult.Ready) {
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(16.dp),
-        verticalAlignment = Alignment.CenterVertically
+        verticalAlignment = Alignment.CenterVertically,
     ) {
         // Circular score indicator
         Box(
             contentAlignment = Alignment.Center,
-            modifier = Modifier.size(72.dp)
+            modifier = Modifier.size(72.dp),
         ) {
             CircularProgressIndicator(
                 progress = { result.score / 100f },
@@ -127,7 +124,7 @@ private fun ReadyContent(result: ReadinessResult.Ready) {
                 text = "${result.score}",
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Black,
-                color = MaterialTheme.colorScheme.onSurface
+                color = MaterialTheme.colorScheme.onSurface,
             )
         }
 
@@ -138,13 +135,13 @@ private fun ReadyContent(result: ReadinessResult.Ready) {
                 modifier = Modifier
                     .clip(RoundedCornerShape(8.dp))
                     .background(statusColor.copy(alpha = 0.15f))
-                    .padding(horizontal = 10.dp, vertical = 4.dp)
+                    .padding(horizontal = 10.dp, vertical = 4.dp),
             ) {
                 Text(
                     text = statusLabel,
                     style = MaterialTheme.typography.labelMedium,
                     fontWeight = FontWeight.Bold,
-                    color = statusColor
+                    color = statusColor,
                 )
             }
 
@@ -155,7 +152,7 @@ private fun ReadyContent(result: ReadinessResult.Ready) {
                 text = "ACWR: ${KmpUtils.formatFloat(result.acwr, 2)}",
                 style = MaterialTheme.typography.bodyMedium,
                 fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.onSurface
+                color = MaterialTheme.colorScheme.onSurface,
             )
         }
     }
@@ -165,15 +162,15 @@ private fun ReadyContent(result: ReadinessResult.Ready) {
     // Acute vs Chronic volume comparison
     Row(
         modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceEvenly
+        horizontalArrangement = Arrangement.SpaceEvenly,
     ) {
         VolumeColumn(
             label = "Acute (7d)",
-            valueKg = result.acuteVolumeKg
+            valueKg = result.acuteVolumeKg,
         )
         VolumeColumn(
             label = "Chronic (avg/wk)",
-            valueKg = result.chronicWeeklyAvgKg
+            valueKg = result.chronicWeeklyAvgKg,
         )
     }
 
@@ -183,25 +180,25 @@ private fun ReadyContent(result: ReadinessResult.Ready) {
     Text(
         text = recommendation,
         style = MaterialTheme.typography.bodySmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
     )
 }
 
 @Composable
 private fun VolumeColumn(label: String, valueKg: Float) {
     Column(
-        horizontalAlignment = Alignment.CenterHorizontally
+        horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Text(
             text = label,
             style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Text(
             text = "${valueKg.toInt()} kg",
             style = MaterialTheme.typography.titleSmall,
             fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.onSurface
+            color = MaterialTheme.colorScheme.onSurface,
         )
     }
 }

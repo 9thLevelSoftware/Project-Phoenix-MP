@@ -18,10 +18,10 @@ import com.devil.phoenixproject.data.repository.TrainingCycleRepository
 import com.devil.phoenixproject.domain.model.CycleProgress
 import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.domain.model.TrainingCycle
-import org.koin.compose.koinInject
 import org.jetbrains.compose.resources.stringResource
-import vitruvianprojectphoenix.shared.generated.resources.Res
+import org.koin.compose.koinInject
 import vitruvianprojectphoenix.shared.generated.resources.*
+import vitruvianprojectphoenix.shared.generated.resources.Res
 
 /**
  * "Up Next" dashboard widget that shows the current day in the active training cycle.
@@ -32,7 +32,7 @@ fun UpNextWidget(
     routines: List<Routine>,
     onStartWorkout: (routineId: String, cycleId: String, dayNumber: Int) -> Unit,
     onViewAllCycles: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
 ) {
     val cycleRepository: TrainingCycleRepository = koinInject()
     val userProfileRepository: com.devil.phoenixproject.data.repository.UserProfileRepository = koinInject()
@@ -53,7 +53,7 @@ fun UpNextWidget(
         // No active cycle - show prompt to create one
         NoActiveCycleWidget(
             onCreateCycle = onViewAllCycles,
-            modifier = modifier
+            modifier = modifier,
         )
     } else {
         // Show the "Up Next" card
@@ -63,7 +63,7 @@ fun UpNextWidget(
             routines = routines,
             onStartWorkout = onStartWorkout,
             onViewDetails = onViewAllCycles,
-            modifier = modifier
+            modifier = modifier,
         )
     }
 }
@@ -72,28 +72,25 @@ fun UpNextWidget(
  * Widget shown when there's no active training cycle.
  */
 @Composable
-private fun NoActiveCycleWidget(
-    onCreateCycle: () -> Unit,
-    modifier: Modifier = Modifier
-) {
+private fun NoActiveCycleWidget(onCreateCycle: () -> Unit, modifier: Modifier = Modifier) {
     Card(
         modifier = modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
         ),
-        shape = RoundedCornerShape(20.dp)
+        shape = RoundedCornerShape(20.dp),
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(20.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
+            horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Icon(
                 Icons.Default.Loop,
                 contentDescription = null,
                 modifier = Modifier.size(48.dp),
-                tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.6f)
+                tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.6f),
             )
 
             Spacer(Modifier.height(12.dp))
@@ -101,7 +98,7 @@ private fun NoActiveCycleWidget(
             Text(
                 "No Active Training Cycle",
                 style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold
+                fontWeight = FontWeight.SemiBold,
             )
 
             Spacer(Modifier.height(4.dp))
@@ -109,14 +106,14 @@ private fun NoActiveCycleWidget(
             Text(
                 "Create a rolling schedule to track your workouts",
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
 
             Spacer(Modifier.height(16.dp))
 
             Button(
                 onClick = onCreateCycle,
-                shape = RoundedCornerShape(12.dp)
+                shape = RoundedCornerShape(12.dp),
             ) {
                 Icon(Icons.Default.Add, contentDescription = null)
                 Spacer(Modifier.width(8.dp))
@@ -136,7 +133,7 @@ private fun ActiveCycleWidget(
     routines: List<Routine>,
     onStartWorkout: (routineId: String, cycleId: String, dayNumber: Int) -> Unit,
     onViewDetails: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
 ) {
     val currentDay = progress?.currentDayNumber ?: 1
     val currentCycleDay = cycle.days.find { it.dayNumber == currentDay }
@@ -148,10 +145,10 @@ private fun ActiveCycleWidget(
         modifier = modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         shape = RoundedCornerShape(20.dp),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
     ) {
         Box(
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier.fillMaxWidth(),
         ) {
             // Gradient header
             Box(
@@ -162,58 +159,58 @@ private fun ActiveCycleWidget(
                         Brush.horizontalGradient(
                             colors = listOf(
                                 MaterialTheme.colorScheme.primary,
-                                MaterialTheme.colorScheme.tertiary
-                            )
-                        )
-                    )
+                                MaterialTheme.colorScheme.tertiary,
+                            ),
+                        ),
+                    ),
             )
 
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(20.dp)
+                    .padding(20.dp),
             ) {
                 // Header row
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(
                             Icons.Default.PlayCircle,
                             contentDescription = null,
                             tint = MaterialTheme.colorScheme.onPrimary,
-                            modifier = Modifier.size(20.dp)
+                            modifier = Modifier.size(20.dp),
                         )
                         Spacer(Modifier.width(8.dp))
                         Text(
                             "UP NEXT",
                             style = MaterialTheme.typography.labelLarge,
                             fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onPrimary
+                            color = MaterialTheme.colorScheme.onPrimary,
                         )
                     }
 
                     Surface(
                         onClick = onViewDetails,
                         color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.2f),
-                        shape = RoundedCornerShape(8.dp)
+                        shape = RoundedCornerShape(8.dp),
                     ) {
                         Row(
                             modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                            verticalAlignment = Alignment.CenterVertically
+                            verticalAlignment = Alignment.CenterVertically,
                         ) {
                             Text(
                                 cycle.name,
                                 style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onPrimary
+                                color = MaterialTheme.colorScheme.onPrimary,
                             )
                             Icon(
                                 Icons.Default.ChevronRight,
                                 contentDescription = null,
                                 tint = MaterialTheme.colorScheme.onPrimary,
-                                modifier = Modifier.size(16.dp)
+                                modifier = Modifier.size(16.dp),
                             )
                         }
                     }
@@ -225,55 +222,55 @@ private fun ActiveCycleWidget(
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
+                        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
                     ),
-                    shape = RoundedCornerShape(16.dp)
+                    shape = RoundedCornerShape(16.dp),
                 ) {
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(16.dp)
+                            .padding(16.dp),
                     ) {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
+                            verticalAlignment = Alignment.CenterVertically,
                         ) {
                             Column {
                                 Text(
                                     currentCycleDay?.name ?: "Day $currentDay",
                                     style = MaterialTheme.typography.titleLarge,
-                                    fontWeight = FontWeight.Bold
+                                    fontWeight = FontWeight.Bold,
                                 )
 
                                 if (currentCycleDay?.isRestDay == true) {
                                     Row(
                                         verticalAlignment = Alignment.CenterVertically,
-                                        modifier = Modifier.padding(top = 4.dp)
+                                        modifier = Modifier.padding(top = 4.dp),
                                     ) {
                                         Icon(
                                             Icons.Default.SelfImprovement,
                                             contentDescription = null,
                                             tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                            modifier = Modifier.size(16.dp)
+                                            modifier = Modifier.size(16.dp),
                                         )
                                         Spacer(Modifier.width(4.dp))
                                         Text(
                                             "Rest Day",
                                             style = MaterialTheme.typography.bodyMedium,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                                         )
                                     }
                                 } else if (routine != null) {
                                     Text(
                                         routine.name,
                                         style = MaterialTheme.typography.bodyMedium,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     )
                                     Text(
                                         "${routine.exercises.size} exercises",
                                         style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
                                     )
                                 }
                             }
@@ -281,22 +278,22 @@ private fun ActiveCycleWidget(
                             // Day counter badge
                             Surface(
                                 color = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f),
-                                shape = RoundedCornerShape(12.dp)
+                                shape = RoundedCornerShape(12.dp),
                             ) {
                                 Column(
                                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                                    horizontalAlignment = Alignment.CenterHorizontally
+                                    horizontalAlignment = Alignment.CenterHorizontally,
                                 ) {
                                     Text(
                                         "$currentDay",
                                         style = MaterialTheme.typography.headlineMedium,
                                         fontWeight = FontWeight.Bold,
-                                        color = MaterialTheme.colorScheme.primary
+                                        color = MaterialTheme.colorScheme.primary,
                                     )
                                     Text(
                                         "of ${cycle.days.size}",
                                         style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f)
+                                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f),
                                     )
                                 }
                             }
@@ -307,9 +304,10 @@ private fun ActiveCycleWidget(
                         // Progress dots
                         Row(
                             modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.Center
+                            horizontalArrangement = Arrangement.Center,
                         ) {
-                            cycle.days.take(10).forEach { day -> // Limit to 10 for UI
+                            cycle.days.take(10).forEach { day ->
+                                // Limit to 10 for UI
                                 val isCurrentDay = day.dayNumber == currentDay
                                 val isPastDay = day.dayNumber < currentDay
                                 Box(
@@ -321,8 +319,8 @@ private fun ActiveCycleWidget(
                                                 isCurrentDay -> MaterialTheme.colorScheme.primary
                                                 isPastDay -> MaterialTheme.colorScheme.primary.copy(alpha = 0.4f)
                                                 else -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.2f)
-                                            }
-                                        )
+                                            },
+                                        ),
                                 )
                                 if (day.dayNumber < cycle.days.size.coerceAtMost(10)) {
                                     Spacer(Modifier.width(4.dp))
@@ -333,7 +331,7 @@ private fun ActiveCycleWidget(
                                 Text(
                                     "+${cycle.days.size - 10}",
                                     style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
                             }
                         }
@@ -345,7 +343,7 @@ private fun ActiveCycleWidget(
                             Button(
                                 onClick = { onStartWorkout(currentCycleDay.routineId, cycle.id, currentDay) },
                                 modifier = Modifier.fillMaxWidth(),
-                                shape = RoundedCornerShape(12.dp)
+                                shape = RoundedCornerShape(12.dp),
                             ) {
                                 Icon(Icons.Default.PlayArrow, contentDescription = null)
                                 Spacer(Modifier.width(8.dp))
@@ -355,7 +353,7 @@ private fun ActiveCycleWidget(
                             OutlinedButton(
                                 onClick = onViewDetails,
                                 modifier = Modifier.fillMaxWidth(),
-                                shape = RoundedCornerShape(12.dp)
+                                shape = RoundedCornerShape(12.dp),
                             ) {
                                 Text(stringResource(Res.string.view_cycle_details))
                             }
@@ -363,7 +361,7 @@ private fun ActiveCycleWidget(
                             OutlinedButton(
                                 onClick = onViewDetails,
                                 modifier = Modifier.fillMaxWidth(),
-                                shape = RoundedCornerShape(12.dp)
+                                shape = RoundedCornerShape(12.dp),
                             ) {
                                 Icon(Icons.Default.Warning, contentDescription = null)
                                 Spacer(Modifier.width(8.dp))
@@ -385,7 +383,7 @@ fun UpNextCompactWidget(
     routines: List<Routine>,
     onStartWorkout: (routineId: String, cycleId: String, dayNumber: Int) -> Unit,
     onViewCycles: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
 ) {
     val cycleRepository: TrainingCycleRepository = koinInject()
     val userProfileRepository: com.devil.phoenixproject.data.repository.UserProfileRepository = koinInject()
@@ -412,7 +410,7 @@ fun UpNextCompactWidget(
     Card(
         modifier = modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.primaryContainer
+            containerColor = MaterialTheme.colorScheme.primaryContainer,
         ),
         shape = RoundedCornerShape(16.dp),
         onClick = {
@@ -421,14 +419,14 @@ fun UpNextCompactWidget(
             } else {
                 onViewCycles()
             }
-        }
+        },
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(16.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
+            verticalAlignment = Alignment.CenterVertically,
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(
@@ -436,13 +434,13 @@ fun UpNextCompactWidget(
                         .size(40.dp)
                         .clip(CircleShape)
                         .background(MaterialTheme.colorScheme.primary),
-                    contentAlignment = Alignment.Center
+                    contentAlignment = Alignment.Center,
                 ) {
                     Text(
                         "$currentDay",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onPrimary
+                        color = MaterialTheme.colorScheme.onPrimary,
                     )
                 }
 
@@ -453,7 +451,7 @@ fun UpNextCompactWidget(
                         currentCycleDay?.name ?: "Day $currentDay",
                         style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                        color = MaterialTheme.colorScheme.onPrimaryContainer,
                     )
                     Text(
                         when {
@@ -462,17 +460,20 @@ fun UpNextCompactWidget(
                             else -> "No routine"
                         },
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
+                        color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f),
                     )
                 }
             }
 
             Icon(
-                if (currentCycleDay?.isRestDay == true) Icons.Default.SelfImprovement
-                else Icons.Default.PlayCircle,
+                if (currentCycleDay?.isRestDay == true) {
+                    Icons.Default.SelfImprovement
+                } else {
+                    Icons.Default.PlayCircle
+                },
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(32.dp)
+                modifier = Modifier.size(32.dp),
             )
         }
     }

@@ -14,24 +14,20 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import com.devil.phoenixproject.domain.model.RoutineFlowState
 import com.devil.phoenixproject.presentation.navigation.NavigationRoutes
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
 import org.jetbrains.compose.resources.stringResource
-import vitruvianprojectphoenix.shared.generated.resources.Res
 import vitruvianprojectphoenix.shared.generated.resources.*
+import vitruvianprojectphoenix.shared.generated.resources.Res
 
 /**
  * Routine Complete Screen - Celebration after finishing entire routine.
  */
 @Composable
-fun RoutineCompleteScreen(
-    navController: NavController,
-    viewModel: MainViewModel
-) {
+fun RoutineCompleteScreen(navController: NavController, viewModel: MainViewModel) {
     val routineFlowState by viewModel.routineFlowState.collectAsState()
 
     val completeState = routineFlowState as? RoutineFlowState.Complete
@@ -50,9 +46,9 @@ fun RoutineCompleteScreen(
         targetValue = 1.1f,
         animationSpec = infiniteRepeatable(
             animation = tween(800, easing = EaseInOutCubic),
-            repeatMode = RepeatMode.Reverse
+            repeatMode = RepeatMode.Reverse,
         ),
-        label = "scale"
+        label = "scale",
     )
 
     // Format duration
@@ -72,19 +68,19 @@ fun RoutineCompleteScreen(
                     colors = listOf(
                         MaterialTheme.colorScheme.primaryContainer,
                         MaterialTheme.colorScheme.tertiaryContainer,
-                        MaterialTheme.colorScheme.background
-                    )
-                )
+                        MaterialTheme.colorScheme.background,
+                    ),
+                ),
             )
             .systemBarsPadding(),
-        contentAlignment = Alignment.Center
+        contentAlignment = Alignment.Center,
     ) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(32.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.SpaceEvenly
+            verticalArrangement = Arrangement.SpaceEvenly,
         ) {
             // Celebration icon
             Box(
@@ -93,15 +89,15 @@ fun RoutineCompleteScreen(
                     .scale(scale)
                     .background(
                         MaterialTheme.colorScheme.primary,
-                        CircleShape
+                        CircleShape,
                     ),
-                contentAlignment = Alignment.Center
+                contentAlignment = Alignment.Center,
             ) {
                 Icon(
                     Icons.Default.EmojiEvents,
                     "Trophy",
                     modifier = Modifier.size(80.dp),
-                    tint = MaterialTheme.colorScheme.onPrimary
+                    tint = MaterialTheme.colorScheme.onPrimary,
                 )
             }
 
@@ -111,13 +107,13 @@ fun RoutineCompleteScreen(
                     "ROUTINE COMPLETE!",
                     style = MaterialTheme.typography.headlineLarge,
                     fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.primary
+                    color = MaterialTheme.colorScheme.primary,
                 )
                 Spacer(Modifier.height(8.dp))
                 Text(
                     completeState.routineName,
                     style = MaterialTheme.typography.titleLarge,
-                    color = MaterialTheme.colorScheme.onSurface
+                    color = MaterialTheme.colorScheme.onSurface,
                 )
             }
 
@@ -126,29 +122,29 @@ fun RoutineCompleteScreen(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(24.dp),
                 colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surface
-                )
+                    containerColor = MaterialTheme.colorScheme.surface,
+                ),
             ) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(24.dp),
-                    horizontalArrangement = Arrangement.SpaceEvenly
+                    horizontalArrangement = Arrangement.SpaceEvenly,
                 ) {
                     StatItem(
                         icon = Icons.Default.FitnessCenter,
                         value = "${completeState.totalExercises}",
-                        label = "Exercises"
+                        label = "Exercises",
                     )
                     StatItem(
                         icon = Icons.Default.Repeat,
                         value = "${completeState.totalSets}",
-                        label = "Sets"
+                        label = "Sets",
                     )
                     StatItem(
                         icon = Icons.Default.Timer,
                         value = durationFormatted,
-                        label = "Duration"
+                        label = "Duration",
                     )
                 }
             }
@@ -162,7 +158,7 @@ fun RoutineCompleteScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(56.dp),
-                shape = RoundedCornerShape(16.dp)
+                shape = RoundedCornerShape(16.dp),
             ) {
                 Text(stringResource(Res.string.label_done), fontWeight = FontWeight.Bold)
             }
@@ -171,28 +167,24 @@ fun RoutineCompleteScreen(
 }
 
 @Composable
-private fun StatItem(
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    value: String,
-    label: String
-) {
+private fun StatItem(icon: androidx.compose.ui.graphics.vector.ImageVector, value: String, label: String) {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         Icon(
             icon,
             label,
             modifier = Modifier.size(32.dp),
-            tint = MaterialTheme.colorScheme.primary
+            tint = MaterialTheme.colorScheme.primary,
         )
         Spacer(Modifier.height(8.dp))
         Text(
             value,
             style = MaterialTheme.typography.headlineSmall,
-            fontWeight = FontWeight.Bold
+            fontWeight = FontWeight.Bold,
         )
         Text(
             label,
             style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
 }

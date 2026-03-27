@@ -41,59 +41,51 @@ private operator fun Dp.times(factor: Float): Dp = (this.value * factor).dp
  * Creates an animated gradient that sweeps across placeholder content.
  */
 @Composable
-fun shimmerBrush(
-    targetValue: Float = 1000f,
-    showShimmer: Boolean = true
-): Brush {
-    return if (showShimmer) {
-        val shimmerColors = listOf(
-            Color.LightGray.copy(alpha = 0.6f),
-            Color.LightGray.copy(alpha = 0.2f),
-            Color.LightGray.copy(alpha = 0.6f),
-        )
+fun shimmerBrush(targetValue: Float = 1000f, showShimmer: Boolean = true): Brush = if (showShimmer) {
+    val shimmerColors = listOf(
+        Color.LightGray.copy(alpha = 0.6f),
+        Color.LightGray.copy(alpha = 0.2f),
+        Color.LightGray.copy(alpha = 0.6f),
+    )
 
-        val transition = rememberInfiniteTransition(label = "shimmer")
-        val translateAnimation = transition.animateFloat(
-            initialValue = 0f,
-            targetValue = targetValue,
-            animationSpec = infiniteRepeatable(
-                animation = tween(
-                    durationMillis = 1000,
-                    easing = FastOutSlowInEasing
-                ),
-                repeatMode = RepeatMode.Restart
+    val transition = rememberInfiniteTransition(label = "shimmer")
+    val translateAnimation = transition.animateFloat(
+        initialValue = 0f,
+        targetValue = targetValue,
+        animationSpec = infiniteRepeatable(
+            animation = tween(
+                durationMillis = 1000,
+                easing = FastOutSlowInEasing,
             ),
-            label = "shimmer_translate"
-        )
+            repeatMode = RepeatMode.Restart,
+        ),
+        label = "shimmer_translate",
+    )
 
-        Brush.linearGradient(
-            colors = shimmerColors,
-            start = Offset.Zero,
-            end = Offset(x = translateAnimation.value, y = translateAnimation.value)
-        )
-    } else {
-        Brush.linearGradient(
-            colors = listOf(Color.Transparent, Color.Transparent),
-            start = Offset.Zero,
-            end = Offset.Zero
-        )
-    }
+    Brush.linearGradient(
+        colors = shimmerColors,
+        start = Offset.Zero,
+        end = Offset(x = translateAnimation.value, y = translateAnimation.value),
+    )
+} else {
+    Brush.linearGradient(
+        colors = listOf(Color.Transparent, Color.Transparent),
+        start = Offset.Zero,
+        end = Offset.Zero,
+    )
 }
 
 /**
  * Shimmer box placeholder - generic rectangular shimmer element.
  */
 @Composable
-fun ShimmerBox(
-    modifier: Modifier = Modifier,
-    showShimmer: Boolean = true
-) {
+fun ShimmerBox(modifier: Modifier = Modifier, showShimmer: Boolean = true) {
     Box(
         modifier = modifier
             .background(
                 brush = shimmerBrush(showShimmer = showShimmer),
-                shape = RoundedCornerShape(8.dp)
-            )
+                shape = RoundedCornerShape(8.dp),
+            ),
     )
 }
 
@@ -102,32 +94,30 @@ fun ShimmerBox(
  * Mimics the structure of WorkoutHistoryCard with shimmer placeholders.
  */
 @Composable
-fun WorkoutHistoryCardSkeleton(
-    modifier: Modifier = Modifier
-) {
+fun WorkoutHistoryCardSkeleton(modifier: Modifier = Modifier) {
     Card(
         modifier = modifier
             .fillMaxWidth()
             .height(responsiveDimension(160.dp)),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         shape = RoundedCornerShape(20.dp), // Material 3 Expressive: More rounded (was 16dp)
-        elevation = CardDefaults.cardElevation(defaultElevation = 8.dp) // Material 3 Expressive: Higher elevation (was 4dp)
+        elevation = CardDefaults.cardElevation(defaultElevation = 8.dp), // Material 3 Expressive: Higher elevation (was 4dp)
     ) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(Spacing.medium)
+                .padding(Spacing.medium),
         ) {
             // Header section
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+                verticalAlignment = Alignment.CenterVertically,
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     // Icon placeholder
                     ShimmerBox(
-                        modifier = Modifier.size(responsiveDimension(48.dp))
+                        modifier = Modifier.size(responsiveDimension(48.dp)),
                     )
 
                     Spacer(modifier = Modifier.width(Spacing.medium))
@@ -137,14 +127,14 @@ fun WorkoutHistoryCardSkeleton(
                         ShimmerBox(
                             modifier = Modifier
                                 .width(responsiveDimension(120.dp))
-                                .height(responsiveDimension(20.dp))
+                                .height(responsiveDimension(20.dp)),
                         )
                         Spacer(modifier = Modifier.height(6.dp))
                         // Mode placeholder
                         ShimmerBox(
                             modifier = Modifier
                                 .width(responsiveDimension(80.dp))
-                                .height(responsiveDimension(16.dp))
+                                .height(responsiveDimension(16.dp)),
                         )
                     }
                 }
@@ -153,7 +143,7 @@ fun WorkoutHistoryCardSkeleton(
                 ShimmerBox(
                     modifier = Modifier
                         .width(responsiveDimension(60.dp))
-                        .height(responsiveDimension(16.dp))
+                        .height(responsiveDimension(16.dp)),
                 )
             }
 
@@ -162,20 +152,20 @@ fun WorkoutHistoryCardSkeleton(
             // Stats placeholders
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceEvenly
+                horizontalArrangement = Arrangement.SpaceEvenly,
             ) {
                 repeat(3) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         ShimmerBox(
                             modifier = Modifier
                                 .width(responsiveDimension(40.dp))
-                                .height(responsiveDimension(24.dp))
+                                .height(responsiveDimension(24.dp)),
                         )
                         Spacer(modifier = Modifier.height(4.dp))
                         ShimmerBox(
                             modifier = Modifier
                                 .width(responsiveDimension(50.dp))
-                                .height(responsiveDimension(14.dp))
+                                .height(responsiveDimension(14.dp)),
                         )
                     }
                 }
@@ -188,31 +178,29 @@ fun WorkoutHistoryCardSkeleton(
  * Skeleton card for personal record loading state.
  */
 @Composable
-fun PersonalRecordCardSkeleton(
-    modifier: Modifier = Modifier
-) {
+fun PersonalRecordCardSkeleton(modifier: Modifier = Modifier) {
     Card(
         modifier = modifier
             .fillMaxWidth()
             .height(responsiveDimension(100.dp)),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         shape = RoundedCornerShape(20.dp), // Material 3 Expressive: More rounded (was 16dp)
-        elevation = CardDefaults.cardElevation(defaultElevation = 8.dp) // Material 3 Expressive: Higher elevation (was 4dp)
+        elevation = CardDefaults.cardElevation(defaultElevation = 8.dp), // Material 3 Expressive: Higher elevation (was 4dp)
     ) {
         Row(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(Spacing.medium),
             horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
+            verticalAlignment = Alignment.CenterVertically,
         ) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.weight(1f)
+                modifier = Modifier.weight(1f),
             ) {
                 // Rank placeholder
                 ShimmerBox(
-                    modifier = Modifier.size(responsiveDimension(40.dp))
+                    modifier = Modifier.size(responsiveDimension(40.dp)),
                 )
 
                 Spacer(modifier = Modifier.width(Spacing.medium))
@@ -222,21 +210,21 @@ fun PersonalRecordCardSkeleton(
                     ShimmerBox(
                         modifier = Modifier
                             .width(responsiveDimension(140.dp))
-                            .height(responsiveDimension(20.dp))
+                            .height(responsiveDimension(20.dp)),
                     )
                     Spacer(modifier = Modifier.height(6.dp))
                     // Weight placeholder
                     ShimmerBox(
                         modifier = Modifier
                             .width(responsiveDimension(100.dp))
-                            .height(responsiveDimension(18.dp))
+                            .height(responsiveDimension(18.dp)),
                     )
                     Spacer(modifier = Modifier.height(4.dp))
                     // Details placeholder
                     ShimmerBox(
                         modifier = Modifier
                             .width(responsiveDimension(120.dp))
-                            .height(responsiveDimension(14.dp))
+                            .height(responsiveDimension(14.dp)),
                     )
                 }
             }
@@ -248,27 +236,25 @@ fun PersonalRecordCardSkeleton(
  * Skeleton for routine card loading state.
  */
 @Composable
-fun RoutineCardSkeleton(
-    modifier: Modifier = Modifier
-) {
+fun RoutineCardSkeleton(modifier: Modifier = Modifier) {
     Card(
         modifier = modifier
             .fillMaxWidth()
             .height(responsiveDimension(140.dp)),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         shape = RoundedCornerShape(20.dp), // Material 3 Expressive: More rounded (was 16dp)
-        elevation = CardDefaults.cardElevation(defaultElevation = 8.dp) // Material 3 Expressive: Higher elevation (was 4dp)
+        elevation = CardDefaults.cardElevation(defaultElevation = 8.dp), // Material 3 Expressive: Higher elevation (was 4dp)
     ) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(Spacing.medium)
+                .padding(Spacing.medium),
         ) {
             // Title placeholder
             ShimmerBox(
                 modifier = Modifier
                     .width(responsiveDimension(160.dp))
-                    .height(responsiveDimension(24.dp))
+                    .height(responsiveDimension(24.dp)),
             )
 
             Spacer(modifier = Modifier.height(Spacing.small))
@@ -277,13 +263,13 @@ fun RoutineCardSkeleton(
             ShimmerBox(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(responsiveDimension(16.dp))
+                    .height(responsiveDimension(16.dp)),
             )
             Spacer(modifier = Modifier.height(6.dp))
             ShimmerBox(
                 modifier = Modifier
                     .fillMaxWidth(0.7f)
-                    .height(responsiveDimension(16.dp))
+                    .height(responsiveDimension(16.dp)),
             )
 
             Spacer(modifier = Modifier.height(Spacing.medium))
@@ -292,7 +278,7 @@ fun RoutineCardSkeleton(
             ShimmerBox(
                 modifier = Modifier
                     .width(responsiveDimension(100.dp))
-                    .height(responsiveDimension(14.dp))
+                    .height(responsiveDimension(14.dp)),
             )
         }
     }

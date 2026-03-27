@@ -3,11 +3,7 @@ package com.devil.phoenixproject.domain.model
 /**
  * A single set defined by percentage of 1RM (for 5/3/1).
  */
-data class PercentageSet(
-    val percent: Float,
-    val targetReps: Int?,
-    val isAmrap: Boolean = false
-)
+data class PercentageSet(val percent: Float, val targetReps: Int?, val isAmrap: Boolean = false)
 
 /**
  * 5/3/1 week definitions with percentage-based sets.
@@ -16,22 +12,22 @@ object FiveThreeOneWeeks {
     val WEEK_1 = listOf(
         PercentageSet(0.65f, 5),
         PercentageSet(0.75f, 5),
-        PercentageSet(0.85f, null, isAmrap = true)
+        PercentageSet(0.85f, null, isAmrap = true),
     )
     val WEEK_2 = listOf(
         PercentageSet(0.70f, 3),
         PercentageSet(0.80f, 3),
-        PercentageSet(0.90f, null, isAmrap = true)
+        PercentageSet(0.90f, null, isAmrap = true),
     )
     val WEEK_3 = listOf(
         PercentageSet(0.75f, 5),
         PercentageSet(0.85f, 3),
-        PercentageSet(0.95f, null, isAmrap = true)
+        PercentageSet(0.95f, null, isAmrap = true),
     )
     val WEEK_4_DELOAD = listOf(
         PercentageSet(0.40f, 5),
         PercentageSet(0.50f, 5),
-        PercentageSet(0.60f, 5)
+        PercentageSet(0.60f, 5),
     )
 
     fun forWeek(weekNumber: Int): List<PercentageSet> = when (weekNumber) {
@@ -72,32 +68,22 @@ data class TemplateExercise(
     val suggestedMode: ProgramMode? = ProgramMode.OldSchool,
     val isPercentageBased: Boolean = false,
     val percentageSets: List<PercentageSet>? = null,
-    val exerciseId: String? = null
+    val exerciseId: String? = null,
 )
 
 /**
  * A routine template containing multiple exercises.
  */
-data class RoutineTemplate(
-    val name: String,
-    val exercises: List<TemplateExercise>
-)
+data class RoutineTemplate(val name: String, val exercises: List<TemplateExercise>)
 
 /**
  * A single day in a cycle template.
  */
-data class CycleDayTemplate(
-    val dayNumber: Int,
-    val name: String,
-    val routine: RoutineTemplate?,
-    val isRestDay: Boolean = false
-) {
+data class CycleDayTemplate(val dayNumber: Int, val name: String, val routine: RoutineTemplate?, val isRestDay: Boolean = false) {
     companion object {
-        fun training(dayNumber: Int, name: String, routine: RoutineTemplate) =
-            CycleDayTemplate(dayNumber, name, routine, isRestDay = false)
+        fun training(dayNumber: Int, name: String, routine: RoutineTemplate) = CycleDayTemplate(dayNumber, name, routine, isRestDay = false)
 
-        fun rest(dayNumber: Int, name: String = "Rest") =
-            CycleDayTemplate(dayNumber, name, null, isRestDay = true)
+        fun rest(dayNumber: Int, name: String = "Rest") = CycleDayTemplate(dayNumber, name, null, isRestDay = true)
     }
 }
 
@@ -111,5 +97,5 @@ data class CycleTemplate(
     val days: List<CycleDayTemplate>,
     val progressionRule: ProgressionRule?,
     val requiresOneRepMax: Boolean = false,
-    val mainLifts: List<String> = emptyList()
+    val mainLifts: List<String> = emptyList(),
 )

@@ -31,7 +31,7 @@ fun LottieAnimation(
     size: Dp = 200.dp,
     iterations: Int = Compottie.IterateForever,
     speed: Float = 1f,
-    contentDescription: String? = null
+    contentDescription: String? = null,
 ) {
     val composition by rememberLottieComposition {
         LottieCompositionSpec.JsonString(animationJson)
@@ -41,11 +41,11 @@ fun LottieAnimation(
         painter = rememberLottiePainter(
             composition = composition,
             iterations = iterations,
-            speed = speed
+            speed = speed,
         ),
         contentDescription = contentDescription,
         contentScale = ContentScale.Fit,
-        modifier = modifier.size(size)
+        modifier = modifier.size(size),
     )
 }
 

@@ -10,13 +10,11 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 
 /**
@@ -32,20 +30,22 @@ fun ExpressiveCard(
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
     shape: Shape = RoundedCornerShape(20.dp),
-    colors: CardColors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest),
+    colors: CardColors = CardDefaults.cardColors(
+        containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+    ),
     elevation: CardElevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
     border: BorderStroke? = BorderStroke(2.dp, MaterialTheme.colorScheme.outlineVariant),
     interactionSource: MutableInteractionSource = remember { MutableInteractionSource() },
-    content: @Composable ColumnScope.() -> Unit
+    content: @Composable ColumnScope.() -> Unit,
 ) {
     val isPressed by interactionSource.collectIsPressedAsState()
     val scale by animateFloatAsState(
         targetValue = if (isPressed) 0.95f else 1f,
         animationSpec = spring(
             dampingRatio = Spring.DampingRatioLowBouncy,
-            stiffness = Spring.StiffnessLow
+            stiffness = Spring.StiffnessLow,
         ),
-        label = "cardScale"
+        label = "cardScale",
     )
 
     Card(
@@ -57,7 +57,7 @@ fun ExpressiveCard(
         elevation = elevation,
         border = border,
         interactionSource = interactionSource,
-        content = content
+        content = content,
     )
 }
 
@@ -74,7 +74,7 @@ fun ExpressiveSlider(
     steps: Int = 0,
     onValueChangeFinished: (() -> Unit)? = null,
     trackColor: Color = MaterialTheme.colorScheme.onSurface,
-    thumbColor: Color = MaterialTheme.colorScheme.onSurface
+    thumbColor: Color = MaterialTheme.colorScheme.onSurface,
 ) {
     Slider(
         value = value,
@@ -88,8 +88,8 @@ fun ExpressiveSlider(
             activeTrackColor = trackColor,
             inactiveTrackColor = MaterialTheme.colorScheme.surfaceContainerHighest,
             activeTickColor = MaterialTheme.colorScheme.surface,
-            inactiveTickColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
-        )
+            inactiveTickColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+        ),
     )
 }
 
@@ -102,7 +102,7 @@ fun ProgressionSlider(
     value: Float,
     onValueChange: (Float) -> Unit,
     valueRange: ClosedFloatingPointRange<Float> = -10f..10f,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
 ) {
     val isNegative = value < 0
     val isPositive = value > 0
@@ -116,23 +116,23 @@ fun ProgressionSlider(
     Column(modifier = modifier) {
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween
+            horizontalArrangement = Arrangement.SpaceBetween,
         ) {
             Text(
                 text = "${valueRange.start.toInt()}",
                 style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Text(
                 text = if (value > 0) "+${value.toInt()}" else "${value.toInt()}",
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
-                color = activeColor
+                color = activeColor,
             )
             Text(
                 text = "+${valueRange.endInclusive.toInt()}",
                 style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
 
@@ -142,7 +142,7 @@ fun ProgressionSlider(
             valueRange = valueRange,
             steps = (valueRange.endInclusive - valueRange.start).toInt() - 1,
             trackColor = activeColor,
-            thumbColor = activeColor
+            thumbColor = activeColor,
         )
     }
 }

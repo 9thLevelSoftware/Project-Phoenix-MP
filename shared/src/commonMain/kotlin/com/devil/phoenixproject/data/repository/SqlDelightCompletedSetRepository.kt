@@ -15,9 +15,7 @@ import kotlinx.coroutines.withContext
  * SQLDelight implementation of CompletedSetRepository.
  * Handles both planned sets (templates) and completed sets (actual performance).
  */
-class SqlDelightCompletedSetRepository(
-    db: VitruvianDatabase
-) : CompletedSetRepository {
+class SqlDelightCompletedSetRepository(db: VitruvianDatabase) : CompletedSetRepository {
 
     private val queries = db.vitruvianDatabaseQueries
 
@@ -31,19 +29,17 @@ class SqlDelightCompletedSetRepository(
         targetReps: Long?,
         targetWeightKg: Double?,
         targetRpe: Long?,
-        restSeconds: Long?
-    ): PlannedSet {
-        return PlannedSet(
-            id = id,
-            routineExerciseId = routineExerciseId,
-            setNumber = setNumber.toInt(),
-            setType = SetType.valueOf(setType),
-            targetReps = targetReps?.toInt(),
-            targetWeightKg = targetWeightKg?.toFloat(),
-            targetRpe = targetRpe?.toInt(),
-            restSeconds = restSeconds?.toInt()
-        )
-    }
+        restSeconds: Long?,
+    ): PlannedSet = PlannedSet(
+        id = id,
+        routineExerciseId = routineExerciseId,
+        setNumber = setNumber.toInt(),
+        setType = SetType.valueOf(setType),
+        targetReps = targetReps?.toInt(),
+        targetWeightKg = targetWeightKg?.toFloat(),
+        targetRpe = targetRpe?.toInt(),
+        restSeconds = restSeconds?.toInt(),
+    )
 
     private fun mapToCompletedSet(
         id: String,
@@ -55,28 +51,27 @@ class SqlDelightCompletedSetRepository(
         actualWeightKg: Double,
         loggedRpe: Long?,
         isPr: Long,
-        completedAt: Long
-    ): CompletedSet {
-        return CompletedSet(
-            id = id,
-            sessionId = sessionId,
-            plannedSetId = plannedSetId,
-            setNumber = setNumber.toInt(),
-            setType = SetType.valueOf(setType),
-            actualReps = actualReps.toInt(),
-            actualWeightKg = actualWeightKg.toFloat(),
-            loggedRpe = loggedRpe?.toInt(),
-            isPr = isPr == 1L,
-            completedAt = completedAt
-        )
-    }
+        completedAt: Long,
+    ): CompletedSet = CompletedSet(
+        id = id,
+        sessionId = sessionId,
+        plannedSetId = plannedSetId,
+        setNumber = setNumber.toInt(),
+        setType = SetType.valueOf(setType),
+        actualReps = actualReps.toInt(),
+        actualWeightKg = actualWeightKg.toFloat(),
+        loggedRpe = loggedRpe?.toInt(),
+        isPr = isPr == 1L,
+        completedAt = completedAt,
+    )
 
     // ==================== Planned Sets ====================
 
-    override suspend fun getPlannedSets(routineExerciseId: String): List<PlannedSet> {
-        return withContext(Dispatchers.IO) {
-            queries.selectPlannedSetsByRoutineExercise(routineExerciseId, ::mapToPlannedSet).executeAsList()
-        }
+    override suspend fun getPlannedSets(routineExerciseId: String): List<PlannedSet> = withContext(Dispatchers.IO) {
+        queries.selectPlannedSetsByRoutineExercise(
+            routineExerciseId,
+            ::mapToPlannedSet,
+        ).executeAsList()
     }
 
     override suspend fun savePlannedSet(set: PlannedSet) {
@@ -89,7 +84,7 @@ class SqlDelightCompletedSetRepository(
                 target_reps = set.targetReps?.toLong(),
                 target_weight_kg = set.targetWeightKg?.toDouble(),
                 target_rpe = set.targetRpe?.toLong(),
-                rest_seconds = set.restSeconds?.toLong()
+                rest_seconds = set.restSeconds?.toLong(),
             )
         }
     }
@@ -105,7 +100,7 @@ class SqlDelightCompletedSetRepository(
                     target_reps = set.targetReps?.toLong(),
                     target_weight_kg = set.targetWeightKg?.toDouble(),
                     target_rpe = set.targetRpe?.toLong(),
-                    rest_seconds = set.restSeconds?.toLong()
+                    rest_seconds = set.restSeconds?.toLong(),
                 )
             }
         }
@@ -120,7 +115,7 @@ class SqlDelightCompletedSetRepository(
                 target_weight_kg = set.targetWeightKg?.toDouble(),
                 target_rpe = set.targetRpe?.toLong(),
                 rest_seconds = set.restSeconds?.toLong(),
-                id = set.id
+                id = set.id,
             )
         }
     }
@@ -139,28 +134,24 @@ class SqlDelightCompletedSetRepository(
 
     // ==================== Completed Sets ====================
 
-    override suspend fun getCompletedSets(sessionId: String): List<CompletedSet> {
-        return withContext(Dispatchers.IO) {
-            queries.selectCompletedSetsBySession(sessionId, ::mapToCompletedSet).executeAsList()
-        }
+    override suspend fun getCompletedSets(sessionId: String): List<CompletedSet> = withContext(Dispatchers.IO) {
+        queries.selectCompletedSetsBySession(sessionId, ::mapToCompletedSet).executeAsList()
     }
 
-    override fun getCompletedSetsFlow(sessionId: String): Flow<List<CompletedSet>> {
-        return queries.selectCompletedSetsBySession(sessionId, ::mapToCompletedSet)
-            .asFlow().mapToList(Dispatchers.IO)
+    override fun getCompletedSetsFlow(sessionId: String): Flow<List<CompletedSet>> = queries.selectCompletedSetsBySession(sessionId, ::mapToCompletedSet)
+        .asFlow().mapToList(Dispatchers.IO)
+
+    override suspend fun getCompletedSetsForExercise(exerciseId: String): List<CompletedSet> = withContext(Dispatchers.IO) {
+        queries.selectCompletedSetsForExercise(exerciseId, ::mapToCompletedSet).executeAsList()
     }
 
-    override suspend fun getCompletedSetsForExercise(exerciseId: String): List<CompletedSet> {
-        return withContext(Dispatchers.IO) {
-            queries.selectCompletedSetsForExercise(exerciseId, ::mapToCompletedSet).executeAsList()
-        }
-    }
-
-    override suspend fun getRecentCompletedSetsForExercise(exerciseId: String, limit: Int): List<CompletedSet> {
-        return withContext(Dispatchers.IO) {
-            queries.selectRecentCompletedSetsForExercise(exerciseId, limit.toLong(), ::mapToCompletedSet)
-                .executeAsList()
-        }
+    override suspend fun getRecentCompletedSetsForExercise(exerciseId: String, limit: Int): List<CompletedSet> = withContext(Dispatchers.IO) {
+        queries.selectRecentCompletedSetsForExercise(
+            exerciseId,
+            limit.toLong(),
+            ::mapToCompletedSet,
+        )
+            .executeAsList()
     }
 
     override suspend fun saveCompletedSet(set: CompletedSet) {
@@ -175,7 +166,7 @@ class SqlDelightCompletedSetRepository(
                 actual_weight_kg = set.actualWeightKg.toDouble(),
                 logged_rpe = set.loggedRpe?.toLong(),
                 is_pr = if (set.isPr) 1L else 0L,
-                completed_at = set.completedAt
+                completed_at = set.completedAt,
             )
         }
     }
@@ -193,7 +184,7 @@ class SqlDelightCompletedSetRepository(
                     actual_weight_kg = set.actualWeightKg.toDouble(),
                     logged_rpe = set.loggedRpe?.toLong(),
                     is_pr = if (set.isPr) 1L else 0L,
-                    completed_at = set.completedAt
+                    completed_at = set.completedAt,
                 )
             }
         }
@@ -203,7 +194,7 @@ class SqlDelightCompletedSetRepository(
         withContext(Dispatchers.IO) {
             queries.updateCompletedSetRpe(
                 logged_rpe = rpe.toLong(),
-                id = setId
+                id = setId,
             )
         }
     }

@@ -1,12 +1,12 @@
 package com.devil.phoenixproject.data.ble
 
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.test.runTest
 
 /**
  * Tests for MetricPollingEngine job lifecycle and partial-stop behavior.
@@ -19,11 +19,9 @@ import kotlin.test.assertTrue
  */
 class MetricPollingEngineTest {
 
-    private fun createTestEngine(
-        onConnectionLost: suspend () -> Unit = {}
-    ): MetricPollingEngine {
+    private fun createTestEngine(onConnectionLost: suspend () -> Unit = {}): MetricPollingEngine {
         val testScope = kotlinx.coroutines.CoroutineScope(
-            kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.Default
+            kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.Default,
         )
         return MetricPollingEngine(
             scope = testScope,
@@ -32,7 +30,7 @@ class MetricPollingEngineTest {
             handleDetector = HandleStateDetector(),
             onMetricEmit = { true },
             onHeuristicData = {},
-            onConnectionLost = onConnectionLost
+            onConnectionLost = onConnectionLost,
         )
     }
 
@@ -46,10 +44,22 @@ class MetricPollingEngineTest {
         engine.startFakeJobs()
         delay(50)
 
-        assertTrue(engine.isJobActive(MetricPollingEngine.PollingType.MONITOR), "Monitor job should be active")
-        assertTrue(engine.isJobActive(MetricPollingEngine.PollingType.DIAGNOSTIC), "Diagnostic job should be active")
-        assertTrue(engine.isJobActive(MetricPollingEngine.PollingType.HEURISTIC), "Heuristic job should be active")
-        assertTrue(engine.isJobActive(MetricPollingEngine.PollingType.HEARTBEAT), "Heartbeat job should be active")
+        assertTrue(
+            engine.isJobActive(MetricPollingEngine.PollingType.MONITOR),
+            "Monitor job should be active",
+        )
+        assertTrue(
+            engine.isJobActive(MetricPollingEngine.PollingType.DIAGNOSTIC),
+            "Diagnostic job should be active",
+        )
+        assertTrue(
+            engine.isJobActive(MetricPollingEngine.PollingType.HEURISTIC),
+            "Heuristic job should be active",
+        )
+        assertTrue(
+            engine.isJobActive(MetricPollingEngine.PollingType.HEARTBEAT),
+            "Heartbeat job should be active",
+        )
 
         engine.stopAll()
     }
@@ -63,10 +73,22 @@ class MetricPollingEngineTest {
         engine.stopAll()
         delay(50)
 
-        assertFalse(engine.isJobActive(MetricPollingEngine.PollingType.MONITOR), "Monitor job should be cancelled")
-        assertFalse(engine.isJobActive(MetricPollingEngine.PollingType.DIAGNOSTIC), "Diagnostic job should be cancelled")
-        assertFalse(engine.isJobActive(MetricPollingEngine.PollingType.HEURISTIC), "Heuristic job should be cancelled")
-        assertFalse(engine.isJobActive(MetricPollingEngine.PollingType.HEARTBEAT), "Heartbeat job should be cancelled")
+        assertFalse(
+            engine.isJobActive(MetricPollingEngine.PollingType.MONITOR),
+            "Monitor job should be cancelled",
+        )
+        assertFalse(
+            engine.isJobActive(MetricPollingEngine.PollingType.DIAGNOSTIC),
+            "Diagnostic job should be cancelled",
+        )
+        assertFalse(
+            engine.isJobActive(MetricPollingEngine.PollingType.HEURISTIC),
+            "Heuristic job should be cancelled",
+        )
+        assertFalse(
+            engine.isJobActive(MetricPollingEngine.PollingType.HEARTBEAT),
+            "Heartbeat job should be cancelled",
+        )
     }
 
     @Test
@@ -76,7 +98,10 @@ class MetricPollingEngineTest {
         // Simulate some diagnostic polls
         engine.incrementDiagnosticCount()
         engine.incrementDiagnosticCount()
-        assertTrue(engine.diagnosticPollCount > 0, "diagnosticPollCount should be > 0 before stopAll")
+        assertTrue(
+            engine.diagnosticPollCount > 0,
+            "diagnosticPollCount should be > 0 before stopAll",
+        )
 
         engine.stopAll()
 
@@ -91,12 +116,18 @@ class MetricPollingEngineTest {
         // Start first monitor job
         engine.startFakeJob(MetricPollingEngine.PollingType.MONITOR)
         delay(50)
-        assertTrue(engine.isJobActive(MetricPollingEngine.PollingType.MONITOR), "First monitor job should be active")
+        assertTrue(
+            engine.isJobActive(MetricPollingEngine.PollingType.MONITOR),
+            "First monitor job should be active",
+        )
 
         // Start second monitor job - should cancel first
         engine.startFakeJob(MetricPollingEngine.PollingType.MONITOR)
         delay(50)
-        assertTrue(engine.isJobActive(MetricPollingEngine.PollingType.MONITOR), "New monitor job should be active")
+        assertTrue(
+            engine.isJobActive(MetricPollingEngine.PollingType.MONITOR),
+            "New monitor job should be active",
+        )
 
         engine.stopAll()
     }
@@ -114,7 +145,10 @@ class MetricPollingEngineTest {
         engine.stopMonitorOnly()
         delay(50)
 
-        assertFalse(engine.isJobActive(MetricPollingEngine.PollingType.MONITOR), "Monitor job should be cancelled")
+        assertFalse(
+            engine.isJobActive(MetricPollingEngine.PollingType.MONITOR),
+            "Monitor job should be cancelled",
+        )
 
         engine.stopAll()
     }
@@ -128,7 +162,10 @@ class MetricPollingEngineTest {
         engine.stopMonitorOnly()
         delay(50)
 
-        assertTrue(engine.isJobActive(MetricPollingEngine.PollingType.DIAGNOSTIC), "Diagnostic job should still be active")
+        assertTrue(
+            engine.isJobActive(MetricPollingEngine.PollingType.DIAGNOSTIC),
+            "Diagnostic job should still be active",
+        )
 
         engine.stopAll()
     }
@@ -142,7 +179,10 @@ class MetricPollingEngineTest {
         engine.stopMonitorOnly()
         delay(50)
 
-        assertTrue(engine.isJobActive(MetricPollingEngine.PollingType.HEARTBEAT), "Heartbeat job should still be active")
+        assertTrue(
+            engine.isJobActive(MetricPollingEngine.PollingType.HEARTBEAT),
+            "Heartbeat job should still be active",
+        )
 
         engine.stopAll()
     }
@@ -156,7 +196,10 @@ class MetricPollingEngineTest {
         engine.stopMonitorOnly()
         delay(50)
 
-        assertTrue(engine.isJobActive(MetricPollingEngine.PollingType.HEURISTIC), "Heuristic job should still be active")
+        assertTrue(
+            engine.isJobActive(MetricPollingEngine.PollingType.HEURISTIC),
+            "Heuristic job should still be active",
+        )
 
         engine.stopAll()
     }
@@ -177,7 +220,10 @@ class MetricPollingEngineTest {
         engine.restartAllFake()
         delay(50)
 
-        assertTrue(engine.isJobActive(MetricPollingEngine.PollingType.MONITOR), "Monitor job should be started")
+        assertTrue(
+            engine.isJobActive(MetricPollingEngine.PollingType.MONITOR),
+            "Monitor job should be started",
+        )
 
         engine.stopAll()
     }
@@ -188,12 +234,18 @@ class MetricPollingEngineTest {
         engine.startFakeJobs()
         delay(50)
 
-        assertTrue(engine.isJobActive(MetricPollingEngine.PollingType.DIAGNOSTIC), "Diagnostic should be active before restart")
+        assertTrue(
+            engine.isJobActive(MetricPollingEngine.PollingType.DIAGNOSTIC),
+            "Diagnostic should be active before restart",
+        )
 
         engine.restartAllFake()
         delay(50)
 
-        assertTrue(engine.isJobActive(MetricPollingEngine.PollingType.DIAGNOSTIC), "Diagnostic should still be active")
+        assertTrue(
+            engine.isJobActive(MetricPollingEngine.PollingType.DIAGNOSTIC),
+            "Diagnostic should still be active",
+        )
 
         engine.stopAll()
     }
@@ -207,12 +259,18 @@ class MetricPollingEngineTest {
         delay(50)
         engine.stopAll()
         delay(50)
-        assertFalse(engine.isJobActive(MetricPollingEngine.PollingType.DIAGNOSTIC), "Diagnostic should be inactive")
+        assertFalse(
+            engine.isJobActive(MetricPollingEngine.PollingType.DIAGNOSTIC),
+            "Diagnostic should be inactive",
+        )
 
         engine.restartAllFake()
         delay(50)
 
-        assertTrue(engine.isJobActive(MetricPollingEngine.PollingType.DIAGNOSTIC), "Diagnostic should be restarted")
+        assertTrue(
+            engine.isJobActive(MetricPollingEngine.PollingType.DIAGNOSTIC),
+            "Diagnostic should be restarted",
+        )
 
         engine.stopAll()
     }
@@ -223,12 +281,18 @@ class MetricPollingEngineTest {
         engine.startFakeJobs()
         delay(50)
 
-        assertTrue(engine.isJobActive(MetricPollingEngine.PollingType.HEARTBEAT), "Heartbeat should be active before restart")
+        assertTrue(
+            engine.isJobActive(MetricPollingEngine.PollingType.HEARTBEAT),
+            "Heartbeat should be active before restart",
+        )
 
         engine.restartAllFake()
         delay(50)
 
-        assertTrue(engine.isJobActive(MetricPollingEngine.PollingType.HEARTBEAT), "Heartbeat should still be active")
+        assertTrue(
+            engine.isJobActive(MetricPollingEngine.PollingType.HEARTBEAT),
+            "Heartbeat should still be active",
+        )
 
         engine.stopAll()
     }
@@ -241,12 +305,18 @@ class MetricPollingEngineTest {
         delay(50)
         engine.stopAll()
         delay(50)
-        assertFalse(engine.isJobActive(MetricPollingEngine.PollingType.HEARTBEAT), "Heartbeat should be inactive")
+        assertFalse(
+            engine.isJobActive(MetricPollingEngine.PollingType.HEARTBEAT),
+            "Heartbeat should be inactive",
+        )
 
         engine.restartAllFake()
         delay(50)
 
-        assertTrue(engine.isJobActive(MetricPollingEngine.PollingType.HEARTBEAT), "Heartbeat should be restarted")
+        assertTrue(
+            engine.isJobActive(MetricPollingEngine.PollingType.HEARTBEAT),
+            "Heartbeat should be restarted",
+        )
 
         engine.stopAll()
     }
@@ -260,21 +330,24 @@ class MetricPollingEngineTest {
     fun `consecutive timeouts trigger disconnect after MAX_CONSECUTIVE_TIMEOUTS`() = runTest {
         var connectionLostCalled = false
         val engine = createTestEngine(
-            onConnectionLost = { connectionLostCalled = true }
+            onConnectionLost = { connectionLostCalled = true },
         )
 
         // Simulate MAX_CONSECUTIVE_TIMEOUTS (5) consecutive timeouts
         repeat(5) { engine.simulateTimeout() }
         engine.checkTimeoutThreshold()
 
-        assertTrue(connectionLostCalled, "onConnectionLost should be called after MAX_CONSECUTIVE_TIMEOUTS")
+        assertTrue(
+            connectionLostCalled,
+            "onConnectionLost should be called after MAX_CONSECUTIVE_TIMEOUTS",
+        )
     }
 
     @Test
     fun `successful read resets consecutive timeout counter`() = runTest {
         var connectionLostCalled = false
         val engine = createTestEngine(
-            onConnectionLost = { connectionLostCalled = true }
+            onConnectionLost = { connectionLostCalled = true },
         )
 
         // Simulate 4 timeouts (just below threshold)
@@ -285,14 +358,17 @@ class MetricPollingEngineTest {
         repeat(4) { engine.simulateTimeout() }
         engine.checkTimeoutThreshold()
 
-        assertFalse(connectionLostCalled, "onConnectionLost should NOT fire - counter was reset by successful read")
+        assertFalse(
+            connectionLostCalled,
+            "onConnectionLost should NOT fire - counter was reset by successful read",
+        )
     }
 
     @Test
     fun `timeout counter does not trigger at MAX minus 1`() = runTest {
         var connectionLostCalled = false
         val engine = createTestEngine(
-            onConnectionLost = { connectionLostCalled = true }
+            onConnectionLost = { connectionLostCalled = true },
         )
 
         // Simulate MAX_CONSECUTIVE_TIMEOUTS - 1 (4) consecutive timeouts
@@ -316,8 +392,14 @@ class MetricPollingEngineTest {
         engine.restartDiagnosticAndHeartbeatFake()
         delay(50)
 
-        assertTrue(engine.isJobActive(MetricPollingEngine.PollingType.DIAGNOSTIC), "Diagnostic should be started")
-        assertTrue(engine.isJobActive(MetricPollingEngine.PollingType.HEARTBEAT), "Heartbeat should be started")
+        assertTrue(
+            engine.isJobActive(MetricPollingEngine.PollingType.DIAGNOSTIC),
+            "Diagnostic should be started",
+        )
+        assertTrue(
+            engine.isJobActive(MetricPollingEngine.PollingType.HEARTBEAT),
+            "Heartbeat should be started",
+        )
 
         engine.stopAll()
     }
@@ -337,8 +419,14 @@ class MetricPollingEngineTest {
         engine.restartDiagnosticAndHeartbeatFake()
         delay(50)
 
-        assertTrue(engine.isJobActive(MetricPollingEngine.PollingType.DIAGNOSTIC), "Diagnostic should remain active")
-        assertTrue(engine.isJobActive(MetricPollingEngine.PollingType.HEARTBEAT), "Heartbeat should remain active")
+        assertTrue(
+            engine.isJobActive(MetricPollingEngine.PollingType.DIAGNOSTIC),
+            "Diagnostic should remain active",
+        )
+        assertTrue(
+            engine.isJobActive(MetricPollingEngine.PollingType.HEARTBEAT),
+            "Heartbeat should remain active",
+        )
 
         engine.stopAll()
     }

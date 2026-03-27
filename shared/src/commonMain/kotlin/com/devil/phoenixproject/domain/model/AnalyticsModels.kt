@@ -9,28 +9,24 @@ data class TrendData(
     val trendDirection: TrendDirection,
     val trendStrength: Float, // 0.0 to 1.0
     val projectedValue: Float? = null,
-    val projectedDate: Long? = null
+    val projectedDate: Long? = null,
 )
 
 /**
  * Single data point in a trend
  */
-data class TrendPoint(
-    val timestamp: Long,
-    val value: Float,
-    val label: String? = null
-)
+data class TrendPoint(val timestamp: Long, val value: Float, val label: String? = null)
 
 /**
  * Type of metric being analyzed
  */
 enum class TrendMetricType {
-    WEIGHT_PR,           // Personal record weight progression
-    VOLUME_WEEKLY,       // Weekly total volume
-    VOLUME_MONTHLY,      // Monthly total volume
-    CONSISTENCY_SCORE,   // Workout consistency (0-1)
-    AVERAGE_POWER,       // Average power per workout
-    WORKOUT_FREQUENCY    // Workouts per week
+    WEIGHT_PR, // Personal record weight progression
+    VOLUME_WEEKLY, // Weekly total volume
+    VOLUME_MONTHLY, // Monthly total volume
+    CONSISTENCY_SCORE, // Workout consistency (0-1)
+    AVERAGE_POWER, // Average power per workout
+    WORKOUT_FREQUENCY, // Workouts per week
 }
 
 /**
@@ -40,7 +36,7 @@ enum class TrendDirection {
     INCREASING,
     DECREASING,
     STABLE,
-    PLATEAU
+    PLATEAU,
 }
 
 /**
@@ -52,7 +48,7 @@ data class Prediction(
     val predictedValue: Float,
     val predictedDate: Long,
     val confidence: Float, // 0.0 to 1.0
-    val method: PredictionMethod
+    val method: PredictionMethod,
 )
 
 /**
@@ -61,7 +57,7 @@ data class Prediction(
 enum class PredictionMethod {
     LINEAR_REGRESSION,
     MOVING_AVERAGE,
-    EXPONENTIAL_SMOOTHING
+    EXPONENTIAL_SMOOTHING,
 }
 
 /**
@@ -73,7 +69,7 @@ data class ComparisonResult(
     val previousPeriod: PeriodData,
     val changePercentage: Float,
     val changeDirection: ChangeDirection,
-    val isSignificant: Boolean // Statistically significant change
+    val isSignificant: Boolean, // Statistically significant change
 )
 
 /**
@@ -84,7 +80,7 @@ data class PeriodData(
     val endDate: Long,
     val totalValue: Float,
     val averageValue: Float,
-    val dataPoints: List<TrendPoint>
+    val dataPoints: List<TrendPoint>,
 )
 
 /**
@@ -93,7 +89,7 @@ data class PeriodData(
 enum class ChangeDirection {
     INCREASE,
     DECREASE,
-    NO_CHANGE
+    NO_CHANGE,
 }
 
 /**
@@ -106,7 +102,7 @@ data class Anomaly(
     val expectedValue: Float,
     val deviation: Float,
     val severity: AnomalySeverity,
-    val description: String
+    val description: String,
 )
 
 /**
@@ -115,7 +111,7 @@ data class Anomaly(
 enum class AnomalySeverity {
     LOW,
     MEDIUM,
-    HIGH
+    HIGH,
 }
 
 /**
@@ -128,5 +124,5 @@ data class Plateau(
     val endDate: Long?,
     val averageValue: Float,
     val durationDays: Int,
-    val recommendation: String
+    val recommendation: String,
 )

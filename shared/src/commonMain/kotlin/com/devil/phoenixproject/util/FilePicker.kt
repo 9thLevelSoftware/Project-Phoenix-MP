@@ -31,9 +31,7 @@ expect class FilePicker {
      * @param onFilePicked Callback with file URI/path as string, or null if cancelled
      */
     @Composable
-    fun LaunchFilePicker(
-        onFilePicked: (String?) -> Unit
-    )
+    fun LaunchFilePicker(onFilePicked: (String?) -> Unit)
 
     /**
      * Composable that launches a file picker to select a CSV file for import.
@@ -42,9 +40,7 @@ expect class FilePicker {
      * @param onFilePicked Callback with file URI/path as string, or null if cancelled
      */
     @Composable
-    fun LaunchCsvFilePicker(
-        onFilePicked: (String?) -> Unit
-    )
+    fun LaunchCsvFilePicker(onFilePicked: (String?) -> Unit)
 
     /**
      * Composable that launches a save file dialog to export backup.
@@ -55,11 +51,7 @@ expect class FilePicker {
      * @param onSaved Callback with saved file path, or null if cancelled/failed
      */
     @Composable
-    fun LaunchFileSaver(
-        fileName: String,
-        content: String,
-        onSaved: (String?) -> Unit
-    )
+    fun LaunchFileSaver(fileName: String, content: String, onSaved: (String?) -> Unit)
 }
 
 /**

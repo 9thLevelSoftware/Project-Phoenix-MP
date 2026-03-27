@@ -1,10 +1,10 @@
 package com.devil.phoenixproject.presentation.manager
 
 import co.touchlab.kermit.Logger
+import com.devil.phoenixproject.data.local.BadgeDefinitions
 import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.data.repository.GamificationRepository
 import com.devil.phoenixproject.data.repository.PersonalRecordRepository
-import com.devil.phoenixproject.data.local.BadgeDefinitions
 import com.devil.phoenixproject.domain.model.Badge
 import com.devil.phoenixproject.domain.model.BadgeRequirement
 import com.devil.phoenixproject.domain.model.HapticEvent
@@ -32,7 +32,7 @@ class GamificationManager(
     private val exerciseRepository: ExerciseRepository,
     private val hapticEvents: MutableSharedFlow<HapticEvent>,
     private val scope: CoroutineScope,
-    private val gamificationEnabled: StateFlow<Boolean>
+    private val gamificationEnabled: StateFlow<Boolean>,
 ) {
     private val _prCelebrationEvent = MutableSharedFlow<PRCelebrationEvent>()
     val prCelebrationEvent: SharedFlow<PRCelebrationEvent> = _prCelebrationEvent.asSharedFlow()
@@ -62,7 +62,7 @@ class GamificationManager(
         isEchoMode: Boolean,
         peakConcentricForceKg: Float = 0f,
         peakEccentricForceKg: Float = 0f,
-        profileId: String = "default"
+        profileId: String = "default",
     ): Boolean {
         var hasCelebrationSound = false
 
@@ -82,7 +82,7 @@ class GamificationManager(
                         reps = workingReps,
                         workoutMode = workoutMode,
                         timestamp = timestamp,
-                        profileId = profileId
+                        profileId = profileId,
                     )
 
                     // Check phase-specific PRs (Issue #111)
@@ -94,7 +94,7 @@ class GamificationManager(
                             reps = workingReps,
                             peakConcentricForceKg = peakConcentricForceKg,
                             peakEccentricForceKg = peakEccentricForceKg,
-                            profileId = profileId
+                            profileId = profileId,
                         ).onFailure { e ->
                             Logger.e(e) { "Error updating phase-specific PRs: ${e.message}" }
                         }
@@ -107,9 +107,13 @@ class GamificationManager(
                                 hasCelebrationSound = true // PR dialog will play sound via callback
                                 val exercise = exerciseRepository.getExerciseById(exId)
                                 val prTypeDescription = when {
-                                    brokenPRs.contains(PRType.MAX_WEIGHT) && brokenPRs.contains(PRType.MAX_VOLUME) -> "Weight & Volume"
+                                    brokenPRs.contains(PRType.MAX_WEIGHT) &&
+                                        brokenPRs.contains(PRType.MAX_VOLUME) -> "Weight & Volume"
+
                                     brokenPRs.contains(PRType.MAX_WEIGHT) -> "Weight"
+
                                     brokenPRs.contains(PRType.MAX_VOLUME) -> "Volume"
+
                                     else -> ""
                                 }
                                 _prCelebrationEvent.emit(
@@ -118,10 +122,12 @@ class GamificationManager(
                                         weightPerCableKg = achievedWeightKg,
                                         reps = workingReps,
                                         workoutMode = workoutMode,
-                                        brokenPRTypes = brokenPRs
-                                    )
+                                        brokenPRTypes = brokenPRs,
+                                    ),
                                 )
-                                Logger.d("NEW PR ($prTypeDescription): ${exercise?.name} - $achievedWeightKg kg x $workingReps reps in $workoutMode mode")
+                                Logger.d(
+                                    "NEW PR ($prTypeDescription): ${exercise?.name} - $achievedWeightKg kg x $workingReps reps in $workoutMode mode",
+                                )
                             }
                         }.onFailure { e ->
                             Logger.e(e) { "Error updating PR: ${e.message}" }
@@ -171,9 +177,13 @@ class GamificationManager(
     suspend fun processSetQualityEvent(averageSetQuality: Int, profileId: String = "default") {
         if (averageSetQuality >= 85) {
             consecutiveQualitySets++
-            Logger.d("Quality streak: $consecutiveQualitySets consecutive sets (score=$averageSetQuality)")
+            Logger.d(
+                "Quality streak: $consecutiveQualitySets consecutive sets (score=$averageSetQuality)",
+            )
         } else {
-            Logger.d("Quality streak reset: score $averageSetQuality < 85 (was $consecutiveQualitySets)")
+            Logger.d(
+                "Quality streak reset: score $averageSetQuality < 85 (was $consecutiveQualitySets)",
+            )
             consecutiveQualitySets = 0
             return // No badge check needed if streak broken
         }
@@ -191,7 +201,9 @@ class GamificationManager(
                     val awarded = gamificationRepository.awardBadge(badge.id, profileId)
                     if (awarded) {
                         newlyEarned.add(badge)
-                        Logger.d("Form Master badge earned: ${badge.name} (streak=$consecutiveQualitySets, score=$averageSetQuality)")
+                        Logger.d(
+                            "Form Master badge earned: ${badge.name} (streak=$consecutiveQualitySets, score=$averageSetQuality)",
+                        )
                     }
                 }
             }

@@ -2,8 +2,8 @@ package com.devil.phoenixproject.data.repository
 
 import com.devil.phoenixproject.domain.model.CycleDay
 import com.devil.phoenixproject.domain.model.CycleItem
-import com.devil.phoenixproject.domain.model.CycleProgression
 import com.devil.phoenixproject.domain.model.CycleProgress
+import com.devil.phoenixproject.domain.model.CycleProgression
 import com.devil.phoenixproject.domain.model.TrainingCycle
 import kotlinx.coroutines.flow.Flow
 

@@ -37,17 +37,17 @@ class RepCounterFromMachine {
 
     // Pending rep state - true when at TOP, waiting for machine confirm
     private var hasPendingRep = false
-    private var pendingRepProgress = 0f  // 0.0 at TOP, 1.0 at BOTTOM (legacy, kept for compatibility)
+    private var pendingRepProgress = 0f // 0.0 at TOP, 1.0 at BOTTOM (legacy, kept for compatibility)
 
     // Issue #163: Phase tracking for animated rep counter
     private var activePhase: RepPhase = RepPhase.IDLE
-    private var phaseProgress: Float = 0f  // 0.0 at phase start, 1.0 at phase end
-    private var lastTrackedPosition: Float = 0f  // For direction detection
-    private var phaseStartPosition: Float = 0f  // Position when phase started
-    private var phasePeakPosition: Float = 0f   // Peak position during current rep (for eccentric progress)
-    private var positionHistoryForDirection = mutableListOf<Float>()  // Rolling window for smoothing
+    private var phaseProgress: Float = 0f // 0.0 at phase start, 1.0 at phase end
+    private var lastTrackedPosition: Float = 0f // For direction detection
+    private var phaseStartPosition: Float = 0f // Position when phase started
+    private var phasePeakPosition: Float = 0f // Peak position during current rep (for eccentric progress)
+    private var positionHistoryForDirection = mutableListOf<Float>() // Rolling window for smoothing
     private val DIRECTION_WINDOW_SIZE = 3
-    private val DIRECTION_THRESHOLD_MM = 5f  // Minimum movement to detect direction change (mm)
+    private val DIRECTION_THRESHOLD_MM = 5f // Minimum movement to detect direction change (mm)
 
     // Track directional counters for position calibration AND visual feedback
     // Issue #210 FIX: Initialize to 0 instead of null so first rep notification
@@ -85,7 +85,7 @@ class RepCounterFromMachine {
         workingTarget: Int,
         isJustLift: Boolean,
         stopAtTop: Boolean,
-        isAMRAP: Boolean = false
+        isAMRAP: Boolean = false,
     ) {
         this.warmupTarget = warmupTarget
         this.workingTarget = workingTarget
@@ -108,7 +108,7 @@ class RepCounterFromMachine {
         shouldStop = false
         hasPendingRep = false
         pendingRepProgress = 0f
-                // Issue #163: Reset phase tracking
+        // Issue #163: Reset phase tracking
         activePhase = RepPhase.IDLE
         phaseProgress = 0f
         lastTrackedPosition = 0f
@@ -149,7 +149,7 @@ class RepCounterFromMachine {
         shouldStop = false
         hasPendingRep = false
         pendingRepProgress = 0f
-                // Issue #163: Reset phase tracking (but keep position history for direction detection)
+        // Issue #163: Reset phase tracking (but keep position history for direction detection)
         activePhase = RepPhase.IDLE
         phaseProgress = 0f
         lastTopCounter = 0
@@ -184,7 +184,7 @@ class RepCounterFromMachine {
      */
     fun seedRomBoundaries(rangeTop: Float, rangeBottom: Float) {
         if (rangeTop <= 0f || rangeBottom < 0f) return
-        if (rangeTop == 300.0f && rangeBottom == 0.0f) return  // Default/unset values
+        if (rangeTop == 300.0f && rangeBottom == 0.0f) return // Default/unset values
 
         // Only seed if not already calibrated from actual reps
         if (maxRepPosA == null && topPositionsA.isEmpty()) {
@@ -269,14 +269,14 @@ class RepCounterFromMachine {
      */
     fun process(
         repsRomCount: Int,
-        repsRomTotal: Int = 0,  // Issue #210: Machine's warmup target
+        repsRomTotal: Int = 0, // Issue #210: Machine's warmup target
         repsSetCount: Int,
-        repsSetTotal: Int = 0,  // Issue #210: Machine's working target
+        repsSetTotal: Int = 0, // Issue #210: Machine's working target
         up: Int = 0,
         down: Int = 0,
         posA: Float = 0f,
         posB: Float = 0f,
-        isLegacyFormat: Boolean = false
+        isLegacyFormat: Boolean = false,
     ) {
         // Issue #210: Sync warmupTarget with machine's repsRomTotal if provided and different
         // This ensures our warmup tracking matches the machine's expectation
@@ -321,16 +321,16 @@ class RepCounterFromMachine {
                     RepEvent(
                         type = RepType.WARMUP_COMPLETED,
                         warmupCount = warmupReps,
-                        workingCount = workingReps
-                    )
+                        workingCount = workingReps,
+                    ),
                 )
                 if (warmupReps == warmupTarget) {
                     onRepEvent?.invoke(
                         RepEvent(
                             type = RepType.WARMUP_COMPLETE,
                             warmupCount = warmupReps,
-                            workingCount = workingReps
-                        )
+                            workingCount = workingReps,
+                        ),
                     )
                 }
             } else {
@@ -340,8 +340,8 @@ class RepCounterFromMachine {
                     RepEvent(
                         type = RepType.WORKING_COMPLETED,
                         warmupCount = warmupReps,
-                        workingCount = workingReps
-                    )
+                        workingCount = workingReps,
+                    ),
                 )
 
                 // Check if target reached (unless AMRAP or Just Lift)
@@ -352,8 +352,8 @@ class RepCounterFromMachine {
                         RepEvent(
                             type = RepType.WORKOUT_COMPLETE,
                             warmupCount = warmupReps,
-                            workingCount = workingReps
-                        )
+                            workingCount = workingReps,
+                        ),
                     )
                 }
             }
@@ -403,8 +403,8 @@ class RepCounterFromMachine {
                     RepEvent(
                         type = RepType.WORKING_PENDING,
                         warmupCount = warmupReps,
-                        workingCount = workingReps  // Still the old count, pending shows +1
-                    )
+                        workingCount = workingReps, // Still the old count, pending shows +1
+                    ),
                 )
 
                 // stopAtTop mode: Complete the set at concentric peak on the final rep.
@@ -428,8 +428,8 @@ class RepCounterFromMachine {
                             RepEvent(
                                 type = RepType.WORKOUT_COMPLETE,
                                 warmupCount = warmupReps,
-                                workingCount = workingReps
-                            )
+                                workingCount = workingReps,
+                            ),
                         )
                     }
                 }
@@ -462,8 +462,8 @@ class RepCounterFromMachine {
                 RepEvent(
                     type = RepType.WARMUP_COMPLETED,
                     warmupCount = warmupReps,
-                    workingCount = workingReps
-                )
+                    workingCount = workingReps,
+                ),
             )
 
             if (warmupReps >= warmupTarget) {
@@ -471,8 +471,8 @@ class RepCounterFromMachine {
                     RepEvent(
                         type = RepType.WARMUP_COMPLETE,
                         warmupCount = warmupReps,
-                        workingCount = workingReps
-                    )
+                        workingCount = workingReps,
+                    ),
                 )
             }
         }
@@ -486,8 +486,8 @@ class RepCounterFromMachine {
                 RepEvent(
                     type = RepType.WARMUP_COMPLETED,
                     warmupCount = warmupReps,
-                    workingCount = workingReps
-                )
+                    workingCount = workingReps,
+                ),
             )
 
             if (warmupReps >= warmupTarget) {
@@ -495,8 +495,8 @@ class RepCounterFromMachine {
                     RepEvent(
                         type = RepType.WARMUP_COMPLETE,
                         warmupCount = warmupReps,
-                        workingCount = workingReps
-                    )
+                        workingCount = workingReps,
+                    ),
                 )
             }
         }
@@ -514,8 +514,8 @@ class RepCounterFromMachine {
                     RepEvent(
                         type = RepType.WARMUP_COMPLETE,
                         warmupCount = warmupReps,
-                        workingCount = workingReps
-                    )
+                        workingCount = workingReps,
+                    ),
                 )
             }
             workingReps = repsSetCount
@@ -531,8 +531,8 @@ class RepCounterFromMachine {
                 RepEvent(
                     type = RepType.WORKING_COMPLETED,
                     warmupCount = warmupReps,
-                    workingCount = workingReps
-                )
+                    workingCount = workingReps,
+                ),
             )
 
             // Check if target reached (unless AMRAP or Just Lift)
@@ -544,19 +544,17 @@ class RepCounterFromMachine {
                     RepEvent(
                         type = RepType.WORKOUT_COMPLETE,
                         warmupCount = warmupReps,
-                        workingCount = workingReps
-                    )
+                        workingCount = workingReps,
+                    ),
                 )
             }
         }
     }
 
-    private fun calculateDelta(last: Int, current: Int): Int {
-        return if (current >= last) {
-            current - last
-        } else {
-            0xFFFF - last + current + 1
-        }
+    private fun calculateDelta(last: Int, current: Int): Int = if (current >= last) {
+        current - last
+    } else {
+        0xFFFF - last + current + 1
     }
 
     private fun recordTopPosition(posA: Float, posB: Float) {
@@ -624,7 +622,7 @@ class RepCounterFromMachine {
     }
 
     fun getRepCount(): RepCount {
-        val total = workingReps  // Exclude warm-up reps from total count
+        val total = workingReps // Exclude warm-up reps from total count
         return RepCount(
             warmupReps = warmupReps,
             workingReps = workingReps,
@@ -634,7 +632,7 @@ class RepCounterFromMachine {
             pendingRepProgress = pendingRepProgress,
             // Issue #163: Include phase tracking for animated counter
             activeRepPhase = activePhase,
-            phaseProgress = phaseProgress
+            phaseProgress = phaseProgress,
         )
     }
 
@@ -679,9 +677,13 @@ class RepCounterFromMachine {
 
         // Determine phase from direction
         val newPhase = when {
-            positionDelta > DIRECTION_THRESHOLD_MM -> RepPhase.CONCENTRIC  // Moving up
-            positionDelta < -DIRECTION_THRESHOLD_MM -> RepPhase.ECCENTRIC  // Moving down
-            else -> activePhase  // No significant movement, keep current phase
+            positionDelta > DIRECTION_THRESHOLD_MM -> RepPhase.CONCENTRIC
+
+            // Moving up
+            positionDelta < -DIRECTION_THRESHOLD_MM -> RepPhase.ECCENTRIC
+
+            // Moving down
+            else -> activePhase // No significant movement, keep current phase
         }
 
         // Handle phase transitions
@@ -692,10 +694,12 @@ class RepCounterFromMachine {
                     phaseStartPosition = currentPos
                     phasePeakPosition = currentPos
                 }
+
                 RepPhase.ECCENTRIC -> {
                     // Starting eccentric - use current position as peak, keep start from concentric
                     phasePeakPosition = currentPos
                 }
+
                 RepPhase.IDLE -> { /* No action needed */ }
             }
             activePhase = newPhase
@@ -716,6 +720,7 @@ class RepCounterFromMachine {
                     0f
                 }
             }
+
             RepPhase.ECCENTRIC -> {
                 // Progress: 0.0 at top, 1.0 at bottom
                 val minPos = minRepPosA ?: minRepPosB ?: phaseStartPosition
@@ -726,6 +731,7 @@ class RepCounterFromMachine {
                     0f
                 }
             }
+
             RepPhase.IDLE -> {
                 phaseProgress = 0f
             }
@@ -749,7 +755,7 @@ class RepCounterFromMachine {
         lastRepTopA = lastRepTopA,
         lastRepTopB = lastRepTopB,
         lastRepBottomA = lastRepBottomA,
-        lastRepBottomB = lastRepBottomB
+        lastRepBottomB = lastRepBottomB,
     )
 
     fun hasMeaningfulRange(minRangeThreshold: Float = 50f): Boolean {
@@ -818,7 +824,7 @@ data class RepRanges(
     val lastRepTopA: Float? = null,
     val lastRepTopB: Float? = null,
     val lastRepBottomA: Float? = null,
-    val lastRepBottomB: Float? = null
+    val lastRepBottomB: Float? = null,
 ) {
     /**
      * Check if cable A is active (has built meaningful range of motion).

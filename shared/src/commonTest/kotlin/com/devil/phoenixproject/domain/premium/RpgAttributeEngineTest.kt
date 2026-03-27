@@ -23,7 +23,7 @@ class RpgAttributeEngineTest {
         currentStreak: Int = 0,
         longestStreak: Int = 0,
         trainingDays: Int = 0,
-        badgesEarned: Int = 0
+        badgesEarned: Int = 0,
     ) = RpgInput(
         maxWeightLiftedKg = maxWeightLiftedKg,
         totalVolumeKg = totalVolumeKg,
@@ -36,7 +36,7 @@ class RpgAttributeEngineTest {
         currentStreak = currentStreak,
         longestStreak = longestStreak,
         trainingDays = trainingDays,
-        badgesEarned = badgesEarned
+        badgesEarned = badgesEarned,
     )
 
     // ==========================================================
@@ -46,7 +46,7 @@ class RpgAttributeEngineTest {
     @Test
     fun emptyInputReturnsEmptyProfile() {
         val result = RpgAttributeEngine.computeProfile(
-            input(totalWorkouts = 0)
+            input(totalWorkouts = 0),
         )
         assertEquals(RpgProfile.EMPTY, result)
     }
@@ -58,55 +58,55 @@ class RpgAttributeEngineTest {
     @Test
     fun strengthComputationWithHighMaxWeight() {
         val result = RpgAttributeEngine.computeProfile(
-            input(maxWeightLiftedKg = 180.0, avgWorkingWeightKg = 100.0)
+            input(maxWeightLiftedKg = 180.0, avgWorkingWeightKg = 100.0),
         )
         assertTrue(
             result.strength >= 60,
-            "Strength should be >= 60 for 180kg max / 100kg avg, got ${result.strength}"
+            "Strength should be >= 60 for 180kg max / 100kg avg, got ${result.strength}",
         )
     }
 
     @Test
     fun powerComputationWithHighPeakPower() {
         val result = RpgAttributeEngine.computeProfile(
-            input(peakPowerWatts = 1800.0)
+            input(peakPowerWatts = 1800.0),
         )
         assertTrue(
             result.power >= 80,
-            "Power should be >= 80 for 1800W peak, got ${result.power}"
+            "Power should be >= 80 for 1800W peak, got ${result.power}",
         )
     }
 
     @Test
     fun staminaComputationWithHighVolume() {
         val result = RpgAttributeEngine.computeProfile(
-            input(totalVolumeKg = 400000.0, totalReps = 40000)
+            input(totalVolumeKg = 400000.0, totalReps = 40000),
         )
         assertTrue(
             result.stamina >= 70,
-            "Stamina should be >= 70 for 400k volume / 40k reps, got ${result.stamina}"
+            "Stamina should be >= 70 for 400k volume / 40k reps, got ${result.stamina}",
         )
     }
 
     @Test
     fun consistencyWithLongStreak() {
         val result = RpgAttributeEngine.computeProfile(
-            input(longestStreak = 80, trainingDays = 400, currentStreak = 30)
+            input(longestStreak = 80, trainingDays = 400, currentStreak = 30),
         )
         assertTrue(
             result.consistency >= 70,
-            "Consistency should be >= 70 for 80-day streak / 400 training days, got ${result.consistency}"
+            "Consistency should be >= 70 for 80-day streak / 400 training days, got ${result.consistency}",
         )
     }
 
     @Test
     fun masteryWithHighVariety() {
         val result = RpgAttributeEngine.computeProfile(
-            input(uniqueExercises = 45, personalRecords = 90, badgesEarned = 35)
+            input(uniqueExercises = 45, personalRecords = 90, badgesEarned = 35),
         )
         assertTrue(
             result.mastery >= 75,
-            "Mastery should be >= 75 for 45 exercises / 90 PRs / 35 badges, got ${result.mastery}"
+            "Mastery should be >= 75 for 45 exercises / 90 PRs / 35 badges, got ${result.mastery}",
         )
     }
 
@@ -129,15 +129,15 @@ class RpgAttributeEngineTest {
                 currentStreak = 15,
                 uniqueExercises = 25,
                 personalRecords = 50,
-                badgesEarned = 20
-            )
+                badgesEarned = 20,
+            ),
         )
         assertEquals(
             CharacterClass.PHOENIX,
             result.characterClass,
             "Balanced attributes should classify as PHOENIX, got ${result.characterClass} " +
                 "(str=${result.strength}, pow=${result.power}, sta=${result.stamina}, " +
-                "con=${result.consistency}, mas=${result.mastery})"
+                "con=${result.consistency}, mas=${result.mastery})",
         )
     }
 
@@ -155,15 +155,15 @@ class RpgAttributeEngineTest {
                 currentStreak = 2,
                 uniqueExercises = 3,
                 personalRecords = 5,
-                badgesEarned = 2
-            )
+                badgesEarned = 2,
+            ),
         )
         assertEquals(
             CharacterClass.POWERLIFTER,
             result.characterClass,
             "Dominant strength should classify as POWERLIFTER, got ${result.characterClass} " +
                 "(str=${result.strength}, pow=${result.power}, sta=${result.stamina}, " +
-                "con=${result.consistency}, mas=${result.mastery})"
+                "con=${result.consistency}, mas=${result.mastery})",
         )
     }
 
@@ -181,15 +181,15 @@ class RpgAttributeEngineTest {
                 currentStreak = 2,
                 uniqueExercises = 3,
                 personalRecords = 5,
-                badgesEarned = 2
-            )
+                badgesEarned = 2,
+            ),
         )
         assertEquals(
             CharacterClass.ATHLETE,
             result.characterClass,
             "Dominant power should classify as ATHLETE, got ${result.characterClass} " +
                 "(str=${result.strength}, pow=${result.power}, sta=${result.stamina}, " +
-                "con=${result.consistency}, mas=${result.mastery})"
+                "con=${result.consistency}, mas=${result.mastery})",
         )
     }
 
@@ -207,15 +207,15 @@ class RpgAttributeEngineTest {
                 currentStreak = 2,
                 uniqueExercises = 3,
                 personalRecords = 5,
-                badgesEarned = 2
-            )
+                badgesEarned = 2,
+            ),
         )
         assertEquals(
             CharacterClass.IRONMAN,
             result.characterClass,
             "Dominant stamina should classify as IRONMAN, got ${result.characterClass} " +
                 "(str=${result.strength}, pow=${result.power}, sta=${result.stamina}, " +
-                "con=${result.consistency}, mas=${result.mastery})"
+                "con=${result.consistency}, mas=${result.mastery})",
         )
     }
 
@@ -233,15 +233,15 @@ class RpgAttributeEngineTest {
                 currentStreak = 29,
                 uniqueExercises = 3,
                 personalRecords = 5,
-                badgesEarned = 2
-            )
+                badgesEarned = 2,
+            ),
         )
         assertEquals(
             CharacterClass.MONK,
             result.characterClass,
             "Dominant consistency should classify as MONK, got ${result.characterClass} " +
                 "(str=${result.strength}, pow=${result.power}, sta=${result.stamina}, " +
-                "con=${result.consistency}, mas=${result.mastery})"
+                "con=${result.consistency}, mas=${result.mastery})",
         )
     }
 
@@ -264,8 +264,8 @@ class RpgAttributeEngineTest {
                 currentStreak = 200,
                 uniqueExercises = 200,
                 personalRecords = 500,
-                badgesEarned = 200
-            )
+                badgesEarned = 200,
+            ),
         )
         assertTrue(result.strength in 0..100, "Strength out of range: ${result.strength}")
         assertTrue(result.power in 0..100, "Power out of range: ${result.power}")
@@ -278,13 +278,16 @@ class RpgAttributeEngineTest {
     fun normalizeHandlesZeroCeiling() {
         // When all inputs are zero but totalWorkouts >= 1, engine should not crash
         val result = RpgAttributeEngine.computeProfile(
-            input(totalWorkouts = 1)
+            input(totalWorkouts = 1),
         )
         // Should return all zeros (normalize with zero values = 0) without NaN/crash
         assertTrue(result.strength in 0..100, "Strength should be valid: ${result.strength}")
         assertTrue(result.power in 0..100, "Power should be valid: ${result.power}")
         assertTrue(result.stamina in 0..100, "Stamina should be valid: ${result.stamina}")
-        assertTrue(result.consistency in 0..100, "Consistency should be valid: ${result.consistency}")
+        assertTrue(
+            result.consistency in 0..100,
+            "Consistency should be valid: ${result.consistency}",
+        )
         assertTrue(result.mastery in 0..100, "Mastery should be valid: ${result.mastery}")
     }
 }

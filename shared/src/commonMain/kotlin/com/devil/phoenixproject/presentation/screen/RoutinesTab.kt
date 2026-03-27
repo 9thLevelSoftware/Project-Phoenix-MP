@@ -15,17 +15,14 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.ui.draw.shadow
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.data.repository.ExerciseRepository
@@ -36,11 +33,11 @@ import com.devil.phoenixproject.domain.model.generateSupersetId
 import com.devil.phoenixproject.domain.model.generateUUID
 import com.devil.phoenixproject.presentation.components.EmptyState
 import com.devil.phoenixproject.ui.theme.*
-import com.devil.phoenixproject.util.KmpUtils
 import com.devil.phoenixproject.ui.theme.screenBackgroundBrush
+import com.devil.phoenixproject.util.KmpUtils
 import org.jetbrains.compose.resources.stringResource
-import vitruvianprojectphoenix.shared.generated.resources.Res
 import vitruvianprojectphoenix.shared.generated.resources.*
+import vitruvianprojectphoenix.shared.generated.resources.Res
 
 /**
  * Routines tab showing list of saved routines with create/edit/delete functionality.
@@ -58,13 +55,13 @@ fun RoutinesTab(
     displayToKg: (Float, WeightUnit) -> Float,
     onStartWorkout: (Routine) -> Unit,
     onDeleteRoutine: (String) -> Unit,
-    onDeleteRoutines: (Set<String>) -> Unit,  // Batch delete for multi-select
+    onDeleteRoutines: (Set<String>) -> Unit, // Batch delete for multi-select
     onSaveRoutine: (Routine) -> Unit,
     // onUpdateRoutine removed as it is replaced by Editor Screen
     onEditRoutine: (String) -> Unit,
     onCreateRoutine: () -> Unit,
     themeMode: ThemeMode,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
 ) {
     // showRoutineBuilder and routineToEdit states removed
 
@@ -94,12 +91,12 @@ fun RoutinesTab(
                         clearSelection()
                     }
                 }
-            }
+            },
     ) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(20.dp)
+                .padding(20.dp),
         ) {
             if (routines.isEmpty()) {
                 EmptyState(
@@ -109,12 +106,12 @@ fun RoutinesTab(
                     actionText = stringResource(Res.string.create_new_routine),
                     onAction = {
                         onCreateRoutine()
-                    }
+                    },
                 )
             } else {
                 LazyColumn(
                     verticalArrangement = Arrangement.spacedBy(Spacing.small),
-                    contentPadding = PaddingValues(bottom = 80.dp) // Space for FAB
+                    contentPadding = PaddingValues(bottom = 80.dp), // Space for FAB
                 ) {
                     items(routines, key = { it.id }) { routine ->
                         RoutineCard(
@@ -148,7 +145,7 @@ fun RoutinesTab(
                                 val newSupersets = routine.supersets.map { superset ->
                                     superset.copy(
                                         id = supersetIdMap[superset.id] ?: generateSupersetId(),
-                                        routineId = newRoutineId
+                                        routineId = newRoutineId,
                                     )
                                 }
 
@@ -158,7 +155,7 @@ fun RoutinesTab(
                                     exercise.copy(
                                         id = generateUUID(),
                                         exercise = exercise.exercise.copy(),
-                                        supersetId = exercise.supersetId?.let { supersetIdMap[it] }
+                                        supersetId = exercise.supersetId?.let { supersetIdMap[it] },
                                     )
                                 }
 
@@ -168,8 +165,12 @@ fun RoutinesTab(
                                 val existingCopyNumbers = routines
                                     .mapNotNull { r ->
                                         when {
-                                            r.name == baseName -> 0 // Original has number 0
-                                            r.name == "$baseName (Copy)" -> 1 // First copy is 1
+                                            r.name == baseName -> 0
+
+                                            // Original has number 0
+                                            r.name == "$baseName (Copy)" -> 1
+
+                                            // First copy is 1
                                             else -> copyPattern.find(r.name)?.groups?.get(2)?.value?.toIntOrNull()
                                         }
                                     }
@@ -187,10 +188,10 @@ fun RoutinesTab(
                                     useCount = 0,
                                     lastUsed = null,
                                     exercises = newExercises,
-                                    supersets = newSupersets
+                                    supersets = newSupersets,
                                 )
                                 onSaveRoutine(duplicated)
-                            }
+                            },
                         )
                     }
                 }
@@ -201,24 +202,24 @@ fun RoutinesTab(
         Box(
             modifier = Modifier
                 .align(Alignment.BottomEnd)
-                .padding(Spacing.medium)
+                .padding(Spacing.medium),
         ) {
             // Normal mode: Single + FAB
             AnimatedVisibility(
                 visible = !selectionMode,
                 enter = fadeIn() + scaleIn(),
-                exit = fadeOut() + scaleOut()
+                exit = fadeOut() + scaleOut(),
             ) {
                 FloatingActionButton(
                     onClick = onCreateRoutine,
                     containerColor = MaterialTheme.colorScheme.primary,
                     contentColor = MaterialTheme.colorScheme.onPrimary,
-                    shape = RoundedCornerShape(16.dp)
+                    shape = RoundedCornerShape(16.dp),
                 ) {
                     Icon(
                         Icons.Default.Add,
                         contentDescription = stringResource(Res.string.cd_add_routine),
-                        modifier = Modifier.size(28.dp)
+                        modifier = Modifier.size(28.dp),
                     )
                 }
             }
@@ -227,17 +228,17 @@ fun RoutinesTab(
             AnimatedVisibility(
                 visible = selectionMode,
                 enter = fadeIn() + scaleIn(),
-                exit = fadeOut() + scaleOut()
+                exit = fadeOut() + scaleOut(),
             ) {
                 Column(
                     verticalArrangement = Arrangement.spacedBy(12.dp),
-                    horizontalAlignment = Alignment.End
+                    horizontalAlignment = Alignment.End,
                 ) {
                     // Cancel button (small)
                     SmallFloatingActionButton(
                         onClick = { clearSelection() },
                         containerColor = MaterialTheme.colorScheme.surfaceVariant,
-                        contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                        contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
                     ) {
                         Icon(Icons.Default.Close, contentDescription = stringResource(Res.string.cd_cancel_selection))
                     }
@@ -246,14 +247,14 @@ fun RoutinesTab(
                     FloatingActionButton(
                         onClick = { showBatchCopyDialog = true },
                         containerColor = MaterialTheme.colorScheme.secondaryContainer,
-                        contentColor = MaterialTheme.colorScheme.onSecondaryContainer
+                        contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
                     ) {
                         BadgedBox(
                             badge = {
                                 Badge(containerColor = MaterialTheme.colorScheme.primary) {
                                     Text("${selectedIds.size}")
                                 }
-                            }
+                            },
                         ) {
                             Icon(Icons.Default.ContentCopy, contentDescription = stringResource(Res.string.cd_copy_selected))
                         }
@@ -263,14 +264,14 @@ fun RoutinesTab(
                     FloatingActionButton(
                         onClick = { showBatchDeleteDialog = true },
                         containerColor = MaterialTheme.colorScheme.errorContainer,
-                        contentColor = MaterialTheme.colorScheme.error
+                        contentColor = MaterialTheme.colorScheme.error,
                     ) {
                         BadgedBox(
                             badge = {
                                 Badge(containerColor = MaterialTheme.colorScheme.error) {
                                     Text("${selectedIds.size}")
                                 }
-                            }
+                            },
                         ) {
                             Icon(Icons.Default.Delete, contentDescription = stringResource(Res.string.cd_delete_selected))
                         }
@@ -292,7 +293,7 @@ fun RoutinesTab(
                         onDeleteRoutines(selectedIds.toSet())
                         showBatchDeleteDialog = false
                         clearSelection()
-                    }
+                    },
                 ) {
                     Text(stringResource(Res.string.action_delete), color = MaterialTheme.colorScheme.error)
                 }
@@ -301,7 +302,7 @@ fun RoutinesTab(
                 TextButton(onClick = { showBatchDeleteDialog = false }) {
                     Text(stringResource(Res.string.action_cancel))
                 }
-            }
+            },
         )
     }
 
@@ -324,7 +325,7 @@ fun RoutinesTab(
                                 val newSupersets = routine.supersets.map { superset ->
                                     superset.copy(
                                         id = supersetIdMap[superset.id] ?: generateSupersetId(),
-                                        routineId = newRoutineId
+                                        routineId = newRoutineId,
                                     )
                                 }
 
@@ -333,7 +334,7 @@ fun RoutinesTab(
                                     exercise.copy(
                                         id = generateUUID(),
                                         exercise = exercise.exercise.copy(),
-                                        supersetId = exercise.supersetId?.let { supersetIdMap[it] }
+                                        supersetId = exercise.supersetId?.let { supersetIdMap[it] },
                                     )
                                 }
 
@@ -362,14 +363,14 @@ fun RoutinesTab(
                                     useCount = 0,
                                     lastUsed = null,
                                     exercises = newExercises,
-                                    supersets = newSupersets
+                                    supersets = newSupersets,
                                 )
                                 onSaveRoutine(duplicated)
                             }
                         }
                         showBatchCopyDialog = false
                         clearSelection()
-                    }
+                    },
                 ) {
                     Text(stringResource(Res.string.action_copy))
                 }
@@ -378,7 +379,7 @@ fun RoutinesTab(
                 TextButton(onClick = { showBatchCopyDialog = false }) {
                     Text(stringResource(Res.string.action_cancel))
                 }
-            }
+            },
         )
     }
 }
@@ -397,7 +398,7 @@ fun RoutineCard(
     onStartWorkout: () -> Unit,
     onEdit: () -> Unit,
     onDelete: () -> Unit,
-    onDuplicate: () -> Unit
+    onDuplicate: () -> Unit,
 ) {
     var expanded by remember { mutableStateOf(false) }
     var showDeleteDialog by remember { mutableStateOf(false) }
@@ -411,41 +412,49 @@ fun RoutineCard(
                 interactionSource = interactionSource,
                 indication = null,
                 onClick = {
-                    if (isSelectionMode) onSelectionToggle()
-                    else expanded = !expanded
+                    if (isSelectionMode) {
+                        onSelectionToggle()
+                    } else {
+                        expanded = !expanded
+                    }
                 },
                 onLongClick = {
-                    if (!isSelectionMode) onLongPress()
-                    else onSelectionToggle()
-                }
+                    if (!isSelectionMode) {
+                        onLongPress()
+                    } else {
+                        onSelectionToggle()
+                    }
+                },
             ),
         shape = RoundedCornerShape(20.dp),
         colors = CardDefaults.cardColors(
-            containerColor = if (isSelected)
+            containerColor = if (isSelected) {
                 MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f)
-            else
+            } else {
                 MaterialTheme.colorScheme.surfaceContainerHighest
+            },
         ),
         elevation = CardDefaults.cardElevation(
-            defaultElevation = if (expanded) 8.dp else 2.dp
+            defaultElevation = if (expanded) 8.dp else 2.dp,
         ),
         border = BorderStroke(
             2.dp,
-            if (isSelected)
+            if (isSelected) {
                 MaterialTheme.colorScheme.primary
-            else
+            } else {
                 MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)
-        )
+            },
+        ),
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(20.dp)
+                .padding(20.dp),
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
-                verticalAlignment = Alignment.CenterVertically
+                verticalAlignment = Alignment.CenterVertically,
             ) {
                 // Checkbox - only visible in selection mode
                 AnimatedVisibility(visible = isSelectionMode) {
@@ -453,26 +462,26 @@ fun RoutineCard(
                         checked = isSelected,
                         onCheckedChange = { onSelectionToggle() },
                         colors = CheckboxDefaults.colors(
-                            checkedColor = MaterialTheme.colorScheme.primary
-                        )
+                            checkedColor = MaterialTheme.colorScheme.primary,
+                        ),
                     )
                 }
 
                 // Header Content
                 Column(
                     modifier = Modifier.weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
                     Text(
                         text = routine.name,
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurface
+                        color = MaterialTheme.colorScheme.onSurface,
                     )
                     Text(
                         text = "${routine.exercises.size} exercises • ${formatEstimatedDuration(routine)}",
                         style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
 
@@ -481,7 +490,7 @@ fun RoutineCard(
                     Icon(
                         imageVector = if (expanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
                         contentDescription = if (expanded) stringResource(Res.string.cd_collapse) else stringResource(Res.string.cd_expand),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
             }
@@ -491,7 +500,7 @@ fun RoutineCard(
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(top = 16.dp)
+                        .padding(top = 16.dp),
                 ) {
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                     Spacer(modifier = Modifier.height(16.dp))
@@ -502,17 +511,17 @@ fun RoutineCard(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .padding(vertical = 4.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween
+                            horizontalArrangement = Arrangement.SpaceBetween,
                         ) {
                             Text(
                                 text = "${index + 1}. ${exercise.exercise.name}",
                                 style = MaterialTheme.typography.bodyMedium,
-                                fontWeight = FontWeight.Medium
+                                fontWeight = FontWeight.Medium,
                             )
                             Text(
                                 text = formatSetRepsForCard(exercise.setReps),
                                 style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
                     }
@@ -525,14 +534,14 @@ fun RoutineCard(
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(56.dp),
-                        shape = RoundedCornerShape(16.dp)
+                        shape = RoundedCornerShape(16.dp),
                     ) {
                         Icon(Icons.Default.PlayArrow, contentDescription = null)
                         Spacer(Modifier.width(8.dp))
                         Text(
                             stringResource(Res.string.start_workout),
                             style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold
+                            fontWeight = FontWeight.Bold,
                         )
                     }
 
@@ -540,18 +549,18 @@ fun RoutineCard(
 
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceEvenly
+                        horizontalArrangement = Arrangement.SpaceEvenly,
                     ) {
                         OutlinedButton(
                             onClick = onEdit,
                             modifier = Modifier.weight(1f),
                             shape = RoundedCornerShape(12.dp),
-                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
                         ) {
                             Icon(
                                 Icons.Default.Edit,
                                 contentDescription = null,
-                                modifier = Modifier.size(16.dp)
+                                modifier = Modifier.size(16.dp),
                             )
                             Spacer(Modifier.width(4.dp))
                             Text(stringResource(Res.string.action_edit), maxLines = 1)
@@ -561,12 +570,12 @@ fun RoutineCard(
                             onClick = onDuplicate,
                             modifier = Modifier.weight(1f),
                             shape = RoundedCornerShape(12.dp),
-                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
                         ) {
                             Icon(
                                 Icons.Default.ContentCopy,
                                 contentDescription = null,
-                                modifier = Modifier.size(16.dp)
+                                modifier = Modifier.size(16.dp),
                             )
                             Spacer(Modifier.width(4.dp))
                             Text(stringResource(Res.string.action_copy), maxLines = 1)
@@ -577,12 +586,12 @@ fun RoutineCard(
                             modifier = Modifier.weight(1f),
                             shape = RoundedCornerShape(12.dp),
                             contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
-                            colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error)
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
                         ) {
                             Icon(
                                 Icons.Default.Delete,
                                 contentDescription = null,
-                                modifier = Modifier.size(16.dp)
+                                modifier = Modifier.size(16.dp),
                             )
                             Spacer(Modifier.width(4.dp))
                             Text(stringResource(Res.string.action_delete), maxLines = 1)
@@ -599,7 +608,10 @@ fun RoutineCard(
             title = { Text(stringResource(Res.string.delete_routine)) },
             text = { Text(stringResource(Res.string.delete_routine_message, routine.name)) },
             confirmButton = {
-                TextButton(onClick = { onDelete(); showDeleteDialog = false }) {
+                TextButton(onClick = {
+                    onDelete()
+                    showDeleteDialog = false
+                }) {
                     Text(stringResource(Res.string.action_delete), color = MaterialTheme.colorScheme.error)
                 }
             },
@@ -607,7 +619,7 @@ fun RoutineCard(
                 TextButton(onClick = { showDeleteDialog = false }) {
                     Text(stringResource(Res.string.action_cancel))
                 }
-            }
+            },
         )
     }
 }
@@ -635,7 +647,7 @@ private fun formatSetRepsForCard(setReps: List<Int?>): String {
     groups.add(Pair(currentCount, currentReps?.toString() ?: "AMRAP"))
 
     // Format as "3x10, 2x8" or "3xAMRAP"
-    return groups.joinToString(", ") { (count, reps) -> "${count}x${reps}" }
+    return groups.joinToString(", ") { (count, reps) -> "${count}x$reps" }
 }
 
 /**
@@ -686,7 +698,7 @@ private fun formatEstimatedDuration(routine: Routine): String {
     val minutes = estimatedSeconds / 60
 
     return if (minutes < 60) {
-        "${minutes} min"
+        "$minutes min"
     } else {
         val hours = minutes / 60
         val remainingMinutes = minutes % 60
@@ -698,16 +710,15 @@ private fun estimateSetWorkSeconds(exercise: com.devil.phoenixproject.domain.mod
     val reps = exercise.setReps.getOrNull(setIndex)
     return when {
         !exercise.exercise.hasCableAccessory -> (exercise.duration ?: 30).coerceAtLeast(0)
-        reps == null -> 30 // AMRAP estimate
+
+        reps == null -> 30
+
+        // AMRAP estimate
         else -> (reps * 3).coerceAtLeast(0) // ~3s per rep estimate
     }
 }
 
-private fun getNextStepForEstimate(
-    routine: Routine,
-    currentExIndex: Int,
-    currentSetIndex: Int
-): Pair<Int, Int>? {
+private fun getNextStepForEstimate(routine: Routine, currentExIndex: Int, currentSetIndex: Int): Pair<Int, Int>? {
     val currentExercise = routine.exercises.getOrNull(currentExIndex) ?: return null
 
     // Superset interleaving: A1 -> B1 -> A2 -> B2 ...

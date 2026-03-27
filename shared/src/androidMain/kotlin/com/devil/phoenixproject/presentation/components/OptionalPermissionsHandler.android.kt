@@ -36,9 +36,7 @@ private val log = Logger.withTag("OptionalPermissionsHandler")
  * @param content The composable content to show after permissions are handled
  */
 @Composable
-fun RequireOptionalPermissions(
-    content: @Composable () -> Unit
-) {
+fun RequireOptionalPermissions(content: @Composable () -> Unit) {
     val context = LocalContext.current
     val prefsManager = koinInject<SettingsPreferencesManager>()
 
@@ -48,12 +46,15 @@ fun RequireOptionalPermissions(
     // Check if all optional permissions are already granted
     val allAlreadyGranted = remember {
         val micGranted = ContextCompat.checkSelfPermission(
-            context, Manifest.permission.RECORD_AUDIO
+            context,
+            Manifest.permission.RECORD_AUDIO,
         ) == PackageManager.PERMISSION_GRANTED
 
         val healthAvailable = try {
             HealthConnectClient.getSdkStatus(context) == HealthConnectClient.SDK_AVAILABLE
-        } catch (_: Exception) { false }
+        } catch (_: Exception) {
+            false
+        }
 
         // If Health Connect isn't available, don't block on it
         micGranted && (!healthAvailable || false) // Health permissions checked async below
@@ -78,15 +79,19 @@ fun RequireOptionalPermissions(
     val healthAvailable = remember {
         try {
             HealthConnectClient.getSdkStatus(context) == HealthConnectClient.SDK_AVAILABLE
-        } catch (_: Exception) { false }
+        } catch (_: Exception) {
+            false
+        }
     }
 
     // Health Connect permission launcher (registered first, launched second)
     val healthPermissionLauncher = rememberLauncherForActivityResult(
-        contract = PermissionController.createRequestPermissionResultContract()
+        contract = PermissionController.createRequestPermissionResultContract(),
     ) { grantedPermissions ->
         val granted = grantedPermissions.containsAll(requiredHealthPermissions)
-        log.d { "Health Connect permission result: $granted (got ${grantedPermissions.size} permissions)" }
+        log.d {
+            "Health Connect permission result: $granted (got ${grantedPermissions.size} permissions)"
+        }
         // Both permissions handled, mark done
         prefsManager.setPermissionsOnboardingShown(true)
         onboardingShown = true
@@ -94,7 +99,7 @@ fun RequireOptionalPermissions(
 
     // Standard Android permission launcher (RECORD_AUDIO) — launched first
     val micPermissionLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.RequestPermission()
+        contract = ActivityResultContracts.RequestPermission(),
     ) { granted ->
         log.d { "Microphone permission result: $granted" }
         // Mic done, now launch health if available
@@ -124,7 +129,7 @@ fun RequireOptionalPermissions(
                 log.d { "User skipped optional permissions" }
                 prefsManager.setPermissionsOnboardingShown(true)
                 onboardingShown = true
-            }
+            },
         )
     }
 }
@@ -133,27 +138,23 @@ fun RequireOptionalPermissions(
  * Explanation screen for optional permissions.
  */
 @Composable
-private fun OptionalPermissionsScreen(
-    healthAvailable: Boolean,
-    onGrantPermissions: () -> Unit,
-    onSkip: () -> Unit
-) {
+private fun OptionalPermissionsScreen(healthAvailable: Boolean, onGrantPermissions: () -> Unit, onSkip: () -> Unit) {
     Surface(
         modifier = Modifier.fillMaxSize(),
-        color = MaterialTheme.colorScheme.background
+        color = MaterialTheme.colorScheme.background,
     ) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(32.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center
+            verticalArrangement = Arrangement.Center,
         ) {
             Icon(
                 imageVector = Icons.Default.Favorite,
                 contentDescription = null,
                 modifier = Modifier.size(80.dp),
-                tint = MaterialTheme.colorScheme.primary
+                tint = MaterialTheme.colorScheme.primary,
             )
 
             Spacer(modifier = Modifier.height(24.dp))
@@ -162,7 +163,7 @@ private fun OptionalPermissionsScreen(
                 text = "Enhance Your Experience",
                 style = MaterialTheme.typography.headlineSmall,
                 fontWeight = FontWeight.Bold,
-                textAlign = TextAlign.Center
+                textAlign = TextAlign.Center,
             )
 
             Spacer(modifier = Modifier.height(16.dp))
@@ -172,14 +173,18 @@ private fun OptionalPermissionsScreen(
                     append("Project Phoenix works best with a few additional permissions:")
                     append("\n\n")
                     if (healthAvailable) {
-                        append("Health Connect -- Automatically sync your workouts to Google Health so all your fitness data stays in one place.")
+                        append(
+                            "Health Connect -- Automatically sync your workouts to Google Health so all your fitness data stays in one place.",
+                        )
                         append("\n\n")
                     }
-                    append("Microphone -- Enable voice-activated emergency stop (\"safe word\") for hands-free workout safety.")
+                    append(
+                        "Microphone -- Enable voice-activated emergency stop (\"safe word\") for hands-free workout safety.",
+                    )
                 },
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                textAlign = TextAlign.Center
+                textAlign = TextAlign.Center,
             )
 
             Spacer(modifier = Modifier.height(32.dp))
@@ -188,12 +193,12 @@ private fun OptionalPermissionsScreen(
                 onClick = onGrantPermissions,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(56.dp)
+                    .height(56.dp),
             ) {
                 Text(
                     text = "Grant Permissions",
                     style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold
+                    fontWeight = FontWeight.Bold,
                 )
             }
 
@@ -201,11 +206,11 @@ private fun OptionalPermissionsScreen(
 
             TextButton(
                 onClick = onSkip,
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier.fillMaxWidth(),
             ) {
                 Text(
                     text = "Skip for Now",
-                    style = MaterialTheme.typography.bodyLarge
+                    style = MaterialTheme.typography.bodyLarge,
                 )
             }
 
@@ -215,7 +220,7 @@ private fun OptionalPermissionsScreen(
                 text = "You can enable these permissions later in Settings.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                textAlign = TextAlign.Center
+                textAlign = TextAlign.Center,
             )
         }
     }

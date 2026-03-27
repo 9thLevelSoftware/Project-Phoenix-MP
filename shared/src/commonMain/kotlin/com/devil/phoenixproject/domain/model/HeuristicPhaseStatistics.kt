@@ -10,5 +10,5 @@ data class HeuristicPhaseStatistics(
     // Deviation fields (Var = E[X^2] - E[X]^2) for statistical tracking (Phase 3f)
     val kgDeviation: Float = 0f,
     val velDeviation: Float = 0f,
-    val wattDeviation: Float = 0f
+    val wattDeviation: Float = 0f,
 )

@@ -1,20 +1,20 @@
 package com.devil.phoenixproject.presentation.viewmodel
 
 import com.devil.phoenixproject.data.repository.SqlDelightPersonalRecordRepository
-import com.devil.phoenixproject.domain.model.PRType
-import com.devil.phoenixproject.domain.model.EchoLevel
 import com.devil.phoenixproject.domain.model.EccentricLoad
+import com.devil.phoenixproject.domain.model.EchoLevel
 import com.devil.phoenixproject.domain.model.Exercise
+import com.devil.phoenixproject.domain.model.PRType
 import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.RoutineExercise
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.testutil.createTestDatabase
-import kotlinx.coroutines.test.runTest
-import org.junit.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import kotlinx.coroutines.test.runTest
+import org.junit.Test
 
 class ExerciseConfigViewModelTest {
 
@@ -28,18 +28,18 @@ class ExerciseConfigViewModelTest {
                 name = "Plank",
                 muscleGroup = "Core",
                 muscleGroups = "Core",
-                equipment = ""
+                equipment = "",
             ),
             orderIndex = 0,
             setReps = listOf(10),
-            weightPerCableKg = 0f
+            weightPerCableKg = 0f,
         )
 
         viewModel.initialize(
             exercise = exercise,
             unit = WeightUnit.KG,
             toDisplay = { value, _ -> value },
-            toKg = { value, _ -> value }
+            toKg = { value, _ -> value },
         )
 
         assertEquals(ExerciseType.BODYWEIGHT, viewModel.exerciseType.value)
@@ -56,7 +56,7 @@ class ExerciseConfigViewModelTest {
                 name = "Bench Press",
                 muscleGroup = "Chest",
                 muscleGroups = "Chest",
-                equipment = "BAR"
+                equipment = "BAR",
             ),
             orderIndex = 0,
             setReps = listOf(10, 8),
@@ -66,14 +66,14 @@ class ExerciseConfigViewModelTest {
             eccentricLoad = EccentricLoad.LOAD_100,
             echoLevel = EchoLevel.HARDER,
             setRestSeconds = listOf(60, 60),
-            perSetRestTime = true
+            perSetRestTime = true,
         )
 
         viewModel.initialize(
             exercise = exercise,
             unit = WeightUnit.KG,
             toDisplay = { value, _ -> value },
-            toKg = { value, _ -> value }
+            toKg = { value, _ -> value },
         )
 
         viewModel.onRestChange(90)
@@ -104,14 +104,14 @@ class ExerciseConfigViewModelTest {
                 name = "Bench Press",
                 muscleGroup = "Chest",
                 muscleGroups = "Chest",
-                equipment = "BAR"
+                equipment = "BAR",
             ),
             orderIndex = 0,
             setReps = listOf(10),
             weightPerCableKg = 20f,
             programMode = ProgramMode.OldSchool,
             eccentricLoad = EccentricLoad.LOAD_100,
-            echoLevel = EchoLevel.HARDER
+            echoLevel = EchoLevel.HARDER,
         )
 
         insertExercise(queries, id = "bench-1", name = "Bench Press")
@@ -126,7 +126,7 @@ class ExerciseConfigViewModelTest {
             prType = PRType.MAX_WEIGHT.name,
             volume = 330.0,
             phase = "COMBINED",
-            profile_id = "default"
+            profile_id = "default",
         )
         queries.insertRecord(
             exerciseId = "bench-1",
@@ -139,7 +139,7 @@ class ExerciseConfigViewModelTest {
             prType = PRType.MAX_WEIGHT.name,
             volume = 362.5,
             phase = "COMBINED",
-            profile_id = "profile-b"
+            profile_id = "profile-b",
         )
 
         viewModel.initialize(
@@ -147,7 +147,7 @@ class ExerciseConfigViewModelTest {
             unit = WeightUnit.KG,
             toDisplay = { value, _ -> value },
             toKg = { value, _ -> value },
-            profileId = "default"
+            profileId = "default",
         )
         waitForCondition { viewModel.currentExercisePR.value != null }
         assertNotNull(viewModel.currentExercisePR.value)
@@ -158,7 +158,7 @@ class ExerciseConfigViewModelTest {
             unit = WeightUnit.KG,
             toDisplay = { value, _ -> value },
             toKg = { value, _ -> value },
-            profileId = "profile-b"
+            profileId = "profile-b",
         )
         waitForCondition { viewModel.currentExercisePR.value?.weightPerCableKg == 72.5f }
         assertEquals(72.5f, viewModel.currentExercisePR.value?.weightPerCableKg)
@@ -168,11 +168,7 @@ class ExerciseConfigViewModelTest {
         assertNull(viewModel.currentExercisePR.value)
     }
 
-    private fun insertExercise(
-        queries: com.devil.phoenixproject.database.VitruvianDatabaseQueries,
-        id: String,
-        name: String
-    ) {
+    private fun insertExercise(queries: com.devil.phoenixproject.database.VitruvianDatabaseQueries, id: String, name: String) {
         queries.insertExercise(
             id = id,
             name = name,
@@ -195,15 +191,11 @@ class ExerciseConfigViewModelTest {
             lastPerformed = null,
             aliases = null,
             defaultCableConfig = "DOUBLE",
-            one_rep_max_kg = null
+            one_rep_max_kg = null,
         )
     }
 
-    private fun waitForCondition(
-        timeoutMs: Long = 1_000L,
-        pollMs: Long = 25L,
-        condition: () -> Boolean
-    ) {
+    private fun waitForCondition(timeoutMs: Long = 1_000L, pollMs: Long = 25L, condition: () -> Boolean) {
         val deadline = System.currentTimeMillis() + timeoutMs
         while (!condition() && System.currentTimeMillis() < deadline) {
             Thread.sleep(pollMs)

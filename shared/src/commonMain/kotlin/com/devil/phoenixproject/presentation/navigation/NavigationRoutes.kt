@@ -57,5 +57,5 @@ sealed class NavigationRoutes(val route: String) {
 enum class BottomNavItem(val route: String, val label: String) {
     WORKOUT("home", "Workout"),
     ANALYTICS("analytics", "Analytics"),
-    SETTINGS("settings", "Settings")
+    SETTINGS("settings", "Settings"),
 }

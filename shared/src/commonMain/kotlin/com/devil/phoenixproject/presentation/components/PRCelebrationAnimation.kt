@@ -14,8 +14,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import org.jetbrains.compose.resources.stringResource
-import vitruvianprojectphoenix.shared.generated.resources.Res
 import vitruvianprojectphoenix.shared.generated.resources.*
+import vitruvianprojectphoenix.shared.generated.resources.Res
 
 /**
  * PR Celebration Dialog - Shows animated celebration when user achieves a new Personal Record
@@ -40,7 +40,7 @@ fun PRCelebrationDialog(
     weight: String,
     workoutMode: String? = null,
     onDismiss: () -> Unit,
-    onSoundTrigger: () -> Unit = {}
+    onSoundTrigger: () -> Unit = {},
 ) {
     if (!show) return
 
@@ -59,23 +59,19 @@ fun PRCelebrationDialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(
             dismissOnBackPress = true,
-            dismissOnClickOutside = true
-        )
+            dismissOnClickOutside = true,
+        ),
     ) {
         PRCelebrationContent(
             exerciseName = exerciseName,
             weight = weight,
-            workoutMode = workoutMode
+            workoutMode = workoutMode,
         )
     }
 }
 
 @Composable
-private fun PRCelebrationContent(
-    exerciseName: String,
-    weight: String,
-    workoutMode: String? = null
-) {
+private fun PRCelebrationContent(exerciseName: String, weight: String, workoutMode: String? = null) {
     // Animation states
     val infiniteTransition = rememberInfiniteTransition(label = "celebration")
 
@@ -85,9 +81,9 @@ private fun PRCelebrationContent(
         targetValue = 1.15f,
         animationSpec = infiniteRepeatable(
             animation = tween(500, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse
+            repeatMode = RepeatMode.Reverse,
         ),
-        label = "pulse"
+        label = "pulse",
     )
 
     // Format the celebration title with workout mode context
@@ -102,29 +98,29 @@ private fun PRCelebrationContent(
             .fillMaxWidth()
             .background(
                 MaterialTheme.colorScheme.surface,
-                shape = MaterialTheme.shapes.large
+                shape = MaterialTheme.shapes.large,
             )
             .padding(32.dp),
-        contentAlignment = Alignment.Center
+        contentAlignment = Alignment.Center,
     ) {
         // Lottie confetti animation layer (background)
         LottieAnimation(
             animationJson = CelebrationAnimations.confetti,
             size = 300.dp,
             contentDescription = stringResource(Res.string.cd_confetti),
-            modifier = Modifier.alpha(0.8f)
+            modifier = Modifier.alpha(0.8f),
         )
 
         // Content overlay
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+            verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             // Lottie trophy/star animation
             LottieAnimation(
                 animationJson = CelebrationAnimations.trophy,
                 size = 100.dp,
-                contentDescription = stringResource(Res.string.cd_trophy)
+                contentDescription = stringResource(Res.string.cd_trophy),
             )
 
             // "NEW [MODE] PR!" text with mode context
@@ -133,7 +129,7 @@ private fun PRCelebrationContent(
                 style = MaterialTheme.typography.headlineLarge,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.tertiary,
-                modifier = Modifier.scale(pulseScale)
+                modifier = Modifier.scale(pulseScale),
             )
 
             // Exercise name
@@ -141,20 +137,20 @@ private fun PRCelebrationContent(
                 exerciseName,
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurface
+                color = MaterialTheme.colorScheme.onSurface,
             )
 
             // Weight achieved
             Surface(
                 color = MaterialTheme.colorScheme.primaryContainer,
-                shape = MaterialTheme.shapes.medium
+                shape = MaterialTheme.shapes.medium,
             ) {
                 Text(
                     weight,
                     style = MaterialTheme.typography.headlineMedium,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onPrimaryContainer,
-                    modifier = Modifier.padding(horizontal = 24.dp, vertical = 12.dp)
+                    modifier = Modifier.padding(horizontal = 24.dp, vertical = 12.dp),
                 )
             }
 
@@ -165,7 +161,7 @@ private fun PRCelebrationContent(
                 "Tap to dismiss",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.alpha(0.6f)
+                modifier = Modifier.alpha(0.6f),
             )
         }
     }

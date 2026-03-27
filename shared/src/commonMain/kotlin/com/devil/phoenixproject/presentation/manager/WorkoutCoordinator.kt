@@ -29,8 +29,8 @@ import kotlinx.coroutines.flow.asStateFlow
 class WorkoutCoordinator(
     internal val _hapticEvents: MutableSharedFlow<HapticEvent> = MutableSharedFlow(
         extraBufferCapacity = 10,
-        onBufferOverflow = BufferOverflow.DROP_OLDEST
-    )
+        onBufferOverflow = BufferOverflow.DROP_OLDEST,
+    ),
 ) {
     companion object {
         /** Position-based auto-stop duration in seconds (handles in danger zone and released) */
@@ -46,8 +46,8 @@ class WorkoutCoordinator(
          * - Above HIGH (>10): reset stall timer (user is clearly moving)
          * - Between LOW and HIGH (>=2.5 and <=10): maintain current state (hysteresis band)
          */
-        const val STALL_VELOCITY_LOW = 2.5    // Below this = definitely stalled (mm/s)
-        const val STALL_VELOCITY_HIGH = 10.0  // Above this = definitely moving (mm/s)
+        const val STALL_VELOCITY_LOW = 2.5 // Below this = definitely stalled (mm/s)
+        const val STALL_VELOCITY_HIGH = 10.0 // Above this = definitely moving (mm/s)
 
         /** Minimum position to consider handles "in use" for stall detection (mm) */
         const val STALL_MIN_POSITION = 10.0
@@ -70,7 +70,7 @@ class WorkoutCoordinator(
     // Replaces the circular lateinit var dependency between DWSM and BleConnectionManager.
     internal val _bleErrorEvents = MutableSharedFlow<String>(
         extraBufferCapacity = 5,
-        onBufferOverflow = BufferOverflow.DROP_OLDEST
+        onBufferOverflow = BufferOverflow.DROP_OLDEST,
     )
     val bleErrorEvents: SharedFlow<String> = _bleErrorEvents.asSharedFlow()
 
@@ -81,7 +81,7 @@ class WorkoutCoordinator(
     // Issue #172: User feedback events for navigation/UI messages
     internal val _userFeedbackEvents = MutableSharedFlow<String>(
         extraBufferCapacity = 5,
-        onBufferOverflow = BufferOverflow.DROP_OLDEST
+        onBufferOverflow = BufferOverflow.DROP_OLDEST,
     )
     val userFeedbackEvents: SharedFlow<String> = _userFeedbackEvents.asSharedFlow()
 
@@ -150,8 +150,8 @@ class WorkoutCoordinator(
             progressionRegressionKg = 0f,
             isJustLift = false,
             stopAtTop = false,
-            warmupReps = 3
-        )
+            warmupReps = 3,
+        ),
     )
     val workoutParameters: StateFlow<WorkoutParameters> = _workoutParameters.asStateFlow()
 
@@ -225,9 +225,10 @@ class WorkoutCoordinator(
 
     internal var currentSessionId: String? = null
     internal var workoutStartTime: Long = 0
-    internal var warmupCompleteTimeMs: Long = 0  // Issue #252: Exclude warmup time from duration
-    internal var routineStartTime: Long = 0  // Issue #195: Track routine start separately from per-set start
+    internal var warmupCompleteTimeMs: Long = 0 // Issue #252: Exclude warmup time from duration
+    internal var routineStartTime: Long = 0 // Issue #195: Track routine start separately from per-set start
     internal val collectedMetrics = MutableStateFlow<List<WorkoutMetric>>(emptyList())
+
     // C3: Thread-safe via MutableStateFlow snapshot — prevents ConcurrentModificationException
     // across coroutine dispatchers during rep processing and set completion
     internal val setRepMetrics = MutableStateFlow<List<RepMetricData>>(emptyList())
@@ -250,13 +251,17 @@ class WorkoutCoordinator(
 
     @Volatile
     internal var autoStopStartTime: Long? = null
+
     @Volatile
     internal var autoStopTriggered = false
+
     @Volatile
     internal var autoStopStopRequested = false
+
     // C1: Guard to prevent duplicate stopWorkout() calls creating duplicate sessions
     // Uses MutableStateFlow for thread-safe compareAndSet across KMP targets
     internal val stopWorkoutInProgress = MutableStateFlow(false)
+
     // Guard to prevent duplicate auto-completion when rep target is reached
     internal val setCompletionInProgress = MutableStateFlow(false)
     internal var currentHandleState: HandleState = HandleState.WaitingForRest
@@ -264,6 +269,7 @@ class WorkoutCoordinator(
     // Velocity-based stall detection state (Issue #204, #214)
     @Volatile
     internal var stallStartTime: Long? = null
+
     @Volatile
     internal var isCurrentlyStalled = false
 
@@ -289,16 +295,20 @@ class WorkoutCoordinator(
 
     // Issue #222 diagnostic: Track bodyweight sets completed in this routine
     internal var bodyweightSetsCompletedInRoutine: Int = 0
+
     // Issue #222 v8: Track if previous exercise was bodyweight (for StopPacket on transition)
     internal var previousExerciseWasBodyweight: Boolean = false
     internal var repEventsCollectionJob: Job? = null
     internal var workoutJob: Job? = null
+
     // Flag to skip countdown - checked in countdown loop
     // H3: @Volatile ensures cross-coroutine visibility for countdown skip checks
     @Volatile
     internal var skipCountdownRequested: Boolean = false
+
     // Track if current workout is duration-based (timed exercise) to show countdown timer
     internal var isCurrentWorkoutTimed: Boolean = false
+
     // Track if current exercise is a timed CABLE exercise (not bodyweight) for auto-stop via handle release.
     // Kept in StateFlow-backed storage for consistent visibility across collectors/coroutines.
     internal val _isCurrentTimedCableExercise = MutableStateFlow(false)
@@ -307,6 +317,7 @@ class WorkoutCoordinator(
         set(value) {
             _isCurrentTimedCableExercise.value = value
         }
+
     // Track if current exercise is bodyweight to skip rep processing (no cable engagement)
     internal val _isCurrentExerciseBodyweight = MutableStateFlow(false)
     val isCurrentExerciseBodyweight: StateFlow<Boolean> = _isCurrentExerciseBodyweight.asStateFlow()
@@ -354,5 +365,4 @@ class WorkoutCoordinator(
      */
     val latestBiomechanicsResult: StateFlow<BiomechanicsRepResult?>
         get() = biomechanicsEngine.latestRepResult
-
 }

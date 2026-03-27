@@ -10,8 +10,10 @@ import kotlinx.coroutines.flow.SharedFlow
 sealed class MotionStartEvent {
     /** Periodic progress tick while load is sustained. [remainingMs] counts down toward zero. */
     data class CountdownTick(val remainingMs: Long) : MotionStartEvent()
+
     /** Emitted once when the hold duration has been satisfied -- the set should begin. */
     data object Started : MotionStartEvent()
+
     /** Emitted when load drops below threshold before the hold completes, resetting the countdown. */
     data object Cancelled : MotionStartEvent()
 }
@@ -30,10 +32,7 @@ sealed class MotionStartEvent {
  * Extracted from the inline auto-start logic in [ActiveSessionEngine]
  * so it can be reused for Routine and Single Exercise flows (Task 4).
  */
-class MotionStartDetector(
-    private val loadThresholdKg: Float = 5f,
-    private val holdDurationMs: Long = 1500L
-) {
+class MotionStartDetector(private val loadThresholdKg: Float = 5f, private val holdDurationMs: Long = 1500L) {
     private val _events = MutableSharedFlow<MotionStartEvent>(extraBufferCapacity = 1)
     val events: SharedFlow<MotionStartEvent> = _events
 

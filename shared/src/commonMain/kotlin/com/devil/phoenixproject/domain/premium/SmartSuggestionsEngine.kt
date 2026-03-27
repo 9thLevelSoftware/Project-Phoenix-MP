@@ -42,13 +42,15 @@ object SmartSuggestionsEngine {
                     muscleGroup = group,
                     sets = groupSessions.size,
                     reps = groupSessions.sumOf { it.workingReps },
-                    totalKg = groupSessions.sumOf { (it.weightPerCableKg * 2 * it.workingReps).toDouble() }.toFloat()
+                    totalKg = groupSessions.sumOf {
+                        (it.weightPerCableKg * 2 * it.workingReps).toDouble()
+                    }.toFloat(),
                 )
             }
 
         return WeeklyVolumeReport(
             weekStartTimestamp = weekStart,
-            volumes = volumes
+            volumes = volumes,
         )
     }
 
@@ -84,34 +86,43 @@ object SmartSuggestionsEngine {
             val legsRatio = legsVol / total
 
             if (pushRatio < IMBALANCE_LOW_THRESHOLD || pushRatio > IMBALANCE_HIGH_THRESHOLD) {
-                imbalances.add(BalanceImbalance(
-                    category = MovementCategory.PUSH,
-                    ratio = pushRatio,
-                    suggestion = if (pushRatio < IMBALANCE_LOW_THRESHOLD)
-                        "Add more push exercises (chest, shoulders, triceps) to balance your training"
-                    else
-                        "Consider reducing push volume and adding more pull/leg exercises"
-                ))
+                imbalances.add(
+                    BalanceImbalance(
+                        category = MovementCategory.PUSH,
+                        ratio = pushRatio,
+                        suggestion = if (pushRatio < IMBALANCE_LOW_THRESHOLD) {
+                            "Add more push exercises (chest, shoulders, triceps) to balance your training"
+                        } else {
+                            "Consider reducing push volume and adding more pull/leg exercises"
+                        },
+                    ),
+                )
             }
             if (pullRatio < IMBALANCE_LOW_THRESHOLD || pullRatio > IMBALANCE_HIGH_THRESHOLD) {
-                imbalances.add(BalanceImbalance(
-                    category = MovementCategory.PULL,
-                    ratio = pullRatio,
-                    suggestion = if (pullRatio < IMBALANCE_LOW_THRESHOLD)
-                        "Add more pull exercises (back, biceps) to balance your push:pull ratio"
-                    else
-                        "Consider reducing pull volume and adding more push/leg exercises"
-                ))
+                imbalances.add(
+                    BalanceImbalance(
+                        category = MovementCategory.PULL,
+                        ratio = pullRatio,
+                        suggestion = if (pullRatio < IMBALANCE_LOW_THRESHOLD) {
+                            "Add more pull exercises (back, biceps) to balance your push:pull ratio"
+                        } else {
+                            "Consider reducing pull volume and adding more push/leg exercises"
+                        },
+                    ),
+                )
             }
             if (legsRatio < IMBALANCE_LOW_THRESHOLD || legsRatio > IMBALANCE_HIGH_THRESHOLD) {
-                imbalances.add(BalanceImbalance(
-                    category = MovementCategory.LEGS,
-                    ratio = legsRatio,
-                    suggestion = if (legsRatio < IMBALANCE_LOW_THRESHOLD)
-                        "Add more leg exercises (squats, lunges) to balance your training"
-                    else
-                        "Consider reducing leg volume and adding more upper body exercises"
-                ))
+                imbalances.add(
+                    BalanceImbalance(
+                        category = MovementCategory.LEGS,
+                        ratio = legsRatio,
+                        suggestion = if (legsRatio < IMBALANCE_LOW_THRESHOLD) {
+                            "Add more leg exercises (squats, lunges) to balance your training"
+                        } else {
+                            "Consider reducing leg volume and adding more upper body exercises"
+                        },
+                    ),
+                )
             }
         }
 
@@ -119,7 +130,7 @@ object SmartSuggestionsEngine {
             pushVolume = pushVol,
             pullVolume = pullVol,
             legsVolume = legsVol,
-            imbalances = imbalances
+            imbalances = imbalances,
         )
     }
 
@@ -140,7 +151,7 @@ object SmartSuggestionsEngine {
                     exerciseId = s.exerciseId,
                     exerciseName = s.exerciseName,
                     daysSinceLastPerformed = daysSince,
-                    muscleGroup = s.muscleGroup
+                    muscleGroup = s.muscleGroup,
                 )
             }
             .filter { it.daysSinceLastPerformed > 14 }
@@ -179,10 +190,13 @@ object SmartSuggestionsEngine {
                         exerciseName = latest.exerciseName,
                         currentWeightKg = referenceWeight,
                         sessionCount = consecutiveCount,
-                        suggestion = "You've been at ${referenceWeight}kg for $consecutiveCount sessions. " +
-                                "Try eccentric overload, drop sets, or changing rep ranges to break through."
+                        suggestion =
+                            "You've been at ${referenceWeight}kg for $consecutiveCount sessions. " +
+                                "Try eccentric overload, drop sets, or changing rep ranges to break through.",
                     )
-                } else null
+                } else {
+                    null
+                }
             }
     }
 
@@ -191,16 +205,13 @@ object SmartSuggestionsEngine {
      * Maps sessions to time windows and finds optimal training time.
      * Requires minimum 3 sessions in a window to consider it for optimal.
      */
-    fun analyzeTimeOfDay(
-        sessions: List<SessionSummary>,
-        timeZone: TimeZone = TimeZone.currentSystemDefault()
-    ): TimeOfDayAnalysis {
+    fun analyzeTimeOfDay(sessions: List<SessionSummary>, timeZone: TimeZone = TimeZone.currentSystemDefault()): TimeOfDayAnalysis {
         if (sessions.isEmpty()) {
             return TimeOfDayAnalysis(
                 windowVolumes = emptyMap(),
                 windowCounts = emptyMap(),
                 optimalWindow = null,
-                suggestion = "Not enough data to determine your optimal training time."
+                suggestion = "Not enough data to determine your optimal training time.",
             )
         }
 
@@ -226,7 +237,7 @@ object SmartSuggestionsEngine {
 
         val suggestion = if (optimal != null) {
             "Your best performance is during ${formatTimeWindow(optimal)} sessions. " +
-                    "Try to schedule your key workouts during this time."
+                "Try to schedule your key workouts during this time."
         } else {
             "Train at more consistent times to identify your optimal training window."
         }
@@ -235,7 +246,7 @@ object SmartSuggestionsEngine {
             windowVolumes = windowAvgVolumes,
             windowCounts = windowCounts,
             optimalWindow = optimal,
-            suggestion = suggestion
+            suggestion = suggestion,
         )
     }
 
@@ -243,14 +254,12 @@ object SmartSuggestionsEngine {
      * Maps a muscle group string to a MovementCategory for balance analysis.
      * Case-insensitive. Unknown groups default to CORE.
      */
-    internal fun classifyMuscleGroup(muscleGroup: String): MovementCategory {
-        return when (muscleGroup.lowercase().trim()) {
-            "chest", "shoulders", "triceps" -> MovementCategory.PUSH
-            "back", "biceps" -> MovementCategory.PULL
-            "legs", "glutes" -> MovementCategory.LEGS
-            "core", "full body" -> MovementCategory.CORE
-            else -> MovementCategory.CORE
-        }
+    internal fun classifyMuscleGroup(muscleGroup: String): MovementCategory = when (muscleGroup.lowercase().trim()) {
+        "chest", "shoulders", "triceps" -> MovementCategory.PUSH
+        "back", "biceps" -> MovementCategory.PULL
+        "legs", "glutes" -> MovementCategory.LEGS
+        "core", "full body" -> MovementCategory.CORE
+        else -> MovementCategory.CORE
     }
 
     /**
@@ -258,10 +267,7 @@ object SmartSuggestionsEngine {
      * Uses the device's local timezone by default. The timeZone parameter is injectable for testing.
      * EARLY_MORNING (5-7), MORNING (7-10), AFTERNOON (10-15), EVENING (15-20), NIGHT (20-5)
      */
-    internal fun classifyTimeWindow(
-        timestampMs: Long,
-        timeZone: TimeZone = TimeZone.currentSystemDefault()
-    ): TimeWindow {
+    internal fun classifyTimeWindow(timestampMs: Long, timeZone: TimeZone = TimeZone.currentSystemDefault()): TimeWindow {
         val instant = Instant.fromEpochMilliseconds(timestampMs)
         val localDateTime = instant.toLocalDateTime(timeZone)
         val hourOfDay = localDateTime.hour

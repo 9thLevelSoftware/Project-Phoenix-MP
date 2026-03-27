@@ -13,7 +13,7 @@ data class ExerciseVideoEntity(
     val angle: String, // FRONT, SIDE, ISOMETRIC, or TUTORIAL
     val videoUrl: String,
     val thumbnailUrl: String,
-    val isTutorial: Boolean = false // True for instructional videos, false for angle demonstrations
+    val isTutorial: Boolean = false, // True for instructional videos, false for angle demonstrations
 )
 
 /**

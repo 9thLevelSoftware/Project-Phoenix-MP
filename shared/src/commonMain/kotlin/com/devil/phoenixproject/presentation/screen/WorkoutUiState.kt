@@ -44,7 +44,7 @@ data class WorkoutUiState(
     val currentHeuristicKgMax: Float = 0f, // Echo mode: actual measured force per cable (kg)
     val workoutParameters: WorkoutParameters = WorkoutParameters(
         programMode = ProgramMode.OldSchool,
-        reps = 10
+        reps = 10,
     ),
     val repCount: RepCount = RepCount(),
     val repRanges: RepRanges? = null,
@@ -58,7 +58,7 @@ data class WorkoutUiState(
     val skippedExercises: Set<Int> = emptySet(),
     val completedExercises: Set<Int> = emptySet(),
     val autoplayEnabled: Boolean = false,
-    val summaryCountdownSeconds: Int = 10,  // Countdown duration for SetSummary auto-continue (0 = Off)
+    val summaryCountdownSeconds: Int = 10, // Countdown duration for SetSummary auto-continue (0 = Off)
     val canGoBack: Boolean = false,
     val canSkipForward: Boolean = false,
     val isWorkoutSetupDialogVisible: Boolean = false,
@@ -81,15 +81,18 @@ data class WorkoutUiState(
     // Total number of variable warm-up sets (0 if none)
     val totalWarmupSets: Int = 0,
     // Issue #113: Just Lift visual rest countdown (null = not resting, 0 = done)
-    val justLiftRestCountdown: Int? = null
+    val justLiftRestCountdown: Int? = null,
 ) {
     /** True when currently executing a variable warm-up set (for HUD label) */
     val isInVariableWarmup: Boolean get() = currentWarmupSetIndex >= 0
 
     /** Label for warm-up set display, e.g., "Warm-up 2/3" (null when not in warm-up) */
     val warmupSetLabel: String? get() =
-        if (isInVariableWarmup) "Warm-up ${currentWarmupSetIndex + 1}/$totalWarmupSets"
-        else null
+        if (isInVariableWarmup) {
+            "Warm-up ${currentWarmupSetIndex + 1}/$totalWarmupSets"
+        } else {
+            null
+        }
 }
 
 /**
@@ -224,7 +227,7 @@ fun workoutActions(
     displayToKg: (Float, WeightUnit) -> Float,
     formatWeight: (Float, WeightUnit) -> String,
     onDetectionConfirmed: suspend (String, String) -> Unit = { _, _ -> },
-    onDetectionDismissed: () -> Unit = {}
+    onDetectionDismissed: () -> Unit = {},
 ): WorkoutActions = object : WorkoutActions {
     override fun onScan() = onScan()
     override fun onCancelScan() = onCancelScan()

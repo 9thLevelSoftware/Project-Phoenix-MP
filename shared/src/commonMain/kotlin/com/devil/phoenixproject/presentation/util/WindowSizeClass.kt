@@ -12,26 +12,30 @@ import androidx.compose.ui.unit.dp
 enum class WindowWidthSizeClass {
     /** Phones in portrait (< 600dp) */
     Compact,
+
     /** Small tablets, phones in landscape (600-840dp) */
     Medium,
+
     /** Large tablets, desktops (> 840dp) */
-    Expanded
+    Expanded,
 }
 
 enum class WindowHeightSizeClass {
     /** Short screens (< 480dp) */
     Compact,
+
     /** Medium height (480-900dp) */
     Medium,
+
     /** Tall screens (> 900dp) */
-    Expanded
+    Expanded,
 }
 
 data class WindowSizeClass(
     val widthSizeClass: WindowWidthSizeClass,
     val heightSizeClass: WindowHeightSizeClass,
     val widthDp: Dp,
-    val heightDp: Dp
+    val heightDp: Dp,
 ) {
     val isTablet: Boolean
         get() = widthSizeClass != WindowWidthSizeClass.Compact
@@ -49,7 +53,7 @@ val LocalWindowSizeClass = compositionLocalOf {
         widthSizeClass = WindowWidthSizeClass.Compact,
         heightSizeClass = WindowHeightSizeClass.Medium,
         widthDp = 400.dp,
-        heightDp = 800.dp
+        heightDp = 800.dp,
     )
 }
 
@@ -73,7 +77,7 @@ fun calculateWindowSizeClass(widthDp: Dp, heightDp: Dp): WindowSizeClass {
         widthSizeClass = widthClass,
         heightSizeClass = heightClass,
         widthDp = widthDp,
-        heightDp = heightDp
+        heightDp = heightDp,
     )
 }
 
@@ -89,11 +93,7 @@ object ResponsiveDimensions {
      * @param expandedMultiplier Scale factor for large tablets (default 1.5)
      */
     @Composable
-    fun chartHeight(
-        baseHeight: Dp,
-        mediumMultiplier: Float = 1.25f,
-        expandedMultiplier: Float = 1.5f
-    ): Dp {
+    fun chartHeight(baseHeight: Dp, mediumMultiplier: Float = 1.25f, expandedMultiplier: Float = 1.5f): Dp {
         val windowSizeClass = LocalWindowSizeClass.current
         return when (windowSizeClass.widthSizeClass) {
             WindowWidthSizeClass.Expanded -> baseHeight * expandedMultiplier
@@ -112,7 +112,7 @@ object ResponsiveDimensions {
         return when (windowSizeClass.widthSizeClass) {
             WindowWidthSizeClass.Expanded -> 600.dp
             WindowWidthSizeClass.Medium -> 500.dp
-            WindowWidthSizeClass.Compact -> null  // No max, use full width
+            WindowWidthSizeClass.Compact -> null // No max, use full width
         }
     }
 

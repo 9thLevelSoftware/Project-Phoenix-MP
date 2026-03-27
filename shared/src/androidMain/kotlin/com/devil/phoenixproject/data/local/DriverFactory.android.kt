@@ -44,7 +44,7 @@ actual class DriverFactory(private val context: Context) {
                             VitruvianDatabase.Schema.migrate(
                                 driver = createTempDriver(db),
                                 oldVersion = version.toLong(),
-                                newVersion = (version + 1).toLong()
+                                newVersion = (version + 1).toLong(),
                             )
                             Log.i(TAG, "Successfully applied migration ${version + 1}")
                         } catch (e: SQLiteException) {
@@ -78,7 +78,8 @@ actual class DriverFactory(private val context: Context) {
                             val msg = e.message ?: ""
                             if (msg.contains("duplicate column") ||
                                 msg.contains("already exists") ||
-                                msg.contains("table .* already exists".toRegex())) {
+                                msg.contains("table .* already exists".toRegex())
+                            ) {
                                 Log.w(TAG, "Skipping (already exists): ${sql.take(60)}...")
                             } else {
                                 Log.e(TAG, "Migration statement failed: $sql", e)
@@ -92,27 +93,29 @@ actual class DriverFactory(private val context: Context) {
                  * Get SQL statements for a specific migration version.
                  * Only includes migrations that need resilient handling.
                  */
-                private fun getMigrationStatements(version: Int): List<String> {
-                    return when (version) {
-                        1 -> listOf(
-                            "ALTER TABLE Exercise ADD COLUMN one_rep_max_kg REAL DEFAULT NULL"
-                        )
-                        2 -> listOf(
-                            """CREATE TABLE IF NOT EXISTS UserProfile (
+                private fun getMigrationStatements(version: Int): List<String> = when (version) {
+                    1 -> listOf(
+                        "ALTER TABLE Exercise ADD COLUMN one_rep_max_kg REAL DEFAULT NULL",
+                    )
+
+                    2 -> listOf(
+                        """CREATE TABLE IF NOT EXISTS UserProfile (
                                 id TEXT PRIMARY KEY NOT NULL,
                                 name TEXT NOT NULL,
                                 colorIndex INTEGER NOT NULL DEFAULT 0,
                                 createdAt INTEGER NOT NULL,
                                 isActive INTEGER NOT NULL DEFAULT 0
-                            )"""
-                        )
-                        3 -> listOf(
-                            "ALTER TABLE RoutineExercise ADD COLUMN supersetGroupId TEXT",
-                            "ALTER TABLE RoutineExercise ADD COLUMN supersetOrder INTEGER NOT NULL DEFAULT 0",
-                            "ALTER TABLE RoutineExercise ADD COLUMN supersetRestSeconds INTEGER NOT NULL DEFAULT 10"
-                        )
-                        4 -> listOf(
-                            """CREATE TABLE IF NOT EXISTS Superset (
+                            )""",
+                    )
+
+                    3 -> listOf(
+                        "ALTER TABLE RoutineExercise ADD COLUMN supersetGroupId TEXT",
+                        "ALTER TABLE RoutineExercise ADD COLUMN supersetOrder INTEGER NOT NULL DEFAULT 0",
+                        "ALTER TABLE RoutineExercise ADD COLUMN supersetRestSeconds INTEGER NOT NULL DEFAULT 10",
+                    )
+
+                    4 -> listOf(
+                        """CREATE TABLE IF NOT EXISTS Superset (
                                 id TEXT PRIMARY KEY NOT NULL,
                                 routineId TEXT NOT NULL,
                                 name TEXT NOT NULL,
@@ -121,38 +124,40 @@ actual class DriverFactory(private val context: Context) {
                                 orderIndex INTEGER NOT NULL,
                                 FOREIGN KEY (routineId) REFERENCES Routine(id) ON DELETE CASCADE
                             )""",
-                            "CREATE INDEX IF NOT EXISTS idx_superset_routine ON Superset(routineId)",
-                            "ALTER TABLE RoutineExercise ADD COLUMN supersetId TEXT",
-                            "ALTER TABLE RoutineExercise ADD COLUMN orderInSuperset INTEGER NOT NULL DEFAULT 0",
-                            "CREATE INDEX IF NOT EXISTS idx_routine_exercise_superset ON RoutineExercise(supersetId)"
-                        )
-                        5 -> listOf(
-                            "ALTER TABLE WorkoutSession ADD COLUMN peakForceConcentricA REAL",
-                            "ALTER TABLE WorkoutSession ADD COLUMN peakForceConcentricB REAL",
-                            "ALTER TABLE WorkoutSession ADD COLUMN peakForceEccentricA REAL",
-                            "ALTER TABLE WorkoutSession ADD COLUMN peakForceEccentricB REAL",
-                            "ALTER TABLE WorkoutSession ADD COLUMN avgForceConcentricA REAL",
-                            "ALTER TABLE WorkoutSession ADD COLUMN avgForceConcentricB REAL",
-                            "ALTER TABLE WorkoutSession ADD COLUMN avgForceEccentricA REAL",
-                            "ALTER TABLE WorkoutSession ADD COLUMN avgForceEccentricB REAL",
-                            "ALTER TABLE WorkoutSession ADD COLUMN heaviestLiftKg REAL",
-                            "ALTER TABLE WorkoutSession ADD COLUMN totalVolumeKg REAL",
-                            "ALTER TABLE WorkoutSession ADD COLUMN estimatedCalories REAL",
-                            "ALTER TABLE WorkoutSession ADD COLUMN warmupAvgWeightKg REAL",
-                            "ALTER TABLE WorkoutSession ADD COLUMN workingAvgWeightKg REAL",
-                            "ALTER TABLE WorkoutSession ADD COLUMN burnoutAvgWeightKg REAL",
-                            "ALTER TABLE WorkoutSession ADD COLUMN peakWeightKg REAL",
-                            "ALTER TABLE WorkoutSession ADD COLUMN rpe INTEGER"
-                        )
-                        6 -> listOf(
-                            """CREATE TABLE IF NOT EXISTS TrainingCycle (
+                        "CREATE INDEX IF NOT EXISTS idx_superset_routine ON Superset(routineId)",
+                        "ALTER TABLE RoutineExercise ADD COLUMN supersetId TEXT",
+                        "ALTER TABLE RoutineExercise ADD COLUMN orderInSuperset INTEGER NOT NULL DEFAULT 0",
+                        "CREATE INDEX IF NOT EXISTS idx_routine_exercise_superset ON RoutineExercise(supersetId)",
+                    )
+
+                    5 -> listOf(
+                        "ALTER TABLE WorkoutSession ADD COLUMN peakForceConcentricA REAL",
+                        "ALTER TABLE WorkoutSession ADD COLUMN peakForceConcentricB REAL",
+                        "ALTER TABLE WorkoutSession ADD COLUMN peakForceEccentricA REAL",
+                        "ALTER TABLE WorkoutSession ADD COLUMN peakForceEccentricB REAL",
+                        "ALTER TABLE WorkoutSession ADD COLUMN avgForceConcentricA REAL",
+                        "ALTER TABLE WorkoutSession ADD COLUMN avgForceConcentricB REAL",
+                        "ALTER TABLE WorkoutSession ADD COLUMN avgForceEccentricA REAL",
+                        "ALTER TABLE WorkoutSession ADD COLUMN avgForceEccentricB REAL",
+                        "ALTER TABLE WorkoutSession ADD COLUMN heaviestLiftKg REAL",
+                        "ALTER TABLE WorkoutSession ADD COLUMN totalVolumeKg REAL",
+                        "ALTER TABLE WorkoutSession ADD COLUMN estimatedCalories REAL",
+                        "ALTER TABLE WorkoutSession ADD COLUMN warmupAvgWeightKg REAL",
+                        "ALTER TABLE WorkoutSession ADD COLUMN workingAvgWeightKg REAL",
+                        "ALTER TABLE WorkoutSession ADD COLUMN burnoutAvgWeightKg REAL",
+                        "ALTER TABLE WorkoutSession ADD COLUMN peakWeightKg REAL",
+                        "ALTER TABLE WorkoutSession ADD COLUMN rpe INTEGER",
+                    )
+
+                    6 -> listOf(
+                        """CREATE TABLE IF NOT EXISTS TrainingCycle (
                                 id TEXT PRIMARY KEY NOT NULL,
                                 name TEXT NOT NULL,
                                 description TEXT,
                                 created_at INTEGER NOT NULL,
                                 is_active INTEGER NOT NULL DEFAULT 0
                             )""",
-                            """CREATE TABLE IF NOT EXISTS CycleDay (
+                        """CREATE TABLE IF NOT EXISTS CycleDay (
                                 id TEXT PRIMARY KEY NOT NULL,
                                 cycle_id TEXT NOT NULL,
                                 day_number INTEGER NOT NULL,
@@ -167,7 +172,7 @@ actual class DriverFactory(private val context: Context) {
                                 FOREIGN KEY (cycle_id) REFERENCES TrainingCycle(id) ON DELETE CASCADE,
                                 FOREIGN KEY (routine_id) REFERENCES Routine(id) ON DELETE SET NULL
                             )""",
-                            """CREATE TABLE IF NOT EXISTS CycleProgress (
+                        """CREATE TABLE IF NOT EXISTS CycleProgress (
                                 id TEXT PRIMARY KEY NOT NULL,
                                 cycle_id TEXT NOT NULL UNIQUE,
                                 current_day_number INTEGER NOT NULL DEFAULT 1,
@@ -179,7 +184,7 @@ actual class DriverFactory(private val context: Context) {
                                 rotation_count INTEGER NOT NULL DEFAULT 0,
                                 FOREIGN KEY (cycle_id) REFERENCES TrainingCycle(id) ON DELETE CASCADE
                             )""",
-                            """CREATE TABLE IF NOT EXISTS CycleProgression (
+                        """CREATE TABLE IF NOT EXISTS CycleProgression (
                                 cycle_id TEXT PRIMARY KEY NOT NULL,
                                 frequency_cycles INTEGER NOT NULL DEFAULT 2,
                                 weight_increase_percent REAL,
@@ -187,7 +192,7 @@ actual class DriverFactory(private val context: Context) {
                                 eccentric_load_increase_percent INTEGER,
                                 FOREIGN KEY (cycle_id) REFERENCES TrainingCycle(id) ON DELETE CASCADE
                             )""",
-                            """CREATE TABLE IF NOT EXISTS PlannedSet (
+                        """CREATE TABLE IF NOT EXISTS PlannedSet (
                                 id TEXT PRIMARY KEY NOT NULL,
                                 routine_exercise_id TEXT NOT NULL,
                                 set_number INTEGER NOT NULL,
@@ -198,7 +203,7 @@ actual class DriverFactory(private val context: Context) {
                                 rest_seconds INTEGER,
                                 FOREIGN KEY (routine_exercise_id) REFERENCES RoutineExercise(id) ON DELETE CASCADE
                             )""",
-                            """CREATE TABLE IF NOT EXISTS CompletedSet (
+                        """CREATE TABLE IF NOT EXISTS CompletedSet (
                                 id TEXT PRIMARY KEY NOT NULL,
                                 session_id TEXT NOT NULL,
                                 planned_set_id TEXT,
@@ -212,7 +217,7 @@ actual class DriverFactory(private val context: Context) {
                                 FOREIGN KEY (session_id) REFERENCES WorkoutSession(id) ON DELETE CASCADE,
                                 FOREIGN KEY (planned_set_id) REFERENCES PlannedSet(id) ON DELETE SET NULL
                             )""",
-                            """CREATE TABLE IF NOT EXISTS ProgressionEvent (
+                        """CREATE TABLE IF NOT EXISTS ProgressionEvent (
                                 id TEXT PRIMARY KEY NOT NULL,
                                 exercise_id TEXT NOT NULL,
                                 suggested_weight_kg REAL NOT NULL,
@@ -223,35 +228,37 @@ actual class DriverFactory(private val context: Context) {
                                 timestamp INTEGER NOT NULL,
                                 FOREIGN KEY (exercise_id) REFERENCES Exercise(id) ON DELETE CASCADE
                             )""",
-                            "CREATE INDEX IF NOT EXISTS idx_cycle_day_cycle ON CycleDay(cycle_id)",
-                            "CREATE INDEX IF NOT EXISTS idx_cycle_progress_cycle ON CycleProgress(cycle_id)",
-                            "CREATE INDEX IF NOT EXISTS idx_planned_set_exercise ON PlannedSet(routine_exercise_id)",
-                            "CREATE INDEX IF NOT EXISTS idx_completed_set_session ON CompletedSet(session_id)",
-                            "CREATE INDEX IF NOT EXISTS idx_progression_exercise ON ProgressionEvent(exercise_id)",
-                            // Fallback: Add missing columns to CycleDay if table existed without them
-                            // CREATE TABLE IF NOT EXISTS won't add columns to existing tables
-                            "ALTER TABLE CycleDay ADD COLUMN echo_level TEXT",
-                            "ALTER TABLE CycleDay ADD COLUMN eccentric_load_percent INTEGER",
-                            "ALTER TABLE CycleDay ADD COLUMN weight_progression_percent REAL",
-                            "ALTER TABLE CycleDay ADD COLUMN rep_modifier INTEGER",
-                            "ALTER TABLE CycleDay ADD COLUMN rest_time_override_seconds INTEGER",
-                            // Fallback: Add missing columns to CycleProgress if table existed without them
-                            // CREATE TABLE IF NOT EXISTS won't add columns to existing tables
-                            "ALTER TABLE CycleProgress ADD COLUMN last_advanced_at INTEGER",
-                            "ALTER TABLE CycleProgress ADD COLUMN completed_days TEXT",
-                            "ALTER TABLE CycleProgress ADD COLUMN missed_days TEXT",
-                            "ALTER TABLE CycleProgress ADD COLUMN rotation_count INTEGER NOT NULL DEFAULT 0"
-                        )
-                        7 -> listOf(
-                            // PR percentage scaling columns for RoutineExercise (Issue #57)
-                            "ALTER TABLE RoutineExercise ADD COLUMN usePercentOfPR INTEGER NOT NULL DEFAULT 0",
-                            "ALTER TABLE RoutineExercise ADD COLUMN weightPercentOfPR INTEGER NOT NULL DEFAULT 80",
-                            "ALTER TABLE RoutineExercise ADD COLUMN prTypeForScaling TEXT NOT NULL DEFAULT 'MAX_WEIGHT'",
-                            "ALTER TABLE RoutineExercise ADD COLUMN setWeightsPercentOfPR TEXT"
-                        )
-                        8 -> listOf(
-                            // Create Superset if missing (so DELETE/SELECT below don't crash)
-                            """CREATE TABLE IF NOT EXISTS Superset (
+                        "CREATE INDEX IF NOT EXISTS idx_cycle_day_cycle ON CycleDay(cycle_id)",
+                        "CREATE INDEX IF NOT EXISTS idx_cycle_progress_cycle ON CycleProgress(cycle_id)",
+                        "CREATE INDEX IF NOT EXISTS idx_planned_set_exercise ON PlannedSet(routine_exercise_id)",
+                        "CREATE INDEX IF NOT EXISTS idx_completed_set_session ON CompletedSet(session_id)",
+                        "CREATE INDEX IF NOT EXISTS idx_progression_exercise ON ProgressionEvent(exercise_id)",
+                        // Fallback: Add missing columns to CycleDay if table existed without them
+                        // CREATE TABLE IF NOT EXISTS won't add columns to existing tables
+                        "ALTER TABLE CycleDay ADD COLUMN echo_level TEXT",
+                        "ALTER TABLE CycleDay ADD COLUMN eccentric_load_percent INTEGER",
+                        "ALTER TABLE CycleDay ADD COLUMN weight_progression_percent REAL",
+                        "ALTER TABLE CycleDay ADD COLUMN rep_modifier INTEGER",
+                        "ALTER TABLE CycleDay ADD COLUMN rest_time_override_seconds INTEGER",
+                        // Fallback: Add missing columns to CycleProgress if table existed without them
+                        // CREATE TABLE IF NOT EXISTS won't add columns to existing tables
+                        "ALTER TABLE CycleProgress ADD COLUMN last_advanced_at INTEGER",
+                        "ALTER TABLE CycleProgress ADD COLUMN completed_days TEXT",
+                        "ALTER TABLE CycleProgress ADD COLUMN missed_days TEXT",
+                        "ALTER TABLE CycleProgress ADD COLUMN rotation_count INTEGER NOT NULL DEFAULT 0",
+                    )
+
+                    7 -> listOf(
+                        // PR percentage scaling columns for RoutineExercise (Issue #57)
+                        "ALTER TABLE RoutineExercise ADD COLUMN usePercentOfPR INTEGER NOT NULL DEFAULT 0",
+                        "ALTER TABLE RoutineExercise ADD COLUMN weightPercentOfPR INTEGER NOT NULL DEFAULT 80",
+                        "ALTER TABLE RoutineExercise ADD COLUMN prTypeForScaling TEXT NOT NULL DEFAULT 'MAX_WEIGHT'",
+                        "ALTER TABLE RoutineExercise ADD COLUMN setWeightsPercentOfPR TEXT",
+                    )
+
+                    8 -> listOf(
+                        // Create Superset if missing (so DELETE/SELECT below don't crash)
+                        """CREATE TABLE IF NOT EXISTS Superset (
                                 id TEXT PRIMARY KEY NOT NULL,
                                 routineId TEXT NOT NULL,
                                 name TEXT NOT NULL,
@@ -259,18 +266,19 @@ actual class DriverFactory(private val context: Context) {
                                 restBetweenSeconds INTEGER NOT NULL DEFAULT 10,
                                 orderIndex INTEGER NOT NULL
                             )""",
-                            // Schema healing: clean up empty string artifacts from legacy data
-                            "UPDATE RoutineExercise SET supersetId = NULL WHERE supersetId = ''",
-                            "DELETE FROM Superset WHERE id = ''",
-                            // Fix index name inconsistency (was idx_progression_event_exercise in some migrations)
-                            "DROP INDEX IF EXISTS idx_progression_event_exercise",
-                            "CREATE INDEX IF NOT EXISTS idx_progression_exercise ON ProgressionEvent(exercise_id)",
-                            // Fix orphaned supersetId references from Migration 4 ID collision bug
-                            "UPDATE RoutineExercise SET supersetId = NULL WHERE supersetId IS NOT NULL AND supersetId NOT IN (SELECT id FROM Superset)"
-                        )
-                        9 -> listOf(
-                            // Create Superset if missing (so SELECT below doesn't crash)
-                            """CREATE TABLE IF NOT EXISTS Superset (
+                        // Schema healing: clean up empty string artifacts from legacy data
+                        "UPDATE RoutineExercise SET supersetId = NULL WHERE supersetId = ''",
+                        "DELETE FROM Superset WHERE id = ''",
+                        // Fix index name inconsistency (was idx_progression_event_exercise in some migrations)
+                        "DROP INDEX IF EXISTS idx_progression_event_exercise",
+                        "CREATE INDEX IF NOT EXISTS idx_progression_exercise ON ProgressionEvent(exercise_id)",
+                        // Fix orphaned supersetId references from Migration 4 ID collision bug
+                        "UPDATE RoutineExercise SET supersetId = NULL WHERE supersetId IS NOT NULL AND supersetId NOT IN (SELECT id FROM Superset)",
+                    )
+
+                    9 -> listOf(
+                        // Create Superset if missing (so SELECT below doesn't crash)
+                        """CREATE TABLE IF NOT EXISTS Superset (
                                 id TEXT PRIMARY KEY NOT NULL,
                                 routineId TEXT NOT NULL,
                                 name TEXT NOT NULL,
@@ -278,29 +286,30 @@ actual class DriverFactory(private val context: Context) {
                                 restBetweenSeconds INTEGER NOT NULL DEFAULT 10,
                                 orderIndex INTEGER NOT NULL
                             )""",
-                            // Final cleanup: Remove orphaned supersetId references after composite ID regeneration
-                            // Migration 9.sqm converts Superset IDs to composite format (routineId_originalId)
-                            // This catches any references that still point to non-existent Superset rows
-                            "UPDATE RoutineExercise SET supersetId = NULL WHERE supersetId IS NOT NULL AND supersetId NOT IN (SELECT id FROM Superset)"
-                        )
-                        10 -> listOf(
-                            // Migration 10: Comprehensive schema fix with table recreation
-                            // Pre-flight columns (also in preflightMigration for early application)
-                            "ALTER TABLE RoutineExercise ADD COLUMN supersetId TEXT",
-                            "ALTER TABLE RoutineExercise ADD COLUMN orderInSuperset INTEGER NOT NULL DEFAULT 0",
-                            "ALTER TABLE RoutineExercise ADD COLUMN usePercentOfPR INTEGER NOT NULL DEFAULT 0",
-                            "ALTER TABLE RoutineExercise ADD COLUMN weightPercentOfPR INTEGER NOT NULL DEFAULT 80",
-                            "ALTER TABLE RoutineExercise ADD COLUMN prTypeForScaling TEXT NOT NULL DEFAULT 'MAX_WEIGHT'",
-                            "ALTER TABLE RoutineExercise ADD COLUMN setWeightsPercentOfPR TEXT",
-                            // Cleanup temp tables
-                            "DROP TABLE IF EXISTS RoutineExercise_new",
-                            "DROP TABLE IF EXISTS RoutineExercise_v10",
-                            "DROP TABLE IF EXISTS PlannedSet_temp",
-                            "DROP TABLE IF EXISTS CompletedSet_temp",
-                            "DROP TABLE IF EXISTS CycleDay_temp",
-                            "DROP TABLE IF EXISTS CycleProgress_temp",
-                            // Ensure Superset exists
-                            """CREATE TABLE IF NOT EXISTS Superset (
+                        // Final cleanup: Remove orphaned supersetId references after composite ID regeneration
+                        // Migration 9.sqm converts Superset IDs to composite format (routineId_originalId)
+                        // This catches any references that still point to non-existent Superset rows
+                        "UPDATE RoutineExercise SET supersetId = NULL WHERE supersetId IS NOT NULL AND supersetId NOT IN (SELECT id FROM Superset)",
+                    )
+
+                    10 -> listOf(
+                        // Migration 10: Comprehensive schema fix with table recreation
+                        // Pre-flight columns (also in preflightMigration for early application)
+                        "ALTER TABLE RoutineExercise ADD COLUMN supersetId TEXT",
+                        "ALTER TABLE RoutineExercise ADD COLUMN orderInSuperset INTEGER NOT NULL DEFAULT 0",
+                        "ALTER TABLE RoutineExercise ADD COLUMN usePercentOfPR INTEGER NOT NULL DEFAULT 0",
+                        "ALTER TABLE RoutineExercise ADD COLUMN weightPercentOfPR INTEGER NOT NULL DEFAULT 80",
+                        "ALTER TABLE RoutineExercise ADD COLUMN prTypeForScaling TEXT NOT NULL DEFAULT 'MAX_WEIGHT'",
+                        "ALTER TABLE RoutineExercise ADD COLUMN setWeightsPercentOfPR TEXT",
+                        // Cleanup temp tables
+                        "DROP TABLE IF EXISTS RoutineExercise_new",
+                        "DROP TABLE IF EXISTS RoutineExercise_v10",
+                        "DROP TABLE IF EXISTS PlannedSet_temp",
+                        "DROP TABLE IF EXISTS CompletedSet_temp",
+                        "DROP TABLE IF EXISTS CycleDay_temp",
+                        "DROP TABLE IF EXISTS CycleProgress_temp",
+                        // Ensure Superset exists
+                        """CREATE TABLE IF NOT EXISTS Superset (
                                 id TEXT PRIMARY KEY NOT NULL,
                                 routineId TEXT NOT NULL,
                                 name TEXT NOT NULL,
@@ -309,16 +318,16 @@ actual class DriverFactory(private val context: Context) {
                                 orderIndex INTEGER NOT NULL,
                                 FOREIGN KEY (routineId) REFERENCES Routine(id) ON DELETE CASCADE
                             )""",
-                            "CREATE INDEX IF NOT EXISTS idx_superset_routine ON Superset(routineId)",
-                            // Ensure TrainingCycle tables exist
-                            """CREATE TABLE IF NOT EXISTS TrainingCycle (
+                        "CREATE INDEX IF NOT EXISTS idx_superset_routine ON Superset(routineId)",
+                        // Ensure TrainingCycle tables exist
+                        """CREATE TABLE IF NOT EXISTS TrainingCycle (
                                 id TEXT PRIMARY KEY NOT NULL,
                                 name TEXT NOT NULL,
                                 description TEXT,
                                 created_at INTEGER NOT NULL,
                                 is_active INTEGER NOT NULL DEFAULT 0
                             )""",
-                            """CREATE TABLE IF NOT EXISTS CycleDay (
+                        """CREATE TABLE IF NOT EXISTS CycleDay (
                                 id TEXT PRIMARY KEY NOT NULL,
                                 cycle_id TEXT NOT NULL,
                                 day_number INTEGER NOT NULL,
@@ -333,7 +342,7 @@ actual class DriverFactory(private val context: Context) {
                                 FOREIGN KEY (cycle_id) REFERENCES TrainingCycle(id) ON DELETE CASCADE,
                                 FOREIGN KEY (routine_id) REFERENCES Routine(id) ON DELETE SET NULL
                             )""",
-                            """CREATE TABLE IF NOT EXISTS CycleProgress (
+                        """CREATE TABLE IF NOT EXISTS CycleProgress (
                                 id TEXT PRIMARY KEY NOT NULL,
                                 cycle_id TEXT NOT NULL UNIQUE,
                                 current_day_number INTEGER NOT NULL DEFAULT 1,
@@ -345,7 +354,7 @@ actual class DriverFactory(private val context: Context) {
                                 rotation_count INTEGER NOT NULL DEFAULT 0,
                                 FOREIGN KEY (cycle_id) REFERENCES TrainingCycle(id) ON DELETE CASCADE
                             )""",
-                            """CREATE TABLE IF NOT EXISTS PlannedSet (
+                        """CREATE TABLE IF NOT EXISTS PlannedSet (
                                 id TEXT PRIMARY KEY NOT NULL,
                                 routine_exercise_id TEXT NOT NULL,
                                 set_number INTEGER NOT NULL,
@@ -356,7 +365,7 @@ actual class DriverFactory(private val context: Context) {
                                 rest_seconds INTEGER,
                                 FOREIGN KEY (routine_exercise_id) REFERENCES RoutineExercise(id) ON DELETE CASCADE
                             )""",
-                            """CREATE TABLE IF NOT EXISTS CompletedSet (
+                        """CREATE TABLE IF NOT EXISTS CompletedSet (
                                 id TEXT PRIMARY KEY NOT NULL,
                                 session_id TEXT NOT NULL,
                                 planned_set_id TEXT,
@@ -370,23 +379,46 @@ actual class DriverFactory(private val context: Context) {
                                 FOREIGN KEY (session_id) REFERENCES WorkoutSession(id) ON DELETE CASCADE,
                                 FOREIGN KEY (planned_set_id) REFERENCES PlannedSet(id) ON DELETE SET NULL
                             )""",
-                            // Create indexes
-                            "CREATE INDEX IF NOT EXISTS idx_routine_exercise_routine ON RoutineExercise(routineId)",
-                            "CREATE INDEX IF NOT EXISTS idx_routine_exercise_superset ON RoutineExercise(supersetId)",
-                            "CREATE INDEX IF NOT EXISTS idx_planned_set_exercise ON PlannedSet(routine_exercise_id)",
-                            "CREATE INDEX IF NOT EXISTS idx_completed_set_session ON CompletedSet(session_id)",
-                            "CREATE INDEX IF NOT EXISTS idx_cycle_day_cycle ON CycleDay(cycle_id)",
-                            "CREATE INDEX IF NOT EXISTS idx_cycle_progress_cycle ON CycleProgress(cycle_id)",
-                            // Cleanup orphaned references
-                            "UPDATE RoutineExercise SET supersetId = NULL WHERE supersetId IS NOT NULL AND supersetId NOT IN (SELECT id FROM Superset)"
-                        )
-                        13 -> listOf(
-                            // Migration 13: MetricSample performance index
-                            "CREATE INDEX IF NOT EXISTS idx_metric_sample_session ON MetricSample(sessionId)"
-                        )
-                        14 -> listOf(
-                            // Migration 14: ExerciseSignature and AssessmentResult tables
-                            """CREATE TABLE IF NOT EXISTS ExerciseSignature (
+                        // Create indexes
+                        "CREATE INDEX IF NOT EXISTS idx_routine_exercise_routine ON RoutineExercise(routineId)",
+                        "CREATE INDEX IF NOT EXISTS idx_routine_exercise_superset ON RoutineExercise(supersetId)",
+                        "CREATE INDEX IF NOT EXISTS idx_planned_set_exercise ON PlannedSet(routine_exercise_id)",
+                        "CREATE INDEX IF NOT EXISTS idx_completed_set_session ON CompletedSet(session_id)",
+                        "CREATE INDEX IF NOT EXISTS idx_cycle_day_cycle ON CycleDay(cycle_id)",
+                        "CREATE INDEX IF NOT EXISTS idx_cycle_progress_cycle ON CycleProgress(cycle_id)",
+                        // Cleanup orphaned references
+                        "UPDATE RoutineExercise SET supersetId = NULL WHERE supersetId IS NOT NULL AND supersetId NOT IN (SELECT id FROM Superset)",
+                    )
+
+                    11 -> listOf(
+                        // Migration 11: Sync columns on multiple tables
+                        "ALTER TABLE WorkoutSession ADD COLUMN updatedAt INTEGER",
+                        "ALTER TABLE WorkoutSession ADD COLUMN serverId TEXT",
+                        "ALTER TABLE WorkoutSession ADD COLUMN deletedAt INTEGER",
+                        "ALTER TABLE PersonalRecord ADD COLUMN updatedAt INTEGER",
+                        "ALTER TABLE PersonalRecord ADD COLUMN serverId TEXT",
+                        "ALTER TABLE PersonalRecord ADD COLUMN deletedAt INTEGER",
+                        "ALTER TABLE Routine ADD COLUMN updatedAt INTEGER",
+                        "ALTER TABLE Routine ADD COLUMN serverId TEXT",
+                        "ALTER TABLE Routine ADD COLUMN deletedAt INTEGER",
+                        "ALTER TABLE Exercise ADD COLUMN updatedAt INTEGER",
+                        "ALTER TABLE Exercise ADD COLUMN serverId TEXT",
+                        "ALTER TABLE Exercise ADD COLUMN deletedAt INTEGER",
+                        "ALTER TABLE EarnedBadge ADD COLUMN updatedAt INTEGER",
+                        "ALTER TABLE EarnedBadge ADD COLUMN serverId TEXT",
+                        "ALTER TABLE EarnedBadge ADD COLUMN deletedAt INTEGER",
+                        "ALTER TABLE GamificationStats ADD COLUMN updatedAt INTEGER",
+                        "ALTER TABLE GamificationStats ADD COLUMN serverId TEXT",
+                    )
+
+                    13 -> listOf(
+                        // Migration 13: MetricSample performance index
+                        "CREATE INDEX IF NOT EXISTS idx_metric_sample_session ON MetricSample(sessionId)",
+                    )
+
+                    14 -> listOf(
+                        // Migration 14: ExerciseSignature and AssessmentResult tables
+                        """CREATE TABLE IF NOT EXISTS ExerciseSignature (
                                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                                 exerciseId TEXT NOT NULL,
                                 romMm REAL NOT NULL,
@@ -400,8 +432,8 @@ actual class DriverFactory(private val context: Context) {
                                 updatedAt INTEGER NOT NULL,
                                 FOREIGN KEY (exerciseId) REFERENCES Exercise(id) ON DELETE CASCADE
                             )""",
-                            "CREATE INDEX IF NOT EXISTS idx_exercise_signature_exercise ON ExerciseSignature(exerciseId)",
-                            """CREATE TABLE IF NOT EXISTS AssessmentResult (
+                        "CREATE INDEX IF NOT EXISTS idx_exercise_signature_exercise ON ExerciseSignature(exerciseId)",
+                        """CREATE TABLE IF NOT EXISTS AssessmentResult (
                                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                                 exerciseId TEXT NOT NULL,
                                 estimatedOneRepMaxKg REAL NOT NULL,
@@ -412,11 +444,12 @@ actual class DriverFactory(private val context: Context) {
                                 FOREIGN KEY (exerciseId) REFERENCES Exercise(id) ON DELETE CASCADE,
                                 FOREIGN KEY (assessmentSessionId) REFERENCES WorkoutSession(id) ON DELETE SET NULL
                             )""",
-                            "CREATE INDEX IF NOT EXISTS idx_assessment_result_exercise ON AssessmentResult(exerciseId)"
-                        )
-                        15 -> listOf(
-                            // Migration 15: Per-Rep Biomechanics table + WorkoutSession summary columns (Phase 13 - v16)
-                            """CREATE TABLE IF NOT EXISTS RepBiomechanics (
+                        "CREATE INDEX IF NOT EXISTS idx_assessment_result_exercise ON AssessmentResult(exerciseId)",
+                    )
+
+                    15 -> listOf(
+                        // Migration 15: Per-Rep Biomechanics table + WorkoutSession summary columns (Phase 13 - v16)
+                        """CREATE TABLE IF NOT EXISTS RepBiomechanics (
                                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                                 sessionId TEXT NOT NULL,
                                 repNumber INTEGER NOT NULL,
@@ -437,16 +470,16 @@ actual class DriverFactory(private val context: Context) {
                                 timestamp INTEGER NOT NULL,
                                 FOREIGN KEY (sessionId) REFERENCES WorkoutSession(id) ON DELETE CASCADE
                             )""",
-                            "CREATE INDEX IF NOT EXISTS idx_rep_biomechanics_session ON RepBiomechanics(sessionId)",
-                            "CREATE UNIQUE INDEX IF NOT EXISTS idx_rep_biomechanics_session_rep ON RepBiomechanics(sessionId, repNumber)",
-                            "ALTER TABLE WorkoutSession ADD COLUMN avgMcvMmS REAL",
-                            "ALTER TABLE WorkoutSession ADD COLUMN avgAsymmetryPercent REAL",
-                            "ALTER TABLE WorkoutSession ADD COLUMN totalVelocityLossPercent REAL",
-                            "ALTER TABLE WorkoutSession ADD COLUMN dominantSide TEXT",
-                            "ALTER TABLE WorkoutSession ADD COLUMN strengthProfile TEXT"
-                        )
-                        else -> emptyList()
-                    }
+                        "CREATE INDEX IF NOT EXISTS idx_rep_biomechanics_session ON RepBiomechanics(sessionId)",
+                        "CREATE UNIQUE INDEX IF NOT EXISTS idx_rep_biomechanics_session_rep ON RepBiomechanics(sessionId, repNumber)",
+                        "ALTER TABLE WorkoutSession ADD COLUMN avgMcvMmS REAL",
+                        "ALTER TABLE WorkoutSession ADD COLUMN avgAsymmetryPercent REAL",
+                        "ALTER TABLE WorkoutSession ADD COLUMN totalVelocityLossPercent REAL",
+                        "ALTER TABLE WorkoutSession ADD COLUMN dominantSide TEXT",
+                        "ALTER TABLE WorkoutSession ADD COLUMN strengthProfile TEXT",
+                    )
+
+                    else -> emptyList()
                 }
 
                 /**
@@ -461,8 +494,9 @@ actual class DriverFactory(private val context: Context) {
                             // Add them if missing (will be overwritten by migration anyway)
                             "ALTER TABLE RoutineExercise ADD COLUMN supersetGroupId TEXT",
                             "ALTER TABLE RoutineExercise ADD COLUMN supersetOrder INTEGER NOT NULL DEFAULT 0",
-                            "ALTER TABLE RoutineExercise ADD COLUMN supersetRestSeconds INTEGER NOT NULL DEFAULT 10"
+                            "ALTER TABLE RoutineExercise ADD COLUMN supersetRestSeconds INTEGER NOT NULL DEFAULT 10",
                         )
+
                         10 -> listOf(
                             // Migration 10 Step 0: Pre-flight columns needed for INSERT...SELECT
                             // Android SQLite (3.28-3.32) doesn't support ALTER TABLE ADD COLUMN IF NOT EXISTS
@@ -472,8 +506,19 @@ actual class DriverFactory(private val context: Context) {
                             "ALTER TABLE RoutineExercise ADD COLUMN usePercentOfPR INTEGER NOT NULL DEFAULT 0",
                             "ALTER TABLE RoutineExercise ADD COLUMN weightPercentOfPR INTEGER NOT NULL DEFAULT 80",
                             "ALTER TABLE RoutineExercise ADD COLUMN prTypeForScaling TEXT NOT NULL DEFAULT 'MAX_WEIGHT'",
-                            "ALTER TABLE RoutineExercise ADD COLUMN setWeightsPercentOfPR TEXT"
+                            "ALTER TABLE RoutineExercise ADD COLUMN setWeightsPercentOfPR TEXT",
                         )
+
+                        11 -> listOf(
+                            // Migration 11 adds sync columns to gamification tables. If these
+                            // tables were bootstrapped with extra columns, ALTER TABLE fails.
+                            "ALTER TABLE EarnedBadge ADD COLUMN updatedAt INTEGER",
+                            "ALTER TABLE EarnedBadge ADD COLUMN serverId TEXT",
+                            "ALTER TABLE EarnedBadge ADD COLUMN deletedAt INTEGER",
+                            "ALTER TABLE GamificationStats ADD COLUMN updatedAt INTEGER",
+                            "ALTER TABLE GamificationStats ADD COLUMN serverId TEXT",
+                        )
+
                         21 -> listOf(
                             // Migration 21 creates indexes on profile_id, but the columns are
                             // added via schema healing which runs AFTER migrations. For upgrade
@@ -483,16 +528,18 @@ actual class DriverFactory(private val context: Context) {
                             "ALTER TABLE Routine ADD COLUMN profile_id TEXT NOT NULL DEFAULT 'default'",
                             "ALTER TABLE TrainingCycle ADD COLUMN profile_id TEXT NOT NULL DEFAULT 'default'",
                             "ALTER TABLE AssessmentResult ADD COLUMN profile_id TEXT NOT NULL DEFAULT 'default'",
-                            "ALTER TABLE ProgressionEvent ADD COLUMN profile_id TEXT NOT NULL DEFAULT 'default'"
+                            "ALTER TABLE ProgressionEvent ADD COLUMN profile_id TEXT NOT NULL DEFAULT 'default'",
                         )
+
                         22 -> listOf(
                             // Migration 22 creates indexes on profile_id for gamification tables.
                             // Same timing issue as migration 21.
                             "ALTER TABLE EarnedBadge ADD COLUMN profile_id TEXT NOT NULL DEFAULT 'default'",
                             "ALTER TABLE StreakHistory ADD COLUMN profile_id TEXT NOT NULL DEFAULT 'default'",
                             "ALTER TABLE RpgAttributes ADD COLUMN profile_id TEXT NOT NULL DEFAULT 'default'",
-                            "ALTER TABLE GamificationStats ADD COLUMN profile_id TEXT NOT NULL DEFAULT 'default'"
+                            "ALTER TABLE GamificationStats ADD COLUMN profile_id TEXT NOT NULL DEFAULT 'default'",
                         )
+
                         else -> emptyList()
                     }
 
@@ -522,14 +569,12 @@ actual class DriverFactory(private val context: Context) {
                         override fun removeListener(vararg queryKeys: String, listener: app.cash.sqldelight.Query.Listener) {}
                         override fun notifyListeners(vararg queryKeys: String) {}
                         override fun currentTransaction(): app.cash.sqldelight.Transacter.Transaction? = null
-                        override fun newTransaction(): app.cash.sqldelight.db.QueryResult<app.cash.sqldelight.Transacter.Transaction> {
-                            throw UnsupportedOperationException()
-                        }
+                        override fun newTransaction(): app.cash.sqldelight.db.QueryResult<app.cash.sqldelight.Transacter.Transaction> = throw UnsupportedOperationException()
                         override fun execute(
                             identifier: Int?,
                             sql: String,
                             parameters: Int,
-                            binders: (app.cash.sqldelight.db.SqlPreparedStatement.() -> Unit)?
+                            binders: (app.cash.sqldelight.db.SqlPreparedStatement.() -> Unit)?,
                         ): app.cash.sqldelight.db.QueryResult<Long> {
                             db.execSQL(sql)
                             return app.cash.sqldelight.db.QueryResult.Value(0L)
@@ -539,10 +584,8 @@ actual class DriverFactory(private val context: Context) {
                             sql: String,
                             mapper: (app.cash.sqldelight.db.SqlCursor) -> app.cash.sqldelight.db.QueryResult<R>,
                             parameters: Int,
-                            binders: (app.cash.sqldelight.db.SqlPreparedStatement.() -> Unit)?
-                        ): app.cash.sqldelight.db.QueryResult<R> {
-                            throw UnsupportedOperationException()
-                        }
+                            binders: (app.cash.sqldelight.db.SqlPreparedStatement.() -> Unit)?,
+                        ): app.cash.sqldelight.db.QueryResult<R> = throw UnsupportedOperationException()
                     }
                 }
 
@@ -587,7 +630,7 @@ actual class DriverFactory(private val context: Context) {
                             lastWorkoutDate INTEGER,
                             streakStartDate INTEGER,
                             lastUpdated INTEGER NOT NULL
-                        )"""
+                        )""",
                     )
 
                     for (sql in statements) {
@@ -607,16 +650,19 @@ actual class DriverFactory(private val context: Context) {
                         when (result.status) {
                             SchemaHealStatus.ADDED ->
                                 Log.i(TAG, "Schema heal: added ${result.operation.target}")
+
                             SchemaHealStatus.ALREADY_PRESENT ->
                                 Log.d(TAG, "Schema heal: ${result.operation.target} already present")
+
                             SchemaHealStatus.TABLE_MISSING ->
                                 Log.w(TAG, "Schema heal: table missing while repairing ${result.operation.target}")
+
                             SchemaHealStatus.FAILED ->
                                 Log.w(TAG, "Schema heal failed for ${result.operation.target}: ${result.detail}")
                         }
                     }
                 }
-            }
+            },
         )
     }
 }

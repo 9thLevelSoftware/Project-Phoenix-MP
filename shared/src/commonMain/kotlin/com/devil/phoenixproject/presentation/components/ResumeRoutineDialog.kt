@@ -14,8 +14,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.presentation.manager.ResumableProgressInfo
 import org.jetbrains.compose.resources.stringResource
-import vitruvianprojectphoenix.shared.generated.resources.Res
 import vitruvianprojectphoenix.shared.generated.resources.*
+import vitruvianprojectphoenix.shared.generated.resources.Res
 
 /**
  * Dialog shown when user tries to start a routine that has existing progress.
@@ -24,12 +24,7 @@ import vitruvianprojectphoenix.shared.generated.resources.*
  * Issue #101: Provides clear UX for resume vs restart behavior.
  */
 @Composable
-fun ResumeRoutineDialog(
-    progressInfo: ResumableProgressInfo,
-    onResume: () -> Unit,
-    onRestart: () -> Unit,
-    onDismiss: () -> Unit
-) {
+fun ResumeRoutineDialog(progressInfo: ResumableProgressInfo, onResume: () -> Unit, onRestart: () -> Unit, onDismiss: () -> Unit) {
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(stringResource(Res.string.resume_workout_title)) },
@@ -40,12 +35,12 @@ fun ResumeRoutineDialog(
                 Text(
                     "Exercise ${progressInfo.currentExercise} of ${progressInfo.totalExercises}",
                     style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.SemiBold
+                    fontWeight = FontWeight.SemiBold,
                 )
                 Text(
                     "${progressInfo.exerciseName} - Set ${progressInfo.currentSet} of ${progressInfo.totalSets}",
                     style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
         },
@@ -58,6 +53,6 @@ fun ResumeRoutineDialog(
             OutlinedButton(onClick = onRestart) {
                 Text(stringResource(Res.string.restart_from_set_1))
             }
-        }
+        },
     )
 }

@@ -32,8 +32,8 @@ import coil3.request.ImageRequest
 import coil3.request.crossfade
 import com.devil.phoenixproject.domain.model.Exercise
 import org.jetbrains.compose.resources.stringResource
-import vitruvianprojectphoenix.shared.generated.resources.Res
 import vitruvianprojectphoenix.shared.generated.resources.*
+import vitruvianprojectphoenix.shared.generated.resources.Res
 
 /**
  * Enhanced exercise row content with larger thumbnail, inline favorite indicator,
@@ -48,21 +48,21 @@ fun ExerciseRowContent(
     onClick: () -> Unit,
     onLongPress: (() -> Unit)? = null,
     onThumbnailClick: (() -> Unit)? = null,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
 ) {
     Surface(
         modifier = modifier
             .fillMaxWidth()
             .combinedClickable(
                 onClick = onClick,
-                onLongClick = onLongPress
+                onLongClick = onLongPress,
             ),
-        color = MaterialTheme.colorScheme.surface
+        color = MaterialTheme.colorScheme.surface,
     ) {
         Row(
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
             horizontalArrangement = Arrangement.spacedBy(16.dp),
-            verticalAlignment = Alignment.CenterVertically
+            verticalAlignment = Alignment.CenterVertically,
         ) {
             // Thumbnail (64dp, with custom border indicator)
             ExerciseThumbnailEnhanced(
@@ -70,24 +70,24 @@ fun ExerciseRowContent(
                 exerciseName = exercise.name,
                 isLoading = isLoadingThumbnail,
                 isCustom = exercise.isCustom,
-                onClick = onThumbnailClick
+                onClick = onThumbnailClick,
             )
 
             // Content
             Column(
                 modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(4.dp)
+                verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
                 // Title with favorite indicator
                 Row(
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(
                         text = exercise.name,
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Medium,
-                        color = MaterialTheme.colorScheme.onSurface
+                        color = MaterialTheme.colorScheme.onSurface,
                     )
                     if (exercise.isFavorite) {
                         Box(
@@ -95,8 +95,8 @@ fun ExerciseRowContent(
                                 .size(6.dp)
                                 .background(
                                     color = MaterialTheme.colorScheme.primary,
-                                    shape = CircleShape
-                                )
+                                    shape = CircleShape,
+                                ),
                         )
                     }
                 }
@@ -107,7 +107,7 @@ fun ExerciseRowContent(
                     Text(
                         text = subtitle,
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
             }
@@ -116,13 +116,13 @@ fun ExerciseRowContent(
             if (exercise.timesPerformed > 0) {
                 Surface(
                     color = MaterialTheme.colorScheme.primaryContainer,
-                    shape = RoundedCornerShape(4.dp)
+                    shape = RoundedCornerShape(4.dp),
                 ) {
                     Text(
                         text = "${exercise.timesPerformed}x",
                         modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
                         style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                        color = MaterialTheme.colorScheme.onPrimaryContainer,
                     )
                 }
             }
@@ -137,14 +137,14 @@ private fun ExerciseThumbnailEnhanced(
     isLoading: Boolean,
     isCustom: Boolean,
     onClick: (() -> Unit)?,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
 ) {
     val platformContext = LocalPlatformContext.current
     val borderModifier = if (isCustom) {
         Modifier.border(
             width = 2.dp,
             color = MaterialTheme.colorScheme.tertiary,
-            shape = RoundedCornerShape(12.dp)
+            shape = RoundedCornerShape(12.dp),
         )
     } else {
         Modifier
@@ -156,16 +156,17 @@ private fun ExerciseThumbnailEnhanced(
             .then(borderModifier)
             .clip(RoundedCornerShape(12.dp))
             .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier),
-        contentAlignment = Alignment.Center
+        contentAlignment = Alignment.Center,
     ) {
         when {
             isLoading -> {
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
-                        .background(MaterialTheme.colorScheme.surfaceVariant)
+                        .background(MaterialTheme.colorScheme.surfaceVariant),
                 )
             }
+
             !thumbnailUrl.isNullOrBlank() -> {
                 SubcomposeAsyncImage(
                     model = ImageRequest.Builder(platformContext)
@@ -179,7 +180,7 @@ private fun ExerciseThumbnailEnhanced(
                         Box(
                             modifier = Modifier
                                 .fillMaxSize()
-                                .background(MaterialTheme.colorScheme.surfaceVariant)
+                                .background(MaterialTheme.colorScheme.surfaceVariant),
                         )
                     },
                     error = {
@@ -187,9 +188,10 @@ private fun ExerciseThumbnailEnhanced(
                     },
                     success = {
                         SubcomposeAsyncImageContent()
-                    }
+                    },
                 )
             }
+
             else -> {
                 ExerciseInitialEnhanced(exerciseName)
             }
@@ -198,20 +200,17 @@ private fun ExerciseThumbnailEnhanced(
 }
 
 @Composable
-private fun ExerciseInitialEnhanced(
-    exerciseName: String,
-    modifier: Modifier = Modifier
-) {
+private fun ExerciseInitialEnhanced(exerciseName: String, modifier: Modifier = Modifier) {
     Box(
         modifier = modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.primaryContainer),
-        contentAlignment = Alignment.Center
+        contentAlignment = Alignment.Center,
     ) {
         Text(
             text = exerciseName.firstOrNull()?.uppercase() ?: "?",
             style = MaterialTheme.typography.headlineSmall,
-            color = MaterialTheme.colorScheme.onPrimaryContainer
+            color = MaterialTheme.colorScheme.onPrimaryContainer,
         )
     }
 }
@@ -255,7 +254,7 @@ private fun formatEquipmentCompact(rawEquipment: String): String {
         "ANKLE_STRAP" to "Ankle Strap",
         "BELT" to "Belt",
         "ROPE" to "Rope",
-        "BODYWEIGHT" to "Bodyweight"
+        "BODYWEIGHT" to "Bodyweight",
     )
 
     return rawEquipment

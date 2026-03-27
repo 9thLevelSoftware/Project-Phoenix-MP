@@ -85,7 +85,7 @@ object ReadinessEngine {
             status = status,
             acwr = acwr,
             acuteVolumeKg = acuteVolume,
-            chronicWeeklyAvgKg = chronicWeeklyAvg
+            chronicWeeklyAvgKg = chronicWeeklyAvg,
         )
     }
 
@@ -105,13 +105,17 @@ object ReadinessEngine {
     internal fun mapAcwrToScore(acwr: Float): Int {
         val score = when {
             acwr < 0.5f -> 30
+
             acwr < 0.8f -> (30 + (acwr - 0.5f) / 0.3f * 40).toInt()
+
             acwr <= 1.3f -> {
                 // Sweet spot: peak at 1.0, minimum 70 at edges (0.8 and 1.3)
                 val distanceFromPeak = kotlin.math.abs(acwr - 1.0f)
                 (70 + (1f - distanceFromPeak / 0.3f) * 30).toInt()
             }
+
             acwr <= 1.5f -> (40 + (1.5f - acwr) / 0.2f * 30).toInt()
+
             else -> (40 * (1f - ((acwr - 1.5f) / 0.5f).coerceAtMost(1f))).toInt()
         }
         return score.coerceIn(0, 100)

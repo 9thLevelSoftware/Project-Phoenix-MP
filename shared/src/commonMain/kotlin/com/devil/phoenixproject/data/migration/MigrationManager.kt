@@ -3,11 +3,11 @@ package com.devil.phoenixproject.data.migration
 import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.data.repository.SqlDelightPersonalRecordRepository
 import com.devil.phoenixproject.data.repository.normalizeWorkoutModeKey
-import com.devil.phoenixproject.domain.model.PRType
 import com.devil.phoenixproject.database.Routine
 import com.devil.phoenixproject.database.RoutineExercise
 import com.devil.phoenixproject.database.VitruvianDatabase
 import com.devil.phoenixproject.database.WorkoutSession
+import com.devil.phoenixproject.domain.model.PRType
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
@@ -21,7 +21,7 @@ import kotlinx.coroutines.launch
  * Call [close] when done to prevent memory leaks.
  */
 class MigrationManager(
-    private val database: VitruvianDatabase
+    private val database: VitruvianDatabase,
 ) {
     private val log = Logger.withTag("MigrationManager")
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -31,7 +31,7 @@ class MigrationManager(
         val routineNameById: Map<String, String>,
         val routineIdByExerciseId: Map<String, String>,
         val uniqueRoutineNameByExerciseId: Map<String, String>,
-        val uniqueRoutineNameByExerciseName: Map<String, String>
+        val uniqueRoutineNameByExerciseName: Map<String, String>,
     )
 
     /**
@@ -75,7 +75,7 @@ class MigrationManager(
                 if (rawId.equals("legacy_session_${session.id}", ignoreCase = true)) {
                     queries.updateSessionRoutineSessionId(
                         routineSessionId = null,
-                        id = session.id
+                        id = session.id,
                     )
                     cleaned++
                 }
@@ -117,7 +117,7 @@ class MigrationManager(
                     if (resolvedRoutineId != null) {
                         queries.updateSessionRoutineId(
                             routineId = resolvedRoutineId,
-                            id = session.id
+                            id = session.id,
                         )
                         updatedIdRows++
                     }
@@ -130,7 +130,7 @@ class MigrationManager(
                 if (updatedRoutineName == null && session.routineName == null) return@forEach
                 queries.updateSessionRoutineName(
                     routineName = updatedRoutineName,
-                    id = session.id
+                    id = session.id,
                 )
                 updatedNameRows++
             }
@@ -161,7 +161,7 @@ class MigrationManager(
 
                 queries.updateSessionMode(
                     mode = normalizedMode,
-                    id = session.id
+                    id = session.id,
                 )
                 updated++
             }
@@ -193,7 +193,7 @@ class MigrationManager(
                         workoutMode = normalizedMode,
                         prType = record.prType,
                         phase = record.phase,
-                        profileId = recordProfileId
+                        profileId = recordProfileId,
                     ).executeAsOneOrNull()
 
                     if (canonicalRecord == null || shouldReplacePersonalRecord(record, canonicalRecord)) {
@@ -208,7 +208,7 @@ class MigrationManager(
                             prType = record.prType,
                             volume = record.volume,
                             phase = record.phase,
-                            profile_id = recordProfileId
+                            profile_id = recordProfileId,
                         )
                         updated++
                     } else {
@@ -220,7 +220,7 @@ class MigrationManager(
                         workoutMode = record.workoutMode,
                         prType = record.prType,
                         phase = record.phase,
-                        profile_id = recordProfileId
+                        profile_id = recordProfileId,
                     )
                 }
             }
@@ -273,7 +273,7 @@ class MigrationManager(
                             reps = reps,
                             workoutMode = normalizedMode,
                             timestamp = session.timestamp,
-                            profileId = profileId
+                            profileId = profileId,
                         ).getOrThrow()
                     }.getOrElse { error ->
                         log.e(error) { "Failed to repair PRs for session ${session.id} (profile=$profileId)" }
@@ -308,27 +308,26 @@ class MigrationManager(
 
     private fun shouldReplacePersonalRecord(
         candidate: com.devil.phoenixproject.database.PersonalRecord,
-        current: com.devil.phoenixproject.database.PersonalRecord
-    ): Boolean {
-        return when (candidate.prType) {
-            PRType.MAX_VOLUME.name -> when {
-                candidate.volume > current.volume -> true
-                candidate.volume < current.volume -> false
-                else -> candidate.achievedAt > current.achievedAt
-            }
-            else -> when {
-                candidate.weight > current.weight -> true
-                candidate.weight < current.weight -> false
-                candidate.oneRepMax > current.oneRepMax -> true
-                candidate.oneRepMax < current.oneRepMax -> false
-                else -> candidate.achievedAt > current.achievedAt
-            }
+        current: com.devil.phoenixproject.database.PersonalRecord,
+    ): Boolean = when (candidate.prType) {
+        PRType.MAX_VOLUME.name -> when {
+            candidate.volume > current.volume -> true
+            candidate.volume < current.volume -> false
+            else -> candidate.achievedAt > current.achievedAt
+        }
+
+        else -> when {
+            candidate.weight > current.weight -> true
+            candidate.weight < current.weight -> false
+            candidate.oneRepMax > current.oneRepMax -> true
+            candidate.oneRepMax < current.oneRepMax -> false
+            else -> candidate.achievedAt > current.achievedAt
         }
     }
 
     private fun resolveRoutineNameForSession(
         session: WorkoutSession,
-        routineNameResolutionContext: RoutineNameResolutionContext
+        routineNameResolutionContext: RoutineNameResolutionContext,
     ): String? {
         val existingRoutineName = sanitizeRoutineName(session.routineName)
         val inferredRoutineName = inferRoutineName(session, routineNameResolutionContext)
@@ -339,7 +338,7 @@ class MigrationManager(
             session.isJustLift != 0L -> "Just Lift"
             inferredRoutineName != null && (existingRoutineName == null || existingLooksLikeExercisePlaceholder) -> inferredRoutineName
             existingRoutineName != null && !existingLooksLikeExercisePlaceholder -> existingRoutineName
-            else -> null  // Can't determine routine - leave null (standalone exercise)
+            else -> null // Can't determine routine - leave null (standalone exercise)
         }
     }
 
@@ -349,7 +348,7 @@ class MigrationManager(
      */
     private fun resolveRoutineIdForSession(
         session: WorkoutSession,
-        routineNameResolutionContext: RoutineNameResolutionContext
+        routineNameResolutionContext: RoutineNameResolutionContext,
     ): String? {
         val exerciseId = sanitizeLegacyLabel(session.exerciseId) ?: return null
         return routineNameResolutionContext.routineIdByExerciseId[exerciseId]
@@ -357,7 +356,7 @@ class MigrationManager(
 
     private fun inferRoutineName(
         session: WorkoutSession,
-        routineNameResolutionContext: RoutineNameResolutionContext
+        routineNameResolutionContext: RoutineNameResolutionContext,
     ): String? {
         val byExerciseId = sanitizeLegacyLabel(session.exerciseId)?.let { exerciseId ->
             routineNameResolutionContext.uniqueRoutineNameByExerciseId[exerciseId]
@@ -370,7 +369,7 @@ class MigrationManager(
 
     private fun buildRoutineNameResolutionContext(
         routines: List<Routine>,
-        routineExercises: List<RoutineExercise>
+        routineExercises: List<RoutineExercise>,
     ): RoutineNameResolutionContext {
         val routineNameById = routines.associate { routine ->
             routine.id to sanitizeEntityName(routine.name, "Unnamed Routine")
@@ -396,7 +395,7 @@ class MigrationManager(
             .toSet()
 
         fun collectUniqueRoutineNamesByExerciseId(
-            allowedRoutineIds: Set<String>? = null
+            allowedRoutineIds: Set<String>? = null,
         ): Map<String, String> {
             val routineIdsByExerciseId = mutableMapOf<String, MutableSet<String>>()
             routineExercises.forEach { exercise ->
@@ -416,7 +415,7 @@ class MigrationManager(
         }
 
         fun collectUniqueRoutineNamesByExerciseName(
-            allowedRoutineIds: Set<String>? = null
+            allowedRoutineIds: Set<String>? = null,
         ): Map<String, String> {
             val routineIdsByExerciseName = mutableMapOf<String, MutableSet<String>>()
             routineExercises.forEach { exercise ->
@@ -436,14 +435,14 @@ class MigrationManager(
         }
 
         val uniqueFromNonTemplateById = collectUniqueRoutineNamesByExerciseId(
-            allowedRoutineIds = nonTemplateRoutineIds.takeIf { it.isNotEmpty() }
+            allowedRoutineIds = nonTemplateRoutineIds.takeIf { it.isNotEmpty() },
         )
         val uniqueFromAllById = collectUniqueRoutineNamesByExerciseId()
         val uniqueRoutineNameByExerciseId = uniqueFromAllById.toMutableMap().apply {
             putAll(uniqueFromNonTemplateById)
         }
         val uniqueFromNonTemplateByName = collectUniqueRoutineNamesByExerciseName(
-            allowedRoutineIds = nonTemplateRoutineIds.takeIf { it.isNotEmpty() }
+            allowedRoutineIds = nonTemplateRoutineIds.takeIf { it.isNotEmpty() },
         )
         val uniqueFromAllByName = collectUniqueRoutineNamesByExerciseName()
         val uniqueRoutineNameByExerciseName = uniqueFromAllByName.toMutableMap().apply {
@@ -454,7 +453,7 @@ class MigrationManager(
             routineNameById = routineNameById,
             routineIdByExerciseId = routineIdByExerciseId,
             uniqueRoutineNameByExerciseId = uniqueRoutineNameByExerciseId,
-            uniqueRoutineNameByExerciseName = uniqueRoutineNameByExerciseName
+            uniqueRoutineNameByExerciseName = uniqueRoutineNameByExerciseName,
         )
     }
 
@@ -468,9 +467,7 @@ class MigrationManager(
         return sanitized
     }
 
-    private fun sanitizeEntityName(raw: String?, fallback: String): String {
-        return sanitizeLegacyLabel(raw) ?: fallback
-    }
+    private fun sanitizeEntityName(raw: String?, fallback: String): String = sanitizeLegacyLabel(raw) ?: fallback
 
     private fun sanitizeLegacyLabel(raw: String?): String? {
         val trimmed = raw?.trim().orEmpty()
@@ -485,7 +482,7 @@ class MigrationManager(
      * These don't identify a real routine and should be treated as null/unknown.
      */
     private val GARBAGE_ROUTINE_NAMES = setOf(
-        "imported strength training session"
+        "imported strength training session",
     )
 
     private fun sanitizeRoutineName(raw: String?): String? {

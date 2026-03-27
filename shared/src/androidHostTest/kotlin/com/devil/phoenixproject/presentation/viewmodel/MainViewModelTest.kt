@@ -1,37 +1,43 @@
 package com.devil.phoenixproject.presentation.viewmodel
 
 import app.cash.turbine.test
-import com.devil.phoenixproject.domain.model.UserPreferences
+import com.devil.phoenixproject.data.repository.ExerciseSignatureRepository
 import com.devil.phoenixproject.data.repository.RepNotification
 import com.devil.phoenixproject.data.repository.ScannedDevice
+import com.devil.phoenixproject.domain.detection.ExerciseClassifier
+import com.devil.phoenixproject.domain.detection.ExerciseSignature
+import com.devil.phoenixproject.domain.detection.SignatureExtractor
 import com.devil.phoenixproject.domain.model.ConnectionState
 import com.devil.phoenixproject.domain.model.Exercise
 import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.domain.model.RoutineExercise
+import com.devil.phoenixproject.domain.model.UserPreferences
 import com.devil.phoenixproject.domain.model.WeightUnit
+import com.devil.phoenixproject.domain.model.WorkoutMetric
 import com.devil.phoenixproject.domain.model.WorkoutParameters
 import com.devil.phoenixproject.domain.model.WorkoutState
-import com.devil.phoenixproject.domain.model.WorkoutMetric
 import com.devil.phoenixproject.domain.usecase.RepCounterFromMachine
 import com.devil.phoenixproject.domain.usecase.ResolveRoutineWeightsUseCase
-import com.devil.phoenixproject.testutil.FakeCompletedSetRepository
+import com.devil.phoenixproject.presentation.manager.ExerciseDetectionManager
+import com.devil.phoenixproject.testutil.FakeBiomechanicsRepository
 import com.devil.phoenixproject.testutil.FakeBleRepository
+import com.devil.phoenixproject.testutil.FakeCompletedSetRepository
+import com.devil.phoenixproject.testutil.FakeDataBackupManager
 import com.devil.phoenixproject.testutil.FakeExerciseRepository
 import com.devil.phoenixproject.testutil.FakeGamificationRepository
 import com.devil.phoenixproject.testutil.FakePersonalRecordRepository
 import com.devil.phoenixproject.testutil.FakePreferencesManager
+import com.devil.phoenixproject.testutil.FakeRepMetricRepository
 import com.devil.phoenixproject.testutil.FakeTrainingCycleRepository
 import com.devil.phoenixproject.testutil.FakeWorkoutRepository
-import com.devil.phoenixproject.testutil.FakeBiomechanicsRepository
-import com.devil.phoenixproject.testutil.FakeDataBackupManager
-import com.devil.phoenixproject.testutil.FakeRepMetricRepository
 import com.devil.phoenixproject.testutil.TestCoroutineRule
-import com.devil.phoenixproject.domain.detection.ExerciseClassifier
-import com.devil.phoenixproject.domain.detection.ExerciseSignature
-import com.devil.phoenixproject.domain.detection.SignatureExtractor
-import com.devil.phoenixproject.data.repository.ExerciseSignatureRepository
-import com.devil.phoenixproject.presentation.manager.ExerciseDetectionManager
+import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertIs
+import kotlin.test.assertNotNull
+import kotlin.test.assertNull
+import kotlin.test.assertTrue
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runCurrent
@@ -39,12 +45,6 @@ import kotlinx.coroutines.test.runTest
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
-import kotlin.test.assertEquals
-import kotlin.test.assertFalse
-import kotlin.test.assertIs
-import kotlin.test.assertNotNull
-import kotlin.test.assertNull
-import kotlin.test.assertTrue
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class MainViewModelTest {
@@ -90,7 +90,7 @@ class MainViewModelTest {
             signatureExtractor = SignatureExtractor(),
             exerciseClassifier = ExerciseClassifier(),
             signatureRepository = fakeSignatureRepo,
-            exerciseRepository = fakeExerciseRepository
+            exerciseRepository = fakeExerciseRepository,
         )
 
         viewModel = MainViewModel(
@@ -108,7 +108,7 @@ class MainViewModelTest {
             resolveWeightsUseCase = resolveWeightsUseCase,
             detectionManager = detectionManager,
             dataBackupManager = FakeDataBackupManager(),
-            userProfileRepository = com.devil.phoenixproject.testutil.FakeUserProfileRepository()
+            userProfileRepository = com.devil.phoenixproject.testutil.FakeUserProfileRepository(),
         )
     }
 
@@ -183,7 +183,7 @@ class MainViewModelTest {
             progressionRegressionKg = 2.5f,
             isJustLift = false,
             stopAtTop = true,
-            warmupReps = 5
+            warmupReps = 5,
         )
 
         viewModel.updateWorkoutParameters(newParams)
@@ -229,8 +229,8 @@ class MainViewModelTest {
             fakePreferencesManager.setPreferences(
                 UserPreferences(
                     weightUnit = WeightUnit.LB,
-                    stopAtTop = true
-                )
+                    stopAtTop = true,
+                ),
             )
 
             val updated = awaitItem()
@@ -298,7 +298,7 @@ class MainViewModelTest {
         val routine = Routine(
             id = "routine-1",
             name = "Push Day",
-            exercises = emptyList()
+            exercises = emptyList(),
         )
         fakeWorkoutRepository.addRoutine(routine)
         advanceUntilIdle()
@@ -365,8 +365,8 @@ class MainViewModelTest {
                 programMode = ProgramMode.OldSchool,
                 reps = 2,
                 warmupReps = 0,
-                weightPerCableKg = 20f
-            )
+                weightPerCableKg = 20f,
+            ),
         )
 
         fakeBleRepository.emitMetric(
@@ -374,8 +374,8 @@ class MainViewModelTest {
                 positionA = 100f,
                 positionB = 100f,
                 loadA = 10f,
-                loadB = 10f
-            )
+                loadB = 10f,
+            ),
         )
 
         viewModel.startWorkout(skipCountdown = true)
@@ -393,8 +393,8 @@ class MainViewModelTest {
                 programMode = ProgramMode.OldSchool,
                 reps = 2,
                 warmupReps = 0,
-                weightPerCableKg = 20f
-            )
+                weightPerCableKg = 20f,
+            ),
         )
 
         val metric = WorkoutMetric(positionA = 100f, positionB = 100f, loadA = 10f, loadB = 10f)
@@ -421,8 +421,8 @@ class MainViewModelTest {
                 programMode = ProgramMode.OldSchool,
                 reps = 1,
                 warmupReps = 0,
-                weightPerCableKg = 20f
-            )
+                weightPerCableKg = 20f,
+            ),
         )
         viewModel.startWorkout(skipCountdown = true)
         advanceUntilIdle()
@@ -440,19 +440,19 @@ class MainViewModelTest {
             exercise = Exercise(
                 name = "Bench Press",
                 muscleGroup = "Chest",
-                equipment = "HANDLES"
+                equipment = "HANDLES",
             ),
             orderIndex = 0,
             setReps = listOf(10),
             weightPerCableKg = 20f,
-            duration = 60
+            duration = 60,
         )
         viewModel.loadRoutine(
             Routine(
                 id = "routine-timed-1",
                 name = "Timed Cable Warmup Regression",
-                exercises = listOf(timedCableExercise)
-            )
+                exercises = listOf(timedCableExercise),
+            ),
         )
         advanceUntilIdle()
 
@@ -462,7 +462,7 @@ class MainViewModelTest {
             velocityA = 0.0,
             velocityB = 0.0,
             loadA = 0f,
-            loadB = 0f
+            loadB = 0f,
         )
         fakeBleRepository.emitMetric(restingMetric)
         viewModel.startWorkout(skipCountdown = true)
@@ -487,7 +487,7 @@ class MainViewModelTest {
             velocityA = 80.0,
             velocityB = 80.0,
             loadA = 10f,
-            loadB = 10f
+            loadB = 10f,
         )
         for (warmupRep in 1..3) {
             fakeBleRepository.emitMetric(activeMetric)
@@ -502,8 +502,8 @@ class MainViewModelTest {
                     rangeTop = 800f,
                     rangeBottom = 0f,
                     rawData = ByteArray(24),
-                    timestamp = warmupRep.toLong()
-                )
+                    timestamp = warmupRep.toLong(),
+                ),
             )
             runCurrent()
         }
@@ -529,23 +529,29 @@ class MainViewModelTest {
         field.set(coordinator, System.currentTimeMillis() - 10_000L)
     }
 
-    private suspend fun emitRepNotification(repIndex: Int, metric: WorkoutMetric, warmupCount: Int = 0, warmupTarget: Int = 3, workingTarget: Int = 10) {
+    private suspend fun emitRepNotification(
+        repIndex: Int,
+        metric: WorkoutMetric,
+        warmupCount: Int = 0,
+        warmupTarget: Int = 3,
+        workingTarget: Int = 10,
+    ) {
         // Issue #210: Include machine's warmup/working targets for sync verification
         // For working reps: repsRomCount stays at warmupCount, completeCounter (down) increments
         fakeBleRepository.emitMetric(metric)
         fakeBleRepository.emitRepNotification(
             com.devil.phoenixproject.data.repository.RepNotification(
                 topCounter = repIndex + warmupCount,
-                completeCounter = repIndex + warmupCount,  // down counter
-                repsRomCount = warmupCount,  // warmup count from machine
+                completeCounter = repIndex + warmupCount, // down counter
+                repsRomCount = warmupCount, // warmup count from machine
                 repsRomTotal = warmupTarget, // Issue #210: Machine's warmup target
-                repsSetCount = repIndex,     // working reps from machine
+                repsSetCount = repIndex, // working reps from machine
                 repsSetTotal = workingTarget, // Issue #210: Machine's working target
                 rangeTop = 800f,
                 rangeBottom = 0f,
                 rawData = ByteArray(24),
-                timestamp = repIndex.toLong()
-            )
+                timestamp = repIndex.toLong(),
+            ),
         )
         fakeBleRepository.emitMetric(metric)
     }

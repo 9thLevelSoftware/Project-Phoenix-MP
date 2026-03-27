@@ -6,10 +6,7 @@ package com.devil.phoenixproject.domain.assessment
  * @property loadKg Weight used for the set in kilograms
  * @property meanVelocityMs Mean concentric velocity in meters/second
  */
-data class LoadVelocityPoint(
-    val loadKg: Float,
-    val meanVelocityMs: Float
-)
+data class LoadVelocityPoint(val loadKg: Float, val meanVelocityMs: Float)
 
 /**
  * Result of a single assessment set.
@@ -20,13 +17,7 @@ data class LoadVelocityPoint(
  * @property meanVelocityMs Mean concentric velocity in meters/second
  * @property peakVelocityMs Peak concentric velocity in meters/second
  */
-data class AssessmentSetResult(
-    val setNumber: Int,
-    val loadKg: Float,
-    val reps: Int,
-    val meanVelocityMs: Float,
-    val peakVelocityMs: Float
-)
+data class AssessmentSetResult(val setNumber: Int, val loadKg: Float, val reps: Int, val meanVelocityMs: Float, val peakVelocityMs: Float)
 
 /**
  * Final assessment output with estimated 1RM and regression quality metrics.
@@ -40,7 +31,7 @@ data class AssessmentResult(
     val estimatedOneRepMaxKg: Float,
     val loadVelocityPoints: List<LoadVelocityPoint>,
     val r2: Float,
-    val velocityAt1RM: Float
+    val velocityAt1RM: Float,
 )
 
 /**
@@ -59,5 +50,5 @@ data class AssessmentConfig(
     val velocityThresholdMs: Float = 0.3f,
     val oneRmVelocityMs: Float = 0.17f,
     val startingWeightPercent: Float = 0.4f,
-    val weightIncrementKg: Float = 10f
+    val weightIncrementKg: Float = 10f,
 )

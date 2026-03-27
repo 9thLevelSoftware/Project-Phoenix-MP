@@ -24,9 +24,7 @@ interface RepMetricRepository {
  * Handles JSON serialization of FloatArray/LongArray curve data to/from TEXT columns.
  * Arrays are stored as JSON arrays (e.g., "[1.0,2.0,3.0]") in the database.
  */
-class SqlDelightRepMetricRepository(
-    private val db: VitruvianDatabase
-) : RepMetricRepository {
+class SqlDelightRepMetricRepository(private val db: VitruvianDatabase) : RepMetricRepository {
 
     private val queries = db.vitruvianDatabaseQueries
 
@@ -65,47 +63,45 @@ class SqlDelightRepMetricRepository(
                     peakPowerWatts = metric.peakPowerWatts.toDouble(),
                     avgPowerWatts = metric.avgPowerWatts.toDouble(),
                     updatedAt = null,
-                    serverId = null
+                    serverId = null,
                 )
             }
         }
     }
 
-    override suspend fun getRepMetrics(sessionId: String): List<RepMetricData> {
-        return withContext(Dispatchers.IO) {
-            queries.selectRepMetricsBySession(sessionId).executeAsList().map { row ->
-                RepMetricData(
-                    repNumber = row.repNumber.toInt(),
-                    isWarmup = row.isWarmup != 0L,
-                    startTimestamp = row.startTimestamp,
-                    endTimestamp = row.endTimestamp,
-                    durationMs = row.durationMs,
-                    concentricDurationMs = row.concentricDurationMs,
-                    concentricPositions = row.concentricPositions.toFloatArrayFromJson(),
-                    concentricLoadsA = row.concentricLoadsA.toFloatArrayFromJson(),
-                    concentricLoadsB = row.concentricLoadsB.toFloatArrayFromJson(),
-                    concentricVelocities = row.concentricVelocities.toFloatArrayFromJson(),
-                    concentricTimestamps = row.concentricTimestamps.toLongArrayFromJson(),
-                    eccentricDurationMs = row.eccentricDurationMs,
-                    eccentricPositions = row.eccentricPositions.toFloatArrayFromJson(),
-                    eccentricLoadsA = row.eccentricLoadsA.toFloatArrayFromJson(),
-                    eccentricLoadsB = row.eccentricLoadsB.toFloatArrayFromJson(),
-                    eccentricVelocities = row.eccentricVelocities.toFloatArrayFromJson(),
-                    eccentricTimestamps = row.eccentricTimestamps.toLongArrayFromJson(),
-                    peakForceA = row.peakForceA.toFloat(),
-                    peakForceB = row.peakForceB.toFloat(),
-                    avgForceConcentricA = row.avgForceConcentricA.toFloat(),
-                    avgForceConcentricB = row.avgForceConcentricB.toFloat(),
-                    avgForceEccentricA = row.avgForceEccentricA.toFloat(),
-                    avgForceEccentricB = row.avgForceEccentricB.toFloat(),
-                    peakVelocity = row.peakVelocity.toFloat(),
-                    avgVelocityConcentric = row.avgVelocityConcentric.toFloat(),
-                    avgVelocityEccentric = row.avgVelocityEccentric.toFloat(),
-                    rangeOfMotionMm = row.rangeOfMotionMm.toFloat(),
-                    peakPowerWatts = row.peakPowerWatts.toFloat(),
-                    avgPowerWatts = row.avgPowerWatts.toFloat()
-                )
-            }
+    override suspend fun getRepMetrics(sessionId: String): List<RepMetricData> = withContext(Dispatchers.IO) {
+        queries.selectRepMetricsBySession(sessionId).executeAsList().map { row ->
+            RepMetricData(
+                repNumber = row.repNumber.toInt(),
+                isWarmup = row.isWarmup != 0L,
+                startTimestamp = row.startTimestamp,
+                endTimestamp = row.endTimestamp,
+                durationMs = row.durationMs,
+                concentricDurationMs = row.concentricDurationMs,
+                concentricPositions = row.concentricPositions.toFloatArrayFromJson(),
+                concentricLoadsA = row.concentricLoadsA.toFloatArrayFromJson(),
+                concentricLoadsB = row.concentricLoadsB.toFloatArrayFromJson(),
+                concentricVelocities = row.concentricVelocities.toFloatArrayFromJson(),
+                concentricTimestamps = row.concentricTimestamps.toLongArrayFromJson(),
+                eccentricDurationMs = row.eccentricDurationMs,
+                eccentricPositions = row.eccentricPositions.toFloatArrayFromJson(),
+                eccentricLoadsA = row.eccentricLoadsA.toFloatArrayFromJson(),
+                eccentricLoadsB = row.eccentricLoadsB.toFloatArrayFromJson(),
+                eccentricVelocities = row.eccentricVelocities.toFloatArrayFromJson(),
+                eccentricTimestamps = row.eccentricTimestamps.toLongArrayFromJson(),
+                peakForceA = row.peakForceA.toFloat(),
+                peakForceB = row.peakForceB.toFloat(),
+                avgForceConcentricA = row.avgForceConcentricA.toFloat(),
+                avgForceConcentricB = row.avgForceConcentricB.toFloat(),
+                avgForceEccentricA = row.avgForceEccentricA.toFloat(),
+                avgForceEccentricB = row.avgForceEccentricB.toFloat(),
+                peakVelocity = row.peakVelocity.toFloat(),
+                avgVelocityConcentric = row.avgVelocityConcentric.toFloat(),
+                avgVelocityEccentric = row.avgVelocityEccentric.toFloat(),
+                rangeOfMotionMm = row.rangeOfMotionMm.toFloat(),
+                peakPowerWatts = row.peakPowerWatts.toFloat(),
+                avgPowerWatts = row.avgPowerWatts.toFloat(),
+            )
         }
     }
 
@@ -115,10 +111,8 @@ class SqlDelightRepMetricRepository(
         }
     }
 
-    override suspend fun getRepMetricCount(sessionId: String): Long {
-        return withContext(Dispatchers.IO) {
-            queries.countRepMetricsBySession(sessionId).executeAsOne()
-        }
+    override suspend fun getRepMetricCount(sessionId: String): Long = withContext(Dispatchers.IO) {
+        queries.countRepMetricsBySession(sessionId).executeAsOne()
     }
 }
 

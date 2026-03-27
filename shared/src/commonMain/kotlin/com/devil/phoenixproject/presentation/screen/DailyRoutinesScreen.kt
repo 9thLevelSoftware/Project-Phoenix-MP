@@ -1,12 +1,7 @@
 package com.devil.phoenixproject.presentation.screen
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.isSystemInDarkTheme
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.layout.*
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
@@ -18,8 +13,8 @@ import com.devil.phoenixproject.presentation.navigation.NavigationRoutes
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
 import com.devil.phoenixproject.ui.theme.screenBackgroundBrush
 import org.jetbrains.compose.resources.stringResource
-import vitruvianprojectphoenix.shared.generated.resources.Res
 import vitruvianprojectphoenix.shared.generated.resources.*
+import vitruvianprojectphoenix.shared.generated.resources.Res
 
 /**
  * Daily Routines screen - view and manage pre-built routines.
@@ -31,11 +26,12 @@ fun DailyRoutinesScreen(
     navController: NavController,
     viewModel: MainViewModel,
     exerciseRepository: ExerciseRepository,
-    themeMode: com.devil.phoenixproject.ui.theme.ThemeMode
+    themeMode: com.devil.phoenixproject.ui.theme.ThemeMode,
 ) {
     val routines by viewModel.routines.collectAsState()
     val weightUnit by viewModel.weightUnit.collectAsState()
     val enableVideoPlayback by viewModel.enableVideoPlayback.collectAsState()
+
     @Suppress("UNUSED_VARIABLE") // Reserved for future connecting overlay
     val isAutoConnecting by viewModel.isAutoConnecting.collectAsState()
     val connectionError by viewModel.connectionError.collectAsState()
@@ -57,7 +53,7 @@ fun DailyRoutinesScreen(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(backgroundGradient)
+            .background(backgroundGradient),
     ) {
         // Reuse RoutinesTab content
         RoutinesTab(
@@ -101,14 +97,14 @@ fun DailyRoutinesScreen(
                 }
             },
             themeMode = themeMode,
-            modifier = Modifier.fillMaxSize()
+            modifier = Modifier.fillMaxSize(),
         )
 
         // Connection error dialog (ConnectingOverlay removed - status shown in top bar button)
         connectionError?.let { error ->
             com.devil.phoenixproject.presentation.components.ConnectionErrorDialog(
                 message = error,
-                onDismiss = { viewModel.clearConnectionError() }
+                onDismiss = { viewModel.clearConnectionError() },
             )
         }
 
@@ -125,7 +121,7 @@ fun DailyRoutinesScreen(
                                 viewModel.startWorkout()
                                 navController.navigate(NavigationRoutes.ActiveWorkout.route)
                             },
-                            onFailed = { /* Error shown via StateFlow */ }
+                            onFailed = { /* Error shown via StateFlow */ },
                         )
                     },
                     onRestart = {
@@ -135,7 +131,7 @@ fun DailyRoutinesScreen(
                             navController.navigate(NavigationRoutes.RoutineOverview.route)
                         }
                     },
-                    onDismiss = { showResumeDialog = false }
+                    onDismiss = { showResumeDialog = false },
                 )
             }
         }
@@ -150,7 +146,7 @@ fun DailyRoutinesScreen(
                     TextButton(onClick = { showWorkoutActiveDialog = false }) {
                         Text(stringResource(Res.string.action_ok))
                     }
-                }
+                },
             )
         }
     }

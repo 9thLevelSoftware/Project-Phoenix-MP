@@ -71,7 +71,7 @@ class SignatureExtractor {
             symmetryRatio = symmetryRatio,
             velocityProfile = velocityProfile,
             cableConfig = cableConfig,
-            sampleCount = valleys.size - 1 // Number of complete reps
+            sampleCount = valleys.size - 1, // Number of complete reps
         )
     }
 
@@ -79,12 +79,10 @@ class SignatureExtractor {
      * Combine dual-cable position into a single value.
      * Uses average when both cables are active (non-zero), max when single cable (M4).
      */
-    private fun combinePosition(positionA: Float, positionB: Float): Float {
-        return if (positionA > 0f && positionB > 0f) {
-            (positionA + positionB) / 2f
-        } else {
-            maxOf(positionA, positionB)
-        }
+    private fun combinePosition(positionA: Float, positionB: Float): Float = if (positionA > 0f && positionB > 0f) {
+        (positionA + positionB) / 2f
+    } else {
+        maxOf(positionA, positionB)
     }
 
     /**
@@ -99,7 +97,9 @@ class SignatureExtractor {
         return metrics.indices.map { i ->
             val start = maxOf(0, i - SMOOTHING_WINDOW / 2)
             val end = minOf(metrics.size - 1, i + SMOOTHING_WINDOW / 2)
-            (start..end).map { combinePosition(metrics[it].positionA, metrics[it].positionB) }.average().toFloat()
+            (start..end).map {
+                combinePosition(metrics[it].positionA, metrics[it].positionB)
+            }.average().toFloat()
         }
     }
 
@@ -109,10 +109,7 @@ class SignatureExtractor {
      *
      * Uses a sliding window approach to find local minima.
      */
-    private fun detectValleys(
-        smoothedPositions: List<Float>,
-        metrics: List<WorkoutMetric>
-    ): List<Int> {
+    private fun detectValleys(smoothedPositions: List<Float>, metrics: List<WorkoutMetric>): List<Int> {
         if (smoothedPositions.size < 5) return emptyList()
 
         val valleys = mutableListOf<Int>()
@@ -124,7 +121,9 @@ class SignatureExtractor {
             val window = (-2..2).map { smoothedPositions[i + it] }
 
             // Current is a local minimum if it's the smallest in the window
-            if (current == window.minOrNull() && current < window.maxOrNull()!! - VALLEY_THRESHOLD_MM) {
+            if (current == window.minOrNull() &&
+                current < window.maxOrNull()!! - VALLEY_THRESHOLD_MM
+            ) {
                 // Avoid detecting valleys too close together (minimum half a rep apart)
                 if (valleys.isEmpty() || i - valleys.last() >= 8) {
                     valleys.add(i)
@@ -159,10 +158,7 @@ class SignatureExtractor {
      * Calculate average ROM from valley-peak differences across all detected reps.
      * Uses raw position data for accuracy (not smoothed).
      */
-    private fun calculateRom(
-        metrics: List<WorkoutMetric>,
-        valleys: List<Int>
-    ): Float {
+    private fun calculateRom(metrics: List<WorkoutMetric>, valleys: List<Int>): Float {
         if (valleys.size < 2) return 0f
 
         val roms = mutableListOf<Float>()
@@ -173,8 +169,10 @@ class SignatureExtractor {
 
             // Find peak and valley positions using raw data with consistent dual-cable handling
             val repMetrics = metrics.subList(valleyStart, valleyEnd + 1)
-            val peakPos = repMetrics.maxOfOrNull { combinePosition(it.positionA, it.positionB) } ?: continue
-            val valleyPos = repMetrics.minOfOrNull { combinePosition(it.positionA, it.positionB) } ?: continue
+            val peakPos =
+                repMetrics.maxOfOrNull { combinePosition(it.positionA, it.positionB) } ?: continue
+            val valleyPos =
+                repMetrics.minOfOrNull { combinePosition(it.positionA, it.positionB) } ?: continue
 
             roms.add(peakPos - valleyPos)
         }
@@ -185,10 +183,7 @@ class SignatureExtractor {
     /**
      * Calculate average rep duration from valley timestamps.
      */
-    private fun calculateDuration(
-        metrics: List<WorkoutMetric>,
-        valleys: List<Int>
-    ): Long {
+    private fun calculateDuration(metrics: List<WorkoutMetric>, valleys: List<Int>): Long {
         if (valleys.size < 2) return 0L
 
         val durations = mutableListOf<Long>()
@@ -220,10 +215,7 @@ class SignatureExtractor {
     /**
      * Detect cable usage pattern based on load distribution.
      */
-    private fun detectCableUsage(
-        metrics: List<WorkoutMetric>,
-        symmetryRatio: Float
-    ): CableUsage {
+    private fun detectCableUsage(metrics: List<WorkoutMetric>, symmetryRatio: Float): CableUsage {
         // Check if either cable is always inactive (< 1kg)
         val loadBAlwaysInactive = metrics.all { it.loadB < CABLE_ACTIVE_THRESHOLD_KG }
         val loadAAlwaysInactive = metrics.all { it.loadA < CABLE_ACTIVE_THRESHOLD_KG }
@@ -240,10 +232,7 @@ class SignatureExtractor {
      * Classify velocity profile based on first rep's concentric phase.
      * Divides concentric phase into thirds and compares average velocities.
      */
-    private fun classifyVelocityProfile(
-        metrics: List<WorkoutMetric>,
-        valleys: List<Int>
-    ): VelocityShape {
+    private fun classifyVelocityProfile(metrics: List<WorkoutMetric>, valleys: List<Int>): VelocityShape {
         if (valleys.size < 2) return VelocityShape.LINEAR
 
         // Get first rep: from first valley to second valley

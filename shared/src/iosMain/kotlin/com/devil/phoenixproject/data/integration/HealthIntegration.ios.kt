@@ -2,6 +2,7 @@ package com.devil.phoenixproject.data.integration
 
 import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.domain.model.WorkoutSession
+import kotlin.coroutines.resume
 import kotlinx.coroutines.suspendCancellableCoroutine
 import platform.Foundation.NSDate
 import platform.Foundation.NSError
@@ -14,7 +15,6 @@ import platform.HealthKit.HKQuantityTypeIdentifierActiveEnergyBurned
 import platform.HealthKit.HKUnit
 import platform.HealthKit.HKWorkout
 import platform.HealthKit.HKWorkoutActivityTypeTraditionalStrengthTraining
-import kotlin.coroutines.resume
 
 private val log = Logger.withTag("HealthIntegration.iOS")
 
@@ -58,13 +58,11 @@ actual class HealthIntegration {
      * Checks whether HealthKit is available on this device.
      * Returns false on iPad and devices without HealthKit support.
      */
-    actual suspend fun isAvailable(): Boolean {
-        return try {
-            HKHealthStore.isHealthDataAvailable()
-        } catch (e: Exception) {
-            log.w(e) { "Error checking HealthKit availability" }
-            false
-        }
+    actual suspend fun isAvailable(): Boolean = try {
+        HKHealthStore.isHealthDataAvailable()
+    } catch (e: Exception) {
+        log.w(e) { "Error checking HealthKit availability" }
+        false
     }
 
     /**
@@ -109,10 +107,12 @@ actual class HealthIntegration {
                     readTypes = null,
                     completion = { success: Boolean, error: NSError? ->
                         if (error != null) {
-                            log.e { "HealthKit authorization request error: ${error.localizedDescription}" }
+                            log.e {
+                                "HealthKit authorization request error: ${error.localizedDescription}"
+                            }
                         }
                         continuation.resume(success)
-                    }
+                    },
                 )
             }
 
@@ -145,13 +145,13 @@ actual class HealthIntegration {
     actual suspend fun writeWorkout(session: WorkoutSession): Result<Unit> {
         if (!isAvailable()) {
             return Result.failure(
-                IllegalStateException("HealthKit is not available on this device")
+                IllegalStateException("HealthKit is not available on this device"),
             )
         }
 
         if (!hasPermissions()) {
             return Result.failure(
-                IllegalStateException("HealthKit write permissions not granted")
+                IllegalStateException("HealthKit write permissions not granted"),
             )
         }
 
@@ -160,12 +160,16 @@ actual class HealthIntegration {
             // NSDate uses "reference date" (2001-01-01), not Unix epoch (1970-01-01)
             // Offset: 978307200 seconds between the two reference points
             val epochSeconds = session.timestamp / 1000.0
-            val startDate = NSDate(timeIntervalSinceReferenceDate = epochSeconds - UNIX_TO_APPLE_EPOCH_OFFSET)
+            val startDate = NSDate(
+                timeIntervalSinceReferenceDate =
+                    epochSeconds - UNIX_TO_APPLE_EPOCH_OFFSET,
+            )
 
             // session.duration is in SECONDS
             val durationSeconds = session.duration.coerceAtLeast(1L).toDouble()
             val endDate = NSDate(
-                timeIntervalSinceReferenceDate = (epochSeconds + durationSeconds) - UNIX_TO_APPLE_EPOCH_OFFSET
+                timeIntervalSinceReferenceDate =
+                    (epochSeconds + durationSeconds) - UNIX_TO_APPLE_EPOCH_OFFSET,
             )
 
             // Build optional calorie quantity
@@ -173,7 +177,7 @@ actual class HealthIntegration {
                 if (cal > 0f) {
                     HKQuantity.quantityWithUnit(
                         unit = HKUnit.unitFromString("kcal"),
-                        doubleValue = cal.toDouble()
+                        doubleValue = cal.toDouble(),
                     )
                 } else {
                     null
@@ -185,7 +189,7 @@ actual class HealthIntegration {
 
             // Build metadata for deduplication and display
             val metadata = mutableMapOf<Any?, Any?>(
-                "HKExternalUUID" to session.id
+                "HKExternalUUID" to session.id,
             )
             metadata["title"] = title
 
@@ -198,7 +202,7 @@ actual class HealthIntegration {
                 duration = durationSeconds,
                 totalEnergyBurned = calorieQuantity,
                 totalDistance = null,
-                metadata = metadata
+                metadata = metadata,
             )
 
             // Save to HealthKit
@@ -208,15 +212,17 @@ actual class HealthIntegration {
                         log.e { "HealthKit save error: ${error.localizedDescription}" }
                         continuation.resume(
                             Result.failure<Unit>(
-                                RuntimeException("HealthKit save failed: ${error.localizedDescription}")
-                            )
+                                RuntimeException(
+                                    "HealthKit save failed: ${error.localizedDescription}",
+                                ),
+                            ),
                         )
                     } else if (!success) {
                         log.e { "HealthKit save returned false without error" }
                         continuation.resume(
                             Result.failure<Unit>(
-                                RuntimeException("HealthKit save failed without error details")
-                            )
+                                RuntimeException("HealthKit save failed without error details"),
+                            ),
                         )
                     } else {
                         log.d { "Wrote HealthKit workout for session ${session.id}" }

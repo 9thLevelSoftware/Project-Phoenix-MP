@@ -5,28 +5,25 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
+import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.data.repository.ExerciseRepository
+import com.devil.phoenixproject.data.repository.GamificationRepository
+import com.devil.phoenixproject.data.repository.UserProfileRepository
 import com.devil.phoenixproject.domain.model.*
 import com.devil.phoenixproject.presentation.components.BatchedBadgeCelebrationDialog
 import com.devil.phoenixproject.presentation.components.ConnectionErrorDialog
-import com.devil.phoenixproject.presentation.components.HapticFeedbackEffect
 import com.devil.phoenixproject.presentation.components.PRCelebrationDialog
-import org.koin.compose.koinInject
-import com.devil.phoenixproject.data.repository.GamificationRepository
-import com.devil.phoenixproject.data.repository.UserProfileRepository
-import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
 import com.devil.phoenixproject.presentation.manager.DefaultWorkoutSessionManager
 import com.devil.phoenixproject.presentation.navigation.NavigationRoutes
-import co.touchlab.kermit.Logger
-import com.devil.phoenixproject.presentation.manager.DetectionState
+import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
 import com.devil.phoenixproject.util.setKeepScreenOn
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.stringResource
-import vitruvianprojectphoenix.shared.generated.resources.Res
+import org.koin.compose.koinInject
 import vitruvianprojectphoenix.shared.generated.resources.*
+import vitruvianprojectphoenix.shared.generated.resources.Res
 
 /**
  * Active Workout screen - displays workout controls and metrics during an active workout.
@@ -34,11 +31,7 @@ import vitruvianprojectphoenix.shared.generated.resources.*
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ActiveWorkoutScreen(
-    navController: NavController,
-    viewModel: MainViewModel,
-    exerciseRepository: ExerciseRepository
-) {
+fun ActiveWorkoutScreen(navController: NavController, viewModel: MainViewModel, exerciseRepository: ExerciseRepository) {
     val workoutState by viewModel.workoutState.collectAsState()
     val currentMetric by viewModel.currentMetric.collectAsState()
     val currentHeuristicKgMax by viewModel.currentHeuristicKgMax.collectAsState()
@@ -74,6 +67,7 @@ fun ActiveWorkoutScreen(
     val totalWarmupSets by viewModel.totalWarmupSets.collectAsState()
     // Issue #113: Just Lift visual rest countdown
     val justLiftRestCountdown by viewModel.justLiftRestCountdown.collectAsState()
+
     @Suppress("UNUSED_VARIABLE") // Reserved for future connecting overlay
     val isAutoConnecting by viewModel.isAutoConnecting.collectAsState()
     val connectionError by viewModel.connectionError.collectAsState()
@@ -92,8 +86,6 @@ fun ActiveWorkoutScreen(
         }
     }
 
-
-
     // Badge Celebration state
     val gamificationRepository: GamificationRepository = koinInject()
     val userProfileRepository: UserProfileRepository = koinInject()
@@ -105,7 +97,8 @@ fun ActiveWorkoutScreen(
     }
 
     // Issue #141: Voice-activated emergency stop via safe word detection
-    val safeWordManager: com.devil.phoenixproject.domain.voice.SafeWordDetectionManager = koinInject()
+    val safeWordManager: com.devil.phoenixproject.domain.voice.SafeWordDetectionManager =
+        koinInject()
     LaunchedEffect(Unit) {
         safeWordManager.startForWorkout()
         safeWordManager.detectedWord.collect {
@@ -127,7 +120,7 @@ fun ActiveWorkoutScreen(
             snackbarScope.launch {
                 snackbarHostState.showSnackbar(
                     message = message,
-                    duration = SnackbarDuration.Short
+                    duration = SnackbarDuration.Short,
                 )
             }
         }
@@ -209,7 +202,9 @@ fun ActiveWorkoutScreen(
         // Guard against double navigation
         if (hasNavigatedAway) return@LaunchedEffect
 
-        Logger.d { "ActiveWorkoutScreen: workoutState=$workoutState, isJustLift=${workoutParameters.isJustLift}" }
+        Logger.d {
+            "ActiveWorkoutScreen: workoutState=$workoutState, isJustLift=${workoutParameters.isJustLift}"
+        }
         when {
             workoutState is WorkoutState.Completed -> {
                 Logger.d { "ActiveWorkoutScreen: Workout completed, navigating back in 2s" }
@@ -217,18 +212,30 @@ fun ActiveWorkoutScreen(
                 hasNavigatedAway = true
                 navController.navigateUp()
             }
+
             workoutState is WorkoutState.Idle && workoutParameters.isJustLift -> {
                 // Just Lift completed and reset to Idle - navigate back to Just Lift screen
-                Logger.d { "ActiveWorkoutScreen: Just Lift idle, navigating back to JustLiftScreen" }
+                Logger.d {
+                    "ActiveWorkoutScreen: Just Lift idle, navigating back to JustLiftScreen"
+                }
                 hasNavigatedAway = true
                 navController.navigateUp()
             }
-            workoutState is WorkoutState.Idle && (loadedRoutine == null || loadedRoutine?.id?.startsWith(DefaultWorkoutSessionManager.TEMP_SINGLE_EXERCISE_PREFIX) == true) -> {
+
+            workoutState is WorkoutState.Idle &&
+                (
+                    loadedRoutine == null ||
+                        loadedRoutine?.id?.startsWith(
+                            DefaultWorkoutSessionManager.TEMP_SINGLE_EXERCISE_PREFIX,
+                        ) ==
+                        true
+                    ) -> {
                 // Single Exercise completed and reset to Idle - navigate back to SingleExerciseScreen
                 Logger.d { "ActiveWorkoutScreen: Single Exercise idle, navigating back" }
                 hasNavigatedAway = true
                 navController.navigateUp()
             }
+
             workoutState is WorkoutState.Error -> {
                 // Show error for 3 seconds then navigate back
                 Logger.e { "ActiveWorkoutScreen: Error state, navigating back in 3s" }
@@ -253,28 +260,34 @@ fun ActiveWorkoutScreen(
         // Issue #142: Added SetSummary and Resting to prevent immediate navigation away
         // before user can see the set summary screen with countdown
         val isWorkoutActive = workoutState is WorkoutState.Active ||
-                              workoutState is WorkoutState.Countdown ||
-                              workoutState is WorkoutState.Initializing ||
-                              workoutState is WorkoutState.SetSummary ||
-                              workoutState is WorkoutState.Resting
+            workoutState is WorkoutState.Countdown ||
+            workoutState is WorkoutState.Initializing ||
+            workoutState is WorkoutState.SetSummary ||
+            workoutState is WorkoutState.Resting
 
         when (routineFlowState) {
             is RoutineFlowState.SetReady -> {
                 if (!isWorkoutActive) {
-                    Logger.d { "ActiveWorkoutScreen: RoutineFlowState.SetReady + Idle - navigating to SetReady" }
+                    Logger.d {
+                        "ActiveWorkoutScreen: RoutineFlowState.SetReady + Idle - navigating to SetReady"
+                    }
                     hasNavigatedAway = true
                     navController.navigate(NavigationRoutes.SetReady.route) {
                         popUpTo(NavigationRoutes.RoutineOverview.route) { inclusive = false }
                     }
                 }
             }
+
             is RoutineFlowState.Complete -> {
-                Logger.d { "ActiveWorkoutScreen: RoutineFlowState.Complete - navigating to RoutineComplete" }
+                Logger.d {
+                    "ActiveWorkoutScreen: RoutineFlowState.Complete - navigating to RoutineComplete"
+                }
                 hasNavigatedAway = true
                 navController.navigate(NavigationRoutes.RoutineComplete.route) {
                     popUpTo(NavigationRoutes.RoutineOverview.route) { inclusive = false }
                 }
             }
+
             else -> {}
         }
     }
@@ -285,7 +298,9 @@ fun ActiveWorkoutScreen(
     // with the navigator visibility check in WorkoutTab)
     val isSetActive = workoutState is WorkoutState.Active
     val canGoBack = !isSetActive && loadedRoutine != null && currentExerciseIndex > 0
-    val canSkipForward = !isSetActive && loadedRoutine != null && currentExerciseIndex < (loadedRoutine?.exercises?.size ?: 0) - 1
+    val canSkipForward =
+        !isSetActive && loadedRoutine != null &&
+            currentExerciseIndex < (loadedRoutine?.exercises?.size ?: 0) - 1
 
     // Issue #167: autoplayEnabled now derived from summaryCountdownSeconds
     // 0 (Unlimited) = autoplay OFF, != 0 (-1 or 5-30) = autoplay ON
@@ -301,7 +316,7 @@ fun ActiveWorkoutScreen(
         latestBiomechanicsResult, detectionState,
         motionStartHoldProgress, isRestPaused,
         currentWarmupSetIndex, totalWarmupSets,
-        justLiftRestCountdown
+        justLiftRestCountdown,
     ) {
         WorkoutUiState(
             connectionState = connectionState,
@@ -337,7 +352,7 @@ fun ActiveWorkoutScreen(
             isRestPaused = isRestPaused,
             currentWarmupSetIndex = currentWarmupSetIndex,
             totalWarmupSets = totalWarmupSets,
-            justLiftRestCountdown = justLiftRestCountdown
+            justLiftRestCountdown = justLiftRestCountdown,
         )
     }
 
@@ -349,7 +364,7 @@ fun ActiveWorkoutScreen(
             onStartWorkout = {
                 viewModel.ensureConnection(
                     onConnected = { viewModel.startWorkout() },
-                    onFailed = { /* Error shown via StateFlow */ }
+                    onFailed = { /* Error shown via StateFlow */ },
                 )
             },
             onStopWorkout = { showExitConfirmation = true },
@@ -369,14 +384,16 @@ fun ActiveWorkoutScreen(
             kgToDisplay = viewModel::kgToDisplay,
             displayToKg = viewModel::displayToKg,
             formatWeight = viewModel::formatWeight,
-            onDetectionConfirmed = { exerciseId, exerciseName -> viewModel.onDetectionConfirmed(exerciseId, exerciseName) },
-            onDetectionDismissed = { viewModel.onDetectionDismissed() }
+            onDetectionConfirmed = { exerciseId, exerciseName ->
+                viewModel.onDetectionConfirmed(exerciseId, exerciseName)
+            },
+            onDetectionDismissed = { viewModel.onDetectionDismissed() },
         )
     }
 
     // Issue #172: Scaffold wrapper for Snackbar support (user feedback messages)
     Scaffold(
-        snackbarHost = { SnackbarHost(snackbarHostState) }
+        snackbarHost = { SnackbarHost(snackbarHostState) },
     ) { paddingValues ->
         Column(modifier = Modifier.padding(paddingValues)) {
             WorkoutTab(
@@ -384,7 +401,7 @@ fun ActiveWorkoutScreen(
                 actions = workoutActions,
                 exerciseRepository = exerciseRepository,
                 hapticEvents = hapticEvents,
-                modifier = Modifier
+                modifier = Modifier,
             )
         }
     }
@@ -404,9 +421,11 @@ fun ActiveWorkoutScreen(
                             viewModel.stopAndReturnToSetReady()
                             showExitConfirmation = false
                             navController.navigate(NavigationRoutes.SetReady.route) {
-                                popUpTo(NavigationRoutes.RoutineOverview.route) { inclusive = false }
+                                popUpTo(NavigationRoutes.RoutineOverview.route) {
+                                    inclusive = false
+                                }
                             }
-                        }
+                        },
                     ) {
                         Text(stringResource(Res.string.stop_set))
                     }
@@ -420,7 +439,7 @@ fun ActiveWorkoutScreen(
                             onClick = {
                                 viewModel.stopAndSkipCurrentExercise()
                                 showExitConfirmation = false
-                            }
+                            },
                         ) {
                             Text(stringResource(Res.string.skip_exercise))
                         }
@@ -428,13 +447,19 @@ fun ActiveWorkoutScreen(
                             onClick = {
                                 viewModel.stopWorkout(exitingWorkout = true)
                                 showExitConfirmation = false
-                                navController.popBackStack(NavigationRoutes.DailyRoutines.route, inclusive = false)
-                            }
+                                navController.popBackStack(
+                                    NavigationRoutes.DailyRoutines.route,
+                                    inclusive = false,
+                                )
+                            },
                         ) {
-                            Text(stringResource(Res.string.end_workout), color = MaterialTheme.colorScheme.error)
+                            Text(
+                                stringResource(Res.string.end_workout),
+                                color = MaterialTheme.colorScheme.error,
+                            )
                         }
                     }
-                }
+                },
             )
         } else {
             AlertDialog(
@@ -451,7 +476,7 @@ fun ActiveWorkoutScreen(
                             viewModel.stopWorkout(exitingWorkout = true)
                             showExitConfirmation = false
                             navController.navigateUp()
-                        }
+                        },
                     ) {
                         Text(stringResource(Res.string.action_exit))
                     }
@@ -460,7 +485,7 @@ fun ActiveWorkoutScreen(
                     TextButton(onClick = { showExitConfirmation = false }) {
                         Text(stringResource(Res.string.action_cancel))
                     }
-                }
+                },
             )
         }
     }
@@ -469,7 +494,7 @@ fun ActiveWorkoutScreen(
     connectionError?.let { error ->
         ConnectionErrorDialog(
             message = error,
-            onDismiss = { viewModel.clearConnectionError() }
+            onDismiss = { viewModel.clearConnectionError() },
         )
     }
 
@@ -478,10 +503,13 @@ fun ActiveWorkoutScreen(
         PRCelebrationDialog(
             show = true,
             exerciseName = event.exerciseName,
-            weight = "${viewModel.formatWeight(event.weightPerCableKg, weightUnit)}/cable × ${event.reps} reps",
+            weight = "${viewModel.formatWeight(
+                event.weightPerCableKg,
+                weightUnit,
+            )}/cable × ${event.reps} reps",
             workoutMode = event.workoutMode,
             onDismiss = { prCelebrationEvent = null },
-            onSoundTrigger = { viewModel.emitPRSound() }
+            onSoundTrigger = { viewModel.emitPRSound() },
         )
     }
 
@@ -498,7 +526,7 @@ fun ActiveWorkoutScreen(
                     gamificationRepository.markBadgesCelebrated(badgeIds, profileId)
                 }
             },
-            onSoundTrigger = {}  // Sound handled by ViewModel - skipped if PR already played
+            onSoundTrigger = {}, // Sound handled by ViewModel - skipped if PR already played
         )
     }
 }

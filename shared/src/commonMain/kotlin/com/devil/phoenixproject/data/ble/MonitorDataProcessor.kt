@@ -41,7 +41,7 @@ import kotlin.math.abs
 class MonitorDataProcessor(
     private val onDeloadOccurred: () -> Unit = {},
     private val onRomViolation: (RomViolationType) -> Unit = {},
-    private val timeProvider: () -> Long = { currentTimeMillis() }
+    private val timeProvider: () -> Long = { currentTimeMillis() },
 ) {
     private val log = Logger.withTag("MonitorDataProcessor")
 
@@ -156,8 +156,8 @@ class MonitorDataProcessor(
 
         // ===== STAGE 4: SAMPLE VALIDATION =====
         if (!validateSample(posA, loadA, posB, loadB, previousPosA, previousPosB)) {
-            lastSampleWasFiltered = true  // Mark for velocity reset on next valid sample
-            return null  // Skip invalid sample, but position tracking is updated for next sample
+            lastSampleWasFiltered = true // Mark for velocity reset on next valid sample
+            return null // Skip invalid sample, but position tracking is updated for next sample
         }
 
         // ===== STAGE 5: VELOCITY FROM FIRMWARE =====
@@ -229,7 +229,7 @@ class MonitorDataProcessor(
             ticks = ticks,
             velocityA = smoothedVelocityA,
             velocityB = smoothedVelocityB,
-            status = packet.status
+            status = packet.status,
         )
     }
 
@@ -305,8 +305,12 @@ class MonitorDataProcessor(
      * @return true if sample is valid and should be processed
      */
     private fun validateSample(
-        posA: Float, loadA: Float, posB: Float, loadB: Float,
-        previousPosA: Float, previousPosB: Float
+        posA: Float,
+        loadA: Float,
+        posB: Float,
+        loadB: Float,
+        previousPosA: Float,
+        previousPosB: Float,
     ): Boolean {
         // Position range check (redundant after clamping in process(), but defensive)
         if (posA !in MIN_POS..MAX_POS || posB !in MIN_POS..MAX_POS) {
@@ -316,7 +320,8 @@ class MonitorDataProcessor(
 
         // Load validation - check against hardware max weight
         if (loadA < 0f || loadA > BleConstants.Thresholds.MAX_WEIGHT_KG ||
-            loadB < 0f || loadB > BleConstants.Thresholds.MAX_WEIGHT_KG) {
+            loadB < 0f || loadB > BleConstants.Thresholds.MAX_WEIGHT_KG
+        ) {
             log.w { "Load out of range: loadA=$loadA, loadB=$loadB (max=${BleConstants.Thresholds.MAX_WEIGHT_KG})" }
             return false
         }
@@ -328,7 +333,8 @@ class MonitorDataProcessor(
             val jumpA = abs(posA - previousPosA)
             val jumpB = abs(posB - previousPosB)
             if (jumpA > BleConstants.Thresholds.POSITION_JUMP_THRESHOLD ||
-                jumpB > BleConstants.Thresholds.POSITION_JUMP_THRESHOLD) {
+                jumpB > BleConstants.Thresholds.POSITION_JUMP_THRESHOLD
+            ) {
                 log.w { "Position jump filtered: jumpA=${jumpA}mm, jumpB=${jumpB}mm (threshold: ${BleConstants.Thresholds.POSITION_JUMP_THRESHOLD}mm)" }
                 return false
             }

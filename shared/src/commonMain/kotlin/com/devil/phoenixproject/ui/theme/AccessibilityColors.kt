@@ -7,8 +7,8 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 import com.devil.phoenixproject.domain.model.BiomechanicsVelocityZone
 import org.jetbrains.compose.resources.stringResource
-import vitruvianprojectphoenix.shared.generated.resources.Res
 import vitruvianprojectphoenix.shared.generated.resources.*
+import vitruvianprojectphoenix.shared.generated.resources.Res
 
 /**
  * Semantic color palette for accessibility-aware UI elements.
@@ -46,7 +46,7 @@ data class AccessibilityColors(
     // Reserved for future phases (readiness card)
     val statusGreen: Color,
     val statusYellow: Color,
-    val statusRed: Color
+    val statusRed: Color,
 )
 
 /**
@@ -62,11 +62,11 @@ val StandardPalette = AccessibilityColors(
     neutral = Color(0xFF9E9E9E),
 
     // Velocity zones (BiomechanicsHistoryCard canonical mapping)
-    zoneExplosive = Color(0xFF06B6D4),   // Cyan -- fastest
-    zoneFast = Color(0xFF22C55E),         // Green
-    zoneModerate = Color(0xFFF59E0B),     // Amber
-    zoneSlow = Color(0xFFF97316),         // Orange
-    zoneGrind = Color(0xFFEF4444),        // Red -- near failure
+    zoneExplosive = Color(0xFF06B6D4), // Cyan -- fastest
+    zoneFast = Color(0xFF22C55E), // Green
+    zoneModerate = Color(0xFFF59E0B), // Amber
+    zoneSlow = Color(0xFFF97316), // Orange
+    zoneGrind = Color(0xFFEF4444), // Red -- near failure
 
     // Asymmetry severity
     asymmetryGood = Color(0xFF4CAF50),
@@ -83,7 +83,7 @@ val StandardPalette = AccessibilityColors(
     // Reserved -- match status colors for now
     statusGreen = Color(0xFF22C55E),
     statusYellow = Color(0xFFF59E0B),
-    statusRed = Color(0xFFEF4444)
+    statusRed = Color(0xFFEF4444),
 )
 
 /**

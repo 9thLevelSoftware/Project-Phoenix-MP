@@ -33,7 +33,7 @@ object BodyweightVolumeCalculator {
 
         // Squats and lunges (bodyweight)
         listOf("bodyweight squat", "air squat") to 0.67f,
-        listOf("lunge", "lunges") to 0.50f,  // Per leg
+        listOf("lunge", "lunges") to 0.50f, // Per leg
         listOf("pistol squat", "single leg squat") to 0.67f,
 
         // Core
@@ -46,7 +46,7 @@ object BodyweightVolumeCalculator {
 
         // General/default
         listOf("burpee") to 0.80f,
-        listOf("mountain climber") to 0.60f
+        listOf("mountain climber") to 0.60f,
     )
 
     /** Default percentage when exercise type is unknown */
@@ -76,11 +76,7 @@ object BodyweightVolumeCalculator {
      * @param reps Number of reps completed
      * @return Estimated volume in kg (bodyWeight * percentage * reps)
      */
-    fun calculateVolume(
-        exerciseName: String,
-        bodyWeightKg: Float,
-        reps: Int
-    ): Float {
+    fun calculateVolume(exerciseName: String, bodyWeightKg: Float, reps: Int): Float {
         if (bodyWeightKg <= 0f || reps <= 0) return 0f
         val percentage = getPercentageForExercise(exerciseName)
         return bodyWeightKg * percentage * reps

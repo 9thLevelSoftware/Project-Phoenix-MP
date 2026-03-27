@@ -84,9 +84,7 @@ class FakeGamificationRepository : GamificationRepository {
 
     override fun getUncelebratedBadges(profileId: String): Flow<List<EarnedBadge>> = _uncelebratedBadgesFlow
 
-    override suspend fun isBadgeEarned(badgeId: String, profileId: String): Boolean {
-        return earnedBadges.containsKey(badgeId)
-    }
+    override suspend fun isBadgeEarned(badgeId: String, profileId: String): Boolean = earnedBadges.containsKey(badgeId)
 
     override suspend fun awardBadge(badgeId: String, profileId: String): Boolean {
         if (earnedBadges.containsKey(badgeId)) {
@@ -95,7 +93,7 @@ class FakeGamificationRepository : GamificationRepository {
         earnedBadges[badgeId] = EarnedBadge(
             badgeId = badgeId,
             earnedAt = currentTimeMillis(),
-            celebratedAt = null
+            celebratedAt = null,
         )
         uncelebratedBadgeIds.add(badgeId)
         updateFlows()
@@ -126,7 +124,7 @@ class FakeGamificationRepository : GamificationRepository {
         maxWeightLiftedKg = 0.0, totalVolumeKg = 0.0, totalWorkouts = 0,
         totalReps = 0, uniqueExercises = 0, personalRecords = 0,
         peakPowerWatts = 0.0, avgWorkingWeightKg = 0.0,
-        currentStreak = 0, longestStreak = 0, trainingDays = 0, badgesEarned = 0
+        currentStreak = 0, longestStreak = 0, trainingDays = 0, badgesEarned = 0,
     )
 
     override suspend fun saveRpgProfile(profile: RpgProfile, profileId: String) {
@@ -143,7 +141,7 @@ class FakeGamificationRepository : GamificationRepository {
             earnedBadges[badge.id] = EarnedBadge(
                 badgeId = badge.id,
                 earnedAt = currentTimeMillis(),
-                celebratedAt = null
+                celebratedAt = null,
             )
             uncelebratedBadgeIds.add(badge.id)
         }
@@ -152,21 +150,17 @@ class FakeGamificationRepository : GamificationRepository {
         return awarded
     }
 
-    override suspend fun getBadgeProgress(badgeId: String, profileId: String): Pair<Int, Int>? {
-        return badgeProgress[badgeId]
-    }
+    override suspend fun getBadgeProgress(badgeId: String, profileId: String): Pair<Int, Int>? = badgeProgress[badgeId]
 
-    override suspend fun getAllBadgesWithProgress(profileId: String): List<BadgeWithProgress> {
-        return BadgeDefinitions.allBadges.map { badge ->
-            val progress = badgeProgress[badge.id] ?: (0 to badge.getTargetValue())
-            val earned = earnedBadges[badge.id]
-            BadgeWithProgress(
-                badge = badge,
-                isEarned = earned != null,
-                earnedAt = earned?.earnedAt,
-                currentProgress = progress.first,
-                targetProgress = progress.second
-            )
-        }
+    override suspend fun getAllBadgesWithProgress(profileId: String): List<BadgeWithProgress> = BadgeDefinitions.allBadges.map { badge ->
+        val progress = badgeProgress[badge.id] ?: (0 to badge.getTargetValue())
+        val earned = earnedBadges[badge.id]
+        BadgeWithProgress(
+            badge = badge,
+            isEarned = earned != null,
+            earnedAt = earned?.earnedAt,
+            currentProgress = progress.first,
+            targetProgress = progress.second,
+        )
     }
 }

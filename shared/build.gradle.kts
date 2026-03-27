@@ -112,8 +112,6 @@ kotlin {
                 // Lottie Animations (Compose Multiplatform)
                 implementation(libs.compottie)
                 implementation(libs.compottie.resources)
-
-
             }
         }
 
@@ -136,7 +134,7 @@ kotlin {
                 implementation(libs.multiplatform.settings.test)
             }
         }
-        
+
         val androidMain by getting {
             dependencies {
                 // Android-specific Coroutines
@@ -174,10 +172,9 @@ kotlin {
                 // across alpha11 and stable — the real fix for permissions was the manifest
                 // intent-filter (VIEW_PERMISSION_USAGE + HEALTH_PERMISSIONS category).
                 implementation("androidx.health.connect:connect-client:1.1.0-alpha11")
-
             }
         }
-        
+
         val iosArm64Main by getting
         val iosArm64Test by getting
         val iosMain by creating {
@@ -201,7 +198,6 @@ kotlin {
                 implementation(libs.sqldelight.native.driver)
             }
         }
-
     }
 }
 

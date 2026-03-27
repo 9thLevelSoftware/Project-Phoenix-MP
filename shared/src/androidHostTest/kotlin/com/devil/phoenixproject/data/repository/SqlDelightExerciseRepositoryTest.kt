@@ -4,12 +4,12 @@ import app.cash.turbine.test
 import com.devil.phoenixproject.data.local.ExerciseImporter
 import com.devil.phoenixproject.database.VitruvianDatabase
 import com.devil.phoenixproject.testutil.createTestDatabase
-import kotlinx.coroutines.test.runTest
-import org.junit.Before
-import org.junit.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
+import kotlinx.coroutines.test.runTest
+import org.junit.Before
+import org.junit.Test
 
 class SqlDelightExerciseRepositoryTest {
 
@@ -60,8 +60,8 @@ class SqlDelightExerciseRepositoryTest {
                 name = "Custom Press",
                 muscleGroup = "Chest",
                 muscleGroups = "Chest",
-                equipment = ""
-            )
+                equipment = "",
+            ),
         )
 
         val created = result.getOrNull()
@@ -97,7 +97,7 @@ class SqlDelightExerciseRepositoryTest {
             angle = "front",
             videoUrl = "https://example.com/video.mp4",
             thumbnailUrl = "https://example.com/thumb.jpg",
-            isTutorial = 0L
+            isTutorial = 0L,
         )
 
         val videos = repository.getVideos("ex-1")
@@ -114,7 +114,7 @@ class SqlDelightExerciseRepositoryTest {
         defaultCableConfig: String = "DOUBLE",
         isFavorite: Long = 0L,
         isCustom: Long = 0L,
-        oneRepMaxKg: Double? = null
+        oneRepMaxKg: Double? = null,
     ) {
         database.vitruvianDatabaseQueries.insertExercise(
             id = id,
@@ -138,7 +138,7 @@ class SqlDelightExerciseRepositoryTest {
             lastPerformed = null,
             aliases = null,
             defaultCableConfig = defaultCableConfig,
-            one_rep_max_kg = oneRepMaxKg
+            one_rep_max_kg = oneRepMaxKg,
         )
     }
 }

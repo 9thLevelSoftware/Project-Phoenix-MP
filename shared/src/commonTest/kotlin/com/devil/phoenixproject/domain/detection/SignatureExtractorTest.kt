@@ -34,7 +34,7 @@ class SignatureExtractorTest {
                 loadA = 50f,
                 loadB = 50f,
                 positionA = 100f,
-                positionB = 100f
+                positionB = 100f,
             )
         }
 
@@ -63,14 +63,18 @@ class SignatureExtractorTest {
             valleyPosition = 100f,
             peakPosition = 300f,
             repCount = 3,
-            samplesPerRep = 20
+            samplesPerRep = 20,
         )
 
         val result = extractor.extractSignature(metrics)
 
         assertNotNull(result, "Should extract signature from valid data")
-        assertEquals(200f, result.romMm, 20f, // Allow 10% tolerance
-            "ROM should be approximately 200mm (peak - valley)")
+        assertEquals(
+            200f,
+            result.romMm,
+            20f, // Allow 10% tolerance
+            "ROM should be approximately 200mm (peak - valley)",
+        )
     }
 
     @Test
@@ -94,8 +98,12 @@ class SignatureExtractorTest {
         val result = extractor.extractSignature(metrics)
 
         assertNotNull(result)
-        assertEquals(200f, result.romMm, 25f,
-            "ROM should average to ~200mm across varying reps")
+        assertEquals(
+            200f,
+            result.romMm,
+            25f,
+            "ROM should average to ~200mm across varying reps",
+        )
     }
 
     // =========================================================================
@@ -111,14 +119,17 @@ class SignatureExtractorTest {
             repCount = 3,
             samplesPerRep = 20,
             loadA = 50f,
-            loadB = 0.5f
+            loadB = 0.5f,
         )
 
         val result = extractor.extractSignature(metrics)
 
         assertNotNull(result)
-        assertEquals(CableUsage.SINGLE_LEFT, result.cableConfig,
-            "Should detect SINGLE_LEFT when loadB is always < 1kg")
+        assertEquals(
+            CableUsage.SINGLE_LEFT,
+            result.cableConfig,
+            "Should detect SINGLE_LEFT when loadB is always < 1kg",
+        )
     }
 
     @Test
@@ -130,14 +141,17 @@ class SignatureExtractorTest {
             repCount = 3,
             samplesPerRep = 20,
             loadA = 0.5f,
-            loadB = 50f
+            loadB = 50f,
         )
 
         val result = extractor.extractSignature(metrics)
 
         assertNotNull(result)
-        assertEquals(CableUsage.SINGLE_RIGHT, result.cableConfig,
-            "Should detect SINGLE_RIGHT when loadA is always < 1kg")
+        assertEquals(
+            CableUsage.SINGLE_RIGHT,
+            result.cableConfig,
+            "Should detect SINGLE_RIGHT when loadA is always < 1kg",
+        )
     }
 
     @Test
@@ -149,16 +163,23 @@ class SignatureExtractorTest {
             repCount = 3,
             samplesPerRep = 20,
             loadA = 50f,
-            loadB = 50f
+            loadB = 50f,
         )
 
         val result = extractor.extractSignature(metrics)
 
         assertNotNull(result)
-        assertEquals(CableUsage.DUAL_SYMMETRIC, result.cableConfig,
-            "Should detect DUAL_SYMMETRIC when loadA ~= loadB")
-        assertEquals(0.5f, result.symmetryRatio, 0.05f,
-            "Symmetry ratio should be ~0.5")
+        assertEquals(
+            CableUsage.DUAL_SYMMETRIC,
+            result.cableConfig,
+            "Should detect DUAL_SYMMETRIC when loadA ~= loadB",
+        )
+        assertEquals(
+            0.5f,
+            result.symmetryRatio,
+            0.05f,
+            "Symmetry ratio should be ~0.5",
+        )
     }
 
     @Test
@@ -170,16 +191,23 @@ class SignatureExtractorTest {
             repCount = 3,
             samplesPerRep = 20,
             loadA = 70f,
-            loadB = 30f
+            loadB = 30f,
         )
 
         val result = extractor.extractSignature(metrics)
 
         assertNotNull(result)
-        assertEquals(CableUsage.DUAL_ASYMMETRIC, result.cableConfig,
-            "Should detect DUAL_ASYMMETRIC when load ratio is outside 0.4-0.6")
-        assertEquals(0.7f, result.symmetryRatio, 0.05f,
-            "Symmetry ratio should be ~0.7 (70/100)")
+        assertEquals(
+            CableUsage.DUAL_ASYMMETRIC,
+            result.cableConfig,
+            "Should detect DUAL_ASYMMETRIC when load ratio is outside 0.4-0.6",
+        )
+        assertEquals(
+            0.7f,
+            result.symmetryRatio,
+            0.05f,
+            "Symmetry ratio should be ~0.7 (70/100)",
+        )
     }
 
     // =========================================================================
@@ -208,7 +236,7 @@ class SignatureExtractorTest {
         val tolerance = 200L
         assertTrue(
             result.durationMs in (expectedDuration - tolerance)..(expectedDuration + tolerance),
-            "Rep duration should be approximately 2000ms, got ${result.durationMs}"
+            "Rep duration should be approximately 2000ms, got ${result.durationMs}",
         )
     }
 
@@ -224,14 +252,17 @@ class SignatureExtractorTest {
             peakPosition = 300f,
             repCount = 3,
             samplesPerRep = 21, // Divisible by 3 for clean thirds
-            velocityPattern = VelocityPattern.EXPLOSIVE_START
+            velocityPattern = VelocityPattern.EXPLOSIVE_START,
         )
 
         val result = extractor.extractSignature(metrics)
 
         assertNotNull(result)
-        assertEquals(VelocityShape.EXPLOSIVE_START, result.velocityProfile,
-            "Should detect EXPLOSIVE_START when first third has highest velocity")
+        assertEquals(
+            VelocityShape.EXPLOSIVE_START,
+            result.velocityProfile,
+            "Should detect EXPLOSIVE_START when first third has highest velocity",
+        )
     }
 
     @Test
@@ -242,14 +273,17 @@ class SignatureExtractorTest {
             peakPosition = 300f,
             repCount = 3,
             samplesPerRep = 21,
-            velocityPattern = VelocityPattern.LINEAR
+            velocityPattern = VelocityPattern.LINEAR,
         )
 
         val result = extractor.extractSignature(metrics)
 
         assertNotNull(result)
-        assertEquals(VelocityShape.LINEAR, result.velocityProfile,
-            "Should detect LINEAR when velocity is roughly constant")
+        assertEquals(
+            VelocityShape.LINEAR,
+            result.velocityProfile,
+            "Should detect LINEAR when velocity is roughly constant",
+        )
     }
 
     @Test
@@ -260,14 +294,17 @@ class SignatureExtractorTest {
             peakPosition = 300f,
             repCount = 3,
             samplesPerRep = 21,
-            velocityPattern = VelocityPattern.DECELERATING
+            velocityPattern = VelocityPattern.DECELERATING,
         )
 
         val result = extractor.extractSignature(metrics)
 
         assertNotNull(result)
-        assertEquals(VelocityShape.DECELERATING, result.velocityProfile,
-            "Should detect DECELERATING when last third has lowest velocity")
+        assertEquals(
+            VelocityShape.DECELERATING,
+            result.velocityProfile,
+            "Should detect DECELERATING when last third has lowest velocity",
+        )
     }
 
     // =========================================================================
@@ -286,24 +323,24 @@ class SignatureExtractorTest {
             // Concentric: valley->peak
             for (i in 0..halfRep) {
                 val progress = i.toFloat() / halfRep
-                val posB = 100f + 200f * progress  // 100 -> 300
+                val posB = 100f + 200f * progress // 100 -> 300
                 metrics.add(
                     WorkoutMetric(
                         timestamp = timestamp + i * 100L,
-                        loadA = 0f,         // Inactive cable
+                        loadA = 0f, // Inactive cable
                         loadB = 50f,
-                        positionA = 0f,     // Zero throughout
+                        positionA = 0f, // Zero throughout
                         positionB = posB,
                         velocityA = 0.0,
-                        velocityB = 0.5
-                    )
+                        velocityB = 0.5,
+                    ),
                 )
             }
             // Eccentric: peak->valley
             val eccentricSamples = samplesPerRep - halfRep - 1
             for (i in 1..eccentricSamples) {
                 val progress = i.toFloat() / eccentricSamples
-                val posB = 300f - 200f * progress  // 300 -> 100
+                val posB = 300f - 200f * progress // 300 -> 100
                 metrics.add(
                     WorkoutMetric(
                         timestamp = timestamp + (halfRep + i) * 100L,
@@ -312,8 +349,8 @@ class SignatureExtractorTest {
                         positionA = 0f,
                         positionB = posB,
                         velocityA = 0.0,
-                        velocityB = 0.5
-                    )
+                        velocityB = 0.5,
+                    ),
                 )
             }
             timestamp += samplesPerRep * 100L
@@ -322,10 +359,15 @@ class SignatureExtractorTest {
         val result = extractor.extractSignature(metrics)
 
         assertNotNull(result, "Should extract signature from right-cable-only data")
-        assertTrue(result.romMm > 100f,
-            "ROM should reflect positionB movement, got ${result.romMm}mm (expected ~200mm)")
-        assertEquals(CableUsage.SINGLE_RIGHT, result.cableConfig,
-            "Should detect SINGLE_RIGHT cable usage")
+        assertTrue(
+            result.romMm > 100f,
+            "ROM should reflect positionB movement, got ${result.romMm}mm (expected ~200mm)",
+        )
+        assertEquals(
+            CableUsage.SINGLE_RIGHT,
+            result.cableConfig,
+            "Should detect SINGLE_RIGHT cable usage",
+        )
     }
 
     // =========================================================================
@@ -333,7 +375,9 @@ class SignatureExtractorTest {
     // =========================================================================
 
     private enum class VelocityPattern {
-        EXPLOSIVE_START, LINEAR, DECELERATING
+        EXPLOSIVE_START,
+        LINEAR,
+        DECELERATING,
     }
 
     /**
@@ -345,14 +389,14 @@ class SignatureExtractorTest {
         repCount: Int,
         samplesPerRep: Int,
         loadA: Float = 50f,
-        loadB: Float = 50f
+        loadB: Float = 50f,
     ): List<WorkoutMetric> {
         val metrics = mutableListOf<WorkoutMetric>()
         var timestamp = 0L
 
         repeat(repCount) {
             metrics.addAll(
-                buildSingleRep(valleyPosition, peakPosition, timestamp, samplesPerRep, loadA, loadB)
+                buildSingleRep(valleyPosition, peakPosition, timestamp, samplesPerRep, loadA, loadB),
             )
             timestamp += samplesPerRep * 100L // 10Hz = 100ms between samples
         }
@@ -370,7 +414,7 @@ class SignatureExtractorTest {
         startTime: Long,
         samplesPerRep: Int,
         loadA: Float = 50f,
-        loadB: Float = 50f
+        loadB: Float = 50f,
     ): List<WorkoutMetric> {
         val metrics = mutableListOf<WorkoutMetric>()
         val halfRep = samplesPerRep / 2
@@ -387,8 +431,8 @@ class SignatureExtractorTest {
                     positionA = position,
                     positionB = position,
                     velocityA = 0.5, // Default velocity
-                    velocityB = 0.5
-                )
+                    velocityB = 0.5,
+                ),
             )
         }
 
@@ -405,8 +449,8 @@ class SignatureExtractorTest {
                     positionA = position,
                     positionB = position,
                     velocityA = 0.5,
-                    velocityB = 0.5
-                )
+                    velocityB = 0.5,
+                ),
             )
         }
 
@@ -423,7 +467,7 @@ class SignatureExtractorTest {
         samplesPerRep: Int,
         velocityPattern: VelocityPattern,
         loadA: Float = 50f,
-        loadB: Float = 50f
+        loadB: Float = 50f,
     ): List<WorkoutMetric> {
         val metrics = mutableListOf<WorkoutMetric>()
         var timestamp = 0L
@@ -431,9 +475,14 @@ class SignatureExtractorTest {
         repeat(repCount) {
             metrics.addAll(
                 buildSingleRepWithVelocity(
-                    valleyPosition, peakPosition, timestamp, samplesPerRep,
-                    velocityPattern, loadA, loadB
-                )
+                    valleyPosition,
+                    peakPosition,
+                    timestamp,
+                    samplesPerRep,
+                    velocityPattern,
+                    loadA,
+                    loadB,
+                ),
             )
             timestamp += samplesPerRep * 100L
         }
@@ -451,7 +500,7 @@ class SignatureExtractorTest {
         samplesPerRep: Int,
         velocityPattern: VelocityPattern,
         loadA: Float = 50f,
-        loadB: Float = 50f
+        loadB: Float = 50f,
     ): List<WorkoutMetric> {
         val metrics = mutableListOf<WorkoutMetric>()
         val halfRep = samplesPerRep / 2
@@ -469,13 +518,20 @@ class SignatureExtractorTest {
             // DECELERATING: 0.6 -> 0.6 -> 0.2 (last third distinctly lower, first two equal)
             val velocity = when (velocityPattern) {
                 VelocityPattern.EXPLOSIVE_START -> when {
-                    i < third -> 1.0       // First third: distinctly high
-                    else -> 0.5            // Rest: lower and equal
+                    i < third -> 1.0
+
+                    // First third: distinctly high
+                    else -> 0.5 // Rest: lower and equal
                 }
-                VelocityPattern.LINEAR -> 0.6  // Constant throughout
+
+                VelocityPattern.LINEAR -> 0.6
+
+                // Constant throughout
                 VelocityPattern.DECELERATING -> when {
-                    i >= 2 * third -> 0.2  // Last third: distinctly low
-                    else -> 0.6            // First two thirds: equal
+                    i >= 2 * third -> 0.2
+
+                    // Last third: distinctly low
+                    else -> 0.6 // First two thirds: equal
                 }
             }
 
@@ -487,8 +543,8 @@ class SignatureExtractorTest {
                     positionA = position,
                     positionB = position,
                     velocityA = velocity,
-                    velocityB = velocity
-                )
+                    velocityB = velocity,
+                ),
             )
         }
 
@@ -504,8 +560,8 @@ class SignatureExtractorTest {
                     positionA = position,
                     positionB = position,
                     velocityA = 0.5,
-                    velocityB = 0.5
-                )
+                    velocityB = 0.5,
+                ),
             )
         }
 

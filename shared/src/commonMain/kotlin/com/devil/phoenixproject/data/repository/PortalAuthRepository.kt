@@ -8,11 +8,11 @@ import com.devil.phoenixproject.data.sync.toPortalAuthResponse
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 
 /**
@@ -21,7 +21,7 @@ import kotlinx.coroutines.launch
 class PortalAuthRepository(
     private val apiClient: PortalApiClient,
     private val tokenStorage: PortalTokenStorage,
-    private val userProfileRepository: UserProfileRepository
+    private val userProfileRepository: UserProfileRepository,
 ) : AuthRepository {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
@@ -37,15 +37,17 @@ class PortalAuthRepository(
         scope.launch {
             combine(
                 tokenStorage.isAuthenticated,
-                tokenStorage.currentUser
+                tokenStorage.currentUser,
             ) { isAuthenticated, portalUser ->
                 when {
                     portalUser != null && isAuthenticated -> {
                         AuthState.Authenticated(portalUser.toAuthUser())
                     }
+
                     isAuthenticated && portalUser == null -> {
                         AuthState.Loading
                     }
+
                     else -> AuthState.NotAuthenticated
                 }
             }.collect { state ->
@@ -71,24 +73,18 @@ class PortalAuthRepository(
             }
     }
 
-    override suspend fun signInWithEmail(email: String, password: String): Result<AuthUser> {
-        return apiClient.signIn(email, password)
-            .onSuccess { goTrueResponse ->
-                tokenStorage.saveGoTrueAuth(goTrueResponse)
-                linkUserProfile(goTrueResponse.user.id)
-            }
-            .map { goTrueResponse ->
-                goTrueResponse.toPortalAuthResponse().user.toAuthUser()
-            }
-    }
+    override suspend fun signInWithEmail(email: String, password: String): Result<AuthUser> = apiClient.signIn(email, password)
+        .onSuccess { goTrueResponse ->
+            tokenStorage.saveGoTrueAuth(goTrueResponse)
+            linkUserProfile(goTrueResponse.user.id)
+        }
+        .map { goTrueResponse ->
+            goTrueResponse.toPortalAuthResponse().user.toAuthUser()
+        }
 
-    override suspend fun signInWithGoogle(): Result<AuthUser> {
-        return Result.failure(NotImplementedError("Google sign-in requires platform implementation"))
-    }
+    override suspend fun signInWithGoogle(): Result<AuthUser> = Result.failure(NotImplementedError("Google sign-in requires platform implementation"))
 
-    override suspend fun signInWithApple(): Result<AuthUser> {
-        return Result.failure(NotImplementedError("Apple sign-in requires platform implementation"))
-    }
+    override suspend fun signInWithApple(): Result<AuthUser> = Result.failure(NotImplementedError("Apple sign-in requires platform implementation"))
 
     override suspend fun signOut(): Result<Unit> {
         apiClient.signOut()
@@ -107,7 +103,8 @@ class PortalAuthRepository(
             .map { }
             .onFailure {
                 if (it.message?.contains("Unauthorized") == true ||
-                    it.message?.contains("invalid") == true) {
+                    it.message?.contains("invalid") == true
+                ) {
                     tokenStorage.clearAuth()
                 }
             }
@@ -147,6 +144,6 @@ class PortalAuthRepository(
     private fun PortalUser.toAuthUser(): AuthUser = AuthUser(
         id = id,
         email = email,
-        displayName = displayName
+        displayName = displayName,
     )
 }

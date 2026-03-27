@@ -28,8 +28,8 @@ import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.domain.model.WorkoutMetric
 import com.devil.phoenixproject.ui.theme.DataColors
 import org.jetbrains.compose.resources.stringResource
-import vitruvianprojectphoenix.shared.generated.resources.Res
 import vitruvianprojectphoenix.shared.generated.resources.*
+import vitruvianprojectphoenix.shared.generated.resources.Res
 
 /**
  * Material 3 Expressive Workout Metrics Detail Chart
@@ -43,13 +43,13 @@ fun WorkoutMetricsDetailChart(
     showLoad: Boolean = true,
     showPosition: Boolean = true,
     showPower: Boolean = true,
-    animationDuration: Int = 1500
+    animationDuration: Int = 1500,
 ) {
     // Data validation
     if (metrics.isEmpty()) {
         MetricsEmptyChartState(
             message = stringResource(Res.string.chart_no_metrics),
-            modifier = modifier
+            modifier = modifier,
         )
         return
     }
@@ -67,8 +67,8 @@ fun WorkoutMetricsDetailChart(
             targetValue = 1f,
             animationSpec = tween(
                 durationMillis = animationDuration,
-                easing = EaseInOutCubic
-            )
+                easing = EaseInOutCubic,
+            ),
         )
     }
 
@@ -94,7 +94,7 @@ fun WorkoutMetricsDetailChart(
                 .fillMaxWidth()
                 .horizontalScroll(rememberScrollState())
                 .padding(bottom = 8.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             FilterChip(
                 selected = showLoadA,
@@ -104,7 +104,7 @@ fun WorkoutMetricsDetailChart(
                     Canvas(modifier = Modifier.size(8.dp)) {
                         drawCircle(color = loadAColor)
                     }
-                }
+                },
             )
             FilterChip(
                 selected = showLoadB,
@@ -114,7 +114,7 @@ fun WorkoutMetricsDetailChart(
                     Canvas(modifier = Modifier.size(8.dp)) {
                         drawCircle(color = loadBColor)
                     }
-                }
+                },
             )
             FilterChip(
                 selected = showPosA,
@@ -124,7 +124,7 @@ fun WorkoutMetricsDetailChart(
                     Canvas(modifier = Modifier.size(8.dp)) {
                         drawCircle(color = posAColor)
                     }
-                }
+                },
             )
             FilterChip(
                 selected = showPosB,
@@ -134,14 +134,14 @@ fun WorkoutMetricsDetailChart(
                     Canvas(modifier = Modifier.size(8.dp)) {
                         drawCircle(color = posBColor)
                     }
-                }
+                },
             )
         }
 
         BoxWithConstraints(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(240.dp)
+                .height(240.dp),
         ) {
             val chartWidth = with(density) { maxWidth.toPx() }
             val chartHeight = with(density) { maxHeight.toPx() }
@@ -163,17 +163,12 @@ fun WorkoutMetricsDetailChart(
                         color = gridColor,
                         start = Offset(paddingLeftPx, y),
                         end = Offset(chartWidth, y),
-                        strokeWidth = 1.dp.toPx()
+                        strokeWidth = 1.dp.toPx(),
                     )
                 }
 
                 // Helper function to draw metric line
-                fun drawMetricLine(
-                    values: List<Float>,
-                    maxValue: Float,
-                    color: Color,
-                    show: Boolean
-                ) {
+                fun drawMetricLine(values: List<Float>, maxValue: Float, color: Color, show: Boolean) {
                     if (!show || values.isEmpty() || maxValue <= 0) return
 
                     val path = Path()
@@ -197,8 +192,8 @@ fun WorkoutMetricsDetailChart(
                         style = Stroke(
                             width = 2.dp.toPx(),
                             cap = StrokeCap.Round,
-                            join = StrokeJoin.Round
-                        )
+                            join = StrokeJoin.Round,
+                        ),
                     )
                 }
 
@@ -207,25 +202,25 @@ fun WorkoutMetricsDetailChart(
                     values = metrics.map { it.loadA },
                     maxValue = maxLoad,
                     color = loadAColor,
-                    show = showLoadA
+                    show = showLoadA,
                 )
                 drawMetricLine(
                     values = metrics.map { it.loadB },
                     maxValue = maxLoad,
                     color = loadBColor,
-                    show = showLoadB
+                    show = showLoadB,
                 )
                 drawMetricLine(
                     values = metrics.map { it.positionA },
                     maxValue = maxPosition,
                     color = posAColor,
-                    show = showPosA
+                    show = showPosA,
                 )
                 drawMetricLine(
                     values = metrics.map { it.positionB },
                     maxValue = maxPosition,
                     color = posBColor,
-                    show = showPosB
+                    show = showPosB,
                 )
             }
 
@@ -235,19 +230,19 @@ fun WorkoutMetricsDetailChart(
                     .align(Alignment.TopStart)
                     .width(paddingLeft - 4.dp)
                     .height(with(density) { effectiveHeight.toDp() }),
-                verticalArrangement = Arrangement.SpaceBetween
+                verticalArrangement = Arrangement.SpaceBetween,
             ) {
                 // Show load scale if load is visible
                 if (showLoadA || showLoadB) {
                     Text(
                         text = "${maxLoad.toInt()}kg",
                         style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     Text(
                         text = "0",
                         style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
             }
@@ -259,7 +254,7 @@ fun WorkoutMetricsDetailChart(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
-                    .padding(end = 8.dp)
+                    .padding(end = 8.dp),
             )
         }
 
@@ -268,19 +263,19 @@ fun WorkoutMetricsDetailChart(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(top = 8.dp),
-            horizontalArrangement = Arrangement.SpaceEvenly
+            horizontalArrangement = Arrangement.SpaceEvenly,
         ) {
             if (showLoadA || showLoadB) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Text(
                         text = "Max Load",
                         style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     Text(
                         text = "${maxLoad.toInt()} kg",
                         style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.primary
+                        color = MaterialTheme.colorScheme.primary,
                     )
                 }
             }
@@ -289,12 +284,12 @@ fun WorkoutMetricsDetailChart(
                 Text(
                     text = "Samples",
                     style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 Text(
                     text = "${metrics.size}",
                     style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.secondary
+                    color = MaterialTheme.colorScheme.secondary,
                 )
             }
 
@@ -303,12 +298,12 @@ fun WorkoutMetricsDetailChart(
                     Text(
                         text = "Max ROM",
                         style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     Text(
                         text = "${maxPosition.toInt()} mm",
                         style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.tertiary
+                        color = MaterialTheme.colorScheme.tertiary,
                     )
                 }
             }
@@ -317,32 +312,29 @@ fun WorkoutMetricsDetailChart(
 }
 
 @Composable
-private fun MetricsEmptyChartState(
-    message: String,
-    modifier: Modifier = Modifier
-) {
+private fun MetricsEmptyChartState(message: String, modifier: Modifier = Modifier) {
     Box(
         modifier = modifier
             .fillMaxWidth()
             .height(320.dp)
             .padding(16.dp),
-        contentAlignment = Alignment.Center
+        contentAlignment = Alignment.Center,
     ) {
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+            verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             Icon(
                 imageVector = Icons.AutoMirrored.Filled.ShowChart,
                 contentDescription = stringResource(Res.string.chart_no_metrics),
                 tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
-                modifier = Modifier.size(48.dp)
+                modifier = Modifier.size(48.dp),
             )
             Text(
                 text = message,
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                textAlign = TextAlign.Center
+                textAlign = TextAlign.Center,
             )
         }
     }

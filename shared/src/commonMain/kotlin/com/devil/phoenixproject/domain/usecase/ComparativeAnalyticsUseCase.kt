@@ -11,16 +11,13 @@ class ComparativeAnalyticsUseCase {
     /**
      * Compare two time periods
      */
-    fun comparePeriods(
-        currentPeriod: List<TrendPoint>,
-        previousPeriod: List<TrendPoint>,
-        metricType: TrendMetricType
-    ): ComparisonResult {
+    fun comparePeriods(currentPeriod: List<TrendPoint>, previousPeriod: List<TrendPoint>, metricType: TrendMetricType): ComparisonResult {
         val currentData = calculatePeriodData(currentPeriod)
         val previousData = calculatePeriodData(previousPeriod)
 
         val changePercentage = if (previousData.averageValue > 0) {
-            ((currentData.averageValue - previousData.averageValue) / previousData.averageValue) * 100f
+            ((currentData.averageValue - previousData.averageValue) / previousData.averageValue) *
+                100f
         } else {
             0f
         }
@@ -40,23 +37,21 @@ class ComparativeAnalyticsUseCase {
             previousPeriod = previousData,
             changePercentage = changePercentage,
             changeDirection = changeDirection,
-            isSignificant = isSignificant
+            isSignificant = isSignificant,
         )
     }
 
     /**
      * Calculate aggregated data for a period
      */
-    private fun calculatePeriodData(
-        dataPoints: List<TrendPoint>
-    ): PeriodData {
+    private fun calculatePeriodData(dataPoints: List<TrendPoint>): PeriodData {
         if (dataPoints.isEmpty()) {
             return PeriodData(
                 startDate = 0L,
                 endDate = 0L,
                 totalValue = 0f,
                 averageValue = 0f,
-                dataPoints = emptyList()
+                dataPoints = emptyList(),
             )
         }
 
@@ -75,20 +70,14 @@ class ComparativeAnalyticsUseCase {
             endDate = endDate,
             totalValue = totalValue,
             averageValue = averageValue,
-            dataPoints = sortedPoints
+            dataPoints = sortedPoints,
         )
     }
 
     /**
      * Compare this week vs last week
      */
-    fun compareThisWeekVsLastWeek(
-        thisWeek: List<TrendPoint>,
-        lastWeek: List<TrendPoint>,
-        metricType: TrendMetricType
-    ): ComparisonResult {
-        return comparePeriods(thisWeek, lastWeek, metricType)
-    }
+    fun compareThisWeekVsLastWeek(thisWeek: List<TrendPoint>, lastWeek: List<TrendPoint>, metricType: TrendMetricType): ComparisonResult = comparePeriods(thisWeek, lastWeek, metricType)
 
     /**
      * Compare this month vs last month
@@ -96,8 +85,6 @@ class ComparativeAnalyticsUseCase {
     fun compareThisMonthVsLastMonth(
         thisMonth: List<TrendPoint>,
         lastMonth: List<TrendPoint>,
-        metricType: TrendMetricType
-    ): ComparisonResult {
-        return comparePeriods(thisMonth, lastMonth, metricType)
-    }
+        metricType: TrendMetricType,
+    ): ComparisonResult = comparePeriods(thisMonth, lastMonth, metricType)
 }

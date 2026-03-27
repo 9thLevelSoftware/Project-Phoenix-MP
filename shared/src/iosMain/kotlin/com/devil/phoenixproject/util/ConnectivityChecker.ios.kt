@@ -1,5 +1,6 @@
 package com.devil.phoenixproject.util
 
+import kotlin.concurrent.Volatile
 import platform.Network.nw_path_get_status
 import platform.Network.nw_path_monitor_create
 import platform.Network.nw_path_monitor_set_queue
@@ -8,7 +9,6 @@ import platform.Network.nw_path_monitor_start
 import platform.Network.nw_path_status_satisfied
 import platform.darwin.DISPATCH_QUEUE_PRIORITY_DEFAULT
 import platform.darwin.dispatch_get_global_queue
-import kotlin.concurrent.Volatile
 
 /**
  * iOS connectivity checker backed by Network.framework's NWPathMonitor.
@@ -32,7 +32,7 @@ actual class ConnectivityChecker {
         }
         nw_path_monitor_set_queue(
             monitor,
-            dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT.toLong(), 0u)
+            dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT.toLong(), 0u),
         )
         nw_path_monitor_start(monitor)
     }

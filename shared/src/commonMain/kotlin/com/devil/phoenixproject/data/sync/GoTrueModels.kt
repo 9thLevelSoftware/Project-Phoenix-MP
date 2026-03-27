@@ -13,7 +13,7 @@ data class GoTrueAuthResponse(
     @SerialName("expires_in") val expiresIn: Int,
     @SerialName("expires_at") val expiresAt: Long? = null,
     @SerialName("refresh_token") val refreshToken: String,
-    val user: GoTrueUser
+    val user: GoTrueUser,
 )
 
 @Serializable
@@ -30,7 +30,7 @@ data class GoTrueUser(
     @SerialName("user_metadata") val userMetadata: JsonObject? = null,
     @SerialName("created_at") val createdAt: String? = null,
     @SerialName("updated_at") val updatedAt: String? = null,
-    @SerialName("is_anonymous") val isAnonymous: Boolean = false
+    @SerialName("is_anonymous") val isAnonymous: Boolean = false,
 ) {
     /** Extract display_name from user_metadata if present */
     val displayName: String?
@@ -40,31 +40,20 @@ data class GoTrueUser(
 // === GoTrue Sign-Up Request ===
 
 @Serializable
-data class GoTrueSignUpRequest(
-    val email: String,
-    val password: String,
-    val data: GoTrueUserMetadata? = null
-)
+data class GoTrueSignUpRequest(val email: String, val password: String, val data: GoTrueUserMetadata? = null)
 
 @Serializable
-data class GoTrueUserMetadata(
-    @SerialName("display_name") val displayName: String? = null
-)
+data class GoTrueUserMetadata(@SerialName("display_name") val displayName: String? = null)
 
 // === GoTrue Password Sign-In Request ===
 
 @Serializable
-data class GoTruePasswordRequest(
-    val email: String,
-    val password: String
-)
+data class GoTruePasswordRequest(val email: String, val password: String)
 
 // === GoTrue Refresh Token Request ===
 
 @Serializable
-data class GoTrueRefreshRequest(
-    @SerialName("refresh_token") val refreshToken: String
-)
+data class GoTrueRefreshRequest(@SerialName("refresh_token") val refreshToken: String)
 
 // === GoTrue Error Response ===
 
@@ -74,7 +63,7 @@ data class GoTrueErrorResponse(
     @SerialName("error_description") val errorDescription: String? = null,
     @SerialName("error_code") val errorCode: String? = null,
     val msg: String? = null,
-    val code: Int? = null
+    val code: Int? = null,
 ) {
     val resolvedCode: String
         get() = errorCode ?: error ?: code?.toString() ?: "unknown"
@@ -84,14 +73,12 @@ data class GoTrueErrorResponse(
 
 // === GoTrueAuthResponse → PortalAuthResponse mapping ===
 
-fun GoTrueAuthResponse.toPortalAuthResponse(): PortalAuthResponse {
-    return PortalAuthResponse(
-        token = accessToken,
-        user = PortalUser(
-            id = user.id,
-            email = user.email ?: "",
-            displayName = user.displayName,
-            isPremium = false
-        )
-    )
-}
+fun GoTrueAuthResponse.toPortalAuthResponse(): PortalAuthResponse = PortalAuthResponse(
+    token = accessToken,
+    user = PortalUser(
+        id = user.id,
+        email = user.email ?: "",
+        displayName = user.displayName,
+        isPremium = false,
+    ),
+)

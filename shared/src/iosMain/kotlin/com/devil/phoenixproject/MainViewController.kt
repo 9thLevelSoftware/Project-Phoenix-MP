@@ -1,14 +1,14 @@
 package com.devil.phoenixproject
 
+import androidx.compose.ui.window.ComposeUIViewController
 import coil3.ImageLoader
 import coil3.SingletonImageLoader
 import coil3.network.ktor3.KtorNetworkFetcherFactory
 import coil3.request.crossfade
 import coil3.util.DebugLogger
-import androidx.compose.ui.window.ComposeUIViewController
 import com.devil.phoenixproject.presentation.components.RequireBlePermissions
-import platform.Foundation.NSLog
 import kotlin.native.Platform as NativePlatform
+import platform.Foundation.NSLog
 
 /**
  * Creates the main UIViewController for iOS that hosts the Compose Multiplatform UI.
@@ -40,7 +40,10 @@ private fun ensureImageLoader() {
             }
             .crossfade(true)
             // DebugLogger only in debug builds — iOS has no BuildConfig, use kotlin.native.Platform
-            .apply { @OptIn(kotlin.experimental.ExperimentalNativeApi::class) if (NativePlatform.isDebugBinary) logger(DebugLogger()) }
+            .apply {
+                @OptIn(kotlin.experimental.ExperimentalNativeApi::class)
+                if (NativePlatform.isDebugBinary) logger(DebugLogger())
+            }
             .build()
     }
 }

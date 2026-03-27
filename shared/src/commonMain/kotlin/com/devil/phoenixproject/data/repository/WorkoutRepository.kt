@@ -1,6 +1,5 @@
 package com.devil.phoenixproject.data.repository
 
-import com.devil.phoenixproject.domain.model.PersonalRecord
 import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.domain.model.WorkoutSession
 import kotlinx.coroutines.flow.Flow
@@ -14,7 +13,7 @@ data class PersonalRecordEntity(
     val weightPerCableKg: Float,
     val reps: Int,
     val timestamp: Long,
-    val workoutMode: String
+    val workoutMode: String,
 )
 
 /**
@@ -82,6 +81,7 @@ interface WorkoutRepository {
     suspend fun getRecentSessionsSync(profileId: String, limit: Int = 10): List<WorkoutSession>
 
     // Phase Statistics (heuristic data from machine)
+
     /**
      * Save phase statistics for a workout session
      */
@@ -111,6 +111,5 @@ data class PhaseStatisticsData(
     val eccentricVelMax: Float,
     val eccentricWattAvg: Float,
     val eccentricWattMax: Float,
-    val timestamp: Long
+    val timestamp: Long,
 )
-

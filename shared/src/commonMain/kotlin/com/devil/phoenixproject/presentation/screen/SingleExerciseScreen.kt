@@ -6,6 +6,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.navigation.NavController
+import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.data.preferences.SingleExerciseDefaults
 import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.domain.model.*
@@ -15,11 +16,10 @@ import com.devil.phoenixproject.presentation.components.CustomExerciseSaveAction
 import com.devil.phoenixproject.presentation.components.ExercisePickerContent
 import com.devil.phoenixproject.presentation.components.resolveCustomExerciseDeleteTarget
 import com.devil.phoenixproject.presentation.components.resolveCustomExerciseSaveAction
+import com.devil.phoenixproject.presentation.manager.DefaultWorkoutSessionManager
 import com.devil.phoenixproject.presentation.navigation.NavigationRoutes
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
-import com.devil.phoenixproject.presentation.manager.DefaultWorkoutSessionManager
 import com.devil.phoenixproject.ui.theme.ThemeMode
-import co.touchlab.kermit.Logger
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 
@@ -33,10 +33,11 @@ fun SingleExerciseScreen(
     navController: NavController,
     viewModel: MainViewModel,
     exerciseRepository: ExerciseRepository,
-    themeMode: ThemeMode
+    themeMode: ThemeMode,
 ) {
     val weightUnit by viewModel.weightUnit.collectAsState()
     val enableVideoPlayback by viewModel.enableVideoPlayback.collectAsState()
+
     @Suppress("UNUSED_VARIABLE") // Reserved for future connecting overlay
     val isAutoConnecting by viewModel.isAutoConnecting.collectAsState()
     val connectionError by viewModel.connectionError.collectAsState()
@@ -61,8 +62,11 @@ fun SingleExerciseScreen(
     val allExercises by remember(searchQuery, selectedMuscles, showFavoritesOnly, showCustomOnly) {
         when {
             showFavoritesOnly -> exerciseRepository.getFavorites()
+
             showCustomOnly -> exerciseRepository.getCustomExercises()
+
             searchQuery.isNotBlank() -> exerciseRepository.searchExercises(searchQuery)
+
             selectedMuscles.isNotEmpty() -> {
                 // Get exercises for all selected muscle groups and combine
                 val flows = selectedMuscles.map { muscle ->
@@ -71,6 +75,7 @@ fun SingleExerciseScreen(
                 // For now, just use the first one - ideally we'd combine all flows
                 flows.firstOrNull() ?: exerciseRepository.getAllExercises()
             }
+
             else -> exerciseRepository.getAllExercises()
         }
     }.collectAsState(initial = emptyList())
@@ -130,13 +135,14 @@ fun SingleExerciseScreen(
                 exerciseToEdit = null
                 val action = resolveCustomExerciseSaveAction(
                     draftExercise = exercise,
-                    editingExerciseId = editExerciseId
+                    editingExerciseId = editExerciseId,
                 )
                 coroutineScope.launch {
                     when (action) {
                         is CustomExerciseSaveAction.Create -> {
                             exerciseRepository.createCustomExercise(action.exercise)
                         }
+
                         is CustomExerciseSaveAction.Update -> {
                             exerciseRepository.updateCustomExercise(action.exercise)
                         }
@@ -153,17 +159,19 @@ fun SingleExerciseScreen(
                         targetId?.let { exerciseRepository.deleteCustomExercise(it) }
                     }
                 }
-            } else null,
+            } else {
+                null
+            },
             onDismiss = {
                 showCreateDialog = false
                 exerciseToEdit = null
             },
-            themeMode = themeMode
+            themeMode = themeMode,
         )
     }
 
     Scaffold(
-        contentWindowInsets = WindowInsets.navigationBars
+        contentWindowInsets = WindowInsets.navigationBars,
     ) { padding ->
         Box(modifier = Modifier.padding(padding)) {
             // Always show the picker content as the background
@@ -228,7 +236,7 @@ fun SingleExerciseScreen(
                         muscleGroup = selectedExercise.muscleGroups.split(",").firstOrNull()?.trim() ?: "Full Body",
                         muscleGroups = selectedExercise.muscleGroups,
                         equipment = selectedExercise.equipment,
-                        id = selectedExercise.id
+                        id = selectedExercise.id,
                     )
 
                     // Cancel any in-progress loading to prevent race conditions
@@ -260,7 +268,7 @@ fun SingleExerciseScreen(
                                     echoLevel = savedDefaults.getEchoLevel(),
                                     duration = savedDefaults.duration.takeIf { it > 0 },
                                     isAMRAP = savedDefaults.isAMRAP,
-                                    perSetRestTime = savedDefaults.perSetRestTime
+                                    perSetRestTime = savedDefaults.perSetRestTime,
                                 )
                             } else {
                                 // No saved defaults - use system defaults
@@ -274,7 +282,7 @@ fun SingleExerciseScreen(
                                     setRestSeconds = listOf(60, 60, 60),
                                     programMode = ProgramMode.OldSchool,
                                     eccentricLoad = EccentricLoad.LOAD_100,
-                                    echoLevel = EchoLevel.HARDER
+                                    echoLevel = EchoLevel.HARDER,
                                 )
                             }
                             exerciseToConfig = newRoutineExercise
@@ -288,14 +296,14 @@ fun SingleExerciseScreen(
                 enableCustomExercises = true,
                 onCreateExercise = { showCreateDialog = true },
                 onEditExercise = { exercise -> exerciseToEdit = exercise },
-                fullScreen = true
+                fullScreen = true,
             )
 
             // Show loading indicator while defaults are being loaded
             if (isLoadingDefaults) {
                 Box(
                     modifier = Modifier.fillMaxSize(),
-                    contentAlignment = Alignment.Center
+                    contentAlignment = Alignment.Center,
                 ) {
                     CircularProgressIndicator()
                 }
@@ -319,7 +327,7 @@ fun SingleExerciseScreen(
                             val tempRoutine = Routine(
                                 id = "${DefaultWorkoutSessionManager.TEMP_SINGLE_EXERCISE_PREFIX}${generateUUID()}",
                                 name = "Single Exercise: ${configuredExercise.exercise.name}",
-                                exercises = listOf(configuredExercise)
+                                exercises = listOf(configuredExercise),
                             )
 
                             // Issue #2 Fix: Use coroutine to await routine loading (including PR weight
@@ -345,7 +353,7 @@ fun SingleExerciseScreen(
                                     },
                                     onFailed = {
                                         Logger.e { "SingleExercise: onFailed callback - connection failed" }
-                                    }
+                                    },
                                 )
                             }
 
@@ -353,7 +361,7 @@ fun SingleExerciseScreen(
                         },
                         onDismiss = {
                             exerciseToConfig = null
-                        }
+                        },
                     )
                 }
             }
@@ -363,7 +371,7 @@ fun SingleExerciseScreen(
         connectionError?.let { error ->
             ConnectionErrorDialog(
                 message = error,
-                onDismiss = { viewModel.clearConnectionError() }
+                onDismiss = { viewModel.clearConnectionError() },
             )
         }
     }

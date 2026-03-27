@@ -16,9 +16,7 @@ import kotlin.test.assertTrue
  */
 class PortalTokenStorageTest {
 
-    private fun createStorage(): PortalTokenStorage {
-        return PortalTokenStorage(MapSettings())
-    }
+    private fun createStorage(): PortalTokenStorage = PortalTokenStorage(MapSettings())
 
     /**
      * Helper to save a GoTrue auth response with a specific expiresAt timestamp.
@@ -32,8 +30,8 @@ class PortalTokenStorageTest {
             refreshToken = "test-refresh-token",
             user = GoTrueUser(
                 id = "user-123",
-                email = "test@example.com"
-            )
+                email = "test@example.com",
+            ),
         )
         storage.saveGoTrueAuth(response)
     }
@@ -58,7 +56,7 @@ class PortalTokenStorageTest {
 
         assertTrue(
             storage.isTokenExpired(),
-            "Token expiring in 30s (within 60s buffer) should be treated as expired"
+            "Token expiring in 30s (within 60s buffer) should be treated as expired",
         )
     }
 
@@ -71,7 +69,7 @@ class PortalTokenStorageTest {
 
         assertFalse(
             storage.isTokenExpired(),
-            "Token expiring in 120s (beyond 60s buffer) should not be expired"
+            "Token expiring in 120s (beyond 60s buffer) should not be expired",
         )
     }
 
@@ -109,9 +107,17 @@ class PortalTokenStorageTest {
         assertNull(storage.getRefreshToken(), "getRefreshToken should return null")
 
         // DeviceId should be preserved for stable identity
-        assertEquals(deviceId, storage.getDeviceId(), "DeviceId should be preserved after clearAuth")
+        assertEquals(
+            deviceId,
+            storage.getDeviceId(),
+            "DeviceId should be preserved after clearAuth",
+        )
         // lastSync should be reset so a re-link triggers a full pull
-        assertEquals(0L, storage.getLastSyncTimestamp(), "lastSyncTimestamp should be reset after clearAuth")
+        assertEquals(
+            0L,
+            storage.getLastSyncTimestamp(),
+            "lastSyncTimestamp should be reset after clearAuth",
+        )
     }
 
     // ===== saveGoTrueAuth Tests =====
@@ -131,13 +137,17 @@ class PortalTokenStorageTest {
                 email = "hello@world.com",
                 userMetadata = kotlinx.serialization.json.buildJsonObject {
                     put("display_name", kotlinx.serialization.json.JsonPrimitive("Hello World"))
-                }
-            )
+                },
+            ),
         )
         storage.saveGoTrueAuth(response)
 
         assertEquals("my-access-token", storage.getToken(), "Access token should be stored")
-        assertEquals("my-refresh-token", storage.getRefreshToken(), "Refresh token should be stored")
+        assertEquals(
+            "my-refresh-token",
+            storage.getRefreshToken(),
+            "Refresh token should be stored",
+        )
         assertEquals(1740916800L, storage.getExpiresAt(), "ExpiresAt should be stored")
         assertTrue(storage.isAuthenticated.value, "isAuthenticated should be true")
         assertTrue(storage.hasToken(), "hasToken should be true")

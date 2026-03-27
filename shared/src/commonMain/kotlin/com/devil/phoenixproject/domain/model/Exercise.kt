@@ -18,11 +18,11 @@ data class Exercise(
     val muscleGroup: String,
     val muscleGroups: String = muscleGroup, // Comma-separated list of primary muscle groups (defaults to muscleGroup for backward compatibility)
     val equipment: String = "",
-    val id: String? = null,  // Optional exercise library ID for loading videos/thumbnails
+    val id: String? = null, // Optional exercise library ID for loading videos/thumbnails
     val isFavorite: Boolean = false, // Whether exercise is marked as favorite
     val isCustom: Boolean = false, // Whether exercise was created by user
     val timesPerformed: Int = 0, // Number of times this exercise has been performed
-    val oneRepMaxKg: Float? = null // User's 1RM for percentage-based programming
+    val oneRepMaxKg: Float? = null, // User's 1RM for percentage-based programming
 ) {
     /**
      * Display name for UI (same as name for now)
@@ -56,5 +56,5 @@ enum class ExerciseCategory(val displayName: String) {
     LEGS("Legs"),
     GLUTES("Glutes"),
     CORE("Core"),
-    FULL_BODY("Full Body")
+    FULL_BODY("Full Body"),
 }

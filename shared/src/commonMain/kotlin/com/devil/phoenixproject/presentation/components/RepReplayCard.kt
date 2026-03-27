@@ -19,7 +19,7 @@ import kotlin.math.max
  *
  * Layout:
  * +------------------------------------------+
- * | Rep 3                           [warmup] |  <- Title row: rep number, optional warmup badge
+ * | Rep 3 [warmup] |  <- Title row: rep number, optional warmup badge
  * +------------------------------------------+
  * | [====== ForceSparkline ================] |  <- Full-width sparkline
  * +------------------------------------------+
@@ -37,16 +37,18 @@ fun RepReplayCard(
     repData: RepMetricData,
     weightUnit: WeightUnit,
     formatWeight: (Float, WeightUnit) -> String,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
 ) {
     // M7: Combine both cables (A+B) for each phase, then concatenate for a continuous curve.
     // Guard against mismatched array sizes between cables A and B by using the shorter length.
-    val concentricCombined = FloatArray(minOf(repData.concentricLoadsA.size, repData.concentricLoadsB.size)) { i ->
-        repData.concentricLoadsA[i] + repData.concentricLoadsB[i]
-    }
-    val eccentricCombined = FloatArray(minOf(repData.eccentricLoadsA.size, repData.eccentricLoadsB.size)) { i ->
-        repData.eccentricLoadsA[i] + repData.eccentricLoadsB[i]
-    }
+    val concentricCombined =
+        FloatArray(minOf(repData.concentricLoadsA.size, repData.concentricLoadsB.size)) { i ->
+            repData.concentricLoadsA[i] + repData.concentricLoadsB[i]
+        }
+    val eccentricCombined =
+        FloatArray(minOf(repData.eccentricLoadsA.size, repData.eccentricLoadsB.size)) { i ->
+            repData.eccentricLoadsA[i] + repData.eccentricLoadsB[i]
+        }
     val combinedForceData = concentricCombined + eccentricCombined
 
     // Peak index is at the transition point (end of concentric phase)
@@ -66,38 +68,38 @@ fun RepReplayCard(
     Card(
         modifier = modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
         ),
-        shape = RoundedCornerShape(12.dp)
+        shape = RoundedCornerShape(12.dp),
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(Spacing.small)
+                .padding(Spacing.small),
         ) {
             // Title row: Rep number + warmup badge
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+                verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
                     "Rep ${repData.repNumber}",
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface
+                    color = MaterialTheme.colorScheme.onSurface,
                 )
 
                 if (repData.isWarmup) {
                     Surface(
                         color = MaterialTheme.colorScheme.tertiaryContainer,
-                        shape = RoundedCornerShape(8.dp)
+                        shape = RoundedCornerShape(8.dp),
                     ) {
                         Text(
                             "warmup",
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onTertiaryContainer,
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
                         )
                     }
                 }
@@ -109,7 +111,7 @@ fun RepReplayCard(
             ForceSparkline(
                 forceData = combinedForceData,
                 peakIndex = peakIndex,
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier.fillMaxWidth(),
             )
 
             Spacer(modifier = Modifier.height(Spacing.small))
@@ -117,24 +119,24 @@ fun RepReplayCard(
             // Metrics row
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceEvenly
+                horizontalArrangement = Arrangement.SpaceEvenly,
             ) {
                 // Peak Force
                 MetricColumn(
                     label = "Peak Force",
-                    value = formatWeight(peakForce, weightUnit)
+                    value = formatWeight(peakForce, weightUnit),
                 )
 
                 // Concentric duration
                 MetricColumn(
                     label = "Concentric",
-                    value = "${KmpUtils.formatFloat(concentricSeconds, 1)}s"
+                    value = "${KmpUtils.formatFloat(concentricSeconds, 1)}s",
                 )
 
                 // Eccentric duration
                 MetricColumn(
                     label = "Eccentric",
-                    value = "${KmpUtils.formatFloat(eccentricSeconds, 1)}s"
+                    value = "${KmpUtils.formatFloat(eccentricSeconds, 1)}s",
                 )
             }
         }
@@ -145,23 +147,20 @@ fun RepReplayCard(
  * Helper composable for displaying a labeled metric value.
  */
 @Composable
-private fun MetricColumn(
-    label: String,
-    value: String
-) {
+private fun MetricColumn(label: String, value: String) {
     Column(
-        horizontalAlignment = Alignment.CenterHorizontally
+        horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Text(
             label,
             style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Text(
             value,
             style = MaterialTheme.typography.bodyMedium,
             fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.onSurface
+            color = MaterialTheme.colorScheme.onSurface,
         )
     }
 }

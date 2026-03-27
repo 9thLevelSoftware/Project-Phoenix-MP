@@ -26,7 +26,7 @@ actual val platformModule: Module = module {
         val bundle = NSBundle.mainBundle
         SupabaseConfig(
             url = bundle.objectForInfoDictionaryKey("SUPABASE_URL") as? String ?: "",
-            anonKey = bundle.objectForInfoDictionaryKey("SUPABASE_ANON_KEY") as? String ?: ""
+            anonKey = bundle.objectForInfoDictionaryKey("SUPABASE_ANON_KEY") as? String ?: "",
         )
     }
     single { DriverFactory() }

@@ -23,13 +23,13 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.RoutineExercise
 import com.devil.phoenixproject.domain.model.WeightUnit
-import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.ui.theme.SupersetTheme
 import org.jetbrains.compose.resources.stringResource
-import vitruvianprojectphoenix.shared.generated.resources.Res
 import vitruvianprojectphoenix.shared.generated.resources.*
+import vitruvianprojectphoenix.shared.generated.resources.Res
 
 /**
  * Exercise item displayed inside a superset with tree connector visuals.
@@ -66,7 +66,7 @@ fun SupersetExerciseItem(
     onMenuClick: () -> Unit,
     onDragHandle: @Composable () -> Unit,
     onClick: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
 ) {
     val color = SupersetTheme.colorForIndex(colorIndex)
 
@@ -74,19 +74,19 @@ fun SupersetExerciseItem(
         modifier = modifier
             .fillMaxWidth()
             .padding(start = 16.dp), // Indent for nesting
-        verticalAlignment = Alignment.CenterVertically
+        verticalAlignment = Alignment.CenterVertically,
     ) {
         // Tree connector
         Column(
             modifier = Modifier.width(24.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
+            horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             // Vertical line (top portion)
             Box(
                 modifier = Modifier
                     .width(2.dp)
                     .height(if (isFirst) 0.dp else 20.dp)
-                    .background(MaterialTheme.colorScheme.outline.copy(alpha = 0.3f))
+                    .background(MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)),
             )
 
             // Horizontal connector
@@ -95,7 +95,7 @@ fun SupersetExerciseItem(
                     modifier = Modifier
                         .width(12.dp)
                         .height(2.dp)
-                        .background(MaterialTheme.colorScheme.outline.copy(alpha = 0.3f))
+                        .background(MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)),
                 )
             }
 
@@ -105,7 +105,7 @@ fun SupersetExerciseItem(
                     modifier = Modifier
                         .width(2.dp)
                         .weight(1f)
-                        .background(MaterialTheme.colorScheme.outline.copy(alpha = 0.3f))
+                        .background(MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)),
                 )
             }
         }
@@ -123,13 +123,13 @@ fun SupersetExerciseItem(
             },
             border = BorderStroke(
                 width = 2.dp,
-                color = color.copy(alpha = 0.3f)
+                color = color.copy(alpha = 0.3f),
             ),
-            tonalElevation = if (isDragging) 8.dp else 1.dp
+            tonalElevation = if (isDragging) 8.dp else 1.dp,
         ) {
             Row(
                 modifier = Modifier.padding(8.dp),
-                verticalAlignment = Alignment.CenterVertically
+                verticalAlignment = Alignment.CenterVertically,
             ) {
                 onDragHandle()
 
@@ -138,7 +138,7 @@ fun SupersetExerciseItem(
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = exercise.exercise.name,
-                        style = MaterialTheme.typography.bodyLarge
+                        style = MaterialTheme.typography.bodyLarge,
                     )
                     // Display format depends on whether this is a timed exercise
                     // Bodyweight = no cable accessories (handles, bar, rope, etc.) in equipment list
@@ -164,11 +164,13 @@ fun SupersetExerciseItem(
                                 val unitLabel = if (weightUnit == WeightUnit.KG) "kg" else "lb"
                                 " (+${progWeight}$unitLabel)"
                             }
+
                             exercise.progressionKg < 0 -> {
                                 val regWeight = kgToDisplay(-exercise.progressionKg, weightUnit)
                                 val unitLabel = if (weightUnit == WeightUnit.KG) "kg" else "lb"
                                 " (-${regWeight}$unitLabel)"
                             }
+
                             else -> ""
                         }
                         "${exercise.sets} sets x ${exercise.duration}s @ $weightText$progressionText"
@@ -191,11 +193,13 @@ fun SupersetExerciseItem(
                                 val unitLabel = if (weightUnit == WeightUnit.KG) "kg" else "lb"
                                 " (+${progWeight}$unitLabel/rep)"
                             }
+
                             exercise.progressionKg < 0 -> {
                                 val regWeight = kgToDisplay(-exercise.progressionKg, weightUnit)
                                 val unitLabel = if (weightUnit == WeightUnit.KG) "kg" else "lb"
                                 " (-${regWeight}$unitLabel/rep)"
                             }
+
                             else -> ""
                         }
                         "${exercise.sets} sets x $repsText @ $weightText$progressionText"
@@ -203,12 +207,15 @@ fun SupersetExerciseItem(
                     Text(
                         text = exerciseText,
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
 
                 IconButton(onClick = onMenuClick) {
-                    Icon(Icons.Default.MoreVert, contentDescription = stringResource(Res.string.cd_menu))
+                    Icon(
+                        Icons.Default.MoreVert,
+                        contentDescription = stringResource(Res.string.cd_menu),
+                    )
                 }
             }
         }

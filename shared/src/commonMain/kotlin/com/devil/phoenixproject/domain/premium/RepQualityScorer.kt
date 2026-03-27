@@ -48,7 +48,8 @@ class RepQualityScorer {
 
         val romScore = scoreRom(repData.rangeOfMotionMm, isFirstRep)
         val velocityScore = scoreVelocity(repData.avgVelocityConcentric, isFirstRep)
-        val eccentricScore = scoreEccentricControl(repData.eccentricDurationMs, repData.concentricDurationMs)
+        val eccentricScore =
+            scoreEccentricControl(repData.eccentricDurationMs, repData.concentricDurationMs)
         val smoothness = scoreSmoothness(repData.concentricVelocities)
 
         // Update running averages after scoring (so current rep is scored against prior average)
@@ -65,7 +66,7 @@ class RepQualityScorer {
             velocityScore = velocityScore,
             eccentricControlScore = eccentricScore,
             smoothnessScore = smoothness,
-            repNumber = repData.repNumber
+            repNumber = repData.repNumber,
         )
 
         scoredReps.add(result)
@@ -91,7 +92,7 @@ class RepQualityScorer {
             bestRepNumber = best.repNumber,
             worstRepNumber = worst.repNumber,
             trend = getTrend(),
-            repScores = scoredReps.toList()
+            repScores = scoredReps.toList(),
         )
     }
 
@@ -131,7 +132,12 @@ class RepQualityScorer {
         val avg = romAverage.average()
         if (avg == 0f) return ROM_MAX_POINTS
         val deviation = abs(repROM - avg) / avg
-        return (ROM_MAX_POINTS * maxOf(0f, 1f - deviation * DEVIATION_MULTIPLIER)).coerceIn(0f, ROM_MAX_POINTS)
+        return (
+            ROM_MAX_POINTS * maxOf(
+                0f,
+                1f - deviation * DEVIATION_MULTIPLIER,
+            )
+            ).coerceIn(0f, ROM_MAX_POINTS)
     }
 
     private fun scoreVelocity(avgVelocity: Float, isFirstRep: Boolean): Float {
@@ -139,13 +145,21 @@ class RepQualityScorer {
         val avg = velocityAverage.average()
         if (avg == 0f) return VELOCITY_MAX_POINTS
         val deviation = abs(avgVelocity - avg) / avg
-        return (VELOCITY_MAX_POINTS * maxOf(0f, 1f - deviation * DEVIATION_MULTIPLIER)).coerceIn(0f, VELOCITY_MAX_POINTS)
+        return (
+            VELOCITY_MAX_POINTS * maxOf(
+                0f,
+                1f - deviation * DEVIATION_MULTIPLIER,
+            )
+            ).coerceIn(0f, VELOCITY_MAX_POINTS)
     }
 
     private fun scoreEccentricControl(eccentricMs: Long, concentricMs: Long): Float {
         if (concentricMs == 0L) return 0f
         val ratio = eccentricMs.toFloat() / concentricMs.toFloat()
-        return (ECCENTRIC_MAX_POINTS * maxOf(0f, 1f - abs(ratio - IDEAL_ECCENTRIC_RATIO) / IDEAL_ECCENTRIC_RATIO))
+        return (
+            ECCENTRIC_MAX_POINTS *
+                maxOf(0f, 1f - abs(ratio - IDEAL_ECCENTRIC_RATIO) / IDEAL_ECCENTRIC_RATIO)
+            )
             .coerceIn(0f, ECCENTRIC_MAX_POINTS)
     }
 

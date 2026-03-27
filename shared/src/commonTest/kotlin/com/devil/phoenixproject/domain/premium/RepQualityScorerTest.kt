@@ -48,7 +48,7 @@ class RepQualityScorerTest {
         avgVelocityEccentric = 150f,
         rangeOfMotionMm = rangeOfMotionMm,
         peakPowerWatts = 500f,
-        avgPowerWatts = 350f
+        avgPowerWatts = 350f,
     )
 
     // ========== First Rep Behavior ==========
@@ -77,7 +77,7 @@ class RepQualityScorerTest {
             val score = scorer.scoreRep(rep)
             assertTrue(
                 score.composite > 90,
-                "Rep ${i + 1} composite ${score.composite} should be >90 for consistent reps"
+                "Rep ${i + 1} composite ${score.composite} should be >90 for consistent reps",
             )
         }
     }
@@ -94,11 +94,11 @@ class RepQualityScorerTest {
 
         assertTrue(
             score.romScore < 20f,
-            "ROM score ${score.romScore} should be penalized for 20% deviation (expected ~12)"
+            "ROM score ${score.romScore} should be penalized for 20% deviation (expected ~12)",
         )
         assertTrue(
             score.romScore > 5f,
-            "ROM score ${score.romScore} should not be zero for 20% deviation"
+            "ROM score ${score.romScore} should not be zero for 20% deviation",
         )
     }
 
@@ -114,11 +114,11 @@ class RepQualityScorerTest {
 
         assertTrue(
             score.velocityScore < 17f,
-            "Velocity score ${score.velocityScore} should be penalized for 20% deviation"
+            "Velocity score ${score.velocityScore} should be penalized for 20% deviation",
         )
         assertTrue(
             score.velocityScore > 3f,
-            "Velocity score ${score.velocityScore} should not be zero for 20% deviation"
+            "Velocity score ${score.velocityScore} should not be zero for 20% deviation",
         )
     }
 
@@ -130,7 +130,7 @@ class RepQualityScorerTest {
         val rep = createRepData(
             repNumber = 1,
             eccentricDurationMs = 2000L,
-            concentricDurationMs = 1000L
+            concentricDurationMs = 1000L,
         )
         val score = scorer.scoreRep(rep)
 
@@ -143,13 +143,13 @@ class RepQualityScorerTest {
         val rep = createRepData(
             repNumber = 1,
             eccentricDurationMs = 500L,
-            concentricDurationMs = 1000L
+            concentricDurationMs = 1000L,
         )
         val score = scorer.scoreRep(rep)
 
         assertTrue(
             score.eccentricControlScore < 8f,
-            "Eccentric score ${score.eccentricControlScore} should be low for 0.5 ratio (expected ~6.25)"
+            "Eccentric score ${score.eccentricControlScore} should be low for 0.5 ratio (expected ~6.25)",
         )
     }
 
@@ -161,13 +161,13 @@ class RepQualityScorerTest {
         // Very consistent velocities - low variance
         val rep = createRepData(
             repNumber = 1,
-            concentricVelocities = floatArrayOf(200f, 201f, 199f, 200f, 200f)
+            concentricVelocities = floatArrayOf(200f, 201f, 199f, 200f, 200f),
         )
         val score = scorer.scoreRep(rep)
 
         assertTrue(
             score.smoothnessScore > 18f,
-            "Smoothness ${score.smoothnessScore} should be >18 for smooth velocity array"
+            "Smoothness ${score.smoothnessScore} should be >18 for smooth velocity array",
         )
     }
 
@@ -177,13 +177,13 @@ class RepQualityScorerTest {
         // Wild variance in velocities
         val rep = createRepData(
             repNumber = 1,
-            concentricVelocities = floatArrayOf(50f, 300f, 80f, 350f, 100f)
+            concentricVelocities = floatArrayOf(50f, 300f, 80f, 350f, 100f),
         )
         val score = scorer.scoreRep(rep)
 
         assertTrue(
             score.smoothnessScore < 10f,
-            "Smoothness ${score.smoothnessScore} should be <10 for erratic velocity array"
+            "Smoothness ${score.smoothnessScore} should be <10 for erratic velocity array",
         )
     }
 

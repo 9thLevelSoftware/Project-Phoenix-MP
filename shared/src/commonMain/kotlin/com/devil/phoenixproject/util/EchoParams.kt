@@ -31,5 +31,5 @@ data class EchoParams(
     /** Eccentric phase duration. Firmware offset 0x18. Always 0.0 in official app. */
     val eccentricDurationSeconds: Float,
     /** Max cable velocity during eccentric phase. Firmware offset 0x1C. -200.0 in official app. */
-    val eccentricMaxVelocity: Float
+    val eccentricMaxVelocity: Float,
 )

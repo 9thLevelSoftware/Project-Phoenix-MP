@@ -2,12 +2,12 @@ package com.devil.phoenixproject.data.repository
 
 import com.devil.phoenixproject.database.VitruvianDatabase
 import com.devil.phoenixproject.testutil.createTestDatabase
-import kotlinx.coroutines.test.runTest
-import org.junit.Before
-import org.junit.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
+import kotlinx.coroutines.test.runTest
+import org.junit.Before
+import org.junit.Test
 
 class SqlDelightUserProfileRepositoryTest {
 

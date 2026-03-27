@@ -19,17 +19,13 @@ data class ExerciseConfig(
     val eccentricLoadPercent: Int = 100, // 100-150%
 
     // Echo-specific
-    val echoLevel: EchoLevel = EchoLevel.HARD
+    val echoLevel: EchoLevel = EchoLevel.HARD,
 ) {
     companion object {
         /**
          * Create default config for an exercise based on template suggestion.
          */
-        fun fromTemplate(
-            exerciseName: String,
-            suggestedMode: ProgramMode?,
-            oneRepMaxKg: Float? = null
-        ): ExerciseConfig {
+        fun fromTemplate(exerciseName: String, suggestedMode: ProgramMode?, oneRepMaxKg: Float? = null): ExerciseConfig {
             val mode = suggestedMode ?: ProgramMode.OldSchool
             // Default weight is 70% of 1RM if available
             val weight = oneRepMaxKg?.let { (it * 0.70f * 2).toInt() / 2f } ?: 0f
@@ -37,7 +33,7 @@ data class ExerciseConfig(
             return ExerciseConfig(
                 exerciseName = exerciseName,
                 mode = mode,
-                weightPerCableKg = weight
+                weightPerCableKg = weight,
             )
         }
     }

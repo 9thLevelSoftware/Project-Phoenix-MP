@@ -2,12 +2,12 @@ package com.devil.phoenixproject.domain.premium
 
 import com.devil.phoenixproject.domain.model.BiomechanicsVelocityZone
 import com.devil.phoenixproject.domain.model.WorkoutMetric
+import com.devil.phoenixproject.domain.model.currentTimeMillis
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
-import com.devil.phoenixproject.domain.model.currentTimeMillis
-import kotlin.test.assertFalse
 
 /**
  * Tests for VBT (Velocity Based Training) computation in BiomechanicsEngine.
@@ -33,7 +33,7 @@ class VbtEngineTest {
         loadA: Float = 50f,
         loadB: Float = 50f,
         positionA: Float = 0f,
-        positionB: Float = 0f
+        positionB: Float = 0f,
     ): WorkoutMetric = WorkoutMetric(
         timestamp = currentTimeMillis(),
         loadA = loadA,
@@ -41,14 +41,13 @@ class VbtEngineTest {
         positionA = positionA,
         positionB = positionB,
         velocityA = velocityA,
-        velocityB = velocityB
+        velocityB = velocityB,
     )
 
     /**
      * Create a list of metrics with uniform velocity for MCV testing.
      */
-    private fun createUniformMetrics(velocity: Double, count: Int = 5): List<WorkoutMetric> =
-        (1..count).map { createMetric(velocityA = velocity, velocityB = velocity) }
+    private fun createUniformMetrics(velocity: Double, count: Int = 5): List<WorkoutMetric> = (1..count).map { createMetric(velocityA = velocity, velocityB = velocity) }
 
     // ========== MCV Calculation Tests (VBT-01) ==========
 
@@ -59,8 +58,12 @@ class VbtEngineTest {
 
         val result = engine.processRep(1, metrics, metrics, currentTimeMillis())
 
-        assertEquals(50f, result.velocity.meanConcentricVelocityMmS, 0.1f,
-            "Single metric with velocityA=50, velocityB=0 should give MCV=50")
+        assertEquals(
+            50f,
+            result.velocity.meanConcentricVelocityMmS,
+            0.1f,
+            "Single metric with velocityA=50, velocityB=0 should give MCV=50",
+        )
     }
 
     @Test
@@ -70,8 +73,12 @@ class VbtEngineTest {
 
         val result = engine.processRep(1, metrics, metrics, currentTimeMillis())
 
-        assertEquals(70f, result.velocity.meanConcentricVelocityMmS, 0.1f,
-            "Should take max(30, 70) = 70 as the movement velocity")
+        assertEquals(
+            70f,
+            result.velocity.meanConcentricVelocityMmS,
+            0.1f,
+            "Should take max(30, 70) = 70 as the movement velocity",
+        )
     }
 
     @Test
@@ -79,17 +86,21 @@ class VbtEngineTest {
         val engine = BiomechanicsEngine()
         // 5 samples: max velocities are 100, 120, 110, 115, 105 -> average = 110
         val metrics = listOf(
-            createMetric(velocityA = 100.0, velocityB = 50.0),  // max = 100
-            createMetric(velocityA = 80.0, velocityB = 120.0),  // max = 120
-            createMetric(velocityA = 110.0, velocityB = 90.0),  // max = 110
+            createMetric(velocityA = 100.0, velocityB = 50.0), // max = 100
+            createMetric(velocityA = 80.0, velocityB = 120.0), // max = 120
+            createMetric(velocityA = 110.0, velocityB = 90.0), // max = 110
             createMetric(velocityA = 115.0, velocityB = 100.0), // max = 115
-            createMetric(velocityA = 105.0, velocityB = 105.0)  // max = 105
+            createMetric(velocityA = 105.0, velocityB = 105.0), // max = 105
         )
 
         val result = engine.processRep(1, metrics, metrics, currentTimeMillis())
 
-        assertEquals(110f, result.velocity.meanConcentricVelocityMmS, 0.1f,
-            "Average of (100, 120, 110, 115, 105) should be 110")
+        assertEquals(
+            110f,
+            result.velocity.meanConcentricVelocityMmS,
+            0.1f,
+            "Average of (100, 120, 110, 115, 105) should be 110",
+        )
     }
 
     @Test
@@ -99,8 +110,12 @@ class VbtEngineTest {
 
         val result = engine.processRep(1, metrics, metrics, currentTimeMillis())
 
-        assertEquals(200f, result.velocity.meanConcentricVelocityMmS, 0.1f,
-            "abs(-200) = 200 should be used as max velocity")
+        assertEquals(
+            200f,
+            result.velocity.meanConcentricVelocityMmS,
+            0.1f,
+            "abs(-200) = 200 should be used as max velocity",
+        )
     }
 
     @Test
@@ -110,10 +125,17 @@ class VbtEngineTest {
 
         val result = engine.processRep(1, emptyMetrics, emptyMetrics, currentTimeMillis())
 
-        assertEquals(0f, result.velocity.meanConcentricVelocityMmS, 0.1f,
-            "Empty metrics should give MCV=0")
-        assertEquals(BiomechanicsVelocityZone.GRIND, result.velocity.zone,
-            "Empty metrics should classify as GRIND zone")
+        assertEquals(
+            0f,
+            result.velocity.meanConcentricVelocityMmS,
+            0.1f,
+            "Empty metrics should give MCV=0",
+        )
+        assertEquals(
+            BiomechanicsVelocityZone.GRIND,
+            result.velocity.zone,
+            "Empty metrics should classify as GRIND zone",
+        )
     }
 
     // ========== Peak Velocity Tests ==========
@@ -122,15 +144,19 @@ class VbtEngineTest {
     fun `peak velocity captures maximum velocity in rep`() {
         val engine = BiomechanicsEngine()
         val metrics = listOf(
-            createMetric(velocityA = 100.0, velocityB = 50.0),   // max = 100
-            createMetric(velocityA = 200.0, velocityB = 180.0),  // max = 200 (peak)
-            createMetric(velocityA = 150.0, velocityB = 140.0)   // max = 150
+            createMetric(velocityA = 100.0, velocityB = 50.0), // max = 100
+            createMetric(velocityA = 200.0, velocityB = 180.0), // max = 200 (peak)
+            createMetric(velocityA = 150.0, velocityB = 140.0), // max = 150
         )
 
         val result = engine.processRep(1, metrics, metrics, currentTimeMillis())
 
-        assertEquals(200f, result.velocity.peakVelocityMmS, 0.1f,
-            "Peak velocity should be 200 (highest sample)")
+        assertEquals(
+            200f,
+            result.velocity.peakVelocityMmS,
+            0.1f,
+            "Peak velocity should be 200 (highest sample)",
+        )
     }
 
     // ========== Zone Classification Tests (VBT-02) ==========
@@ -142,8 +168,11 @@ class VbtEngineTest {
 
         val result = engine.processRep(1, metrics, metrics, currentTimeMillis())
 
-        assertEquals(BiomechanicsVelocityZone.GRIND, result.velocity.zone,
-            "MCV=249 should be GRIND (< 250)")
+        assertEquals(
+            BiomechanicsVelocityZone.GRIND,
+            result.velocity.zone,
+            "MCV=249 should be GRIND (< 250)",
+        )
     }
 
     @Test
@@ -153,8 +182,11 @@ class VbtEngineTest {
 
         val result = engine.processRep(1, metrics, metrics, currentTimeMillis())
 
-        assertEquals(BiomechanicsVelocityZone.SLOW, result.velocity.zone,
-            "MCV=250 should be SLOW (>= 250)")
+        assertEquals(
+            BiomechanicsVelocityZone.SLOW,
+            result.velocity.zone,
+            "MCV=250 should be SLOW (>= 250)",
+        )
     }
 
     @Test
@@ -164,8 +196,11 @@ class VbtEngineTest {
 
         val result = engine.processRep(1, metrics, metrics, currentTimeMillis())
 
-        assertEquals(BiomechanicsVelocityZone.SLOW, result.velocity.zone,
-            "MCV=499 should be SLOW (< 500)")
+        assertEquals(
+            BiomechanicsVelocityZone.SLOW,
+            result.velocity.zone,
+            "MCV=499 should be SLOW (< 500)",
+        )
     }
 
     @Test
@@ -175,8 +210,11 @@ class VbtEngineTest {
 
         val result = engine.processRep(1, metrics, metrics, currentTimeMillis())
 
-        assertEquals(BiomechanicsVelocityZone.MODERATE, result.velocity.zone,
-            "MCV=500 should be MODERATE (>= 500)")
+        assertEquals(
+            BiomechanicsVelocityZone.MODERATE,
+            result.velocity.zone,
+            "MCV=500 should be MODERATE (>= 500)",
+        )
     }
 
     @Test
@@ -186,8 +224,11 @@ class VbtEngineTest {
 
         val result = engine.processRep(1, metrics, metrics, currentTimeMillis())
 
-        assertEquals(BiomechanicsVelocityZone.MODERATE, result.velocity.zone,
-            "MCV=749 should be MODERATE (< 750)")
+        assertEquals(
+            BiomechanicsVelocityZone.MODERATE,
+            result.velocity.zone,
+            "MCV=749 should be MODERATE (< 750)",
+        )
     }
 
     @Test
@@ -197,8 +238,11 @@ class VbtEngineTest {
 
         val result = engine.processRep(1, metrics, metrics, currentTimeMillis())
 
-        assertEquals(BiomechanicsVelocityZone.FAST, result.velocity.zone,
-            "MCV=750 should be FAST (>= 750)")
+        assertEquals(
+            BiomechanicsVelocityZone.FAST,
+            result.velocity.zone,
+            "MCV=750 should be FAST (>= 750)",
+        )
     }
 
     @Test
@@ -208,8 +252,11 @@ class VbtEngineTest {
 
         val result = engine.processRep(1, metrics, metrics, currentTimeMillis())
 
-        assertEquals(BiomechanicsVelocityZone.FAST, result.velocity.zone,
-            "MCV=999 should be FAST (< 1000)")
+        assertEquals(
+            BiomechanicsVelocityZone.FAST,
+            result.velocity.zone,
+            "MCV=999 should be FAST (< 1000)",
+        )
     }
 
     @Test
@@ -219,8 +266,11 @@ class VbtEngineTest {
 
         val result = engine.processRep(1, metrics, metrics, currentTimeMillis())
 
-        assertEquals(BiomechanicsVelocityZone.EXPLOSIVE, result.velocity.zone,
-            "MCV=1000 should be EXPLOSIVE (>= 1000)")
+        assertEquals(
+            BiomechanicsVelocityZone.EXPLOSIVE,
+            result.velocity.zone,
+            "MCV=1000 should be EXPLOSIVE (>= 1000)",
+        )
     }
 
     @Test
@@ -230,8 +280,11 @@ class VbtEngineTest {
 
         val result = engine.processRep(1, metrics, metrics, currentTimeMillis())
 
-        assertEquals(BiomechanicsVelocityZone.EXPLOSIVE, result.velocity.zone,
-            "MCV=1500 should be EXPLOSIVE")
+        assertEquals(
+            BiomechanicsVelocityZone.EXPLOSIVE,
+            result.velocity.zone,
+            "MCV=1500 should be EXPLOSIVE",
+        )
     }
 
     // ========== Velocity Loss Tests (VBT-03) ==========
@@ -243,8 +296,10 @@ class VbtEngineTest {
 
         val result = engine.processRep(1, metrics, metrics, currentTimeMillis())
 
-        assertNull(result.velocity.velocityLossPercent,
-            "Rep 1 should have null velocityLossPercent")
+        assertNull(
+            result.velocity.velocityLossPercent,
+            "Rep 1 should have null velocityLossPercent",
+        )
     }
 
     @Test
@@ -257,8 +312,12 @@ class VbtEngineTest {
         // Rep 2: MCV = 800 mm/s (80% of 1000)
         val result = engine.processRep(2, createUniformMetrics(800.0), emptyList(), currentTimeMillis())
 
-        assertEquals(20f, result.velocity.velocityLossPercent!!, 0.1f,
-            "Rep 2 at 80% of rep 1 should show 20% velocity loss")
+        assertEquals(
+            20f,
+            result.velocity.velocityLossPercent!!,
+            0.1f,
+            "Rep 2 at 80% of rep 1 should show 20% velocity loss",
+        )
     }
 
     @Test
@@ -271,8 +330,12 @@ class VbtEngineTest {
         // Rep 2: MCV = 900 mm/s (90% of 1000)
         val result = engine.processRep(2, createUniformMetrics(900.0), emptyList(), currentTimeMillis())
 
-        assertEquals(10f, result.velocity.velocityLossPercent!!, 0.1f,
-            "Rep 2 at 90% of rep 1 should show 10% velocity loss")
+        assertEquals(
+            10f,
+            result.velocity.velocityLossPercent!!,
+            0.1f,
+            "Rep 2 at 90% of rep 1 should show 10% velocity loss",
+        )
     }
 
     @Test
@@ -285,8 +348,12 @@ class VbtEngineTest {
         // Rep 2: MCV = 900 mm/s (faster than rep 1!)
         val result = engine.processRep(2, createUniformMetrics(900.0), emptyList(), currentTimeMillis())
 
-        assertEquals(0f, result.velocity.velocityLossPercent!!, 0.1f,
-            "Velocity loss should be clamped to 0 when rep is faster than rep 1")
+        assertEquals(
+            0f,
+            result.velocity.velocityLossPercent!!,
+            0.1f,
+            "Velocity loss should be clamped to 0 when rep is faster than rep 1",
+        )
     }
 
     @Test
@@ -318,8 +385,10 @@ class VbtEngineTest {
 
         val result = engine.processRep(1, metrics, metrics, currentTimeMillis())
 
-        assertFalse(result.velocity.shouldStopSet,
-            "Rep 1 should never trigger shouldStopSet")
+        assertFalse(
+            result.velocity.shouldStopSet,
+            "Rep 1 should never trigger shouldStopSet",
+        )
     }
 
     @Test
@@ -332,8 +401,10 @@ class VbtEngineTest {
         // Rep 2: MCV = 800 (exactly 20% loss)
         val result = engine.processRep(2, createUniformMetrics(800.0), emptyList(), currentTimeMillis())
 
-        assertTrue(result.velocity.shouldStopSet,
-            "shouldStopSet should be true when velocity loss equals 20% threshold")
+        assertTrue(
+            result.velocity.shouldStopSet,
+            "shouldStopSet should be true when velocity loss equals 20% threshold",
+        )
     }
 
     @Test
@@ -346,8 +417,10 @@ class VbtEngineTest {
         // Rep 3: MCV = 700 (30% loss)
         val result = engine.processRep(3, createUniformMetrics(700.0), emptyList(), currentTimeMillis())
 
-        assertTrue(result.velocity.shouldStopSet,
-            "shouldStopSet should be true when velocity loss (30%) exceeds 20% threshold")
+        assertTrue(
+            result.velocity.shouldStopSet,
+            "shouldStopSet should be true when velocity loss (30%) exceeds 20% threshold",
+        )
     }
 
     @Test
@@ -360,8 +433,10 @@ class VbtEngineTest {
         // Rep 2: MCV = 900 (10% loss)
         val result = engine.processRep(2, createUniformMetrics(900.0), emptyList(), currentTimeMillis())
 
-        assertFalse(result.velocity.shouldStopSet,
-            "shouldStopSet should be false when velocity loss (10%) is below 20% threshold")
+        assertFalse(
+            result.velocity.shouldStopSet,
+            "shouldStopSet should be false when velocity loss (10%) is below 20% threshold",
+        )
     }
 
     @Test
@@ -373,13 +448,17 @@ class VbtEngineTest {
 
         // Rep 2: MCV = 750 (25% loss - below 30% custom threshold)
         val rep2 = engine.processRep(2, createUniformMetrics(750.0), emptyList(), currentTimeMillis())
-        assertFalse(rep2.velocity.shouldStopSet,
-            "25% loss should not trigger 30% threshold")
+        assertFalse(
+            rep2.velocity.shouldStopSet,
+            "25% loss should not trigger 30% threshold",
+        )
 
         // Rep 3: MCV = 700 (30% loss - at threshold)
         val rep3 = engine.processRep(3, createUniformMetrics(700.0), emptyList(), currentTimeMillis())
-        assertTrue(rep3.velocity.shouldStopSet,
-            "30% loss should trigger 30% threshold")
+        assertTrue(
+            rep3.velocity.shouldStopSet,
+            "30% loss should trigger 30% threshold",
+        )
     }
 
     // ========== Rep Projection Tests (VBT-04) ==========
@@ -391,8 +470,10 @@ class VbtEngineTest {
 
         val result = engine.processRep(1, metrics, metrics, currentTimeMillis())
 
-        assertNull(result.velocity.estimatedRepsRemaining,
-            "Rep 1 should have null estimatedRepsRemaining")
+        assertNull(
+            result.velocity.estimatedRepsRemaining,
+            "Rep 1 should have null estimatedRepsRemaining",
+        )
     }
 
     @Test
@@ -406,11 +487,16 @@ class VbtEngineTest {
         // At 5% per rep, to reach 20% threshold needs 3 more reps (10%, 15%, 20%)
         val result = engine.processRep(2, createUniformMetrics(950.0), emptyList(), currentTimeMillis())
 
-        assertTrue(result.velocity.estimatedRepsRemaining != null,
-            "Rep 2 should have estimated reps remaining")
+        assertTrue(
+            result.velocity.estimatedRepsRemaining != null,
+            "Rep 2 should have estimated reps remaining",
+        )
         // At 5% loss per rep, from current 5% loss, need 3 more reps to hit 20%
-        assertEquals(3, result.velocity.estimatedRepsRemaining,
-            "At 5% loss per rep from 5% current, should estimate 3 reps to 20%")
+        assertEquals(
+            3,
+            result.velocity.estimatedRepsRemaining,
+            "At 5% loss per rep from 5% current, should estimate 3 reps to 20%",
+        )
     }
 
     @Test
@@ -424,8 +510,10 @@ class VbtEngineTest {
         // At 10% per rep, from 10% current loss, need 1.5 more to hit 25% -> rounds to 1
         val rep2 = engine.processRep(2, createUniformMetrics(900.0), emptyList(), currentTimeMillis())
         // (25 - 10) / 10 = 1.5 -> 1 remaining
-        assertTrue(rep2.velocity.estimatedRepsRemaining in 1..2,
-            "At 10% per rep from 10%, should estimate 1-2 reps to 25%")
+        assertTrue(
+            rep2.velocity.estimatedRepsRemaining in 1..2,
+            "At 10% per rep from 10%, should estimate 1-2 reps to 25%",
+        )
     }
 
     @Test
@@ -439,8 +527,10 @@ class VbtEngineTest {
         val result = engine.processRep(2, createUniformMetrics(850.0), emptyList(), currentTimeMillis())
 
         // When velocity is increasing, projection is nonsensical
-        assertNull(result.velocity.estimatedRepsRemaining,
-            "Should return null when velocity is increasing (no decay)")
+        assertNull(
+            result.velocity.estimatedRepsRemaining,
+            "Should return null when velocity is increasing (no decay)",
+        )
     }
 
     @Test
@@ -454,8 +544,10 @@ class VbtEngineTest {
         val result = engine.processRep(2, createUniformMetrics(999.0), emptyList(), currentTimeMillis())
 
         if (result.velocity.estimatedRepsRemaining != null) {
-            assertTrue(result.velocity.estimatedRepsRemaining!! <= 99,
-                "Estimated reps should be clamped to max 99")
+            assertTrue(
+                result.velocity.estimatedRepsRemaining!! <= 99,
+                "Estimated reps should be clamped to max 99",
+            )
         }
     }
 
@@ -474,10 +566,14 @@ class VbtEngineTest {
         // After reset, rep 1 should have no velocity loss (fresh baseline)
         val result = engine.processRep(1, createUniformMetrics(600.0), emptyList(), currentTimeMillis())
 
-        assertNull(result.velocity.velocityLossPercent,
-            "After reset, rep 1 should have null velocity loss")
-        assertFalse(result.velocity.shouldStopSet,
-            "After reset, rep 1 should not trigger stop")
+        assertNull(
+            result.velocity.velocityLossPercent,
+            "After reset, rep 1 should have null velocity loss",
+        )
+        assertFalse(
+            result.velocity.shouldStopSet,
+            "After reset, rep 1 should not trigger stop",
+        )
     }
 
     // ========== Set Summary Integration ==========
@@ -497,8 +593,12 @@ class VbtEngineTest {
 
         val summary = engine.getSetSummary()
 
-        assertEquals(20f, summary!!.totalVelocityLossPercent!!, 0.1f,
-            "Total velocity loss should be 20% (1000 -> 800)")
+        assertEquals(
+            20f,
+            summary!!.totalVelocityLossPercent!!,
+            0.1f,
+            "Total velocity loss should be 20% (1000 -> 800)",
+        )
     }
 
     @Test
@@ -512,8 +612,12 @@ class VbtEngineTest {
 
         val summary = engine.getSetSummary()
 
-        assertEquals(900f, summary!!.avgMcvMmS, 0.1f,
-            "Average MCV should be 900 mm/s")
+        assertEquals(
+            900f,
+            summary!!.avgMcvMmS,
+            0.1f,
+            "Average MCV should be 900 mm/s",
+        )
     }
 
     @Test
@@ -523,8 +627,8 @@ class VbtEngineTest {
         // 2 EXPLOSIVE, 1 FAST, 1 MODERATE
         engine.processRep(1, createUniformMetrics(1000.0), emptyList(), currentTimeMillis()) // EXPLOSIVE
         engine.processRep(2, createUniformMetrics(1100.0), emptyList(), currentTimeMillis()) // EXPLOSIVE
-        engine.processRep(3, createUniformMetrics(800.0), emptyList(), currentTimeMillis())  // FAST
-        engine.processRep(4, createUniformMetrics(600.0), emptyList(), currentTimeMillis())  // MODERATE
+        engine.processRep(3, createUniformMetrics(800.0), emptyList(), currentTimeMillis()) // FAST
+        engine.processRep(4, createUniformMetrics(600.0), emptyList(), currentTimeMillis()) // MODERATE
 
         val summary = engine.getSetSummary()
 

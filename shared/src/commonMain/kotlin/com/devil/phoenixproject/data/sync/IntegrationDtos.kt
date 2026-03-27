@@ -10,17 +10,13 @@ import kotlinx.serialization.Serializable
  */
 
 @Serializable
-data class IntegrationSyncRequest(
-    val provider: String,
-    val action: String,
-    val apiKey: String? = null
-)
+data class IntegrationSyncRequest(val provider: String, val action: String, val apiKey: String? = null)
 
 @Serializable
 data class IntegrationSyncResponse(
     val status: String,
     val activities: List<IntegrationActivityDto> = emptyList(),
-    val error: String? = null
+    val error: String? = null,
 )
 
 @Serializable
@@ -36,5 +32,5 @@ data class IntegrationActivityDto(
     val avgHeartRate: Int? = null,
     val maxHeartRate: Int? = null,
     val elevationGainMeters: Double? = null,
-    val rawData: String? = null
+    val rawData: String? = null,
 )

@@ -1,28 +1,28 @@
 package com.devil.phoenixproject.e2e
 
+import com.devil.phoenixproject.data.repository.ExerciseSignatureRepository
+import com.devil.phoenixproject.domain.detection.ExerciseClassifier
+import com.devil.phoenixproject.domain.detection.ExerciseSignature
+import com.devil.phoenixproject.domain.detection.SignatureExtractor
 import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.usecase.RepCounterFromMachine
 import com.devil.phoenixproject.domain.usecase.ResolveRoutineWeightsUseCase
 import com.devil.phoenixproject.e2e.robot.WorkoutRobot
 import com.devil.phoenixproject.e2e.robot.workoutRobot
+import com.devil.phoenixproject.presentation.manager.ExerciseDetectionManager
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
-import com.devil.phoenixproject.testutil.FakeCompletedSetRepository
+import com.devil.phoenixproject.testutil.FakeBiomechanicsRepository
 import com.devil.phoenixproject.testutil.FakeBleRepository
+import com.devil.phoenixproject.testutil.FakeCompletedSetRepository
+import com.devil.phoenixproject.testutil.FakeDataBackupManager
 import com.devil.phoenixproject.testutil.FakeExerciseRepository
 import com.devil.phoenixproject.testutil.FakeGamificationRepository
 import com.devil.phoenixproject.testutil.FakePersonalRecordRepository
 import com.devil.phoenixproject.testutil.FakePreferencesManager
+import com.devil.phoenixproject.testutil.FakeRepMetricRepository
 import com.devil.phoenixproject.testutil.FakeTrainingCycleRepository
 import com.devil.phoenixproject.testutil.FakeWorkoutRepository
-import com.devil.phoenixproject.testutil.FakeBiomechanicsRepository
-import com.devil.phoenixproject.testutil.FakeDataBackupManager
-import com.devil.phoenixproject.testutil.FakeRepMetricRepository
 import com.devil.phoenixproject.testutil.TestCoroutineRule
-import com.devil.phoenixproject.domain.detection.ExerciseClassifier
-import com.devil.phoenixproject.domain.detection.ExerciseSignature
-import com.devil.phoenixproject.domain.detection.SignatureExtractor
-import com.devil.phoenixproject.data.repository.ExerciseSignatureRepository
-import com.devil.phoenixproject.presentation.manager.ExerciseDetectionManager
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
@@ -79,7 +79,7 @@ class WorkoutFlowE2ETest {
             signatureExtractor = SignatureExtractor(),
             exerciseClassifier = ExerciseClassifier(),
             signatureRepository = fakeSignatureRepo,
-            exerciseRepository = fakeExerciseRepository
+            exerciseRepository = fakeExerciseRepository,
         )
 
         viewModel = MainViewModel(
@@ -97,7 +97,7 @@ class WorkoutFlowE2ETest {
             resolveWeightsUseCase = resolveWeightsUseCase,
             detectionManager = detectionManager,
             dataBackupManager = FakeDataBackupManager(),
-            userProfileRepository = com.devil.phoenixproject.testutil.FakeUserProfileRepository()
+            userProfileRepository = com.devil.phoenixproject.testutil.FakeUserProfileRepository(),
         )
 
         robot = WorkoutRobot(viewModel, fakeBleRepository)
@@ -167,7 +167,7 @@ class WorkoutFlowE2ETest {
                 weight = 25f,
                 reps = 12,
                 mode = ProgramMode.OldSchool,
-                warmupReps = 3
+                warmupReps = 3,
             )
 
             verifyWeight(25f)
@@ -188,7 +188,7 @@ class WorkoutFlowE2ETest {
                 weight = 15f,
                 reps = 20,
                 mode = ProgramMode.Pump,
-                warmupReps = 5
+                warmupReps = 5,
             )
 
             verifyWeight(15f)
@@ -206,7 +206,7 @@ class WorkoutFlowE2ETest {
             configureWorkout(
                 weight = 30f,
                 reps = 8,
-                mode = ProgramMode.TUT
+                mode = ProgramMode.TUT,
             )
 
             verifyWeight(30f)
@@ -225,7 +225,7 @@ class WorkoutFlowE2ETest {
                 weight = 20f,
                 reps = 10,
                 mode = ProgramMode.OldSchool,
-                isJustLift = true
+                isJustLift = true,
             )
 
             verifyJustLiftEnabled()
@@ -274,7 +274,7 @@ class WorkoutFlowE2ETest {
                 weight = 22.5f,
                 reps = 10,
                 mode = ProgramMode.OldSchool,
-                warmupReps = 3
+                warmupReps = 3,
             )
 
             // Verify configuration
@@ -292,7 +292,7 @@ class WorkoutFlowE2ETest {
             positionA = 100f,
             positionB = 100f,
             loadA = 10f,
-            loadB = 10f
+            loadB = 10f,
         )
 
         val localRobot = WorkoutRobot(viewModel, fakeBleRepository)
@@ -315,7 +315,7 @@ class WorkoutFlowE2ETest {
             positionA = 120f,
             positionB = 120f,
             loadA = 10f,
-            loadB = 10f
+            loadB = 10f,
         )
 
         val localRobot = WorkoutRobot(viewModel, fakeBleRepository)
@@ -332,8 +332,20 @@ class WorkoutFlowE2ETest {
         // Issue #210/#222: Pass correct warmup/working targets to match actual app behavior
         // The app forces warmupReps=3 for cable exercises, and when machine reports working reps,
         // it infers that warmup is complete and sets warmupReps to the configured target (3)
-        localRobot.simulateRepNotification(1, metric, warmupCount = 3, warmupTarget = 3, workingTarget = 2)
-        localRobot.simulateRepNotification(2, metric, warmupCount = 3, warmupTarget = 3, workingTarget = 2)
+        localRobot.simulateRepNotification(
+            1,
+            metric,
+            warmupCount = 3,
+            warmupTarget = 3,
+            workingTarget = 2,
+        )
+        localRobot.simulateRepNotification(
+            2,
+            metric,
+            warmupCount = 3,
+            warmupTarget = 3,
+            workingTarget = 2,
+        )
         advanceUntilIdle()
 
         localRobot.verifyWorkoutSummary()
@@ -380,7 +392,7 @@ class WorkoutFlowE2ETest {
             configureWorkout(
                 weight = 0f,
                 reps = 1,
-                warmupReps = 0
+                warmupReps = 0,
             )
 
             verifyWeight(0f)
@@ -398,7 +410,7 @@ class WorkoutFlowE2ETest {
             configureWorkout(
                 weight = 220f, // Max weight
                 reps = 100,
-                warmupReps = 10
+                warmupReps = 10,
             )
 
             verifyWeight(220f)

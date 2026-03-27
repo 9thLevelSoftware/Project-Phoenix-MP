@@ -14,10 +14,10 @@ enum class ReadinessStatus { GREEN, YELLOW, RED }
 sealed class ReadinessResult {
     object InsufficientData : ReadinessResult()
     data class Ready(
-        val score: Int,                // 0-100 readiness score
-        val status: ReadinessStatus,   // GREEN/YELLOW/RED
-        val acwr: Float,               // Raw ACWR ratio
-        val acuteVolumeKg: Float,      // 7-day total volume
-        val chronicWeeklyAvgKg: Float  // 28-day weekly average volume
+        val score: Int, // 0-100 readiness score
+        val status: ReadinessStatus, // GREEN/YELLOW/RED
+        val acwr: Float, // Raw ACWR ratio
+        val acuteVolumeKg: Float, // 7-day total volume
+        val chronicWeeklyAvgKg: Float, // 28-day weekly average volume
     ) : ReadinessResult()
 }

@@ -2,7 +2,6 @@ package com.devil.phoenixproject.data.repository
 
 import app.cash.sqldelight.coroutines.asFlow
 import app.cash.sqldelight.coroutines.mapToList
-import app.cash.sqldelight.coroutines.mapToOneOrNull
 import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.database.VitruvianDatabase
 import com.devil.phoenixproject.domain.model.EccentricLoad
@@ -22,13 +21,9 @@ import kotlinx.coroutines.IO
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
-import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
-class SqlDelightWorkoutRepository(
-    private val db: VitruvianDatabase,
-    private val exerciseRepository: ExerciseRepository
-) : WorkoutRepository {
+class SqlDelightWorkoutRepository(private val db: VitruvianDatabase, private val exerciseRepository: ExerciseRepository) : WorkoutRepository {
 
     private val queries = db.vitruvianDatabaseQueries
 
@@ -92,62 +87,60 @@ class SqlDelightWorkoutRepository(
         serverId: String?,
         deletedAt: Long?,
         // Multi-profile support (migration 21)
-        profileId: String
-    ): WorkoutSession {
-        return WorkoutSession(
-            id = id,
-            timestamp = timestamp,
-            mode = mode,
-            reps = targetReps.toInt(),
-            weightPerCableKg = weightPerCableKg.toFloat(),
-            progressionKg = progressionKg.toFloat(),
-            duration = duration,
-            totalReps = totalReps.toInt(),
-            warmupReps = warmupReps.toInt(),
-            workingReps = workingReps.toInt(),
-            isJustLift = isJustLift == 1L,
-            stopAtTop = stopAtTop == 1L,
-            eccentricLoad = eccentricLoad.toInt(),
-            echoLevel = echoLevel.toInt(),
-            exerciseId = exerciseId,
-            exerciseName = exerciseName,
-            routineSessionId = routineSessionId,
-            routineName = routineName,
-            routineId = routineId,
-            safetyFlags = safetyFlags.toInt(),
-            deloadWarningCount = deloadWarningCount.toInt(),
-            romViolationCount = romViolationCount.toInt(),
-            spotterActivations = spotterActivations.toInt(),
-            // New summary metrics
-            peakForceConcentricA = peakForceConcentricA?.toFloat(),
-            peakForceConcentricB = peakForceConcentricB?.toFloat(),
-            peakForceEccentricA = peakForceEccentricA?.toFloat(),
-            peakForceEccentricB = peakForceEccentricB?.toFloat(),
-            avgForceConcentricA = avgForceConcentricA?.toFloat(),
-            avgForceConcentricB = avgForceConcentricB?.toFloat(),
-            avgForceEccentricA = avgForceEccentricA?.toFloat(),
-            avgForceEccentricB = avgForceEccentricB?.toFloat(),
-            heaviestLiftKg = heaviestLiftKg?.toFloat(),
-            totalVolumeKg = totalVolumeKg?.toFloat(),
-            cableCount = cableCount?.toInt(),
-            estimatedCalories = estimatedCalories?.toFloat(),
-            warmupAvgWeightKg = warmupAvgWeightKg?.toFloat(),
-            workingAvgWeightKg = workingAvgWeightKg?.toFloat(),
-            burnoutAvgWeightKg = burnoutAvgWeightKg?.toFloat(),
-            peakWeightKg = peakWeightKg?.toFloat(),
-            rpe = rpe?.toInt(),
-            // Biomechanics summary
-            avgMcvMmS = avgMcvMmS?.toFloat(),
-            avgAsymmetryPercent = avgAsymmetryPercent?.toFloat(),
-            totalVelocityLossPercent = totalVelocityLossPercent?.toFloat(),
-            dominantSide = dominantSide,
-            strengthProfile = strengthProfile,
-            // Form Check score
-            formScore = formScore?.toInt(),
-            // Multi-profile support
-            profileId = profileId
-        )
-    }
+        profileId: String,
+    ): WorkoutSession = WorkoutSession(
+        id = id,
+        timestamp = timestamp,
+        mode = mode,
+        reps = targetReps.toInt(),
+        weightPerCableKg = weightPerCableKg.toFloat(),
+        progressionKg = progressionKg.toFloat(),
+        duration = duration,
+        totalReps = totalReps.toInt(),
+        warmupReps = warmupReps.toInt(),
+        workingReps = workingReps.toInt(),
+        isJustLift = isJustLift == 1L,
+        stopAtTop = stopAtTop == 1L,
+        eccentricLoad = eccentricLoad.toInt(),
+        echoLevel = echoLevel.toInt(),
+        exerciseId = exerciseId,
+        exerciseName = exerciseName,
+        routineSessionId = routineSessionId,
+        routineName = routineName,
+        routineId = routineId,
+        safetyFlags = safetyFlags.toInt(),
+        deloadWarningCount = deloadWarningCount.toInt(),
+        romViolationCount = romViolationCount.toInt(),
+        spotterActivations = spotterActivations.toInt(),
+        // New summary metrics
+        peakForceConcentricA = peakForceConcentricA?.toFloat(),
+        peakForceConcentricB = peakForceConcentricB?.toFloat(),
+        peakForceEccentricA = peakForceEccentricA?.toFloat(),
+        peakForceEccentricB = peakForceEccentricB?.toFloat(),
+        avgForceConcentricA = avgForceConcentricA?.toFloat(),
+        avgForceConcentricB = avgForceConcentricB?.toFloat(),
+        avgForceEccentricA = avgForceEccentricA?.toFloat(),
+        avgForceEccentricB = avgForceEccentricB?.toFloat(),
+        heaviestLiftKg = heaviestLiftKg?.toFloat(),
+        totalVolumeKg = totalVolumeKg?.toFloat(),
+        cableCount = cableCount?.toInt(),
+        estimatedCalories = estimatedCalories?.toFloat(),
+        warmupAvgWeightKg = warmupAvgWeightKg?.toFloat(),
+        workingAvgWeightKg = workingAvgWeightKg?.toFloat(),
+        burnoutAvgWeightKg = burnoutAvgWeightKg?.toFloat(),
+        peakWeightKg = peakWeightKg?.toFloat(),
+        rpe = rpe?.toInt(),
+        // Biomechanics summary
+        avgMcvMmS = avgMcvMmS?.toFloat(),
+        avgAsymmetryPercent = avgAsymmetryPercent?.toFloat(),
+        totalVelocityLossPercent = totalVelocityLossPercent?.toFloat(),
+        dominantSide = dominantSide,
+        strengthProfile = strengthProfile,
+        // Form Check score
+        formScore = formScore?.toInt(),
+        // Multi-profile support
+        profileId = profileId,
+    )
 
     private fun mapToRoutineBasic(
         id: String,
@@ -161,20 +154,24 @@ class SqlDelightWorkoutRepository(
         serverId: String?,
         deletedAt: Long?,
         // Multi-profile support (migration 21)
-        profileId: String
-    ): Routine {
-        return Routine(
-            id = id,
-            name = name,
-            exercises = emptyList(),
-            createdAt = createdAt,
-            lastUsed = lastUsed,
-            useCount = useCount.toInt(),
-            profileId = profileId
-        )
-    }
+        profileId: String,
+    ): Routine = Routine(
+        id = id,
+        name = name,
+        exercises = emptyList(),
+        createdAt = createdAt,
+        lastUsed = lastUsed,
+        useCount = useCount.toInt(),
+        profileId = profileId,
+    )
 
-    private suspend fun loadRoutineWithExercises(routineId: String, name: String, createdAt: Long, lastUsed: Long? = null, useCount: Int = 0): Routine {
+    private suspend fun loadRoutineWithExercises(
+        routineId: String,
+        name: String,
+        createdAt: Long,
+        lastUsed: Long? = null,
+        useCount: Int = 0,
+    ): Routine {
         val exerciseRows = queries.selectExercisesByRoutine(routineId).executeAsList()
         val supersetRows = queries.selectSupersetsByRoutine(routineId).executeAsList()
 
@@ -186,7 +183,7 @@ class SqlDelightWorkoutRepository(
                 name = row.name,
                 colorIndex = row.colorIndex.toInt(),
                 restBetweenSeconds = row.restBetweenSeconds.toInt(),
-                orderIndex = row.orderIndex.toInt()
+                orderIndex = row.orderIndex.toInt(),
             )
         }
 
@@ -203,7 +200,7 @@ class SqlDelightWorkoutRepository(
                             muscleGroups = row.exerciseMuscleGroup,
                             equipment = row.exerciseEquipment,
                             isFavorite = false,
-                            isCustom = false
+                            isCustom = false,
                         )
                     }
                 } ?: run {
@@ -215,7 +212,7 @@ class SqlDelightWorkoutRepository(
                         muscleGroups = row.exerciseMuscleGroup,
                         equipment = row.exerciseEquipment,
                         isFavorite = false,
-                        isCustom = false
+                        isCustom = false,
                     )
                 }
 
@@ -231,8 +228,11 @@ class SqlDelightWorkoutRepository(
                 }
 
                 val setWeights: List<Float> = try {
-                    if (row.setWeights.isBlank()) emptyList()
-                    else row.setWeights.split(",").mapNotNull { it.trim().toFloatOrNull() }
+                    if (row.setWeights.isBlank()) {
+                        emptyList()
+                    } else {
+                        row.setWeights.split(",").mapNotNull { it.trim().toFloatOrNull() }
+                    }
                 } catch (e: Exception) {
                     Logger.w(e) { "Failed to parse setWeights '${row.setWeights}' for exercise ${row.exerciseName}, using empty list" }
                     emptyList()
@@ -241,30 +241,40 @@ class SqlDelightWorkoutRepository(
                 val setRestSeconds: List<Int> = try {
                     json.decodeFromString<List<Int>>(row.setRestSeconds)
                 } catch (e: Exception) {
-                    Logger.w(e) { "Failed to parse setRestSeconds '${row.setRestSeconds}' for exercise ${row.exerciseName}, using empty list" }
+                    Logger.w(e) {
+                        "Failed to parse setRestSeconds '${row.setRestSeconds}' for exercise ${row.exerciseName}, using empty list"
+                    }
                     emptyList()
                 }
 
                 val setEchoLevels: List<EchoLevel?> = try {
-                    if (row.setEchoLevels.isBlank()) emptyList()
-                    else json.decodeFromString<List<Int?>>(row.setEchoLevels).map { ordinal ->
-                        ordinal?.let { EchoLevel.values().getOrNull(it) }
+                    if (row.setEchoLevels.isBlank()) {
+                        emptyList()
+                    } else {
+                        json.decodeFromString<List<Int?>>(row.setEchoLevels).map { ordinal ->
+                            ordinal?.let { EchoLevel.entries.getOrNull(it) }
+                        }
                     }
                 } catch (e: Exception) {
-                    Logger.w(e) { "Failed to parse setEchoLevels '${row.setEchoLevels}' for exercise ${row.exerciseName}, using empty list" }
+                    Logger.w(e) {
+                        "Failed to parse setEchoLevels '${row.setEchoLevels}' for exercise ${row.exerciseName}, using empty list"
+                    }
                     emptyList()
                 }
 
                 val warmupSets: List<com.devil.phoenixproject.domain.model.WarmupSet> = try {
-                    if (row.warmupSets.isBlank()) emptyList()
-                    else json.decodeFromString<List<com.devil.phoenixproject.domain.model.WarmupSet>>(row.warmupSets)
+                    if (row.warmupSets.isBlank()) {
+                        emptyList()
+                    } else {
+                        json.decodeFromString<List<com.devil.phoenixproject.domain.model.WarmupSet>>(row.warmupSets)
+                    }
                 } catch (e: Exception) {
                     Logger.w(e) { "Failed to parse warmupSets '${row.warmupSets}' for exercise ${row.exerciseName}, using empty list" }
                     emptyList()
                 }
 
                 val eccentricLoad = mapEccentricLoadFromDb(row.eccentricLoad)
-                val echoLevel = EchoLevel.values().getOrNull(row.echoLevel.toInt()) ?: EchoLevel.HARDER
+                val echoLevel = EchoLevel.entries.getOrNull(row.echoLevel.toInt()) ?: EchoLevel.HARDER
 
                 val programMode = parseProgramMode(row.mode)
 
@@ -277,10 +287,15 @@ class SqlDelightWorkoutRepository(
                 }
 
                 val setWeightsPercentOfPR: List<Int> = try {
-                    if (row.setWeightsPercentOfPR.isNullOrBlank()) emptyList()
-                    else json.decodeFromString<List<Int>>(row.setWeightsPercentOfPR)
+                    if (row.setWeightsPercentOfPR.isNullOrBlank()) {
+                        emptyList()
+                    } else {
+                        json.decodeFromString<List<Int>>(row.setWeightsPercentOfPR)
+                    }
                 } catch (e: Exception) {
-                    Logger.w(e) { "Failed to parse setWeightsPercentOfPR '${row.setWeightsPercentOfPR}' for exercise ${row.exerciseName}, using empty list" }
+                    Logger.w(e) {
+                        "Failed to parse setWeightsPercentOfPR '${row.setWeightsPercentOfPR}' for exercise ${row.exerciseName}, using empty list"
+                    }
                     emptyList()
                 }
 
@@ -302,7 +317,13 @@ class SqlDelightWorkoutRepository(
                     perSetRestTime = row.perSetRestTime == 1L,
                     // Per-exercise behavior overrides
                     stallDetectionEnabled = row.stallDetectionEnabled == 1L,
-                    repCountTiming = try { com.devil.phoenixproject.domain.model.RepCountTiming.valueOf(row.repCountTiming) } catch (_: Exception) { com.devil.phoenixproject.domain.model.RepCountTiming.TOP },
+                    repCountTiming = try {
+                        com.devil.phoenixproject.domain.model.RepCountTiming.valueOf(row.repCountTiming)
+                    } catch (
+                        _: Exception,
+                    ) {
+                        com.devil.phoenixproject.domain.model.RepCountTiming.TOP
+                    },
                     stopAtTop = row.stopAtTop == 1L,
                     supersetId = row.supersetId,
                     orderInSuperset = row.orderInSuperset.toInt(),
@@ -311,7 +332,7 @@ class SqlDelightWorkoutRepository(
                     weightPercentOfPR = row.weightPercentOfPR.toInt(),
                     prTypeForScaling = prTypeForScaling,
                     setWeightsPercentOfPR = setWeightsPercentOfPR,
-                    warmupSets = warmupSets
+                    warmupSets = warmupSets,
                 )
             } catch (e: Exception) {
                 Logger.e(e) { "Failed to map routine exercise: ${row.exerciseId}" }
@@ -326,7 +347,7 @@ class SqlDelightWorkoutRepository(
             supersets = supersets,
             createdAt = createdAt,
             lastUsed = lastUsed,
-            useCount = useCount
+            useCount = useCount,
         )
     }
 
@@ -340,14 +361,23 @@ class SqlDelightWorkoutRepository(
 
         return when (safeValue) {
             0 -> EccentricLoad.LOAD_0
+
             50 -> EccentricLoad.LOAD_50
+
             75 -> EccentricLoad.LOAD_75
+
             100 -> EccentricLoad.LOAD_100
+
             110 -> EccentricLoad.LOAD_110
+
             120 -> EccentricLoad.LOAD_120
+
             130 -> EccentricLoad.LOAD_130
+
             140 -> EccentricLoad.LOAD_140
+
             150 -> EccentricLoad.LOAD_150
+
             else -> {
                 // Value is within 0-150 but not a standard enum value - find closest match
                 Logger.w { "Non-standard eccentric load value: $safeValue%, finding closest match" }
@@ -357,49 +387,50 @@ class SqlDelightWorkoutRepository(
         }
     }
 
-    private fun parseProgramMode(modeStr: String): ProgramMode {
-        return when {
-            modeStr.startsWith("Program:") -> {
-                val programModeName = modeStr.removePrefix("Program:")
-                when (programModeName) {
-                    "OldSchool" -> ProgramMode.OldSchool
-                    "Pump" -> ProgramMode.Pump
-                    "TUT" -> ProgramMode.TUT
-                    "TUTBeast" -> ProgramMode.TUTBeast
-                    "EccentricOnly" -> ProgramMode.EccentricOnly
-                    "Echo" -> ProgramMode.Echo
-                    else -> ProgramMode.OldSchool
-                }
+    private fun parseProgramMode(modeStr: String): ProgramMode = when {
+        modeStr.startsWith("Program:") -> {
+            val programModeName = modeStr.removePrefix("Program:")
+            when (programModeName) {
+                "OldSchool" -> ProgramMode.OldSchool
+                "Pump" -> ProgramMode.Pump
+                "TUT" -> ProgramMode.TUT
+                "TUTBeast" -> ProgramMode.TUTBeast
+                "EccentricOnly" -> ProgramMode.EccentricOnly
+                "Echo" -> ProgramMode.Echo
+                else -> ProgramMode.OldSchool
             }
-            modeStr == "Echo" || modeStr.startsWith("Echo") -> {
-                ProgramMode.Echo
-            }
-            // Issue #7 Fix: Handle unprefixed legacy mode strings
-            modeStr == "Pump" -> ProgramMode.Pump
-            modeStr == "TUT" -> ProgramMode.TUT
-            modeStr == "TUTBeast" -> ProgramMode.TUTBeast
-            modeStr == "EccentricOnly" -> ProgramMode.EccentricOnly
-            modeStr == "OldSchool" -> ProgramMode.OldSchool
-            else -> ProgramMode.OldSchool
         }
+
+        modeStr == "Echo" || modeStr.startsWith("Echo") -> {
+            ProgramMode.Echo
+        }
+
+        // Issue #7 Fix: Handle unprefixed legacy mode strings
+        modeStr == "Pump" -> ProgramMode.Pump
+
+        modeStr == "TUT" -> ProgramMode.TUT
+
+        modeStr == "TUTBeast" -> ProgramMode.TUTBeast
+
+        modeStr == "EccentricOnly" -> ProgramMode.EccentricOnly
+
+        modeStr == "OldSchool" -> ProgramMode.OldSchool
+
+        else -> ProgramMode.OldSchool
     }
 
-    private fun serializeProgramMode(programMode: ProgramMode): String {
-        return when (programMode) {
-            ProgramMode.OldSchool -> "Program:OldSchool"
-            ProgramMode.Pump -> "Program:Pump"
-            ProgramMode.TUT -> "Program:TUT"
-            ProgramMode.TUTBeast -> "Program:TUTBeast"
-            ProgramMode.EccentricOnly -> "Program:EccentricOnly"
-            ProgramMode.Echo -> "Echo"  // EchoLevel and EccentricLoad are stored separately in DB columns
-        }
+    private fun serializeProgramMode(programMode: ProgramMode): String = when (programMode) {
+        ProgramMode.OldSchool -> "Program:OldSchool"
+        ProgramMode.Pump -> "Program:Pump"
+        ProgramMode.TUT -> "Program:TUT"
+        ProgramMode.TUTBeast -> "Program:TUTBeast"
+        ProgramMode.EccentricOnly -> "Program:EccentricOnly"
+        ProgramMode.Echo -> "Echo" // EchoLevel and EccentricLoad are stored separately in DB columns
     }
 
-    override fun getAllSessions(profileId: String): Flow<List<WorkoutSession>> {
-        return queries.selectAllSessions(profileId = profileId, mapper = ::mapToSession)
-            .asFlow()
-            .mapToList(Dispatchers.IO)
-    }
+    override fun getAllSessions(profileId: String): Flow<List<WorkoutSession>> = queries.selectAllSessions(profileId = profileId, mapper = ::mapToSession)
+        .asFlow()
+        .mapToList(Dispatchers.IO)
 
     override suspend fun saveSession(session: WorkoutSession) {
         withContext(Dispatchers.IO) {
@@ -454,7 +485,7 @@ class SqlDelightWorkoutRepository(
                 // Form Check score
                 formScore = session.formScore?.toLong(),
                 // Multi-profile support
-                profile_id = session.profileId
+                profile_id = session.profileId,
             )
         }
     }
@@ -471,28 +502,26 @@ class SqlDelightWorkoutRepository(
         }
     }
 
-    override fun getAllRoutines(profileId: String): Flow<List<Routine>> {
-        return queries.selectAllRoutines(profileId = profileId, mapper = ::mapToRoutineBasic)
-            .asFlow()
-            .mapToList(Dispatchers.IO)
-            .map { basicRoutines ->
-                // Load exercises for each routine
-                basicRoutines.map { routine ->
-                    try {
-                        loadRoutineWithExercises(
-                            routine.id,
-                            routine.name,
-                            routine.createdAt,
-                            routine.lastUsed,
-                            routine.useCount
-                        )
-                    } catch (e: Exception) {
-                        Logger.e(e) { "Failed to load exercises for routine ${routine.id}" }
-                        routine
-                    }
+    override fun getAllRoutines(profileId: String): Flow<List<Routine>> = queries.selectAllRoutines(profileId = profileId, mapper = ::mapToRoutineBasic)
+        .asFlow()
+        .mapToList(Dispatchers.IO)
+        .map { basicRoutines ->
+            // Load exercises for each routine
+            basicRoutines.map { routine ->
+                try {
+                    loadRoutineWithExercises(
+                        routine.id,
+                        routine.name,
+                        routine.createdAt,
+                        routine.lastUsed,
+                        routine.useCount,
+                    )
+                } catch (e: Exception) {
+                    Logger.e(e) { "Failed to load exercises for routine ${routine.id}" }
+                    routine
                 }
             }
-    }
+        }
 
     override suspend fun saveRoutine(routine: Routine) {
         withContext(Dispatchers.IO) {
@@ -508,7 +537,7 @@ class SqlDelightWorkoutRepository(
                     createdAt = routine.createdAt,
                     lastUsed = routine.lastUsed,
                     useCount = routine.useCount.toLong(),
-                    profile_id = routine.profileId
+                    profile_id = routine.profileId,
                 )
 
                 // Delete existing supersets and exercises before re-inserting
@@ -562,17 +591,29 @@ class SqlDelightWorkoutRepository(
             usePercentOfPR = if (exercise.usePercentOfPR) 1L else 0L,
             weightPercentOfPR = exercise.weightPercentOfPR.toLong(),
             prTypeForScaling = exercise.prTypeForScaling.name,
-            setWeightsPercentOfPR = if (exercise.setWeightsPercentOfPR.isEmpty()) null else json.encodeToString(exercise.setWeightsPercentOfPR),
+            setWeightsPercentOfPR = if (exercise.setWeightsPercentOfPR.isEmpty()) {
+                null
+            } else {
+                json.encodeToString(
+                    exercise.setWeightsPercentOfPR,
+                )
+            },
             // Per-exercise behavior overrides
             stallDetectionEnabled = if (exercise.stallDetectionEnabled) 1L else 0L,
             stopAtTop = if (exercise.stopAtTop) 1L else 0L,
             repCountTiming = exercise.repCountTiming.name,
             // Per-set echo levels (stored as JSON array of nullable ordinals)
-            setEchoLevels = if (exercise.setEchoLevels.isEmpty()) ""
-                else json.encodeToString(exercise.setEchoLevels.map { it?.ordinal }),
+            setEchoLevels = if (exercise.setEchoLevels.isEmpty()) {
+                ""
+            } else {
+                json.encodeToString(exercise.setEchoLevels.map { it?.ordinal })
+            },
             // Variable warm-up sets (Phase 35C)
-            warmupSets = if (exercise.warmupSets.isEmpty()) ""
-                else json.encodeToString(exercise.warmupSets)
+            warmupSets = if (exercise.warmupSets.isEmpty()) {
+                ""
+            } else {
+                json.encodeToString(exercise.warmupSets)
+            },
         )
     }
 
@@ -583,7 +624,7 @@ class SqlDelightWorkoutRepository(
             name = superset.name,
             colorIndex = superset.colorIndex.toLong(),
             restBetweenSeconds = superset.restBetweenSeconds.toLong(),
-            orderIndex = superset.orderIndex.toLong()
+            orderIndex = superset.orderIndex.toLong(),
         )
     }
 
@@ -596,7 +637,7 @@ class SqlDelightWorkoutRepository(
                 queries.updateRoutineById(
                     name = routine.name,
                     description = "", // Keep description empty for now
-                    id = routineId
+                    id = routineId,
                 )
 
                 // Delete existing supersets and exercises, then re-insert
@@ -614,7 +655,9 @@ class SqlDelightWorkoutRepository(
                 }
             }
 
-            Logger.d { "Updated routine '${routine.name}' with ${routine.exercises.size} exercises and ${routine.supersets.size} supersets" }
+            Logger.d {
+                "Updated routine '${routine.name}' with ${routine.exercises.size} exercises and ${routine.supersets.size} supersets"
+            }
         }
     }
 
@@ -644,32 +687,44 @@ class SqlDelightWorkoutRepository(
                 basicRoutine.name,
                 basicRoutine.createdAt,
                 basicRoutine.lastUsed,
-                basicRoutine.useCount
+                basicRoutine.useCount,
             )
         }
     }
 
-    override suspend fun getAverageSetDurationMs(exerciseId: String, profileId: String): Long? {
-        return withContext(Dispatchers.IO) {
-            queries.selectAverageSetDurationMs(exerciseId, profileId = profileId)
-                .executeAsOneOrNull()
-                ?.avgDurationMs
-                ?.toLong()
-        }
+    override suspend fun getAverageSetDurationMs(exerciseId: String, profileId: String): Long? = withContext(Dispatchers.IO) {
+        queries.selectAverageSetDurationMs(exerciseId, profileId = profileId)
+            .executeAsOneOrNull()
+            ?.avgDurationMs
+            ?.toLong()
     }
 
-    override fun getAllPersonalRecords(profileId: String): Flow<List<PersonalRecordEntity>> {
-        return queries.selectAllRecords(profileId = profileId) { id, exerciseId, exerciseName, weight, reps, oneRepMax, achievedAt, workoutMode, prType, volume, phase, updatedAt, serverId, deletedAt, profileId_ ->
-            PersonalRecordEntity(
-                id = id,
-                exerciseId = exerciseId,
-                weightPerCableKg = weight.toFloat(),
-                reps = reps.toInt(),
-                timestamp = achievedAt,
-                workoutMode = workoutMode
-            )
-        }.asFlow().mapToList(Dispatchers.IO)
-    }
+    override fun getAllPersonalRecords(profileId: String): Flow<List<PersonalRecordEntity>> = queries.selectAllRecords(profileId = profileId) {
+            id,
+            exerciseId,
+            exerciseName,
+            weight,
+            reps,
+            oneRepMax,
+            achievedAt,
+            workoutMode,
+            prType,
+            volume,
+            phase,
+            updatedAt,
+            serverId,
+            deletedAt,
+            profileId_,
+        ->
+        PersonalRecordEntity(
+            id = id,
+            exerciseId = exerciseId,
+            weightPerCableKg = weight.toFloat(),
+            reps = reps.toInt(),
+            timestamp = achievedAt,
+            workoutMode = workoutMode,
+        )
+    }.asFlow().mapToList(Dispatchers.IO)
 
     override suspend fun updatePRIfBetter(exerciseId: String, weightKg: Float, reps: Int, mode: String) {
         withContext(Dispatchers.IO) {
@@ -688,7 +743,7 @@ class SqlDelightWorkoutRepository(
                 mode,
                 PRType.MAX_WEIGHT.name,
                 combinedPhase,
-                profileId = defaultProfileId
+                profileId = defaultProfileId,
             ).executeAsOneOrNull()
 
             val currentVolumePR = queries.selectPR(
@@ -696,7 +751,7 @@ class SqlDelightWorkoutRepository(
                 mode,
                 PRType.MAX_VOLUME.name,
                 combinedPhase,
-                profileId = defaultProfileId
+                profileId = defaultProfileId,
             ).executeAsOneOrNull()
 
             val isNewWeightPR = currentWeightPR == null || weightKg > currentWeightPR.weight.toFloat()
@@ -719,7 +774,7 @@ class SqlDelightWorkoutRepository(
                     prType = PRType.MAX_WEIGHT.name,
                     volume = newVolume.toDouble(),
                     phase = combinedPhase,
-                    profile_id = defaultProfileId
+                    profile_id = defaultProfileId,
                 )
             }
 
@@ -735,7 +790,7 @@ class SqlDelightWorkoutRepository(
                     prType = PRType.MAX_VOLUME.name,
                     volume = newVolume.toDouble(),
                     phase = combinedPhase,
-                    profile_id = defaultProfileId
+                    profile_id = defaultProfileId,
                 )
             }
 
@@ -745,16 +800,13 @@ class SqlDelightWorkoutRepository(
             if (oneRepMax > currentExercise1RM) {
                 queries.updateOneRepMax(
                     one_rep_max_kg = oneRepMax.toDouble(),
-                    id = exerciseId
+                    id = exerciseId,
                 )
             }
         }
     }
 
-    override suspend fun saveMetrics(
-        sessionId: String,
-        metrics: List<com.devil.phoenixproject.domain.model.WorkoutMetric>
-    ) {
+    override suspend fun saveMetrics(sessionId: String, metrics: List<com.devil.phoenixproject.domain.model.WorkoutMetric>) {
         withContext(Dispatchers.IO) {
             metrics.forEach { metric ->
                 // Calculate power: P = (loadA + loadB) × v (combined force × velocity for dual-cable)
@@ -769,7 +821,7 @@ class SqlDelightWorkoutRepository(
                     load = metric.loadA.toDouble(),
                     loadB = metric.loadB.toDouble(),
                     power = power.toDouble(),
-                    status = metric.status.toLong()
+                    status = metric.status.toLong(),
                 )
             }
         }
@@ -777,16 +829,12 @@ class SqlDelightWorkoutRepository(
 
     // ========== New methods for full parity ==========
 
-    override fun getRecentSessions(profileId: String, limit: Int): Flow<List<WorkoutSession>> {
-        return queries.selectRecentSessions(profileId = profileId, limit = limit.toLong(), mapper = ::mapToSession)
-            .asFlow()
-            .mapToList(Dispatchers.IO)
-    }
+    override fun getRecentSessions(profileId: String, limit: Int): Flow<List<WorkoutSession>> = queries.selectRecentSessions(profileId = profileId, limit = limit.toLong(), mapper = ::mapToSession)
+        .asFlow()
+        .mapToList(Dispatchers.IO)
 
-    override suspend fun getSession(sessionId: String): WorkoutSession? {
-        return withContext(Dispatchers.IO) {
-            queries.selectSessionById(sessionId, ::mapToSession).executeAsOneOrNull()
-        }
+    override suspend fun getSession(sessionId: String): WorkoutSession? = withContext(Dispatchers.IO) {
+        queries.selectSessionById(sessionId, ::mapToSession).executeAsOneOrNull()
     }
 
     override suspend fun markRoutineUsed(routineId: String) {
@@ -797,8 +845,45 @@ class SqlDelightWorkoutRepository(
         }
     }
 
-    override fun getMetricsForSession(sessionId: String): Flow<List<com.devil.phoenixproject.domain.model.WorkoutMetric>> {
-        return queries.selectMetricsBySession(sessionId) { id, sessId, timestamp, position, positionB, velocity, velocityB, load, loadB, power, status ->
+    override fun getMetricsForSession(sessionId: String): Flow<List<com.devil.phoenixproject.domain.model.WorkoutMetric>> = queries.selectMetricsBySession(sessionId) {
+            id,
+            sessId,
+            timestamp,
+            position,
+            positionB,
+            velocity,
+            velocityB,
+            load,
+            loadB,
+            power,
+            status,
+        ->
+        com.devil.phoenixproject.domain.model.WorkoutMetric(
+            timestamp = timestamp,
+            loadA = load?.toFloat() ?: 0f,
+            loadB = loadB?.toFloat() ?: 0f,
+            positionA = position?.toFloat() ?: 0f,
+            positionB = positionB?.toFloat() ?: 0f,
+            velocityA = velocity ?: 0.0,
+            velocityB = velocityB ?: 0.0,
+            status = status.toInt(),
+        )
+    }.asFlow().mapToList(Dispatchers.IO)
+
+    override suspend fun getMetricsForSessionSync(sessionId: String): List<com.devil.phoenixproject.domain.model.WorkoutMetric> = withContext(Dispatchers.IO) {
+        queries.selectMetricsBySession(sessionId) {
+                id,
+                sessId,
+                timestamp,
+                position,
+                positionB,
+                velocity,
+                velocityB,
+                load,
+                loadB,
+                power,
+                status,
+            ->
             com.devil.phoenixproject.domain.model.WorkoutMetric(
                 timestamp = timestamp,
                 loadA = load?.toFloat() ?: 0f,
@@ -807,38 +892,16 @@ class SqlDelightWorkoutRepository(
                 positionB = positionB?.toFloat() ?: 0f,
                 velocityA = velocity ?: 0.0,
                 velocityB = velocityB ?: 0.0,
-                status = status.toInt()
+                status = status.toInt(),
             )
-        }.asFlow().mapToList(Dispatchers.IO)
+        }.executeAsList()
     }
 
-    override suspend fun getMetricsForSessionSync(sessionId: String): List<com.devil.phoenixproject.domain.model.WorkoutMetric> {
-        return withContext(Dispatchers.IO) {
-            queries.selectMetricsBySession(sessionId) { id, sessId, timestamp, position, positionB, velocity, velocityB, load, loadB, power, status ->
-                com.devil.phoenixproject.domain.model.WorkoutMetric(
-                    timestamp = timestamp,
-                    loadA = load?.toFloat() ?: 0f,
-                    loadB = loadB?.toFloat() ?: 0f,
-                    positionA = position?.toFloat() ?: 0f,
-                    positionB = positionB?.toFloat() ?: 0f,
-                    velocityA = velocity ?: 0.0,
-                    velocityB = velocityB ?: 0.0,
-                    status = status.toInt()
-                )
-            }.executeAsList()
-        }
+    override suspend fun getRecentSessionsSync(profileId: String, limit: Int): List<WorkoutSession> = withContext(Dispatchers.IO) {
+        queries.selectRecentSessions(profileId = profileId, limit = limit.toLong(), mapper = ::mapToSession).executeAsList()
     }
 
-    override suspend fun getRecentSessionsSync(profileId: String, limit: Int): List<WorkoutSession> {
-        return withContext(Dispatchers.IO) {
-            queries.selectRecentSessions(profileId = profileId, limit = limit.toLong(), mapper = ::mapToSession).executeAsList()
-        }
-    }
-
-    override suspend fun savePhaseStatistics(
-        sessionId: String,
-        stats: com.devil.phoenixproject.domain.model.HeuristicStatistics
-    ) {
+    override suspend fun savePhaseStatistics(sessionId: String, stats: com.devil.phoenixproject.domain.model.HeuristicStatistics) {
         withContext(Dispatchers.IO) {
             queries.insertPhaseStatistics(
                 sessionId = sessionId,
@@ -854,31 +917,45 @@ class SqlDelightWorkoutRepository(
                 eccentricVelMax = stats.eccentric.velMax.toDouble(),
                 eccentricWattAvg = stats.eccentric.wattAvg.toDouble(),
                 eccentricWattMax = stats.eccentric.wattMax.toDouble(),
-                timestamp = stats.timestamp
+                timestamp = stats.timestamp,
             )
             Logger.d { "Saved phase statistics for session $sessionId" }
         }
     }
 
-    override fun getAllPhaseStatistics(): Flow<List<PhaseStatisticsData>> {
-        return queries.selectAllPhaseStats { id, sessionId, concentricKgAvg, concentricKgMax, concentricVelAvg, concentricVelMax, concentricWattAvg, concentricWattMax, eccentricKgAvg, eccentricKgMax, eccentricVelAvg, eccentricVelMax, eccentricWattAvg, eccentricWattMax, timestamp ->
-            PhaseStatisticsData(
-                id = id,
-                sessionId = sessionId,
-                concentricKgAvg = concentricKgAvg.toFloat(),
-                concentricKgMax = concentricKgMax.toFloat(),
-                concentricVelAvg = concentricVelAvg.toFloat(),
-                concentricVelMax = concentricVelMax.toFloat(),
-                concentricWattAvg = concentricWattAvg.toFloat(),
-                concentricWattMax = concentricWattMax.toFloat(),
-                eccentricKgAvg = eccentricKgAvg.toFloat(),
-                eccentricKgMax = eccentricKgMax.toFloat(),
-                eccentricVelAvg = eccentricVelAvg.toFloat(),
-                eccentricVelMax = eccentricVelMax.toFloat(),
-                eccentricWattAvg = eccentricWattAvg.toFloat(),
-                eccentricWattMax = eccentricWattMax.toFloat(),
-                timestamp = timestamp
-            )
-        }.asFlow().mapToList(Dispatchers.IO)
-    }
+    override fun getAllPhaseStatistics(): Flow<List<PhaseStatisticsData>> = queries.selectAllPhaseStats {
+            id,
+            sessionId,
+            concentricKgAvg,
+            concentricKgMax,
+            concentricVelAvg,
+            concentricVelMax,
+            concentricWattAvg,
+            concentricWattMax,
+            eccentricKgAvg,
+            eccentricKgMax,
+            eccentricVelAvg,
+            eccentricVelMax,
+            eccentricWattAvg,
+            eccentricWattMax,
+            timestamp,
+        ->
+        PhaseStatisticsData(
+            id = id,
+            sessionId = sessionId,
+            concentricKgAvg = concentricKgAvg.toFloat(),
+            concentricKgMax = concentricKgMax.toFloat(),
+            concentricVelAvg = concentricVelAvg.toFloat(),
+            concentricVelMax = concentricVelMax.toFloat(),
+            concentricWattAvg = concentricWattAvg.toFloat(),
+            concentricWattMax = concentricWattMax.toFloat(),
+            eccentricKgAvg = eccentricKgAvg.toFloat(),
+            eccentricKgMax = eccentricKgMax.toFloat(),
+            eccentricVelAvg = eccentricVelAvg.toFloat(),
+            eccentricVelMax = eccentricVelMax.toFloat(),
+            eccentricWattAvg = eccentricWattAvg.toFloat(),
+            eccentricWattMax = eccentricWattMax.toFloat(),
+            timestamp = timestamp,
+        )
+    }.asFlow().mapToList(Dispatchers.IO)
 }

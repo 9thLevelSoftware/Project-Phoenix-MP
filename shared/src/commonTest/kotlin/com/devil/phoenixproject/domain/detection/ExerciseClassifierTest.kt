@@ -1,6 +1,5 @@
 package com.devil.phoenixproject.domain.detection
 
-import kotlin.math.abs
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
@@ -32,26 +31,31 @@ class ExerciseClassifierTest {
             durationMs = 2000L,
             symmetryRatio = 0.5f,
             velocityProfile = VelocityShape.LINEAR,
-            cableConfig = CableUsage.DUAL_SYMMETRIC
+            cableConfig = CableUsage.DUAL_SYMMETRIC,
         )
 
         val historySignature = ExerciseSignature(
-            romMm = 205f,  // Very close
+            romMm = 205f, // Very close
             durationMs = 2050L,
             symmetryRatio = 0.51f,
             velocityProfile = VelocityShape.LINEAR,
-            cableConfig = CableUsage.DUAL_SYMMETRIC
+            cableConfig = CableUsage.DUAL_SYMMETRIC,
         )
 
         val history = mapOf("bench_press" to historySignature)
 
         val result = classifier.classify(signature, history)
 
-        assertEquals(ClassificationSource.HISTORY_MATCH, result.source,
-            "Should use history match for high similarity")
+        assertEquals(
+            ClassificationSource.HISTORY_MATCH,
+            result.source,
+            "Should use history match for high similarity",
+        )
         assertEquals("bench_press", result.exerciseId)
-        assertTrue(result.confidence > 0.85f,
-            "Confidence should be above 0.85, got ${result.confidence}")
+        assertTrue(
+            result.confidence > 0.85f,
+            "Confidence should be above 0.85, got ${result.confidence}",
+        )
     }
 
     @Test
@@ -61,7 +65,7 @@ class ExerciseClassifierTest {
             durationMs = 2000L,
             symmetryRatio = 0.5f,
             velocityProfile = VelocityShape.LINEAR,
-            cableConfig = CableUsage.DUAL_SYMMETRIC
+            cableConfig = CableUsage.DUAL_SYMMETRIC,
         )
 
         val historySignature = ExerciseSignature(
@@ -69,7 +73,7 @@ class ExerciseClassifierTest {
             durationMs = 2050L,
             symmetryRatio = 0.51f,
             velocityProfile = VelocityShape.LINEAR,
-            cableConfig = CableUsage.DUAL_SYMMETRIC
+            cableConfig = CableUsage.DUAL_SYMMETRIC,
         )
 
         val exerciseId = "a1b2c3d4-uuid-here"
@@ -80,8 +84,11 @@ class ExerciseClassifierTest {
 
         assertEquals(ClassificationSource.HISTORY_MATCH, result.source)
         assertEquals(exerciseId, result.exerciseId)
-        assertEquals("Bench Press", result.exerciseName,
-            "Should use human-readable name from exerciseNames, not the UUID")
+        assertEquals(
+            "Bench Press",
+            result.exerciseName,
+            "Should use human-readable name from exerciseNames, not the UUID",
+        )
     }
 
     @Test
@@ -91,7 +98,7 @@ class ExerciseClassifierTest {
             durationMs = 2000L,
             symmetryRatio = 0.5f,
             velocityProfile = VelocityShape.LINEAR,
-            cableConfig = CableUsage.DUAL_SYMMETRIC
+            cableConfig = CableUsage.DUAL_SYMMETRIC,
         )
 
         val historySignature = ExerciseSignature(
@@ -99,7 +106,7 @@ class ExerciseClassifierTest {
             durationMs = 2050L,
             symmetryRatio = 0.51f,
             velocityProfile = VelocityShape.LINEAR,
-            cableConfig = CableUsage.DUAL_SYMMETRIC
+            cableConfig = CableUsage.DUAL_SYMMETRIC,
         )
 
         val exerciseId = "a1b2c3d4-uuid-here"
@@ -110,24 +117,30 @@ class ExerciseClassifierTest {
 
         assertEquals(ClassificationSource.HISTORY_MATCH, result.source)
         assertEquals(exerciseId, result.exerciseId)
-        assertEquals(exerciseId, result.exerciseName,
-            "Should fall back to exerciseId when exerciseNames map is empty")
+        assertEquals(
+            exerciseId,
+            result.exerciseName,
+            "Should fall back to exerciseId when exerciseNames map is empty",
+        )
     }
 
     @Test
     fun `classify falls back to rules when no history`() {
         val signature = ExerciseSignature(
-            romMm = 350f,  // Short ROM
-            durationMs = 2500L,  // Fast
+            romMm = 350f, // Short ROM
+            durationMs = 2500L, // Fast
             symmetryRatio = 0.5f,
             velocityProfile = VelocityShape.EXPLOSIVE_START,
-            cableConfig = CableUsage.DUAL_SYMMETRIC
+            cableConfig = CableUsage.DUAL_SYMMETRIC,
         )
 
         val result = classifier.classify(signature, emptyMap())
 
-        assertEquals(ClassificationSource.RULE_BASED, result.source,
-            "Should use rule-based when no history available")
+        assertEquals(
+            ClassificationSource.RULE_BASED,
+            result.source,
+            "Should use rule-based when no history available",
+        )
     }
 
     @Test
@@ -137,43 +150,48 @@ class ExerciseClassifierTest {
             durationMs = 2000L,
             symmetryRatio = 0.5f,
             velocityProfile = VelocityShape.LINEAR,
-            cableConfig = CableUsage.DUAL_SYMMETRIC
+            cableConfig = CableUsage.DUAL_SYMMETRIC,
         )
 
         // Very different signature in history
         val historySignature = ExerciseSignature(
-            romMm = 600f,  // Very different ROM
+            romMm = 600f, // Very different ROM
             durationMs = 5000L,
             symmetryRatio = 0.8f,
             velocityProfile = VelocityShape.DECELERATING,
-            cableConfig = CableUsage.SINGLE_LEFT
+            cableConfig = CableUsage.SINGLE_LEFT,
         )
 
         val history = mapOf("squat" to historySignature)
 
         val result = classifier.classify(signature, history)
 
-        assertEquals(ClassificationSource.RULE_BASED, result.source,
-            "Should fall back to rules when similarity is low")
+        assertEquals(
+            ClassificationSource.RULE_BASED,
+            result.source,
+            "Should fall back to rules when similarity is low",
+        )
     }
 
     @Test
     fun `classify returns Unknown for ambiguous signatures`() {
         // Create a signature that doesn't match any rule clearly
         val signature = ExerciseSignature(
-            romMm = 450f,  // Medium ROM - between categories
-            durationMs = 3500L,  // Borderline duration
-            symmetryRatio = 0.35f,  // Outside symmetric range but not single cable
+            romMm = 450f, // Medium ROM - between categories
+            durationMs = 3500L, // Borderline duration
+            symmetryRatio = 0.35f, // Outside symmetric range but not single cable
             velocityProfile = VelocityShape.LINEAR,
-            cableConfig = CableUsage.DUAL_ASYMMETRIC
+            cableConfig = CableUsage.DUAL_ASYMMETRIC,
         )
 
         val result = classifier.classify(signature, emptyMap())
 
         // Should return something but with lower confidence
         assertNotNull(result)
-        assertTrue(result.confidence <= 0.5f,
-            "Ambiguous signature should have low confidence, got ${result.confidence}")
+        assertTrue(
+            result.confidence <= 0.5f,
+            "Ambiguous signature should have low confidence, got ${result.confidence}",
+        )
     }
 
     // =========================================================================
@@ -183,11 +201,11 @@ class ExerciseClassifierTest {
     @Test
     fun `classify single cable short ROM returns Bicep Curl`() {
         val signature = ExerciseSignature(
-            romMm = 250f,  // Short ROM < 300mm
+            romMm = 250f, // Short ROM < 300mm
             durationMs = 2000L,
-            symmetryRatio = 0.99f,  // Single cable (loadB ~0)
+            symmetryRatio = 0.99f, // Single cable (loadB ~0)
             velocityProfile = VelocityShape.LINEAR,
-            cableConfig = CableUsage.SINGLE_LEFT
+            cableConfig = CableUsage.SINGLE_LEFT,
         )
 
         val result = classifier.classify(signature, emptyMap())
@@ -199,11 +217,11 @@ class ExerciseClassifierTest {
     @Test
     fun `classify dual symmetric short ROM explosive returns Chest Press`() {
         val signature = ExerciseSignature(
-            romMm = 350f,  // Short ROM < 400mm
-            durationMs = 2500L,  // Fast < 3000ms
+            romMm = 350f, // Short ROM < 400mm
+            durationMs = 2500L, // Fast < 3000ms
             symmetryRatio = 0.5f,
             velocityProfile = VelocityShape.EXPLOSIVE_START,
-            cableConfig = CableUsage.DUAL_SYMMETRIC
+            cableConfig = CableUsage.DUAL_SYMMETRIC,
         )
 
         val result = classifier.classify(signature, emptyMap())
@@ -215,11 +233,11 @@ class ExerciseClassifierTest {
     @Test
     fun `classify dual symmetric short ROM not explosive returns Shoulder Press`() {
         val signature = ExerciseSignature(
-            romMm = 350f,  // Short ROM < 400mm
-            durationMs = 2500L,  // Fast < 3000ms
+            romMm = 350f, // Short ROM < 400mm
+            durationMs = 2500L, // Fast < 3000ms
             symmetryRatio = 0.5f,
-            velocityProfile = VelocityShape.LINEAR,  // Not explosive
-            cableConfig = CableUsage.DUAL_SYMMETRIC
+            velocityProfile = VelocityShape.LINEAR, // Not explosive
+            cableConfig = CableUsage.DUAL_SYMMETRIC,
         )
 
         val result = classifier.classify(signature, emptyMap())
@@ -231,11 +249,11 @@ class ExerciseClassifierTest {
     @Test
     fun `classify dual symmetric medium ROM returns Bent-Over Row`() {
         val signature = ExerciseSignature(
-            romMm = 500f,  // Medium ROM 400-600mm
+            romMm = 500f, // Medium ROM 400-600mm
             durationMs = 2500L,
             symmetryRatio = 0.5f,
             velocityProfile = VelocityShape.LINEAR,
-            cableConfig = CableUsage.DUAL_SYMMETRIC
+            cableConfig = CableUsage.DUAL_SYMMETRIC,
         )
 
         val result = classifier.classify(signature, emptyMap())
@@ -247,11 +265,11 @@ class ExerciseClassifierTest {
     @Test
     fun `classify dual symmetric long ROM returns Squat`() {
         val signature = ExerciseSignature(
-            romMm = 700f,  // Long ROM > 600mm
+            romMm = 700f, // Long ROM > 600mm
             durationMs = 3500L,
             symmetryRatio = 0.5f,
             velocityProfile = VelocityShape.DECELERATING,
-            cableConfig = CableUsage.DUAL_SYMMETRIC
+            cableConfig = CableUsage.DUAL_SYMMETRIC,
         )
 
         val result = classifier.classify(signature, emptyMap())
@@ -271,13 +289,17 @@ class ExerciseClassifierTest {
             durationMs = 2000L,
             symmetryRatio = 0.5f,
             velocityProfile = VelocityShape.LINEAR,
-            cableConfig = CableUsage.DUAL_SYMMETRIC
+            cableConfig = CableUsage.DUAL_SYMMETRIC,
         )
 
         val similarity = classifier.computeSimilarity(signature, signature)
 
-        assertEquals(1.0f, similarity, 0.001f,
-            "Identical signatures should have similarity 1.0")
+        assertEquals(
+            1.0f,
+            similarity,
+            0.001f,
+            "Identical signatures should have similarity 1.0",
+        )
     }
 
     @Test
@@ -287,16 +309,16 @@ class ExerciseClassifierTest {
             durationMs = 2000L,
             symmetryRatio = 0.5f,
             velocityProfile = VelocityShape.LINEAR,
-            cableConfig = CableUsage.DUAL_SYMMETRIC
+            cableConfig = CableUsage.DUAL_SYMMETRIC,
         )
 
         // Only ROM differs significantly (50% difference -> 0.5 normalized)
         val differentRom = ExerciseSignature(
-            romMm = 400f,  // 100% larger
+            romMm = 400f, // 100% larger
             durationMs = 2000L,
             symmetryRatio = 0.5f,
             velocityProfile = VelocityShape.LINEAR,
-            cableConfig = CableUsage.DUAL_SYMMETRIC
+            cableConfig = CableUsage.DUAL_SYMMETRIC,
         )
 
         val similarity = classifier.computeSimilarity(base, differentRom)
@@ -304,8 +326,12 @@ class ExerciseClassifierTest {
         // ROM contributes 40% weight with 0.5 normalized similarity
         // Other components: duration 20%*1.0, symmetry 25%*1.0, shape 15%*1.0
         // Expected: 0.4*0.5 + 0.2*1.0 + 0.25*1.0 + 0.15*1.0 = 0.2 + 0.6 = 0.8
-        assertEquals(0.8f, similarity, 0.05f,
-            "50% ROM difference should result in ~0.8 similarity")
+        assertEquals(
+            0.8f,
+            similarity,
+            0.05f,
+            "50% ROM difference should result in ~0.8 similarity",
+        )
     }
 
     @Test
@@ -315,7 +341,7 @@ class ExerciseClassifierTest {
             durationMs = 2000L,
             symmetryRatio = 0.5f,
             velocityProfile = VelocityShape.EXPLOSIVE_START,
-            cableConfig = CableUsage.DUAL_SYMMETRIC
+            cableConfig = CableUsage.DUAL_SYMMETRIC,
         )
 
         // Only shape differs
@@ -324,15 +350,19 @@ class ExerciseClassifierTest {
             durationMs = 2000L,
             symmetryRatio = 0.5f,
             velocityProfile = VelocityShape.DECELERATING,
-            cableConfig = CableUsage.DUAL_SYMMETRIC
+            cableConfig = CableUsage.DUAL_SYMMETRIC,
         )
 
         val similarity = classifier.computeSimilarity(base, differentShape)
 
         // Shape contributes 15% weight with 0.0 (different shapes)
         // Expected: 0.4*1.0 + 0.2*1.0 + 0.25*1.0 + 0.15*0.0 = 0.85
-        assertEquals(0.85f, similarity, 0.05f,
-            "Different shapes should reduce similarity by 15%")
+        assertEquals(
+            0.85f,
+            similarity,
+            0.05f,
+            "Different shapes should reduce similarity by 15%",
+        )
     }
 
     // =========================================================================
@@ -347,30 +377,41 @@ class ExerciseClassifierTest {
             symmetryRatio = 0.4f,
             velocityProfile = VelocityShape.LINEAR,
             cableConfig = CableUsage.DUAL_SYMMETRIC,
-            sampleCount = 5
+            sampleCount = 5,
         )
 
         val newObservation = ExerciseSignature(
-            romMm = 200f,  // 100 more
-            durationMs = 2000L,  // 1000 more
-            symmetryRatio = 0.6f,  // 0.2 more
-            velocityProfile = VelocityShape.EXPLOSIVE_START,  // Different
-            cableConfig = CableUsage.SINGLE_LEFT  // Different
+            romMm = 200f, // 100 more
+            durationMs = 2000L, // 1000 more
+            symmetryRatio = 0.6f, // 0.2 more
+            velocityProfile = VelocityShape.EXPLOSIVE_START, // Different
+            cableConfig = CableUsage.SINGLE_LEFT, // Different
         )
 
         val evolved = classifier.evolveSignature(existing, newObservation, 0.3f)
 
         // ROM: 100 * 0.7 + 200 * 0.3 = 70 + 60 = 130
-        assertEquals(130f, evolved.romMm, 1f,
-            "ROM should be EMA: 100*0.7 + 200*0.3 = 130")
+        assertEquals(
+            130f,
+            evolved.romMm,
+            1f,
+            "ROM should be EMA: 100*0.7 + 200*0.3 = 130",
+        )
 
         // Duration: 1000 * 0.7 + 2000 * 0.3 = 700 + 600 = 1300
-        assertEquals(1300L, evolved.durationMs,
-            "Duration should be EMA: 1000*0.7 + 2000*0.3 = 1300")
+        assertEquals(
+            1300L,
+            evolved.durationMs,
+            "Duration should be EMA: 1000*0.7 + 2000*0.3 = 1300",
+        )
 
         // Symmetry: 0.4 * 0.7 + 0.6 * 0.3 = 0.28 + 0.18 = 0.46
-        assertEquals(0.46f, evolved.symmetryRatio, 0.01f,
-            "Symmetry should be EMA: 0.4*0.7 + 0.6*0.3 = 0.46")
+        assertEquals(
+            0.46f,
+            evolved.symmetryRatio,
+            0.01f,
+            "Symmetry should be EMA: 0.4*0.7 + 0.6*0.3 = 0.46",
+        )
     }
 
     @Test
@@ -381,7 +422,7 @@ class ExerciseClassifierTest {
             symmetryRatio = 0.5f,
             velocityProfile = VelocityShape.LINEAR,
             cableConfig = CableUsage.DUAL_SYMMETRIC,
-            sampleCount = 5
+            sampleCount = 5,
         )
 
         val newObservation = ExerciseSignature(
@@ -389,13 +430,16 @@ class ExerciseClassifierTest {
             durationMs = 1500L,
             symmetryRatio = 0.5f,
             velocityProfile = VelocityShape.LINEAR,
-            cableConfig = CableUsage.DUAL_SYMMETRIC
+            cableConfig = CableUsage.DUAL_SYMMETRIC,
         )
 
         val evolved = classifier.evolveSignature(existing, newObservation)
 
-        assertEquals(6, evolved.sampleCount,
-            "Sample count should increment from 5 to 6")
+        assertEquals(
+            6,
+            evolved.sampleCount,
+            "Sample count should increment from 5 to 6",
+        )
     }
 
     @Test
@@ -406,7 +450,7 @@ class ExerciseClassifierTest {
             symmetryRatio = 0.5f,
             velocityProfile = VelocityShape.LINEAR,
             cableConfig = CableUsage.DUAL_SYMMETRIC,
-            sampleCount = 5
+            sampleCount = 5,
         )
 
         val newObservation = ExerciseSignature(
@@ -414,14 +458,20 @@ class ExerciseClassifierTest {
             durationMs = 1000L,
             symmetryRatio = 0.5f,
             velocityProfile = VelocityShape.EXPLOSIVE_START,
-            cableConfig = CableUsage.SINGLE_LEFT
+            cableConfig = CableUsage.SINGLE_LEFT,
         )
 
         val evolved = classifier.evolveSignature(existing, newObservation)
 
-        assertEquals(VelocityShape.EXPLOSIVE_START, evolved.velocityProfile,
-            "Velocity profile should use latest observation")
-        assertEquals(CableUsage.SINGLE_LEFT, evolved.cableConfig,
-            "Cable config should use latest observation")
+        assertEquals(
+            VelocityShape.EXPLOSIVE_START,
+            evolved.velocityProfile,
+            "Velocity profile should use latest observation",
+        )
+        assertEquals(
+            CableUsage.SINGLE_LEFT,
+            evolved.cableConfig,
+            "Cable config should use latest observation",
+        )
     }
 }

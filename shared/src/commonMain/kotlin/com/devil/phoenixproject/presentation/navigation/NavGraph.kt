@@ -45,602 +45,604 @@ fun NavGraph(
     exerciseRepository: ExerciseRepository,
     themeMode: ThemeMode,
     onThemeModeChange: (ThemeMode) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
 ) {
     SharedTransitionLayout {
         NavHost(
             navController = navController,
             startDestination = NavigationRoutes.Home.route,
-            modifier = modifier
+            modifier = modifier,
         ) {
-        // Home screen - workout type selection
-        composable(NavigationRoutes.Home.route) {
-            HomeScreen(
-                navController = navController,
-                viewModel = viewModel,
-                themeMode = themeMode
-            )
-        }
-
-        // Just Lift screen - quick workout configuration
-        composable(
-            route = NavigationRoutes.JustLift.route,
-            enterTransition = {
-                slideIntoContainer(
-                    towards = AnimatedContentTransitionScope.SlideDirection.Left,
-                    animationSpec = tween(300)
-                )
-            },
-            exitTransition = {
-                slideOutOfContainer(
-                    towards = AnimatedContentTransitionScope.SlideDirection.Left,
-                    animationSpec = tween(300)
-                )
-            },
-            popEnterTransition = {
-                slideIntoContainer(
-                    towards = AnimatedContentTransitionScope.SlideDirection.Right,
-                    animationSpec = tween(300)
-                )
-            },
-            popExitTransition = {
-                slideOutOfContainer(
-                    towards = AnimatedContentTransitionScope.SlideDirection.Right,
-                    animationSpec = tween(300)
+            // Home screen - workout type selection
+            composable(NavigationRoutes.Home.route) {
+                HomeScreen(
+                    navController = navController,
+                    viewModel = viewModel,
+                    themeMode = themeMode,
                 )
             }
-        ) {
-            JustLiftScreen(
-                navController = navController,
-                viewModel = viewModel,
-                themeMode = themeMode
-            )
-        }
 
-        // Single Exercise screen - choose one exercise
-        composable(NavigationRoutes.SingleExercise.route) {
-            SingleExerciseScreen(
-                navController = navController,
-                viewModel = viewModel,
-                exerciseRepository = exerciseRepository,
-                themeMode = themeMode
-            )
-        }
-
-        // Daily Routines screen - pre-built routines
-        composable(NavigationRoutes.DailyRoutines.route) {
-            DailyRoutinesScreen(
-                navController = navController,
-                viewModel = viewModel,
-                exerciseRepository = exerciseRepository,
-                themeMode = themeMode
-            )
-        }
-
-        // Active Workout screen - shows workout controls during active workout
-        composable(
-            route = NavigationRoutes.ActiveWorkout.route,
-            enterTransition = {
-                slideIntoContainer(
-                    towards = AnimatedContentTransitionScope.SlideDirection.Left,
-                    animationSpec = tween(300)
-                ) + fadeIn(animationSpec = tween(300))
-            },
-            exitTransition = {
-                slideOutOfContainer(
-                    towards = AnimatedContentTransitionScope.SlideDirection.Left,
-                    animationSpec = tween(300)
-                ) + fadeOut(animationSpec = tween(300))
-            },
-            popEnterTransition = {
-                slideIntoContainer(
-                    towards = AnimatedContentTransitionScope.SlideDirection.Right,
-                    animationSpec = tween(300)
-                ) + fadeIn(animationSpec = tween(300))
-            },
-            popExitTransition = {
-                slideOutOfContainer(
-                    towards = AnimatedContentTransitionScope.SlideDirection.Right,
-                    animationSpec = tween(300)
-                ) + fadeOut(animationSpec = tween(300))
-            }
-        ) {
-            ActiveWorkoutScreen(
-                navController = navController,
-                viewModel = viewModel,
-                exerciseRepository = exerciseRepository
-            )
-        }
-
-        // Routine Overview screen - browse exercises before starting
-        composable(NavigationRoutes.RoutineOverview.route) {
-            RoutineOverviewScreen(
-                navController = navController,
-                viewModel = viewModel,
-                exerciseRepository = exerciseRepository
-            )
-        }
-
-        // Set Ready screen - configure set before starting
-        composable(NavigationRoutes.SetReady.route) {
-            SetReadyScreen(
-                navController = navController,
-                viewModel = viewModel,
-                exerciseRepository = exerciseRepository
-            )
-        }
-
-        // Routine Complete screen - celebration after finishing
-        composable(NavigationRoutes.RoutineComplete.route) {
-            RoutineCompleteScreen(
-                navController = navController,
-                viewModel = viewModel
-            )
-        }
-
-        // Training Cycles screen - new rolling schedule system
-        composable(
-            route = NavigationRoutes.TrainingCycles.route,
-            enterTransition = {
-                slideIntoContainer(
-                    towards = AnimatedContentTransitionScope.SlideDirection.Left,
-                    animationSpec = tween(300)
-                )
-            },
-            exitTransition = {
-                slideOutOfContainer(
-                    towards = AnimatedContentTransitionScope.SlideDirection.Left,
-                    animationSpec = tween(300)
-                )
-            },
-            popEnterTransition = {
-                slideIntoContainer(
-                    towards = AnimatedContentTransitionScope.SlideDirection.Right,
-                    animationSpec = tween(300)
-                )
-            },
-            popExitTransition = {
-                slideOutOfContainer(
-                    towards = AnimatedContentTransitionScope.SlideDirection.Right,
-                    animationSpec = tween(300)
+            // Just Lift screen - quick workout configuration
+            composable(
+                route = NavigationRoutes.JustLift.route,
+                enterTransition = {
+                    slideIntoContainer(
+                        towards = AnimatedContentTransitionScope.SlideDirection.Left,
+                        animationSpec = tween(300),
+                    )
+                },
+                exitTransition = {
+                    slideOutOfContainer(
+                        towards = AnimatedContentTransitionScope.SlideDirection.Left,
+                        animationSpec = tween(300),
+                    )
+                },
+                popEnterTransition = {
+                    slideIntoContainer(
+                        towards = AnimatedContentTransitionScope.SlideDirection.Right,
+                        animationSpec = tween(300),
+                    )
+                },
+                popExitTransition = {
+                    slideOutOfContainer(
+                        towards = AnimatedContentTransitionScope.SlideDirection.Right,
+                        animationSpec = tween(300),
+                    )
+                },
+            ) {
+                JustLiftScreen(
+                    navController = navController,
+                    viewModel = viewModel,
+                    themeMode = themeMode,
                 )
             }
-        ) {
-            TrainingCyclesScreen(
-                navController = navController,
-                viewModel = viewModel,
-                themeMode = themeMode
-            )
-        }
 
-        // Analytics screen - history, PRs, trends
-        composable(
-            route = NavigationRoutes.Analytics.route,
-            enterTransition = { fadeIn(animationSpec = tween(200)) },
-            exitTransition = { fadeOut(animationSpec = tween(200)) }
-        ) {
-            AnalyticsScreen(
-                viewModel = viewModel,
-                themeMode = themeMode
-            )
-        }
-
-        // Smart Insights screen - training suggestions and readiness
-        composable(
-            route = NavigationRoutes.SmartInsights.route,
-            enterTransition = { fadeIn(animationSpec = tween(200)) },
-            exitTransition = { fadeOut(animationSpec = tween(200)) }
-        ) {
-            SmartInsightsTab()
-        }
-
-        // Exercise Detail screen - drill-down for individual exercise
-        composable(
-            route = NavigationRoutes.ExerciseDetail.route,
-            arguments = listOf(navArgument("exerciseId") { type = NavType.StringType }),
-            enterTransition = {
-                slideIntoContainer(
-                    towards = AnimatedContentTransitionScope.SlideDirection.Left,
-                    animationSpec = tween(300)
-                )
-            },
-            exitTransition = {
-                slideOutOfContainer(
-                    towards = AnimatedContentTransitionScope.SlideDirection.Left,
-                    animationSpec = tween(300)
-                )
-            },
-            popEnterTransition = {
-                slideIntoContainer(
-                    towards = AnimatedContentTransitionScope.SlideDirection.Right,
-                    animationSpec = tween(300)
-                )
-            },
-            popExitTransition = {
-                slideOutOfContainer(
-                    towards = AnimatedContentTransitionScope.SlideDirection.Right,
-                    animationSpec = tween(300)
+            // Single Exercise screen - choose one exercise
+            composable(NavigationRoutes.SingleExercise.route) {
+                SingleExerciseScreen(
+                    navController = navController,
+                    viewModel = viewModel,
+                    exerciseRepository = exerciseRepository,
+                    themeMode = themeMode,
                 )
             }
-        ) { backStackEntry ->
-            val exerciseId = backStackEntry.arguments?.read { getStringOrNull("exerciseId") }
 
-            // Handle null/invalid exerciseId - navigate back instead of blank screen
-            if (exerciseId.isNullOrBlank()) {
-                LaunchedEffect(Unit) {
-                    navController.popBackStack()
-                }
-                return@composable
+            // Daily Routines screen - pre-built routines
+            composable(NavigationRoutes.DailyRoutines.route) {
+                DailyRoutinesScreen(
+                    navController = navController,
+                    viewModel = viewModel,
+                    exerciseRepository = exerciseRepository,
+                    themeMode = themeMode,
+                )
             }
 
-            ExerciseDetailScreen(
-                exerciseId = exerciseId,
-                navController = navController,
-                viewModel = viewModel,
-                themeMode = themeMode
-            )
-        }
-
-        // Settings screen
-        composable(
-            route = NavigationRoutes.Settings.route,
-            enterTransition = { fadeIn(animationSpec = tween(200)) },
-            exitTransition = { fadeOut(animationSpec = tween(200)) }
-        ) {
-            val weightUnit by viewModel.weightUnit.collectAsState()
-            val userPreferences by viewModel.userPreferences.collectAsState()
-            val isAutoConnecting by viewModel.isAutoConnecting.collectAsState()
-            val connectionError by viewModel.connectionError.collectAsState()
-            val connectionState by viewModel.connectionState.collectAsState()
-            val discoModeActive by viewModel.discoModeActive.collectAsState()
-            val backupStats by viewModel.backupStats.collectAsState()
-            // Refresh backup stats when Settings screen is displayed
-            androidx.compose.runtime.LaunchedEffect(Unit) { viewModel.refreshBackupStats() }
-            SettingsTab(
-                weightUnit = weightUnit,
-                enableVideoPlayback = userPreferences.enableVideoPlayback,
-                darkModeEnabled = themeMode == ThemeMode.DARK,
-                audioRepCountEnabled = userPreferences.audioRepCountEnabled,
-                countdownBeepsEnabled = userPreferences.countdownBeepsEnabled,
-                repSoundEnabled = userPreferences.repSoundEnabled,
-                onCountdownBeepsChange = { viewModel.setCountdownBeepsEnabled(it) },
-                onRepSoundChange = { viewModel.setRepSoundEnabled(it) },
-                motionStartEnabled = userPreferences.motionStartEnabled,
-                onMotionStartChange = { viewModel.setMotionStartEnabled(it) },
-                summaryCountdownSeconds = userPreferences.summaryCountdownSeconds,
-                autoStartCountdownSeconds = userPreferences.autoStartCountdownSeconds,
-                selectedColorSchemeIndex = userPreferences.colorScheme,
-                onWeightUnitChange = { viewModel.setWeightUnit(it) },
-                onEnableVideoPlaybackChange = { viewModel.setEnableVideoPlayback(it) },
-                onDarkModeChange = { enabled -> onThemeModeChange(if (enabled) ThemeMode.DARK else ThemeMode.LIGHT) },
-                onAudioRepCountChange = { viewModel.setAudioRepCountEnabled(it) },
-                onSummaryCountdownChange = { viewModel.setSummaryCountdownSeconds(it) },
-                onAutoStartCountdownChange = { viewModel.setAutoStartCountdownSeconds(it) },
-                onColorSchemeChange = { viewModel.setColorScheme(it) },
-                onDeleteAllWorkouts = { viewModel.deleteAllWorkouts() },
-                onNavigateToConnectionLogs = { navController.navigate(NavigationRoutes.ConnectionLogs.route) },
-                onNavigateToBadges = { navController.navigate(NavigationRoutes.Badges.route) },
-                onNavigateToLinkAccount = { navController.navigate(NavigationRoutes.LinkAccount.route) },
-                onNavigateToIntegrations = { navController.navigate(NavigationRoutes.Integrations.route) },
-                isAutoConnecting = isAutoConnecting,
-                connectionError = connectionError,
-                onClearConnectionError = { viewModel.clearConnectionError() },
-                onCancelAutoConnecting = { viewModel.cancelAutoConnecting() },
-                onSetTitle = { viewModel.updateTopBarTitle(it) },
-                // Disco mode Easter egg
-                discoModeUnlocked = userPreferences.discoModeUnlocked,
-                discoModeActive = discoModeActive,
-                isConnected = connectionState is com.devil.phoenixproject.domain.model.ConnectionState.Connected,
-                onDiscoModeUnlocked = { viewModel.unlockDiscoMode() },
-                onDiscoModeToggle = { viewModel.toggleDiscoMode(it) },
-                onPlayDiscoSound = { viewModel.emitDiscoSound() },
-                onTestSounds = { viewModel.testSounds() },
-                // Gamification toggle
-                gamificationEnabled = userPreferences.gamificationEnabled,
-                onGamificationEnabledChange = { viewModel.setGamificationEnabled(it) },
-                // Auto-backup (Phase 36)
-                autoBackupEnabled = userPreferences.autoBackupEnabled,
-                onAutoBackupEnabledChange = { viewModel.setAutoBackupEnabled(it) },
-                backupStats = backupStats,
-                onOpenBackupFolder = { viewModel.openBackupFolder() },
-                // Language preference
-                selectedLanguage = userPreferences.language,
-                onLanguageChange = { viewModel.setLanguage(it) },
-                // Issue #141: Voice emergency stop
-                voiceStopEnabled = userPreferences.voiceStopEnabled,
-                onVoiceStopEnabledChange = { viewModel.setVoiceStopEnabled(it) },
-                safeWord = userPreferences.safeWord,
-                onSafeWordChange = { viewModel.setSafeWord(it) },
-                safeWordCalibrated = userPreferences.safeWordCalibrated,
-                onSafeWordCalibratedChange = { viewModel.setSafeWordCalibrated(it) }
-            )
-        }
-
-        // Connection Logs screen - debug BLE connections
-        composable(NavigationRoutes.ConnectionLogs.route) {
-            ConnectionLogsScreen(
-                onNavigateBack = { navController.popBackStack() },
-                mainViewModel = viewModel
-            )
-        }
-
-        // Badges screen - achievements and gamification
-        composable(
-            route = NavigationRoutes.Badges.route,
-            enterTransition = {
-                slideIntoContainer(
-                    towards = AnimatedContentTransitionScope.SlideDirection.Left,
-                    animationSpec = tween(300)
-                ) + fadeIn(animationSpec = tween(300))
-            },
-            exitTransition = { fadeOut(animationSpec = tween(200)) },
-            popEnterTransition = { fadeIn(animationSpec = tween(200)) },
-            popExitTransition = {
-                slideOutOfContainer(
-                    towards = AnimatedContentTransitionScope.SlideDirection.Right,
-                    animationSpec = tween(300)
-                ) + fadeOut(animationSpec = tween(300))
-            }
-        ) {
-            BadgesScreen(
-                onBack = { navController.popBackStack() },
-                mainViewModel = viewModel
-            )
-        }
-
-        // Routine Editor - create/edit daily routine
-        composable(
-            route = NavigationRoutes.RoutineEditor.route,
-            arguments = listOf(navArgument("routineId") { type = NavType.StringType })
-        ) { backStackEntry ->
-            val routineId = backStackEntry.arguments?.read { getStringOrNull("routineId") } ?: "new"
-
-            // Collect dependencies from ViewModel/Koin
-            val weightUnit by viewModel.weightUnit.collectAsState()
-            val enableVideo by viewModel.enableVideoPlayback.collectAsState()
-
-            RoutineEditorScreen(
-                routineId = routineId,
-                navController = navController,
-                viewModel = viewModel,
-                exerciseRepository = exerciseRepository,
-                weightUnit = weightUnit,
-                kgToDisplay = viewModel::kgToDisplay,
-                displayToKg = viewModel::displayToKg,
-                enableVideoPlayback = enableVideo
-            )
-        }
-
-        // Cycle Editor - timeline builder for rolling schedules
-        composable(
-            route = NavigationRoutes.CycleEditor.route,
-            arguments = listOf(
-                navArgument("cycleId") { type = NavType.StringType }
-            )
-        ) { backStackEntry ->
-            val cycleId = backStackEntry.arguments?.read { getStringOrNull("cycleId") } ?: "new"
-            val routines by viewModel.routines.collectAsState()
-
-            CycleEditorScreen(
-                cycleId = cycleId,
-                navController = navController,
-                viewModel = viewModel,
-                routines = routines
-            )
-        }
-
-        // Cycle Review - preview before final save
-        composable(
-            route = NavigationRoutes.CycleReview.route,
-            arguments = listOf(navArgument("cycleId") { type = NavType.StringType })
-        ) { backStackEntry ->
-            val cycleId = backStackEntry.arguments?.read { getStringOrNull("cycleId") }
-
-            // Handle null/invalid cycleId - navigate back instead of blank screen
-            if (cycleId.isNullOrBlank()) {
-                LaunchedEffect(Unit) {
-                    navController.popBackStack()
-                }
-                return@composable
+            // Active Workout screen - shows workout controls during active workout
+            composable(
+                route = NavigationRoutes.ActiveWorkout.route,
+                enterTransition = {
+                    slideIntoContainer(
+                        towards = AnimatedContentTransitionScope.SlideDirection.Left,
+                        animationSpec = tween(300),
+                    ) + fadeIn(animationSpec = tween(300))
+                },
+                exitTransition = {
+                    slideOutOfContainer(
+                        towards = AnimatedContentTransitionScope.SlideDirection.Left,
+                        animationSpec = tween(300),
+                    ) + fadeOut(animationSpec = tween(300))
+                },
+                popEnterTransition = {
+                    slideIntoContainer(
+                        towards = AnimatedContentTransitionScope.SlideDirection.Right,
+                        animationSpec = tween(300),
+                    ) + fadeIn(animationSpec = tween(300))
+                },
+                popExitTransition = {
+                    slideOutOfContainer(
+                        towards = AnimatedContentTransitionScope.SlideDirection.Right,
+                        animationSpec = tween(300),
+                    ) + fadeOut(animationSpec = tween(300))
+                },
+            ) {
+                ActiveWorkoutScreen(
+                    navController = navController,
+                    viewModel = viewModel,
+                    exerciseRepository = exerciseRepository,
+                )
             }
 
-            val routines by viewModel.routines.collectAsState()
-            val cycleRepository: TrainingCycleRepository = koinInject()
-
-            // Load cycle from repository
-            var cycle by remember { mutableStateOf<TrainingCycle?>(null) }
-            var isLoading by remember { mutableStateOf(true) }
-
-            LaunchedEffect(cycleId) {
-                isLoading = true
-                cycle = cycleRepository.getCycleById(cycleId)
-                isLoading = false
+            // Routine Overview screen - browse exercises before starting
+            composable(NavigationRoutes.RoutineOverview.route) {
+                RoutineOverviewScreen(
+                    navController = navController,
+                    viewModel = viewModel,
+                    exerciseRepository = exerciseRepository,
+                )
             }
 
-            when {
-                isLoading -> {
-                    // Show loading indicator
-                    Box(
-                        modifier = Modifier.fillMaxSize(),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        CircularProgressIndicator()
-                    }
-                }
-                cycle == null -> {
-                    // Cycle not found - navigate back with error handling
+            // Set Ready screen - configure set before starting
+            composable(NavigationRoutes.SetReady.route) {
+                SetReadyScreen(
+                    navController = navController,
+                    viewModel = viewModel,
+                    exerciseRepository = exerciseRepository,
+                )
+            }
+
+            // Routine Complete screen - celebration after finishing
+            composable(NavigationRoutes.RoutineComplete.route) {
+                RoutineCompleteScreen(
+                    navController = navController,
+                    viewModel = viewModel,
+                )
+            }
+
+            // Training Cycles screen - new rolling schedule system
+            composable(
+                route = NavigationRoutes.TrainingCycles.route,
+                enterTransition = {
+                    slideIntoContainer(
+                        towards = AnimatedContentTransitionScope.SlideDirection.Left,
+                        animationSpec = tween(300),
+                    )
+                },
+                exitTransition = {
+                    slideOutOfContainer(
+                        towards = AnimatedContentTransitionScope.SlideDirection.Left,
+                        animationSpec = tween(300),
+                    )
+                },
+                popEnterTransition = {
+                    slideIntoContainer(
+                        towards = AnimatedContentTransitionScope.SlideDirection.Right,
+                        animationSpec = tween(300),
+                    )
+                },
+                popExitTransition = {
+                    slideOutOfContainer(
+                        towards = AnimatedContentTransitionScope.SlideDirection.Right,
+                        animationSpec = tween(300),
+                    )
+                },
+            ) {
+                TrainingCyclesScreen(
+                    navController = navController,
+                    viewModel = viewModel,
+                    themeMode = themeMode,
+                )
+            }
+
+            // Analytics screen - history, PRs, trends
+            composable(
+                route = NavigationRoutes.Analytics.route,
+                enterTransition = { fadeIn(animationSpec = tween(200)) },
+                exitTransition = { fadeOut(animationSpec = tween(200)) },
+            ) {
+                AnalyticsScreen(
+                    viewModel = viewModel,
+                    themeMode = themeMode,
+                )
+            }
+
+            // Smart Insights screen - training suggestions and readiness
+            composable(
+                route = NavigationRoutes.SmartInsights.route,
+                enterTransition = { fadeIn(animationSpec = tween(200)) },
+                exitTransition = { fadeOut(animationSpec = tween(200)) },
+            ) {
+                SmartInsightsTab()
+            }
+
+            // Exercise Detail screen - drill-down for individual exercise
+            composable(
+                route = NavigationRoutes.ExerciseDetail.route,
+                arguments = listOf(navArgument("exerciseId") { type = NavType.StringType }),
+                enterTransition = {
+                    slideIntoContainer(
+                        towards = AnimatedContentTransitionScope.SlideDirection.Left,
+                        animationSpec = tween(300),
+                    )
+                },
+                exitTransition = {
+                    slideOutOfContainer(
+                        towards = AnimatedContentTransitionScope.SlideDirection.Left,
+                        animationSpec = tween(300),
+                    )
+                },
+                popEnterTransition = {
+                    slideIntoContainer(
+                        towards = AnimatedContentTransitionScope.SlideDirection.Right,
+                        animationSpec = tween(300),
+                    )
+                },
+                popExitTransition = {
+                    slideOutOfContainer(
+                        towards = AnimatedContentTransitionScope.SlideDirection.Right,
+                        animationSpec = tween(300),
+                    )
+                },
+            ) { backStackEntry ->
+                val exerciseId = backStackEntry.arguments?.read { getStringOrNull("exerciseId") }
+
+                // Handle null/invalid exerciseId - navigate back instead of blank screen
+                if (exerciseId.isNullOrBlank()) {
                     LaunchedEffect(Unit) {
                         navController.popBackStack()
                     }
+                    return@composable
                 }
-                else -> {
-                    CycleReviewScreen(
-                        cycleName = cycle!!.name,
-                        days = cycle!!.days,
-                        routines = routines,
-                        onBack = { navController.popBackStack() },
-                        onSave = {
-                            // Cycle is already saved, just navigate back to TrainingCycles
-                            navController.navigate(NavigationRoutes.TrainingCycles.route) {
-                                popUpTo(NavigationRoutes.TrainingCycles.route) { inclusive = true }
-                            }
-                        },
-                        viewModel = viewModel
-                    )
-                }
-            }
-        }
 
-        // Strength Assessment Picker - no exercise pre-selected
-        composable(
-            route = NavigationRoutes.StrengthAssessmentPicker.route,
-            enterTransition = {
-                slideIntoContainer(
-                    towards = AnimatedContentTransitionScope.SlideDirection.Left,
-                    animationSpec = tween(300)
-                )
-            },
-            exitTransition = {
-                slideOutOfContainer(
-                    towards = AnimatedContentTransitionScope.SlideDirection.Left,
-                    animationSpec = tween(300)
-                )
-            },
-            popEnterTransition = {
-                slideIntoContainer(
-                    towards = AnimatedContentTransitionScope.SlideDirection.Right,
-                    animationSpec = tween(300)
-                )
-            },
-            popExitTransition = {
-                slideOutOfContainer(
-                    towards = AnimatedContentTransitionScope.SlideDirection.Right,
-                    animationSpec = tween(300)
+                ExerciseDetailScreen(
+                    exerciseId = exerciseId,
+                    navController = navController,
+                    viewModel = viewModel,
+                    themeMode = themeMode,
                 )
             }
-        ) {
-            val assessmentViewModel: AssessmentViewModel = koinInject()
-            AssessmentWizardScreen(
-                viewModel = assessmentViewModel,
-                themeMode = themeMode,
-                onNavigateBack = { navController.popBackStack() },
-                metricsFlow = viewModel.currentMetric
-            )
-        }
 
-        // Strength Assessment with pre-selected exercise
-        composable(
-            route = NavigationRoutes.StrengthAssessment.route,
-            arguments = listOf(navArgument("exerciseId") { type = NavType.StringType }),
-            enterTransition = {
-                slideIntoContainer(
-                    towards = AnimatedContentTransitionScope.SlideDirection.Left,
-                    animationSpec = tween(300)
-                )
-            },
-            exitTransition = {
-                slideOutOfContainer(
-                    towards = AnimatedContentTransitionScope.SlideDirection.Left,
-                    animationSpec = tween(300)
-                )
-            },
-            popEnterTransition = {
-                slideIntoContainer(
-                    towards = AnimatedContentTransitionScope.SlideDirection.Right,
-                    animationSpec = tween(300)
-                )
-            },
-            popExitTransition = {
-                slideOutOfContainer(
-                    towards = AnimatedContentTransitionScope.SlideDirection.Right,
-                    animationSpec = tween(300)
+            // Settings screen
+            composable(
+                route = NavigationRoutes.Settings.route,
+                enterTransition = { fadeIn(animationSpec = tween(200)) },
+                exitTransition = { fadeOut(animationSpec = tween(200)) },
+            ) {
+                val weightUnit by viewModel.weightUnit.collectAsState()
+                val userPreferences by viewModel.userPreferences.collectAsState()
+                val isAutoConnecting by viewModel.isAutoConnecting.collectAsState()
+                val connectionError by viewModel.connectionError.collectAsState()
+                val connectionState by viewModel.connectionState.collectAsState()
+                val discoModeActive by viewModel.discoModeActive.collectAsState()
+                val backupStats by viewModel.backupStats.collectAsState()
+                // Refresh backup stats when Settings screen is displayed
+                androidx.compose.runtime.LaunchedEffect(Unit) { viewModel.refreshBackupStats() }
+                SettingsTab(
+                    weightUnit = weightUnit,
+                    enableVideoPlayback = userPreferences.enableVideoPlayback,
+                    darkModeEnabled = themeMode == ThemeMode.DARK,
+                    audioRepCountEnabled = userPreferences.audioRepCountEnabled,
+                    countdownBeepsEnabled = userPreferences.countdownBeepsEnabled,
+                    repSoundEnabled = userPreferences.repSoundEnabled,
+                    onCountdownBeepsChange = { viewModel.setCountdownBeepsEnabled(it) },
+                    onRepSoundChange = { viewModel.setRepSoundEnabled(it) },
+                    motionStartEnabled = userPreferences.motionStartEnabled,
+                    onMotionStartChange = { viewModel.setMotionStartEnabled(it) },
+                    summaryCountdownSeconds = userPreferences.summaryCountdownSeconds,
+                    autoStartCountdownSeconds = userPreferences.autoStartCountdownSeconds,
+                    selectedColorSchemeIndex = userPreferences.colorScheme,
+                    onWeightUnitChange = { viewModel.setWeightUnit(it) },
+                    onEnableVideoPlaybackChange = { viewModel.setEnableVideoPlayback(it) },
+                    onDarkModeChange = { enabled -> onThemeModeChange(if (enabled) ThemeMode.DARK else ThemeMode.LIGHT) },
+                    onAudioRepCountChange = { viewModel.setAudioRepCountEnabled(it) },
+                    onSummaryCountdownChange = { viewModel.setSummaryCountdownSeconds(it) },
+                    onAutoStartCountdownChange = { viewModel.setAutoStartCountdownSeconds(it) },
+                    onColorSchemeChange = { viewModel.setColorScheme(it) },
+                    onDeleteAllWorkouts = { viewModel.deleteAllWorkouts() },
+                    onNavigateToConnectionLogs = { navController.navigate(NavigationRoutes.ConnectionLogs.route) },
+                    onNavigateToBadges = { navController.navigate(NavigationRoutes.Badges.route) },
+                    onNavigateToLinkAccount = { navController.navigate(NavigationRoutes.LinkAccount.route) },
+                    onNavigateToIntegrations = { navController.navigate(NavigationRoutes.Integrations.route) },
+                    isAutoConnecting = isAutoConnecting,
+                    connectionError = connectionError,
+                    onClearConnectionError = { viewModel.clearConnectionError() },
+                    onCancelAutoConnecting = { viewModel.cancelAutoConnecting() },
+                    onSetTitle = { viewModel.updateTopBarTitle(it) },
+                    // Disco mode Easter egg
+                    discoModeUnlocked = userPreferences.discoModeUnlocked,
+                    discoModeActive = discoModeActive,
+                    isConnected = connectionState is com.devil.phoenixproject.domain.model.ConnectionState.Connected,
+                    onDiscoModeUnlocked = { viewModel.unlockDiscoMode() },
+                    onDiscoModeToggle = { viewModel.toggleDiscoMode(it) },
+                    onPlayDiscoSound = { viewModel.emitDiscoSound() },
+                    onTestSounds = { viewModel.testSounds() },
+                    // Gamification toggle
+                    gamificationEnabled = userPreferences.gamificationEnabled,
+                    onGamificationEnabledChange = { viewModel.setGamificationEnabled(it) },
+                    // Auto-backup (Phase 36)
+                    autoBackupEnabled = userPreferences.autoBackupEnabled,
+                    onAutoBackupEnabledChange = { viewModel.setAutoBackupEnabled(it) },
+                    backupStats = backupStats,
+                    onOpenBackupFolder = { viewModel.openBackupFolder() },
+                    // Language preference
+                    selectedLanguage = userPreferences.language,
+                    onLanguageChange = { viewModel.setLanguage(it) },
+                    // Issue #141: Voice emergency stop
+                    voiceStopEnabled = userPreferences.voiceStopEnabled,
+                    onVoiceStopEnabledChange = { viewModel.setVoiceStopEnabled(it) },
+                    safeWord = userPreferences.safeWord,
+                    onSafeWordChange = { viewModel.setSafeWord(it) },
+                    safeWordCalibrated = userPreferences.safeWordCalibrated,
+                    onSafeWordCalibratedChange = { viewModel.setSafeWordCalibrated(it) },
                 )
             }
-        ) { backStackEntry ->
-            val exerciseId = backStackEntry.arguments?.read { getStringOrNull("exerciseId") } ?: ""
-            val assessmentViewModel: AssessmentViewModel = koinInject()
-            AssessmentWizardScreen(
-                viewModel = assessmentViewModel,
-                exerciseId = exerciseId,
-                themeMode = themeMode,
-                onNavigateBack = { navController.popBackStack() },
-                metricsFlow = viewModel.currentMetric
-            )
-        }
 
-        // Link Account screen - cloud sync with Phoenix Portal
-        composable(
-            route = NavigationRoutes.LinkAccount.route,
-            enterTransition = {
-                slideIntoContainer(
-                    towards = AnimatedContentTransitionScope.SlideDirection.Left,
-                    animationSpec = tween(300)
-                )
-            },
-            exitTransition = { fadeOut(animationSpec = tween(200)) },
-            popEnterTransition = { fadeIn(animationSpec = tween(200)) },
-            popExitTransition = {
-                slideOutOfContainer(
-                    towards = AnimatedContentTransitionScope.SlideDirection.Right,
-                    animationSpec = tween(300)
+            // Connection Logs screen - debug BLE connections
+            composable(NavigationRoutes.ConnectionLogs.route) {
+                ConnectionLogsScreen(
+                    onNavigateBack = { navController.popBackStack() },
+                    mainViewModel = viewModel,
                 )
             }
-        ) {
-            LinkAccountScreen(
-                onNavigateBack = { navController.popBackStack() }
-            )
-        }
 
-        // Integrations screen - third-party app connections and CSV import/export
-        composable(
-            route = NavigationRoutes.Integrations.route,
-            enterTransition = {
-                slideIntoContainer(
-                    towards = AnimatedContentTransitionScope.SlideDirection.Left,
-                    animationSpec = tween(300)
-                )
-            },
-            exitTransition = { fadeOut(animationSpec = tween(200)) },
-            popEnterTransition = { fadeIn(animationSpec = tween(200)) },
-            popExitTransition = {
-                slideOutOfContainer(
-                    towards = AnimatedContentTransitionScope.SlideDirection.Right,
-                    animationSpec = tween(300)
-                )
-            }
-        ) {
-            val weightUnit by viewModel.weightUnit.collectAsState()
-            IntegrationsScreen(
-                weightUnit = weightUnit,
-                onNavigateToExternalActivities = {
-                    navController.navigate(NavigationRoutes.ExternalActivities.route)
+            // Badges screen - achievements and gamification
+            composable(
+                route = NavigationRoutes.Badges.route,
+                enterTransition = {
+                    slideIntoContainer(
+                        towards = AnimatedContentTransitionScope.SlideDirection.Left,
+                        animationSpec = tween(300),
+                    ) + fadeIn(animationSpec = tween(300))
                 },
-                onSetTitle = { viewModel.updateTopBarTitle(it) }
-            )
-        }
-
-        // External Activities screen - list of imported workouts from third-party apps
-        composable(
-            route = NavigationRoutes.ExternalActivities.route,
-            enterTransition = {
-                slideIntoContainer(
-                    towards = AnimatedContentTransitionScope.SlideDirection.Left,
-                    animationSpec = tween(300)
-                )
-            },
-            exitTransition = { fadeOut(animationSpec = tween(200)) },
-            popEnterTransition = { fadeIn(animationSpec = tween(200)) },
-            popExitTransition = {
-                slideOutOfContainer(
-                    towards = AnimatedContentTransitionScope.SlideDirection.Right,
-                    animationSpec = tween(300)
+                exitTransition = { fadeOut(animationSpec = tween(200)) },
+                popEnterTransition = { fadeIn(animationSpec = tween(200)) },
+                popExitTransition = {
+                    slideOutOfContainer(
+                        towards = AnimatedContentTransitionScope.SlideDirection.Right,
+                        animationSpec = tween(300),
+                    ) + fadeOut(animationSpec = tween(300))
+                },
+            ) {
+                BadgesScreen(
+                    onBack = { navController.popBackStack() },
+                    mainViewModel = viewModel,
                 )
             }
-        ) {
-            ExternalActivitiesScreen(
-                onSetTitle = { viewModel.updateTopBarTitle(it) }
-            )
+
+            // Routine Editor - create/edit daily routine
+            composable(
+                route = NavigationRoutes.RoutineEditor.route,
+                arguments = listOf(navArgument("routineId") { type = NavType.StringType }),
+            ) { backStackEntry ->
+                val routineId = backStackEntry.arguments?.read { getStringOrNull("routineId") } ?: "new"
+
+                // Collect dependencies from ViewModel/Koin
+                val weightUnit by viewModel.weightUnit.collectAsState()
+                val enableVideo by viewModel.enableVideoPlayback.collectAsState()
+
+                RoutineEditorScreen(
+                    routineId = routineId,
+                    navController = navController,
+                    viewModel = viewModel,
+                    exerciseRepository = exerciseRepository,
+                    weightUnit = weightUnit,
+                    kgToDisplay = viewModel::kgToDisplay,
+                    displayToKg = viewModel::displayToKg,
+                    enableVideoPlayback = enableVideo,
+                )
+            }
+
+            // Cycle Editor - timeline builder for rolling schedules
+            composable(
+                route = NavigationRoutes.CycleEditor.route,
+                arguments = listOf(
+                    navArgument("cycleId") { type = NavType.StringType },
+                ),
+            ) { backStackEntry ->
+                val cycleId = backStackEntry.arguments?.read { getStringOrNull("cycleId") } ?: "new"
+                val routines by viewModel.routines.collectAsState()
+
+                CycleEditorScreen(
+                    cycleId = cycleId,
+                    navController = navController,
+                    viewModel = viewModel,
+                    routines = routines,
+                )
+            }
+
+            // Cycle Review - preview before final save
+            composable(
+                route = NavigationRoutes.CycleReview.route,
+                arguments = listOf(navArgument("cycleId") { type = NavType.StringType }),
+            ) { backStackEntry ->
+                val cycleId = backStackEntry.arguments?.read { getStringOrNull("cycleId") }
+
+                // Handle null/invalid cycleId - navigate back instead of blank screen
+                if (cycleId.isNullOrBlank()) {
+                    LaunchedEffect(Unit) {
+                        navController.popBackStack()
+                    }
+                    return@composable
+                }
+
+                val routines by viewModel.routines.collectAsState()
+                val cycleRepository: TrainingCycleRepository = koinInject()
+
+                // Load cycle from repository
+                var cycle by remember { mutableStateOf<TrainingCycle?>(null) }
+                var isLoading by remember { mutableStateOf(true) }
+
+                LaunchedEffect(cycleId) {
+                    isLoading = true
+                    cycle = cycleRepository.getCycleById(cycleId)
+                    isLoading = false
+                }
+
+                when {
+                    isLoading -> {
+                        // Show loading indicator
+                        Box(
+                            modifier = Modifier.fillMaxSize(),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            CircularProgressIndicator()
+                        }
+                    }
+
+                    cycle == null -> {
+                        // Cycle not found - navigate back with error handling
+                        LaunchedEffect(Unit) {
+                            navController.popBackStack()
+                        }
+                    }
+
+                    else -> {
+                        CycleReviewScreen(
+                            cycleName = cycle!!.name,
+                            days = cycle!!.days,
+                            routines = routines,
+                            onBack = { navController.popBackStack() },
+                            onSave = {
+                                // Cycle is already saved, just navigate back to TrainingCycles
+                                navController.navigate(NavigationRoutes.TrainingCycles.route) {
+                                    popUpTo(NavigationRoutes.TrainingCycles.route) { inclusive = true }
+                                }
+                            },
+                            viewModel = viewModel,
+                        )
+                    }
+                }
+            }
+
+            // Strength Assessment Picker - no exercise pre-selected
+            composable(
+                route = NavigationRoutes.StrengthAssessmentPicker.route,
+                enterTransition = {
+                    slideIntoContainer(
+                        towards = AnimatedContentTransitionScope.SlideDirection.Left,
+                        animationSpec = tween(300),
+                    )
+                },
+                exitTransition = {
+                    slideOutOfContainer(
+                        towards = AnimatedContentTransitionScope.SlideDirection.Left,
+                        animationSpec = tween(300),
+                    )
+                },
+                popEnterTransition = {
+                    slideIntoContainer(
+                        towards = AnimatedContentTransitionScope.SlideDirection.Right,
+                        animationSpec = tween(300),
+                    )
+                },
+                popExitTransition = {
+                    slideOutOfContainer(
+                        towards = AnimatedContentTransitionScope.SlideDirection.Right,
+                        animationSpec = tween(300),
+                    )
+                },
+            ) {
+                val assessmentViewModel: AssessmentViewModel = koinInject()
+                AssessmentWizardScreen(
+                    viewModel = assessmentViewModel,
+                    themeMode = themeMode,
+                    onNavigateBack = { navController.popBackStack() },
+                    metricsFlow = viewModel.currentMetric,
+                )
+            }
+
+            // Strength Assessment with pre-selected exercise
+            composable(
+                route = NavigationRoutes.StrengthAssessment.route,
+                arguments = listOf(navArgument("exerciseId") { type = NavType.StringType }),
+                enterTransition = {
+                    slideIntoContainer(
+                        towards = AnimatedContentTransitionScope.SlideDirection.Left,
+                        animationSpec = tween(300),
+                    )
+                },
+                exitTransition = {
+                    slideOutOfContainer(
+                        towards = AnimatedContentTransitionScope.SlideDirection.Left,
+                        animationSpec = tween(300),
+                    )
+                },
+                popEnterTransition = {
+                    slideIntoContainer(
+                        towards = AnimatedContentTransitionScope.SlideDirection.Right,
+                        animationSpec = tween(300),
+                    )
+                },
+                popExitTransition = {
+                    slideOutOfContainer(
+                        towards = AnimatedContentTransitionScope.SlideDirection.Right,
+                        animationSpec = tween(300),
+                    )
+                },
+            ) { backStackEntry ->
+                val exerciseId = backStackEntry.arguments?.read { getStringOrNull("exerciseId") } ?: ""
+                val assessmentViewModel: AssessmentViewModel = koinInject()
+                AssessmentWizardScreen(
+                    viewModel = assessmentViewModel,
+                    exerciseId = exerciseId,
+                    themeMode = themeMode,
+                    onNavigateBack = { navController.popBackStack() },
+                    metricsFlow = viewModel.currentMetric,
+                )
+            }
+
+            // Link Account screen - cloud sync with Phoenix Portal
+            composable(
+                route = NavigationRoutes.LinkAccount.route,
+                enterTransition = {
+                    slideIntoContainer(
+                        towards = AnimatedContentTransitionScope.SlideDirection.Left,
+                        animationSpec = tween(300),
+                    )
+                },
+                exitTransition = { fadeOut(animationSpec = tween(200)) },
+                popEnterTransition = { fadeIn(animationSpec = tween(200)) },
+                popExitTransition = {
+                    slideOutOfContainer(
+                        towards = AnimatedContentTransitionScope.SlideDirection.Right,
+                        animationSpec = tween(300),
+                    )
+                },
+            ) {
+                LinkAccountScreen(
+                    onNavigateBack = { navController.popBackStack() },
+                )
+            }
+
+            // Integrations screen - third-party app connections and CSV import/export
+            composable(
+                route = NavigationRoutes.Integrations.route,
+                enterTransition = {
+                    slideIntoContainer(
+                        towards = AnimatedContentTransitionScope.SlideDirection.Left,
+                        animationSpec = tween(300),
+                    )
+                },
+                exitTransition = { fadeOut(animationSpec = tween(200)) },
+                popEnterTransition = { fadeIn(animationSpec = tween(200)) },
+                popExitTransition = {
+                    slideOutOfContainer(
+                        towards = AnimatedContentTransitionScope.SlideDirection.Right,
+                        animationSpec = tween(300),
+                    )
+                },
+            ) {
+                val weightUnit by viewModel.weightUnit.collectAsState()
+                IntegrationsScreen(
+                    weightUnit = weightUnit,
+                    onNavigateToExternalActivities = {
+                        navController.navigate(NavigationRoutes.ExternalActivities.route)
+                    },
+                    onSetTitle = { viewModel.updateTopBarTitle(it) },
+                )
+            }
+
+            // External Activities screen - list of imported workouts from third-party apps
+            composable(
+                route = NavigationRoutes.ExternalActivities.route,
+                enterTransition = {
+                    slideIntoContainer(
+                        towards = AnimatedContentTransitionScope.SlideDirection.Left,
+                        animationSpec = tween(300),
+                    )
+                },
+                exitTransition = { fadeOut(animationSpec = tween(200)) },
+                popEnterTransition = { fadeIn(animationSpec = tween(200)) },
+                popExitTransition = {
+                    slideOutOfContainer(
+                        towards = AnimatedContentTransitionScope.SlideDirection.Right,
+                        animationSpec = tween(300),
+                    )
+                },
+            ) {
+                ExternalActivitiesScreen(
+                    onSetTitle = { viewModel.updateTopBarTitle(it) },
+                )
+            }
         }
     }
-}
 }

@@ -3,7 +3,6 @@ package com.devil.phoenixproject.presentation.manager
 import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.data.preferences.PreferencesManager
 import com.devil.phoenixproject.data.repository.BleRepository
-import com.devil.phoenixproject.data.repository.KableBleRepository
 import com.devil.phoenixproject.domain.model.RepCountTiming
 import com.devil.phoenixproject.domain.model.UserPreferences
 import com.devil.phoenixproject.domain.model.WeightUnit
@@ -22,7 +21,7 @@ import kotlinx.coroutines.launch
 class SettingsManager(
     private val preferencesManager: PreferencesManager,
     private val bleRepository: BleRepository,
-    private val scope: CoroutineScope
+    private val scope: CoroutineScope,
 ) {
     val userPreferences: StateFlow<UserPreferences> = preferencesManager.preferencesFlow
         .stateIn(scope, SharingStarted.Eagerly, UserPreferences())
@@ -142,17 +141,15 @@ class SettingsManager(
 
     // Weight conversion functions — keep original signatures with explicit unit parameter
     // to preserve backward compatibility with all call sites
-    fun kgToDisplay(kg: Float, unit: WeightUnit): Float =
-        when (unit) {
-            WeightUnit.KG -> kg
-            WeightUnit.LB -> kg * 2.20462f
-        }
+    fun kgToDisplay(kg: Float, unit: WeightUnit): Float = when (unit) {
+        WeightUnit.KG -> kg
+        WeightUnit.LB -> kg * 2.20462f
+    }
 
-    fun displayToKg(display: Float, unit: WeightUnit): Float =
-        when (unit) {
-            WeightUnit.KG -> display
-            WeightUnit.LB -> display / 2.20462f
-        }
+    fun displayToKg(display: Float, unit: WeightUnit): Float = when (unit) {
+        WeightUnit.KG -> display
+        WeightUnit.LB -> display / 2.20462f
+    }
 
     fun formatWeight(kg: Float, unit: WeightUnit): String {
         val value = kgToDisplay(kg, unit)

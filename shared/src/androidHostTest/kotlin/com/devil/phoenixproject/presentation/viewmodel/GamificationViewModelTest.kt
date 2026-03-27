@@ -1,20 +1,20 @@
 package com.devil.phoenixproject.presentation.viewmodel
 
 import com.devil.phoenixproject.data.local.BadgeDefinitions
+import com.devil.phoenixproject.domain.model.Badge
 import com.devil.phoenixproject.domain.model.BadgeCategory
 import com.devil.phoenixproject.domain.model.BadgeRequirement
 import com.devil.phoenixproject.domain.model.BadgeTier
-import com.devil.phoenixproject.domain.model.Badge
 import com.devil.phoenixproject.testutil.FakeGamificationRepository
 import com.devil.phoenixproject.testutil.FakeUserProfileRepository
 import com.devil.phoenixproject.testutil.TestCoroutineRule
+import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
-import kotlin.test.assertEquals
-import kotlin.test.assertTrue
 
 class GamificationViewModelTest {
 
@@ -49,7 +49,12 @@ class GamificationViewModelTest {
         viewModel.selectCategory(BadgeCategory.DEDICATION)
         advanceUntilIdle()
 
-        assertTrue(viewModel.filteredBadges.value.all { it.badge.category == BadgeCategory.DEDICATION })
+        assertTrue(
+            viewModel.filteredBadges.value.all {
+                it.badge.category ==
+                    BadgeCategory.DEDICATION
+            },
+        )
     }
 
     @Test
@@ -61,7 +66,7 @@ class GamificationViewModelTest {
             category = BadgeCategory.DEDICATION,
             iconResource = "icon",
             tier = BadgeTier.BRONZE,
-            requirement = BadgeRequirement.TotalWorkouts(1)
+            requirement = BadgeRequirement.TotalWorkouts(1),
         )
         repository.pendingBadges.add(badge)
 

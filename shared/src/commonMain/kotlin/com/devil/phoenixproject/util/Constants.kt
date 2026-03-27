@@ -16,7 +16,7 @@ object Constants {
     // Trainer+: 110kg max per cable (220kg total) - use 100kg as safe default
     const val MIN_WEIGHT_KG = 0f
     const val MAX_WEIGHT_KG = 100f
-    const val WEIGHT_INCREMENT_KG = 0.5f      // Machine minimum step (BLE constraint)
+    const val WEIGHT_INCREMENT_KG = 0.5f // Machine minimum step (BLE constraint)
     const val MAX_PROGRESSION_KG = 3f
 
     // Configurable weight increment options per unit system (Issue #266)
@@ -31,7 +31,7 @@ object Constants {
     const val DEFAULT_WARMUP_REPS = 3
 
     // BLE configuration
-    const val BLE_SCAN_TIMEOUT_MS = 30000L  // Matches parent repo BleConstants.SCAN_TIMEOUT_MS
+    const val BLE_SCAN_TIMEOUT_MS = 30000L // Matches parent repo BleConstants.SCAN_TIMEOUT_MS
     const val BLE_CONNECTION_TIMEOUT_MS = 15000L
 
     // Workout detection thresholds
@@ -55,45 +55,41 @@ object Constants {
 object UnitConverter {
     private const val KG_TO_LB = 2.20462f
     private const val LB_TO_KG = 0.453592f
-    
+
     /**
      * Convert kilograms to pounds.
      */
     fun kgToLb(kg: Float): Float = kg * KG_TO_LB
-    
+
     /**
      * Convert pounds to kilograms.
      */
     fun lbToKg(lb: Float): Float = lb * LB_TO_KG
-    
+
     /**
      * Format weight for display with appropriate unit.
      */
-    fun formatWeight(kg: Float, useLb: Boolean): String {
-        return if (useLb) {
-            val lbs = kgToLb(kg)
-            "${formatDecimal(lbs)} lbs"
-        } else {
-            "${formatDecimal(kg)} kg"
-        }
+    fun formatWeight(kg: Float, useLb: Boolean): String = if (useLb) {
+        val lbs = kgToLb(kg)
+        "${formatDecimal(lbs)} lbs"
+    } else {
+        "${formatDecimal(kg)} kg"
     }
 
     /**
      * Format a decimal value: shows as integer if whole, 1 decimal place otherwise.
      * Issue #266: Supports sub-1lb increments with proper decimal display.
      */
-    fun formatDecimal(value: Float): String {
-        return if (value % 1.0f == 0f) {
-            value.toInt().toString()
+    fun formatDecimal(value: Float): String = if (value % 1.0f == 0f) {
+        value.toInt().toString()
+    } else {
+        val rounded = (value * 10).toInt() / 10f
+        if (rounded % 1.0f == 0f) {
+            rounded.toInt().toString()
         } else {
-            val rounded = (value * 10).toInt() / 10f
-            if (rounded % 1.0f == 0f) {
-                rounded.toInt().toString()
-            } else {
-                val intPart = rounded.toInt()
-                val decPart = kotlin.math.abs(((rounded - intPart) * 10).toInt())
-                "$intPart.$decPart"
-            }
+            val intPart = rounded.toInt()
+            val decPart = kotlin.math.abs(((rounded - intPart) * 10).toInt())
+            "$intPart.$decPart"
         }
     }
 
@@ -108,9 +104,7 @@ object UnitConverter {
     /**
      * Round to nearest 0.5kg — the machine's physical minimum step.
      */
-    fun roundToMachineIncrement(kg: Float): Float {
-        return roundToIncrement(kg, 0.5f)
-    }
+    fun roundToMachineIncrement(kg: Float): Float = roundToIncrement(kg, 0.5f)
 }
 
 /**
@@ -143,14 +137,14 @@ object OneRepMaxCalculator {
  * Protocol constants - aligned with Phoenix Backend (official app)
  * NOTE: Legacy web app used different sizes and commands
  */
-@Suppress("unused")  // Protocol reference constants
+@Suppress("unused") // Protocol reference constants
 object ProtocolConstants {
     // Command types are in BleConstants.Commands
 
     // Frame sizes (Phoenix Backend aligned)
     const val STOP_PACKET_SIZE = 2
-    const val REGULAR_PACKET_SIZE = 25        // Was 96 in web app
-    const val ECHO_PACKET_SIZE = 29           // Was 40 in web app
+    const val REGULAR_PACKET_SIZE = 25 // Was 96 in web app
+    const val ECHO_PACKET_SIZE = 29 // Was 40 in web app
     const val ACTIVATION_PACKET_SIZE = 97
     const val COLOR_SCHEME_SIZE = 34
 

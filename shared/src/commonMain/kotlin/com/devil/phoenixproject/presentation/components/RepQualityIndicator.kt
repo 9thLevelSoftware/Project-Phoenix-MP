@@ -48,10 +48,7 @@ private fun scoreColor(score: Int): Color {
  * @param latestRepQualityScore The score to display (null = hidden / not available)
  */
 @Composable
-fun RepQualityIndicator(
-    latestRepQualityScore: Int?,
-    modifier: Modifier = Modifier
-) {
+fun RepQualityIndicator(latestRepQualityScore: Int?, modifier: Modifier = Modifier) {
     var showScore by remember { mutableStateOf(false) }
     var displayedScore by remember { mutableIntStateOf(0) }
     var isExcellent by remember { mutableStateOf(false) }
@@ -71,18 +68,18 @@ fun RepQualityIndicator(
     val pulseScale by animateFloatAsState(
         targetValue = if (showScore && isExcellent) 1.15f else 1.0f,
         animationSpec = tween(durationMillis = 400),
-        label = "qualityPulse"
+        label = "qualityPulse",
     )
 
     Box(
         modifier = modifier.fillMaxSize(),
-        contentAlignment = Alignment.TopCenter
+        contentAlignment = Alignment.TopCenter,
     ) {
         AnimatedVisibility(
             visible = showScore,
             enter = fadeIn(animationSpec = tween(150)),
             exit = fadeOut(animationSpec = tween(200)),
-            modifier = Modifier.padding(top = 80.dp)
+            modifier = Modifier.padding(top = 80.dp),
         ) {
             Box(
                 modifier = Modifier
@@ -90,13 +87,13 @@ fun RepQualityIndicator(
                     .clip(RoundedCornerShape(16.dp))
                     .background(Color.Black.copy(alpha = 0.6f))
                     .padding(horizontal = 24.dp, vertical = 12.dp),
-                contentAlignment = Alignment.Center
+                contentAlignment = Alignment.Center,
             ) {
                 Text(
                     text = "$displayedScore",
                     fontSize = 36.sp,
                     fontWeight = FontWeight.Bold,
-                    color = scoreColor(displayedScore)
+                    color = scoreColor(displayedScore),
                 )
             }
         }

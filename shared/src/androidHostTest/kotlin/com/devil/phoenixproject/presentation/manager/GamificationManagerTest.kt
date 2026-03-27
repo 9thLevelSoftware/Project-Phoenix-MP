@@ -9,22 +9,22 @@ import com.devil.phoenixproject.testutil.FakeExerciseRepository
 import com.devil.phoenixproject.testutil.FakeGamificationRepository
 import com.devil.phoenixproject.testutil.FakePersonalRecordRepository
 import com.devil.phoenixproject.testutil.TestCoroutineRule
+import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
-import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
-import kotlin.test.assertEquals
-import kotlin.test.assertFalse
-import kotlin.test.assertTrue
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class GamificationManagerTest {
@@ -55,7 +55,7 @@ class GamificationManagerTest {
                 exerciseRepository = fakeExerciseRepository,
                 hapticEvents = hapticEvents,
                 scope = managerScope,
-                gamificationEnabled = MutableStateFlow(true)
+                gamificationEnabled = MutableStateFlow(true),
             )
             val badge = BadgeDefinitions.allBadges.first()
             fakeGamificationRepository.pendingBadges = mutableListOf(badge)
@@ -64,8 +64,8 @@ class GamificationManagerTest {
                     id = "bench-1",
                     name = "Bench Press",
                     muscleGroup = "Chest",
-                    equipment = "HANDLES"
-                )
+                    equipment = "HANDLES",
+                ),
             )
 
             val prEvents = mutableListOf<com.devil.phoenixproject.domain.model.PRCelebrationEvent>()
@@ -84,7 +84,7 @@ class GamificationManagerTest {
                 volumeWeightKg = 20f,
                 programMode = ProgramMode.OldSchool,
                 isJustLift = false,
-                isEchoMode = false
+                isEchoMode = false,
             )
             advanceUntilIdle()
 
@@ -120,7 +120,7 @@ class GamificationManagerTest {
                 exerciseRepository = fakeExerciseRepository,
                 hapticEvents = hapticEvents,
                 scope = managerScope,
-                gamificationEnabled = MutableStateFlow(true)
+                gamificationEnabled = MutableStateFlow(true),
             )
             val badge = BadgeDefinitions.allBadges.first()
             fakeGamificationRepository.pendingBadges = mutableListOf(badge)
@@ -141,7 +141,7 @@ class GamificationManagerTest {
                 volumeWeightKg = 20f,
                 programMode = ProgramMode.OldSchool,
                 isJustLift = true,
-                isEchoMode = false
+                isEchoMode = false,
             )
             advanceUntilIdle()
 

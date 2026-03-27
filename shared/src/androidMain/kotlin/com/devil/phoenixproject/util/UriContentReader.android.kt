@@ -1,7 +1,7 @@
 package com.devil.phoenixproject.util
 
 import android.content.Context
-import android.net.Uri
+import androidx.core.net.toUri
 import co.touchlab.kermit.Logger
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -17,7 +17,7 @@ actual suspend fun readUriContent(uriOrPath: String): String? = withContext(Disp
     try {
         val context: Context = getKoin().get()
         if (uriOrPath.startsWith("content://") || uriOrPath.startsWith("file://")) {
-            val uri = Uri.parse(uriOrPath)
+            val uri = uriOrPath.toUri()
             context.contentResolver.openInputStream(uri)?.use { stream ->
                 stream.bufferedReader().readText()
             }

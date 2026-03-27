@@ -8,19 +8,19 @@ package com.devil.phoenixproject.domain.model
  * JSON serialization for DB storage is handled in the repository layer (Plan 02).
  */
 data class RepMetricData(
-    val repNumber: Int,              // 1-indexed within the set
-    val isWarmup: Boolean,           // true for warmup reps
-    val startTimestamp: Long,        // ms since epoch
-    val endTimestamp: Long,          // ms since epoch
-    val durationMs: Long,            // total rep duration
+    val repNumber: Int, // 1-indexed within the set
+    val isWarmup: Boolean, // true for warmup reps
+    val startTimestamp: Long, // ms since epoch
+    val endTimestamp: Long, // ms since epoch
+    val durationMs: Long, // total rep duration
 
     // Concentric phase (lifting)
     val concentricDurationMs: Long,
-    val concentricPositions: FloatArray,   // mm, sampled at capture rate
-    val concentricLoadsA: FloatArray,      // kg per sample
-    val concentricLoadsB: FloatArray,      // kg per sample
-    val concentricVelocities: FloatArray,  // mm/s per sample
-    val concentricTimestamps: LongArray,   // ms offsets from rep start
+    val concentricPositions: FloatArray, // mm, sampled at capture rate
+    val concentricLoadsA: FloatArray, // kg per sample
+    val concentricLoadsB: FloatArray, // kg per sample
+    val concentricVelocities: FloatArray, // mm/s per sample
+    val concentricTimestamps: LongArray, // ms offsets from rep start
 
     // Eccentric phase (lowering)
     val eccentricDurationMs: Long,
@@ -31,18 +31,18 @@ data class RepMetricData(
     val eccentricTimestamps: LongArray,
 
     // Computed summary (calculated at capture time)
-    val peakForceA: Float,           // kg, max during concentric
-    val peakForceB: Float,           // kg, max during concentric
-    val avgForceConcentricA: Float,  // kg
-    val avgForceConcentricB: Float,  // kg
-    val avgForceEccentricA: Float,   // kg
-    val avgForceEccentricB: Float,   // kg
-    val peakVelocity: Float,         // mm/s, max during concentric
-    val avgVelocityConcentric: Float,// mm/s
+    val peakForceA: Float, // kg, max during concentric
+    val peakForceB: Float, // kg, max during concentric
+    val avgForceConcentricA: Float, // kg
+    val avgForceConcentricB: Float, // kg
+    val avgForceEccentricA: Float, // kg
+    val avgForceEccentricB: Float, // kg
+    val peakVelocity: Float, // mm/s, max during concentric
+    val avgVelocityConcentric: Float, // mm/s
     val avgVelocityEccentric: Float, // mm/s
-    val rangeOfMotionMm: Float,      // max position - min position
-    val peakPowerWatts: Float,       // max(force * velocity)
-    val avgPowerWatts: Float         // mean(force * velocity) over concentric
+    val rangeOfMotionMm: Float, // max position - min position
+    val peakPowerWatts: Float, // max(force * velocity)
+    val avgPowerWatts: Float, // mean(force * velocity) over concentric
 ) {
     // Custom equals/hashCode needed because data classes don't deep-compare arrays
     override fun equals(other: Any?): Boolean {

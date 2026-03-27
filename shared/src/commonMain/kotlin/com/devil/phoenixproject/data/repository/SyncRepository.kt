@@ -82,9 +82,7 @@ interface SyncRepository {
      * Get phase statistics for the given session IDs.
      * Returns SQLDelight PhaseStatistics rows for conversion to portal DTOs.
      */
-    suspend fun getPhaseStatisticsForSessions(
-        sessionIds: List<String>
-    ): List<com.devil.phoenixproject.database.PhaseStatistics>
+    suspend fun getPhaseStatisticsForSessions(sessionIds: List<String>): List<com.devil.phoenixproject.database.PhaseStatistics>
 
     /**
      * Get all exercise signatures for sync push.

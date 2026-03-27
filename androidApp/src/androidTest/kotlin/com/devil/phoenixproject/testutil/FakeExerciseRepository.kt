@@ -49,30 +49,22 @@ class FakeExerciseRepository : ExerciseRepository {
 
     override fun getAllExercises(): Flow<List<Exercise>> = _exercisesFlow
 
-    override fun searchExercises(query: String): Flow<List<Exercise>> {
-        return _exercisesFlow.map { list ->
-            list.filter {
-                it.name.contains(query, ignoreCase = true) ||
+    override fun searchExercises(query: String): Flow<List<Exercise>> = _exercisesFlow.map { list ->
+        list.filter {
+            it.name.contains(query, ignoreCase = true) ||
                 it.muscleGroup.contains(query, ignoreCase = true)
-            }
         }
     }
 
-    override fun filterByMuscleGroup(muscleGroup: String): Flow<List<Exercise>> {
-        return _exercisesFlow.map { list ->
-            list.filter { it.muscleGroup.equals(muscleGroup, ignoreCase = true) }
-        }
+    override fun filterByMuscleGroup(muscleGroup: String): Flow<List<Exercise>> = _exercisesFlow.map { list ->
+        list.filter { it.muscleGroup.equals(muscleGroup, ignoreCase = true) }
     }
 
-    override fun filterByEquipment(equipment: String): Flow<List<Exercise>> {
-        return _exercisesFlow.map { list ->
-            list.filter { it.equipment.contains(equipment, ignoreCase = true) }
-        }
+    override fun filterByEquipment(equipment: String): Flow<List<Exercise>> = _exercisesFlow.map { list ->
+        list.filter { it.equipment.contains(equipment, ignoreCase = true) }
     }
 
-    override fun getFavorites(): Flow<List<Exercise>> {
-        return _exercisesFlow.map { list -> list.filter { it.isFavorite } }
-    }
+    override fun getFavorites(): Flow<List<Exercise>> = _exercisesFlow.map { list -> list.filter { it.isFavorite } }
 
     override suspend fun toggleFavorite(id: String) {
         exercises[id]?.let { exercise ->
@@ -83,9 +75,7 @@ class FakeExerciseRepository : ExerciseRepository {
 
     override suspend fun getExerciseById(id: String): Exercise? = exercises[id]
 
-    override suspend fun getVideos(exerciseId: String): List<ExerciseVideoEntity> {
-        return videos[exerciseId] ?: emptyList()
-    }
+    override suspend fun getVideos(exerciseId: String): List<ExerciseVideoEntity> = videos[exerciseId] ?: emptyList()
 
     override suspend fun importExercises(): Result<Unit> = importResult
 
@@ -93,9 +83,7 @@ class FakeExerciseRepository : ExerciseRepository {
 
     override suspend fun updateFromGitHub(): Result<Int> = updateFromGitHubResult
 
-    override fun getCustomExercises(): Flow<List<Exercise>> {
-        return _exercisesFlow.map { list -> list.filter { it.isCustom } }
-    }
+    override fun getCustomExercises(): Flow<List<Exercise>> = _exercisesFlow.map { list -> list.filter { it.isCustom } }
 
     override suspend fun createCustomExercise(exercise: Exercise): Result<Exercise> {
         val id = exercise.id ?: "custom-${exercises.size}"
@@ -131,13 +119,9 @@ class FakeExerciseRepository : ExerciseRepository {
         }
     }
 
-    override fun getExercisesWithOneRepMax(): Flow<List<Exercise>> {
-        return _exercisesFlow.map { list -> list.filter { it.oneRepMaxKg != null } }
-    }
+    override fun getExercisesWithOneRepMax(): Flow<List<Exercise>> = _exercisesFlow.map { list -> list.filter { it.oneRepMaxKg != null } }
 
-    override suspend fun findByName(name: String): Exercise? {
-        return exercises.values.find { it.name == name }
-    }
+    override suspend fun findByName(name: String): Exercise? = exercises.values.find { it.name == name }
 
     override suspend fun findByIdOrName(id: String?, name: String): Exercise? {
         if (id != null) {

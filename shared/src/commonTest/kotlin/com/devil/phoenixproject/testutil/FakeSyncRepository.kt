@@ -57,39 +57,23 @@ class FakeSyncRepository : SyncRepository {
 
     // === Push Operations ===
 
-    override suspend fun getSessionsModifiedSince(timestamp: Long, profileId: String): List<WorkoutSessionSyncDto> {
-        return sessionsToReturn
-    }
+    override suspend fun getSessionsModifiedSince(timestamp: Long, profileId: String): List<WorkoutSessionSyncDto> = sessionsToReturn
 
-    override suspend fun getPRsModifiedSince(timestamp: Long, profileId: String): List<PersonalRecordSyncDto> {
-        return prsToReturn
-    }
+    override suspend fun getPRsModifiedSince(timestamp: Long, profileId: String): List<PersonalRecordSyncDto> = prsToReturn
 
-    override suspend fun getRoutinesModifiedSince(timestamp: Long, profileId: String): List<RoutineSyncDto> {
-        return legacyRoutinesToReturn
-    }
+    override suspend fun getRoutinesModifiedSince(timestamp: Long, profileId: String): List<RoutineSyncDto> = legacyRoutinesToReturn
 
-    override suspend fun getCustomExercisesModifiedSince(timestamp: Long): List<CustomExerciseSyncDto> {
-        return customExercisesToReturn
-    }
+    override suspend fun getCustomExercisesModifiedSince(timestamp: Long): List<CustomExerciseSyncDto> = customExercisesToReturn
 
-    override suspend fun getBadgesModifiedSince(timestamp: Long, profileId: String): List<EarnedBadgeSyncDto> {
-        return badgesToReturn
-    }
+    override suspend fun getBadgesModifiedSince(timestamp: Long, profileId: String): List<EarnedBadgeSyncDto> = badgesToReturn
 
-    override suspend fun getGamificationStatsForSync(profileId: String): GamificationStatsSyncDto? {
-        return gamificationStatsToReturn
-    }
+    override suspend fun getGamificationStatsForSync(profileId: String): GamificationStatsSyncDto? = gamificationStatsToReturn
 
     // === Portal Push Operations ===
 
-    override suspend fun getWorkoutSessionsModifiedSince(timestamp: Long, profileId: String): List<WorkoutSession> {
-        return workoutSessionsToReturn
-    }
+    override suspend fun getWorkoutSessionsModifiedSince(timestamp: Long, profileId: String): List<WorkoutSession> = workoutSessionsToReturn
 
-    override suspend fun getFullRoutinesModifiedSince(timestamp: Long, profileId: String): List<Routine> {
-        return routinesToReturn
-    }
+    override suspend fun getFullRoutinesModifiedSince(timestamp: Long, profileId: String): List<Routine> = routinesToReturn
 
     // === ID Mapping ===
 

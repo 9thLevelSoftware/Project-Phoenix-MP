@@ -16,11 +16,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
-import com.devil.phoenixproject.util.KmpUtils
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -39,9 +37,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.domain.model.BiomechanicsRepResult
 import com.devil.phoenixproject.domain.model.BiomechanicsVelocityZone
@@ -49,22 +45,18 @@ import com.devil.phoenixproject.domain.model.StrengthProfile
 import com.devil.phoenixproject.ui.theme.Spacing
 import com.devil.phoenixproject.ui.theme.velocityZoneColor
 import com.devil.phoenixproject.ui.theme.velocityZoneLabel
-import org.jetbrains.compose.resources.stringResource
-import vitruvianprojectphoenix.shared.generated.resources.Res
-import vitruvianprojectphoenix.shared.generated.resources.*
+import com.devil.phoenixproject.util.KmpUtils
 
 // velocityZoneColor() now provided by shared utility from AccessibilityColors.kt
 
 /**
  * Human-readable label for a [StrengthProfile].
  */
-private fun strengthProfileLabel(profile: StrengthProfile): String {
-    return when (profile) {
-        StrengthProfile.ASCENDING -> "Ascending"
-        StrengthProfile.DESCENDING -> "Descending"
-        StrengthProfile.BELL_SHAPED -> "Bell-shaped"
-        StrengthProfile.FLAT -> "Flat"
-    }
+private fun strengthProfileLabel(profile: StrengthProfile): String = when (profile) {
+    StrengthProfile.ASCENDING -> "Ascending"
+    StrengthProfile.DESCENDING -> "Descending"
+    StrengthProfile.BELL_SHAPED -> "Bell-shaped"
+    StrengthProfile.FLAT -> "Flat"
 }
 
 // velocityZoneLabel() now provided by shared utility from AccessibilityColors.kt
@@ -95,37 +87,37 @@ fun BiomechanicsHistorySummary(
     dominantSide: String?,
     strengthProfile: String?,
     onExpandReps: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
 ) {
     Card(
         modifier = modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
         ),
-        shape = RoundedCornerShape(12.dp)
+        shape = RoundedCornerShape(12.dp),
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(Spacing.small)
+                .padding(Spacing.small),
         ) {
             // Section header
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
+                verticalAlignment = Alignment.CenterVertically,
             ) {
                 Icon(
                     imageVector = Icons.Default.Speed,
                     contentDescription = null,
                     modifier = Modifier.size(16.dp),
-                    tint = MaterialTheme.colorScheme.primary
+                    tint = MaterialTheme.colorScheme.primary,
                 )
                 Spacer(modifier = Modifier.width(Spacing.extraSmall))
                 Text(
                     "Biomechanics",
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.primary
+                    color = MaterialTheme.colorScheme.primary,
                 )
             }
 
@@ -135,7 +127,7 @@ fun BiomechanicsHistorySummary(
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+                verticalAlignment = Alignment.CenterVertically,
             ) {
                 // MCV with velocity zone color
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -145,14 +137,14 @@ fun BiomechanicsHistorySummary(
                             modifier = Modifier
                                 .size(8.dp)
                                 .clip(CircleShape)
-                                .background(velocityZoneColor(zone))
+                                .background(velocityZoneColor(zone)),
                         )
                         Spacer(modifier = Modifier.width(Spacing.extraSmall))
                         Text(
                             "Avg MCV: ${KmpUtils.formatFloat(avgMcvMmS, 1)} mm/s",
                             style = MaterialTheme.typography.bodyMedium,
                             fontWeight = FontWeight.Medium,
-                            color = MaterialTheme.colorScheme.onSurface
+                            color = MaterialTheme.colorScheme.onSurface,
                         )
                         Spacer(modifier = Modifier.width(Spacing.extraSmall))
                         VelocityZoneChip(zone)
@@ -160,7 +152,7 @@ fun BiomechanicsHistorySummary(
                         Text(
                             "Avg MCV: \u2014",
                             style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
                 }
@@ -176,7 +168,7 @@ fun BiomechanicsHistorySummary(
                 Text(
                     profileLabel ?: "\u2014",
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
 
@@ -186,7 +178,7 @@ fun BiomechanicsHistorySummary(
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+                verticalAlignment = Alignment.CenterVertically,
             ) {
                 // Asymmetry (only shown if non-null, i.e. Elite tier)
                 if (avgAsymmetryPercent != null) {
@@ -199,7 +191,7 @@ fun BiomechanicsHistorySummary(
                     Text(
                         "Asymmetry: ${KmpUtils.formatFloat(avgAsymmetryPercent, 1)}% ($sideLabel)",
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 } else {
                     Spacer(modifier = Modifier.width(1.dp))
@@ -210,16 +202,17 @@ fun BiomechanicsHistorySummary(
                     Text(
                         "Vel. Loss: ${KmpUtils.formatFloat(totalVelocityLossPercent, 1)}%",
                         style = MaterialTheme.typography.bodySmall,
-                        color = if (totalVelocityLossPercent > 20f)
+                        color = if (totalVelocityLossPercent > 20f) {
                             MaterialTheme.colorScheme.error
-                        else
+                        } else {
                             MaterialTheme.colorScheme.onSurfaceVariant
+                        },
                     )
                 } else {
                     Text(
                         "Vel. Loss: \u2014",
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
             }
@@ -234,7 +227,7 @@ fun BiomechanicsHistorySummary(
                 color = MaterialTheme.colorScheme.primary,
                 modifier = Modifier
                     .clickable(onClick = onExpandReps)
-                    .padding(vertical = Spacing.extraSmall)
+                    .padding(vertical = Spacing.extraSmall),
             )
         }
     }
@@ -247,13 +240,13 @@ fun BiomechanicsHistorySummary(
 private fun VelocityZoneChip(zone: BiomechanicsVelocityZone) {
     Surface(
         color = velocityZoneColor(zone).copy(alpha = 0.15f),
-        shape = RoundedCornerShape(8.dp)
+        shape = RoundedCornerShape(8.dp),
     ) {
         Text(
             velocityZoneLabel(zone),
             style = MaterialTheme.typography.labelSmall,
             color = velocityZoneColor(zone),
-            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
         )
     }
 }
@@ -280,7 +273,7 @@ fun RepBiomechanicsDetail(
     isLoading: Boolean,
     showAsymmetry: Boolean = true,
     showForceCurves: Boolean = true,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
 ) {
     Column(modifier = modifier.fillMaxWidth()) {
         if (isLoading) {
@@ -288,11 +281,11 @@ fun RepBiomechanicsDetail(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(Spacing.medium),
-                contentAlignment = Alignment.Center
+                contentAlignment = Alignment.Center,
             ) {
                 CircularProgressIndicator(
                     modifier = Modifier.size(24.dp),
-                    strokeWidth = 2.dp
+                    strokeWidth = 2.dp,
                 )
             }
         } else if (repResults.isEmpty()) {
@@ -300,14 +293,14 @@ fun RepBiomechanicsDetail(
                 "No per-rep biomechanics data available",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(Spacing.small)
+                modifier = Modifier.padding(Spacing.small),
             )
         } else {
             repResults.forEach { rep ->
                 RepBiomechanicsRow(
                     rep = rep,
                     showAsymmetry = showAsymmetry,
-                    showForceCurves = showForceCurves
+                    showForceCurves = showForceCurves,
                 )
             }
         }
@@ -318,11 +311,7 @@ fun RepBiomechanicsDetail(
  * Single rep row with expandable force curve sparkline.
  */
 @Composable
-private fun RepBiomechanicsRow(
-    rep: BiomechanicsRepResult,
-    showAsymmetry: Boolean,
-    showForceCurves: Boolean
-) {
+private fun RepBiomechanicsRow(rep: BiomechanicsRepResult, showAsymmetry: Boolean, showForceCurves: Boolean) {
     var isExpanded by remember { mutableStateOf(false) }
     val zone = rep.velocity.zone
 
@@ -331,21 +320,21 @@ private fun RepBiomechanicsRow(
             .fillMaxWidth()
             .padding(vertical = 2.dp),
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
         ),
-        shape = RoundedCornerShape(8.dp)
+        shape = RoundedCornerShape(8.dp),
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .clickable { isExpanded = !isExpanded }
-                .padding(Spacing.small)
+                .padding(Spacing.small),
         ) {
             // Main rep metrics row
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+                verticalAlignment = Alignment.CenterVertically,
             ) {
                 // Left: Rep number + MCV + zone chip
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -353,14 +342,14 @@ private fun RepBiomechanicsRow(
                         "Rep ${rep.repNumber}",
                         style = MaterialTheme.typography.bodyMedium,
                         fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurface
+                        color = MaterialTheme.colorScheme.onSurface,
                     )
                     Spacer(modifier = Modifier.width(Spacing.small))
                     Text(
                         "${KmpUtils.formatFloat(rep.velocity.meanConcentricVelocityMmS, 1)} mm/s",
                         style = MaterialTheme.typography.bodySmall,
                         fontWeight = FontWeight.Medium,
-                        color = MaterialTheme.colorScheme.onSurface
+                        color = MaterialTheme.colorScheme.onSurface,
                     )
                     Spacer(modifier = Modifier.width(Spacing.extraSmall))
                     VelocityZoneChip(zone)
@@ -372,10 +361,11 @@ private fun RepBiomechanicsRow(
                         Text(
                             "-${KmpUtils.formatFloat(loss, 1)}%",
                             style = MaterialTheme.typography.labelSmall,
-                            color = if (loss > 20f)
+                            color = if (loss > 20f) {
                                 MaterialTheme.colorScheme.error
-                            else
+                            } else {
                                 MaterialTheme.colorScheme.onSurfaceVariant
+                            },
                         )
                         Spacer(modifier = Modifier.width(Spacing.extraSmall))
                     }
@@ -387,7 +377,7 @@ private fun RepBiomechanicsRow(
                             modifier = Modifier
                                 .size(16.dp)
                                 .rotate(if (isExpanded) 180f else 0f),
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
                 }
@@ -403,9 +393,12 @@ private fun RepBiomechanicsRow(
                     else -> rep.asymmetry.dominantSide
                 }
                 Text(
-                    "Asymmetry: ${KmpUtils.formatFloat(rep.asymmetry.asymmetryPercent, 1)}% ($sideLabel)",
+                    "Asymmetry: ${KmpUtils.formatFloat(
+                        rep.asymmetry.asymmetryPercent,
+                        1,
+                    )}% ($sideLabel)",
                     style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
 
@@ -414,12 +407,12 @@ private fun RepBiomechanicsRow(
                 AnimatedVisibility(
                     visible = isExpanded,
                     enter = expandVertically(),
-                    exit = shrinkVertically()
+                    exit = shrinkVertically(),
                 ) {
                     Column(modifier = Modifier.padding(top = Spacing.small)) {
                         HorizontalDivider(
                             thickness = 1.dp,
-                            color = MaterialTheme.colorScheme.outlineVariant
+                            color = MaterialTheme.colorScheme.outlineVariant,
                         )
                         Spacer(modifier = Modifier.height(Spacing.small))
 
@@ -428,7 +421,7 @@ private fun RepBiomechanicsRow(
                             ForceSparkline(
                                 forceData = rep.forceCurve.normalizedForceN,
                                 peakIndex = null, // Normalized curve, no single peak index
-                                modifier = Modifier.fillMaxWidth()
+                                modifier = Modifier.fillMaxWidth(),
                             )
                         }
 
@@ -437,13 +430,13 @@ private fun RepBiomechanicsRow(
                         // Annotations: sticking point + strength profile
                         Row(
                             modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween
+                            horizontalArrangement = Arrangement.SpaceBetween,
                         ) {
                             rep.forceCurve.stickingPointPct?.let { sp ->
                                 Text(
                                     "Sticking point: ${KmpUtils.formatFloat(sp, 0)}% ROM",
                                     style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
                             } ?: Spacer(modifier = Modifier.width(1.dp))
 
@@ -451,7 +444,7 @@ private fun RepBiomechanicsRow(
                                 strengthProfileLabel(rep.forceCurve.strengthProfile),
                                 style = MaterialTheme.typography.labelSmall,
                                 fontWeight = FontWeight.Medium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
                     }

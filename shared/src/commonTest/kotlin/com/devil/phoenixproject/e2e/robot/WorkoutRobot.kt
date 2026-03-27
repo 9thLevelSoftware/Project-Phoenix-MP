@@ -1,5 +1,6 @@
 package com.devil.phoenixproject.e2e.robot
 
+import com.devil.phoenixproject.data.repository.RepNotification
 import com.devil.phoenixproject.domain.model.ConnectionState
 import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.WorkoutMetric
@@ -7,7 +8,6 @@ import com.devil.phoenixproject.domain.model.WorkoutParameters
 import com.devil.phoenixproject.domain.model.WorkoutState
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
 import com.devil.phoenixproject.testutil.FakeBleRepository
-import com.devil.phoenixproject.data.repository.RepNotification
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
 import kotlin.test.assertTrue
@@ -29,10 +29,7 @@ import kotlin.test.assertTrue
  * ```
  */
 @Suppress("unused") // Robot methods are available for test scenarios
-class WorkoutRobot(
-    private val viewModel: MainViewModel,
-    private val bleRepository: FakeBleRepository
-) {
+class WorkoutRobot(private val viewModel: MainViewModel, private val bleRepository: FakeBleRepository) {
 
     // ========== Connection Actions ==========
 
@@ -58,14 +55,14 @@ class WorkoutRobot(
         reps: Int = 10,
         mode: ProgramMode = ProgramMode.OldSchool,
         warmupReps: Int = 3,
-        isJustLift: Boolean = false
+        isJustLift: Boolean = false,
     ): WorkoutRobot {
         val params = WorkoutParameters(
             programMode = mode,
             weightPerCableKg = weight,
             reps = reps,
             warmupReps = warmupReps,
-            isJustLift = isJustLift
+            isJustLift = isJustLift,
         )
         viewModel.updateWorkoutParameters(params)
         return this
@@ -113,7 +110,7 @@ class WorkoutRobot(
         velocityA: Double = 100.0,
         velocityB: Double = 100.0,
         loadA: Float = 20f,
-        loadB: Float = 20f
+        loadB: Float = 20f,
     ): WorkoutRobot {
         val metric = WorkoutMetric(
             positionA = positionA,
@@ -121,7 +118,7 @@ class WorkoutRobot(
             velocityA = velocityA,
             velocityB = velocityB,
             loadA = loadA,
-            loadB = loadB
+            loadB = loadB,
         )
         bleRepository.emitMetric(metric)
         return this
@@ -132,28 +129,39 @@ class WorkoutRobot(
             // Simulate concentric phase (extension)
             simulateMetric(positionA = 0f, positionB = 0f, velocityA = 200.0, velocityB = 200.0)
             // Simulate eccentric phase (return)
-            simulateMetric(positionA = 1000f, positionB = 1000f, velocityA = -150.0, velocityB = -150.0)
+            simulateMetric(
+                positionA = 1000f,
+                positionB = 1000f,
+                velocityA = -150.0,
+                velocityB = -150.0,
+            )
         }
         return this
     }
 
-    suspend fun simulateRepNotification(repIndex: Int, metric: WorkoutMetric, warmupCount: Int = 0, warmupTarget: Int = 3, workingTarget: Int = 10): WorkoutRobot {
+    suspend fun simulateRepNotification(
+        repIndex: Int,
+        metric: WorkoutMetric,
+        warmupCount: Int = 0,
+        warmupTarget: Int = 3,
+        workingTarget: Int = 10,
+    ): WorkoutRobot {
         // Issue #210: Include machine's warmup/working targets for sync verification
         // For working reps: repsRomCount stays at warmupCount, completeCounter (down) increments
         bleRepository.emitMetric(metric)
         bleRepository.emitRepNotification(
             RepNotification(
                 topCounter = repIndex + warmupCount,
-                completeCounter = repIndex + warmupCount,  // down counter
-                repsRomCount = warmupCount,  // warmup count from machine
+                completeCounter = repIndex + warmupCount, // down counter
+                repsRomCount = warmupCount, // warmup count from machine
                 repsRomTotal = warmupTarget, // Issue #210: Machine's warmup target
-                repsSetCount = repIndex,     // working reps from machine
+                repsSetCount = repIndex, // working reps from machine
                 repsSetTotal = workingTarget, // Issue #210: Machine's working target
                 rangeTop = 800f,
                 rangeBottom = 0f,
                 rawData = ByteArray(24),
-                timestamp = repIndex.toLong()
-            )
+                timestamp = repIndex.toLong(),
+            ),
         )
         bleRepository.emitMetric(metric)
         return this
@@ -240,10 +248,4 @@ class WorkoutRobot(
 /**
  * DSL function to create and use a WorkoutRobot.
  */
-inline fun workoutRobot(
-    viewModel: MainViewModel,
-    bleRepository: FakeBleRepository,
-    block: WorkoutRobot.() -> Unit
-): WorkoutRobot {
-    return WorkoutRobot(viewModel, bleRepository).apply(block)
-}
+inline fun workoutRobot(viewModel: MainViewModel, bleRepository: FakeBleRepository, block: WorkoutRobot.() -> Unit): WorkoutRobot = WorkoutRobot(viewModel, bleRepository).apply(block)

@@ -31,8 +31,6 @@ import com.devil.phoenixproject.presentation.viewmodel.ThemeViewModel
 import com.devil.phoenixproject.ui.theme.VitruvianTheme
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import org.koin.compose.viewmodel.koinViewModel
-import org.koin.compose.koinInject
 import org.koin.mp.KoinPlatform
 
 /**
@@ -66,11 +64,11 @@ private fun AppLifecycleObserver(syncTriggerManager: SyncTriggerManager) {
 private fun CrashErrorScreen(error: String) {
     Box(
         modifier = Modifier.fillMaxSize().background(Color(0xFF1A1A2E)).padding(24.dp),
-        contentAlignment = Alignment.Center
+        contentAlignment = Alignment.Center,
     ) {
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
-            modifier = Modifier.verticalScroll(rememberScrollState())
+            modifier = Modifier.verticalScroll(rememberScrollState()),
         ) {
             Text("Project Phoenix", color = Color(0xFFFF6B35), fontSize = 24.sp)
             Spacer(Modifier.height(16.dp))
@@ -79,7 +77,7 @@ private fun CrashErrorScreen(error: String) {
             Text(
                 "The app failed to initialize. Please take a screenshot and submit TestFlight feedback.",
                 color = Color.White.copy(alpha = 0.7f),
-                fontSize = 14.sp
+                fontSize = 14.sp,
             )
             Spacer(Modifier.height(16.dp))
             Text(
@@ -87,7 +85,7 @@ private fun CrashErrorScreen(error: String) {
                 color = Color(0xFFFF6B6B),
                 fontSize = 12.sp,
                 fontFamily = FontFamily.Monospace,
-                modifier = Modifier.padding(8.dp)
+                modifier = Modifier.padding(8.dp),
             )
         }
     }
@@ -175,7 +173,7 @@ fun App() {
             // EULA acceptance screen - shown first if not accepted
             if (!eulaAccepted) {
                 EulaScreen(
-                    onAccept = { eulaVm.acceptEula() }
+                    onAccept = { eulaVm.acceptEula() },
                 )
             } else {
                 // Main content (only rendered after EULA accepted)
@@ -184,7 +182,7 @@ fun App() {
                         viewModel = vm,
                         exerciseRepository = exRepo,
                         themeMode = themeMode,
-                        onThemeModeChange = { themeVm.setThemeMode(it) }
+                        onThemeModeChange = { themeVm.setThemeMode(it) },
                     )
                 }
 

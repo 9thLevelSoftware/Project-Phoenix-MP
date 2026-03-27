@@ -74,6 +74,7 @@ class WorkoutForegroundService : Service() {
                 startForeground(NOTIFICATION_ID, createNotification())
                 log.d { "Workout service started: $workoutMode, $targetReps reps" }
             }
+
             ACTION_STOP_WORKOUT -> {
                 log.d { "Workout service stopping" }
                 stopForeground(STOP_FOREGROUND_REMOVE)
@@ -93,13 +94,15 @@ class WorkoutForegroundService : Service() {
         val channel = NotificationChannel(
             CHANNEL_ID,
             "Phoenix Workout",
-            NotificationManager.IMPORTANCE_LOW // Low importance = no sound/vibration
+            NotificationManager.IMPORTANCE_LOW, // Low importance = no sound/vibration
         ).apply {
             description = "Shows ongoing workout status"
             setShowBadge(false)
         }
 
-        val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        val notificationManager = getSystemService(
+            Context.NOTIFICATION_SERVICE,
+        ) as NotificationManager
         notificationManager.createNotificationChannel(channel)
     }
 
@@ -128,7 +131,9 @@ class WorkoutForegroundService : Service() {
      */
     fun updateRepCount(reps: Int) {
         currentReps = reps
-        val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        val notificationManager = getSystemService(
+            Context.NOTIFICATION_SERVICE,
+        ) as NotificationManager
         notificationManager.notify(NOTIFICATION_ID, createNotification())
     }
 

@@ -27,9 +27,9 @@ import androidx.compose.ui.unit.dp
  * Movement phase for the cable - determines indicator coloring
  */
 enum class MovementPhase {
-    CONCENTRIC,  // Pulling/lifting against resistance (positive velocity)
-    ECCENTRIC,   // Lowering/resisting (negative velocity)
-    STATIC       // Holding position (near-zero velocity)
+    CONCENTRIC, // Pulling/lifting against resistance (positive velocity)
+    ECCENTRIC, // Lowering/resisting (negative velocity)
+    STATIC, // Holding position (near-zero velocity)
 }
 
 /**
@@ -56,43 +56,52 @@ enum class MovementPhase {
 @Composable
 fun EnhancedCablePositionBar(
     label: String,
-    currentPosition: Float,  // Position in mm (Issue #197)
+    currentPosition: Float, // Position in mm (Issue #197)
     velocity: Double = 0.0,
-    minPosition: Float? = null,  // Position in mm (Float for Nordic parity)
-    maxPosition: Float? = null,  // Position in mm (Float for Nordic parity)
+    minPosition: Float? = null, // Position in mm (Float for Nordic parity)
+    maxPosition: Float? = null, // Position in mm (Float for Nordic parity)
     ghostMin: Float? = null,
     ghostMax: Float? = null,
     isActive: Boolean = true,
-    isDanger: Boolean = false,  // Danger zone - user dropped below ROM
-    modifier: Modifier = Modifier
+    isDanger: Boolean = false, // Danger zone - user dropped below ROM
+    modifier: Modifier = Modifier,
 ) {
     // Determine movement phase from velocity
     val phase = remember(velocity) {
         when {
-            velocity > 50 -> MovementPhase.CONCENTRIC   // Pulling out (extending cable)
-            velocity < -50 -> MovementPhase.ECCENTRIC   // Letting back in (retracting cable)
+            velocity > 50 -> MovementPhase.CONCENTRIC
+
+            // Pulling out (extending cable)
+            velocity < -50 -> MovementPhase.ECCENTRIC
+
+            // Letting back in (retracting cable)
             else -> MovementPhase.STATIC
         }
     }
 
     // Phase-reactive colors
-    val concentricColor = Color(0xFF00E676)  // Bright green
-    val eccentricColor = Color(0xFFFF7043)   // Orange-red
-    val staticColor = Color(0xFF90CAF9)      // Light blue
-    val inactiveColor = Color(0xFF616161)    // Grey
-    val dangerColor = Color(0xFFFF1744)      // Bright red for danger zone
+    val concentricColor = Color(0xFF00E676) // Bright green
+    val eccentricColor = Color(0xFFFF7043) // Orange-red
+    val staticColor = Color(0xFF90CAF9) // Light blue
+    val inactiveColor = Color(0xFF616161) // Grey
+    val dangerColor = Color(0xFFFF1744) // Bright red for danger zone
 
     // Animate color based on phase (danger zone overrides all)
     val activeColor by animateColorAsState(
         targetValue = when {
             !isActive -> inactiveColor
-            isDanger -> dangerColor  // Danger zone takes priority
+
+            isDanger -> dangerColor
+
+            // Danger zone takes priority
             phase == MovementPhase.CONCENTRIC -> concentricColor
+
             phase == MovementPhase.ECCENTRIC -> eccentricColor
+
             else -> staticColor
         },
         animationSpec = tween(durationMillis = 90),
-        label = "Phase Color"
+        label = "Phase Color",
     )
 
     // Position display normalization - ROM-relative scaling (matches parent repo)
@@ -103,9 +112,9 @@ fun EnhancedCablePositionBar(
     // - Going below ROM bottom triggers deload/spotter mode
 
     // ROM padding: Based on official app screenshots, ROM boundaries appear at ~25% and ~90%
-    val romPaddingBottom = 0.25f  // ROM bottom appears at 25% (leaves room for deload detection below)
-    val romPaddingTop = 0.90f     // ROM top appears at 90% (small headroom at top)
-    val romDisplayRange = romPaddingTop - romPaddingBottom  // 0.65 (65% of bar for ROM)
+    val romPaddingBottom = 0.25f // ROM bottom appears at 25% (leaves room for deload detection below)
+    val romPaddingTop = 0.90f // ROM top appears at 90% (small headroom at top)
+    val romDisplayRange = romPaddingTop - romPaddingBottom // 0.65 (65% of bar for ROM)
 
     // Calculate normalized position with ROM-relative scaling
     // Matches parent repo condition: just requires maxPosition > minPosition (any positive range)
@@ -113,45 +122,53 @@ fun EnhancedCablePositionBar(
         targetValue = if (minPosition != null && maxPosition != null && maxPosition > minPosition) {
             // ROM established: normalize relative to ROM range with padding
             val romRange = maxPosition - minPosition
-            val positionInRom = (currentPosition - minPosition) / romRange  // 0-1 within ROM
+            val positionInRom = (currentPosition - minPosition) / romRange // 0-1 within ROM
             // Map ROM 0-1 to display 0.25-0.90, allow overflow for positions outside ROM
             (romPaddingBottom + positionInRom * romDisplayRange).coerceIn(0f, 1f)
         } else {
             // ROM not yet established: use wide range for initial display
             // Start with large range so initial movements appear small (like official app)
-            val wideRangeMax = 1000f  // Full validation range
+            val wideRangeMax = 1000f // Full validation range
             (currentPosition / wideRangeMax).coerceIn(0f, 1f)
         },
         animationSpec = tween(durationMillis = 25),
-        label = "Position"
+        label = "Position",
     )
 
     // Calculate ROM marker positions (fixed at padding boundaries when ROM established)
     val minProgress = if (minPosition != null && maxPosition != null && maxPosition > minPosition) {
-        romPaddingBottom  // ROM bottom marker at 25%
-    } else null
+        romPaddingBottom // ROM bottom marker at 25%
+    } else {
+        null
+    }
 
     val maxProgress = if (minPosition != null && maxPosition != null && maxPosition > minPosition) {
-        romPaddingTop  // ROM top marker at 90%
-    } else null
+        romPaddingTop // ROM top marker at 90%
+    } else {
+        null
+    }
 
     // Ghost markers also normalized to ROM-relative display
     val ghostMinProgress = if (minPosition != null && maxPosition != null && maxPosition > minPosition && ghostMin != null) {
         val romRange = maxPosition - minPosition
         val posInRom = (ghostMin - minPosition) / romRange
         (romPaddingBottom + posInRom * romDisplayRange).coerceIn(0f, 1f)
-    } else null
+    } else {
+        null
+    }
 
     val ghostMaxProgress = if (minPosition != null && maxPosition != null && maxPosition > minPosition && ghostMax != null) {
         val romRange = maxPosition - minPosition
         val posInRom = (ghostMax - minPosition) / romRange
         (romPaddingBottom + posInRom * romDisplayRange).coerceIn(0f, 1f)
-    } else null
+    } else {
+        null
+    }
 
     Column(
         modifier = modifier.fillMaxHeight(),
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.SpaceBetween
+        verticalArrangement = Arrangement.SpaceBetween,
     ) {
         // Label at top with phase indicator
         Text(
@@ -159,7 +176,7 @@ fun EnhancedCablePositionBar(
             style = MaterialTheme.typography.labelMedium,
             fontWeight = FontWeight.Bold,
             color = activeColor,
-            modifier = Modifier.padding(bottom = 4.dp)
+            modifier = Modifier.padding(bottom = 4.dp),
         )
 
         // Main canvas for the bar
@@ -168,7 +185,7 @@ fun EnhancedCablePositionBar(
                 .weight(1f)
                 .width(40.dp)
                 .clip(RoundedCornerShape(16.dp))
-                .background(MaterialTheme.colorScheme.surfaceContainerHighest)
+                .background(MaterialTheme.colorScheme.surfaceContainerHighest),
         ) {
             val barWidth = size.width
             val barHeight = size.height
@@ -180,7 +197,7 @@ fun EnhancedCablePositionBar(
                     barHeight = barHeight,
                     minProgress = minProgress,
                     maxProgress = maxProgress,
-                    color = activeColor
+                    color = activeColor,
                 )
             }
 
@@ -190,7 +207,7 @@ fun EnhancedCablePositionBar(
                     barWidth = barWidth,
                     barHeight = barHeight,
                     progress = ghostMinProgress,
-                    color = activeColor.copy(alpha = 0.5f)
+                    color = activeColor.copy(alpha = 0.5f),
                 )
             }
             if (ghostMaxProgress != null) {
@@ -198,7 +215,7 @@ fun EnhancedCablePositionBar(
                     barWidth = barWidth,
                     barHeight = barHeight,
                     progress = ghostMaxProgress,
-                    color = activeColor.copy(alpha = 0.5f)
+                    color = activeColor.copy(alpha = 0.5f),
                 )
             }
 
@@ -209,14 +226,14 @@ fun EnhancedCablePositionBar(
                     barWidth = barWidth,
                     barHeight = barHeight,
                     progress = minProgress,
-                    color = activeColor.copy(alpha = 0.95f)
+                    color = activeColor.copy(alpha = 0.95f),
                 )
                 // Max marker (top of ROM)
                 drawRomMarker(
                     barWidth = barWidth,
                     barHeight = barHeight,
                     progress = maxProgress,
-                    color = activeColor.copy(alpha = 0.95f)
+                    color = activeColor.copy(alpha = 0.95f),
                 )
             }
 
@@ -226,7 +243,7 @@ fun EnhancedCablePositionBar(
                 centerX = barWidth / 2,
                 centerY = indicatorY,
                 radius = barWidth * 1.2f,
-                color = activeColor
+                color = activeColor,
             )
 
             // 5. Draw current position indicator (pill shape)
@@ -234,7 +251,7 @@ fun EnhancedCablePositionBar(
                 barWidth = barWidth,
                 barHeight = barHeight,
                 position = animatedPosition,
-                color = activeColor
+                color = activeColor,
             )
         }
 
@@ -245,7 +262,7 @@ fun EnhancedCablePositionBar(
             color = activeColor,
             maxLines = 1,
             overflow = TextOverflow.Visible,
-            modifier = Modifier.padding(top = 4.dp)
+            modifier = Modifier.padding(top = 4.dp),
         )
     }
 }
@@ -253,13 +270,7 @@ fun EnhancedCablePositionBar(
 /**
  * Draw the ROM (Range of Motion) zone - a highlighted area showing target range
  */
-private fun DrawScope.drawRomZone(
-    barWidth: Float,
-    barHeight: Float,
-    minProgress: Float,
-    maxProgress: Float,
-    color: Color
-) {
+private fun DrawScope.drawRomZone(barWidth: Float, barHeight: Float, minProgress: Float, maxProgress: Float, color: Color) {
     val topY = barHeight * (1f - maxProgress)
     val bottomY = barHeight * (1f - minProgress)
     val zoneHeight = bottomY - topY
@@ -268,19 +279,14 @@ private fun DrawScope.drawRomZone(
         color = color.copy(alpha = 0.28f),
         topLeft = Offset(0f, topY),
         size = Size(barWidth, zoneHeight),
-        cornerRadius = CornerRadius(8f, 8f)
+        cornerRadius = CornerRadius(8f, 8f),
     )
 }
 
 /**
  * Draw a ghost marker - faint indicator showing previous rep extent
  */
-private fun DrawScope.drawGhostMarker(
-    barWidth: Float,
-    barHeight: Float,
-    progress: Float,
-    color: Color
-) {
+private fun DrawScope.drawGhostMarker(barWidth: Float, barHeight: Float, progress: Float, color: Color) {
     val y = barHeight * (1f - progress)
     val markerWidth = barWidth * 0.6f
     val startX = (barWidth - markerWidth) / 2
@@ -294,7 +300,7 @@ private fun DrawScope.drawGhostMarker(
         drawRect(
             color = color,
             topLeft = Offset(currentX, y - 1.5f),
-            size = Size(dashWidth.coerceAtMost(startX + markerWidth - currentX), 3f)
+            size = Size(dashWidth.coerceAtMost(startX + markerWidth - currentX), 3f),
         )
         currentX += dashWidth + gapWidth
     }
@@ -303,55 +309,40 @@ private fun DrawScope.drawGhostMarker(
 /**
  * Draw ROM boundary marker - solid line at min/max positions
  */
-private fun DrawScope.drawRomMarker(
-    barWidth: Float,
-    barHeight: Float,
-    progress: Float,
-    color: Color
-) {
+private fun DrawScope.drawRomMarker(barWidth: Float, barHeight: Float, progress: Float, color: Color) {
     val y = barHeight * (1f - progress)
 
     drawRoundRect(
         color = color,
         topLeft = Offset(2f, y - 2f),
         size = Size(barWidth - 4f, 4f),
-        cornerRadius = CornerRadius(2f, 2f)
+        cornerRadius = CornerRadius(2f, 2f),
     )
 }
 
 /**
  * Draw glow effect around the position indicator
  */
-private fun DrawScope.drawGlowEffect(
-    centerX: Float,
-    centerY: Float,
-    radius: Float,
-    color: Color
-) {
+private fun DrawScope.drawGlowEffect(centerX: Float, centerY: Float, radius: Float, color: Color) {
     drawCircle(
         brush = Brush.radialGradient(
             colors = listOf(
                 color.copy(alpha = 0.55f),
                 color.copy(alpha = 0.2f),
-                Color.Transparent
+                Color.Transparent,
             ),
             center = Offset(centerX, centerY),
-            radius = radius
+            radius = radius,
         ),
         radius = radius,
-        center = Offset(centerX, centerY)
+        center = Offset(centerX, centerY),
     )
 }
 
 /**
  * Draw the main position indicator - a pill/capsule shape
  */
-private fun DrawScope.drawPositionIndicator(
-    barWidth: Float,
-    barHeight: Float,
-    position: Float,
-    color: Color
-) {
+private fun DrawScope.drawPositionIndicator(barWidth: Float, barHeight: Float, position: Float, color: Color) {
     val indicatorHeight = 20f
     val indicatorWidth = barWidth - 8f
     val y = barHeight * (1f - position) - (indicatorHeight / 2)
@@ -362,7 +353,7 @@ private fun DrawScope.drawPositionIndicator(
         color = Color.White,
         topLeft = Offset(x, y),
         size = Size(indicatorWidth, indicatorHeight),
-        cornerRadius = CornerRadius(indicatorHeight / 2, indicatorHeight / 2)
+        cornerRadius = CornerRadius(indicatorHeight / 2, indicatorHeight / 2),
     )
 
     // Colored border
@@ -370,6 +361,6 @@ private fun DrawScope.drawPositionIndicator(
         color = color,
         topLeft = Offset(x + 2f, y + 2f),
         size = Size(indicatorWidth - 4f, indicatorHeight - 4f),
-        cornerRadius = CornerRadius((indicatorHeight - 4f) / 2, (indicatorHeight - 4f) / 2)
+        cornerRadius = CornerRadius((indicatorHeight - 4f) / 2, (indicatorHeight - 4f) / 2),
     )
 }

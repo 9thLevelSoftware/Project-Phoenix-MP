@@ -2,7 +2,6 @@ package com.devil.phoenixproject.domain.premium
 
 import com.devil.phoenixproject.domain.model.WorkoutMetric
 import com.devil.phoenixproject.domain.model.currentTimeMillis
-import kotlin.math.abs
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -23,17 +22,15 @@ class AsymmetryEngineTest {
 
     // ========== Helper Functions ==========
 
-    private fun createMetric(loadA: Float, loadB: Float): WorkoutMetric =
-        WorkoutMetric(
-            timestamp = currentTimeMillis(),
-            loadA = loadA,
-            loadB = loadB,
-            positionA = 0f,
-            positionB = 0f
-        )
+    private fun createMetric(loadA: Float, loadB: Float): WorkoutMetric = WorkoutMetric(
+        timestamp = currentTimeMillis(),
+        loadA = loadA,
+        loadB = loadB,
+        positionA = 0f,
+        positionB = 0f,
+    )
 
-    private fun createMetrics(vararg loads: Pair<Float, Float>): List<WorkoutMetric> =
-        loads.map { (a, b) -> createMetric(a, b) }
+    private fun createMetrics(vararg loads: Pair<Float, Float>): List<WorkoutMetric> = loads.map { (a, b) -> createMetric(a, b) }
 
     // ========== Perfectly Balanced ==========
 
@@ -54,7 +51,7 @@ class AsymmetryEngineTest {
         val metrics = createMetrics(
             50f to 50f,
             60f to 60f,
-            40f to 40f
+            40f to 40f,
         )
         val result = engine.computeAsymmetry(2, metrics)
 
@@ -137,7 +134,7 @@ class AsymmetryEngineTest {
         val metrics = createMetrics(
             50f to 40f,
             60f to 50f,
-            70f to 60f
+            70f to 60f,
         )
         val result = engine.computeAsymmetry(3, metrics)
 
@@ -155,7 +152,7 @@ class AsymmetryEngineTest {
         // Should be balanced despite individual samples being imbalanced
         val metrics = createMetrics(
             30f to 70f,
-            70f to 30f
+            70f to 30f,
         )
         val result = engine.computeAsymmetry(1, metrics)
 

@@ -8,9 +8,11 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -21,8 +23,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.width
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -49,12 +49,7 @@ import com.devil.phoenixproject.ui.theme.AccessibilityTheme
  * @param modifier Modifier for layout customization
  */
 @Composable
-fun BalanceBar(
-    asymmetryPercent: Float,
-    dominantSide: String,
-    showAlert: Boolean = false,
-    modifier: Modifier = Modifier
-) {
+fun BalanceBar(asymmetryPercent: Float, dominantSide: String, showAlert: Boolean = false, modifier: Modifier = Modifier) {
     // Severity color from AccessibilityTheme (ASYM-04)
     val colors = AccessibilityTheme.colors
     val severityColor = when {
@@ -75,16 +70,16 @@ fun BalanceBar(
         targetValue = 1f,
         animationSpec = infiniteRepeatable(
             animation = tween(durationMillis = 500),
-            repeatMode = RepeatMode.Reverse
+            repeatMode = RepeatMode.Reverse,
         ),
-        label = "AlertPulse"
+        label = "AlertPulse",
     )
 
     val borderModifier = if (showAlert) {
         Modifier.border(
             width = 2.dp,
             color = alertBorderColor.copy(alpha = alertAlpha),
-            shape = RoundedCornerShape(8.dp)
+            shape = RoundedCornerShape(8.dp),
         )
     } else {
         Modifier
@@ -95,17 +90,17 @@ fun BalanceBar(
     // Row layout: bar + percentage beside it (WCAG: numeric value beside bar, not inside)
     Row(
         modifier = modifier,
-        verticalAlignment = Alignment.CenterVertically
+        verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(
             modifier = Modifier
                 .weight(1f)
                 .height(16.dp)
-                .then(borderModifier)
+                .then(borderModifier),
         ) {
             // Canvas for the bar drawing
             Canvas(
-                modifier = Modifier.fillMaxSize()
+                modifier = Modifier.fillMaxSize(),
             ) {
                 val barWidth = size.width
                 val barHeight = size.height
@@ -116,7 +111,7 @@ fun BalanceBar(
                     color = backgroundColor,
                     topLeft = Offset.Zero,
                     size = Size(barWidth, barHeight),
-                    cornerRadius = CornerRadius(8.dp.toPx(), 8.dp.toPx())
+                    cornerRadius = CornerRadius(8.dp.toPx(), 8.dp.toPx()),
                 )
 
                 // 2. Center tick mark (50/50 balance point)
@@ -124,7 +119,7 @@ fun BalanceBar(
                     color = Color.White.copy(alpha = 0.5f),
                     start = Offset(centerX, 2f),
                     end = Offset(centerX, barHeight - 2f),
-                    strokeWidth = 1.5f
+                    strokeWidth = 1.5f,
                 )
 
                 // 3. Asymmetry indicator from center toward dominant side
@@ -135,8 +130,12 @@ fun BalanceBar(
 
                 if (indicatorWidth > 0.5f) {
                     val indicatorX = when (dominantSide) {
-                        "A" -> centerX - indicatorWidth // Extends left (cable A = left)
-                        "B" -> centerX                   // Extends right (cable B = right)
+                        "A" -> centerX - indicatorWidth
+
+                        // Extends left (cable A = left)
+                        "B" -> centerX
+
+                        // Extends right (cable B = right)
                         else -> centerX - indicatorWidth / 2f // Balanced: tiny centered
                     }
 
@@ -144,7 +143,7 @@ fun BalanceBar(
                         color = severityColor.copy(alpha = 0.8f),
                         topLeft = Offset(indicatorX, indicatorY),
                         size = Size(indicatorWidth, indicatorHeight),
-                        cornerRadius = CornerRadius(4.dp.toPx(), 4.dp.toPx())
+                        cornerRadius = CornerRadius(4.dp.toPx(), 4.dp.toPx()),
                     )
                 }
             }
@@ -156,7 +155,7 @@ fun BalanceBar(
                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
                 modifier = Modifier
                     .align(Alignment.CenterStart)
-                    .padding(start = 4.dp)
+                    .padding(start = 4.dp),
             )
 
             Text(
@@ -165,7 +164,7 @@ fun BalanceBar(
                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
                 modifier = Modifier
                     .align(Alignment.CenterEnd)
-                    .padding(end = 4.dp)
+                    .padding(end = 4.dp),
             )
         }
 
@@ -174,7 +173,7 @@ fun BalanceBar(
             text = "${asymmetryPercent.toInt()}%",
             style = MaterialTheme.typography.labelSmall.copy(
                 fontSize = 9.sp,
-                fontWeight = FontWeight.Bold
+                fontWeight = FontWeight.Bold,
             ),
             color = if (asymmetryPercent < 10f) {
                 MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
@@ -182,7 +181,7 @@ fun BalanceBar(
                 severityColor
             },
             textAlign = TextAlign.End,
-            modifier = Modifier.width(32.dp).padding(start = 4.dp)
+            modifier = Modifier.width(32.dp).padding(start = 4.dp),
         )
     }
 }

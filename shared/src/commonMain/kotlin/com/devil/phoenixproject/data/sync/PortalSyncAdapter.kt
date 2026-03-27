@@ -1,6 +1,5 @@
 package com.devil.phoenixproject.data.sync
 
-import com.devil.phoenixproject.domain.model.CycleDay
 import com.devil.phoenixproject.domain.model.CycleProgress
 import com.devil.phoenixproject.domain.model.CycleProgression
 import com.devil.phoenixproject.domain.model.PersonalRecord
@@ -11,11 +10,11 @@ import com.devil.phoenixproject.domain.model.SupersetColors
 import com.devil.phoenixproject.domain.model.TrainingCycle
 import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.domain.model.generateUUID
-import kotlinx.serialization.json.Json
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.builtins.MapSerializer
 import kotlinx.serialization.builtins.nullable
 import kotlinx.serialization.builtins.serializer
+import kotlinx.serialization.json.Json
 
 /**
  * Transforms mobile data structures into portal-compatible DTOs.
@@ -43,17 +42,14 @@ object PortalSyncAdapter {
         val repBiomechanics: List<RepBiomechanicsData> = emptyList(),
         val muscleGroup: String = "General",
         val isPr: Boolean = false,
-        val prRecord: PersonalRecord? = null // Carries PR metadata (type, phase, volume)
+        val prRecord: PersonalRecord? = null, // Carries PR metadata (type, phase, volume)
     )
 
     /**
      * Bundle returned by buildPortalExercise, pairing the exercise DTO
      * with telemetry that references the correct generated setId.
      */
-    data class ExerciseWithTelemetry(
-        val exercise: PortalExerciseDto,
-        val telemetry: List<PortalRepTelemetryDto>
-    )
+    data class ExerciseWithTelemetry(val exercise: PortalExerciseDto, val telemetry: List<PortalRepTelemetryDto>)
 
     /**
      * Lightweight representation of RepBiomechanics DB row for sync.
@@ -66,33 +62,22 @@ object PortalSyncAdapter {
         val asymmetryPercent: Float,
         val dominantSide: String,
         val avgLoadA: Float,
-        val avgLoadB: Float
+        val avgLoadB: Float,
     )
 
     /**
      * Result of building portal sessions -- includes both session DTOs and
      * correctly-keyed telemetry data where setIds match the generated exercise set IDs.
      */
-    data class PortalSessionBuildResult(
-        val sessions: List<PortalWorkoutSessionDto>,
-        val telemetry: List<PortalRepTelemetryDto>
-    )
+    data class PortalSessionBuildResult(val sessions: List<PortalWorkoutSessionDto>, val telemetry: List<PortalRepTelemetryDto>)
 
-    fun toPortalWorkoutSessions(
-        sessionsWithReps: List<SessionWithReps>,
-        userId: String
-    ): List<PortalWorkoutSessionDto> {
-        return toPortalWorkoutSessionsWithTelemetry(sessionsWithReps, userId).sessions
-    }
+    fun toPortalWorkoutSessions(sessionsWithReps: List<SessionWithReps>, userId: String): List<PortalWorkoutSessionDto> = toPortalWorkoutSessionsWithTelemetry(sessionsWithReps, userId).sessions
 
     /**
      * Build portal workout sessions AND correctly-keyed telemetry in one pass.
      * Telemetry setIds are guaranteed to match the generated set IDs in the exercises.
      */
-    fun toPortalWorkoutSessionsWithTelemetry(
-        sessionsWithReps: List<SessionWithReps>,
-        userId: String
-    ): PortalSessionBuildResult {
+    fun toPortalWorkoutSessionsWithTelemetry(sessionsWithReps: List<SessionWithReps>, userId: String): PortalSessionBuildResult {
         // Group: null routineSessionId = standalone, non-null = routine group
         val standalone = sessionsWithReps.filter { it.session.routineSessionId == null }
         val routineGroups = sessionsWithReps
@@ -122,7 +107,7 @@ object PortalSyncAdapter {
     private fun buildPortalSession(
         sessionsWithReps: List<SessionWithReps>,
         userId: String,
-        routineSessionId: String?
+        routineSessionId: String?,
     ): Pair<PortalWorkoutSessionDto, List<PortalRepTelemetryDto>> {
         val sorted = sessionsWithReps.sortedBy { it.session.timestamp }
         val first = sorted.first().session
@@ -151,7 +136,7 @@ object PortalSyncAdapter {
             ?.key
 
         // Aggregate biomechanics from sessions that have values
-        val sessionsWithBio = sorted.filter { it.session.avgMcvMmS != null && it.session.avgMcvMmS!! > 0f }
+        val sessionsWithBio = sorted.filter { it.session.avgMcvMmS != null && it.session.avgMcvMmS > 0f }
         val avgVelocity = sessionsWithBio.mapNotNull { it.session.avgMcvMmS }
             .takeIf { it.isNotEmpty() }
             ?.let { vals -> vals.sum() / vals.size }
@@ -221,7 +206,7 @@ object PortalSyncAdapter {
             eccentricLoad = eccLoad,
             echoLevel = echoLvl,
             warmupReps = warmup,
-            workingReps = working
+            workingReps = working,
         )
         return Pair(sessionDto, telemetry)
     }
@@ -231,11 +216,7 @@ object PortalSyncAdapter {
      * The generated setId is shared between the set DTO and the telemetry points,
      * ensuring FK consistency when inserted into the portal database.
      */
-    private fun buildPortalExerciseWithTelemetry(
-        swr: SessionWithReps,
-        portalSessionId: String,
-        orderIndex: Int
-    ): ExerciseWithTelemetry {
+    private fun buildPortalExerciseWithTelemetry(swr: SessionWithReps, portalSessionId: String, orderIndex: Int): ExerciseWithTelemetry {
         val session = swr.session
         val exerciseId = generateUUID()
         val setId = generateUUID()
@@ -266,7 +247,7 @@ object PortalSyncAdapter {
             prPhase = pr?.phase?.name, // "COMBINED", "CONCENTRIC", "ECCENTRIC"
             prVolume = if (pr?.prType?.name == "MAX_VOLUME") pr.volume else null,
             workoutMode = PortalMappings.workoutModeToSync(session.mode),
-            repSummaries = repSummaries
+            repSummaries = repSummaries,
         )
 
         val exercise = PortalExerciseDto(
@@ -275,17 +256,14 @@ object PortalSyncAdapter {
             name = session.exerciseName ?: "Unknown Exercise",
             muscleGroup = swr.muscleGroup,
             orderIndex = orderIndex,
-            sets = listOf(set)
+            sets = listOf(set),
         )
         return ExerciseWithTelemetry(exercise, telemetry)
     }
 
     // ─── Rep Data Mapping ───────────────────────────────────────────
 
-    private fun buildRepSummaries(
-        swr: SessionWithReps,
-        setId: String
-    ): List<PortalRepSummaryDto> {
+    private fun buildRepSummaries(swr: SessionWithReps, setId: String): List<PortalRepSummaryDto> {
         val biomechanicsMap = swr.repBiomechanics.associateBy { it.repNumber }
 
         return swr.repMetrics.map { rep ->
@@ -301,10 +279,10 @@ object PortalSyncAdapter {
                     ?: PortalMappings.velocityMmSToMps(rep.peakVelocity),
                 // Force: kg → Newtons (combined cable A+B average)
                 meanForceN = PortalMappings.loadKgToNewtons(
-                    rep.avgForceConcentricA + rep.avgForceConcentricB
+                    rep.avgForceConcentricA + rep.avgForceConcentricB,
                 ),
                 peakForceN = PortalMappings.loadKgToNewtons(
-                    rep.peakForceA + rep.peakForceB
+                    rep.peakForceA + rep.peakForceB,
                 ),
                 // Power: already in Watts
                 powerWatts = rep.avgPowerWatts,
@@ -318,7 +296,7 @@ object PortalSyncAdapter {
                 // Asymmetry from biomechanics if available
                 asymmetryPct = bio?.asymmetryPercent,
                 // VBT zone from biomechanics
-                vbtZone = bio?.velocityZone
+                vbtZone = bio?.velocityZone,
             )
         }
     }
@@ -329,10 +307,7 @@ object PortalSyncAdapter {
      * Convert RepMetricData force curve arrays into portal telemetry points.
      * This produces per-cable time-series data for force curve visualization.
      */
-    fun toRepTelemetry(
-        rep: RepMetricData,
-        setId: String
-    ): List<PortalRepTelemetryDto> {
+    fun toRepTelemetry(rep: RepMetricData, setId: String): List<PortalRepTelemetryDto> {
         val points = mutableListOf<PortalRepTelemetryDto>()
 
         // Concentric phase - Cable A (left)
@@ -342,14 +317,23 @@ object PortalSyncAdapter {
                     id = generateUUID(),
                     setId = setId,
                     timestampMs = rep.startTimestamp + rep.concentricTimestamps[i],
-                    forceN = if (i < rep.concentricLoadsA.size)
-                        PortalMappings.loadKgToNewtons(rep.concentricLoadsA[i]) else null,
-                    velocityMps = if (i < rep.concentricVelocities.size)
-                        PortalMappings.velocityMmSToMps(rep.concentricVelocities[i]) else null,
-                    positionMm = if (i < rep.concentricPositions.size)
-                        rep.concentricPositions[i] else null,
-                    cable = "left"
-                )
+                    forceN = if (i < rep.concentricLoadsA.size) {
+                        PortalMappings.loadKgToNewtons(rep.concentricLoadsA[i])
+                    } else {
+                        null
+                    },
+                    velocityMps = if (i < rep.concentricVelocities.size) {
+                        PortalMappings.velocityMmSToMps(rep.concentricVelocities[i])
+                    } else {
+                        null
+                    },
+                    positionMm = if (i < rep.concentricPositions.size) {
+                        rep.concentricPositions[i]
+                    } else {
+                        null
+                    },
+                    cable = "left",
+                ),
             )
         }
 
@@ -362,12 +346,18 @@ object PortalSyncAdapter {
                         setId = setId,
                         timestampMs = rep.startTimestamp + rep.concentricTimestamps[i],
                         forceN = PortalMappings.loadKgToNewtons(rep.concentricLoadsB[i]),
-                        velocityMps = if (i < rep.concentricVelocities.size)
-                            PortalMappings.velocityMmSToMps(rep.concentricVelocities[i]) else null,
-                        positionMm = if (i < rep.concentricPositions.size)
-                            rep.concentricPositions[i] else null,
-                        cable = "right"
-                    )
+                        velocityMps = if (i < rep.concentricVelocities.size) {
+                            PortalMappings.velocityMmSToMps(rep.concentricVelocities[i])
+                        } else {
+                            null
+                        },
+                        positionMm = if (i < rep.concentricPositions.size) {
+                            rep.concentricPositions[i]
+                        } else {
+                            null
+                        },
+                        cable = "right",
+                    ),
                 )
             }
         }
@@ -380,14 +370,23 @@ object PortalSyncAdapter {
                     id = generateUUID(),
                     setId = setId,
                     timestampMs = rep.startTimestamp + eccentricOffset + rep.eccentricTimestamps[i],
-                    forceN = if (i < rep.eccentricLoadsA.size)
-                        PortalMappings.loadKgToNewtons(rep.eccentricLoadsA[i]) else null,
-                    velocityMps = if (i < rep.eccentricVelocities.size)
-                        PortalMappings.velocityMmSToMps(rep.eccentricVelocities[i]) else null,
-                    positionMm = if (i < rep.eccentricPositions.size)
-                        rep.eccentricPositions[i] else null,
-                    cable = "left"
-                )
+                    forceN = if (i < rep.eccentricLoadsA.size) {
+                        PortalMappings.loadKgToNewtons(rep.eccentricLoadsA[i])
+                    } else {
+                        null
+                    },
+                    velocityMps = if (i < rep.eccentricVelocities.size) {
+                        PortalMappings.velocityMmSToMps(rep.eccentricVelocities[i])
+                    } else {
+                        null
+                    },
+                    positionMm = if (i < rep.eccentricPositions.size) {
+                        rep.eccentricPositions[i]
+                    } else {
+                        null
+                    },
+                    cable = "left",
+                ),
             )
         }
 
@@ -400,12 +399,18 @@ object PortalSyncAdapter {
                         setId = setId,
                         timestampMs = rep.startTimestamp + eccentricOffset + rep.eccentricTimestamps[i],
                         forceN = PortalMappings.loadKgToNewtons(rep.eccentricLoadsB[i]),
-                        velocityMps = if (i < rep.eccentricVelocities.size)
-                            PortalMappings.velocityMmSToMps(rep.eccentricVelocities[i]) else null,
-                        positionMm = if (i < rep.eccentricPositions.size)
-                            rep.eccentricPositions[i] else null,
-                        cable = "right"
-                    )
+                        velocityMps = if (i < rep.eccentricVelocities.size) {
+                            PortalMappings.velocityMmSToMps(rep.eccentricVelocities[i])
+                        } else {
+                            null
+                        },
+                        positionMm = if (i < rep.eccentricPositions.size) {
+                            rep.eccentricPositions[i]
+                        } else {
+                            null
+                        },
+                        cable = "right",
+                    ),
                 )
             }
         }
@@ -418,16 +423,13 @@ object PortalSyncAdapter {
     /**
      * Convert a mobile Routine to portal-format DTO.
      */
-    fun toPortalRoutine(
-        routine: Routine,
-        userId: String
-    ): PortalRoutineSyncDto {
+    fun toPortalRoutine(routine: Routine, userId: String): PortalRoutineSyncDto {
         // Map superset colors: index → name
         val colorNames = mapOf(
             SupersetColors.INDIGO to "indigo",
             SupersetColors.PINK to "pink",
             SupersetColors.GREEN to "green",
-            SupersetColors.AMBER to "amber"
+            SupersetColors.AMBER to "amber",
         )
 
         val exercises = routine.exercises.map { ex ->
@@ -459,19 +461,25 @@ object PortalSyncAdapter {
                 repCountTiming = ex.repCountTiming.name,
                 stopAtPosition = if (ex.stopAtTop) "TOP" else null,
                 stallDetection = ex.stallDetectionEnabled,
-                eccentricLoad = if (ex.programMode == ProgramMode.Echo)
-                    ex.eccentricLoad.name else null,
-                echoLevel = if (ex.programMode == ProgramMode.Echo)
-                    ex.echoLevel.name else null,
+                eccentricLoad = if (ex.programMode == ProgramMode.Echo) {
+                    ex.eccentricLoad.name
+                } else {
+                    null
+                },
+                echoLevel = if (ex.programMode == ProgramMode.Echo) {
+                    ex.echoLevel.name
+                } else {
+                    null
+                },
                 perSetEchoLevels = ex.setEchoLevels.takeIf { it.isNotEmpty() }
                     ?.let { levels ->
                         Json.encodeToString(
                             ListSerializer(String.serializer().nullable),
-                            levels.map { it?.name }
+                            levels.map { it?.name },
                         )
                     },
                 warmupSets = ex.warmupSets.takeIf { it.isNotEmpty() }
-                    ?.let { Json.encodeToString(it) }
+                    ?.let { Json.encodeToString(it) },
             )
         }
 
@@ -484,7 +492,7 @@ object PortalSyncAdapter {
             estimatedDuration = estimateRoutineDuration(routine),
             timesCompleted = routine.useCount,
             isFavorite = false,
-            exercises = exercises
+            exercises = exercises,
         )
     }
 
@@ -504,11 +512,7 @@ object PortalSyncAdapter {
      * Data bundle for a cycle with its optional progress + progression.
      * SyncRepository gathers these for push.
      */
-    data class CycleWithContext(
-        val cycle: TrainingCycle,
-        val progress: CycleProgress? = null,
-        val progression: CycleProgression? = null
-    )
+    data class CycleWithContext(val cycle: TrainingCycle, val progress: CycleProgress? = null, val progression: CycleProgression? = null)
 
     /**
      * Convert a mobile TrainingCycle (with context) to portal-format DTO.
@@ -524,18 +528,18 @@ object PortalSyncAdapter {
      * Note: weekNumber defaults to 1 since mobile DB has no week_number column.
      * The portal's current_week is set to 1 unless CycleProgress tracks it.
      */
-    fun toPortalTrainingCycle(
-        ctx: CycleWithContext,
-        userId: String
-    ): PortalTrainingCycleSyncDto {
+    fun toPortalTrainingCycle(ctx: CycleWithContext, userId: String): PortalTrainingCycleSyncDto {
         val cycle = ctx.cycle
         val progress = ctx.progress
         val progression = ctx.progression
 
         val workoutDays = cycle.days.count { !it.isRestDay }
         val restDays = cycle.days.count { it.isRestDay }
-        val durationWeeks = if (cycle.days.isEmpty()) 1
-            else ((cycle.days.size + 6) / 7) // ceil division
+        val durationWeeks = if (cycle.days.isEmpty()) {
+            1
+        } else {
+            ((cycle.days.size + 6) / 7) // ceil division
+        }
 
         val progressionJson = progression?.let {
             Json.encodeToString(
@@ -545,7 +549,7 @@ object PortalSyncAdapter {
                     it.weightIncreasePercent?.let { w -> put("weightIncreasePercent", w.toString()) }
                     if (it.echoLevelIncrease) put("echoLevelIncrease", "true")
                     it.eccentricLoadIncreasePercent?.let { e -> put("eccentricLoadIncreasePercent", e.toString()) }
-                }
+                },
             )
         }
 
@@ -560,7 +564,7 @@ object PortalSyncAdapter {
                 repModifier = day.repModifier ?: 0,
                 restOverride = day.restTimeOverrideSeconds,
                 restType = null,
-                notes = day.name
+                notes = day.name,
             )
         }
 
@@ -578,7 +582,7 @@ object PortalSyncAdapter {
             lastUsedAt = progress?.lastCompletedDate?.let { epochToIso8601(it) },
             progressionSettings = progressionJson,
             deloadSettings = null,
-            days = days
+            days = days,
         )
     }
 
@@ -588,67 +592,55 @@ object PortalSyncAdapter {
      * Convert SQLDelight PhaseStatistics to portal DTO.
      * Velocities are converted from mm/s to m/s.
      */
-    fun toPortalPhaseStatistics(
-        stats: com.devil.phoenixproject.database.PhaseStatistics
-    ): PortalPhaseStatisticsDto {
-        return PortalPhaseStatisticsDto(
-            id = generateUUID(),
-            sessionId = stats.sessionId,
-            concentricKgAvg = stats.concentricKgAvg.toFloat(),
-            concentricKgMax = stats.concentricKgMax.toFloat(),
-            concentricVelAvg = PortalMappings.velocityMmSToMps(stats.concentricVelAvg.toFloat()),
-            concentricVelMax = PortalMappings.velocityMmSToMps(stats.concentricVelMax.toFloat()),
-            concentricWattAvg = stats.concentricWattAvg.toFloat(),
-            concentricWattMax = stats.concentricWattMax.toFloat(),
-            eccentricKgAvg = stats.eccentricKgAvg.toFloat(),
-            eccentricKgMax = stats.eccentricKgMax.toFloat(),
-            eccentricVelAvg = PortalMappings.velocityMmSToMps(stats.eccentricVelAvg.toFloat()),
-            eccentricVelMax = PortalMappings.velocityMmSToMps(stats.eccentricVelMax.toFloat()),
-            eccentricWattAvg = stats.eccentricWattAvg.toFloat(),
-            eccentricWattMax = stats.eccentricWattMax.toFloat()
-        )
-    }
+    fun toPortalPhaseStatistics(stats: com.devil.phoenixproject.database.PhaseStatistics): PortalPhaseStatisticsDto = PortalPhaseStatisticsDto(
+        id = generateUUID(),
+        sessionId = stats.sessionId,
+        concentricKgAvg = stats.concentricKgAvg.toFloat(),
+        concentricKgMax = stats.concentricKgMax.toFloat(),
+        concentricVelAvg = PortalMappings.velocityMmSToMps(stats.concentricVelAvg.toFloat()),
+        concentricVelMax = PortalMappings.velocityMmSToMps(stats.concentricVelMax.toFloat()),
+        concentricWattAvg = stats.concentricWattAvg.toFloat(),
+        concentricWattMax = stats.concentricWattMax.toFloat(),
+        eccentricKgAvg = stats.eccentricKgAvg.toFloat(),
+        eccentricKgMax = stats.eccentricKgMax.toFloat(),
+        eccentricVelAvg = PortalMappings.velocityMmSToMps(stats.eccentricVelAvg.toFloat()),
+        eccentricVelMax = PortalMappings.velocityMmSToMps(stats.eccentricVelMax.toFloat()),
+        eccentricWattAvg = stats.eccentricWattAvg.toFloat(),
+        eccentricWattMax = stats.eccentricWattMax.toFloat(),
+    )
 
     // ─── Exercise Signatures (GAP 8) ────────────────────────────────
 
     /**
      * Convert SQLDelight ExerciseSignature to portal DTO.
      */
-    fun toPortalExerciseSignature(
-        sig: com.devil.phoenixproject.database.ExerciseSignature
-    ): PortalExerciseSignatureDto {
-        return PortalExerciseSignatureDto(
-            id = generateUUID(),
-            exerciseId = sig.exerciseId,
-            romMm = sig.romMm.toFloat(),
-            durationMs = sig.durationMs,
-            symmetryRatio = sig.symmetryRatio.toFloat(),
-            velocityProfile = sig.velocityProfile,
-            cableConfig = sig.cableConfig,
-            sampleCount = sig.sampleCount.toInt(),
-            confidence = sig.confidence.toFloat(),
-            updatedAt = epochToIso8601(sig.updatedAt)
-        )
-    }
+    fun toPortalExerciseSignature(sig: com.devil.phoenixproject.database.ExerciseSignature): PortalExerciseSignatureDto = PortalExerciseSignatureDto(
+        id = generateUUID(),
+        exerciseId = sig.exerciseId,
+        romMm = sig.romMm.toFloat(),
+        durationMs = sig.durationMs,
+        symmetryRatio = sig.symmetryRatio.toFloat(),
+        velocityProfile = sig.velocityProfile,
+        cableConfig = sig.cableConfig,
+        sampleCount = sig.sampleCount.toInt(),
+        confidence = sig.confidence.toFloat(),
+        updatedAt = epochToIso8601(sig.updatedAt),
+    )
 
     // ─── VBT Assessments (GAP 9) ────────────────────────────────────
 
     /**
      * Convert SQLDelight AssessmentResult to portal DTO.
      */
-    fun toPortalAssessmentResult(
-        result: com.devil.phoenixproject.database.AssessmentResult
-    ): PortalAssessmentResultDto {
-        return PortalAssessmentResultDto(
-            id = result.id.toString(),
-            exerciseId = result.exerciseId,
-            estimatedOneRepMaxKg = result.estimatedOneRepMaxKg.toFloat(),
-            loadVelocityData = result.loadVelocityData,
-            assessmentSessionId = result.assessmentSessionId,
-            userOverrideKg = result.userOverrideKg?.toFloat(),
-            createdAt = epochToIso8601(result.createdAt)
-        )
-    }
+    fun toPortalAssessmentResult(result: com.devil.phoenixproject.database.AssessmentResult): PortalAssessmentResultDto = PortalAssessmentResultDto(
+        id = result.id.toString(),
+        exerciseId = result.exerciseId,
+        estimatedOneRepMaxKg = result.estimatedOneRepMaxKg.toFloat(),
+        loadVelocityData = result.loadVelocityData,
+        assessmentSessionId = result.assessmentSessionId,
+        userOverrideKg = result.userOverrideKg?.toFloat(),
+        createdAt = epochToIso8601(result.createdAt),
+    )
 
     // ─── Utility ────────────────────────────────────────────────────
 

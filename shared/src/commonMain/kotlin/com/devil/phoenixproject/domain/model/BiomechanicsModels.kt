@@ -17,7 +17,8 @@ enum class BiomechanicsVelocityZone {
     FAST,
     MODERATE,
     SLOW,
-    GRIND;
+    GRIND,
+    ;
 
     companion object {
         /**
@@ -26,11 +27,19 @@ enum class BiomechanicsVelocityZone {
          * @return Corresponding velocity zone
          */
         fun fromMcv(mcvMmPerSec: Float): BiomechanicsVelocityZone = when {
-            mcvMmPerSec >= 1000f -> EXPLOSIVE  // >= 1.0 m/s
-            mcvMmPerSec >= 750f -> FAST        // >= 0.75 m/s
-            mcvMmPerSec >= 500f -> MODERATE    // >= 0.5 m/s
-            mcvMmPerSec >= 250f -> SLOW        // >= 0.25 m/s
-            else -> GRIND                       // < 0.25 m/s
+            mcvMmPerSec >= 1000f -> EXPLOSIVE
+
+            // >= 1.0 m/s
+            mcvMmPerSec >= 750f -> FAST
+
+            // >= 0.75 m/s
+            mcvMmPerSec >= 500f -> MODERATE
+
+            // >= 0.5 m/s
+            mcvMmPerSec >= 250f -> SLOW
+
+            // >= 0.25 m/s
+            else -> GRIND // < 0.25 m/s
         }
     }
 }
@@ -53,7 +62,7 @@ data class VelocityResult(
     val velocityLossPercent: Float?,
     val estimatedRepsRemaining: Int?,
     val shouldStopSet: Boolean,
-    val repNumber: Int
+    val repNumber: Int,
 )
 
 /**
@@ -68,7 +77,7 @@ enum class StrengthProfile {
     ASCENDING,
     DESCENDING,
     BELL_SHAPED,
-    FLAT
+    FLAT,
 }
 
 /**
@@ -88,7 +97,7 @@ data class ForceCurveResult(
     val normalizedPositionPct: FloatArray,
     val stickingPointPct: Float?,
     val strengthProfile: StrengthProfile,
-    val repNumber: Int
+    val repNumber: Int,
 ) {
     // Custom equals/hashCode for FloatArray fields (data classes don't deep-compare arrays)
     override fun equals(other: Any?): Boolean {
@@ -126,7 +135,7 @@ data class AsymmetryResult(
     val dominantSide: String,
     val avgLoadA: Float,
     val avgLoadB: Float,
-    val repNumber: Int
+    val repNumber: Int,
 )
 
 /**
@@ -143,7 +152,7 @@ data class BiomechanicsRepResult(
     val forceCurve: ForceCurveResult,
     val asymmetry: AsymmetryResult,
     val repNumber: Int,
-    val timestamp: Long
+    val timestamp: Long,
 )
 
 /**
@@ -168,5 +177,5 @@ data class BiomechanicsSetSummary(
     val avgAsymmetryPercent: Float,
     val dominantSide: String,
     val strengthProfile: StrengthProfile,
-    val avgForceCurve: ForceCurveResult?
+    val avgForceCurve: ForceCurveResult?,
 )

@@ -7,19 +7,14 @@ import com.devil.phoenixproject.data.repository.UserProfileRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.stringResource
-import vitruvianprojectphoenix.shared.generated.resources.Res
 import vitruvianprojectphoenix.shared.generated.resources.*
+import vitruvianprojectphoenix.shared.generated.resources.Res
 
 /**
  * Confirmation dialog for deleting a user profile.
  */
 @Composable
-fun DeleteProfileDialog(
-    profile: UserProfile,
-    profileRepository: UserProfileRepository,
-    scope: CoroutineScope,
-    onDismiss: () -> Unit
-) {
+fun DeleteProfileDialog(profile: UserProfile, profileRepository: UserProfileRepository, scope: CoroutineScope, onDismiss: () -> Unit) {
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(stringResource(Res.string.delete_profile)) },
@@ -35,8 +30,8 @@ fun DeleteProfileDialog(
                     onDismiss()
                 },
                 colors = ButtonDefaults.textButtonColors(
-                    contentColor = MaterialTheme.colorScheme.error
-                )
+                    contentColor = MaterialTheme.colorScheme.error,
+                ),
             ) {
                 Text(stringResource(Res.string.action_delete))
             }
@@ -45,6 +40,6 @@ fun DeleteProfileDialog(
             TextButton(onClick = onDismiss) {
                 Text(stringResource(Res.string.action_cancel))
             }
-        }
+        },
     )
 }

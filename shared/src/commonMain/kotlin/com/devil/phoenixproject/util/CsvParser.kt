@@ -26,7 +26,7 @@ object CsvParser {
     private val EXPECTED_HEADERS = listOf(
         "date", "exercise", "mode", "target reps", "warmup reps",
         "working reps", "total reps", "weight", "progression",
-        "duration (s)", "just lift", "eccentric load"
+        "duration (s)", "just lift", "eccentric load",
     )
 
     /**
@@ -46,7 +46,7 @@ object CsvParser {
 
         if (columnMap.isEmpty()) {
             return emptyList<WorkoutSession>() to listOf(
-                "Unrecognized CSV format. Expected headers: ${EXPECTED_HEADERS.joinToString(", ")}"
+                "Unrecognized CSV format. Expected headers: ${EXPECTED_HEADERS.joinToString(", ")}",
             )
         }
 
@@ -81,19 +81,32 @@ object CsvParser {
             // Match against expected headers (handle variations)
             val normalized = when {
                 header == "date" -> "date"
+
                 header == "exercise" -> "exercise"
+
                 header == "mode" -> "mode"
+
                 header.contains("target") && header.contains("rep") -> "target_reps"
+
                 header == "warmup reps" -> "warmup_reps"
+
                 header == "working reps" -> "working_reps"
+
                 header == "total reps" || header == "reps" -> "total_reps"
+
                 header == "weight" || header.startsWith("weight") -> "weight"
+
                 header == "progression" -> "progression"
+
                 header.contains("duration") -> "duration"
+
                 header.contains("just lift") -> "just_lift"
+
                 header.contains("eccentric") -> "eccentric_load"
+
                 // iOS format extras
                 header == "time" -> "time"
+
                 else -> null
             }
             if (normalized != null) {
@@ -113,11 +126,7 @@ object CsvParser {
      * Map a single CSV row to a [WorkoutSession].
      * Returns null if required fields are missing or unparseable.
      */
-    private fun mapRowToSession(
-        fields: List<String>,
-        columnMap: Map<String, Int>,
-        rowNumber: Int
-    ): WorkoutSession? {
+    private fun mapRowToSession(fields: List<String>, columnMap: Map<String, Int>, rowNumber: Int): WorkoutSession? {
         fun field(key: String): String? {
             val idx = columnMap[key] ?: return null
             return if (idx < fields.size) fields[idx].trim() else null
@@ -132,7 +141,7 @@ object CsvParser {
         // Without time column, multiple same-day workouts all collapse to midnight.
         val timeStr = field("time")
         val timestamp = parseDateTimeToEpochMs(dateStr, timeStr) ?: throw IllegalArgumentException(
-            "Invalid date format: '$dateStr' (expected yyyy-MM-dd)"
+            "Invalid date format: '$dateStr' (expected yyyy-MM-dd)",
         )
 
         // Optional numeric fields with safe defaults
@@ -161,21 +170,19 @@ object CsvParser {
             workingReps = workingReps,
             isJustLift = justLift,
             eccentricLoad = eccentricLoad,
-            exerciseName = exerciseName
+            exerciseName = exerciseName,
         )
     }
 
     /**
      * Parse a date string in yyyy-MM-dd format to epoch milliseconds (midnight).
      */
-    private fun parseDateToEpochMs(dateStr: String): Long? {
-        return try {
-            val localDate = LocalDate.parse(dateStr)
-            val instant = localDate.atStartOfDayIn(TimeZone.currentSystemDefault())
-            instant.toEpochMilliseconds()
-        } catch (_: Exception) {
-            null
-        }
+    private fun parseDateToEpochMs(dateStr: String): Long? = try {
+        val localDate = LocalDate.parse(dateStr)
+        val instant = localDate.atStartOfDayIn(TimeZone.currentSystemDefault())
+        instant.toEpochMilliseconds()
+    } catch (_: Exception) {
+        null
     }
 
     /**
@@ -232,6 +239,7 @@ object CsvParser {
                 c == '"' && !inQuotes -> {
                     inQuotes = true
                 }
+
                 c == '"' && inQuotes -> {
                     // Check for escaped quote
                     if (i + 1 < line.length && line[i + 1] == '"') {
@@ -241,10 +249,12 @@ object CsvParser {
                         inQuotes = false
                     }
                 }
+
                 c == ',' && !inQuotes -> {
                     fields.add(current.toString())
                     current.clear()
                 }
+
                 else -> {
                     current.append(c)
                 }

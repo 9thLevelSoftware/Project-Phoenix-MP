@@ -30,20 +30,16 @@ import vitruvianprojectphoenix.shared.generated.resources.rpg_no_data_yet
  * and a Portal deep-link button. Displayed on BadgesScreen.
  */
 @Composable
-fun RpgAttributeCard(
-    profile: RpgProfile,
-    onPortalLink: () -> Unit,
-    modifier: Modifier = Modifier
-) {
+fun RpgAttributeCard(profile: RpgProfile, onPortalLink: () -> Unit, modifier: Modifier = Modifier) {
     // M13: Show a friendly empty state for zero-workout users instead of a card
     // with all-zero attribute bars, which is confusing and uninformative.
     if (profile == RpgProfile.EMPTY) {
         Card(
             modifier = modifier.fillMaxWidth(),
             colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surface
+                containerColor = MaterialTheme.colorScheme.surface,
             ),
-            shape = MaterialTheme.shapes.medium
+            shape = MaterialTheme.shapes.medium,
         ) {
             Text(
                 text = stringResource(Res.string.rpg_no_data_yet),
@@ -52,7 +48,7 @@ fun RpgAttributeCard(
                 textAlign = TextAlign.Center,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(Spacing.large)
+                    .padding(Spacing.large),
             )
         }
         return
@@ -61,37 +57,37 @@ fun RpgAttributeCard(
     Card(
         modifier = modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface
+            containerColor = MaterialTheme.colorScheme.surface,
         ),
-        shape = MaterialTheme.shapes.medium
+        shape = MaterialTheme.shapes.medium,
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(Spacing.medium)
+                .padding(Spacing.medium),
         ) {
             // Header: icon + class name + description
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(Spacing.small)
+                horizontalArrangement = Arrangement.spacedBy(Spacing.small),
             ) {
                 Icon(
                     imageVector = getCharacterClassIcon(profile.characterClass),
                     contentDescription = profile.characterClass.displayName,
                     tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(24.dp)
+                    modifier = Modifier.size(24.dp),
                 )
                 Column {
                     Text(
                         text = profile.characterClass.displayName,
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurface
+                        color = MaterialTheme.colorScheme.onSurface,
                     )
                     Text(
                         text = profile.characterClass.description,
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
             }
@@ -109,7 +105,7 @@ fun RpgAttributeCard(
                 }
                 AttributeBar(
                     name = attribute.displayName,
-                    value = value
+                    value = value,
                 )
                 Spacer(modifier = Modifier.height(4.dp))
             }
@@ -119,12 +115,12 @@ fun RpgAttributeCard(
             // Portal deep link
             TextButton(
                 onClick = onPortalLink,
-                contentPadding = PaddingValues(0.dp)
+                contentPadding = PaddingValues(0.dp),
             ) {
                 Text(
                     text = "View full skill tree on Phoenix Portal",
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.primary
+                    color = MaterialTheme.colorScheme.primary,
                 )
             }
         }
@@ -132,20 +128,16 @@ fun RpgAttributeCard(
 }
 
 @Composable
-private fun AttributeBar(
-    name: String,
-    value: Int,
-    modifier: Modifier = Modifier
-) {
+private fun AttributeBar(name: String, value: Int, modifier: Modifier = Modifier) {
     Row(
         modifier = modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically
+        verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
             text = name,
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurface,
-            modifier = Modifier.width(90.dp)
+            modifier = Modifier.width(90.dp),
         )
         LinearProgressIndicator(
             progress = { value / 100f },
@@ -154,7 +146,7 @@ private fun AttributeBar(
                 .height(8.dp)
                 .clip(RoundedCornerShape(4.dp)),
             color = MaterialTheme.colorScheme.primary,
-            trackColor = MaterialTheme.colorScheme.surfaceVariant
+            trackColor = MaterialTheme.colorScheme.surfaceVariant,
         )
         Text(
             text = "$value",
@@ -162,17 +154,15 @@ private fun AttributeBar(
             fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.onSurface,
             textAlign = TextAlign.End,
-            modifier = Modifier.width(30.dp)
+            modifier = Modifier.width(30.dp),
         )
     }
 }
 
-private fun getCharacterClassIcon(characterClass: CharacterClass): ImageVector {
-    return when (characterClass) {
-        CharacterClass.POWERLIFTER -> Icons.Default.FitnessCenter
-        CharacterClass.ATHLETE -> Icons.Default.Bolt
-        CharacterClass.IRONMAN -> Icons.Default.Repeat
-        CharacterClass.MONK -> Icons.Default.SelfImprovement
-        CharacterClass.PHOENIX -> Icons.Default.LocalFireDepartment
-    }
+private fun getCharacterClassIcon(characterClass: CharacterClass): ImageVector = when (characterClass) {
+    CharacterClass.POWERLIFTER -> Icons.Default.FitnessCenter
+    CharacterClass.ATHLETE -> Icons.Default.Bolt
+    CharacterClass.IRONMAN -> Icons.Default.Repeat
+    CharacterClass.MONK -> Icons.Default.SelfImprovement
+    CharacterClass.PHOENIX -> Icons.Default.LocalFireDepartment
 }

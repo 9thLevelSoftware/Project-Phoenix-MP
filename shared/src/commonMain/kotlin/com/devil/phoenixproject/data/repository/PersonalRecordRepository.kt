@@ -66,21 +66,19 @@ interface PersonalRecordRepository {
         reps: Int,
         workoutMode: String,
         timestamp: Long,
-        profileId: String
-    ): Result<Boolean> {
-        return updatePRsIfBetter(
-            exerciseId = exerciseId,
-            weightPRWeightPerCableKg = weightPerCableKg,
-            volumePRWeightPerCableKg = weightPerCableKg,
-            reps = reps,
-            workoutMode = workoutMode,
-            timestamp = timestamp,
-            profileId = profileId
-        ).fold(
-            onSuccess = { Result.success(it.isNotEmpty()) },
-            onFailure = { Result.failure(it) }
-        )
-    }
+        profileId: String,
+    ): Result<Boolean> = updatePRsIfBetter(
+        exerciseId = exerciseId,
+        weightPRWeightPerCableKg = weightPerCableKg,
+        volumePRWeightPerCableKg = weightPerCableKg,
+        reps = reps,
+        workoutMode = workoutMode,
+        timestamp = timestamp,
+        profileId = profileId,
+    ).fold(
+        onSuccess = { Result.success(it.isNotEmpty()) },
+        onFailure = { Result.failure(it) },
+    )
 
     // ========== Volume/Weight PR Methods (parity with parent) ==========
 
@@ -158,18 +156,16 @@ interface PersonalRecordRepository {
         reps: Int,
         workoutMode: String,
         timestamp: Long,
-        profileId: String
-    ): Result<List<PRType>> {
-        return updatePRsIfBetter(
-            exerciseId = exerciseId,
-            weightPRWeightPerCableKg = weightPerCableKg,
-            volumePRWeightPerCableKg = weightPerCableKg,
-            reps = reps,
-            workoutMode = workoutMode,
-            timestamp = timestamp,
-            profileId = profileId
-        )
-    }
+        profileId: String,
+    ): Result<List<PRType>> = updatePRsIfBetter(
+        exerciseId = exerciseId,
+        weightPRWeightPerCableKg = weightPerCableKg,
+        volumePRWeightPerCableKg = weightPerCableKg,
+        reps = reps,
+        workoutMode = workoutMode,
+        timestamp = timestamp,
+        profileId = profileId,
+    )
 
     /**
      * Update PRs if the new performance is better.
@@ -191,7 +187,7 @@ interface PersonalRecordRepository {
         reps: Int,
         workoutMode: String,
         timestamp: Long,
-        profileId: String
+        profileId: String,
     ): Result<List<PRType>>
 
     // ========== Phase-specific PR Methods (Issue #111) ==========
@@ -215,7 +211,7 @@ interface PersonalRecordRepository {
         reps: Int,
         peakConcentricForceKg: Float,
         peakEccentricForceKg: Float,
-        profileId: String
+        profileId: String,
     ): Result<List<WorkoutPhase>>
 }
 

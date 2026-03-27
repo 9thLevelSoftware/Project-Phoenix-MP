@@ -27,8 +27,7 @@ class BleOperationQueue {
      * Execute a read operation through the serialization gate.
      * All BLE reads MUST go through this method.
      */
-    suspend fun <T> read(operation: suspend () -> T): T =
-        mutex.withLock { operation() }
+    suspend fun <T> read(operation: suspend () -> T): T = mutex.withLock { operation() }
 
     /**
      * Execute a write operation with retry logic.
@@ -46,7 +45,7 @@ class BleOperationQueue {
         characteristic: Characteristic,
         data: ByteArray,
         writeType: WriteType = WriteType.WithResponse,
-        maxRetries: Int = 3
+        maxRetries: Int = 3,
     ): Result<Unit> {
         var lastException: Exception? = null
 
@@ -81,7 +80,7 @@ class BleOperationQueue {
         peripheral: Peripheral,
         characteristic: Characteristic,
         data: ByteArray,
-        writeType: WriteType = WriteType.WithResponse
+        writeType: WriteType = WriteType.WithResponse,
     ) {
         mutex.withLock {
             peripheral.write(characteristic, data, writeType)
@@ -92,6 +91,5 @@ class BleOperationQueue {
      * Execute a custom operation with the lock held.
      * Use for compound operations (read-then-write patterns).
      */
-    suspend fun <T> withLock(operation: suspend () -> T): T =
-        mutex.withLock { operation() }
+    suspend fun <T> withLock(operation: suspend () -> T): T = mutex.withLock { operation() }
 }

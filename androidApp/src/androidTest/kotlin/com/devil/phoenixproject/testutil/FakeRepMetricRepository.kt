@@ -10,15 +10,11 @@ class FakeRepMetricRepository : RepMetricRepository {
         savedMetrics[sessionId] = (savedMetrics[sessionId] ?: emptyList()) + metrics
     }
 
-    override suspend fun getRepMetrics(sessionId: String): List<RepMetricData> {
-        return savedMetrics[sessionId] ?: emptyList()
-    }
+    override suspend fun getRepMetrics(sessionId: String): List<RepMetricData> = savedMetrics[sessionId] ?: emptyList()
 
     override suspend fun deleteRepMetrics(sessionId: String) {
         savedMetrics.remove(sessionId)
     }
 
-    override suspend fun getRepMetricCount(sessionId: String): Long {
-        return (savedMetrics[sessionId]?.size ?: 0).toLong()
-    }
+    override suspend fun getRepMetricCount(sessionId: String): Long = (savedMetrics[sessionId]?.size ?: 0).toLong()
 }

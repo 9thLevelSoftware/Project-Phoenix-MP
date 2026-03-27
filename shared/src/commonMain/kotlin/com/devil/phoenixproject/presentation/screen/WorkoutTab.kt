@@ -1,7 +1,7 @@
 package com.devil.phoenixproject.presentation.screen
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -13,13 +13,12 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.data.repository.AutoStopUiState
 import com.devil.phoenixproject.data.repository.ExerciseRepository
+import com.devil.phoenixproject.data.repository.ExerciseVideoEntity
 import com.devil.phoenixproject.domain.model.*
 import com.devil.phoenixproject.domain.model.BiomechanicsRepResult
 import com.devil.phoenixproject.domain.usecase.RepRanges
@@ -27,19 +26,17 @@ import com.devil.phoenixproject.presentation.components.AutoStartOverlay
 import com.devil.phoenixproject.presentation.components.AutoStopOverlay
 import com.devil.phoenixproject.presentation.components.EnhancedCablePositionBar
 import com.devil.phoenixproject.presentation.components.ExerciseNavigator
-import com.devil.phoenixproject.presentation.components.HapticFeedbackEffect
 import com.devil.phoenixproject.presentation.components.RepQualityIndicator
 import com.devil.phoenixproject.presentation.components.VideoPlayer
-import com.devil.phoenixproject.data.repository.ExerciseVideoEntity
-import com.devil.phoenixproject.ui.theme.Spacing
 import com.devil.phoenixproject.presentation.manager.DetectionState
 import com.devil.phoenixproject.presentation.util.LocalWindowSizeClass
 import com.devil.phoenixproject.presentation.util.WindowWidthSizeClass
-import kotlinx.coroutines.flow.SharedFlow
+import com.devil.phoenixproject.ui.theme.Spacing
 import com.devil.phoenixproject.ui.theme.screenBackgroundBrush
+import kotlinx.coroutines.flow.SharedFlow
 import org.jetbrains.compose.resources.stringResource
-import vitruvianprojectphoenix.shared.generated.resources.Res
 import vitruvianprojectphoenix.shared.generated.resources.*
+import vitruvianprojectphoenix.shared.generated.resources.Res
 
 /**
  * WorkoutTab with State Holder Pattern (2025 Material Expressive).
@@ -56,7 +53,7 @@ fun WorkoutTab(
     actions: WorkoutActions,
     exerciseRepository: ExerciseRepository,
     hapticEvents: SharedFlow<HapticEvent>? = null,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
 ) {
     // Delegate to the original implementation
     WorkoutTab(
@@ -118,7 +115,7 @@ fun WorkoutTab(
         onDetectionDismissed = actions::onDetectionDismissed,
         motionStartHoldProgress = state.motionStartHoldProgress,
         isRestPaused = state.isRestPaused,
-        justLiftRestCountdown = state.justLiftRestCountdown
+        justLiftRestCountdown = state.justLiftRestCountdown,
     )
 }
 
@@ -149,7 +146,7 @@ fun WorkoutTab(
     skippedExercises: Set<Int> = emptySet(),
     completedExercises: Set<Int> = emptySet(),
     autoplayEnabled: Boolean = false,
-    summaryCountdownSeconds: Int = 10,  // Countdown duration for SetSummary auto-continue (0 = Off)
+    summaryCountdownSeconds: Int = 10, // Countdown duration for SetSummary auto-continue (0 = Off)
     onJumpToExercise: (Int) -> Unit = {},
     canGoBack: Boolean = false,
     canSkipForward: Boolean = false,
@@ -167,7 +164,7 @@ fun WorkoutTab(
     onResetRest: () -> Unit = {},
     onSkipCountdown: () -> Unit,
     onProceedFromSummary: () -> Unit = {},
-    onRpeLogged: ((Int) -> Unit)? = null,  // Optional RPE callback for set summary
+    onRpeLogged: ((Int) -> Unit)? = null, // Optional RPE callback for set summary
     onResetForNewWorkout: () -> Unit,
     onStartNextExercise: () -> Unit = {},
     onUpdateParameters: (WorkoutParameters) -> Unit,
@@ -178,19 +175,19 @@ fun WorkoutTab(
     showWorkoutSetupCard: Boolean = true,
     loadBaselineA: Float = 0f,
     loadBaselineB: Float = 0f,
-    timedExerciseRemainingSeconds: Int? = null,  // Issue #192: Countdown for timed exercises
+    timedExerciseRemainingSeconds: Int? = null, // Issue #192: Countdown for timed exercises
     isCurrentExerciseBodyweight: Boolean = false,
-    latestRepQualityScore: Int? = null,  // Rep quality score (null = not available or free tier)
-    latestBiomechanicsResult: BiomechanicsRepResult? = null,  // Latest biomechanics analysis result
-    detectionState: DetectionState = DetectionState(),  // Exercise auto-detection state
-    onDetectionConfirmed: suspend (String, String) -> Unit = { _, _ -> },  // Detection confirm callback
-    onDetectionDismissed: () -> Unit = {},  // Detection dismiss callback
+    latestRepQualityScore: Int? = null, // Rep quality score (null = not available or free tier)
+    latestBiomechanicsResult: BiomechanicsRepResult? = null, // Latest biomechanics analysis result
+    detectionState: DetectionState = DetectionState(), // Exercise auto-detection state
+    onDetectionConfirmed: suspend (String, String) -> Unit = { _, _ -> }, // Detection confirm callback
+    onDetectionDismissed: () -> Unit = {}, // Detection dismiss callback
     // Issue #237: Motion-triggered set start
     motionStartHoldProgress: Float? = null,
     // Issue #297, #228: Rest timer pause state
     isRestPaused: Boolean = false,
     // Issue #113: Just Lift visual rest countdown (null = not resting)
-    justLiftRestCountdown: Int? = null
+    justLiftRestCountdown: Int? = null,
 ) {
     // Note: HapticFeedbackEffect is now global in EnhancedMainScreen
     // No need for local haptic effect here
@@ -227,7 +224,7 @@ fun WorkoutTab(
                 detectionState = detectionState,
                 onDetectionConfirmed = onDetectionConfirmed,
                 onDetectionDismissed = onDetectionDismissed,
-                modifier = Modifier.fillMaxSize()
+                modifier = Modifier.fillMaxSize(),
             )
 
             // Rep Quality Score overlay (Phoenix+ tier only, passed as null for Free)
@@ -239,7 +236,7 @@ fun WorkoutTab(
     Box(
         modifier = modifier
             .fillMaxSize()
-            .background(backgroundGradient)
+            .background(backgroundGradient),
     ) {
         // Show position bars at edges only when workout is active and metric is available
         val showPositionBars = connectionState is ConnectionState.Connected &&
@@ -268,7 +265,7 @@ fun WorkoutTab(
                     .windowInsetsPadding(WindowInsets.safeGestures.only(WindowInsetsSides.Start))
                     .width(40.dp)
                     .fillMaxHeight(0.8f) // Don't stretch full height for better visual balance
-                    .padding(vertical = 8.dp, horizontal = 4.dp)
+                    .padding(vertical = 8.dp, horizontal = 4.dp),
             )
         }
 
@@ -294,7 +291,7 @@ fun WorkoutTab(
                     .windowInsetsPadding(WindowInsets.safeGestures.only(WindowInsetsSides.End))
                     .width(40.dp)
                     .fillMaxHeight(0.8f) // Don't stretch full height for better visual balance
-                    .padding(vertical = 8.dp, horizontal = 4.dp)
+                    .padding(vertical = 8.dp, horizontal = 4.dp),
             )
         }
 
@@ -302,15 +299,15 @@ fun WorkoutTab(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .navigationBarsPadding()  // Issue #XXX: Prevent content from going behind soft nav buttons
+                .navigationBarsPadding() // Issue #XXX: Prevent content from going behind soft nav buttons
                 .padding(
                     start = if (showPositionBars) 56.dp else 20.dp,
                     end = if (showPositionBars) 56.dp else 20.dp,
                     top = 0.dp,
-                    bottom = 8.dp  // Small additional padding for visual breathing room
+                    bottom = 8.dp, // Small additional padding for visual breathing room
                 )
                 .verticalScroll(rememberScrollState()),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+            verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             // Connection Card (conditionally shown)
             if (showConnectionCard) {
@@ -318,7 +315,7 @@ fun WorkoutTab(
                     connectionState = connectionState,
                     onScan = onScan,
                     onCancelScan = onCancelScan,
-                    onDisconnect = onDisconnect
+                    onDisconnect = onDisconnect,
                 )
             }
 
@@ -328,21 +325,24 @@ fun WorkoutTab(
                     is WorkoutState.Idle -> {
                         if (showWorkoutSetupCard) {
                             WorkoutSetupCard(
-                                onShowWorkoutSetupDialog = onShowWorkoutSetupDialog
+                                onShowWorkoutSetupDialog = onShowWorkoutSetupDialog,
                             )
                         }
                     }
+
                     is WorkoutState.Error -> {
                         ErrorCard(message = workoutState.message)
                     }
+
                     is WorkoutState.Completed -> {
                         CompletedCard(
                             loadedRoutine = loadedRoutine,
                             currentExerciseIndex = currentExerciseIndex,
                             onStartNextExercise = onStartNextExercise,
-                            onResetForNewWorkout = onResetForNewWorkout
+                            onResetForNewWorkout = onResetForNewWorkout,
                         )
                     }
+
                     is WorkoutState.Active -> {
                         // NEW HUD LAYOUT
                         // We intercept the Active state here and delegate everything to WorkoutHud
@@ -351,6 +351,7 @@ fun WorkoutTab(
                         // For now, we render it inside this column? No, that's bad (scaffold inside column).
                         // Refactoring: We should lift WorkoutHud to be the root content of WorkoutTab when active.
                     }
+
                     else -> {}
                 }
 
@@ -383,7 +384,7 @@ fun WorkoutTab(
                 WorkoutPausedCard(
                     onScan = onScan,
                     workoutState = workoutState,
-                    repCount = repCount
+                    repCount = repCount,
                 )
             }
 
@@ -403,10 +404,11 @@ fun WorkoutTab(
                             isEchoMode = workoutParameters.isEchoMode,
                             onSkipCountdown = onSkipCountdown,
                             onEndWorkout = onStopWorkout,
-                            motionStartHoldProgress = motionStartHoldProgress
+                            motionStartHoldProgress = motionStartHoldProgress,
                         )
                     }
                 }
+
                 is WorkoutState.SetSummary -> {
                     // Compute contextual button label
                     val buttonLabel = run {
@@ -433,7 +435,7 @@ fun WorkoutTab(
                             .fillMaxSize()
                             .background(screenBackgroundBrush())
                             .systemBarsPadding()
-                            .padding(horizontal = 16.dp, vertical = 8.dp)
+                            .padding(horizontal = 16.dp, vertical = 8.dp),
                     ) {
                         SetSummaryCard(
                             summary = workoutState,
@@ -445,19 +447,20 @@ fun WorkoutTab(
                             autoplayEnabled = autoplayEnabled,
                             summaryCountdownSeconds = summaryCountdownSeconds,
                             onRpeLogged = onRpeLogged,
-                            buttonLabel = buttonLabel
+                            buttonLabel = buttonLabel,
                         )
                     }
                 }
+
                 is WorkoutState.Resting -> {
                     // Issue #222: Determine if next exercise is bodyweight to hide config card
                     // Parse the next exercise name to find the matching exercise in the routine
                     val nextExerciseName = workoutState.nextExerciseName
                     val nextExercise = loadedRoutine?.exercises?.find {
                         it.exercise.name == nextExerciseName ||
-                        it.exercise.displayName == nextExerciseName ||
-                        nextExerciseName.startsWith(it.exercise.name) ||
-                        nextExerciseName.startsWith(it.exercise.displayName)
+                            it.exercise.displayName == nextExerciseName ||
+                            nextExerciseName.startsWith(it.exercise.name) ||
+                            nextExerciseName.startsWith(it.exercise.displayName)
                     }
                     val nextEquipment = nextExercise?.exercise?.equipment ?: ""
                     val isNextBodyweight = nextEquipment.isEmpty() || nextEquipment.equals("bodyweight", ignoreCase = true)
@@ -506,9 +509,10 @@ fun WorkoutTab(
                                 ?: com.devil.phoenixproject.domain.model.EccentricLoad.LOAD_100
                             onUpdateParameters(workoutParameters.copy(eccentricLoad = newLoad))
                         },
-                        isNextExerciseBodyweight = isNextBodyweight
+                        isNextExerciseBodyweight = isNextBodyweight,
                     )
                 }
+
                 else -> {}
             }
 
@@ -526,7 +530,7 @@ fun WorkoutTab(
                     completedIndices = completedExercises,
                     onNavigateToExercise = onJumpToExercise,
                     canGoBack = canGoBack,
-                    canSkipForward = canSkipForward
+                    canSkipForward = canSkipForward,
                 )
             }
         }
@@ -538,11 +542,11 @@ fun WorkoutTab(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(bottom = 32.dp),
-                contentAlignment = Alignment.BottomCenter
+                contentAlignment = Alignment.BottomCenter,
             ) {
                 AutoStopOverlay(
                     autoStopState = autoStopState,
-                    isJustLift = workoutParameters.isJustLift
+                    isJustLift = workoutParameters.isJustLift,
                 )
             }
         }
@@ -551,11 +555,11 @@ fun WorkoutTab(
         if (workoutState is WorkoutState.Idle && autoStartCountdown != null) {
             Box(
                 modifier = Modifier.fillMaxSize(),
-                contentAlignment = Alignment.Center
+                contentAlignment = Alignment.Center,
             ) {
                 AutoStartOverlay(
                     isActive = true,
-                    secondsRemaining = autoStartCountdown
+                    secondsRemaining = autoStartCountdown,
                 )
             }
         }
@@ -568,7 +572,7 @@ fun WorkoutTab(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(top = 16.dp),
-                contentAlignment = Alignment.TopCenter
+                contentAlignment = Alignment.TopCenter,
             ) {
                 JustLiftRestTimerBadge(secondsRemaining = justLiftRestCountdown)
             }
@@ -588,7 +592,7 @@ fun WorkoutTab(
                 onStartWorkout()
                 onHideWorkoutSetupDialog()
             },
-            onDismiss = onHideWorkoutSetupDialog
+            onDismiss = onHideWorkoutSetupDialog,
         )
     }
 }
@@ -609,24 +613,24 @@ private fun JustLiftRestTimerBadge(secondsRemaining: Int) {
     Surface(
         shape = RoundedCornerShape(24.dp),
         color = MaterialTheme.colorScheme.secondaryContainer,
-        tonalElevation = 4.dp
+        tonalElevation = 4.dp,
     ) {
         Row(
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             Icon(
                 imageVector = Icons.Filled.Timer,
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.onSecondaryContainer,
-                modifier = Modifier.size(18.dp)
+                modifier = Modifier.size(18.dp),
             )
             Text(
                 text = timeText,
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSecondaryContainer
+                color = MaterialTheme.colorScheme.onSecondaryContainer,
             )
         }
     }
@@ -636,26 +640,24 @@ private fun JustLiftRestTimerBadge(secondsRemaining: Int) {
  * Workout Setup Card - shown when connected and idle
  */
 @Composable
-private fun WorkoutSetupCard(
-    onShowWorkoutSetupDialog: () -> Unit
-) {
+private fun WorkoutSetupCard(onShowWorkoutSetupDialog: () -> Unit) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest),
         shape = RoundedCornerShape(20.dp),
         elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
-        border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f))
+        border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)),
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(Spacing.medium)
+                .padding(Spacing.medium),
         ) {
             Text(
                 "Workout Setup",
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurface
+                color = MaterialTheme.colorScheme.onSurface,
             )
             Spacer(modifier = Modifier.height(Spacing.small))
             Button(
@@ -666,15 +668,15 @@ private fun WorkoutSetupCard(
                 shape = RoundedCornerShape(20.dp),
                 elevation = ButtonDefaults.buttonElevation(
                     defaultElevation = 4.dp,
-                    pressedElevation = 2.dp
-                )
+                    pressedElevation = 2.dp,
+                ),
             ) {
                 Icon(Icons.Default.Settings, contentDescription = stringResource(Res.string.cd_configure_workout))
                 Spacer(modifier = Modifier.width(Spacing.small))
                 Text(
                     "Setup Workout",
                     style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold
+                    fontWeight = FontWeight.Bold,
                 )
             }
         }
@@ -691,40 +693,40 @@ private fun ErrorCard(message: String) {
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer),
         shape = RoundedCornerShape(20.dp),
         elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
-        border = BorderStroke(2.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.6f))
+        border = BorderStroke(2.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.6f)),
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(Spacing.medium),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(Spacing.small)
+            verticalArrangement = Arrangement.spacedBy(Spacing.small),
         ) {
             Icon(
                 Icons.Default.Warning,
                 contentDescription = stringResource(Res.string.cd_workout_error),
                 tint = MaterialTheme.colorScheme.error,
-                modifier = Modifier.size(48.dp)
+                modifier = Modifier.size(48.dp),
             )
             Text(
                 "Workout Failed to Start",
                 style = MaterialTheme.typography.titleLarge,
                 color = MaterialTheme.colorScheme.onErrorContainer,
-                fontWeight = FontWeight.Bold
+                fontWeight = FontWeight.Bold,
             )
             Spacer(modifier = Modifier.height(Spacing.small))
             Text(
                 message,
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onErrorContainer,
-                textAlign = TextAlign.Center
+                textAlign = TextAlign.Center,
             )
             Spacer(modifier = Modifier.height(Spacing.small))
             Text(
                 "Returning to previous screen...",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.7f),
-                textAlign = TextAlign.Center
+                textAlign = TextAlign.Center,
             )
         }
     }
@@ -735,42 +737,38 @@ private fun ErrorCard(message: String) {
  * Displays workout progress and prompts user to reconnect
  */
 @Composable
-private fun WorkoutPausedCard(
-    onScan: () -> Unit,
-    workoutState: WorkoutState,
-    repCount: RepCount
-) {
+private fun WorkoutPausedCard(onScan: () -> Unit, workoutState: WorkoutState, repCount: RepCount) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer),
         shape = RoundedCornerShape(20.dp),
         elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
-        border = BorderStroke(2.dp, MaterialTheme.colorScheme.tertiary.copy(alpha = 0.6f))
+        border = BorderStroke(2.dp, MaterialTheme.colorScheme.tertiary.copy(alpha = 0.6f)),
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(Spacing.medium),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(Spacing.small)
+            verticalArrangement = Arrangement.spacedBy(Spacing.small),
         ) {
             Icon(
                 Icons.Default.BluetoothDisabled,
                 contentDescription = stringResource(Res.string.cd_connection_lost),
                 tint = MaterialTheme.colorScheme.tertiary,
-                modifier = Modifier.size(48.dp)
+                modifier = Modifier.size(48.dp),
             )
             Text(
                 "Workout Paused",
                 style = MaterialTheme.typography.titleLarge,
                 color = MaterialTheme.colorScheme.onTertiaryContainer,
-                fontWeight = FontWeight.Bold
+                fontWeight = FontWeight.Bold,
             )
             Text(
                 "Connection to trainer lost",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onTertiaryContainer,
-                textAlign = TextAlign.Center
+                textAlign = TextAlign.Center,
             )
             Spacer(modifier = Modifier.height(Spacing.small))
 
@@ -784,13 +782,13 @@ private fun WorkoutPausedCard(
                 progressText,
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onTertiaryContainer.copy(alpha = 0.8f),
-                textAlign = TextAlign.Center
+                textAlign = TextAlign.Center,
             )
             Text(
                 "Reconnect to continue your session",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onTertiaryContainer.copy(alpha = 0.7f),
-                textAlign = TextAlign.Center
+                textAlign = TextAlign.Center,
             )
             Spacer(modifier = Modifier.height(Spacing.medium))
 
@@ -798,13 +796,13 @@ private fun WorkoutPausedCard(
                 onClick = onScan,
                 colors = ButtonDefaults.buttonColors(
                     containerColor = MaterialTheme.colorScheme.tertiary,
-                    contentColor = MaterialTheme.colorScheme.onTertiary
-                )
+                    contentColor = MaterialTheme.colorScheme.onTertiary,
+                ),
             ) {
                 Icon(
                     Icons.Default.Bluetooth,
                     contentDescription = null,
-                    modifier = Modifier.size(20.dp)
+                    modifier = Modifier.size(20.dp),
                 )
                 Spacer(modifier = Modifier.width(Spacing.small))
                 Text(stringResource(Res.string.reconnect), fontWeight = FontWeight.Bold)
@@ -822,33 +820,33 @@ private fun CompletedCard(
     loadedRoutine: Routine?,
     currentExerciseIndex: Int,
     onStartNextExercise: () -> Unit,
-    onResetForNewWorkout: () -> Unit
+    onResetForNewWorkout: () -> Unit,
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest),
         shape = RoundedCornerShape(20.dp),
         elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
-        border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f))
+        border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)),
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(Spacing.medium),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(Spacing.small)
+            verticalArrangement = Arrangement.spacedBy(Spacing.small),
         ) {
             Icon(
                 Icons.Default.CheckCircle,
                 contentDescription = stringResource(Res.string.cd_workout_completed),
                 tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(48.dp)
+                modifier = Modifier.size(48.dp),
             )
             Text(
                 "Workout Completed!",
                 style = MaterialTheme.typography.titleLarge,
                 color = MaterialTheme.colorScheme.primary,
-                fontWeight = FontWeight.Bold
+                fontWeight = FontWeight.Bold,
             )
             Spacer(modifier = Modifier.height(Spacing.small))
 
@@ -863,17 +861,17 @@ private fun CompletedCard(
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.primaryContainer
+                        containerColor = MaterialTheme.colorScheme.primaryContainer,
                     ),
                     shape = RoundedCornerShape(12.dp),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
                 ) {
                     Column(modifier = Modifier.padding(Spacing.medium)) {
                         Text(
                             "Next Exercise",
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                            color = MaterialTheme.colorScheme.onPrimaryContainer,
                         )
 
                         Spacer(Modifier.height(Spacing.small))
@@ -881,13 +879,13 @@ private fun CompletedCard(
                         Text(
                             nextExercise.exercise.name,
                             style = MaterialTheme.typography.headlineSmall,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                            color = MaterialTheme.colorScheme.onPrimaryContainer,
                         )
 
                         Text(
                             formatReps(nextExercise.setReps),
                             style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                            color = MaterialTheme.colorScheme.onPrimaryContainer,
                         )
 
                         Spacer(Modifier.height(Spacing.medium))
@@ -900,13 +898,13 @@ private fun CompletedCard(
                             shape = RoundedCornerShape(20.dp),
                             elevation = ButtonDefaults.buttonElevation(
                                 defaultElevation = 4.dp,
-                                pressedElevation = 2.dp
-                            )
+                                pressedElevation = 2.dp,
+                            ),
                         ) {
                             Text(
                                 "Start Next Exercise",
                                 style = MaterialTheme.typography.titleLarge,
-                                fontWeight = FontWeight.Bold
+                                fontWeight = FontWeight.Bold,
                             )
                         }
                     }
@@ -921,15 +919,15 @@ private fun CompletedCard(
                     shape = RoundedCornerShape(20.dp),
                     elevation = ButtonDefaults.buttonElevation(
                         defaultElevation = 4.dp,
-                        pressedElevation = 2.dp
-                    )
+                        pressedElevation = 2.dp,
+                    ),
                 ) {
                     Icon(Icons.Default.Refresh, contentDescription = stringResource(Res.string.cd_start_new_workout))
                     Spacer(modifier = Modifier.width(Spacing.small))
                     Text(
                         "Start New Workout",
                         style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Bold
+                        fontWeight = FontWeight.Bold,
                     )
                 }
             }
@@ -941,34 +939,31 @@ private fun CompletedCard(
  * Active Workout Card - shown during active workout
  */
 @Composable
-private fun ActiveWorkoutCard(
-    workoutParameters: WorkoutParameters,
-    onStopWorkout: () -> Unit
-) {
+private fun ActiveWorkoutCard(workoutParameters: WorkoutParameters, onStopWorkout: () -> Unit) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
         shape = RoundedCornerShape(20.dp),
         elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
-        border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.3f))
+        border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.3f)),
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(Spacing.medium)
+                .padding(Spacing.medium),
         ) {
             Text(
                 "Workout Active",
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onPrimaryContainer
+                color = MaterialTheme.colorScheme.onPrimaryContainer,
             )
             Spacer(modifier = Modifier.height(Spacing.small))
 
             Button(
                 onClick = onStopWorkout,
                 modifier = Modifier.fillMaxWidth(),
-                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
             ) {
                 Icon(Icons.Default.Close, contentDescription = stringResource(Res.string.cd_stop_workout))
                 Spacer(modifier = Modifier.width(Spacing.small))
@@ -983,12 +978,7 @@ private fun ActiveWorkoutCard(
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ConnectionCard(
-    connectionState: ConnectionState,
-    onScan: () -> Unit,
-    onCancelScan: () -> Unit,
-    onDisconnect: () -> Unit
-) {
+fun ConnectionCard(connectionState: ConnectionState, onScan: () -> Unit, onCancelScan: () -> Unit, onDisconnect: () -> Unit) {
     var showDisconnectDialog by remember { mutableStateOf(false) }
 
     // Disconnect confirmation dialog
@@ -1005,7 +995,7 @@ fun ConnectionCard(
                     onClick = {
                         showDisconnectDialog = false
                         onDisconnect()
-                    }
+                    },
                 ) {
                     Text(stringResource(Res.string.disconnect), color = MaterialTheme.colorScheme.error)
                 }
@@ -1014,7 +1004,7 @@ fun ConnectionCard(
                 TextButton(onClick = { showDisconnectDialog = false }) {
                     Text(stringResource(Res.string.action_cancel))
                 }
-            }
+            },
         )
     }
 
@@ -1023,18 +1013,18 @@ fun ConnectionCard(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest),
         shape = RoundedCornerShape(20.dp),
         elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
-        border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f))
+        border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)),
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(Spacing.medium)
+                .padding(Spacing.medium),
         ) {
             Text(
                 "Connection",
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurface
+                color = MaterialTheme.colorScheme.onSurface,
             )
             Spacer(modifier = Modifier.height(Spacing.small))
 
@@ -1043,7 +1033,7 @@ fun ConnectionCard(
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
+                        verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Text(stringResource(Res.string.not_connected), color = MaterialTheme.colorScheme.onSurfaceVariant)
                         Button(onClick = onScan) {
@@ -1053,11 +1043,12 @@ fun ConnectionCard(
                         }
                     }
                 }
+
                 is ConnectionState.Scanning -> {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
+                        verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             CircularProgressIndicator(modifier = Modifier.size(24.dp))
@@ -1069,11 +1060,12 @@ fun ConnectionCard(
                         }
                     }
                 }
+
                 is ConnectionState.Connecting -> {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
+                        verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             CircularProgressIndicator(modifier = Modifier.size(24.dp))
@@ -1085,55 +1077,57 @@ fun ConnectionCard(
                         }
                     }
                 }
+
                 is ConnectionState.Connected -> {
                     Column(modifier = Modifier.fillMaxWidth()) {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
+                            verticalAlignment = Alignment.CenterVertically,
                         ) {
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(Spacing.small)
+                                horizontalArrangement = Arrangement.spacedBy(Spacing.small),
                             ) {
                                 Icon(
                                     Icons.Default.Bluetooth,
                                     contentDescription = null,
                                     tint = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.size(20.dp)
+                                    modifier = Modifier.size(20.dp),
                                 )
                                 Column {
                                     Text(
                                         connectionState.deviceName,
                                         style = MaterialTheme.typography.bodyLarge,
-                                        fontWeight = FontWeight.Bold
+                                        fontWeight = FontWeight.Bold,
                                     )
                                     Text(
                                         connectionState.deviceAddress,
                                         style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     )
                                 }
                             }
                             FilledTonalIconButton(
                                 onClick = { showDisconnectDialog = true },
                                 colors = IconButtonDefaults.filledTonalIconButtonColors(
-                                    containerColor = MaterialTheme.colorScheme.errorContainer
-                                )
+                                    containerColor = MaterialTheme.colorScheme.errorContainer,
+                                ),
                             ) {
                                 Icon(
                                     Icons.Default.BluetoothDisabled,
                                     contentDescription = stringResource(Res.string.cd_disconnect),
-                                    tint = MaterialTheme.colorScheme.onErrorContainer
+                                    tint = MaterialTheme.colorScheme.onErrorContainer,
                                 )
                             }
                         }
                     }
                 }
+
                 is ConnectionState.Error -> {
                     Text(
                         "Error: ${connectionState.message}",
-                        color = MaterialTheme.colorScheme.error
+                        color = MaterialTheme.colorScheme.error,
                     )
                 }
             }
@@ -1155,13 +1149,13 @@ fun RepCounterCard(repCount: RepCount, workoutParameters: WorkoutParameters) {
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
         shape = RoundedCornerShape(24.dp),
         elevation = CardDefaults.cardElevation(defaultElevation = 12.dp),
-        border = BorderStroke(3.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.3f))
+        border = BorderStroke(3.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.3f)),
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(Spacing.large),
-            horizontalAlignment = Alignment.CenterHorizontally
+            horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             // Determine display values for working reps:
             // - hasPendingRep: At TOP (concentric peak) - show next rep number in grey
@@ -1183,13 +1177,13 @@ fun RepCounterCard(repCount: RepCount, workoutParameters: WorkoutParameters) {
                 Badge(
                     containerColor = MaterialTheme.colorScheme.primary,
                     contentColor = MaterialTheme.colorScheme.onPrimary,
-                    modifier = Modifier.padding(bottom = Spacing.small)
+                    modifier = Modifier.padding(bottom = Spacing.small),
                 ) {
                     Text(
                         text = "AMRAP",
                         style = MaterialTheme.typography.labelLarge,
                         fontWeight = FontWeight.Bold,
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
                     )
                 }
             }
@@ -1204,7 +1198,7 @@ fun RepCounterCard(repCount: RepCount, workoutParameters: WorkoutParameters) {
                 text = labelText,
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onPrimaryContainer
+                color = MaterialTheme.colorScheme.onPrimaryContainer,
             )
             Spacer(modifier = Modifier.height(Spacing.medium))
 
@@ -1219,7 +1213,7 @@ fun RepCounterCard(repCount: RepCount, workoutParameters: WorkoutParameters) {
                 } else {
                     // Full color for confirmed rep (at BOTTOM, completed)
                     MaterialTheme.colorScheme.onPrimaryContainer
-                }
+                },
             )
         }
     }
@@ -1229,11 +1223,7 @@ fun RepCounterCard(repCount: RepCount, workoutParameters: WorkoutParameters) {
  * Live Metrics Card - displays real-time workout metrics
  */
 @Composable
-fun LiveMetricsCard(
-    metric: WorkoutMetric,
-    weightUnit: WeightUnit,
-    formatWeight: (Float, WeightUnit) -> String
-) {
+fun LiveMetricsCard(metric: WorkoutMetric, weightUnit: WeightUnit, formatWeight: (Float, WeightUnit) -> String) {
     val windowSizeClass = LocalWindowSizeClass.current
     val labelWidth = when (windowSizeClass.widthSizeClass) {
         WindowWidthSizeClass.Expanded -> 80.dp
@@ -1246,17 +1236,17 @@ fun LiveMetricsCard(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest),
         shape = RoundedCornerShape(20.dp),
         elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
-        border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f))
+        border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)),
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(Spacing.medium)
+                .padding(Spacing.medium),
         ) {
             Text(
                 "Live Metrics",
                 style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Bold
+                fontWeight = FontWeight.Bold,
             )
             Spacer(modifier = Modifier.height(Spacing.small))
 
@@ -1265,9 +1255,13 @@ fun LiveMetricsCard(
                 formatWeight(metric.totalLoad / 2f, weightUnit),
                 style = MaterialTheme.typography.displayMedium,
                 fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.primary
+                color = MaterialTheme.colorScheme.primary,
             )
-            Text(stringResource(Res.string.label_per_cable), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(
+                stringResource(Res.string.label_per_cable),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
 
             Spacer(modifier = Modifier.height(Spacing.medium))
 
@@ -1277,19 +1271,19 @@ fun LiveMetricsCard(
                     "Cable Positions",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(bottom = Spacing.extraSmall)
+                    modifier = Modifier.padding(bottom = Spacing.extraSmall),
                 )
 
                 // Cable A Position Bar
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(
                         "A",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.width(20.dp)
+                        modifier = Modifier.width(20.dp),
                     )
                     LinearProgressIndicator(
                         progress = { (metric.positionA / 1000f).coerceIn(0f, 1f) },
@@ -1297,14 +1291,14 @@ fun LiveMetricsCard(
                             .weight(1f)
                             .height(8.dp),
                         color = MaterialTheme.colorScheme.primary,
-                        trackColor = MaterialTheme.colorScheme.surfaceContainerHighest
+                        trackColor = MaterialTheme.colorScheme.surfaceContainerHighest,
                     )
                     Text(
                         "${metric.positionA.toInt()}mm",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.width(labelWidth).padding(start = Spacing.extraSmall),
-                        textAlign = TextAlign.End
+                        textAlign = TextAlign.End,
                     )
                 }
 
@@ -1313,13 +1307,13 @@ fun LiveMetricsCard(
                 // Cable B Position Bar
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(
                         "B",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.width(20.dp)
+                        modifier = Modifier.width(20.dp),
                     )
                     LinearProgressIndicator(
                         progress = { (metric.positionB / 1000f).coerceIn(0f, 1f) },
@@ -1327,14 +1321,14 @@ fun LiveMetricsCard(
                             .weight(1f)
                             .height(8.dp),
                         color = MaterialTheme.colorScheme.secondary,
-                        trackColor = MaterialTheme.colorScheme.surfaceContainerHighest
+                        trackColor = MaterialTheme.colorScheme.surfaceContainerHighest,
                     )
                     Text(
                         "${metric.positionB.toInt()}mm",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.width(labelWidth).padding(start = Spacing.extraSmall),
-                        textAlign = TextAlign.End
+                        textAlign = TextAlign.End,
                     )
                 }
             }
@@ -1352,12 +1346,12 @@ fun VerticalCablePositionBar(
     minPosition: Int?,
     maxPosition: Int?,
     isActive: Boolean,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
 ) {
     Column(
         modifier = modifier.fillMaxHeight(),
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.SpaceBetween
+        verticalArrangement = Arrangement.SpaceBetween,
     ) {
         // Label at top
         Text(
@@ -1365,7 +1359,7 @@ fun VerticalCablePositionBar(
             style = MaterialTheme.typography.labelSmall,
             fontWeight = FontWeight.Bold,
             color = if (isActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(bottom = 4.dp)
+            modifier = Modifier.padding(bottom = 4.dp),
         )
 
         // Vertical bar container
@@ -1374,7 +1368,7 @@ fun VerticalCablePositionBar(
                 .weight(1f)
                 .width(40.dp)
                 .clip(RoundedCornerShape(20.dp))
-                .background(MaterialTheme.colorScheme.surfaceVariant)
+                .background(MaterialTheme.colorScheme.surfaceVariant),
         ) {
             val barHeight = maxHeight
 
@@ -1393,7 +1387,7 @@ fun VerticalCablePositionBar(
                         .height(barHeight * rangeHeight)
                         .align(Alignment.BottomCenter)
                         .offset(y = -barHeight * minProgress)
-                        .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.3f))
+                        .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.3f)),
                 )
             }
 
@@ -1408,8 +1402,8 @@ fun VerticalCablePositionBar(
                             MaterialTheme.colorScheme.primary
                         } else {
                             MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)
-                        }
-                    )
+                        },
+                    ),
             )
 
             // Range markers
@@ -1420,7 +1414,7 @@ fun VerticalCablePositionBar(
                         .height(2.dp)
                         .align(Alignment.BottomCenter)
                         .offset(y = -barHeight * minProgress)
-                        .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.6f))
+                        .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.6f)),
                 )
                 Box(
                     modifier = Modifier
@@ -1428,7 +1422,7 @@ fun VerticalCablePositionBar(
                         .height(2.dp)
                         .align(Alignment.BottomCenter)
                         .offset(y = -barHeight * maxProgress)
-                        .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.6f))
+                        .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.6f)),
                 )
             }
         }
@@ -1438,7 +1432,7 @@ fun VerticalCablePositionBar(
             text = "${currentPosition / 10}%",
             style = MaterialTheme.typography.labelSmall,
             color = if (isActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(top = 4.dp)
+            modifier = Modifier.padding(top = 4.dp),
         )
     }
 }
@@ -1455,7 +1449,7 @@ fun CurrentExerciseCard(
     enableVideoPlayback: Boolean,
     formatWeight: (Float) -> String,
     kgToDisplay: (Float) -> Float,
-    weightUnit: WeightUnit
+    weightUnit: WeightUnit,
 ) {
     // Get current exercise from routine if available
     val currentExercise = loadedRoutine?.exercises?.getOrNull(currentExerciseIndex)
@@ -1487,19 +1481,19 @@ fun CurrentExerciseCard(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest),
         shape = RoundedCornerShape(20.dp),
         elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
-        border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f))
+        border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)),
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(Spacing.medium)
+                .padding(Spacing.medium),
         ) {
             // Exercise name
             Text(
                 text = currentExercise?.exercise?.name ?: exerciseEntity?.name ?: "Exercise",
                 style = MaterialTheme.typography.headlineSmall,
                 fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurface
+                color = MaterialTheme.colorScheme.onSurface,
             )
 
             Spacer(modifier = Modifier.height(Spacing.small))
@@ -1539,19 +1533,21 @@ fun CurrentExerciseCard(
                 Text(
                     text = descriptionText,
                     style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.onSurface
+                    color = MaterialTheme.colorScheme.onSurface,
                 )
             } else {
                 val descriptionText = if (workoutParameters.isEchoMode) {
                     "${workoutParameters.reps} reps - ${workoutParameters.programMode.displayName} - Adaptive"
                 } else {
-                    "${workoutParameters.reps} reps @ ${formatWeight(workoutParameters.weightPerCableKg)}/cable - ${workoutParameters.programMode.displayName}"
+                    "${workoutParameters.reps} reps @ ${formatWeight(
+                        workoutParameters.weightPerCableKg,
+                    )}/cable - ${workoutParameters.programMode.displayName}"
                 }
 
                 Text(
                     text = descriptionText,
                     style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.onSurface
+                    color = MaterialTheme.colorScheme.onSurface,
                 )
             }
 
@@ -1563,7 +1559,7 @@ fun CurrentExerciseCard(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(200.dp)
-                        .clip(RoundedCornerShape(12.dp))
+                        .clip(RoundedCornerShape(12.dp)),
                 )
             }
         }
@@ -1580,8 +1576,10 @@ private fun formatReps(setReps: List<Int?>): String {
     val nonNullReps = setReps.filterNotNull()
     return when {
         nonNullReps.isEmpty() -> "${setReps.size} sets AMRAP"
+
         nonNullReps.size == setReps.size && nonNullReps.distinct().size == 1 ->
             "${setReps.size} sets x ${nonNullReps.first()} reps"
+
         else -> {
             val min = nonNullReps.minOrNull() ?: 0
             val max = nonNullReps.maxOrNull() ?: 0

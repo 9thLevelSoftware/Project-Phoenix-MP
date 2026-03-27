@@ -7,12 +7,12 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
 import kotlinx.coroutines.withContext
 import platform.Foundation.*
-import platform.darwin.NSObject
 import platform.UIKit.UIActivityViewController
 import platform.UIKit.UIApplication
-import platform.UIKit.UIWindowScene
 import platform.UIKit.UIDevice
 import platform.UIKit.UIUserInterfaceIdiomPad
+import platform.UIKit.UIWindowScene
+import platform.darwin.NSObject
 import platform.darwin.dispatch_async
 import platform.darwin.dispatch_get_main_queue
 
@@ -21,9 +21,7 @@ import platform.darwin.dispatch_get_main_queue
  * Uses NSFileManager for file operations and Documents directory for storage.
  */
 @OptIn(ExperimentalForeignApi::class, BetaInteropApi::class)
-class IosDataBackupManager(
-    database: VitruvianDatabase
-) : BaseDataBackupManager(database) {
+class IosDataBackupManager(database: VitruvianDatabase) : BaseDataBackupManager(database) {
 
     private val fileManager = NSFileManager.defaultManager
 
@@ -32,7 +30,7 @@ class IosDataBackupManager(
             val paths = NSSearchPathForDirectoriesInDomains(
                 NSDocumentDirectory,
                 NSUserDomainMask,
-                true
+                true,
             )
             return paths.firstOrNull() as? String ?: ""
         }
@@ -46,7 +44,7 @@ class IosDataBackupManager(
                     url,
                     withIntermediateDirectories = true,
                     attributes = null,
-                    error = null
+                    error = null,
                 )
             }
             return dir
@@ -60,7 +58,7 @@ class IosDataBackupManager(
                 url,
                 withIntermediateDirectories = true,
                 attributes = null,
-                error = null
+                error = null,
             )
         }
         return dir
@@ -112,7 +110,7 @@ class IosDataBackupManager(
 
             val activityVC = UIActivityViewController(
                 activityItems = listOf(fileURL),
-                applicationActivities = null
+                applicationActivities = null,
             )
 
             if (UIDevice.currentDevice.userInterfaceIdiom == UIUserInterfaceIdiomPad) {
@@ -124,7 +122,7 @@ class IosDataBackupManager(
             rootViewController.presentViewController(
                 activityVC,
                 animated = true,
-                completion = null
+                completion = null,
             )
         }
     }
@@ -139,23 +137,21 @@ class IosDataBackupManager(
         return BackupJsonWriter("$tempDir$fileName")
     }
 
-    override suspend fun finalizeExport(tempFilePath: String): Result<String> {
-        return try {
-            val fileName = tempFilePath.substringAfterLast('/')
-            val destPath = "$backupDirectory/$fileName"
+    override suspend fun finalizeExport(tempFilePath: String): Result<String> = try {
+        val fileName = tempFilePath.substringAfterLast('/')
+        val destPath = "$backupDirectory/$fileName"
 
-            // Remove existing file if present
-            if (fileManager.fileExistsAtPath(destPath)) {
-                fileManager.removeItemAtPath(destPath, error = null)
-            }
-
-            val success = fileManager.moveItemAtPath(tempFilePath, toPath = destPath, error = null)
-            if (!success) throw Exception("Failed to move backup to Documents")
-
-            Result.success(destPath)
-        } catch (e: Exception) {
-            Result.failure(e)
+        // Remove existing file if present
+        if (fileManager.fileExistsAtPath(destPath)) {
+            fileManager.removeItemAtPath(destPath, error = null)
         }
+
+        val success = fileManager.moveItemAtPath(tempFilePath, toPath = destPath, error = null)
+        if (!success) throw Exception("Failed to move backup to Documents")
+
+        Result.success(destPath)
+    } catch (e: Exception) {
+        Result.failure(e)
     }
 
     // Legacy save path (kept for backward compatibility)
@@ -212,7 +208,7 @@ class IosDataBackupManager(
 
             val activityVC = UIActivityViewController(
                 activityItems = listOf(fileURL),
-                applicationActivities = null
+                applicationActivities = null,
             )
 
             // Configure popover for iPad - required to prevent crash
@@ -226,7 +222,7 @@ class IosDataBackupManager(
             rootViewController.presentViewController(
                 activityVC,
                 animated = true,
-                completion = null
+                completion = null,
             )
         }
     }

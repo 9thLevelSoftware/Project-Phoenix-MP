@@ -5,11 +5,11 @@ import com.devil.phoenixproject.domain.model.CompletedSet
 import com.devil.phoenixproject.domain.model.PlannedSet
 import com.devil.phoenixproject.domain.model.SetType
 import com.devil.phoenixproject.testutil.createTestDatabase
+import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 import kotlinx.coroutines.test.runTest
 import org.junit.Before
 import org.junit.Test
-import kotlin.test.assertEquals
-import kotlin.test.assertTrue
 
 class SqlDelightCompletedSetRepositoryTest {
 
@@ -77,7 +77,7 @@ class SqlDelightCompletedSetRepositoryTest {
         setNumber: Int,
         targetReps: Int = 10,
         targetWeightKg: Float = 40f,
-        restSeconds: Int? = 60
+        restSeconds: Int? = 60,
     ) = PlannedSet(
         id = id,
         routineExerciseId = routineExerciseId,
@@ -86,14 +86,10 @@ class SqlDelightCompletedSetRepositoryTest {
         targetReps = targetReps,
         targetWeightKg = targetWeightKg,
         targetRpe = null,
-        restSeconds = restSeconds
+        restSeconds = restSeconds,
     )
 
-    private fun completedSet(
-        id: String,
-        sessionId: String,
-        setNumber: Int
-    ) = CompletedSet(
+    private fun completedSet(id: String, sessionId: String, setNumber: Int) = CompletedSet(
         id = id,
         sessionId = sessionId,
         plannedSetId = null,
@@ -103,7 +99,7 @@ class SqlDelightCompletedSetRepositoryTest {
         actualWeightKg = 40f,
         loggedRpe = null,
         isPr = false,
-        completedAt = 1000L + setNumber
+        completedAt = 1000L + setNumber,
     )
 
     private fun insertRoutine(id: String) {
@@ -114,7 +110,7 @@ class SqlDelightCompletedSetRepositoryTest {
             createdAt = 0L,
             lastUsed = null,
             useCount = 0L,
-            profile_id = "default"
+            profile_id = "default",
         )
     }
 
@@ -151,7 +147,7 @@ class SqlDelightCompletedSetRepositoryTest {
             stopAtTop = 0L,
             repCountTiming = "TOP",
             setEchoLevels = "",
-            warmupSets = ""
+            warmupSets = "",
         )
     }
 
@@ -203,7 +199,7 @@ class SqlDelightCompletedSetRepositoryTest {
             dominantSide = null,
             strengthProfile = null,
             formScore = null,
-            profile_id = "default"
+            profile_id = "default",
         )
     }
 }

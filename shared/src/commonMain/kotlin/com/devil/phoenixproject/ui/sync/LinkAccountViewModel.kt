@@ -17,9 +17,7 @@ sealed class LinkAccountUiState {
     data class Error(val message: String) : LinkAccountUiState()
 }
 
-class LinkAccountViewModel(
-    private val syncManager: SyncManager
-) {
+class LinkAccountViewModel(private val syncManager: SyncManager) {
     private val scope = CoroutineScope(Dispatchers.Main)
 
     private val _uiState = MutableStateFlow<LinkAccountUiState>(LinkAccountUiState.Initial)
@@ -40,7 +38,7 @@ class LinkAccountViewModel(
                 }
                 .onFailure { error ->
                     _uiState.value = LinkAccountUiState.Error(
-                        error.message ?: "Login failed"
+                        error.message ?: "Login failed",
                     )
                 }
         }
@@ -56,7 +54,7 @@ class LinkAccountViewModel(
                 }
                 .onFailure { error ->
                     _uiState.value = LinkAccountUiState.Error(
-                        error.message ?: "Signup failed"
+                        error.message ?: "Signup failed",
                     )
                 }
         }

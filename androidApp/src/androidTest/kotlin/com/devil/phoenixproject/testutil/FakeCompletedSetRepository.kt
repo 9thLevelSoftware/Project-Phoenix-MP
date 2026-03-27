@@ -19,12 +19,10 @@ class FakeCompletedSetRepository : CompletedSetRepository {
         sessionExerciseIds[sessionId] = exerciseId
     }
 
-    override suspend fun getPlannedSets(routineExerciseId: String): List<PlannedSet> {
-        return plannedSetsByExercise[routineExerciseId]
-            ?.mapNotNull { plannedSets[it] }
-            ?.sortedBy { it.setNumber }
-            ?: emptyList()
-    }
+    override suspend fun getPlannedSets(routineExerciseId: String): List<PlannedSet> = plannedSetsByExercise[routineExerciseId]
+        ?.mapNotNull { plannedSets[it] }
+        ?.sortedBy { it.setNumber }
+        ?: emptyList()
 
     override suspend fun savePlannedSet(set: PlannedSet) {
         plannedSets[set.id] = set
@@ -55,28 +53,20 @@ class FakeCompletedSetRepository : CompletedSetRepository {
         plannedSetsByExercise.remove(routineExerciseId)?.forEach { plannedSets.remove(it) }
     }
 
-    override suspend fun getCompletedSets(sessionId: String): List<CompletedSet> {
-        return completedSetsBySession[sessionId]
-            ?.mapNotNull { completedSets[it] }
-            ?.sortedBy { it.setNumber }
-            ?: emptyList()
-    }
+    override suspend fun getCompletedSets(sessionId: String): List<CompletedSet> = completedSetsBySession[sessionId]
+        ?.mapNotNull { completedSets[it] }
+        ?.sortedBy { it.setNumber }
+        ?: emptyList()
 
-    override fun getCompletedSetsFlow(sessionId: String): Flow<List<CompletedSet>> {
-        return completedSetsFlows.getOrPut(sessionId) {
-            MutableStateFlow(emptyList())
-        }.asStateFlow()
-    }
+    override fun getCompletedSetsFlow(sessionId: String): Flow<List<CompletedSet>> = completedSetsFlows.getOrPut(sessionId) {
+        MutableStateFlow(emptyList())
+    }.asStateFlow()
 
-    override suspend fun getCompletedSetsForExercise(exerciseId: String): List<CompletedSet> {
-        return completedSets.values
-            .filter { sessionExerciseIds[it.sessionId] == exerciseId }
-            .sortedByDescending { it.completedAt }
-    }
+    override suspend fun getCompletedSetsForExercise(exerciseId: String): List<CompletedSet> = completedSets.values
+        .filter { sessionExerciseIds[it.sessionId] == exerciseId }
+        .sortedByDescending { it.completedAt }
 
-    override suspend fun getRecentCompletedSetsForExercise(exerciseId: String, limit: Int): List<CompletedSet> {
-        return getCompletedSetsForExercise(exerciseId).take(limit)
-    }
+    override suspend fun getRecentCompletedSetsForExercise(exerciseId: String, limit: Int): List<CompletedSet> = getCompletedSetsForExercise(exerciseId).take(limit)
 
     override suspend fun saveCompletedSet(set: CompletedSet) {
         completedSets[set.id] = set

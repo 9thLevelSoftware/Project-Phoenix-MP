@@ -13,7 +13,6 @@ import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.InputChip
 import androidx.compose.material3.InputChipDefaults
@@ -25,8 +24,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import org.jetbrains.compose.resources.stringResource
-import vitruvianprojectphoenix.shared.generated.resources.Res
 import vitruvianprojectphoenix.shared.generated.resources.*
+import vitruvianprojectphoenix.shared.generated.resources.Res
 
 /**
  * Unified horizontal filter shelf combining favorites, custom, muscle, and equipment filters.
@@ -43,10 +42,20 @@ fun ExerciseFilterShelf(
     selectedEquipment: Set<String>,
     onToggleEquipment: (String) -> Unit,
     onClearAll: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
 ) {
     val muscleGroups = listOf("Chest", "Back", "Legs", "Shoulders", "Arms", "Core")
-    val equipmentTypes = listOf("Long Bar", "Short Bar", "Handles", "Rope", "Belt", "Ankle Strap", "Bench", "Bodyweight")
+    val equipmentTypes =
+        listOf(
+            "Long Bar",
+            "Short Bar",
+            "Handles",
+            "Rope",
+            "Belt",
+            "Ankle Strap",
+            "Bench",
+            "Bodyweight",
+        )
 
     val hasActiveFilters = showFavoritesOnly || showCustomOnly ||
         selectedMuscles.isNotEmpty() || selectedEquipment.isNotEmpty()
@@ -55,7 +64,7 @@ fun ExerciseFilterShelf(
         contentPadding = PaddingValues(horizontal = 16.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.CenterVertically,
-        modifier = modifier.height(48.dp)
+        modifier = modifier.height(48.dp),
     ) {
         // Clear button (only when filters active)
         if (hasActiveFilters) {
@@ -68,13 +77,13 @@ fun ExerciseFilterShelf(
                         Icon(
                             Icons.Default.Close,
                             contentDescription = stringResource(Res.string.cd_clear_filters),
-                            modifier = Modifier.size(18.dp)
+                            modifier = Modifier.size(18.dp),
                         )
                     },
                     colors = InputChipDefaults.inputChipColors(
                         containerColor = MaterialTheme.colorScheme.errorContainer,
-                        labelColor = MaterialTheme.colorScheme.onErrorContainer
-                    )
+                        labelColor = MaterialTheme.colorScheme.onErrorContainer,
+                    ),
                 )
             }
         }
@@ -89,13 +98,13 @@ fun ExerciseFilterShelf(
                     Icon(
                         Icons.Default.Star,
                         contentDescription = null,
-                        modifier = Modifier.size(18.dp)
+                        modifier = Modifier.size(18.dp),
                     )
                 },
                 colors = FilterChipDefaults.filterChipColors(
                     selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
-                    selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer
-                )
+                    selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                ),
             )
         }
 
@@ -109,13 +118,13 @@ fun ExerciseFilterShelf(
                     Icon(
                         Icons.Default.Person,
                         contentDescription = null,
-                        modifier = Modifier.size(18.dp)
+                        modifier = Modifier.size(18.dp),
                     )
                 },
                 colors = FilterChipDefaults.filterChipColors(
                     selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
-                    selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer
-                )
+                    selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                ),
             )
         }
 
@@ -123,7 +132,7 @@ fun ExerciseFilterShelf(
         item {
             VerticalDivider(
                 modifier = Modifier.height(24.dp).padding(horizontal = 4.dp),
-                color = MaterialTheme.colorScheme.outlineVariant
+                color = MaterialTheme.colorScheme.outlineVariant,
             )
         }
 
@@ -135,8 +144,8 @@ fun ExerciseFilterShelf(
                 label = { Text(muscle) },
                 colors = FilterChipDefaults.filterChipColors(
                     selectedContainerColor = MaterialTheme.colorScheme.secondaryContainer,
-                    selectedLabelColor = MaterialTheme.colorScheme.onSecondaryContainer
-                )
+                    selectedLabelColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                ),
             )
         }
 
@@ -144,7 +153,7 @@ fun ExerciseFilterShelf(
         item {
             VerticalDivider(
                 modifier = Modifier.height(24.dp).padding(horizontal = 4.dp),
-                color = MaterialTheme.colorScheme.outlineVariant
+                color = MaterialTheme.colorScheme.outlineVariant,
             )
         }
 
@@ -156,8 +165,8 @@ fun ExerciseFilterShelf(
                 label = { Text(equipment) },
                 colors = FilterChipDefaults.filterChipColors(
                     selectedContainerColor = MaterialTheme.colorScheme.tertiaryContainer,
-                    selectedLabelColor = MaterialTheme.colorScheme.onTertiaryContainer
-                )
+                    selectedLabelColor = MaterialTheme.colorScheme.onTertiaryContainer,
+                ),
             )
         }
     }

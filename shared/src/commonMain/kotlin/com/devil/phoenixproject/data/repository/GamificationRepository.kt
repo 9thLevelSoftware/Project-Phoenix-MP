@@ -95,10 +95,12 @@ data class BadgeWithProgress(
     val isEarned: Boolean,
     val earnedAt: Long? = null,
     val currentProgress: Int,
-    val targetProgress: Int
+    val targetProgress: Int,
 ) {
     val progressPercent: Float
         get() = if (targetProgress > 0) {
             (currentProgress.toFloat() / targetProgress).coerceIn(0f, 1f)
-        } else 0f
+        } else {
+            0f
+        }
 }

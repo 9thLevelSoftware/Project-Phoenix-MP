@@ -18,9 +18,7 @@ import org.koin.compose.koinInject
 actual class HealthPermissionRequester {
 
     @Composable
-    actual fun LaunchPermissionRequest(
-        onPermissionsResult: (Boolean) -> Unit
-    ) {
+    actual fun LaunchPermissionRequest(onPermissionsResult: (Boolean) -> Unit) {
         val healthIntegration = koinInject<HealthIntegration>()
 
         LaunchedEffect(Unit) {
@@ -31,6 +29,6 @@ actual class HealthPermissionRequester {
 }
 
 @Composable
-actual fun rememberHealthPermissionRequester(): HealthPermissionRequester {
-    return remember { HealthPermissionRequester() }
+actual fun rememberHealthPermissionRequester(): HealthPermissionRequester = remember {
+    HealthPermissionRequester()
 }

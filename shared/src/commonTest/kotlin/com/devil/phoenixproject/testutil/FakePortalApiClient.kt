@@ -17,10 +17,11 @@ import com.russhwolf.settings.MapSettings
  * Extends the open PortalApiClient with dummy config; overrides all 4 methods
  * used by SyncManager. Provides configurable Result returns and call counters.
  */
-class FakePortalApiClient : PortalApiClient(
-    supabaseConfig = SupabaseConfig(url = "https://fake.supabase.co", anonKey = "fake-anon-key"),
-    tokenStorage = PortalTokenStorage(MapSettings())
-) {
+class FakePortalApiClient :
+    PortalApiClient(
+        supabaseConfig = SupabaseConfig(url = "https://fake.supabase.co", anonKey = "fake-anon-key"),
+        tokenStorage = PortalTokenStorage(MapSettings()),
+    ) {
     // Configurable results
     var pushResult: Result<PortalSyncPushResponse> = Result.success(
         PortalSyncPushResponse(
@@ -32,8 +33,8 @@ class FakePortalApiClient : PortalApiClient(
             routinesUpserted = 0,
             badgesUpserted = 0,
             exerciseProgressInserted = 0,
-            personalRecordsInserted = 0
-        )
+            personalRecordsInserted = 0,
+        ),
     )
 
     var pullResult: Result<PortalSyncPullResponse> = Result.success(
@@ -43,15 +44,15 @@ class FakePortalApiClient : PortalApiClient(
             routines = emptyList(),
             rpgAttributes = null,
             badges = emptyList(),
-            gamificationStats = null
-        )
+            gamificationStats = null,
+        ),
     )
 
     var signInResult: Result<GoTrueAuthResponse>? = null
     var signUpResult: Result<GoTrueAuthResponse>? = null
 
     var integrationSyncResult: Result<IntegrationSyncResponse> = Result.success(
-        IntegrationSyncResponse(status = "ok")
+        IntegrationSyncResponse(status = "ok"),
     )
 
     // Call counters and captures

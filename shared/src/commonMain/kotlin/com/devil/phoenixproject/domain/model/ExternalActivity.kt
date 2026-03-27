@@ -9,7 +9,8 @@ enum class IntegrationProvider(val key: String, val displayName: String) {
     LIFTOSAUR("liftosaur", "Liftosaur"),
     STRONG("strong", "Strong"),
     APPLE_HEALTH("apple_health", "Apple Health"),
-    GOOGLE_HEALTH("google_health", "Google Health Connect");
+    GOOGLE_HEALTH("google_health", "Google Health Connect"),
+    ;
 
     companion object {
         fun fromKey(key: String): IntegrationProvider? = entries.find { it.key == key }
@@ -20,7 +21,10 @@ enum class IntegrationProvider(val key: String, val displayName: String) {
  * Connection status for an integration provider.
  */
 enum class ConnectionStatus {
-    CONNECTED, DISCONNECTED, ERROR, TOKEN_EXPIRED
+    CONNECTED,
+    DISCONNECTED,
+    ERROR,
+    TOKEN_EXPIRED,
 }
 
 /**
@@ -31,7 +35,7 @@ data class IntegrationStatus(
     val status: ConnectionStatus,
     val lastSyncAt: Long? = null,
     val errorMessage: String? = null,
-    val profileId: String = "default"
+    val profileId: String = "default",
 )
 
 /**
@@ -55,5 +59,5 @@ data class ExternalActivity(
     val rawData: String? = null,
     val syncedAt: Long = currentTimeMillis(),
     val profileId: String = "default",
-    val needsSync: Boolean = false
+    val needsSync: Boolean = false,
 )

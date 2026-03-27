@@ -3,11 +3,11 @@ package com.devil.phoenixproject.data.migration
 import com.devil.phoenixproject.domain.model.PRType
 import com.devil.phoenixproject.testutil.createTestDatabase
 import com.devil.phoenixproject.util.OneRepMaxCalculator
-import org.junit.Before
-import org.junit.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
+import org.junit.Before
+import org.junit.Test
 
 class MigrationManagerTest {
 
@@ -28,7 +28,7 @@ class MigrationManagerTest {
         insertMinimalSession(
             id = "session-1",
             routineSessionId = "legacy_session_session-1",
-            routineName = "Upper Day"
+            routineName = "Upper Day",
         )
 
         migrationManager.checkAndRunMigrations()
@@ -46,7 +46,7 @@ class MigrationManagerTest {
         insertMinimalSession(
             id = "session-2",
             routineSessionId = "real-routine-session-uuid-123",
-            routineName = "Leg Day"
+            routineName = "Leg Day",
         )
 
         migrationManager.checkAndRunMigrations()
@@ -64,7 +64,7 @@ class MigrationManagerTest {
         insertMinimalSession(
             id = "session-3",
             routineSessionId = "legacy_session_some-other-session",
-            routineName = "Push Day"
+            routineName = "Push Day",
         )
 
         migrationManager.checkAndRunMigrations()
@@ -77,8 +77,11 @@ class MigrationManagerTest {
         // So this ID should NOT be stripped by migration (it doesn't match the fabrication pattern)
         // However, the sanitizeRoutineSessionId used in backfill still uses prefix match
         // The migration cleanup only strips exact matches for safety
-        assertEquals("legacy_session_some-other-session", session.routineSessionId,
-            "Non-matching legacy_session_ prefix should not be stripped by migration")
+        assertEquals(
+            "legacy_session_some-other-session",
+            session.routineSessionId,
+            "Non-matching legacy_session_ prefix should not be stripped by migration",
+        )
     }
 
     // -- backfillLegacyWorkoutRoutineNames tests --
@@ -90,7 +93,7 @@ class MigrationManagerTest {
         insertMinimalSession(
             id = "session-garbage",
             routineSessionId = null,
-            routineName = "Imported Strength Training Session"
+            routineName = "Imported Strength Training Session",
         )
 
         migrationManager.checkAndRunMigrations()
@@ -112,20 +115,20 @@ class MigrationManagerTest {
             createdAt = 1_700_000_000_000,
             lastUsed = null,
             useCount = 0,
-            profile_id = "default"
+            profile_id = "default",
         )
         insertMinimalRoutineExercise(
             id = "re-bench",
             routineId = "routine-upper",
             exerciseName = "Bench Press",
-            exerciseId = "exercise-bench"
+            exerciseId = "exercise-bench",
         )
         insertMinimalSession(
             id = "session-garbage-infer",
             routineSessionId = null,
             routineName = "Imported Strength Training Session",
             exerciseId = "exercise-bench",
-            exerciseName = "Bench Press"
+            exerciseName = "Bench Press",
         )
 
         migrationManager.checkAndRunMigrations()
@@ -146,13 +149,13 @@ class MigrationManagerTest {
             createdAt = 1_700_000_000_000,
             lastUsed = null,
             useCount = 0,
-            profile_id = "default"
+            profile_id = "default",
         )
         insertMinimalRoutineExercise(
             id = "re-bench",
             routineId = "routine-upper",
             exerciseName = "Bench Press",
-            exerciseId = "exercise-bench"
+            exerciseId = "exercise-bench",
         )
         // Session with routineName == exerciseName (placeholder pattern)
         insertMinimalSession(
@@ -160,7 +163,7 @@ class MigrationManagerTest {
             routineSessionId = null,
             routineName = "Bench Press",
             exerciseId = "exercise-bench",
-            exerciseName = "Bench Press"
+            exerciseName = "Bench Press",
         )
 
         migrationManager.checkAndRunMigrations()
@@ -177,7 +180,7 @@ class MigrationManagerTest {
         insertMinimalSession(
             id = "session-legit",
             routineSessionId = null,
-            routineName = "My Custom Routine"
+            routineName = "My Custom Routine",
         )
 
         migrationManager.checkAndRunMigrations()
@@ -195,7 +198,7 @@ class MigrationManagerTest {
             id = "session-mode",
             routineSessionId = null,
             routineName = "Pull Day",
-            mode = "OldSchool"
+            mode = "OldSchool",
         )
 
         migrationManager.checkAndRunMigrations()
@@ -221,7 +224,7 @@ class MigrationManagerTest {
             prType = PRType.MAX_WEIGHT.name,
             volume = 500.0,
             phase = "COMBINED",
-            profile_id = "default"
+            profile_id = "default",
         )
         queries.insertRecord(
             exerciseId = "deadlift",
@@ -234,13 +237,19 @@ class MigrationManagerTest {
             prType = PRType.MAX_WEIGHT.name,
             volume = 500.0,
             phase = "COMBINED",
-            profile_id = "default"
+            profile_id = "default",
         )
 
         migrationManager.checkAndRunMigrations()
         Thread.sleep(500)
 
-        val canonical = queries.selectPR("deadlift", "Old School", PRType.MAX_WEIGHT.name, phase = "COMBINED", profileId = "default").executeAsOneOrNull()
+        val canonical = queries.selectPR(
+            "deadlift",
+            "Old School",
+            PRType.MAX_WEIGHT.name,
+            phase = "COMBINED",
+            profileId = "default",
+        ).executeAsOneOrNull()
         val records = queries.selectAllRecords(profileId = "default").executeAsList()
             .filter { it.exerciseId == "deadlift" && it.prType == PRType.MAX_WEIGHT.name }
 
@@ -248,7 +257,15 @@ class MigrationManagerTest {
         assertEquals(1, records.size)
         assertEquals("Old School", canonical.workoutMode)
         assertEquals(60.0, canonical.weight)
-        assertNull(queries.selectPR("deadlift", "OldSchool", PRType.MAX_WEIGHT.name, phase = "COMBINED", profileId = "default").executeAsOneOrNull())
+        assertNull(
+            queries.selectPR(
+                "deadlift",
+                "OldSchool",
+                PRType.MAX_WEIGHT.name,
+                phase = "COMBINED",
+                profileId = "default",
+            ).executeAsOneOrNull(),
+        )
     }
 
     @Test
@@ -268,7 +285,7 @@ class MigrationManagerTest {
             prType = PRType.MAX_WEIGHT.name,
             volume = 560.0,
             phase = "COMBINED",
-            profile_id = "profile-b"
+            profile_id = "profile-b",
         )
         queries.insertRecord(
             exerciseId = "deadlift",
@@ -281,13 +298,19 @@ class MigrationManagerTest {
             prType = PRType.MAX_WEIGHT.name,
             volume = 520.0,
             phase = "COMBINED",
-            profile_id = "profile-b"
+            profile_id = "profile-b",
         )
 
         migrationManager.checkAndRunMigrations()
         Thread.sleep(500)
 
-        val canonicalProfileB = queries.selectPR("deadlift", "Old School", PRType.MAX_WEIGHT.name, phase = "COMBINED", profileId = "profile-b").executeAsOneOrNull()
+        val canonicalProfileB = queries.selectPR(
+            "deadlift",
+            "Old School",
+            PRType.MAX_WEIGHT.name,
+            phase = "COMBINED",
+            profileId = "profile-b",
+        ).executeAsOneOrNull()
         val recordsProfileB = queries.selectAllRecords(profileId = "profile-b").executeAsList()
             .filter { it.exerciseId == "deadlift" && it.prType == PRType.MAX_WEIGHT.name }
 
@@ -295,8 +318,24 @@ class MigrationManagerTest {
         assertEquals(1, recordsProfileB.size)
         assertEquals("Old School", canonicalProfileB.workoutMode)
         assertEquals(70.0, canonicalProfileB.weight)
-        assertNull(queries.selectPR("deadlift", "OldSchool", PRType.MAX_WEIGHT.name, phase = "COMBINED", profileId = "profile-b").executeAsOneOrNull())
-        assertNull(queries.selectPR("deadlift", "Old School", PRType.MAX_WEIGHT.name, phase = "COMBINED", profileId = "default").executeAsOneOrNull())
+        assertNull(
+            queries.selectPR(
+                "deadlift",
+                "OldSchool",
+                PRType.MAX_WEIGHT.name,
+                phase = "COMBINED",
+                profileId = "profile-b",
+            ).executeAsOneOrNull(),
+        )
+        assertNull(
+            queries.selectPR(
+                "deadlift",
+                "Old School",
+                PRType.MAX_WEIGHT.name,
+                phase = "COMBINED",
+                profileId = "default",
+            ).executeAsOneOrNull(),
+        )
     }
 
     @Test
@@ -313,7 +352,7 @@ class MigrationManagerTest {
             weightPerCableKg = 50.0,
             totalReps = 10,
             workingReps = 10,
-            heaviestLiftKg = 60.0
+            heaviestLiftKg = 60.0,
         )
 
         migrationManager.checkAndRunMigrations()
@@ -322,8 +361,20 @@ class MigrationManagerTest {
         Thread.sleep(500)
 
         val session = queries.selectSessionById("session-pr-repair").executeAsOneOrNull()
-        val weightPr = queries.selectPR("deadlift", "Old School", PRType.MAX_WEIGHT.name, phase = "COMBINED", profileId = "default").executeAsOneOrNull()
-        val volumePr = queries.selectPR("deadlift", "Old School", PRType.MAX_VOLUME.name, phase = "COMBINED", profileId = "default").executeAsOneOrNull()
+        val weightPr = queries.selectPR(
+            "deadlift",
+            "Old School",
+            PRType.MAX_WEIGHT.name,
+            phase = "COMBINED",
+            profileId = "default",
+        ).executeAsOneOrNull()
+        val volumePr = queries.selectPR(
+            "deadlift",
+            "Old School",
+            PRType.MAX_VOLUME.name,
+            phase = "COMBINED",
+            profileId = "default",
+        ).executeAsOneOrNull()
         val exercise = queries.selectExerciseById("deadlift").executeAsOneOrNull()
         val repairedRecords = queries.selectAllRecords(profileId = "default").executeAsList()
             .filter { it.exerciseId == "deadlift" }
@@ -338,7 +389,7 @@ class MigrationManagerTest {
         assertEquals(2, repairedRecords.size)
         assertEquals(
             OneRepMaxCalculator.epley(60f, 10).toDouble(),
-            exercise?.one_rep_max_kg
+            exercise?.one_rep_max_kg,
         )
     }
 
@@ -360,7 +411,7 @@ class MigrationManagerTest {
             workingReps = 10,
             heaviestLiftKg = 60.0,
             timestamp = 1_700_000_000_000,
-            profileId = "default"
+            profileId = "default",
         )
         insertMinimalSession(
             id = "session-profile-b",
@@ -374,7 +425,7 @@ class MigrationManagerTest {
             workingReps = 8,
             heaviestLiftKg = 80.0,
             timestamp = 1_700_000_100_000,
-            profileId = "profile-b"
+            profileId = "profile-b",
         )
 
         migrationManager.checkAndRunMigrations()
@@ -382,10 +433,34 @@ class MigrationManagerTest {
         migrationManager.checkAndRunMigrations()
         Thread.sleep(500)
 
-        val defaultWeightPr = queries.selectPR("deadlift", "Old School", PRType.MAX_WEIGHT.name, phase = "COMBINED", profileId = "default").executeAsOneOrNull()
-        val defaultVolumePr = queries.selectPR("deadlift", "Old School", PRType.MAX_VOLUME.name, phase = "COMBINED", profileId = "default").executeAsOneOrNull()
-        val profileBWeightPr = queries.selectPR("deadlift", "Old School", PRType.MAX_WEIGHT.name, phase = "COMBINED", profileId = "profile-b").executeAsOneOrNull()
-        val profileBVolumePr = queries.selectPR("deadlift", "Old School", PRType.MAX_VOLUME.name, phase = "COMBINED", profileId = "profile-b").executeAsOneOrNull()
+        val defaultWeightPr = queries.selectPR(
+            "deadlift",
+            "Old School",
+            PRType.MAX_WEIGHT.name,
+            phase = "COMBINED",
+            profileId = "default",
+        ).executeAsOneOrNull()
+        val defaultVolumePr = queries.selectPR(
+            "deadlift",
+            "Old School",
+            PRType.MAX_VOLUME.name,
+            phase = "COMBINED",
+            profileId = "default",
+        ).executeAsOneOrNull()
+        val profileBWeightPr = queries.selectPR(
+            "deadlift",
+            "Old School",
+            PRType.MAX_WEIGHT.name,
+            phase = "COMBINED",
+            profileId = "profile-b",
+        ).executeAsOneOrNull()
+        val profileBVolumePr = queries.selectPR(
+            "deadlift",
+            "Old School",
+            PRType.MAX_VOLUME.name,
+            phase = "COMBINED",
+            profileId = "profile-b",
+        ).executeAsOneOrNull()
 
         assertNotNull(defaultWeightPr)
         assertNotNull(defaultVolumePr)
@@ -397,11 +472,11 @@ class MigrationManagerTest {
         assertEquals(70.0, profileBVolumePr.weight)
         assertEquals(
             2,
-            queries.selectAllRecords(profileId = "default").executeAsList().count { it.exerciseId == "deadlift" }
+            queries.selectAllRecords(profileId = "default").executeAsList().count { it.exerciseId == "deadlift" },
         )
         assertEquals(
             2,
-            queries.selectAllRecords(profileId = "profile-b").executeAsList().count { it.exerciseId == "deadlift" }
+            queries.selectAllRecords(profileId = "profile-b").executeAsList().count { it.exerciseId == "deadlift" },
         )
     }
 
@@ -413,15 +488,11 @@ class MigrationManagerTest {
             name = name,
             colorIndex = 0L,
             createdAt = 1_700_000_000_000,
-            isActive = if (isActive) 1L else 0L
+            isActive = if (isActive) 1L else 0L,
         )
     }
 
-    private fun insertMinimalExercise(
-        id: String,
-        name: String,
-        oneRepMaxKg: Double? = null
-    ) {
+    private fun insertMinimalExercise(id: String, name: String, oneRepMaxKg: Double? = null) {
         database.vitruvianDatabaseQueries.insertExercise(
             id = id,
             name = name,
@@ -444,16 +515,11 @@ class MigrationManagerTest {
             lastPerformed = null,
             aliases = null,
             defaultCableConfig = "DOUBLE",
-            one_rep_max_kg = oneRepMaxKg
+            one_rep_max_kg = oneRepMaxKg,
         )
     }
 
-    private fun insertMinimalRoutineExercise(
-        id: String,
-        routineId: String,
-        exerciseName: String,
-        exerciseId: String
-    ) {
+    private fun insertMinimalRoutineExercise(id: String, routineId: String, exerciseName: String, exerciseId: String) {
         database.vitruvianDatabaseQueries.insertRoutineExerciseIgnore(
             id = id,
             routineId = routineId,
@@ -486,7 +552,7 @@ class MigrationManagerTest {
             stopAtTop = 0,
             repCountTiming = "TOP",
             setEchoLevels = "",
-            warmupSets = ""
+            warmupSets = "",
         )
     }
 
@@ -502,7 +568,7 @@ class MigrationManagerTest {
         workingReps: Long = 10L,
         heaviestLiftKg: Double? = null,
         timestamp: Long = 1_700_000_000_000,
-        profileId: String = "default"
+        profileId: String = "default",
     ) {
         database.vitruvianDatabaseQueries.insertSession(
             id = id,

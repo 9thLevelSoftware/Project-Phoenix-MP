@@ -32,10 +32,7 @@ object PortalPullAdapter {
      * @param profileId The local profile to assign these sessions to
      * @return List of WorkoutSession domain objects, one per exercise
      */
-    fun toWorkoutSessions(
-        portalSession: PullWorkoutSessionDto,
-        profileId: String
-    ): List<WorkoutSession> {
+    fun toWorkoutSessions(portalSession: PullWorkoutSessionDto, profileId: String): List<WorkoutSession> {
         if (portalSession.exercises.isEmpty()) return emptyList()
 
         val timestamp = try {
@@ -69,7 +66,7 @@ object PortalPullAdapter {
                 heaviestLiftKg = maxWeight,
                 totalVolumeKg = null, // Let effectiveTotalVolumeKg() compute from weightPerCableKg * cableCount * totalReps
                 cableCount = 2,
-                profileId = profileId
+                profileId = profileId,
             )
         }
     }
@@ -88,7 +85,7 @@ object PortalPullAdapter {
             description = routine.description,
             deletedAt = null,
             createdAt = now, // Portal doesn't track created_at on routines
-            updatedAt = now  // Portal doesn't track updated_at on routines
+            updatedAt = now, // Portal doesn't track updated_at on routines
         )
     }
 
@@ -109,7 +106,7 @@ object PortalPullAdapter {
             earnedAt = earnedAtEpoch,
             deletedAt = null,
             createdAt = earnedAtEpoch,
-            updatedAt = now
+            updatedAt = now,
         )
     }
 
@@ -125,7 +122,7 @@ object PortalPullAdapter {
             totalVolumeKg = stats.totalVolumeKg,
             longestStreak = stats.longestStreak,
             currentStreak = stats.currentStreak,
-            updatedAt = now
+            updatedAt = now,
         )
     }
 
@@ -133,16 +130,14 @@ object PortalPullAdapter {
      * Convert portal SCREAMING_SNAKE mode string to mobile DB format.
      * Portal sends "OLD_SCHOOL", mobile stores "OldSchool".
      */
-    fun portalModeToMobileMode(portalMode: String): String {
-        return when (ProgramMode.fromSyncString(portalMode)) {
-            ProgramMode.OldSchool -> "OldSchool"
-            ProgramMode.Pump -> "Pump"
-            ProgramMode.TUT -> "TUT"
-            ProgramMode.TUTBeast -> "TUTBeast"
-            ProgramMode.EccentricOnly -> "EccentricOnly"
-            ProgramMode.Echo -> "Echo"
-            null -> "OldSchool"
-        }
+    fun portalModeToMobileMode(portalMode: String): String = when (ProgramMode.fromSyncString(portalMode)) {
+        ProgramMode.OldSchool -> "OldSchool"
+        ProgramMode.Pump -> "Pump"
+        ProgramMode.TUT -> "TUT"
+        ProgramMode.TUTBeast -> "TUTBeast"
+        ProgramMode.EccentricOnly -> "EccentricOnly"
+        ProgramMode.Echo -> "Echo"
+        null -> "OldSchool"
     }
 
     /**
@@ -162,13 +157,11 @@ object PortalPullAdapter {
      * Parse portal echoLevel string to integer index.
      * Portal sends enum names like "HARD", "HARDER", "HARDEST", "EPIC", or null.
      */
-    fun parseEchoLevel(portalValue: String?): Long {
-        return when (portalValue?.uppercase()) {
-            "HARD" -> 0L
-            "HARDER" -> 1L
-            "HARDEST" -> 2L
-            "EPIC" -> 3L
-            else -> 1L // Default HARDER
-        }
+    fun parseEchoLevel(portalValue: String?): Long = when (portalValue?.uppercase()) {
+        "HARD" -> 0L
+        "HARDER" -> 1L
+        "HARDEST" -> 2L
+        "EPIC" -> 3L
+        else -> 1L // Default HARDER
     }
 }

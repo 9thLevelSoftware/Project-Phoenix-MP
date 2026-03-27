@@ -23,7 +23,7 @@ object PortalMappings {
         ProgramMode.TUT,
         ProgramMode.TUTBeast,
         ProgramMode.EccentricOnly,
-        ProgramMode.Echo
+        ProgramMode.Echo,
     ).associateBy { it::class.simpleName ?: "" }
 
     fun workoutModeToSync(modeString: String): String {
@@ -43,9 +43,7 @@ object PortalMappings {
     /**
      * Convert portal sync format back to display name.
      */
-    fun workoutModeFromSync(syncString: String): String {
-        return ProgramMode.fromSyncString(syncString)?.displayName ?: syncString
-    }
+    fun workoutModeFromSync(syncString: String): String = ProgramMode.fromSyncString(syncString)?.displayName ?: syncString
 
     // -- Muscle Group --
 
@@ -68,21 +66,20 @@ object PortalMappings {
         "Glutes" to "Glutes",
         "Core" to "Core",
         "Abs" to "Core",
-        "Full Body" to "Full Body"
+        "Full Body" to "Full Body",
     )
 
     /**
      * Map granular muscle group to a broader portal analytics category.
      * Returns the input unchanged if no mapping exists (safe passthrough).
      */
-    fun toPortalCategory(muscleGroup: String): String {
-        return muscleGroupToCategory[muscleGroup] ?: muscleGroup
-    }
+    fun toPortalCategory(muscleGroup: String): String = muscleGroupToCategory[muscleGroup] ?: muscleGroup
 
     /**
      * All portal analytics categories, for building UI filters.
      */
-    val portalCategories = listOf("Chest", "Back", "Shoulders", "Arms", "Legs", "Glutes", "Core", "Full Body")
+    val portalCategories =
+        listOf("Chest", "Back", "Shoulders", "Arms", "Legs", "Glutes", "Core", "Full Body")
 
     // -- Cable Mapping --
 

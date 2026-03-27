@@ -29,16 +29,14 @@ data class CycleEditorUiState(
     val showProgressionSheet: Boolean = false,
     val editingItemIndex: Int? = null,
     val recentRoutineIds: List<String> = emptyList(),
-    val lastDeletedItem: Pair<Int, CycleItem>? = null
+    val lastDeletedItem: Pair<Int, CycleItem>? = null,
 )
 
 /**
  * ViewModel for CycleEditorScreen.
  * Manages state across configuration changes and handles async operations.
  */
-class CycleEditorViewModel(
-    private val repository: TrainingCycleRepository
-) : ViewModel() {
+class CycleEditorViewModel(private val repository: TrainingCycleRepository) : ViewModel() {
 
     private val _uiState = MutableStateFlow(CycleEditorUiState())
     val uiState: StateFlow<CycleEditorUiState> = _uiState.asStateFlow()
@@ -63,10 +61,11 @@ class CycleEditorViewModel(
                                 items = templateItems,
                                 cycleName = "New Cycle",
                                 progression = CycleProgression.default("temp"),
-                                isLoading = false
+                                isLoading = false,
                             )
                         }
                     }
+
                     // Edit existing cycle
                     cycleId != "new" -> {
                         val cycle = repository.getCycleById(cycleId)
@@ -82,13 +81,16 @@ class CycleEditorViewModel(
                                     items = items,
                                     progression = progression ?: CycleProgression.default(cycleId),
                                     currentRotation = progress?.rotationCount ?: 0,
-                                    isLoading = false
+                                    isLoading = false,
                                 )
                             }
                         } else {
-                            _uiState.update { it.copy(isLoading = false, saveError = "Cycle not found") }
+                            _uiState.update {
+                                it.copy(isLoading = false, saveError = "Cycle not found")
+                            }
                         }
                     }
+
                     // New blank cycle - start empty and show AddDaySheet
                     else -> {
                         _uiState.update { state ->
@@ -97,7 +99,7 @@ class CycleEditorViewModel(
                                 items = emptyList(),
                                 progression = CycleProgression.default("temp"),
                                 isLoading = false,
-                                showAddDaySheet = true
+                                showAddDaySheet = true,
                             )
                         }
                     }
@@ -140,13 +142,13 @@ class CycleEditorViewModel(
                 dayNumber = state.items.size + 1,
                 routineId = routine.id,
                 routineName = routine.name,
-                exerciseCount = routine.exercises.size
+                exerciseCount = routine.exercises.size,
             )
             val recentIds = (listOf(routine.id) + state.recentRoutineIds).distinct().take(3)
             state.copy(
                 items = state.items + newItem,
                 recentRoutineIds = recentIds,
-                showAddDaySheet = false
+                showAddDaySheet = false,
             )
         }
     }
@@ -156,7 +158,7 @@ class CycleEditorViewModel(
             val newItem = CycleItem.Rest(
                 id = generateUUID(),
                 dayNumber = state.items.size + 1,
-                note = "Rest"
+                note = "Rest",
             )
             state.copy(items = state.items + newItem, showAddDaySheet = false)
         }
@@ -169,7 +171,7 @@ class CycleEditorViewModel(
             val renumbered = renumberItems(newList)
             state.copy(
                 items = renumbered,
-                lastDeletedItem = index to item
+                lastDeletedItem = index to item,
             )
         }
     }
@@ -221,7 +223,7 @@ class CycleEditorViewModel(
                     routineId = routine.id,
                     routineName = routine.name,
                     exerciseCount = routine.exercises.size,
-                    exerciseNames = routine.exercises.map { it.exercise.name }
+                    exerciseNames = routine.exercises.map { it.exercise.name },
                 )
                 val newList = state.items.toMutableList().apply { set(index, workout) }
                 state.copy(items = newList, editingItemIndex = null)
@@ -238,7 +240,7 @@ class CycleEditorViewModel(
                 val rest = CycleItem.Rest(
                     id = item.id,
                     dayNumber = item.dayNumber,
-                    note = "Rest"
+                    note = "Rest",
                 )
                 val newList = state.items.toMutableList().apply { set(index, rest) }
                 state.copy(items = newList)
@@ -255,7 +257,7 @@ class CycleEditorViewModel(
                 val updated = item.copy(
                     routineId = routine.id,
                     routineName = routine.name,
-                    exerciseCount = routine.exercises.size
+                    exerciseCount = routine.exercises.size,
                 )
                 val newList = state.items.toMutableList().apply { set(index, updated) }
                 state.copy(items = newList, editingItemIndex = null)
@@ -271,7 +273,9 @@ class CycleEditorViewModel(
      */
     suspend fun saveCycle(): String? {
         val state = _uiState.value
-        Logger.d { "CycleEditorVM: saveCycle called, cycleId=${state.cycleId}, items=${state.items.size}" }
+        Logger.d {
+            "CycleEditorVM: saveCycle called, cycleId=${state.cycleId}, items=${state.items.size}"
+        }
         _uiState.update { it.copy(isSaving = true, saveError = null) }
 
         return try {
@@ -286,13 +290,14 @@ class CycleEditorViewModel(
                         dayNumber = item.dayNumber,
                         name = item.routineName,
                         routineId = item.routineId,
-                        isRestDay = false
+                        isRestDay = false,
                     )
+
                     is CycleItem.Rest -> CycleDay.restDay(
                         id = item.id,
                         cycleId = cycleIdToUse,
                         dayNumber = item.dayNumber,
-                        name = item.note
+                        name = item.note,
                     )
                 }
             }
@@ -302,7 +307,7 @@ class CycleEditorViewModel(
                 name = state.cycleName.ifBlank { "Unnamed Cycle" },
                 description = state.description.ifBlank { null },
                 days = days,
-                isActive = false
+                isActive = false,
             )
 
             if (state.cycleId == "new") {
@@ -329,12 +334,13 @@ class CycleEditorViewModel(
         }
     }
 
-    private fun renumberItems(items: List<CycleItem>): List<CycleItem> {
-        return items.mapIndexed { i, item ->
-            when (item) {
-                is CycleItem.Workout -> item.copy(dayNumber = i + 1)
-                is CycleItem.Rest -> item.copy(dayNumber = i + 1)
-            }
+    private fun renumberItems(items: List<CycleItem>): List<CycleItem> = items.mapIndexed {
+            i,
+            item,
+        ->
+        when (item) {
+            is CycleItem.Workout -> item.copy(dayNumber = i + 1)
+            is CycleItem.Rest -> item.copy(dayNumber = i + 1)
         }
     }
 }

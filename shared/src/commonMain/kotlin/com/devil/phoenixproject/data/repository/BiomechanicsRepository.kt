@@ -23,9 +23,7 @@ interface BiomechanicsRepository {
  * Handles JSON serialization of FloatArray curve data to/from TEXT columns.
  * Reuses toJsonString()/toFloatArrayFromJson() from RepMetricRepository.
  */
-class SqlDelightBiomechanicsRepository(
-    private val db: VitruvianDatabase
-) : BiomechanicsRepository {
+class SqlDelightBiomechanicsRepository(private val db: VitruvianDatabase) : BiomechanicsRepository {
 
     private val queries = db.vitruvianDatabaseQueries
 
@@ -53,55 +51,53 @@ class SqlDelightBiomechanicsRepository(
                     avgLoadA = result.asymmetry.avgLoadA.toDouble(),
                     avgLoadB = result.asymmetry.avgLoadB.toDouble(),
                     // Metadata
-                    timestamp = result.timestamp
+                    timestamp = result.timestamp,
                 )
             }
         }
     }
 
-    override suspend fun getRepBiomechanics(sessionId: String): List<BiomechanicsRepResult> {
-        return withContext(Dispatchers.IO) {
-            queries.selectRepBiomechanicsBySession(sessionId).executeAsList().map { row ->
-                val velocityZone = try {
-                    BiomechanicsVelocityZone.valueOf(row.velocityZone)
-                } catch (_: IllegalArgumentException) {
-                    BiomechanicsVelocityZone.MODERATE
-                }
-
-                val strengthProfile = try {
-                    StrengthProfile.valueOf(row.strengthProfile)
-                } catch (_: IllegalArgumentException) {
-                    StrengthProfile.FLAT
-                }
-
-                BiomechanicsRepResult(
-                    velocity = VelocityResult(
-                        meanConcentricVelocityMmS = row.mcvMmS.toFloat(),
-                        peakVelocityMmS = row.peakVelocityMmS.toFloat(),
-                        zone = velocityZone,
-                        velocityLossPercent = row.velocityLossPercent?.toFloat(),
-                        estimatedRepsRemaining = row.estimatedRepsRemaining?.toInt(),
-                        shouldStopSet = row.shouldStopSet != 0L,
-                        repNumber = row.repNumber.toInt()
-                    ),
-                    forceCurve = ForceCurveResult(
-                        normalizedForceN = row.normalizedForceN.toFloatArrayFromJson(),
-                        normalizedPositionPct = row.normalizedPositionPct.toFloatArrayFromJson(),
-                        stickingPointPct = row.stickingPointPct?.toFloat(),
-                        strengthProfile = strengthProfile,
-                        repNumber = row.repNumber.toInt()
-                    ),
-                    asymmetry = AsymmetryResult(
-                        asymmetryPercent = row.asymmetryPercent.toFloat(),
-                        dominantSide = row.dominantSide,
-                        avgLoadA = row.avgLoadA.toFloat(),
-                        avgLoadB = row.avgLoadB.toFloat(),
-                        repNumber = row.repNumber.toInt()
-                    ),
-                    repNumber = row.repNumber.toInt(),
-                    timestamp = row.timestamp
-                )
+    override suspend fun getRepBiomechanics(sessionId: String): List<BiomechanicsRepResult> = withContext(Dispatchers.IO) {
+        queries.selectRepBiomechanicsBySession(sessionId).executeAsList().map { row ->
+            val velocityZone = try {
+                BiomechanicsVelocityZone.valueOf(row.velocityZone)
+            } catch (_: IllegalArgumentException) {
+                BiomechanicsVelocityZone.MODERATE
             }
+
+            val strengthProfile = try {
+                StrengthProfile.valueOf(row.strengthProfile)
+            } catch (_: IllegalArgumentException) {
+                StrengthProfile.FLAT
+            }
+
+            BiomechanicsRepResult(
+                velocity = VelocityResult(
+                    meanConcentricVelocityMmS = row.mcvMmS.toFloat(),
+                    peakVelocityMmS = row.peakVelocityMmS.toFloat(),
+                    zone = velocityZone,
+                    velocityLossPercent = row.velocityLossPercent?.toFloat(),
+                    estimatedRepsRemaining = row.estimatedRepsRemaining?.toInt(),
+                    shouldStopSet = row.shouldStopSet != 0L,
+                    repNumber = row.repNumber.toInt(),
+                ),
+                forceCurve = ForceCurveResult(
+                    normalizedForceN = row.normalizedForceN.toFloatArrayFromJson(),
+                    normalizedPositionPct = row.normalizedPositionPct.toFloatArrayFromJson(),
+                    stickingPointPct = row.stickingPointPct?.toFloat(),
+                    strengthProfile = strengthProfile,
+                    repNumber = row.repNumber.toInt(),
+                ),
+                asymmetry = AsymmetryResult(
+                    asymmetryPercent = row.asymmetryPercent.toFloat(),
+                    dominantSide = row.dominantSide,
+                    avgLoadA = row.avgLoadA.toFloat(),
+                    avgLoadB = row.avgLoadB.toFloat(),
+                    repNumber = row.repNumber.toInt(),
+                ),
+                repNumber = row.repNumber.toInt(),
+                timestamp = row.timestamp,
+            )
         }
     }
 

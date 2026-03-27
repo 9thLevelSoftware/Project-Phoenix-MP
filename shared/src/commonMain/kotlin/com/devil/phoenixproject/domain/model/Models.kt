@@ -6,15 +6,15 @@ package com.devil.phoenixproject.domain.model
 enum class VitruvianModel(val displayName: String) {
     VFormTrainer("V-Form Trainer"),
     TrainerPlus("Trainer+"),
-    Unknown("Unknown Vitruvian Device")
+    Unknown("Unknown Vitruvian Device"),
 }
 
 /**
  * PR Type - distinguishes between weight-based and volume-based records
  */
 enum class PRType {
-    MAX_WEIGHT,  // Highest weight in a single rep (strength PR)
-    MAX_VOLUME   // Highest weight × reps in a single set (volume PR)
+    MAX_WEIGHT, // Highest weight in a single rep (strength PR)
+    MAX_VOLUME, // Highest weight × reps in a single set (volume PR)
 }
 
 /**
@@ -22,9 +22,9 @@ enum class PRType {
  * Allows tracking separate PRs for concentric (lifting) vs eccentric (lowering) phases.
  */
 enum class WorkoutPhase {
-    COMBINED,     // Traditional: overall peak (backward compatible default)
-    CONCENTRIC,   // Peak during lifting (velocity > 0)
-    ECCENTRIC     // Peak during lowering (velocity < 0)
+    COMBINED, // Traditional: overall peak (backward compatible default)
+    CONCENTRIC, // Peak during lifting (velocity > 0)
+    ECCENTRIC, // Peak during lowering (velocity < 0)
 }
 
 /**
@@ -42,7 +42,7 @@ data class PersonalRecord(
     val prType: PRType = PRType.MAX_WEIGHT,
     val volume: Float,
     val phase: WorkoutPhase = WorkoutPhase.COMBINED,
-    val profileId: String = "default"
+    val profileId: String = "default",
 )
 
 /**
@@ -55,7 +55,7 @@ sealed class ConnectionState {
     data class Connected(
         val deviceName: String,
         val deviceAddress: String,
-        val hardwareModel: VitruvianModel = VitruvianModel.Unknown
+        val hardwareModel: VitruvianModel = VitruvianModel.Unknown,
     ) : ConnectionState()
     data class Error(val message: String, val throwable: Throwable? = null) : ConnectionState()
 }
@@ -78,9 +78,9 @@ sealed class WorkoutState {
         val cableCount: Int = 1,
         val heaviestLiftKgPerCable: Float = 0f,
         val configuredWeightKgPerCable: Float = 0f,
-        val peakForceConcentricA: Float = 0f,  // Peak during lifting (velocity > 0)
+        val peakForceConcentricA: Float = 0f, // Peak during lifting (velocity > 0)
         val peakForceConcentricB: Float = 0f,
-        val peakForceEccentricA: Float = 0f,   // Peak during lowering (velocity < 0)
+        val peakForceEccentricA: Float = 0f, // Peak during lowering (velocity < 0)
         val peakForceEccentricB: Float = 0f,
         val avgForceConcentricA: Float = 0f,
         val avgForceConcentricB: Float = 0f,
@@ -92,14 +92,14 @@ sealed class WorkoutState {
         val warmupReps: Int = 0,
         val workingReps: Int = 0,
         val burnoutReps: Int = 0,
-        val warmupAvgWeightKg: Float = 0f,  // Average weight during warmup phase
-        val workingAvgWeightKg: Float = 0f,  // Average weight at peak (working phase)
-        val burnoutAvgWeightKg: Float = 0f,  // Average weight during burnout/eccentric phase
-        val peakWeightKg: Float = 0f,  // Highest weight achieved during set
+        val warmupAvgWeightKg: Float = 0f, // Average weight during warmup phase
+        val workingAvgWeightKg: Float = 0f, // Average weight at peak (working phase)
+        val burnoutAvgWeightKg: Float = 0f, // Average weight during burnout/eccentric phase
+        val peakWeightKg: Float = 0f, // Highest weight achieved during set
         // Rep Quality Summary (null for Free tier or if scorer wasn't active)
         val qualitySummary: SetQualitySummary? = null,
         // Biomechanics Set Summary (null for Free tier or if no reps processed by engine)
-        val biomechanicsSummary: BiomechanicsSetSummary? = null
+        val biomechanicsSummary: BiomechanicsSetSummary? = null,
     ) : WorkoutState()
     object Paused : WorkoutState()
     object Completed : WorkoutState()
@@ -113,7 +113,7 @@ sealed class WorkoutState {
         val currentSet: Int,
         val totalSets: Int,
         val isSupersetTransition: Boolean = false,
-        val supersetLabel: String? = null
+        val supersetLabel: String? = null,
     ) : WorkoutState()
 }
 
@@ -128,7 +128,7 @@ sealed class RoutineFlowState {
     /** Browsing routine exercises before starting (horizontal carousel) */
     data class Overview(
         val routine: Routine,
-        val selectedExerciseIndex: Int = 0
+        val selectedExerciseIndex: Int = 0,
     ) : RoutineFlowState()
 
     /** Ready to start a specific set (focused view with adjustments) */
@@ -138,7 +138,7 @@ sealed class RoutineFlowState {
         val adjustedWeight: Float,
         val adjustedReps: Int,
         val echoLevel: EchoLevel? = null,
-        val eccentricLoadPercent: Int? = null
+        val eccentricLoadPercent: Int? = null,
     ) : RoutineFlowState()
 
     /** Routine completed - celebration screen */
@@ -146,7 +146,7 @@ sealed class RoutineFlowState {
         val routineName: String,
         val totalSets: Int,
         val totalExercises: Int,
-        val totalDurationMs: Long
+        val totalDurationMs: Long,
     ) : RoutineFlowState()
 }
 
@@ -179,7 +179,7 @@ sealed class ProgramMode(val modeValue: Int, val displayName: String) {
 
     companion object {
         @Suppress("unused")
-        fun fromValue(value: Int): ProgramMode = when(value) {
+        fun fromValue(value: Int): ProgramMode = when (value) {
             0 -> OldSchool
             2 -> Pump
             3 -> TUT
@@ -263,7 +263,7 @@ enum class EchoLevel(val levelValue: Int, val displayName: String) {
     HARD(0, "Hard"),
     HARDER(1, "Harder"),
     HARDEST(2, "Hardest"),
-    EPIC(3, "Epic")
+    EPIC(3, "Epic"),
 }
 
 /**
@@ -279,22 +279,23 @@ enum class EccentricLoad(val percentage: Int, val displayName: String) {
     LOAD_120(120, "120%"),
     LOAD_130(130, "130%"),
     LOAD_140(140, "140%"),
-    LOAD_150(150, "150%")
+    LOAD_150(150, "150%"),
 }
 
 /**
  * Weight unit preference
  */
 enum class WeightUnit {
-    KG, LB
+    KG,
+    LB,
 }
 
 /**
  * Rep count timing mode - controls when the working rep number increments
  */
 enum class RepCountTiming {
-    TOP,    // Count rep at concentric peak (top of lift) - what users expect
-    BOTTOM  // Count rep at eccentric valley (bottom) - legacy machine behavior
+    TOP, // Count rep at concentric peak (top of lift) - what users expect
+    BOTTOM, // Count rep at eccentric valley (bottom) - legacy machine behavior
 }
 
 /**
@@ -303,23 +304,23 @@ enum class RepCountTiming {
 data class WorkoutParameters(
     val programMode: ProgramMode,
     val reps: Int,
-    val weightPerCableKg: Float = 0f,  // Only used for Program modes
-    val progressionRegressionKg: Float = 0f,  // Positive = progression, negative = regression
+    val weightPerCableKg: Float = 0f, // Only used for Program modes
+    val progressionRegressionKg: Float = 0f, // Positive = progression, negative = regression
     val isJustLift: Boolean = false,
     val useAutoStart: Boolean = false, // true for Just Lift, false for others
-    val stopAtTop: Boolean = false,  // false = stop at bottom (extended), true = stop at top (contracted)
+    val stopAtTop: Boolean = false, // false = stop at bottom (extended), true = stop at top (contracted)
     val warmupReps: Int = 3,
     val selectedExerciseId: String? = null,
-    val isAMRAP: Boolean = false,  // AMRAP (As Many Reps As Possible) - disables auto-stop
-    val lastUsedWeightKg: Float? = null,  // Last used weight for this exercise (for quick preset)
-    val prWeightKg: Float? = null,  // Personal record weight for this exercise (for quick preset)
-    val stallDetectionEnabled: Boolean = true,  // Enable 5s stall/de-load auto-stop during active sets
-    val repCountTiming: RepCountTiming = RepCountTiming.TOP,  // When to count working reps (TOP=concentric peak, BOTTOM=eccentric valley)
+    val isAMRAP: Boolean = false, // AMRAP (As Many Reps As Possible) - disables auto-stop
+    val lastUsedWeightKg: Float? = null, // Last used weight for this exercise (for quick preset)
+    val prWeightKg: Float? = null, // Personal record weight for this exercise (for quick preset)
+    val stallDetectionEnabled: Boolean = true, // Enable 5s stall/de-load auto-stop during active sets
+    val repCountTiming: RepCountTiming = RepCountTiming.TOP, // When to count working reps (TOP=concentric peak, BOTTOM=eccentric valley)
     // Echo-specific settings (only used when programMode == ProgramMode.Echo)
     val echoLevel: EchoLevel = EchoLevel.HARD,
     val eccentricLoad: EccentricLoad = EccentricLoad.LOAD_100,
     // Just Lift rest timer (0 = off, 5-300 in 5s increments)
-    val justLiftRestSeconds: Int = 0
+    val justLiftRestSeconds: Int = 0,
 ) {
     /** True if this is an Echo workout */
     val isEchoMode: Boolean get() = programMode == ProgramMode.Echo
@@ -335,12 +336,12 @@ data class WorkoutMetric(
     val timestamp: Long = currentTimeMillis(),
     val loadA: Float,
     val loadB: Float,
-    val positionA: Float,  // Position in mm (changed from Int in Issue #197)
-    val positionB: Float,  // Position in mm (changed from Int in Issue #197)
+    val positionA: Float, // Position in mm (changed from Int in Issue #197)
+    val positionB: Float, // Position in mm (changed from Int in Issue #197)
     val ticks: Int = 0,
-    val velocityA: Double = 0.0,  // Velocity for handle detection (official app protocol)
-    val velocityB: Double = 0.0,   // Velocity for right handle detection (for single-handle exercises)
-    val status: Int = 0 // Machine status flags (0x8000=Deload Occurred, 0x0040=Deload Warn)
+    val velocityA: Double = 0.0, // Velocity for handle detection (official app protocol)
+    val velocityB: Double = 0.0, // Velocity for right handle detection (for single-handle exercises)
+    val status: Int = 0, // Machine status flags (0x8000=Deload Occurred, 0x0040=Deload Warn)
 ) {
     val totalLoad: Float get() = loadA + loadB
 }
@@ -349,9 +350,9 @@ data class WorkoutMetric(
  * Movement phase during a rep - used for animated rep counter display
  */
 enum class RepPhase {
-    IDLE,       // Between reps, not actively moving
+    IDLE, // Between reps, not actively moving
     CONCENTRIC, // Lifting (moving to top of ROM)
-    ECCENTRIC   // Lowering (moving to bottom of ROM)
+    ECCENTRIC, // Lowering (moving to bottom of ROM)
 }
 
 /**
@@ -360,24 +361,24 @@ enum class RepPhase {
 data class RepCount(
     val warmupReps: Int = 0,
     val workingReps: Int = 0,
-    val totalReps: Int = workingReps,  // Exclude warm-up reps from total count
+    val totalReps: Int = workingReps, // Exclude warm-up reps from total count
     val isWarmupComplete: Boolean = false,
-    val hasPendingRep: Boolean = false,  // True when at TOP (concentric peak), waiting for eccentric
-    val pendingRepProgress: Float = 0f,  // 0.0 at TOP, 1.0 at BOTTOM (fill progress)
+    val hasPendingRep: Boolean = false, // True when at TOP (concentric peak), waiting for eccentric
+    val pendingRepProgress: Float = 0f, // 0.0 at TOP, 1.0 at BOTTOM (fill progress)
     // Animation fields for Issue #163 animated rep counter
     val activeRepPhase: RepPhase = RepPhase.IDLE,
-    val phaseProgress: Float = 0f  // 0.0 at start of phase, 1.0 at end (for animation)
+    val phaseProgress: Float = 0f, // 0.0 at start of phase, 1.0 at end (for animation)
 )
 
 /**
  * Rep event types
  */
 enum class RepType {
-    WARMUP_COMPLETED,  // Warmup rep done (no pending animation for warmup)
-    WORKING_PENDING,   // At TOP during working - show grey number, waiting for eccentric
+    WARMUP_COMPLETED, // Warmup rep done (no pending animation for warmup)
+    WORKING_PENDING, // At TOP during working - show grey number, waiting for eccentric
     WORKING_COMPLETED, // At BOTTOM during working - rep confirmed (colored)
-    WARMUP_COMPLETE,   // All warmup reps done
-    WORKOUT_COMPLETE   // All working reps done
+    WARMUP_COMPLETE, // All warmup reps done
+    WORKOUT_COMPLETE, // All working reps done
 }
 
 /**
@@ -387,7 +388,7 @@ data class RepEvent(
     val type: RepType,
     val warmupCount: Int,
     val workingCount: Int,
-    val timestamp: Long = currentTimeMillis()
+    val timestamp: Long = currentTimeMillis(),
 )
 
 /**
@@ -457,15 +458,15 @@ data class WorkoutSession(
     val isJustLift: Boolean = false,
     val stopAtTop: Boolean = false,
     // Echo mode configuration
-    val eccentricLoad: Int = 100,  // Percentage (0, 50, 75, 100, 125, 150)
-    val echoLevel: Int = 2,  // 0=Hard, 1=Harder, 2=Hardest, 3=Epic
+    val eccentricLoad: Int = 100, // Percentage (0, 50, 75, 100, 125, 150)
+    val echoLevel: Int = 2, // 0=Hard, 1=Harder, 2=Hardest, 3=Epic
     // Exercise tracking
-    val exerciseId: String? = null,  // Exercise library ID for PR tracking
-    val exerciseName: String? = null,  // Exercise name for display (avoids DB lookups)
+    val exerciseId: String? = null, // Exercise library ID for PR tracking
+    val exerciseName: String? = null, // Exercise name for display (avoids DB lookups)
     // Routine tracking (for grouping sets from the same routine)
-    val routineSessionId: String? = null,  // Unique ID for this routine session
-    val routineName: String? = null,  // Name of the routine being performed
-    val routineId: String? = null,  // ID of the originating routine (direct FK, added in migration 12)
+    val routineSessionId: String? = null, // Unique ID for this routine session
+    val routineName: String? = null, // Name of the routine being performed
+    val routineId: String? = null, // ID of the originating routine (direct FK, added in migration 12)
     // Safety tracking (parity with parent repo v23)
     val safetyFlags: Int = 0,
     val deloadWarningCount: Int = 0,
@@ -498,7 +499,7 @@ data class WorkoutSession(
     // Form score (legacy DB column from migration 16, always null for new sessions)
     val formScore: Int? = null,
     // Profile scoping
-    val profileId: String = "default"
+    val profileId: String = "default",
 ) {
     /** True if this session has detailed summary metrics (v0.2.1+) */
     val hasSummaryMetrics: Boolean
@@ -507,7 +508,6 @@ data class WorkoutSession(
     /** True if this session has biomechanics data (v0.5.0+) */
     val hasBiomechanicsData: Boolean
         get() = avgMcvMmS != null
-
 }
 
 /**
@@ -516,8 +516,7 @@ data class WorkoutSession(
  * Uses measured summary data when available (v0.2.1+), otherwise falls back to
  * configured set weight for legacy sessions.
  */
-fun WorkoutSession.effectiveHeaviestKgPerCable(): Float =
-    heaviestLiftKg ?: weightPerCableKg
+fun WorkoutSession.effectiveHeaviestKgPerCable(): Float = heaviestLiftKg ?: weightPerCableKg
 
 /**
  * Effective total volume (kg) for analytics/display.
@@ -528,8 +527,7 @@ fun WorkoutSession.effectiveHeaviestKgPerCable(): Float =
  * Legacy rows may not have cableCount metadata; in those cases we default to 1 cable
  * to avoid overcounting historical volume.
  */
-fun WorkoutSession.effectiveTotalVolumeKg(): Float =
-    totalVolumeKg ?: (weightPerCableKg * ((if (cableCount == 2) 2 else 1).toFloat()) * totalReps)
+fun WorkoutSession.effectiveTotalVolumeKg(): Float = totalVolumeKg ?: (weightPerCableKg * ((if (cableCount == 2) 2 else 1).toFloat()) * totalReps)
 
 /**
  * Convert WorkoutSession to SetSummary for display in history.
@@ -564,7 +562,7 @@ fun WorkoutSession.toSetSummary(): WorkoutState.SetSummary? {
         warmupAvgWeightKg = warmupAvgWeightKg ?: 0f,
         workingAvgWeightKg = workingAvgWeightKg ?: 0f,
         burnoutAvgWeightKg = burnoutAvgWeightKg ?: 0f,
-        peakWeightKg = peakWeightKg ?: 0f
+        peakWeightKg = peakWeightKg ?: 0f,
     )
 }
 
@@ -580,8 +578,8 @@ data class ChartDataPoint(
     val totalLoad: Float,
     val loadA: Float,
     val loadB: Float,
-    val positionA: Float,  // Position in mm (changed from Int in Issue #197)
-    val positionB: Float   // Position in mm (changed from Int in Issue #197)
+    val positionA: Float, // Position in mm (changed from Int in Issue #197)
+    val positionB: Float, // Position in mm (changed from Int in Issue #197)
 )
 
 /**
@@ -590,8 +588,10 @@ data class ChartDataPoint(
 sealed class ChartEvent(val timestamp: Long, val label: String) {
     @Suppress("unused")
     class RepStart(timestamp: Long, repNumber: Int) : ChartEvent(timestamp, "Rep $repNumber")
+
     @Suppress("unused")
     class RepComplete(timestamp: Long, repNumber: Int) : ChartEvent(timestamp, "Rep $repNumber Complete")
+
     @Suppress("unused")
     class WarmupComplete(timestamp: Long) : ChartEvent(timestamp, "Warmup Complete")
 }
@@ -604,7 +604,7 @@ data class PRCelebrationEvent(
     val weightPerCableKg: Float,
     val reps: Int,
     val workoutMode: String,
-    val brokenPRTypes: List<PRType> = listOf(PRType.MAX_WEIGHT)
+    val brokenPRTypes: List<PRType> = listOf(PRType.MAX_WEIGHT),
 ) {
     val isWeightPR: Boolean get() = PRType.MAX_WEIGHT in brokenPRTypes
     val isVolumePR: Boolean get() = PRType.MAX_VOLUME in brokenPRTypes

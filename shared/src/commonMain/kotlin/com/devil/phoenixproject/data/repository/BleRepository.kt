@@ -3,34 +3,22 @@ package com.devil.phoenixproject.data.repository
 import com.devil.phoenixproject.domain.model.ConnectionState
 import com.devil.phoenixproject.domain.model.WorkoutMetric
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 
 /**
  * Scanned BLE device
  */
-data class ScannedDevice(
-    val name: String,
-    val address: String,
-    val rssi: Int = 0
-)
+data class ScannedDevice(val name: String, val address: String, val rssi: Int = 0)
 
 /**
  * Handle detection state (left/right cable detection)
  */
-data class HandleDetection(
-    val leftDetected: Boolean = false,
-    val rightDetected: Boolean = false
-)
+data class HandleDetection(val leftDetected: Boolean = false, val rightDetected: Boolean = false)
 
 /**
  * Auto-stop UI state for Just Lift mode
  */
-data class AutoStopUiState(
-    val isActive: Boolean = false,
-    val secondsRemaining: Int = 0,
-    val progress: Float = 0f
-)
+data class AutoStopUiState(val isActive: Boolean = false, val secondsRemaining: Int = 0, val progress: Float = 0f)
 
 /**
  * Handle state for auto-start/auto-stop logic.
@@ -45,12 +33,15 @@ data class AutoStopUiState(
 enum class HandleState {
     /** Initial state - waiting for handles to be at rest before arming grab detection */
     WaitingForRest,
+
     /** Handles at rest - armed for grab detection */
     Released,
+
     /** Handles grabbed - force > 3kg sustained */
     Grabbed,
+
     /** Handles in motion */
-    Moving
+    Moving,
 }
 
 /**
@@ -80,14 +71,14 @@ data class RepNotification(
     val topCounter: Int,
     val completeCounter: Int,
     val repsRomCount: Int,
-    val repsRomTotal: Int,    // Issue #210: Machine's warmup target (bytes 18-19) - for sync verification
+    val repsRomTotal: Int, // Issue #210: Machine's warmup target (bytes 18-19) - for sync verification
     val repsSetCount: Int,
-    val repsSetTotal: Int,    // Issue #210: Machine's working target (bytes 22-23) - for sync verification
+    val repsSetTotal: Int, // Issue #210: Machine's working target (bytes 22-23) - for sync verification
     val rangeTop: Float = 0f,
     val rangeBottom: Float = 0f,
     val rawData: ByteArray,
     val timestamp: Long = 0L,
-    val isLegacyFormat: Boolean = false
+    val isLegacyFormat: Boolean = false,
 ) {
     override fun equals(other: Any?): Boolean {
         if (this === other) return true
@@ -130,12 +121,7 @@ data class RepNotification(
  * Reconnection request data.
  * Emitted when connection is lost but auto-reconnect should be attempted.
  */
-data class ReconnectionRequest(
-    val deviceName: String?,
-    val deviceAddress: String,
-    val reason: String,
-    val timestamp: Long
-)
+data class ReconnectionRequest(val deviceName: String?, val deviceAddress: String, val reason: String, val timestamp: Long)
 
 /**
  * BLE Repository interface for Vitruvian machine communication.
@@ -164,7 +150,7 @@ interface BleRepository {
     suspend fun startScanning(): Result<Unit>
     suspend fun stopScanning()
     suspend fun connect(device: ScannedDevice): Result<Unit>
-    suspend fun cancelConnection()  // Cancel an in-progress connection attempt
+    suspend fun cancelConnection() // Cancel an in-progress connection attempt
     suspend fun disconnect()
 
     /**

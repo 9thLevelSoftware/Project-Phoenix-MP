@@ -95,11 +95,7 @@ class HealthDataMappingTest {
         }
     }
 
-    private fun clampDuration(durationSeconds: Long): Long {
-        return durationSeconds.coerceAtLeast(1L)
-    }
+    private fun clampDuration(durationSeconds: Long): Long = durationSeconds.coerceAtLeast(1L)
 
-    private fun shouldIncludeCalories(estimatedCalories: Float?): Boolean {
-        return estimatedCalories != null && estimatedCalories > 0f
-    }
+    private fun shouldIncludeCalories(estimatedCalories: Float?): Boolean = estimatedCalories != null && estimatedCalories > 0f
 }

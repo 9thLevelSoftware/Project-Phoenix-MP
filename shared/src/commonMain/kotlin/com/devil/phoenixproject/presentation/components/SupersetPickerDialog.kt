@@ -29,8 +29,8 @@ import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.domain.model.Superset
 import com.devil.phoenixproject.ui.theme.SupersetTheme
 import org.jetbrains.compose.resources.stringResource
-import vitruvianprojectphoenix.shared.generated.resources.Res
 import vitruvianprojectphoenix.shared.generated.resources.*
+import vitruvianprojectphoenix.shared.generated.resources.Res
 
 /**
  * Dialog for choosing which superset to add exercises to.
@@ -42,7 +42,7 @@ fun SupersetPickerDialog(
     canCreateNew: Boolean = true,
     onCreateNew: () -> Unit,
     onSelectExisting: (Superset) -> Unit,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -57,29 +57,29 @@ fun SupersetPickerDialog(
                             .clip(RoundedCornerShape(8.dp))
                             .clickable { onCreateNew() }
                             .padding(12.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                        verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Box(
                             modifier = Modifier
                                 .size(32.dp)
                                 .background(
                                     MaterialTheme.colorScheme.primaryContainer,
-                                    CircleShape
+                                    CircleShape,
                                 ),
-                            contentAlignment = Alignment.Center
+                            contentAlignment = Alignment.Center,
                         ) {
                             Icon(
                                 Icons.Default.Add,
                                 contentDescription = null,
                                 tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                                modifier = Modifier.size(20.dp)
+                                modifier = Modifier.size(20.dp),
                             )
                         }
                         Spacer(Modifier.width(12.dp))
                         Text(
                             "Create New Superset",
                             style = MaterialTheme.typography.bodyLarge,
-                            fontWeight = FontWeight.Medium
+                            fontWeight = FontWeight.Medium,
                         )
                     }
                 }
@@ -91,7 +91,7 @@ fun SupersetPickerDialog(
                         if (canCreateNew) "Or add to existing:" else "Add to existing:",
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(bottom = 8.dp)
+                        modifier = Modifier.padding(bottom = 8.dp),
                     )
 
                     existingSupersets.forEach { superset ->
@@ -101,27 +101,27 @@ fun SupersetPickerDialog(
                                 .clip(RoundedCornerShape(8.dp))
                                 .clickable { onSelectExisting(superset) }
                                 .padding(12.dp),
-                            verticalAlignment = Alignment.CenterVertically
+                            verticalAlignment = Alignment.CenterVertically,
                         ) {
                             Box(
                                 modifier = Modifier
                                     .size(32.dp)
                                     .background(
                                         SupersetTheme.colorForIndex(superset.colorIndex),
-                                        CircleShape
-                                    )
+                                        CircleShape,
+                                    ),
                             )
                             Spacer(Modifier.width(12.dp))
                             Column {
                                 Text(
                                     superset.name,
                                     style = MaterialTheme.typography.bodyLarge,
-                                    fontWeight = FontWeight.Medium
+                                    fontWeight = FontWeight.Medium,
                                 )
                                 Text(
                                     "${superset.exerciseCount} exercises",
                                     style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
                             }
                         }
@@ -134,6 +134,6 @@ fun SupersetPickerDialog(
             TextButton(onClick = onDismiss) {
                 Text(stringResource(Res.string.action_cancel))
             }
-        }
+        },
     )
 }

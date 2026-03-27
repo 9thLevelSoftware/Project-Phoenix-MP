@@ -10,12 +10,7 @@ import com.devil.phoenixproject.domain.model.WorkoutSession
  * @param failed Number of rows that could not be parsed
  * @param errors Human-readable error descriptions for failed rows
  */
-data class CsvImportResult(
-    val imported: Int,
-    val skipped: Int,
-    val failed: Int,
-    val errors: List<String> = emptyList()
-) {
+data class CsvImportResult(val imported: Int, val skipped: Int, val failed: Int, val errors: List<String> = emptyList()) {
     /** True if at least one record was successfully imported */
     val hasImports: Boolean get() = imported > 0
 

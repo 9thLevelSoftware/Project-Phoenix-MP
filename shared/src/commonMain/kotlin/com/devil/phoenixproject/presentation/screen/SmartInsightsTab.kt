@@ -23,14 +23,13 @@ import com.devil.phoenixproject.domain.premium.ReadinessEngine
 import com.devil.phoenixproject.domain.premium.SmartSuggestionsEngine
 import com.devil.phoenixproject.presentation.components.ReadinessBriefingCard
 import com.devil.phoenixproject.ui.theme.AccessibilityTheme
-import com.devil.phoenixproject.ui.theme.Spacing
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
 import kotlinx.coroutines.withContext
-import org.koin.compose.koinInject
 import org.jetbrains.compose.resources.stringResource
-import vitruvianprojectphoenix.shared.generated.resources.Res
+import org.koin.compose.koinInject
 import vitruvianprojectphoenix.shared.generated.resources.*
+import vitruvianprojectphoenix.shared.generated.resources.Res
 
 /**
  * Smart Insights Tab - training insights powered by SmartSuggestionsEngine and ReadinessEngine.
@@ -44,16 +43,12 @@ import vitruvianprojectphoenix.shared.generated.resources.*
  * 6. Training Readiness / ACWR (ACWR-01)
  */
 @Composable
-fun SmartInsightsTab(
-    modifier: Modifier = Modifier
-) {
+fun SmartInsightsTab(modifier: Modifier = Modifier) {
     SmartInsightsContent(modifier = modifier)
 }
 
 @Composable
-private fun SmartInsightsContent(
-    modifier: Modifier = Modifier
-) {
+private fun SmartInsightsContent(modifier: Modifier = Modifier) {
     val repository: SmartSuggestionsRepository = koinInject()
     val userProfileRepository: UserProfileRepository = koinInject()
     val activeProfile by userProfileRepository.activeProfile.collectAsState()
@@ -69,7 +64,8 @@ private fun SmartInsightsContent(
 
     LaunchedEffect(profileId) {
         withContext(Dispatchers.IO) {
-            sessionSummaries = repository.getSessionSummariesSince(nowMs - twentyEightDaysMs, profileId)
+            sessionSummaries =
+                repository.getSessionSummariesSince(nowMs - twentyEightDaysMs, profileId)
             exerciseLastPerformed = repository.getExerciseLastPerformed(profileId)
             weightHistory = repository.getExerciseWeightHistory(profileId)
         }
@@ -79,7 +75,7 @@ private fun SmartInsightsContent(
     if (isLoading) {
         Box(
             modifier = modifier.fillMaxSize(),
-            contentAlignment = Alignment.Center
+            contentAlignment = Alignment.Center,
         ) {
             CircularProgressIndicator()
         }
@@ -109,20 +105,20 @@ private fun SmartInsightsContent(
             .background(MaterialTheme.colorScheme.background)
             .padding(horizontal = 16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
-        contentPadding = PaddingValues(vertical = 16.dp)
+        contentPadding = PaddingValues(vertical = 16.dp),
     ) {
         item {
             Text(
                 text = stringResource(Res.string.insights_title),
                 style = MaterialTheme.typography.headlineLarge,
                 fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onBackground
+                color = MaterialTheme.colorScheme.onBackground,
             )
             Spacer(modifier = Modifier.height(4.dp))
             Text(
                 text = stringResource(Res.string.insights_subtitle),
                 style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
 
@@ -174,14 +170,14 @@ private fun WeeklyVolumeCard(report: WeeklyVolumeReport) {
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(bottom = 4.dp),
-                horizontalArrangement = Arrangement.SpaceBetween
+                horizontalArrangement = Arrangement.SpaceBetween,
             ) {
                 Text(
                     stringResource(Res.string.insights_col_muscle_group),
                     style = MaterialTheme.typography.labelMedium,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.weight(1.4f)
+                    modifier = Modifier.weight(1.4f),
                 )
                 Text(
                     stringResource(Res.string.insights_col_sets),
@@ -189,7 +185,7 @@ private fun WeeklyVolumeCard(report: WeeklyVolumeReport) {
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.weight(0.6f),
-                    textAlign = TextAlign.End
+                    textAlign = TextAlign.End,
                 )
                 Text(
                     stringResource(Res.string.insights_col_reps),
@@ -197,7 +193,7 @@ private fun WeeklyVolumeCard(report: WeeklyVolumeReport) {
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.weight(0.6f),
-                    textAlign = TextAlign.End
+                    textAlign = TextAlign.End,
                 )
                 Text(
                     stringResource(Res.string.insights_col_total_kg),
@@ -205,12 +201,12 @@ private fun WeeklyVolumeCard(report: WeeklyVolumeReport) {
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.weight(0.8f),
-                    textAlign = TextAlign.End
+                    textAlign = TextAlign.End,
                 )
             }
             HorizontalDivider(
                 thickness = 1.dp,
-                color = MaterialTheme.colorScheme.outlineVariant
+                color = MaterialTheme.colorScheme.outlineVariant,
             )
             Spacer(modifier = Modifier.height(4.dp))
 
@@ -220,27 +216,27 @@ private fun WeeklyVolumeCard(report: WeeklyVolumeReport) {
                         .fillMaxWidth()
                         .padding(vertical = 2.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(
                         vol.muscleGroup.replaceFirstChar { it.uppercase() },
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurface,
-                        modifier = Modifier.weight(1.4f)
+                        modifier = Modifier.weight(1.4f),
                     )
                     Text(
                         "${vol.sets}",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurface,
                         modifier = Modifier.weight(0.6f),
-                        textAlign = TextAlign.End
+                        textAlign = TextAlign.End,
                     )
                     Text(
                         "${vol.reps}",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurface,
                         modifier = Modifier.weight(0.6f),
-                        textAlign = TextAlign.End
+                        textAlign = TextAlign.End,
                     )
                     Text(
                         "${vol.totalKg.toInt()}",
@@ -248,7 +244,7 @@ private fun WeeklyVolumeCard(report: WeeklyVolumeReport) {
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurface,
                         modifier = Modifier.weight(0.8f),
-                        textAlign = TextAlign.End
+                        textAlign = TextAlign.End,
                     )
                 }
             }
@@ -270,11 +266,26 @@ private fun BalanceAnalysisCard(analysis: BalanceAnalysis) {
             val pullPct = (analysis.pullVolume / total * 100).toInt()
             val legsPct = (analysis.legsVolume / total * 100).toInt()
 
-            BalanceBar(label = stringResource(Res.string.insights_push), percentage = pushPct, fraction = analysis.pushVolume / total)
+            BalanceBar(
+                label = stringResource(Res.string.insights_push),
+                percentage = pushPct,
+                fraction =
+                    analysis.pushVolume / total,
+            )
             Spacer(modifier = Modifier.height(8.dp))
-            BalanceBar(label = stringResource(Res.string.insights_pull), percentage = pullPct, fraction = analysis.pullVolume / total)
+            BalanceBar(
+                label = stringResource(Res.string.insights_pull),
+                percentage = pullPct,
+                fraction =
+                    analysis.pullVolume / total,
+            )
             Spacer(modifier = Modifier.height(8.dp))
-            BalanceBar(label = stringResource(Res.string.insights_legs), percentage = legsPct, fraction = analysis.legsVolume / total)
+            BalanceBar(
+                label = stringResource(Res.string.insights_legs),
+                percentage = legsPct,
+                fraction =
+                    analysis.legsVolume / total,
+            )
 
             Spacer(modifier = Modifier.height(12.dp))
 
@@ -283,25 +294,25 @@ private fun BalanceAnalysisCard(analysis: BalanceAnalysis) {
                     stringResource(Res.string.insights_well_balanced),
                     style = MaterialTheme.typography.bodyMedium,
                     color = AccessibilityTheme.colors.success,
-                    fontWeight = FontWeight.Medium
+                    fontWeight = FontWeight.Medium,
                 )
             } else {
                 analysis.imbalances.forEach { imbalance ->
                     Row(
                         modifier = Modifier.padding(vertical = 2.dp),
-                        verticalAlignment = Alignment.Top
+                        verticalAlignment = Alignment.Top,
                     ) {
                         Icon(
                             Icons.Default.Warning,
                             contentDescription = null,
                             tint = Color(0xFFF59E0B), // Amber warning
-                            modifier = Modifier.size(16.dp)
+                            modifier = Modifier.size(16.dp),
                         )
                         Spacer(modifier = Modifier.width(6.dp))
                         Text(
                             imbalance.suggestion,
                             style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
                 }
@@ -314,28 +325,28 @@ private fun BalanceAnalysisCard(analysis: BalanceAnalysis) {
 private fun BalanceBar(label: String, percentage: Int, fraction: Float) {
     Row(
         modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically
+        verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
             label,
             style = MaterialTheme.typography.bodyMedium,
             fontWeight = FontWeight.Medium,
             color = MaterialTheme.colorScheme.onSurface,
-            modifier = Modifier.width(48.dp)
+            modifier = Modifier.width(48.dp),
         )
         Box(
             modifier = Modifier
                 .weight(1f)
                 .height(20.dp)
                 .clip(RoundedCornerShape(10.dp))
-                .background(MaterialTheme.colorScheme.surfaceVariant)
+                .background(MaterialTheme.colorScheme.surfaceVariant),
         ) {
             Box(
                 modifier = Modifier
                     .fillMaxHeight()
                     .fillMaxWidth(fraction.coerceIn(0f, 1f))
                     .clip(RoundedCornerShape(10.dp))
-                    .background(MaterialTheme.colorScheme.primary)
+                    .background(MaterialTheme.colorScheme.primary),
             )
         }
         Spacer(modifier = Modifier.width(8.dp))
@@ -345,7 +356,7 @@ private fun BalanceBar(label: String, percentage: Int, fraction: Float) {
             fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.onSurface,
             modifier = Modifier.width(36.dp),
-            textAlign = TextAlign.End
+            textAlign = TextAlign.End,
         )
     }
 }
@@ -360,7 +371,9 @@ private fun NeglectedExercisesCard(neglected: List<NeglectedExercise>) {
         } else {
             neglected.take(5).forEach { exercise ->
                 val color = when {
-                    exercise.daysSinceLastPerformed > 30 -> Color(0xFFF97316) // Orange
+                    exercise.daysSinceLastPerformed > 30 -> Color(0xFFF97316)
+
+                    // Orange
                     else -> Color(0xFFEAB308) // Yellow
                 }
                 Row(
@@ -368,26 +381,29 @@ private fun NeglectedExercisesCard(neglected: List<NeglectedExercise>) {
                         .fillMaxWidth()
                         .padding(vertical = 4.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
                             exercise.exerciseName,
                             style = MaterialTheme.typography.bodyMedium,
                             fontWeight = FontWeight.Medium,
-                            color = MaterialTheme.colorScheme.onSurface
+                            color = MaterialTheme.colorScheme.onSurface,
                         )
                         Text(
                             exercise.muscleGroup.replaceFirstChar { it.uppercase() },
                             style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
                     Text(
-                        stringResource(Res.string.insights_days_ago, exercise.daysSinceLastPerformed),
+                        stringResource(
+                            Res.string.insights_days_ago,
+                            exercise.daysSinceLastPerformed,
+                        ),
                         style = MaterialTheme.typography.labelMedium,
                         fontWeight = FontWeight.Bold,
-                        color = color
+                        color = color,
                     )
                 }
             }
@@ -408,13 +424,13 @@ private fun PlateauDetectionCard(plateaus: List<PlateauDetection>) {
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(vertical = 4.dp),
-                    verticalAlignment = Alignment.Top
+                    verticalAlignment = Alignment.Top,
                 ) {
                     Icon(
                         Icons.Default.Info,
                         contentDescription = null,
                         tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(18.dp)
+                        modifier = Modifier.size(18.dp),
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Column {
@@ -422,12 +438,12 @@ private fun PlateauDetectionCard(plateaus: List<PlateauDetection>) {
                             "${plateau.exerciseName} at ${plateau.currentWeightKg}kg",
                             style = MaterialTheme.typography.bodyMedium,
                             fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurface
+                            color = MaterialTheme.colorScheme.onSurface,
                         )
                         Text(
                             plateau.suggestion,
                             style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
                 }
@@ -443,10 +459,11 @@ private fun TimeOfDayCard(analysis: TimeOfDayAnalysis) {
     InsightCard(title = stringResource(Res.string.insights_best_window)) {
         if (analysis.optimalWindow == null) {
             PlaceholderText(
-                if (analysis.windowCounts.isEmpty())
+                if (analysis.windowCounts.isEmpty()) {
                     stringResource(Res.string.insights_need_more_sessions)
-                else
+                } else {
                     analysis.suggestion
+                },
             )
         } else {
             val windowLabel = formatWindowName(analysis.optimalWindow)
@@ -454,13 +471,13 @@ private fun TimeOfDayCard(analysis: TimeOfDayAnalysis) {
             Text(
                 stringResource(Res.string.insights_perform_best_in),
                 style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Text(
                 windowLabel.uppercase(),
                 style = MaterialTheme.typography.headlineSmall,
                 fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.primary
+                color = MaterialTheme.colorScheme.primary,
             )
 
             Spacer(modifier = Modifier.height(12.dp))
@@ -477,20 +494,20 @@ private fun TimeOfDayCard(analysis: TimeOfDayAnalysis) {
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(vertical = 2.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(
                         formatWindowShort(window),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.width(72.dp)
+                        modifier = Modifier.width(72.dp),
                     )
                     Box(
                         modifier = Modifier
                             .weight(1f)
                             .height(14.dp)
                             .clip(RoundedCornerShape(7.dp))
-                            .background(MaterialTheme.colorScheme.surfaceVariant)
+                            .background(MaterialTheme.colorScheme.surfaceVariant),
                     ) {
                         Box(
                             modifier = Modifier
@@ -498,11 +515,12 @@ private fun TimeOfDayCard(analysis: TimeOfDayAnalysis) {
                                 .fillMaxWidth(barFraction.coerceIn(0f, 1f))
                                 .clip(RoundedCornerShape(7.dp))
                                 .background(
-                                    if (window == analysis.optimalWindow)
+                                    if (window == analysis.optimalWindow) {
                                         MaterialTheme.colorScheme.primary
-                                    else
+                                    } else {
                                         MaterialTheme.colorScheme.primary.copy(alpha = 0.4f)
-                                )
+                                    },
+                                ),
                         )
                     }
                     Spacer(modifier = Modifier.width(8.dp))
@@ -511,7 +529,7 @@ private fun TimeOfDayCard(analysis: TimeOfDayAnalysis) {
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurface,
                         modifier = Modifier.width(24.dp),
-                        textAlign = TextAlign.End
+                        textAlign = TextAlign.End,
                     )
                 }
             }
@@ -522,27 +540,24 @@ private fun TimeOfDayCard(analysis: TimeOfDayAnalysis) {
 // ---- Shared Components ----
 
 @Composable
-private fun InsightCard(
-    title: String,
-    content: @Composable ColumnScope.() -> Unit
-) {
+private fun InsightCard(title: String, content: @Composable ColumnScope.() -> Unit) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceContainerHighest
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
         ),
-        shape = RoundedCornerShape(16.dp)
+        shape = RoundedCornerShape(16.dp),
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp)
+                .padding(16.dp),
         ) {
             Text(
                 title,
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurface
+                color = MaterialTheme.colorScheme.onSurface,
             )
             Spacer(modifier = Modifier.height(8.dp))
             content()
@@ -555,7 +570,7 @@ private fun PlaceholderText(text: String) {
     Text(
         text,
         style = MaterialTheme.typography.bodyMedium,
-        color = MaterialTheme.colorScheme.onSurfaceVariant
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
     )
 }
 

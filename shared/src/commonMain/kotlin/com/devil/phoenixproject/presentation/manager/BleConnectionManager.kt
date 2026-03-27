@@ -43,7 +43,7 @@ class BleConnectionManager(
     private val settingsManager: SettingsManager,
     private val workoutStateProvider: WorkoutStateProvider,
     private val bleErrorEvents: SharedFlow<String>,
-    private val scope: CoroutineScope
+    private val scope: CoroutineScope,
 ) {
     val connectionState: StateFlow<ConnectionState> = bleRepository.connectionState
 
@@ -100,6 +100,7 @@ class BleConnectionManager(
                                 Logger.e(e) { "Failed to initialize LED color scheme on connection" }
                             }
                         }
+
                         is ConnectionState.Disconnected, is ConnectionState.Error -> {
                             // Only trigger alert if we were previously connected
                             // and a workout is actively in progress (not in summary)
@@ -111,6 +112,7 @@ class BleConnectionManager(
                             }
                             wasConnected = false
                         }
+
                         else -> {
                             // Scanning, Connecting - don't change wasConnected or alert state
                         }
@@ -140,7 +142,7 @@ class BleConnectionManager(
                         delay(1500L) // BLE stack cooldown — Android needs time to release GATT resources
                         ensureConnection(
                             onConnected = { Logger.i { "Auto-reconnect succeeded for ${request.deviceName}" } },
-                            onFailed = { Logger.w { "Auto-reconnect failed for ${request.deviceName}" } }
+                            onFailed = { Logger.w { "Auto-reconnect failed for ${request.deviceName}" } },
                         )
                     } else {
                         Logger.d { "Ignoring reconnection request — no active workout" }
@@ -226,7 +228,8 @@ class BleConnectionManager(
 
         // If already connecting/scanning, cancel and return to disconnected
         if (connectionState.value is ConnectionState.Connecting ||
-            connectionState.value is ConnectionState.Scanning) {
+            connectionState.value is ConnectionState.Scanning
+        ) {
             Logger.d { "ensureConnection: Cancelling in-progress connection" }
             cancelConnection()
             return

@@ -43,7 +43,7 @@ fun ExerciseRowInSuperset(
     onClick: () -> Unit,
     onLongPress: () -> Unit,
     onSelectionToggle: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
 ) {
     Card(
         modifier = modifier
@@ -53,41 +53,48 @@ fun ExerciseRowInSuperset(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null,
                 onClick = {
-                    if (isSelectionMode) onSelectionToggle()
-                    else onClick()
+                    if (isSelectionMode) {
+                        onSelectionToggle()
+                    } else {
+                        onClick()
+                    }
                 },
                 onLongClick = {
-                    if (!isSelectionMode) onLongPress()
-                    else onSelectionToggle()
-                }
+                    if (!isSelectionMode) {
+                        onLongPress()
+                    } else {
+                        onSelectionToggle()
+                    }
+                },
             ),
         shape = RoundedCornerShape(10.dp),
         colors = CardDefaults.cardColors(
-            containerColor = if (isSelected)
+            containerColor = if (isSelected) {
                 MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f)
-            else
+            } else {
                 MaterialTheme.colorScheme.surfaceContainer
-        )
+            },
+        ),
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(12.dp),
-            verticalAlignment = Alignment.CenterVertically
+            verticalAlignment = Alignment.CenterVertically,
         ) {
             // Selection checkbox
             AnimatedVisibility(
                 visible = isSelectionMode,
                 enter = fadeIn(),
-                exit = fadeOut()
+                exit = fadeOut(),
             ) {
                 Checkbox(
                     checked = isSelected,
                     onCheckedChange = { onSelectionToggle() },
                     colors = CheckboxDefaults.colors(
-                        checkedColor = MaterialTheme.colorScheme.primary
+                        checkedColor = MaterialTheme.colorScheme.primary,
                     ),
-                    modifier = Modifier.padding(end = 8.dp)
+                    modifier = Modifier.padding(end = 8.dp),
                 )
             }
 
@@ -95,7 +102,7 @@ fun ExerciseRowInSuperset(
                 Text(
                     exercise.exercise.name,
                     style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.Medium
+                    fontWeight = FontWeight.Medium,
                 )
 
                 // Display format depends on whether this is a timed exercise
@@ -122,11 +129,13 @@ fun ExerciseRowInSuperset(
                             val unitLabel = if (weightUnit == WeightUnit.KG) "kg" else "lb"
                             " (+${progWeight}$unitLabel)"
                         }
+
                         exercise.progressionKg < 0 -> {
                             val regWeight = kgToDisplay(-exercise.progressionKg, weightUnit)
                             val unitLabel = if (weightUnit == WeightUnit.KG) "kg" else "lb"
                             " (-${regWeight}$unitLabel)"
                         }
+
                         else -> ""
                     }
                     "${exercise.sets} sets x ${exercise.duration}s @ $weightText$progressionText"
@@ -149,11 +158,13 @@ fun ExerciseRowInSuperset(
                             val unitLabel = if (weightUnit == WeightUnit.KG) "kg" else "lb"
                             " (+${progWeight}$unitLabel/rep)"
                         }
+
                         exercise.progressionKg < 0 -> {
                             val regWeight = kgToDisplay(-exercise.progressionKg, weightUnit)
                             val unitLabel = if (weightUnit == WeightUnit.KG) "kg" else "lb"
                             " (-${regWeight}$unitLabel/rep)"
                         }
+
                         else -> ""
                     }
                     "${exercise.sets} sets x $repsText @ $weightText$progressionText"
@@ -162,14 +173,14 @@ fun ExerciseRowInSuperset(
                 Text(
                     exerciseText,
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
 
                 // Inherited rest time indicator
                 Text(
                     "${supersetRestSeconds}s rest (superset)",
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
                 )
             }
         }

@@ -20,9 +20,7 @@ import platform.Foundation.stringWithContentsOfFile
  * Duplicate detection: for each parsed session we check if any existing session
  * has the same timestamp and exercise name. If so, the row is skipped.
  */
-class IosCsvImporter(
-    private val workoutRepository: WorkoutRepository
-) : CsvImporter {
+class IosCsvImporter(private val workoutRepository: WorkoutRepository) : CsvImporter {
 
     override suspend fun importFromCsv(uri: String, profileId: String): CsvImportResult {
         return withContext(Dispatchers.IO) {
@@ -30,18 +28,22 @@ class IosCsvImporter(
                 val csvContent = NSString.stringWithContentsOfFile(
                     uri,
                     encoding = NSUTF8StringEncoding,
-                    error = null
+                    error = null,
                 ) ?: return@withContext CsvImportResult(
-                    imported = 0, skipped = 0, failed = 0,
-                    errors = listOf("Could not open file: $uri")
+                    imported = 0,
+                    skipped = 0,
+                    failed = 0,
+                    errors = listOf("Could not open file: $uri"),
                 )
 
                 val (sessions, parseErrors) = CsvParser.parseWorkoutHistory(csvContent)
 
                 if (sessions.isEmpty() && parseErrors.isNotEmpty()) {
                     return@withContext CsvImportResult(
-                        imported = 0, skipped = 0, failed = parseErrors.size,
-                        errors = parseErrors
+                        imported = 0,
+                        skipped = 0,
+                        failed = parseErrors.size,
+                        errors = parseErrors,
                     )
                 }
 
@@ -72,7 +74,7 @@ class IosCsvImporter(
                             skipped++
                         } else {
                             importErrors.add(
-                                "Failed to save session (${session.exerciseName}): ${e.message}"
+                                "Failed to save session (${session.exerciseName}): ${e.message}",
                             )
                         }
                     }
@@ -84,13 +86,15 @@ class IosCsvImporter(
                     imported = imported,
                     skipped = skipped,
                     failed = parseErrors.size,
-                    errors = importErrors
+                    errors = importErrors,
                 )
             } catch (e: Exception) {
                 Logger.e("CsvImporter", e) { "Import failed" }
                 CsvImportResult(
-                    imported = 0, skipped = 0, failed = 0,
-                    errors = listOf("Import failed: ${e.message}")
+                    imported = 0,
+                    skipped = 0,
+                    failed = 0,
+                    errors = listOf("Import failed: ${e.message}"),
                 )
             }
         }

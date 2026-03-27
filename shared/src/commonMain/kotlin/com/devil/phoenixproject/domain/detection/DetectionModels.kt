@@ -7,10 +7,12 @@ package com.devil.phoenixproject.domain.detection
 enum class VelocityShape {
     /** First third of movement has highest velocity */
     EXPLOSIVE_START,
+
     /** Velocity roughly equal throughout movement */
     LINEAR,
+
     /** Last third has lowest velocity (most common) */
-    DECELERATING
+    DECELERATING,
 }
 
 /**
@@ -20,12 +22,15 @@ enum class VelocityShape {
 enum class CableUsage {
     /** Only left cable active (loadB < 1kg throughout) */
     SINGLE_LEFT,
+
     /** Only right cable active (loadA < 1kg throughout) */
     SINGLE_RIGHT,
+
     /** Both cables with symmetric load (symmetry 0.4-0.6) */
     DUAL_SYMMETRIC,
+
     /** Both cables with asymmetric load */
-    DUAL_ASYMMETRIC
+    DUAL_ASYMMETRIC,
 }
 
 /**
@@ -46,7 +51,7 @@ data class ExerciseSignature(
     /** Number of observations that contributed to this signature */
     val sampleCount: Int = 1,
     /** Aggregated confidence (0.0-1.0) */
-    val confidence: Float = 0f
+    val confidence: Float = 0f,
 )
 
 /**
@@ -55,8 +60,9 @@ data class ExerciseSignature(
 enum class ClassificationSource {
     /** Matched against user's exercise history */
     HISTORY_MATCH,
+
     /** Classified using rule-based decision tree */
-    RULE_BASED
+    RULE_BASED,
 }
 
 /**
@@ -72,5 +78,5 @@ data class ExerciseClassification(
     /** Other likely exercises (alternates) */
     val alternates: List<String>,
     /** How this classification was made */
-    val source: ClassificationSource
+    val source: ClassificationSource,
 )

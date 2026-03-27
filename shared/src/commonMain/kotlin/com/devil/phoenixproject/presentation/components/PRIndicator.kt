@@ -29,17 +29,13 @@ import androidx.compose.ui.unit.dp
  * @param modifier Modifier for the composable
  */
 @Composable
-fun PRIndicator(
-    currentWeight: Float,
-    prWeight: Float?,
-    modifier: Modifier = Modifier
-) {
+fun PRIndicator(currentWeight: Float, prWeight: Float?, modifier: Modifier = Modifier) {
     if (prWeight == null || prWeight <= 0) {
         Text(
             text = "No PR",
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = modifier
+            modifier = modifier,
         )
         return
     }
@@ -52,7 +48,7 @@ fun PRIndicator(
     Row(
         modifier = modifier,
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.Center
+        horizontalArrangement = Arrangement.Center,
     ) {
         Text(
             text = "$percentage% PR",
@@ -61,23 +57,25 @@ fun PRIndicator(
                 isAbovePR -> MaterialTheme.colorScheme.primary
                 percentage >= 90 -> MaterialTheme.colorScheme.tertiary
                 else -> MaterialTheme.colorScheme.onSurfaceVariant
-            }
+            },
         )
 
         Spacer(Modifier.width(4.dp))
 
         if (!isAtPR) {
             Icon(
-                imageVector = if (isAbovePR)
+                imageVector = if (isAbovePR) {
                     Icons.Default.KeyboardArrowUp
-                else
-                    Icons.Default.KeyboardArrowDown,
+                } else {
+                    Icons.Default.KeyboardArrowDown
+                },
                 contentDescription = if (isAbovePR) "Above PR" else "Below PR",
-                tint = if (isAbovePR)
+                tint = if (isAbovePR) {
                     MaterialTheme.colorScheme.primary
-                else
-                    MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(16.dp)
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                },
+                modifier = Modifier.size(16.dp),
             )
         }
     }
@@ -93,11 +91,7 @@ fun PRIndicator(
  * @param modifier Modifier for the composable
  */
 @Composable
-fun PRIndicatorCompact(
-    currentWeight: Float,
-    prWeight: Float?,
-    modifier: Modifier = Modifier
-) {
+fun PRIndicatorCompact(currentWeight: Float, prWeight: Float?, modifier: Modifier = Modifier) {
     if (prWeight == null || prWeight <= 0) return
 
     val percentage = ((currentWeight / prWeight) * 100).toInt().coerceIn(0, 200)
@@ -110,6 +104,6 @@ fun PRIndicatorCompact(
             percentage >= 90 -> MaterialTheme.colorScheme.tertiary
             else -> MaterialTheme.colorScheme.onSurfaceVariant
         },
-        modifier = modifier
+        modifier = modifier,
     )
 }

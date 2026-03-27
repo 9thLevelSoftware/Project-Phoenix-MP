@@ -1,6 +1,5 @@
 package com.devil.phoenixproject.domain.assessment
 
-import kotlin.math.abs
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -38,14 +37,18 @@ class AssessmentEngineTest {
         // At velocity 0.17: load = (0.17 - 1.8) / -0.015 = 108.67
         val points = listOf(
             LoadVelocityPoint(40f, 1.2f),
-            LoadVelocityPoint(80f, 0.6f)
+            LoadVelocityPoint(80f, 0.6f),
         )
 
         val result = engine.estimateOneRepMax(points)
 
         assertNotNull(result, "Should produce result from 2 valid points")
-        assertEquals(108.67f, result.estimatedOneRepMaxKg, tolerance,
-            "1RM should be approximately 108.67kg")
+        assertEquals(
+            108.67f,
+            result.estimatedOneRepMaxKg,
+            tolerance,
+            "1RM should be approximately 108.67kg",
+        )
         assertEquals(2, result.loadVelocityPoints.size)
         assertEquals(0.17f, result.velocityAt1RM)
     }
@@ -58,14 +61,16 @@ class AssessmentEngineTest {
         val points = listOf(
             LoadVelocityPoint(30f, 1.3f),
             LoadVelocityPoint(60f, 0.8f),
-            LoadVelocityPoint(90f, 0.3f)
+            LoadVelocityPoint(90f, 0.3f),
         )
 
         val result = engine.estimateOneRepMax(points)
 
         assertNotNull(result, "Should produce result from 3 valid points")
-        assertTrue(result.estimatedOneRepMaxKg in 96f..100f,
-            "1RM should be in 96-100kg range, got ${result.estimatedOneRepMaxKg}")
+        assertTrue(
+            result.estimatedOneRepMaxKg in 96f..100f,
+            "1RM should be in 96-100kg range, got ${result.estimatedOneRepMaxKg}",
+        )
         assertEquals(3, result.loadVelocityPoints.size)
     }
 
@@ -74,14 +79,18 @@ class AssessmentEngineTest {
         // Perfectly linear data: R^2 should be 1.0
         val points = listOf(
             LoadVelocityPoint(40f, 1.2f),
-            LoadVelocityPoint(80f, 0.6f)
+            LoadVelocityPoint(80f, 0.6f),
         )
 
         val result = engine.estimateOneRepMax(points)
 
         assertNotNull(result)
-        assertEquals(1.0f, result.r2, 0.01f,
-            "R-squared should be 1.0 for perfectly linear data")
+        assertEquals(
+            1.0f,
+            result.r2,
+            0.01f,
+            "R-squared should be 1.0 for perfectly linear data",
+        )
     }
 
     @Test
@@ -91,16 +100,20 @@ class AssessmentEngineTest {
             LoadVelocityPoint(30f, 1.25f),
             LoadVelocityPoint(50f, 0.95f),
             LoadVelocityPoint(70f, 0.55f),
-            LoadVelocityPoint(90f, 0.30f)
+            LoadVelocityPoint(90f, 0.30f),
         )
 
         val result = engine.estimateOneRepMax(points)
 
         assertNotNull(result)
-        assertTrue(result.r2 > 0.9f,
-            "R-squared should be high for nearly linear data, got ${result.r2}")
-        assertTrue(result.estimatedOneRepMaxKg > 90f && result.estimatedOneRepMaxKg < 120f,
-            "1RM should be reasonable, got ${result.estimatedOneRepMaxKg}")
+        assertTrue(
+            result.r2 > 0.9f,
+            "R-squared should be high for nearly linear data, got ${result.r2}",
+        )
+        assertTrue(
+            result.estimatedOneRepMaxKg > 90f && result.estimatedOneRepMaxKg < 120f,
+            "1RM should be reasonable, got ${result.estimatedOneRepMaxKg}",
+        )
     }
 
     // =========================================================================
@@ -128,7 +141,7 @@ class AssessmentEngineTest {
         // Invalid: velocity increases with load (impossible in practice)
         val points = listOf(
             LoadVelocityPoint(40f, 0.5f),
-            LoadVelocityPoint(80f, 0.8f)
+            LoadVelocityPoint(80f, 0.8f),
         )
 
         val result = engine.estimateOneRepMax(points)
@@ -141,7 +154,7 @@ class AssessmentEngineTest {
         // Zero slope (flat line) - can't extrapolate
         val points = listOf(
             LoadVelocityPoint(40f, 0.8f),
-            LoadVelocityPoint(80f, 0.8f)
+            LoadVelocityPoint(80f, 0.8f),
         )
 
         val result = engine.estimateOneRepMax(points)
@@ -154,7 +167,7 @@ class AssessmentEngineTest {
         val config = AssessmentConfig(minSets = 3)
         val points = listOf(
             LoadVelocityPoint(40f, 1.2f),
-            LoadVelocityPoint(80f, 0.6f)
+            LoadVelocityPoint(80f, 0.6f),
         )
 
         val result = engine.estimateOneRepMax(points, config)
@@ -167,7 +180,7 @@ class AssessmentEngineTest {
         val config = AssessmentConfig(oneRmVelocityMs = 0.2f)
         val points = listOf(
             LoadVelocityPoint(40f, 1.2f),
-            LoadVelocityPoint(80f, 0.6f)
+            LoadVelocityPoint(80f, 0.6f),
         )
 
         val result = engine.estimateOneRepMax(points, config)
@@ -184,30 +197,40 @@ class AssessmentEngineTest {
 
     @Test
     fun `shouldStopAssessment returns true below threshold`() {
-        assertTrue(engine.shouldStopAssessment(0.25f),
-            "Should stop when velocity (0.25) is below default threshold (0.3)")
+        assertTrue(
+            engine.shouldStopAssessment(0.25f),
+            "Should stop when velocity (0.25) is below default threshold (0.3)",
+        )
     }
 
     @Test
     fun `shouldStopAssessment returns true at threshold`() {
-        assertTrue(engine.shouldStopAssessment(0.3f),
-            "Should stop when velocity equals threshold")
+        assertTrue(
+            engine.shouldStopAssessment(0.3f),
+            "Should stop when velocity equals threshold",
+        )
     }
 
     @Test
     fun `shouldStopAssessment returns false above threshold`() {
-        assertFalse(engine.shouldStopAssessment(0.35f),
-            "Should not stop when velocity (0.35) is above threshold (0.3)")
+        assertFalse(
+            engine.shouldStopAssessment(0.35f),
+            "Should not stop when velocity (0.35) is above threshold (0.3)",
+        )
     }
 
     @Test
     fun `shouldStopAssessment respects custom threshold`() {
         val config = AssessmentConfig(velocityThresholdMs = 0.5f)
 
-        assertTrue(engine.shouldStopAssessment(0.45f, config),
-            "Should stop at 0.45 with custom threshold 0.5")
-        assertFalse(engine.shouldStopAssessment(0.55f, config),
-            "Should not stop at 0.55 with custom threshold 0.5")
+        assertTrue(
+            engine.shouldStopAssessment(0.45f, config),
+            "Should stop at 0.45 with custom threshold 0.5",
+        )
+        assertFalse(
+            engine.shouldStopAssessment(0.55f, config),
+            "Should not stop at 0.55 with custom threshold 0.5",
+        )
     }
 
     // =========================================================================
@@ -218,32 +241,44 @@ class AssessmentEngineTest {
     fun `suggestNextWeight large jump for high velocity`() {
         // > 0.8 m/s: 2x increment (default 10kg -> +20kg)
         val result = engine.suggestNextWeight(40f, 1.0f)
-        assertEquals(60f, result,
-            "Should suggest 60kg (40 + 2*10) for high velocity")
+        assertEquals(
+            60f,
+            result,
+            "Should suggest 60kg (40 + 2*10) for high velocity",
+        )
     }
 
     @Test
     fun `suggestNextWeight standard jump for medium velocity`() {
         // > 0.5 m/s: 1x increment (default 10kg)
         val result = engine.suggestNextWeight(60f, 0.6f)
-        assertEquals(70f, result,
-            "Should suggest 70kg (60 + 10) for medium velocity")
+        assertEquals(
+            70f,
+            result,
+            "Should suggest 70kg (60 + 10) for medium velocity",
+        )
     }
 
     @Test
     fun `suggestNextWeight small jump for low velocity`() {
         // > 0.3 m/s: 0.5x increment (default 10kg -> +5kg)
         val result = engine.suggestNextWeight(80f, 0.45f)
-        assertEquals(85f, result,
-            "Should suggest 85kg (80 + 5) for low velocity")
+        assertEquals(
+            85f,
+            result,
+            "Should suggest 85kg (80 + 5) for low velocity",
+        )
     }
 
     @Test
     fun `suggestNextWeight no jump at threshold`() {
         // <= 0.3 m/s: no more sets
         val result = engine.suggestNextWeight(90f, 0.25f)
-        assertEquals(90f, result,
-            "Should return same weight when at/below threshold")
+        assertEquals(
+            90f,
+            result,
+            "Should return same weight when at/below threshold",
+        )
     }
 
     @Test
@@ -253,16 +288,22 @@ class AssessmentEngineTest {
         val config = AssessmentConfig(weightIncrementKg = 7f)
         val result = engine.suggestNextWeight(33f, 0.45f, config)
         // 33 + 3.5 = 36.5 - should be on 0.5kg boundary
-        assertEquals(36.5f, result,
-            "Should clamp to 0.5kg increments")
+        assertEquals(
+            36.5f,
+            result,
+            "Should clamp to 0.5kg increments",
+        )
     }
 
     @Test
     fun `suggestNextWeight clamps to max 220kg`() {
         val result = engine.suggestNextWeight(215f, 1.0f)
         // 215 + 20 = 235, clamped to 220
-        assertEquals(220f, result,
-            "Should clamp to maximum 220kg")
+        assertEquals(
+            220f,
+            result,
+            "Should clamp to maximum 220kg",
+        )
     }
 
     @Test
@@ -270,7 +311,10 @@ class AssessmentEngineTest {
         val config = AssessmentConfig(weightIncrementKg = 5f)
         val result = engine.suggestNextWeight(40f, 1.0f, config)
         // > 0.8: 2x increment = 10kg
-        assertEquals(50f, result,
-            "Should use custom increment (5kg * 2 = 10kg)")
+        assertEquals(
+            50f,
+            result,
+            "Should use custom increment (5kg * 2 = 10kg)",
+        )
     }
 }

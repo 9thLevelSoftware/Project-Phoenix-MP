@@ -21,7 +21,7 @@ data class LogFilter(
     val showInfo: Boolean = true,
     val showWarning: Boolean = true,
     val showError: Boolean = true,
-    val searchQuery: String = ""
+    val searchQuery: String = "",
 )
 
 /**
@@ -43,7 +43,7 @@ class ConnectionLogsViewModel : ViewModel() {
      */
     val logs: StateFlow<List<ConnectionLogEntity>> = combine(
         repository.logs,
-        _filter
+        _filter,
     ) { allLogs, filter ->
         allLogs.filter { log ->
             val levelMatch = when (log.level) {
@@ -58,9 +58,9 @@ class ConnectionLogsViewModel : ViewModel() {
                 true
             } else {
                 log.message.contains(filter.searchQuery, ignoreCase = true) ||
-                log.eventType.contains(filter.searchQuery, ignoreCase = true) ||
-                (log.deviceName?.contains(filter.searchQuery, ignoreCase = true) == true) ||
-                (log.details?.contains(filter.searchQuery, ignoreCase = true) == true)
+                    log.eventType.contains(filter.searchQuery, ignoreCase = true) ||
+                    (log.deviceName?.contains(filter.searchQuery, ignoreCase = true) == true) ||
+                    (log.details?.contains(filter.searchQuery, ignoreCase = true) == true)
             }
 
             levelMatch && searchMatch
@@ -68,7 +68,7 @@ class ConnectionLogsViewModel : ViewModel() {
     }.stateIn(
         viewModelScope,
         SharingStarted.WhileSubscribed(5000),
-        emptyList()
+        emptyList(),
     )
 
     val isLoggingEnabled: StateFlow<Boolean> = repository.isEnabled
@@ -131,16 +131,12 @@ class ConnectionLogsViewModel : ViewModel() {
     /**
      * Export logs as plain text.
      */
-    fun exportLogsAsText(): String {
-        return repository.exportAsText()
-    }
+    fun exportLogsAsText(): String = repository.exportAsText()
 
     /**
      * Export logs as CSV.
      */
-    fun exportLogsAsCsv(): String {
-        return repository.exportAsCsv()
-    }
+    fun exportLogsAsCsv(): String = repository.exportAsCsv()
 
     /**
      * Get count of logs by level.
@@ -151,7 +147,7 @@ class ConnectionLogsViewModel : ViewModel() {
             LogLevel.DEBUG to allLogs.count { it.level == LogLevel.DEBUG.name },
             LogLevel.INFO to allLogs.count { it.level == LogLevel.INFO.name },
             LogLevel.WARNING to allLogs.count { it.level == LogLevel.WARNING.name },
-            LogLevel.ERROR to allLogs.count { it.level == LogLevel.ERROR.name }
+            LogLevel.ERROR to allLogs.count { it.level == LogLevel.ERROR.name },
         )
     }
 }

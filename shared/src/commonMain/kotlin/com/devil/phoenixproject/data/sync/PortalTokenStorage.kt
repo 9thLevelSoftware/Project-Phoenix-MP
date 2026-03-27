@@ -1,14 +1,14 @@
 package com.devil.phoenixproject.data.sync
 
+import com.devil.phoenixproject.domain.model.currentTimeMillis
 import com.devil.phoenixproject.domain.model.generateUUID
+import com.devil.phoenixproject.util.withPlatformLock
 import com.russhwolf.settings.Settings
 import com.russhwolf.settings.get
 import com.russhwolf.settings.set
-import com.devil.phoenixproject.util.withPlatformLock
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import com.devil.phoenixproject.domain.model.currentTimeMillis
 
 class PortalTokenStorage(private val settings: Settings) {
 

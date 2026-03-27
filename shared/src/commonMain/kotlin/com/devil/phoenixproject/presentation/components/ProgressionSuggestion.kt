@@ -22,12 +22,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.domain.model.ProgressionEvent
 import com.devil.phoenixproject.domain.model.ProgressionReason
-import com.devil.phoenixproject.domain.model.ProgressionResponse
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.ui.theme.AccessibilityTheme
 import org.jetbrains.compose.resources.stringResource
-import vitruvianprojectphoenix.shared.generated.resources.Res
 import vitruvianprojectphoenix.shared.generated.resources.*
+import vitruvianprojectphoenix.shared.generated.resources.Res
 
 /**
  * Banner component that shows a weight progression suggestion.
@@ -41,7 +40,7 @@ fun ProgressionSuggestionBanner(
     onAccept: () -> Unit,
     onModify: (Float) -> Unit,
     onDismiss: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
 ) {
     var showModifyDialog by remember { mutableStateOf(false) }
     var isVisible by remember { mutableStateOf(true) }
@@ -49,7 +48,7 @@ fun ProgressionSuggestionBanner(
     AnimatedVisibility(
         visible = isVisible,
         enter = fadeIn() + expandVertically(),
-        exit = fadeOut() + shrinkVertically()
+        exit = fadeOut() + shrinkVertically(),
     ) {
         val isDeload = event.reason.isDeload
         val accentColor = if (isDeload) Color(0xFFF57C00) else Color(0xFF4CAF50)
@@ -59,24 +58,24 @@ fun ProgressionSuggestionBanner(
         Card(
             modifier = modifier.fillMaxWidth(),
             colors = CardDefaults.cardColors(
-                containerColor = AccessibilityTheme.colors.success.copy(alpha = 0.15f)
+                containerColor = AccessibilityTheme.colors.success.copy(alpha = 0.15f),
             ),
-            shape = RoundedCornerShape(16.dp)
+            shape = RoundedCornerShape(16.dp),
         ) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(16.dp)
+                    .padding(16.dp),
             ) {
                 // Header with icon and reason
                 Row(
-                    verticalAlignment = Alignment.CenterVertically
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Icon(
                         if (isDeload) Icons.AutoMirrored.Filled.TrendingDown else Icons.AutoMirrored.Filled.TrendingUp,
                         contentDescription = null,
                         tint = AccessibilityTheme.colors.success,
-                        modifier = Modifier.size(24.dp)
+                        modifier = Modifier.size(24.dp),
                     )
                     Spacer(Modifier.width(8.dp))
                     Column {
@@ -84,7 +83,7 @@ fun ProgressionSuggestionBanner(
                             if (isDeload) "Deload Suggested" else "Weight Increase Suggested",
                             style = MaterialTheme.typography.titleSmall,
                             fontWeight = FontWeight.Bold,
-                            color = AccessibilityTheme.colors.success
+                            color = AccessibilityTheme.colors.success,
                         )
                         Text(
                             when (event.reason) {
@@ -95,7 +94,7 @@ fun ProgressionSuggestionBanner(
                                 ProgressionReason.PLATEAU_DETECTED -> "A plateau has been detected in your progress"
                             },
                             style = MaterialTheme.typography.bodySmall,
-                            color = AccessibilityTheme.colors.success
+                            color = AccessibilityTheme.colors.success,
                         )
                     }
                 }
@@ -108,22 +107,22 @@ fun ProgressionSuggestionBanner(
                         .fillMaxWidth()
                         .background(
                             AccessibilityTheme.colors.success.copy(alpha = 0.1f),
-                            RoundedCornerShape(12.dp)
+                            RoundedCornerShape(12.dp),
                         )
                         .padding(12.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Column {
                         Text(
                             "Current",
                             style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                         Text(
                             formatWeight(event.previousWeightKg, weightUnit),
                             style = MaterialTheme.typography.bodyLarge,
-                            fontWeight = FontWeight.Medium
+                            fontWeight = FontWeight.Medium,
                         )
                     }
 
@@ -131,26 +130,26 @@ fun ProgressionSuggestionBanner(
                         Icons.AutoMirrored.Filled.ArrowForward,
                         contentDescription = null,
                         tint = AccessibilityTheme.colors.success,
-                        modifier = Modifier.size(20.dp)
+                        modifier = Modifier.size(20.dp),
                     )
 
                     Column(horizontalAlignment = Alignment.End) {
                         Text(
                             "Suggested",
                             style = MaterialTheme.typography.labelSmall,
-                            color = AccessibilityTheme.colors.success
+                            color = AccessibilityTheme.colors.success,
                         )
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(
                                 formatWeight(event.suggestedWeightKg, weightUnit),
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.Bold,
-                                color = AccessibilityTheme.colors.success
+                                color = AccessibilityTheme.colors.success,
                             )
                             Spacer(Modifier.width(4.dp))
                             Surface(
                                 color = AccessibilityTheme.colors.success,
-                                shape = RoundedCornerShape(4.dp)
+                                shape = RoundedCornerShape(4.dp),
                             ) {
                                 val incrementText = if (isDeload) {
                                     formatWeight(-event.increment(), weightUnit).let { "-$it" }
@@ -161,7 +160,7 @@ fun ProgressionSuggestionBanner(
                                     incrementText,
                                     modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
                                     style = MaterialTheme.typography.labelSmall,
-                                    color = Color.White
+                                    color = Color.White,
                                 )
                             }
                         }
@@ -173,7 +172,7 @@ fun ProgressionSuggestionBanner(
                 // Action buttons
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     OutlinedButton(
                         onClick = {
@@ -183,8 +182,8 @@ fun ProgressionSuggestionBanner(
                         modifier = Modifier.weight(1f),
                         shape = RoundedCornerShape(8.dp),
                         colors = ButtonDefaults.outlinedButtonColors(
-                            contentColor = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                            contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                        ),
                     ) {
                         Text(stringResource(Res.string.action_skip))
                     }
@@ -192,12 +191,12 @@ fun ProgressionSuggestionBanner(
                     OutlinedButton(
                         onClick = { showModifyDialog = true },
                         modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(8.dp)
+                        shape = RoundedCornerShape(8.dp),
                     ) {
                         Icon(
                             Icons.Default.Edit,
                             contentDescription = null,
-                            modifier = Modifier.size(16.dp)
+                            modifier = Modifier.size(16.dp),
                         )
                         Spacer(Modifier.width(4.dp))
                         Text(stringResource(Res.string.action_modify))
@@ -211,13 +210,13 @@ fun ProgressionSuggestionBanner(
                         modifier = Modifier.weight(1f),
                         shape = RoundedCornerShape(8.dp),
                         colors = ButtonDefaults.buttonColors(
-                            containerColor = AccessibilityTheme.colors.success
-                        )
+                            containerColor = AccessibilityTheme.colors.success,
+                        ),
                     ) {
                         Icon(
                             Icons.Default.Check,
                             contentDescription = null,
-                            modifier = Modifier.size(16.dp)
+                            modifier = Modifier.size(16.dp),
                         )
                         Spacer(Modifier.width(4.dp))
                         Text(stringResource(Res.string.action_accept))
@@ -239,7 +238,7 @@ fun ProgressionSuggestionBanner(
                 isVisible = false
                 onModify(newWeight)
             },
-            onDismiss = { showModifyDialog = false }
+            onDismiss = { showModifyDialog = false },
         )
     }
 }
@@ -254,7 +253,7 @@ private fun ModifyWeightDialog(
     weightUnit: WeightUnit,
     formatWeight: (Float, WeightUnit) -> String,
     onConfirm: (Float) -> Unit,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
 ) {
     var weight by remember { mutableStateOf(currentWeight) }
     val increment = 0.5f
@@ -267,12 +266,12 @@ private fun ModifyWeightDialog(
         text = {
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier.fillMaxWidth(),
             ) {
                 Text(
                     "Previous: ${formatWeight(previousWeight, weightUnit)}",
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
 
                 Spacer(Modifier.height(16.dp))
@@ -280,10 +279,10 @@ private fun ModifyWeightDialog(
                 // Weight adjuster
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.Center
+                    horizontalArrangement = Arrangement.Center,
                 ) {
                     IconButton(
-                        onClick = { weight = (weight - increment).coerceAtLeast(0f) }
+                        onClick = { weight = (weight - increment).coerceAtLeast(0f) },
                     ) {
                         Icon(Icons.Default.Remove, contentDescription = stringResource(Res.string.cd_decrease))
                     }
@@ -291,19 +290,19 @@ private fun ModifyWeightDialog(
                     Surface(
                         color = MaterialTheme.colorScheme.primaryContainer,
                         shape = RoundedCornerShape(12.dp),
-                        modifier = Modifier.padding(horizontal = 16.dp)
+                        modifier = Modifier.padding(horizontal = 16.dp),
                     ) {
                         Text(
                             formatWeight(weight, weightUnit),
                             modifier = Modifier.padding(horizontal = 24.dp, vertical = 12.dp),
                             style = MaterialTheme.typography.headlineMedium,
                             fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                            color = MaterialTheme.colorScheme.onPrimaryContainer,
                         )
                     }
 
                     IconButton(
-                        onClick = { weight += increment }
+                        onClick = { weight += increment },
                     ) {
                         Icon(Icons.Default.Add, contentDescription = stringResource(Res.string.cd_increase))
                     }
@@ -312,7 +311,7 @@ private fun ModifyWeightDialog(
                 // Quick presets
                 Spacer(Modifier.height(16.dp))
                 Row(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     listOf(-1f, -0.5f, 0.5f, 1f, 2.5f).forEach { delta ->
                         FilterChip(
@@ -321,9 +320,9 @@ private fun ModifyWeightDialog(
                             label = {
                                 Text(
                                     if (delta > 0) "+${delta}kg" else "${delta}kg",
-                                    style = MaterialTheme.typography.labelSmall
+                                    style = MaterialTheme.typography.labelSmall,
                                 )
-                            }
+                            },
                         )
                     }
                 }
@@ -332,7 +331,7 @@ private fun ModifyWeightDialog(
         confirmButton = {
             Button(
                 onClick = { onConfirm(weight) },
-                enabled = weight > 0f && weight != previousWeight
+                enabled = weight > 0f && weight != previousWeight,
             ) {
                 Text(stringResource(Res.string.use_this_weight))
             }
@@ -341,7 +340,7 @@ private fun ModifyWeightDialog(
             TextButton(onClick = onDismiss) {
                 Text(stringResource(Res.string.action_cancel))
             }
-        }
+        },
     )
 }
 
@@ -355,30 +354,30 @@ fun ProgressionIndicator(
     weightUnit: WeightUnit,
     formatWeight: (Float, WeightUnit) -> String,
     onClick: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
 ) {
     Surface(
         onClick = onClick,
         color = AccessibilityTheme.colors.success.copy(alpha = 0.2f),
         shape = RoundedCornerShape(8.dp),
-        modifier = modifier
+        modifier = modifier,
     ) {
         Row(
             modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-            verticalAlignment = Alignment.CenterVertically
+            verticalAlignment = Alignment.CenterVertically,
         ) {
             Icon(
                 Icons.AutoMirrored.Filled.TrendingUp,
                 contentDescription = null,
                 tint = AccessibilityTheme.colors.success,
-                modifier = Modifier.size(14.dp)
+                modifier = Modifier.size(14.dp),
             )
             Spacer(Modifier.width(4.dp))
             Text(
                 "+${formatWeight(increment, weightUnit)}",
                 style = MaterialTheme.typography.labelSmall,
                 fontWeight = FontWeight.SemiBold,
-                color = AccessibilityTheme.colors.success
+                color = AccessibilityTheme.colors.success,
             )
         }
     }

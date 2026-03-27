@@ -9,9 +9,7 @@ import com.devil.phoenixproject.domain.model.Routine
  *
  * Issue #225
  */
-class RoutineTimeEstimator(
-    private val workoutRepository: WorkoutRepository
-) {
+class RoutineTimeEstimator(private val workoutRepository: WorkoutRepository) {
     /**
      * Estimate routine duration in seconds.
      * Uses historical average set duration per exercise when available,
@@ -26,7 +24,10 @@ class RoutineTimeEstimator(
             val exerciseId = exercise.exercise.id
             if (exerciseId != null) {
                 // Try to get average set duration from history
-                val avgDurationMs = workoutRepository.getAverageSetDurationMs(exerciseId, profileId = "default")
+                val avgDurationMs = workoutRepository.getAverageSetDurationMs(
+                    exerciseId,
+                    profileId = "default",
+                )
                 if (avgDurationMs != null && avgDurationMs > 0) {
                     totalHistoricalMs += avgDurationMs * exercise.sets
                     historicalExerciseCount++
@@ -49,7 +50,7 @@ class RoutineTimeEstimator(
             totalSeconds = totalSeconds,
             isHistoryBased = historicalExerciseCount > 0,
             historicalExerciseCount = historicalExerciseCount,
-            totalExerciseCount = routine.exercises.size
+            totalExerciseCount = routine.exercises.size,
         )
     }
 }
@@ -58,7 +59,7 @@ data class RoutineTimeEstimate(
     val totalSeconds: Int,
     val isHistoryBased: Boolean,
     val historicalExerciseCount: Int,
-    val totalExerciseCount: Int
+    val totalExerciseCount: Int,
 ) {
     val formattedDuration: String
         get() {

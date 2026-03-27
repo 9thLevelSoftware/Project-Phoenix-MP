@@ -41,7 +41,7 @@ class RoutineTest {
     @Test
     fun getRestForSet_returnsConfiguredRest() {
         val exercise = createTestRoutineExercise(
-            setRestSeconds = listOf(30, 60, 90)
+            setRestSeconds = listOf(30, 60, 90),
         )
         assertEquals(30, exercise.getRestForSet(0))
         assertEquals(60, exercise.getRestForSet(1))
@@ -51,18 +51,18 @@ class RoutineTest {
     @Test
     fun getRestForSet_fallsBackTo60WhenMissing() {
         val exercise = createTestRoutineExercise(
-            setRestSeconds = listOf(30)
+            setRestSeconds = listOf(30),
         )
         assertEquals(30, exercise.getRestForSet(0))
-        assertEquals(60, exercise.getRestForSet(1))  // Falls back
-        assertEquals(60, exercise.getRestForSet(5))  // Falls back
+        assertEquals(60, exercise.getRestForSet(1)) // Falls back
+        assertEquals(60, exercise.getRestForSet(5)) // Falls back
     }
 
     @Test
     fun withNormalizedRestTimes_padsToMatchSets() {
         val exercise = createTestRoutineExercise(
             setReps = listOf(10, 10, 10),
-            setRestSeconds = listOf(30)
+            setRestSeconds = listOf(30),
         )
         val normalized = exercise.withNormalizedRestTimes()
         assertEquals(3, normalized.setRestSeconds.size)
@@ -75,7 +75,7 @@ class RoutineTest {
     fun withNormalizedRestTimes_trimsExcess() {
         val exercise = createTestRoutineExercise(
             setReps = listOf(10, 10),
-            setRestSeconds = listOf(30, 60, 90, 120)
+            setRestSeconds = listOf(30, 60, 90, 120),
         )
         val normalized = exercise.withNormalizedRestTimes()
         assertEquals(2, normalized.setRestSeconds.size)
@@ -87,14 +87,25 @@ class RoutineTest {
     fun routine_getItems_ordersSupersetAndStandalone() {
         val ssId = "ss1"
         val exercises = listOf(
-            createTestRoutineExercise(id = "e1", orderIndex = 0, supersetId = ssId, orderInSuperset = 0),
-            createTestRoutineExercise(id = "e2", orderIndex = 0, supersetId = ssId, orderInSuperset = 1),
-            createTestRoutineExercise(id = "e3", orderIndex = 1)
+            createTestRoutineExercise(
+                id = "e1",
+                orderIndex = 0,
+                supersetId = ssId,
+                orderInSuperset = 0,
+            ),
+            createTestRoutineExercise(
+                id = "e2",
+                orderIndex = 0,
+                supersetId = ssId,
+                orderInSuperset = 1,
+            ),
+            createTestRoutineExercise(id = "e3", orderIndex = 1),
         )
         val supersets = listOf(
-            Superset(id = ssId, routineId = "r1", name = "SS A", orderIndex = 0)
+            Superset(id = ssId, routineId = "r1", name = "SS A", orderIndex = 0),
         )
-        val routine = Routine(id = "r1", name = "Test", exercises = exercises, supersets = supersets)
+        val routine =
+            Routine(id = "r1", name = "Test", exercises = exercises, supersets = supersets)
         val items = routine.getItems()
 
         assertEquals(2, items.size)
@@ -110,22 +121,20 @@ class RoutineTest {
         setReps: List<Int?> = listOf(10, 10, 10),
         setRestSeconds: List<Int> = emptyList(),
         supersetId: String? = null,
-        orderInSuperset: Int = 0
-    ): RoutineExercise {
-        return RoutineExercise(
-            id = id,
-            exercise = Exercise(
-                name = "Test Exercise",
-                muscleGroup = "Chest",
-                equipment = "Double Cable",
-                id = "ex1"
-            ),
-            orderIndex = orderIndex,
-            setReps = setReps,
-            weightPerCableKg = 20f,
-            setRestSeconds = setRestSeconds,
-            supersetId = supersetId,
-            orderInSuperset = orderInSuperset
-        )
-    }
+        orderInSuperset: Int = 0,
+    ): RoutineExercise = RoutineExercise(
+        id = id,
+        exercise = Exercise(
+            name = "Test Exercise",
+            muscleGroup = "Chest",
+            equipment = "Double Cable",
+            id = "ex1",
+        ),
+        orderIndex = orderIndex,
+        setReps = setReps,
+        weightPerCableKg = 20f,
+        setRestSeconds = setRestSeconds,
+        supersetId = supersetId,
+        orderInSuperset = orderInSuperset,
+    )
 }

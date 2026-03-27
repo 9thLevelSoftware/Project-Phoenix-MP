@@ -28,15 +28,9 @@ import kotlinx.serialization.json.Json
  * Sealed class representing each step of the assessment wizard.
  */
 sealed class AssessmentStep {
-    data class ExerciseSelection(
-        val exercises: List<Exercise> = emptyList(),
-        val searchQuery: String = ""
-    ) : AssessmentStep()
+    data class ExerciseSelection(val exercises: List<Exercise> = emptyList(), val searchQuery: String = "") : AssessmentStep()
 
-    data class Instruction(
-        val exercise: Exercise,
-        val videos: List<ExerciseVideoEntity> = emptyList()
-    ) : AssessmentStep()
+    data class Instruction(val exercise: Exercise, val videos: List<ExerciseVideoEntity> = emptyList()) : AssessmentStep()
 
     data class ProgressiveLoading(
         val currentSetNumber: Int = 1,
@@ -47,22 +41,19 @@ sealed class AssessmentStep {
         /** True while the user is performing a set and velocity is being captured from BLE. */
         val isCapturing: Boolean = false,
         /** Live mean velocity in m/s being accumulated during capture. Null before any data. */
-        val liveVelocityMs: Float? = null
+        val liveVelocityMs: Float? = null,
     ) : AssessmentStep()
 
     data class Results(
         val estimatedOneRepMaxKg: Float,
         val r2: Float,
         val loadVelocityPoints: List<LoadVelocityPoint>,
-        val overrideValueKg: String = ""
+        val overrideValueKg: String = "",
     ) : AssessmentStep()
 
     data object Saving : AssessmentStep()
 
-    data class Complete(
-        val finalOneRepMaxKg: Float,
-        val exerciseName: String
-    ) : AssessmentStep()
+    data class Complete(val finalOneRepMaxKg: Float, val exerciseName: String) : AssessmentStep()
 }
 
 /**
@@ -78,7 +69,7 @@ sealed class AssessmentStep {
 class AssessmentViewModel(
     private val exerciseRepository: ExerciseRepository,
     private val assessmentRepository: AssessmentRepository,
-    private val assessmentEngine: AssessmentEngine
+    private val assessmentEngine: AssessmentEngine,
 ) : ViewModel() {
 
     private val _currentStep = MutableStateFlow<AssessmentStep>(AssessmentStep.ExerciseSelection())
@@ -145,7 +136,7 @@ class AssessmentViewModel(
             } else {
                 _currentStep.value = AssessmentStep.Instruction(
                     exercise = exercise,
-                    videos = videos
+                    videos = videos,
                 )
             }
         }
@@ -195,7 +186,7 @@ class AssessmentViewModel(
         // Use the engine to get a properly snapped suggestion
         val suggestedWeight = assessmentEngine.suggestNextWeight(
             currentLoadKg = startingLoad,
-            currentVelocity = 1.2f // High velocity assumption for first set
+            currentVelocity = 1.2f, // High velocity assumption for first set
         )
 
         _currentStep.value = AssessmentStep.ProgressiveLoading(
@@ -203,7 +194,7 @@ class AssessmentViewModel(
             suggestedWeightKg = suggestedWeight,
             recordedSets = emptyList(),
             latestVelocity = null,
-            shouldStop = false
+            shouldStop = false,
         )
     }
 
@@ -227,7 +218,7 @@ class AssessmentViewModel(
             loadKg = loadKg,
             reps = reps,
             meanVelocityMs = meanVelocityMs,
-            peakVelocityMs = peakVelocityMs
+            peakVelocityMs = peakVelocityMs,
         )
 
         val updatedSets = current.recordedSets + newSet
@@ -244,7 +235,7 @@ class AssessmentViewModel(
                 _currentStep.value = AssessmentStep.Results(
                     estimatedOneRepMaxKg = result.estimatedOneRepMaxKg,
                     r2 = result.r2,
-                    loadVelocityPoints = result.loadVelocityPoints
+                    loadVelocityPoints = result.loadVelocityPoints,
                 )
             } else {
                 // Not enough valid data for regression - show what we have with a fallback
@@ -253,7 +244,7 @@ class AssessmentViewModel(
                 _currentStep.value = AssessmentStep.Results(
                     estimatedOneRepMaxKg = heaviestLoad,
                     r2 = 0f,
-                    loadVelocityPoints = points
+                    loadVelocityPoints = points,
                 )
             }
         } else {
@@ -264,7 +255,7 @@ class AssessmentViewModel(
                 suggestedWeightKg = nextWeight,
                 recordedSets = updatedSets,
                 latestVelocity = meanVelocityMs,
-                shouldStop = false
+                shouldStop = false,
             )
         }
     }
@@ -292,8 +283,11 @@ class AssessmentViewModel(
                 // Serialize load-velocity data as JSON
                 val lvDataJson = Json.encodeToString(
                     current.loadVelocityPoints.map {
-                        mapOf("loadKg" to it.loadKg.toString(), "velocityMs" to it.meanVelocityMs.toString())
-                    }
+                        mapOf(
+                            "loadKg" to it.loadKg.toString(),
+                            "velocityMs" to it.meanVelocityMs.toString(),
+                        )
+                    },
                 )
 
                 val totalReps = assessmentResult?.let {
@@ -312,15 +306,21 @@ class AssessmentViewModel(
                     exerciseName = exercise.displayName,
                     estimatedOneRepMaxKg = current.estimatedOneRepMaxKg,
                     loadVelocityDataJson = lvDataJson,
-                    userOverrideKg = if (overrideKg != null && overrideKg > 0f) overrideKg else null,
+                    userOverrideKg = if (overrideKg != null &&
+                        overrideKg > 0f
+                    ) {
+                        overrideKg
+                    } else {
+                        null
+                    },
                     totalReps = totalReps,
                     durationMs = durationMs,
-                    weightPerCableKg = avgWeight / 2f
+                    weightPerCableKg = avgWeight / 2f,
                 )
 
                 _currentStep.value = AssessmentStep.Complete(
                     finalOneRepMaxKg = finalOneRm,
-                    exerciseName = exercise.displayName
+                    exerciseName = exercise.displayName,
                 )
 
                 Logger.i("Assessment saved: ${exercise.displayName} -> $finalOneRm kg 1RM")
@@ -355,7 +355,13 @@ class AssessmentViewModel(
                 metricsFlow.collect { metric ->
                     if (metric != null) {
                         // Average velocity across both cables, in mm/s
-                        val avgVelocityMmS = (kotlin.math.abs(metric.velocityA) + kotlin.math.abs(metric.velocityB)) / 2.0
+                        val avgVelocityMmS =
+                            (
+                                kotlin.math.abs(
+                                    metric.velocityA,
+                                ) + kotlin.math.abs(metric.velocityB)
+                                ) /
+                                2.0
                         if (avgVelocityMmS > noiseFloorMmS) {
                             val velocityMs = (avgVelocityMmS / 1000.0).toFloat()
                             capturedVelocities.add(velocityMs)
@@ -414,7 +420,7 @@ class AssessmentViewModel(
         assessmentResult = null
         assessmentStartTimeMs = 0L
         _currentStep.value = AssessmentStep.ExerciseSelection(
-            exercises = _exercises.value
+            exercises = _exercises.value,
         )
     }
 }
