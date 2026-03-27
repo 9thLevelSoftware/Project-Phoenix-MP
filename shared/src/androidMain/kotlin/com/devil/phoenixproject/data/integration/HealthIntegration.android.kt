@@ -1,5 +1,6 @@
 package com.devil.phoenixproject.data.integration
 
+import android.annotation.SuppressLint
 import android.content.Context
 import androidx.health.connect.client.HealthConnectClient
 import androidx.health.connect.client.permission.HealthPermission
@@ -41,13 +42,11 @@ actual class HealthIntegration(private val context: Context) {
         }
     }
 
-    actual suspend fun isAvailable(): Boolean {
-        return try {
-            HealthConnectClient.getSdkStatus(context) == HealthConnectClient.SDK_AVAILABLE
-        } catch (e: Exception) {
-            log.w(e) { "Error checking Health Connect availability" }
-            false
-        }
+    actual suspend fun isAvailable(): Boolean = try {
+        HealthConnectClient.getSdkStatus(context) == HealthConnectClient.SDK_AVAILABLE
+    } catch (e: Exception) {
+        log.w(e) { "Error checking Health Connect availability" }
+        false
     }
 
     /**
@@ -67,14 +66,15 @@ actual class HealthIntegration(private val context: Context) {
         }
     }
 
+    @SuppressLint("RestrictedApi") // ExerciseSessionRecord constructor restricted in alpha; fixed in stable 1.1.0
     actual suspend fun writeWorkout(session: WorkoutSession): Result<Unit> {
         val c = client ?: return Result.failure(
-            IllegalStateException("Health Connect is not available on this device")
+            IllegalStateException("Health Connect is not available on this device"),
         )
 
         if (!hasPermissions()) {
             return Result.failure(
-                SecurityException("Health Connect write permissions not granted")
+                SecurityException("Health Connect write permissions not granted"),
             )
         }
 
@@ -94,7 +94,7 @@ actual class HealthIntegration(private val context: Context) {
                         endZoneOffset = zoneOffset,
                         exerciseType = ExerciseSessionRecord.EXERCISE_TYPE_WEIGHTLIFTING,
                         title = buildExerciseTitle(session),
-                                            )
+                    ),
                 )
 
                 val calories = session.estimatedCalories
@@ -106,7 +106,7 @@ actual class HealthIntegration(private val context: Context) {
                             endTime = endInstant,
                             endZoneOffset = zoneOffset,
                             energy = Energy.kilocalories(calories.toDouble()),
-                                                    )
+                        ),
                     )
                 }
             }
