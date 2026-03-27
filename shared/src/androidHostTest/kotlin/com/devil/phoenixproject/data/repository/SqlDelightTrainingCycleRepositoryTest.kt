@@ -91,8 +91,15 @@ class SqlDelightTrainingCycleRepositoryTest {
         repository.saveCycle(cycle)
         val progress = repository.initializeProgress(cycleId)
 
+        // Use midnight-of-yesterday to guarantee exactly 1 calendar day difference.
+        // pendingAutoAdvanceDays() compares calendar dates in the system timezone,
+        // so raw "25 hours ago" millis can still be the same calendar day near midnight
+        // depending on timezone. Using yesterday's midnight is deterministic.
+        val yesterdayMidnight = java.time.LocalDate.now().minusDays(1)
+            .atStartOfDay(java.time.ZoneId.systemDefault())
+            .toInstant().toEpochMilli()
         repository.updateCycleProgress(
-            progress.copy(lastAdvancedAt = System.currentTimeMillis() - (25 * 60 * 60 * 1000L))
+            progress.copy(lastAdvancedAt = yesterdayMidnight)
         )
 
         val updated = repository.checkAndAutoAdvance(cycleId)
@@ -115,9 +122,14 @@ class SqlDelightTrainingCycleRepositoryTest {
         repository.saveCycle(cycle)
         val progress = repository.initializeProgress(cycleId)
 
+        // Use midnight-of-2-days-ago for timezone-safe day comparison.
+        // pendingAutoAdvanceDays() compares calendar dates, not raw millis.
+        val twoDaysAgoMidnight = java.time.LocalDate.now().minusDays(2)
+            .atStartOfDay(java.time.ZoneId.systemDefault())
+            .toInstant().toEpochMilli()
         repository.updateCycleProgress(
             progress.copy(
-                cycleStartDate = System.currentTimeMillis() - (2 * 24 * 60 * 60 * 1000L),
+                cycleStartDate = twoDaysAgoMidnight,
                 lastAdvancedAt = null
             )
         )
