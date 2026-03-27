@@ -1,13 +1,8 @@
 -- Migration 22: Add profile_id to gamification tables for multi-profile isolation
--- Without this, Profile B's workouts advance Profile A's streaks and badges.
-
-ALTER TABLE EarnedBadge ADD COLUMN profile_id TEXT NOT NULL DEFAULT 'default';
-
-ALTER TABLE StreakHistory ADD COLUMN profile_id TEXT NOT NULL DEFAULT 'default';
-
-ALTER TABLE RpgAttributes ADD COLUMN profile_id TEXT NOT NULL DEFAULT 'default';
-
-ALTER TABLE GamificationStats ADD COLUMN profile_id TEXT NOT NULL DEFAULT 'default';
+-- These profile_id columns are intentionally healed outside this numbered
+-- migration. The tables were later released through schema/create paths with
+-- profile_id already present, so replaying ALTER TABLE here can crash existing
+-- installs with duplicate-column errors.
 
 -- Drop the old UNIQUE constraint on EarnedBadge.badgeId and re-create with profile_id.
 -- SQLite doesn't support DROP CONSTRAINT, so we need to work around it.

@@ -49,6 +49,7 @@ class ExerciseConfigViewModel constructor(
 
     private val log = Logger.withTag("ExerciseConfigViewModel")
     private val _initialized = MutableStateFlow(false)
+    private var activeProfileId: String = "default"
 
     // Dependencies that need to be passed in
     private lateinit var originalExercise: RoutineExercise
@@ -119,9 +120,10 @@ class ExerciseConfigViewModel constructor(
         unit: WeightUnit,
         toDisplay: (Float, WeightUnit) -> Float,
         toKg: (Float, WeightUnit) -> Float,
-        prWeightKg: Float? = null  // Optional PR weight to use as default
+        prWeightKg: Float? = null,  // Optional PR weight to use as default
+        profileId: String = "default"
     ) {
-        if (_initialized.value && originalExercise.id == exercise.id) {
+        if (_initialized.value && originalExercise.id == exercise.id && activeProfileId == profileId) {
             return
         }
 
@@ -129,6 +131,7 @@ class ExerciseConfigViewModel constructor(
         weightUnit = unit
         kgToDisplay = toDisplay
         displayToKg = toKg
+        activeProfileId = profileId
 
         _exerciseType.value = if (!exercise.exercise.hasCableAccessory) {
             ExerciseType.BODYWEIGHT
@@ -248,11 +251,11 @@ class ExerciseConfigViewModel constructor(
         }
         viewModelScope.launch {
             try {
-                val pr = personalRecordRepository.getBestWeightPR(exerciseId, workoutMode)
+                val pr = personalRecordRepository.getBestWeightPR(exerciseId, workoutMode, activeProfileId)
                 _currentExercisePR.value = pr
-                logDebug("Loaded PR for exercise=$exerciseId, mode=$workoutMode: ${pr?.weightPerCableKg ?: "none"}")
+                logDebug("Loaded PR for exercise=$exerciseId, mode=$workoutMode, profile=$activeProfileId: ${pr?.weightPerCableKg ?: "none"}")
             } catch (e: Exception) {
-                logWarning("Failed to load PR for exercise=$exerciseId, mode=$workoutMode: ${e.message}")
+                logWarning("Failed to load PR for exercise=$exerciseId, mode=$workoutMode, profile=$activeProfileId: ${e.message}")
                 _currentExercisePR.value = null
             }
         }

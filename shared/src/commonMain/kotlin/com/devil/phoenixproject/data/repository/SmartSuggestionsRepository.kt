@@ -28,8 +28,10 @@ interface SmartSuggestionsRepository {
 
     /**
      * Get per-exercise weight history ordered by timestamp.
-     * Used for plateau detection. Only exerciseId, exerciseName, weightPerCableKg, and timestamp
-     * are populated; muscleGroup defaults to exercise name, reps default to 0.
+     * Used for plateau detection. Weight history should reflect achieved session load when
+     * available, falling back to the programmed weight for older sessions that lack summaries.
+     * Only exerciseId, exerciseName, weightPerCableKg, and timestamp are populated; muscleGroup
+     * defaults to exercise name, reps default to 0.
      */
     suspend fun getExerciseWeightHistory(profileId: String): List<SessionSummary>
 }
@@ -84,7 +86,7 @@ class SqlDelightSmartSuggestionsRepository(
                     exerciseName = row.exerciseName ?: "Unknown",
                     muscleGroup = row.exerciseName ?: "Unknown",
                     timestamp = row.timestamp,
-                    weightPerCableKg = row.weightPerCableKg.toFloat(),
+                    weightPerCableKg = row.achievedWeightKg.toFloat(),
                     totalReps = 0,
                     workingReps = 0
                 )

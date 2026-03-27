@@ -173,58 +173,61 @@ class MigrationManager(
     }
 
     private fun normalizeLegacyPersonalRecordModes() {
-        val records = runCatching { queries.selectAllRecords(profileId = "default").executeAsList() }
-            .getOrElse { error ->
-                log.e(error) { "Failed to load personal records for mode normalization" }
-                return
-            }
-
-        var updated = 0
-        var merged = 0
-        database.transaction {
-            records.forEach { record ->
-                val normalizedMode = normalizeWorkoutModeKey(record.workoutMode)
-                if (normalizedMode == record.workoutMode) return@forEach
-
-                val canonicalRecord = queries.selectPR(
-                    exerciseId = record.exerciseId,
-                    workoutMode = normalizedMode,
-                    prType = record.prType,
-                    phase = record.phase,
-                    profileId = "default"
-                ).executeAsOneOrNull()
-
-                if (canonicalRecord == null || shouldReplacePersonalRecord(record, canonicalRecord)) {
-                    queries.upsertPR(
-                        exerciseId = record.exerciseId,
-                        exerciseName = record.exerciseName,
-                        weight = record.weight,
-                        reps = record.reps,
-                        oneRepMax = record.oneRepMax,
-                        achievedAt = record.achievedAt,
-                        workoutMode = normalizedMode,
-                        prType = record.prType,
-                        volume = record.volume,
-                        phase = record.phase,
-                        profile_id = "default"
-                    )
-                    updated++
-                } else {
-                    merged++
+        knownProfileIds().forEach { profileId ->
+            val records = runCatching { queries.selectAllRecords(profileId = profileId).executeAsList() }
+                .getOrElse { error ->
+                    log.e(error) { "Failed to load personal records for mode normalization (profile=$profileId)" }
+                    return@forEach
                 }
 
-                queries.deletePRByKey(
-                    exerciseId = record.exerciseId,
-                    workoutMode = record.workoutMode,
-                    prType = record.prType,
-                    phase = record.phase,
-                    profile_id = "default"
-                )
-            }
-        }
+            var updated = 0
+            var merged = 0
+            database.transaction {
+                records.forEach { record ->
+                    val normalizedMode = normalizeWorkoutModeKey(record.workoutMode)
+                    if (normalizedMode == record.workoutMode) return@forEach
 
-        if (updated > 0 || merged > 0) {
-            log.i { "Normalized personal record mode keys: updated $updated rows, merged $merged legacy duplicates" }
+                    val recordProfileId = record.profile_id.ifBlank { profileId }
+                    val canonicalRecord = queries.selectPR(
+                        exerciseId = record.exerciseId,
+                        workoutMode = normalizedMode,
+                        prType = record.prType,
+                        phase = record.phase,
+                        profileId = recordProfileId
+                    ).executeAsOneOrNull()
+
+                    if (canonicalRecord == null || shouldReplacePersonalRecord(record, canonicalRecord)) {
+                        queries.upsertPR(
+                            exerciseId = record.exerciseId,
+                            exerciseName = record.exerciseName,
+                            weight = record.weight,
+                            reps = record.reps,
+                            oneRepMax = record.oneRepMax,
+                            achievedAt = record.achievedAt,
+                            workoutMode = normalizedMode,
+                            prType = record.prType,
+                            volume = record.volume,
+                            phase = record.phase,
+                            profile_id = recordProfileId
+                        )
+                        updated++
+                    } else {
+                        merged++
+                    }
+
+                    queries.deletePRByKey(
+                        exerciseId = record.exerciseId,
+                        workoutMode = record.workoutMode,
+                        prType = record.prType,
+                        phase = record.phase,
+                        profile_id = recordProfileId
+                    )
+                }
+            }
+
+            if (updated > 0 || merged > 0) {
+                log.i { "Normalized personal record mode keys for profile=$profileId: updated $updated rows, merged $merged legacy duplicates" }
+            }
         }
     }
 
@@ -242,44 +245,65 @@ class MigrationManager(
         var repairedSessions = 0
         var repairedRecords = 0
 
-        sessions.forEach { session ->
-            val exerciseId = sanitizeLegacyLabel(session.exerciseId) ?: return@forEach
-            if (session.isJustLift != 0L) return@forEach
+        sessions
+            .groupBy { it.profile_id.ifBlank { "default" } }
+            .forEach { (profileId, profileSessions) ->
+                var profileRepairedSessions = 0
+                var profileRepairedRecords = 0
 
-            val normalizedMode = normalizeWorkoutModeKey(session.mode)
-            if (normalizedMode == "Echo") return@forEach
+                profileSessions.sortedBy { it.timestamp }.forEach { session ->
+                    val exerciseId = sanitizeLegacyLabel(session.exerciseId) ?: return@forEach
+                    if (session.isJustLift != 0L) return@forEach
 
-            val reps = session.workingReps.toInt()
-            if (reps <= 0) return@forEach
+                    val normalizedMode = normalizeWorkoutModeKey(session.mode)
+                    if (normalizedMode == "Echo") return@forEach
 
-            val achievedWeightKg = session.heaviestLiftKg?.toFloat() ?: session.weightPerCableKg.toFloat()
-            val configuredWeightKg = session.weightPerCableKg.toFloat()
-            if (achievedWeightKg <= 0f || configuredWeightKg <= 0f) return@forEach
+                    val reps = session.workingReps.toInt()
+                    if (reps <= 0) return@forEach
 
-            val brokenPRs = runCatching {
-                personalRecordRepository.updatePRsIfBetter(
-                    exerciseId = exerciseId,
-                    weightPRWeightPerCableKg = achievedWeightKg,
-                    volumePRWeightPerCableKg = configuredWeightKg,
-                    reps = reps,
-                    workoutMode = normalizedMode,
-                    timestamp = session.timestamp,
-                    profileId = "default"
-                ).getOrThrow()
-            }.getOrElse { error ->
-                log.e(error) { "Failed to repair PRs for session ${session.id}" }
-                return@forEach
+                    val achievedWeightKg = session.heaviestLiftKg?.toFloat() ?: session.weightPerCableKg.toFloat()
+                    val configuredWeightKg = session.weightPerCableKg.toFloat()
+                    if (achievedWeightKg <= 0f || configuredWeightKg <= 0f) return@forEach
+
+                    val brokenPRs = runCatching {
+                        personalRecordRepository.updatePRsIfBetter(
+                            exerciseId = exerciseId,
+                            weightPRWeightPerCableKg = achievedWeightKg,
+                            volumePRWeightPerCableKg = configuredWeightKg,
+                            reps = reps,
+                            workoutMode = normalizedMode,
+                            timestamp = session.timestamp,
+                            profileId = profileId
+                        ).getOrThrow()
+                    }.getOrElse { error ->
+                        log.e(error) { "Failed to repair PRs for session ${session.id} (profile=$profileId)" }
+                        return@forEach
+                    }
+
+                    if (brokenPRs.isNotEmpty()) {
+                        repairedSessions++
+                        repairedRecords += brokenPRs.size
+                        profileRepairedSessions++
+                        profileRepairedRecords += brokenPRs.size
+                    }
+                }
+
+                if (profileRepairedRecords > 0) {
+                    log.i { "Repaired $profileRepairedRecords PR records from $profileRepairedSessions workout sessions for profile=$profileId" }
+                }
             }
-
-            if (brokenPRs.isNotEmpty()) {
-                repairedSessions++
-                repairedRecords += brokenPRs.size
-            }
-        }
 
         if (repairedRecords > 0) {
             log.i { "Repaired $repairedRecords PR records from $repairedSessions workout sessions" }
         }
+    }
+
+    private fun knownProfileIds(): List<String> {
+        val profileIds = queries.getAllProfiles().executeAsList()
+            .map { it.id }
+            .ifEmpty { listOf("default") }
+
+        return if ("default" in profileIds) profileIds.distinct() else (listOf("default") + profileIds).distinct()
     }
 
     private fun shouldReplacePersonalRecord(

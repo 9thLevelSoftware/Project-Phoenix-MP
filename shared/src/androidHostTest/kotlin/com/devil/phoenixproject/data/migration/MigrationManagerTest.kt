@@ -252,6 +252,54 @@ class MigrationManagerTest {
     }
 
     @Test
+    fun `normalize legacy personal record modes stays within each profile`() {
+        val queries = database.vitruvianDatabaseQueries
+        insertProfile(id = "profile-b", name = "Profile B", isActive = false)
+        insertMinimalExercise(id = "deadlift", name = "Conventional Deadlift")
+
+        queries.insertRecord(
+            exerciseId = "deadlift",
+            exerciseName = "Conventional Deadlift",
+            weight = 70.0,
+            reps = 8,
+            oneRepMax = OneRepMaxCalculator.epley(70f, 8).toDouble(),
+            achievedAt = 1_700_000_000_000,
+            workoutMode = "OldSchool",
+            prType = PRType.MAX_WEIGHT.name,
+            volume = 560.0,
+            phase = "COMBINED",
+            profile_id = "profile-b"
+        )
+        queries.insertRecord(
+            exerciseId = "deadlift",
+            exerciseName = "Conventional Deadlift",
+            weight = 65.0,
+            reps = 8,
+            oneRepMax = OneRepMaxCalculator.epley(65f, 8).toDouble(),
+            achievedAt = 1_700_000_100_000,
+            workoutMode = "Old School",
+            prType = PRType.MAX_WEIGHT.name,
+            volume = 520.0,
+            phase = "COMBINED",
+            profile_id = "profile-b"
+        )
+
+        migrationManager.checkAndRunMigrations()
+        Thread.sleep(500)
+
+        val canonicalProfileB = queries.selectPR("deadlift", "Old School", PRType.MAX_WEIGHT.name, phase = "COMBINED", profileId = "profile-b").executeAsOneOrNull()
+        val recordsProfileB = queries.selectAllRecords(profileId = "profile-b").executeAsList()
+            .filter { it.exerciseId == "deadlift" && it.prType == PRType.MAX_WEIGHT.name }
+
+        assertNotNull(canonicalProfileB)
+        assertEquals(1, recordsProfileB.size)
+        assertEquals("Old School", canonicalProfileB.workoutMode)
+        assertEquals(70.0, canonicalProfileB.weight)
+        assertNull(queries.selectPR("deadlift", "OldSchool", PRType.MAX_WEIGHT.name, phase = "COMBINED", profileId = "profile-b").executeAsOneOrNull())
+        assertNull(queries.selectPR("deadlift", "Old School", PRType.MAX_WEIGHT.name, phase = "COMBINED", profileId = "default").executeAsOneOrNull())
+    }
+
+    @Test
     fun `repair personal records from workout history backfills achieved load and stays idempotent`() {
         val queries = database.vitruvianDatabaseQueries
         insertMinimalExercise(id = "deadlift", name = "Conventional Deadlift")
@@ -294,7 +342,80 @@ class MigrationManagerTest {
         )
     }
 
+    @Test
+    fun `repair personal records from workout history respects session profile ids`() {
+        val queries = database.vitruvianDatabaseQueries
+        insertProfile(id = "profile-b", name = "Profile B", isActive = false)
+        insertMinimalExercise(id = "deadlift", name = "Conventional Deadlift")
+
+        insertMinimalSession(
+            id = "session-default",
+            routineSessionId = null,
+            routineName = "Pull A",
+            exerciseId = "deadlift",
+            exerciseName = "Conventional Deadlift",
+            mode = "OldSchool",
+            weightPerCableKg = 50.0,
+            totalReps = 10,
+            workingReps = 10,
+            heaviestLiftKg = 60.0,
+            timestamp = 1_700_000_000_000,
+            profileId = "default"
+        )
+        insertMinimalSession(
+            id = "session-profile-b",
+            routineSessionId = null,
+            routineName = "Pull B",
+            exerciseId = "deadlift",
+            exerciseName = "Conventional Deadlift",
+            mode = "OldSchool",
+            weightPerCableKg = 70.0,
+            totalReps = 8,
+            workingReps = 8,
+            heaviestLiftKg = 80.0,
+            timestamp = 1_700_000_100_000,
+            profileId = "profile-b"
+        )
+
+        migrationManager.checkAndRunMigrations()
+        Thread.sleep(500)
+        migrationManager.checkAndRunMigrations()
+        Thread.sleep(500)
+
+        val defaultWeightPr = queries.selectPR("deadlift", "Old School", PRType.MAX_WEIGHT.name, phase = "COMBINED", profileId = "default").executeAsOneOrNull()
+        val defaultVolumePr = queries.selectPR("deadlift", "Old School", PRType.MAX_VOLUME.name, phase = "COMBINED", profileId = "default").executeAsOneOrNull()
+        val profileBWeightPr = queries.selectPR("deadlift", "Old School", PRType.MAX_WEIGHT.name, phase = "COMBINED", profileId = "profile-b").executeAsOneOrNull()
+        val profileBVolumePr = queries.selectPR("deadlift", "Old School", PRType.MAX_VOLUME.name, phase = "COMBINED", profileId = "profile-b").executeAsOneOrNull()
+
+        assertNotNull(defaultWeightPr)
+        assertNotNull(defaultVolumePr)
+        assertNotNull(profileBWeightPr)
+        assertNotNull(profileBVolumePr)
+        assertEquals(60.0, defaultWeightPr.weight)
+        assertEquals(50.0, defaultVolumePr.weight)
+        assertEquals(80.0, profileBWeightPr.weight)
+        assertEquals(70.0, profileBVolumePr.weight)
+        assertEquals(
+            2,
+            queries.selectAllRecords(profileId = "default").executeAsList().count { it.exerciseId == "deadlift" }
+        )
+        assertEquals(
+            2,
+            queries.selectAllRecords(profileId = "profile-b").executeAsList().count { it.exerciseId == "deadlift" }
+        )
+    }
+
     // -- Helper --
+
+    private fun insertProfile(id: String, name: String, isActive: Boolean) {
+        database.vitruvianDatabaseQueries.insertProfile(
+            id = id,
+            name = name,
+            colorIndex = 0L,
+            createdAt = 1_700_000_000_000,
+            isActive = if (isActive) 1L else 0L
+        )
+    }
 
     private fun insertMinimalExercise(
         id: String,
@@ -379,11 +500,13 @@ class MigrationManagerTest {
         weightPerCableKg: Double = 10.0,
         totalReps: Long = 10L,
         workingReps: Long = 10L,
-        heaviestLiftKg: Double? = null
+        heaviestLiftKg: Double? = null,
+        timestamp: Long = 1_700_000_000_000,
+        profileId: String = "default"
     ) {
         database.vitruvianDatabaseQueries.insertSession(
             id = id,
-            timestamp = 1_700_000_000_000,
+            timestamp = timestamp,
             mode = mode,
             targetReps = 10,
             weightPerCableKg = weightPerCableKg,
@@ -428,7 +551,7 @@ class MigrationManagerTest {
             dominantSide = null,
             strengthProfile = null,
             formScore = null,
-            profile_id = "default",
+            profile_id = profileId,
         )
     }
 }

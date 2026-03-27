@@ -23,6 +23,7 @@ import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.data.repository.ExerciseVideoEntity
 import com.devil.phoenixproject.data.repository.PersonalRecordRepository
+import com.devil.phoenixproject.data.repository.UserProfileRepository
 import com.devil.phoenixproject.domain.model.*
 import com.devil.phoenixproject.presentation.components.CompactNumberPicker
 import com.devil.phoenixproject.presentation.components.ProgressionSlider
@@ -34,6 +35,7 @@ import com.devil.phoenixproject.presentation.viewmodel.SetMode
 import com.devil.phoenixproject.ui.theme.Spacing
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
+import org.koin.compose.koinInject
 import org.jetbrains.compose.resources.stringResource
 import vitruvianprojectphoenix.shared.generated.resources.Res
 import vitruvianprojectphoenix.shared.generated.resources.*
@@ -58,6 +60,9 @@ fun ExerciseEditBottomSheet(
 ) {
     // Create local ViewModel instance with PersonalRecordRepository for PR lookups
     val viewModel = remember { ExerciseConfigViewModel(personalRecordRepository) }
+    val userProfileRepository: UserProfileRepository = koinInject()
+    val activeProfile by userProfileRepository.activeProfile.collectAsState()
+    val activeProfileId = activeProfile?.id ?: "default"
 
     // Fetch videos for exercise
     var videos by remember { mutableStateOf<List<ExerciseVideoEntity>>(emptyList()) }
@@ -73,8 +78,8 @@ fun ExerciseEditBottomSheet(
     val preferredVideo = videos.firstOrNull { it.angle == "FRONT" } ?: videos.firstOrNull()
 
     // Initialize the ViewModel - PR loading is now handled internally by the ViewModel
-    LaunchedEffect(exercise, weightUnit) {
-        viewModel.initialize(exercise, weightUnit, kgToDisplay, displayToKg)
+    LaunchedEffect(exercise, weightUnit, activeProfileId) {
+        viewModel.initialize(exercise, weightUnit, kgToDisplay, displayToKg, profileId = activeProfileId)
     }
 
     // Collect state from the ViewModel

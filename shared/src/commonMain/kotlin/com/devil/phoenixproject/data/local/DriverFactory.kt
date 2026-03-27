@@ -39,12 +39,44 @@ internal data class SchemaHealResult(
  * - Migration 13: WorkoutSession.cableCount
  * - Migration 18: RoutineExercise.setEchoLevels / warmupSets
  * - Migration 20: RoutineExercise.stallDetectionEnabled / stopAtTop / repCountTiming
+ * - Migration 21: profile_id on profile-scoped workout / routine / assessment tables
+ * - Migration 22: profile_id on gamification tables
  */
 private val knownLegacySchemaHeals = listOf(
     SchemaHealOperation(
         table = "WorkoutSession",
         column = "cableCount",
         sql = "ALTER TABLE WorkoutSession ADD COLUMN cableCount INTEGER",
+    ),
+    SchemaHealOperation(
+        table = "WorkoutSession",
+        column = "profile_id",
+        sql = "ALTER TABLE WorkoutSession ADD COLUMN profile_id TEXT NOT NULL DEFAULT 'default'",
+    ),
+    SchemaHealOperation(
+        table = "PersonalRecord",
+        column = "profile_id",
+        sql = "ALTER TABLE PersonalRecord ADD COLUMN profile_id TEXT NOT NULL DEFAULT 'default'",
+    ),
+    SchemaHealOperation(
+        table = "Routine",
+        column = "profile_id",
+        sql = "ALTER TABLE Routine ADD COLUMN profile_id TEXT NOT NULL DEFAULT 'default'",
+    ),
+    SchemaHealOperation(
+        table = "TrainingCycle",
+        column = "profile_id",
+        sql = "ALTER TABLE TrainingCycle ADD COLUMN profile_id TEXT NOT NULL DEFAULT 'default'",
+    ),
+    SchemaHealOperation(
+        table = "AssessmentResult",
+        column = "profile_id",
+        sql = "ALTER TABLE AssessmentResult ADD COLUMN profile_id TEXT NOT NULL DEFAULT 'default'",
+    ),
+    SchemaHealOperation(
+        table = "ProgressionEvent",
+        column = "profile_id",
+        sql = "ALTER TABLE ProgressionEvent ADD COLUMN profile_id TEXT NOT NULL DEFAULT 'default'",
     ),
     SchemaHealOperation(
         table = "RoutineExercise",
@@ -70,6 +102,26 @@ private val knownLegacySchemaHeals = listOf(
         table = "RoutineExercise",
         column = "repCountTiming",
         sql = "ALTER TABLE RoutineExercise ADD COLUMN repCountTiming TEXT NOT NULL DEFAULT 'TOP'",
+    ),
+    SchemaHealOperation(
+        table = "EarnedBadge",
+        column = "profile_id",
+        sql = "ALTER TABLE EarnedBadge ADD COLUMN profile_id TEXT NOT NULL DEFAULT 'default'",
+    ),
+    SchemaHealOperation(
+        table = "StreakHistory",
+        column = "profile_id",
+        sql = "ALTER TABLE StreakHistory ADD COLUMN profile_id TEXT NOT NULL DEFAULT 'default'",
+    ),
+    SchemaHealOperation(
+        table = "RpgAttributes",
+        column = "profile_id",
+        sql = "ALTER TABLE RpgAttributes ADD COLUMN profile_id TEXT NOT NULL DEFAULT 'default'",
+    ),
+    SchemaHealOperation(
+        table = "GamificationStats",
+        column = "profile_id",
+        sql = "ALTER TABLE GamificationStats ADD COLUMN profile_id TEXT NOT NULL DEFAULT 'default'",
     ),
 )
 

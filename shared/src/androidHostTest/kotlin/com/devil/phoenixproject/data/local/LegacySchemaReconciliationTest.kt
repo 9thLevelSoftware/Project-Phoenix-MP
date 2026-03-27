@@ -208,6 +208,160 @@ class LegacySchemaReconciliationTest {
     }
 
     @Test
+    fun `migration 21 remains replay-safe when profile columns already exist`() {
+        val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
+        driver.execute(
+            null,
+            """
+            CREATE TABLE WorkoutSession (
+                id TEXT NOT NULL PRIMARY KEY,
+                timestamp INTEGER NOT NULL,
+                profile_id TEXT NOT NULL DEFAULT 'default'
+            )
+            """.trimIndent(),
+            0,
+        )
+        driver.execute(
+            null,
+            """
+            CREATE TABLE PersonalRecord (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                exerciseId TEXT NOT NULL,
+                workoutMode TEXT NOT NULL,
+                prType TEXT NOT NULL DEFAULT 'MAX_WEIGHT',
+                phase TEXT NOT NULL DEFAULT 'COMBINED',
+                profile_id TEXT NOT NULL DEFAULT 'default'
+            )
+            """.trimIndent(),
+            0,
+        )
+        driver.execute(
+            null,
+            """
+            CREATE UNIQUE INDEX idx_pr_unique
+            ON PersonalRecord(exerciseId, workoutMode, prType, phase)
+            """.trimIndent(),
+            0,
+        )
+        driver.execute(
+            null,
+            """
+            CREATE TABLE Routine (
+                id TEXT NOT NULL PRIMARY KEY,
+                name TEXT NOT NULL,
+                profile_id TEXT NOT NULL DEFAULT 'default'
+            )
+            """.trimIndent(),
+            0,
+        )
+        driver.execute(
+            null,
+            """
+            CREATE TABLE TrainingCycle (
+                id TEXT NOT NULL PRIMARY KEY,
+                created_at INTEGER NOT NULL,
+                is_active INTEGER NOT NULL DEFAULT 0,
+                profile_id TEXT NOT NULL DEFAULT 'default'
+            )
+            """.trimIndent(),
+            0,
+        )
+        driver.execute(
+            null,
+            """
+            CREATE TABLE AssessmentResult (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                exerciseId TEXT NOT NULL,
+                createdAt INTEGER NOT NULL,
+                profile_id TEXT NOT NULL DEFAULT 'default'
+            )
+            """.trimIndent(),
+            0,
+        )
+        driver.execute(
+            null,
+            """
+            CREATE TABLE ProgressionEvent (
+                id TEXT PRIMARY KEY NOT NULL,
+                exercise_id TEXT NOT NULL,
+                timestamp INTEGER NOT NULL,
+                profile_id TEXT NOT NULL DEFAULT 'default'
+            )
+            """.trimIndent(),
+            0,
+        )
+
+        VitruvianDatabase.Schema.migrate(driver, 21, 22)
+
+        assertTrue(indexExists(driver, "idx_session_profile"))
+        assertTrue(indexExists(driver, "idx_pr_profile"))
+        assertTrue(indexExists(driver, "idx_routine_profile"))
+        assertTrue(indexExists(driver, "idx_cycle_profile"))
+        assertTrue(indexExists(driver, "idx_assessment_profile"))
+        assertTrue(indexExists(driver, "idx_progression_profile"))
+        assertTrue(indexSql(driver, "idx_pr_unique").orEmpty().contains("profile_id"))
+    }
+
+    @Test
+    fun `migration 22 remains replay-safe when gamification profile columns already exist`() {
+        val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
+        driver.execute(
+            null,
+            """
+            CREATE TABLE EarnedBadge (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                badgeId TEXT NOT NULL UNIQUE,
+                earnedAt INTEGER NOT NULL,
+                profile_id TEXT NOT NULL DEFAULT 'default'
+            )
+            """.trimIndent(),
+            0,
+        )
+        driver.execute(
+            null,
+            """
+            CREATE TABLE StreakHistory (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                startDate INTEGER NOT NULL,
+                endDate INTEGER NOT NULL,
+                length INTEGER NOT NULL,
+                profile_id TEXT NOT NULL DEFAULT 'default'
+            )
+            """.trimIndent(),
+            0,
+        )
+        driver.execute(
+            null,
+            """
+            CREATE TABLE RpgAttributes (
+                id INTEGER PRIMARY KEY DEFAULT 1,
+                strength INTEGER NOT NULL DEFAULT 0,
+                profile_id TEXT NOT NULL DEFAULT 'default'
+            )
+            """.trimIndent(),
+            0,
+        )
+        driver.execute(
+            null,
+            """
+            CREATE TABLE GamificationStats (
+                id INTEGER PRIMARY KEY,
+                lastUpdated INTEGER NOT NULL,
+                profile_id TEXT NOT NULL DEFAULT 'default'
+            )
+            """.trimIndent(),
+            0,
+        )
+
+        VitruvianDatabase.Schema.migrate(driver, 22, 23)
+
+        assertTrue(indexExists(driver, "idx_earned_badge_profile"))
+        assertTrue(indexExists(driver, "idx_streak_history_profile"))
+        assertTrue(indexExists(driver, "idx_rpg_attributes_profile"))
+        assertTrue(indexExists(driver, "idx_gamification_stats_profile"))
+    }
+
+    @Test
     fun `legacy reconciliation heals mixed drift states idempotently`() {
         val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
         driver.execute(
@@ -237,6 +391,54 @@ class LegacySchemaReconciliationTest {
             """.trimIndent(),
             0,
         )
+        driver.execute(
+            null,
+            """
+            CREATE TABLE PersonalRecord (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                exerciseId TEXT NOT NULL,
+                workoutMode TEXT NOT NULL,
+                prType TEXT NOT NULL DEFAULT 'MAX_WEIGHT',
+                phase TEXT NOT NULL DEFAULT 'COMBINED'
+            )
+            """.trimIndent(),
+            0,
+        )
+        driver.execute(
+            null,
+            """
+            CREATE TABLE AssessmentResult (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                exerciseId TEXT NOT NULL,
+                createdAt INTEGER NOT NULL
+            )
+            """.trimIndent(),
+            0,
+        )
+        driver.execute(
+            null,
+            """
+            CREATE TABLE EarnedBadge (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                badgeId TEXT NOT NULL,
+                earnedAt INTEGER NOT NULL,
+                profile_id TEXT NOT NULL DEFAULT 'default'
+            )
+            """.trimIndent(),
+            0,
+        )
+        driver.execute(
+            null,
+            """
+            CREATE TABLE StreakHistory (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                startDate INTEGER NOT NULL,
+                endDate INTEGER NOT NULL,
+                length INTEGER NOT NULL
+            )
+            """.trimIndent(),
+            0,
+        )
 
         val firstPass = reconcileKnownLegacySchema(driver)
         val secondPass = reconcileKnownLegacySchema(driver)
@@ -247,6 +449,10 @@ class LegacySchemaReconciliationTest {
         assertEquals(SchemaHealStatus.ADDED, healStatus(firstPass, "RoutineExercise", "repCountTiming"))
         assertEquals(SchemaHealStatus.ADDED, healStatus(firstPass, "RoutineExercise", "setEchoLevels"))
         assertEquals(SchemaHealStatus.ADDED, healStatus(firstPass, "RoutineExercise", "warmupSets"))
+        assertEquals(SchemaHealStatus.ADDED, healStatus(firstPass, "PersonalRecord", "profile_id"))
+        assertEquals(SchemaHealStatus.ADDED, healStatus(firstPass, "AssessmentResult", "profile_id"))
+        assertEquals(SchemaHealStatus.ALREADY_PRESENT, healStatus(firstPass, "EarnedBadge", "profile_id"))
+        assertEquals(SchemaHealStatus.ADDED, healStatus(firstPass, "StreakHistory", "profile_id"))
 
         assertFalse(secondPass.any { it.status == SchemaHealStatus.ADDED })
         assertTrue(columnNames(driver, "WorkoutSession").contains("cableCount"))
@@ -255,6 +461,10 @@ class LegacySchemaReconciliationTest {
         assertTrue(columnNames(driver, "RoutineExercise").contains("repCountTiming"))
         assertTrue(columnNames(driver, "RoutineExercise").contains("setEchoLevels"))
         assertTrue(columnNames(driver, "RoutineExercise").contains("warmupSets"))
+        assertTrue(columnNames(driver, "PersonalRecord").contains("profile_id"))
+        assertTrue(columnNames(driver, "AssessmentResult").contains("profile_id"))
+        assertTrue(columnNames(driver, "EarnedBadge").contains("profile_id"))
+        assertTrue(columnNames(driver, "StreakHistory").contains("profile_id"))
     }
 
     private fun columnNames(driver: SqlDriver, table: String): List<String> {
@@ -285,6 +495,22 @@ class LegacySchemaReconciliationTest {
             parameters = 0,
         )
         return exists
+    }
+
+    private fun indexSql(driver: SqlDriver, indexName: String): String? {
+        var sql: String? = null
+        driver.executeQuery(
+            identifier = null,
+            sql = "SELECT sql FROM sqlite_master WHERE type = 'index' AND name = '$indexName'",
+            mapper = { cursor ->
+                if (cursor.next().value) {
+                    sql = cursor.getString(0)
+                }
+                QueryResult.Value(Unit)
+            },
+            parameters = 0,
+        )
+        return sql
     }
 
     private fun healStatus(results: List<SchemaHealResult>, table: String, column: String): SchemaHealStatus {

@@ -1795,7 +1795,10 @@ GROUP BY e.id;
 
 -- Per-exercise weight history (for plateau detection)
 selectExerciseWeightHistory:
-SELECT ws.exerciseId, ws.exerciseName, ws.weightPerCableKg, ws.timestamp
+SELECT ws.exerciseId,
+       ws.exerciseName,
+       COALESCE(ws.heaviestLiftKg, ws.weightPerCableKg) AS achievedWeightKg,
+       ws.timestamp
 FROM WorkoutSession ws
 WHERE ws.exerciseId IS NOT NULL
   AND ws.profile_id = :profileId
