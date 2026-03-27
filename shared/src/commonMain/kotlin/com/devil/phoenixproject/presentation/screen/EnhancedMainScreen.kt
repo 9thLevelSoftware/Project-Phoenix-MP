@@ -7,15 +7,13 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.filled.BluetoothSearching
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -30,31 +28,26 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.rememberNavController
 import com.devil.phoenixproject.data.repository.ExerciseRepository
+import com.devil.phoenixproject.data.repository.UserProfileRepository
 import com.devil.phoenixproject.data.sync.SyncManager
 import com.devil.phoenixproject.data.sync.SyncState
 import com.devil.phoenixproject.domain.model.ConnectionState
+import com.devil.phoenixproject.presentation.components.AddProfileDialog
 import com.devil.phoenixproject.presentation.components.ConnectionLostDialog
 import com.devil.phoenixproject.presentation.components.HapticFeedbackEffect
+import com.devil.phoenixproject.presentation.components.ProfileSidePanel
 import com.devil.phoenixproject.presentation.navigation.NavGraph
 import com.devil.phoenixproject.presentation.navigation.NavigationRoutes
+import com.devil.phoenixproject.presentation.util.LocalWindowSizeClass
+import com.devil.phoenixproject.presentation.util.calculateWindowSizeClass
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
 import com.devil.phoenixproject.ui.theme.AccessibilityTheme
 import com.devil.phoenixproject.ui.theme.ThemeMode
-import com.devil.phoenixproject.data.repository.UserProfileRepository
-import com.devil.phoenixproject.presentation.components.AddProfileDialog
-import com.devil.phoenixproject.presentation.components.ProfileSidePanel
-import kotlinx.coroutines.launch
-import org.koin.compose.koinInject
-import androidx.compose.runtime.CompositionLocalProvider
-import com.devil.phoenixproject.presentation.util.LocalWindowSizeClass
-import com.devil.phoenixproject.presentation.util.calculateWindowSizeClass
-import androidx.compose.foundation.layout.BoxWithConstraints
 import org.jetbrains.compose.resources.stringResource
-import vitruvianprojectphoenix.shared.generated.resources.Res
+import org.koin.compose.koinInject
 import vitruvianprojectphoenix.shared.generated.resources.*
 
 /**
@@ -71,7 +64,7 @@ fun EnhancedMainScreen(
     exerciseRepository: ExerciseRepository,
     themeMode: ThemeMode,
     onThemeModeChange: (ThemeMode) -> Unit,
-    navController: NavHostController = rememberNavController()
+    navController: NavHostController = rememberNavController(),
 ) {
     val connectionState by viewModel.connectionState.collectAsState()
     val connectionLostDuringWorkout by viewModel.connectionLostDuringWorkout.collectAsState()
@@ -129,28 +122,28 @@ fun EnhancedMainScreen(
     // Helper function to determine if current route is a "Workouts" route
     val isWorkoutsRoute = remember(currentRoute) {
         currentRoute == NavigationRoutes.Home.route ||
-        currentRoute == NavigationRoutes.JustLift.route ||
-        currentRoute == NavigationRoutes.SingleExercise.route ||
-        currentRoute == NavigationRoutes.DailyRoutines.route ||
-        currentRoute == NavigationRoutes.ActiveWorkout.route ||
-        currentRoute == NavigationRoutes.TrainingCycles.route ||
-        currentRoute.startsWith(NavigationRoutes.CycleEditor.route.replace("/{cycleId}", ""))
+            currentRoute == NavigationRoutes.JustLift.route ||
+            currentRoute == NavigationRoutes.SingleExercise.route ||
+            currentRoute == NavigationRoutes.DailyRoutines.route ||
+            currentRoute == NavigationRoutes.ActiveWorkout.route ||
+            currentRoute == NavigationRoutes.TrainingCycles.route ||
+            currentRoute.startsWith(NavigationRoutes.CycleEditor.route.replace("/{cycleId}", ""))
     }
 
     // Always show TopBar unless in Active Workout or RoutineComplete (HUD handles it)
     val shouldShowTopBar = remember(currentRoute) {
         currentRoute != NavigationRoutes.ActiveWorkout.route &&
-        currentRoute != NavigationRoutes.RoutineComplete.route
+            currentRoute != NavigationRoutes.RoutineComplete.route
     }
 
     // Show BottomBar only for main tabs
     val shouldShowBottomBar = remember(currentRoute) {
         currentRoute == NavigationRoutes.Home.route ||
-        currentRoute == NavigationRoutes.DailyRoutines.route ||
-        currentRoute == NavigationRoutes.TrainingCycles.route ||
-        currentRoute == NavigationRoutes.Analytics.route ||
-        currentRoute == NavigationRoutes.SmartInsights.route ||
-        currentRoute == NavigationRoutes.Settings.route
+            currentRoute == NavigationRoutes.DailyRoutines.route ||
+            currentRoute == NavigationRoutes.TrainingCycles.route ||
+            currentRoute == NavigationRoutes.Analytics.route ||
+            currentRoute == NavigationRoutes.SmartInsights.route ||
+            currentRoute == NavigationRoutes.Settings.route
     }
 
     // Show back button for all screens except Home
@@ -166,270 +159,275 @@ fun EnhancedMainScreen(
 
         CompositionLocalProvider(LocalWindowSizeClass provides windowSizeClass) {
             Scaffold(
-        contentWindowInsets = WindowInsets(0, 0, 0, 0),
-        topBar = {
-            if (shouldShowTopBar) {
-                TopAppBar(
-                    modifier = Modifier.statusBarsPadding(),
-                    title = {
-                        Column(
-                            verticalArrangement = Arrangement.spacedBy(0.dp)
-                        ) {
-                            // Main title - either dynamic or default based on route
-                            Text(
-                                text = if (topBarTitle.isNotEmpty()) topBarTitle
-                                       else getScreenTitle(
-                                           route = currentRoute,
-                                           routineName = currentRoutineName,
-                                           exerciseName = selectedExerciseName,
-                                           cycleName = editingCycleName
-                                       ),
-                                style = MaterialTheme.typography.titleLarge,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onSurface,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                            // Subtitle - always show "Project Phoenix" with gradient
-                            Text(
-                                text = "Project Phoenix",
-                                style = MaterialTheme.typography.labelSmall.copy(
-                                    brush = Brush.linearGradient(
-                                        colors = listOf(
-                                            Color(0xFFF97316), // Orange
-                                            Color(0xFFEF4444)  // Red
-                                        )
-                                    ),
-                                    fontWeight = FontWeight.Medium
-                                )
-                            )
-                        }
-                    },
-                    navigationIcon = {
-                        if (showBackButton) {
-                            IconButton(onClick = {
-                                when (currentRoute) {
-                                    // Routine flow - needs confirmation
-                                    NavigationRoutes.RoutineOverview.route -> {
-                                        showExitRoutineConfirmation = true
-                                    }
-                                    // Set ready - go back to overview
-                                    NavigationRoutes.SetReady.route -> {
-                                        viewModel.returnToOverview()
-                                        navController.navigateUp()
-                                    }
-                                    // All other screens - standard back or custom action
-                                    else -> {
-                                        if (topBarBackAction != null) {
-                                            topBarBackAction?.invoke()
+                contentWindowInsets = WindowInsets(0, 0, 0, 0),
+                topBar = {
+                    if (shouldShowTopBar) {
+                        TopAppBar(
+                            modifier = Modifier.statusBarsPadding(),
+                            title = {
+                                Column(
+                                    verticalArrangement = Arrangement.spacedBy(0.dp),
+                                ) {
+                                    // Main title - either dynamic or default based on route
+                                    Text(
+                                        text = if (topBarTitle.isNotEmpty()) {
+                                            topBarTitle
                                         } else {
-                                            navController.navigateUp()
-                                        }
-                                    }
-                                }
-                            }) {
-                                Icon(
-                                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                                    contentDescription = stringResource(Res.string.cd_back),
-                                    tint = MaterialTheme.colorScheme.onSurface
-                                )
-                            }
-                        }
-                    },
-                    colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = MaterialTheme.colorScheme.surface,
-                        titleContentColor = MaterialTheme.colorScheme.onSurface,
-                        actionIconContentColor = MaterialTheme.colorScheme.onSurface
-                    ),
-                    actions = {
-                        // Dynamic Actions from Screens
-                        topBarActions.forEach { action ->
-                            IconButton(onClick = action.onClick) {
-                                Icon(
-                                    imageVector = action.icon,
-                                    contentDescription = action.description,
-                                    tint = MaterialTheme.colorScheme.onSurface
-                                )
-                            }
-                        }
-
-                        // Cloud sync status icon
-                        SyncStatusIcon(
-                            syncState = syncState,
-                            isAuthenticated = isAuthenticated,
-                            lastSyncTime = lastSyncTime,
-                            onErrorTap = {
-                                navController.navigate(NavigationRoutes.LinkAccount.route) {
-                                    launchSingleTop = true
-                                }
-                            }
-                        )
-
-                        // Connection status icon with text label
-                        ConnectionStatusIndicator(
-                            connectionState = connectionState,
-                            onToggleConnection = {
-                                if (connectionState is ConnectionState.Connected) {
-                                    viewModel.disconnect()
-                                } else {
-                                    viewModel.ensureConnection(
-                                        onConnected = {},
-                                        onFailed = {}
+                                            getScreenTitle(
+                                                route = currentRoute,
+                                                routineName = currentRoutineName,
+                                                exerciseName = selectedExerciseName,
+                                                cycleName = editingCycleName,
+                                            )
+                                        },
+                                        style = MaterialTheme.typography.titleLarge,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.onSurface,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                    // Subtitle - always show "Project Phoenix" with gradient
+                                    Text(
+                                        text = "Project Phoenix",
+                                        style = MaterialTheme.typography.labelSmall.copy(
+                                            brush = Brush.linearGradient(
+                                                colors = listOf(
+                                                    Color(0xFFF97316), // Orange
+                                                    Color(0xFFEF4444), // Red
+                                                ),
+                                            ),
+                                            fontWeight = FontWeight.Medium,
+                                        ),
                                     )
                                 }
-                            }
+                            },
+                            navigationIcon = {
+                                if (showBackButton) {
+                                    IconButton(onClick = {
+                                        when (currentRoute) {
+                                            // Routine flow - needs confirmation
+                                            NavigationRoutes.RoutineOverview.route -> {
+                                                showExitRoutineConfirmation = true
+                                            }
+
+                                            // Set ready - go back to overview
+                                            NavigationRoutes.SetReady.route -> {
+                                                viewModel.returnToOverview()
+                                                navController.navigateUp()
+                                            }
+
+                                            // All other screens - standard back or custom action
+                                            else -> {
+                                                if (topBarBackAction != null) {
+                                                    topBarBackAction?.invoke()
+                                                } else {
+                                                    navController.navigateUp()
+                                                }
+                                            }
+                                        }
+                                    }) {
+                                        Icon(
+                                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                                            contentDescription = stringResource(Res.string.cd_back),
+                                            tint = MaterialTheme.colorScheme.onSurface,
+                                        )
+                                    }
+                                }
+                            },
+                            colors = TopAppBarDefaults.topAppBarColors(
+                                containerColor = MaterialTheme.colorScheme.surface,
+                                titleContentColor = MaterialTheme.colorScheme.onSurface,
+                                actionIconContentColor = MaterialTheme.colorScheme.onSurface,
+                            ),
+                            actions = {
+                                // Dynamic Actions from Screens
+                                topBarActions.forEach { action ->
+                                    IconButton(onClick = action.onClick) {
+                                        Icon(
+                                            imageVector = action.icon,
+                                            contentDescription = action.description,
+                                            tint = MaterialTheme.colorScheme.onSurface,
+                                        )
+                                    }
+                                }
+
+                                // Cloud sync status icon
+                                SyncStatusIcon(
+                                    syncState = syncState,
+                                    isAuthenticated = isAuthenticated,
+                                    lastSyncTime = lastSyncTime,
+                                    onErrorTap = {
+                                        navController.navigate(NavigationRoutes.LinkAccount.route) {
+                                            launchSingleTop = true
+                                        }
+                                    },
+                                )
+
+                                // Connection status icon with text label
+                                ConnectionStatusIndicator(
+                                    connectionState = connectionState,
+                                    onToggleConnection = {
+                                        if (connectionState is ConnectionState.Connected) {
+                                            viewModel.disconnect()
+                                        } else {
+                                            viewModel.ensureConnection(
+                                                onConnected = {},
+                                                onFailed = {},
+                                            )
+                                        }
+                                    },
+                                )
+                            },
                         )
                     }
-                )
-            }
-        },
-        bottomBar = {
-            if (shouldShowBottomBar) {
-                NavigationBar(
-                    containerColor = if (isDarkMode) Color(0xFF1C1B1F) else Color(0xFFF3F3F3),
-                    contentColor = MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier.navigationBarsPadding()
-                ) {
-                    // Analytics tab
-                    NavigationBarItem(
-                        icon = {
-                            Icon(
-                                imageVector = Icons.Default.BarChart,
-                                contentDescription = stringResource(Res.string.cd_analytics)
+                },
+                bottomBar = {
+                    if (shouldShowBottomBar) {
+                        NavigationBar(
+                            containerColor = if (isDarkMode) Color(0xFF1C1B1F) else Color(0xFFF3F3F3),
+                            contentColor = MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.navigationBarsPadding(),
+                        ) {
+                            // Analytics tab
+                            NavigationBarItem(
+                                icon = {
+                                    Icon(
+                                        imageVector = Icons.Default.BarChart,
+                                        contentDescription = stringResource(Res.string.cd_analytics),
+                                    )
+                                },
+                                label = { Text(stringResource(Res.string.nav_analytics)) },
+                                selected = currentRoute == NavigationRoutes.Analytics.route,
+                                onClick = {
+                                    if (currentRoute != NavigationRoutes.Analytics.route) {
+                                        navController.navigate(NavigationRoutes.Analytics.route) {
+                                            popUpTo(NavigationRoutes.Home.route) { saveState = true }
+                                            launchSingleTop = true
+                                            restoreState = true
+                                        }
+                                    }
+                                },
+                                colors = NavigationBarItemDefaults.colors(
+                                    selectedIconColor = MaterialTheme.colorScheme.primary,
+                                    selectedTextColor = MaterialTheme.colorScheme.primary,
+                                    indicatorColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.2f),
+                                    unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                ),
                             )
-                        },
-                        label = { Text(stringResource(Res.string.nav_analytics)) },
-                        selected = currentRoute == NavigationRoutes.Analytics.route,
-                        onClick = {
-                            if (currentRoute != NavigationRoutes.Analytics.route) {
-                                navController.navigate(NavigationRoutes.Analytics.route) {
-                                    popUpTo(NavigationRoutes.Home.route) { saveState = true }
-                                    launchSingleTop = true
-                                    restoreState = true
-                                }
-                            }
-                        },
-                        colors = NavigationBarItemDefaults.colors(
-                            selectedIconColor = MaterialTheme.colorScheme.primary,
-                            selectedTextColor = MaterialTheme.colorScheme.primary,
-                            indicatorColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.2f),
-                            unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                            unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+
+                            // Workouts tab (Home) - center
+                            NavigationBarItem(
+                                icon = {
+                                    Icon(
+                                        imageVector = Icons.Default.Home,
+                                        contentDescription = stringResource(Res.string.cd_workouts),
+                                    )
+                                },
+                                label = { Text(stringResource(Res.string.nav_workouts)) },
+                                selected = isWorkoutsRoute,
+                                onClick = {
+                                    if (currentRoute != NavigationRoutes.Home.route) {
+                                        navController.navigate(NavigationRoutes.Home.route) {
+                                            popUpTo(NavigationRoutes.Home.route) { inclusive = true }
+                                            launchSingleTop = true
+                                        }
+                                    }
+                                },
+                                colors = NavigationBarItemDefaults.colors(
+                                    selectedIconColor = MaterialTheme.colorScheme.primary,
+                                    selectedTextColor = MaterialTheme.colorScheme.primary,
+                                    indicatorColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.2f),
+                                    unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                ),
+                            )
+
+                            // Smart Insights tab
+                            NavigationBarItem(
+                                icon = {
+                                    Icon(
+                                        imageVector = Icons.Default.AutoAwesome,
+                                        contentDescription = "Insights",
+                                    )
+                                },
+                                label = { Text("Insights") },
+                                selected = currentRoute == NavigationRoutes.SmartInsights.route,
+                                onClick = {
+                                    if (currentRoute != NavigationRoutes.SmartInsights.route) {
+                                        navController.navigate(NavigationRoutes.SmartInsights.route) {
+                                            popUpTo(NavigationRoutes.Home.route) { saveState = true }
+                                            launchSingleTop = true
+                                            restoreState = true
+                                        }
+                                    }
+                                },
+                                colors = NavigationBarItemDefaults.colors(
+                                    selectedIconColor = MaterialTheme.colorScheme.primary,
+                                    selectedTextColor = MaterialTheme.colorScheme.primary,
+                                    indicatorColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.2f),
+                                    unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                ),
+                            )
+
+                            // Settings tab
+                            NavigationBarItem(
+                                icon = {
+                                    Icon(
+                                        imageVector = Icons.Default.Settings,
+                                        contentDescription = stringResource(Res.string.cd_settings),
+                                    )
+                                },
+                                label = { Text(stringResource(Res.string.nav_settings)) },
+                                selected = currentRoute == NavigationRoutes.Settings.route,
+                                onClick = {
+                                    if (currentRoute != NavigationRoutes.Settings.route) {
+                                        navController.navigate(NavigationRoutes.Settings.route) {
+                                            popUpTo(NavigationRoutes.Home.route) { saveState = true }
+                                            launchSingleTop = true
+                                            restoreState = true
+                                        }
+                                    }
+                                },
+                                colors = NavigationBarItemDefaults.colors(
+                                    selectedIconColor = MaterialTheme.colorScheme.primary,
+                                    selectedTextColor = MaterialTheme.colorScheme.primary,
+                                    indicatorColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.2f),
+                                    unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                ),
+                            )
+                        }
+                    }
+                },
+            ) { padding ->
+                // Global haptic feedback effect - ensures sounds/haptics work on all screens
+                HapticFeedbackEffect(hapticEvents = viewModel.hapticEvents)
+
+                Box(modifier = Modifier.fillMaxSize()) {
+                    // Use proper padding to account for TopAppBar and system bars
+                    NavGraph(
+                        navController = navController,
+                        viewModel = viewModel,
+                        exerciseRepository = exerciseRepository,
+                        themeMode = themeMode,
+                        onThemeModeChange = onThemeModeChange,
+                        modifier = Modifier.padding(padding),
                     )
 
-                    // Workouts tab (Home) - center
-                    NavigationBarItem(
-                        icon = {
-                            Icon(
-                                imageVector = Icons.Default.Home,
-                                contentDescription = stringResource(Res.string.cd_workouts)
-                            )
-                        },
-                        label = { Text(stringResource(Res.string.nav_workouts)) },
-                        selected = isWorkoutsRoute,
-                        onClick = {
-                            if (currentRoute != NavigationRoutes.Home.route) {
-                                navController.navigate(NavigationRoutes.Home.route) {
-                                    popUpTo(NavigationRoutes.Home.route) { inclusive = true }
-                                    launchSingleTop = true
-                                }
-                            }
-                        },
-                        colors = NavigationBarItemDefaults.colors(
-                            selectedIconColor = MaterialTheme.colorScheme.primary,
-                            selectedTextColor = MaterialTheme.colorScheme.primary,
-                            indicatorColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.2f),
-                            unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                            unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant
+                    // Profile side panel (only on Home screen)
+                    if (currentRoute == NavigationRoutes.Home.route) {
+                        ProfileSidePanel(
+                            profiles = profiles,
+                            activeProfile = activeProfile,
+                            profileRepository = profileRepository,
+                            scope = scope,
+                            onAddProfile = { showAddProfileDialog = true },
                         )
-                    )
-
-                    // Smart Insights tab
-                    NavigationBarItem(
-                        icon = {
-                            Icon(
-                                imageVector = Icons.Default.AutoAwesome,
-                                contentDescription = "Insights"
-                            )
-                        },
-                        label = { Text("Insights") },
-                        selected = currentRoute == NavigationRoutes.SmartInsights.route,
-                        onClick = {
-                            if (currentRoute != NavigationRoutes.SmartInsights.route) {
-                                navController.navigate(NavigationRoutes.SmartInsights.route) {
-                                    popUpTo(NavigationRoutes.Home.route) { saveState = true }
-                                    launchSingleTop = true
-                                    restoreState = true
-                                }
-                            }
-                        },
-                        colors = NavigationBarItemDefaults.colors(
-                            selectedIconColor = MaterialTheme.colorScheme.primary,
-                            selectedTextColor = MaterialTheme.colorScheme.primary,
-                            indicatorColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.2f),
-                            unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                            unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    )
-
-                    // Settings tab
-                    NavigationBarItem(
-                        icon = {
-                            Icon(
-                                imageVector = Icons.Default.Settings,
-                                contentDescription = stringResource(Res.string.cd_settings)
-                            )
-                        },
-                        label = { Text(stringResource(Res.string.nav_settings)) },
-                        selected = currentRoute == NavigationRoutes.Settings.route,
-                        onClick = {
-                            if (currentRoute != NavigationRoutes.Settings.route) {
-                                navController.navigate(NavigationRoutes.Settings.route) {
-                                    popUpTo(NavigationRoutes.Home.route) { saveState = true }
-                                    launchSingleTop = true
-                                    restoreState = true
-                                }
-                            }
-                        },
-                        colors = NavigationBarItemDefaults.colors(
-                            selectedIconColor = MaterialTheme.colorScheme.primary,
-                            selectedTextColor = MaterialTheme.colorScheme.primary,
-                            indicatorColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.2f),
-                            unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                            unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    )
+                    }
                 }
             }
-        }
-    ) { padding ->
-        // Global haptic feedback effect - ensures sounds/haptics work on all screens
-        HapticFeedbackEffect(hapticEvents = viewModel.hapticEvents)
-
-        Box(modifier = Modifier.fillMaxSize()) {
-            // Use proper padding to account for TopAppBar and system bars
-            NavGraph(
-                navController = navController,
-                viewModel = viewModel,
-                exerciseRepository = exerciseRepository,
-                themeMode = themeMode,
-                onThemeModeChange = onThemeModeChange,
-                modifier = Modifier.padding(padding)
-            )
-
-            // Profile side panel (only on Home screen)
-            if (currentRoute == NavigationRoutes.Home.route) {
-                ProfileSidePanel(
-                    profiles = profiles,
-                    activeProfile = activeProfile,
-                    profileRepository = profileRepository,
-                    scope = scope,
-                    onAddProfile = { showAddProfileDialog = true }
-                )
-            }
-        }
-    }
 
             // Show connection lost alert during workout (Issue #43)
             if (connectionLostDuringWorkout) {
@@ -438,12 +436,12 @@ fun EnhancedMainScreen(
                         viewModel.dismissConnectionLostAlert()
                         viewModel.ensureConnection(
                             onConnected = {},
-                            onFailed = {}
+                            onFailed = {},
                         )
                     },
                     onDismiss = {
                         viewModel.dismissConnectionLostAlert()
-                    }
+                    },
                 )
             }
 
@@ -464,7 +462,7 @@ fun EnhancedMainScreen(
                         TextButton(onClick = { showExitRoutineConfirmation = false }) {
                             Text(stringResource(Res.string.action_cancel))
                         }
-                    }
+                    },
                 )
             }
 
@@ -474,7 +472,7 @@ fun EnhancedMainScreen(
                     profiles = profiles,
                     profileRepository = profileRepository,
                     scope = scope,
-                    onDismiss = { showAddProfileDialog = false }
+                    onDismiss = { showAddProfileDialog = false },
                 )
             }
         } // CompositionLocalProvider
@@ -491,12 +489,7 @@ fun EnhancedMainScreen(
  * - Visible otherwise with state-dependent icon and color
  */
 @Composable
-private fun SyncStatusIcon(
-    syncState: SyncState,
-    isAuthenticated: Boolean,
-    lastSyncTime: Long,
-    onErrorTap: () -> Unit
-) {
+private fun SyncStatusIcon(syncState: SyncState, isAuthenticated: Boolean, lastSyncTime: Long, onErrorTap: () -> Unit) {
     // Track a local display state to handle Success -> Idle transition with delay
     var displayState by remember { mutableStateOf(syncState) }
 
@@ -521,9 +514,9 @@ private fun SyncStatusIcon(
         targetValue = 360f,
         animationSpec = infiniteRepeatable(
             animation = tween(durationMillis = 1200, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart
+            repeatMode = RepeatMode.Restart,
         ),
-        label = "syncRotation"
+        label = "syncRotation",
     )
 
     // Success pulse animation (brief green pulse that fades)
@@ -534,7 +527,7 @@ private fun SyncStatusIcon(
         } else {
             tween(durationMillis = 600)
         },
-        label = "successPulse"
+        label = "successPulse",
     )
 
     val mutedColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
@@ -554,6 +547,7 @@ private fun SyncStatusIcon(
             applyRotation = true
             clickable = false
         }
+
         is SyncState.Success -> {
             icon = Icons.Default.CloudDone
             // Interpolate between success green and muted based on pulse
@@ -561,12 +555,14 @@ private fun SyncStatusIcon(
             applyRotation = false
             clickable = false
         }
+
         is SyncState.Error -> {
             icon = Icons.Default.CloudOff
             tint = errorColor
             applyRotation = false
             clickable = true
         }
+
         else -> {
             // Idle, NotAuthenticated, NotPremium -- show muted cloud checkmark
             icon = Icons.Default.CloudDone
@@ -580,12 +576,16 @@ private fun SyncStatusIcon(
         modifier = Modifier
             .size(36.dp)
             .then(
-                if (clickable) Modifier.clickable(
-                    onClick = onErrorTap,
-                    role = Role.Button
-                ) else Modifier
+                if (clickable) {
+                    Modifier.clickable(
+                        onClick = onErrorTap,
+                        role = Role.Button,
+                    )
+                } else {
+                    Modifier
+                },
             ),
-        contentAlignment = Alignment.Center
+        contentAlignment = Alignment.Center,
     ) {
         Icon(
             imageVector = icon,
@@ -599,9 +599,12 @@ private fun SyncStatusIcon(
             modifier = Modifier
                 .size(20.dp)
                 .then(
-                    if (applyRotation) Modifier.graphicsLayer { rotationZ = rotation }
-                    else Modifier
-                )
+                    if (applyRotation) {
+                        Modifier.graphicsLayer { rotationZ = rotation }
+                    } else {
+                        Modifier
+                    },
+                ),
         )
     }
 }
@@ -615,13 +618,10 @@ private fun SyncStatusIcon(
  * 4. Red "Reconnect" - error or connection lost
  */
 @Composable
-private fun ConnectionStatusIndicator(
-    connectionState: ConnectionState,
-    onToggleConnection: () -> Unit
-) {
+private fun ConnectionStatusIndicator(connectionState: ConnectionState, onToggleConnection: () -> Unit) {
     val isConnected = connectionState is ConnectionState.Connected
     val isConnecting = connectionState is ConnectionState.Connecting ||
-                       connectionState is ConnectionState.Scanning
+        connectionState is ConnectionState.Scanning
     val isError = connectionState is ConnectionState.Error
 
     // Animated gradient offset for connecting state
@@ -631,9 +631,9 @@ private fun ConnectionStatusIndicator(
         targetValue = 1f,
         animationSpec = infiniteRepeatable(
             animation = tween(1000, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart
+            repeatMode = RepeatMode.Restart,
         ),
-        label = "gradientOffset"
+        label = "gradientOffset",
     )
 
     val buttonText = when {
@@ -670,11 +670,11 @@ private fun ConnectionStatusIndicator(
                                 greenColor,
                                 blueColor,
                                 greenColor,
-                                blueColor
+                                blueColor,
                             ),
                             startX = -200f + (gradientOffset * 600f),
-                            endX = 200f + (gradientOffset * 600f)
-                        )
+                            endX = 200f + (gradientOffset * 600f),
+                        ),
                     )
                 } else {
                     // Static background for other states
@@ -683,22 +683,22 @@ private fun ConnectionStatusIndicator(
                             isConnected -> greenColor
                             isError -> redColor
                             else -> blueColor
-                        }
+                        },
                     )
-                }
+                },
             )
             .clickable(
                 onClick = onToggleConnection,
-                role = Role.Button
+                role = Role.Button,
             )
             .padding(horizontal = 10.dp),
-        contentAlignment = Alignment.Center
+        contentAlignment = Alignment.Center,
     ) {
         Text(
             text = buttonText,
             style = MaterialTheme.typography.labelSmall,
             color = Color.White,
-            maxLines = 1
+            maxLines = 1,
         )
     }
 }
@@ -707,46 +707,50 @@ private fun ConnectionStatusIndicator(
  * Get the screen title based on the current route.
  * Supports dynamic titles for routine, exercise, and cycle flows.
  */
-private fun getScreenTitle(
-    route: String,
-    routineName: String = "",
-    exerciseName: String = "",
-    cycleName: String = ""
-): String {
-    return when {
-        // Main tabs (static titles)
-        route == NavigationRoutes.Home.route -> "Choose Your Workout"
-        route == NavigationRoutes.DailyRoutines.route -> "Daily Routines"
-        route == NavigationRoutes.TrainingCycles.route -> "Training Cycles"
-        route == NavigationRoutes.Analytics.route -> "Analytics"
-        route == NavigationRoutes.SmartInsights.route -> "Smart Insights"
-        route == NavigationRoutes.Settings.route -> "Settings"
-        route == NavigationRoutes.JustLift.route -> "Just Lift"
-        route == NavigationRoutes.SingleExercise.route -> "Single Exercise"
+private fun getScreenTitle(route: String, routineName: String = "", exerciseName: String = "", cycleName: String = ""): String = when {
+    // Main tabs (static titles)
+    route == NavigationRoutes.Home.route -> "Choose Your Workout"
 
-        // Routine flow (dynamic - uses routine name)
-        route == NavigationRoutes.RoutineOverview.route -> routineName.ifEmpty { "Routine" }
-        route == NavigationRoutes.SetReady.route -> routineName.ifEmpty { "Routine" }
+    route == NavigationRoutes.DailyRoutines.route -> "Daily Routines"
 
-        // Exercise detail (dynamic - uses exercise name)
-        route.startsWith("exercise_detail") -> exerciseName.ifEmpty { "Exercise" }
+    route == NavigationRoutes.TrainingCycles.route -> "Training Cycles"
 
-        // Cycle flow (dynamic - uses cycle name)
-        route.startsWith("cycle_editor") -> cycleName.ifEmpty { "Training Cycle" }
-        route.startsWith("cycleReview") -> cycleName.ifEmpty { "Cycle Review" }
+    route == NavigationRoutes.Analytics.route -> "Analytics"
 
-        // Routine editor (dynamic - uses routine name)
-        route.startsWith("routine_editor") -> routineName.ifEmpty { "Edit Routine" }
+    route == NavigationRoutes.SmartInsights.route -> "Smart Insights"
 
-        // Static titles
-        route == NavigationRoutes.Badges.route -> "Achievements"
-        route == NavigationRoutes.ConnectionLogs.route -> "Connection Logs"
-        route == NavigationRoutes.RoutineComplete.route -> "Complete"
+    route == NavigationRoutes.Settings.route -> "Settings"
 
-        // Active workout - hidden, but provide fallback
-        route == NavigationRoutes.ActiveWorkout.route -> "Workout"
+    route == NavigationRoutes.JustLift.route -> "Just Lift"
 
-        // Fallback
-        else -> "Project Phoenix"
-    }
+    route == NavigationRoutes.SingleExercise.route -> "Single Exercise"
+
+    // Routine flow (dynamic - uses routine name)
+    route == NavigationRoutes.RoutineOverview.route -> routineName.ifEmpty { "Routine" }
+
+    route == NavigationRoutes.SetReady.route -> routineName.ifEmpty { "Routine" }
+
+    // Exercise detail (dynamic - uses exercise name)
+    route.startsWith("exercise_detail") -> exerciseName.ifEmpty { "Exercise" }
+
+    // Cycle flow (dynamic - uses cycle name)
+    route.startsWith("cycle_editor") -> cycleName.ifEmpty { "Training Cycle" }
+
+    route.startsWith("cycleReview") -> cycleName.ifEmpty { "Cycle Review" }
+
+    // Routine editor (dynamic - uses routine name)
+    route.startsWith("routine_editor") -> routineName.ifEmpty { "Edit Routine" }
+
+    // Static titles
+    route == NavigationRoutes.Badges.route -> "Achievements"
+
+    route == NavigationRoutes.ConnectionLogs.route -> "Connection Logs"
+
+    route == NavigationRoutes.RoutineComplete.route -> "Complete"
+
+    // Active workout - hidden, but provide fallback
+    route == NavigationRoutes.ActiveWorkout.route -> "Workout"
+
+    // Fallback
+    else -> "Project Phoenix"
 }

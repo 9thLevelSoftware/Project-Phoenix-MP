@@ -24,22 +24,22 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.devil.phoenixproject.data.sync.SyncTriggerManager
 import com.devil.phoenixproject.domain.model.WeightUnit
-import com.devil.phoenixproject.util.ColorSchemes
-import com.devil.phoenixproject.util.BackupProgress
-import com.devil.phoenixproject.util.DataBackupManager
-import com.devil.phoenixproject.util.ImportResult
-import com.devil.phoenixproject.util.rememberFilePicker
-import kotlinx.coroutines.launch
-import org.koin.compose.koinInject
 import com.devil.phoenixproject.presentation.components.CountdownDropdown
 import com.devil.phoenixproject.ui.theme.*
-import com.devil.phoenixproject.data.sync.SyncTriggerManager
+import com.devil.phoenixproject.util.BackupProgress
+import com.devil.phoenixproject.util.ColorSchemes
+import com.devil.phoenixproject.util.DataBackupManager
 import com.devil.phoenixproject.util.DeviceInfo
+import com.devil.phoenixproject.util.ImportResult
 import com.devil.phoenixproject.util.KmpUtils
+import com.devil.phoenixproject.util.rememberFilePicker
+import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.stringResource
-import vitruvianprojectphoenix.shared.generated.resources.Res
+import org.koin.compose.koinInject
 import vitruvianprojectphoenix.shared.generated.resources.*
+import vitruvianprojectphoenix.shared.generated.resources.Res
 
 @Composable
 fun SettingsTab(
@@ -102,7 +102,7 @@ fun SettingsTab(
     onSafeWordChange: (String?) -> Unit = {},
     safeWordCalibrated: Boolean = false,
     onSafeWordCalibratedChange: (Boolean) -> Unit = {},
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
 ) {
     var showDeleteAllDialog by remember { mutableStateOf(false) }
     // Backup/Restore state
@@ -145,7 +145,7 @@ fun SettingsTab(
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
             .padding(Spacing.medium),
-        verticalArrangement = Arrangement.spacedBy(Spacing.medium)
+        verticalArrangement = Arrangement.spacedBy(Spacing.medium),
     ) {
         // Header removed for global scaffold integration
 
@@ -158,12 +158,12 @@ fun SettingsTab(
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest),
             shape = RoundedCornerShape(20.dp),
             elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
-            border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f))
+            border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)),
         ) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(Spacing.medium)
+                    .padding(Spacing.medium),
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Box(
@@ -172,17 +172,17 @@ fun SettingsTab(
                             .shadow(8.dp, RoundedCornerShape(20.dp))
                             .background(
                                 Brush.linearGradient(
-                                    colors = listOf(Color(0xFFFFD700), Color(0xFFFFA500))
+                                    colors = listOf(Color(0xFFFFD700), Color(0xFFFFA500)),
                                 ),
-                                RoundedCornerShape(20.dp)
+                                RoundedCornerShape(20.dp),
                             ),
-                        contentAlignment = Alignment.Center
+                        contentAlignment = Alignment.Center,
                     ) {
                         Icon(
                             Icons.Default.Favorite,
                             contentDescription = stringResource(Res.string.cd_support_developer),
                             tint = MaterialTheme.colorScheme.onPrimary,
-                            modifier = Modifier.size(24.dp)
+                            modifier = Modifier.size(24.dp),
                         )
                     }
                     Spacer(modifier = Modifier.width(Spacing.medium))
@@ -190,14 +190,14 @@ fun SettingsTab(
                         "Like My Work?",
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurface
+                        color = MaterialTheme.colorScheme.onSurface,
                     )
                 }
                 Spacer(modifier = Modifier.height(Spacing.small))
                 Text(
                     "This app is 100% free with no ads, but I graciously accept donations if you are so inclined!",
                     style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 Spacer(modifier = Modifier.height(Spacing.small))
                 Text(
@@ -207,7 +207,7 @@ fun SettingsTab(
                     color = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.clickable {
                         uriHandler.openUri("https://ko-fi.com/vitruvianredux")
-                    }
+                    },
                 )
             }
         }
@@ -220,12 +220,12 @@ fun SettingsTab(
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest),
             shape = RoundedCornerShape(20.dp),
             elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
-            border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f))
+            border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)),
         ) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(Spacing.medium)
+                    .padding(Spacing.medium),
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Box(
@@ -234,17 +234,17 @@ fun SettingsTab(
                             .shadow(8.dp, RoundedCornerShape(20.dp))
                             .background(
                                 Brush.linearGradient(
-                                    colors = listOf(Color(0xFF06B6D4), Color(0xFF3B82F6))
+                                    colors = listOf(Color(0xFF06B6D4), Color(0xFF3B82F6)),
                                 ),
-                                RoundedCornerShape(20.dp)
+                                RoundedCornerShape(20.dp),
                             ),
-                        contentAlignment = Alignment.Center
+                        contentAlignment = Alignment.Center,
                     ) {
                         Icon(
                             Icons.Default.Cloud,
                             contentDescription = stringResource(Res.string.cd_cloud_sync),
                             tint = MaterialTheme.colorScheme.onPrimary,
-                            modifier = Modifier.size(24.dp)
+                            modifier = Modifier.size(24.dp),
                         )
                     }
                     Spacer(modifier = Modifier.width(Spacing.medium))
@@ -252,7 +252,7 @@ fun SettingsTab(
                         stringResource(Res.string.settings_cloud_sync),
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurface
+                        color = MaterialTheme.colorScheme.onSurface,
                     )
                 }
                 Spacer(modifier = Modifier.height(Spacing.small))
@@ -264,20 +264,20 @@ fun SettingsTab(
                         .height(56.dp),
                     shape = RoundedCornerShape(20.dp),
                     colors = ButtonDefaults.outlinedButtonColors(
-                        contentColor = MaterialTheme.colorScheme.primary
+                        contentColor = MaterialTheme.colorScheme.primary,
                     ),
-                    border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary)
+                    border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary),
                 ) {
                     Icon(
                         Icons.Default.Sync,
                         contentDescription = stringResource(Res.string.cd_link_portal),
-                        modifier = Modifier.size(24.dp)
+                        modifier = Modifier.size(24.dp),
                     )
                     Spacer(modifier = Modifier.width(Spacing.small))
                     Text(
                         "Link Portal Account",
                         style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold
+                        fontWeight = FontWeight.Bold,
                     )
                 }
 
@@ -285,26 +285,26 @@ fun SettingsTab(
                 Text(
                     "Sync your workouts to the Phoenix Portal for cross-device access",
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
 
                 if (hasSyncError) {
                     Spacer(modifier = Modifier.height(Spacing.small))
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically
+                        verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Icon(
                             Icons.Default.Warning,
                             contentDescription = stringResource(Res.string.cd_sync_error),
                             tint = MaterialTheme.colorScheme.error,
-                            modifier = Modifier.size(16.dp)
+                            modifier = Modifier.size(16.dp),
                         )
                         Spacer(modifier = Modifier.width(Spacing.small))
                         Text(
                             "Sync error — tap above to retry",
                             style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.error
+                            color = MaterialTheme.colorScheme.error,
                         )
                     }
                 }
@@ -318,20 +318,20 @@ fun SettingsTab(
                         .height(56.dp),
                     shape = RoundedCornerShape(20.dp),
                     colors = ButtonDefaults.outlinedButtonColors(
-                        contentColor = MaterialTheme.colorScheme.primary
+                        contentColor = MaterialTheme.colorScheme.primary,
                     ),
-                    border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary)
+                    border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary),
                 ) {
                     Icon(
                         Icons.Default.Extension,
                         contentDescription = "Integrations",
-                        modifier = Modifier.size(24.dp)
+                        modifier = Modifier.size(24.dp),
                     )
                     Spacer(modifier = Modifier.width(Spacing.small))
                     Text(
                         "Integrations",
                         style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold
+                        fontWeight = FontWeight.Bold,
                     )
                 }
 
@@ -339,59 +339,59 @@ fun SettingsTab(
                 Text(
                     "Connect Hevy, Liftosaur, Health apps, and import/export CSV",
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
         }
 
-    // Weight Unit Section - Material 3 Expressive
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .shadow(8.dp, RoundedCornerShape(20.dp)), // Material 3 Expressive: More shadow, more rounded
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest), // Material 3 Expressive: Higher contrast
-        shape = RoundedCornerShape(20.dp), // Material 3 Expressive: More rounded (was 16dp)
-        elevation = CardDefaults.cardElevation(defaultElevation = 8.dp), // Material 3 Expressive: Higher elevation (was 4dp)
-        border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)) // Material 3 Expressive: Thicker border (was 1dp)
-    ) {
+        // Weight Unit Section - Material 3 Expressive
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .shadow(8.dp, RoundedCornerShape(20.dp)), // Material 3 Expressive: More shadow, more rounded
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest), // Material 3 Expressive: Higher contrast
+            shape = RoundedCornerShape(20.dp), // Material 3 Expressive: More rounded (was 16dp)
+            elevation = CardDefaults.cardElevation(defaultElevation = 8.dp), // Material 3 Expressive: Higher elevation (was 4dp)
+            border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)), // Material 3 Expressive: Thicker border (was 1dp)
+        ) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(Spacing.medium)
+                    .padding(Spacing.medium),
             ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(
-                    modifier = Modifier
-                        .size(48.dp) // Material 3 Expressive: Larger (was 40dp)
-                        .shadow(8.dp, RoundedCornerShape(20.dp)) // Material 3 Expressive: More shadow, more rounded (was 16dp)
-                        .background(
-                            Brush.linearGradient(
-                                colors = listOf(Color(0xFF8B5CF6), Color(0xFF9333EA))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        modifier = Modifier
+                            .size(48.dp) // Material 3 Expressive: Larger (was 40dp)
+                            .shadow(8.dp, RoundedCornerShape(20.dp)) // Material 3 Expressive: More shadow, more rounded (was 16dp)
+                            .background(
+                                Brush.linearGradient(
+                                    colors = listOf(Color(0xFF8B5CF6), Color(0xFF9333EA)),
+                                ),
+                                RoundedCornerShape(20.dp), // Material 3 Expressive: More rounded (was 16dp)
                             ),
-                            RoundedCornerShape(20.dp) // Material 3 Expressive: More rounded (was 16dp)
-                        ),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        Icons.Default.Scale,
-                        contentDescription = stringResource(Res.string.cd_weight_unit),
-                        tint = MaterialTheme.colorScheme.onPrimary,
-                        modifier = Modifier.size(24.dp) // Material 3 Expressive: Larger icon
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(
+                            Icons.Default.Scale,
+                            contentDescription = stringResource(Res.string.cd_weight_unit),
+                            tint = MaterialTheme.colorScheme.onPrimary,
+                            modifier = Modifier.size(24.dp), // Material 3 Expressive: Larger icon
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(Spacing.medium))
+                    Text(
+                        stringResource(Res.string.settings_weight_unit),
+                        style = MaterialTheme.typography.titleLarge, // Material 3 Expressive: Larger (was titleMedium)
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface,
                     )
                 }
-                Spacer(modifier = Modifier.width(Spacing.medium))
-                Text(
-                    stringResource(Res.string.settings_weight_unit),
-                    style = MaterialTheme.typography.titleLarge, // Material 3 Expressive: Larger (was titleMedium)
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-            }
                 Spacer(modifier = Modifier.height(Spacing.small))
 
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(Spacing.small)
+                    horizontalArrangement = Arrangement.spacedBy(Spacing.small),
                 ) {
                     FilterChip(
                         selected = localWeightUnit == WeightUnit.KG,
@@ -405,14 +405,14 @@ fun SettingsTab(
                             selectedContainerColor = MaterialTheme.colorScheme.primary,
                             selectedLabelColor = MaterialTheme.colorScheme.onPrimary,
                             containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
-                            labelColor = MaterialTheme.colorScheme.onSurface
+                            labelColor = MaterialTheme.colorScheme.onSurface,
                         ),
                         border = FilterChipDefaults.filterChipBorder(
                             enabled = true,
                             selected = localWeightUnit == WeightUnit.KG,
                             borderColor = MaterialTheme.colorScheme.outline,
-                            selectedBorderColor = MaterialTheme.colorScheme.primary
-                        )
+                            selectedBorderColor = MaterialTheme.colorScheme.primary,
+                        ),
                     )
                     FilterChip(
                         selected = localWeightUnit == WeightUnit.LB,
@@ -426,243 +426,243 @@ fun SettingsTab(
                             selectedContainerColor = MaterialTheme.colorScheme.primary,
                             selectedLabelColor = MaterialTheme.colorScheme.onPrimary,
                             containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
-                            labelColor = MaterialTheme.colorScheme.onSurface
+                            labelColor = MaterialTheme.colorScheme.onSurface,
                         ),
                         border = FilterChipDefaults.filterChipBorder(
                             enabled = true,
                             selected = localWeightUnit == WeightUnit.LB,
                             borderColor = MaterialTheme.colorScheme.outline,
-                            selectedBorderColor = MaterialTheme.colorScheme.primary
-                        )
+                            selectedBorderColor = MaterialTheme.colorScheme.primary,
+                        ),
                     )
                 }
             }
         }
 
-    // Appearance Section - Material 3 Expressive
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .shadow(8.dp, RoundedCornerShape(20.dp)),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest),
-        shape = RoundedCornerShape(20.dp),
-        elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
-        border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f))
-    ) {
-        Column(
+        // Appearance Section - Material 3 Expressive
+        Card(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(Spacing.medium)
+                .shadow(8.dp, RoundedCornerShape(20.dp)),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest),
+            shape = RoundedCornerShape(20.dp),
+            elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
+            border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)),
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(
-                    modifier = Modifier
-                        .size(48.dp)
-                        .shadow(8.dp, RoundedCornerShape(20.dp))
-                        .background(
-                            Brush.linearGradient(
-                                colors = listOf(Color(0xFF6366F1), Color(0xFFA855F7))
-                            ),
-                            RoundedCornerShape(20.dp)
-                        ),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        Icons.Default.Palette,
-                        contentDescription = stringResource(Res.string.cd_appearance),
-                        tint = MaterialTheme.colorScheme.onPrimary,
-                        modifier = Modifier.size(24.dp)
-                    )
-                }
-                Spacer(modifier = Modifier.width(Spacing.medium))
-                Text(
-                    stringResource(Res.string.settings_appearance),
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-            }
-            Spacer(modifier = Modifier.height(Spacing.small))
-
-            // Dark Mode toggle
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column(
-                    modifier = Modifier.weight(1f)
-                ) {
-                    Text(
-                        stringResource(Res.string.settings_dark_mode),
-                        style = MaterialTheme.typography.bodyLarge,
-                        fontWeight = FontWeight.Medium,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                        stringResource(Res.string.settings_dark_mode_description),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                Switch(
-                    checked = darkModeEnabled,
-                    onCheckedChange = onDarkModeChange
-                )
-            }
-        }
-    }
-
-    // Language Section - Material 3 Expressive
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .shadow(8.dp, RoundedCornerShape(20.dp)),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest),
-        shape = RoundedCornerShape(20.dp),
-        elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
-        border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f))
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(Spacing.medium)
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(
-                    modifier = Modifier
-                        .size(48.dp)
-                        .shadow(8.dp, RoundedCornerShape(20.dp))
-                        .background(
-                            Brush.linearGradient(
-                                colors = listOf(Color(0xFF10B981), Color(0xFF059669))
-                            ),
-                            RoundedCornerShape(20.dp)
-                        ),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        Icons.Default.Language,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onPrimary,
-                        modifier = Modifier.size(24.dp)
-                    )
-                }
-                Spacer(modifier = Modifier.width(Spacing.medium))
-                Text(
-                    stringResource(Res.string.settings_language),
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-            }
-            Spacer(modifier = Modifier.height(Spacing.small))
-
-            // Language selection dropdown
-            val languageOptions = listOf(
-                "en" to stringResource(Res.string.language_english),
-                "nl" to stringResource(Res.string.language_dutch),
-                "de" to stringResource(Res.string.language_german),
-                "es" to stringResource(Res.string.language_spanish),
-                "fr" to stringResource(Res.string.language_french)
-            )
-            val selectedLabel = languageOptions.firstOrNull { it.first == selectedLanguage }?.second
-                ?: languageOptions.first().second
-            var languageExpanded by remember { mutableStateOf(false) }
-
-            @OptIn(ExperimentalMaterial3Api::class)
-            ExposedDropdownMenuBox(
-                expanded = languageExpanded,
-                onExpandedChange = { languageExpanded = !languageExpanded }
-            ) {
-                OutlinedTextField(
-                    value = selectedLabel,
-                    onValueChange = {},
-                    readOnly = true,
-                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = languageExpanded) },
-                    colors = ExposedDropdownMenuDefaults.outlinedTextFieldColors(),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable)
-                )
-                ExposedDropdownMenu(
-                    expanded = languageExpanded,
-                    onDismissRequest = { languageExpanded = false }
-                ) {
-                    languageOptions.forEach { (code, label) ->
-                        DropdownMenuItem(
-                            text = {
-                                Text(
-                                    text = label,
-                                    style = MaterialTheme.typography.bodyLarge
-                                )
-                            },
-                            onClick = {
-                                onLanguageChange(code)
-                                languageExpanded = false
-                            },
-                            contentPadding = ExposedDropdownMenuDefaults.ItemContentPadding
-                        )
-                    }
-                }
-            }
-
-            Spacer(modifier = Modifier.height(Spacing.small))
-            Text(
-                stringResource(Res.string.settings_language_help),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.clickable {
-                    uriHandler.openUri("https://github.com/user/phoenix-translations")
-                }
-            )
-        }
-    }
-
-    // Workout Preferences Section - Material 3 Expressive
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .shadow(8.dp, RoundedCornerShape(20.dp)), // Material 3 Expressive: More shadow, more rounded
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest), // Material 3 Expressive: Higher contrast
-        shape = RoundedCornerShape(20.dp), // Material 3 Expressive: More rounded (was 16dp)
-        elevation = CardDefaults.cardElevation(defaultElevation = 8.dp), // Material 3 Expressive: Higher elevation (was 4dp)
-        border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)) // Material 3 Expressive: Thicker border (was 1dp)
-    ) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(Spacing.medium)
+                    .padding(Spacing.medium),
             ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(
-                    modifier = Modifier
-                        .size(48.dp) // Material 3 Expressive: Larger (was 40dp)
-                        .shadow(8.dp, RoundedCornerShape(20.dp)) // Material 3 Expressive: More shadow, more rounded (was 16dp)
-                        .background(
-                            Brush.linearGradient(
-                                colors = listOf(Color(0xFF6366F1), Color(0xFF8B5CF6))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        modifier = Modifier
+                            .size(48.dp)
+                            .shadow(8.dp, RoundedCornerShape(20.dp))
+                            .background(
+                                Brush.linearGradient(
+                                    colors = listOf(Color(0xFF6366F1), Color(0xFFA855F7)),
+                                ),
+                                RoundedCornerShape(20.dp),
                             ),
-                            RoundedCornerShape(20.dp) // Material 3 Expressive: More rounded (was 16dp)
-                        ),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        Icons.Default.Tune,
-                        contentDescription = stringResource(Res.string.cd_advanced_settings),
-                        tint = MaterialTheme.colorScheme.onPrimary,
-                        modifier = Modifier.size(24.dp) // Material 3 Expressive: Larger icon
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(
+                            Icons.Default.Palette,
+                            contentDescription = stringResource(Res.string.cd_appearance),
+                            tint = MaterialTheme.colorScheme.onPrimary,
+                            modifier = Modifier.size(24.dp),
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(Spacing.medium))
+                    Text(
+                        stringResource(Res.string.settings_appearance),
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface,
                     )
                 }
-                Spacer(modifier = Modifier.width(Spacing.medium))
+                Spacer(modifier = Modifier.height(Spacing.small))
+
+                // Dark Mode toggle
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        Text(
+                            stringResource(Res.string.settings_dark_mode),
+                            style = MaterialTheme.typography.bodyLarge,
+                            fontWeight = FontWeight.Medium,
+                            color = MaterialTheme.colorScheme.onSurface,
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            stringResource(Res.string.settings_dark_mode_description),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Switch(
+                        checked = darkModeEnabled,
+                        onCheckedChange = onDarkModeChange,
+                    )
+                }
+            }
+        }
+
+        // Language Section - Material 3 Expressive
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .shadow(8.dp, RoundedCornerShape(20.dp)),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest),
+            shape = RoundedCornerShape(20.dp),
+            elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
+            border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)),
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(Spacing.medium),
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        modifier = Modifier
+                            .size(48.dp)
+                            .shadow(8.dp, RoundedCornerShape(20.dp))
+                            .background(
+                                Brush.linearGradient(
+                                    colors = listOf(Color(0xFF10B981), Color(0xFF059669)),
+                                ),
+                                RoundedCornerShape(20.dp),
+                            ),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(
+                            Icons.Default.Language,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onPrimary,
+                            modifier = Modifier.size(24.dp),
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(Spacing.medium))
+                    Text(
+                        stringResource(Res.string.settings_language),
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+                }
+                Spacer(modifier = Modifier.height(Spacing.small))
+
+                // Language selection dropdown
+                val languageOptions = listOf(
+                    "en" to stringResource(Res.string.language_english),
+                    "nl" to stringResource(Res.string.language_dutch),
+                    "de" to stringResource(Res.string.language_german),
+                    "es" to stringResource(Res.string.language_spanish),
+                    "fr" to stringResource(Res.string.language_french),
+                )
+                val selectedLabel = languageOptions.firstOrNull { it.first == selectedLanguage }?.second
+                    ?: languageOptions.first().second
+                var languageExpanded by remember { mutableStateOf(false) }
+
+                @OptIn(ExperimentalMaterial3Api::class)
+                ExposedDropdownMenuBox(
+                    expanded = languageExpanded,
+                    onExpandedChange = { languageExpanded = !languageExpanded },
+                ) {
+                    OutlinedTextField(
+                        value = selectedLabel,
+                        onValueChange = {},
+                        readOnly = true,
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = languageExpanded) },
+                        colors = ExposedDropdownMenuDefaults.outlinedTextFieldColors(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable),
+                    )
+                    ExposedDropdownMenu(
+                        expanded = languageExpanded,
+                        onDismissRequest = { languageExpanded = false },
+                    ) {
+                        languageOptions.forEach { (code, label) ->
+                            DropdownMenuItem(
+                                text = {
+                                    Text(
+                                        text = label,
+                                        style = MaterialTheme.typography.bodyLarge,
+                                    )
+                                },
+                                onClick = {
+                                    onLanguageChange(code)
+                                    languageExpanded = false
+                                },
+                                contentPadding = ExposedDropdownMenuDefaults.ItemContentPadding,
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(Spacing.small))
                 Text(
-                    "Workout Preferences",
-                    style = MaterialTheme.typography.titleLarge, // Material 3 Expressive: Larger (was titleMedium)
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface
+                    stringResource(Res.string.settings_language_help),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.clickable {
+                        uriHandler.openUri("https://github.com/user/phoenix-translations")
+                    },
                 )
             }
+        }
+
+        // Workout Preferences Section - Material 3 Expressive
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .shadow(8.dp, RoundedCornerShape(20.dp)), // Material 3 Expressive: More shadow, more rounded
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest), // Material 3 Expressive: Higher contrast
+            shape = RoundedCornerShape(20.dp), // Material 3 Expressive: More rounded (was 16dp)
+            elevation = CardDefaults.cardElevation(defaultElevation = 8.dp), // Material 3 Expressive: Higher elevation (was 4dp)
+            border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)), // Material 3 Expressive: Thicker border (was 1dp)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(Spacing.medium),
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        modifier = Modifier
+                            .size(48.dp) // Material 3 Expressive: Larger (was 40dp)
+                            .shadow(8.dp, RoundedCornerShape(20.dp)) // Material 3 Expressive: More shadow, more rounded (was 16dp)
+                            .background(
+                                Brush.linearGradient(
+                                    colors = listOf(Color(0xFF6366F1), Color(0xFF8B5CF6)),
+                                ),
+                                RoundedCornerShape(20.dp), // Material 3 Expressive: More rounded (was 16dp)
+                            ),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(
+                            Icons.Default.Tune,
+                            contentDescription = stringResource(Res.string.cd_advanced_settings),
+                            tint = MaterialTheme.colorScheme.onPrimary,
+                            modifier = Modifier.size(24.dp), // Material 3 Expressive: Larger icon
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(Spacing.medium))
+                    Text(
+                        "Workout Preferences",
+                        style = MaterialTheme.typography.titleLarge, // Material 3 Expressive: Larger (was titleMedium)
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+                }
                 Spacer(modifier = Modifier.height(Spacing.small))
 
                 // Issue #167: Summary Countdown now controls autoplay behavior
@@ -671,18 +671,18 @@ fun SettingsTab(
                 // - 5-30s: Show summary, auto-advance after countdown (like old autoplay ON)
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
                             text = "Set Summary",
                             style = MaterialTheme.typography.titleMedium,
-                            color = MaterialTheme.colorScheme.onSurface
+                            color = MaterialTheme.colorScheme.onSurface,
                         )
                         Text(
                             text = "Off = skip summary, Unlimited = manual, 5-30s = auto-advance",
                             style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
 
@@ -696,11 +696,15 @@ fun SettingsTab(
                         modifier = Modifier.width(120.dp),
                         formatLabel = {
                             when (it) {
-                                -1 -> "Off"        // Skip summary entirely
-                                0 -> "Unlimited"   // Show summary, no auto-advance
+                                -1 -> "Off"
+
+                                // Skip summary entirely
+                                0 -> "Unlimited"
+
+                                // Show summary, no auto-advance
                                 else -> "${it}s"
                             }
-                        }
+                        },
                     )
                 }
 
@@ -709,18 +713,18 @@ fun SettingsTab(
                 // Autostart Countdown - always visible
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
                             text = "Autostart Countdown",
                             style = MaterialTheme.typography.titleMedium,
-                            color = MaterialTheme.colorScheme.onSurface
+                            color = MaterialTheme.colorScheme.onSurface,
                         )
                         Text(
                             text = "Just Lift countdown when handles are grabbed",
                             style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
 
@@ -731,7 +735,7 @@ fun SettingsTab(
                         selectedValue = autoStartCountdownSeconds,
                         options = (2..10).toList(),
                         onValueSelected = { onAutoStartCountdownChange(it) },
-                        modifier = Modifier.width(100.dp)
+                        modifier = Modifier.width(100.dp),
                     )
                 }
 
@@ -741,27 +745,27 @@ fun SettingsTab(
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Column(
-                        modifier = Modifier.weight(1f)
+                        modifier = Modifier.weight(1f),
                     ) {
                         Text(
                             "Show Exercise Videos",
                             style = MaterialTheme.typography.bodyLarge,
                             fontWeight = FontWeight.Medium,
-                            color = MaterialTheme.colorScheme.onSurface
+                            color = MaterialTheme.colorScheme.onSurface,
                         )
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
                             "Display exercise demonstration videos (disable to avoid slow loading)",
                             style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
                     Switch(
                         checked = enableVideoPlayback,
-                        onCheckedChange = onEnableVideoPlaybackChange
+                        onCheckedChange = onEnableVideoPlaybackChange,
                     )
                 }
 
@@ -771,27 +775,27 @@ fun SettingsTab(
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Column(
-                        modifier = Modifier.weight(1f)
+                        modifier = Modifier.weight(1f),
                     ) {
                         Text(
                             "Audio Rep Counter",
                             style = MaterialTheme.typography.bodyLarge,
                             fontWeight = FontWeight.Medium,
-                            color = MaterialTheme.colorScheme.onSurface
+                            color = MaterialTheme.colorScheme.onSurface,
                         )
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
                             "Play spoken rep numbers during working sets",
                             style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
                     Switch(
                         checked = audioRepCountEnabled,
-                        onCheckedChange = onAudioRepCountChange
+                        onCheckedChange = onAudioRepCountChange,
                     )
                 }
 
@@ -801,27 +805,27 @@ fun SettingsTab(
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Column(
-                        modifier = Modifier.weight(1f)
+                        modifier = Modifier.weight(1f),
                     ) {
                         Text(
                             "Countdown Beeps",
                             style = MaterialTheme.typography.bodyLarge,
                             fontWeight = FontWeight.Medium,
-                            color = MaterialTheme.colorScheme.onSurface
+                            color = MaterialTheme.colorScheme.onSurface,
                         )
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
                             "Beep during last 10 seconds of rest timer",
                             style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
                     Switch(
                         checked = countdownBeepsEnabled,
-                        onCheckedChange = onCountdownBeepsChange
+                        onCheckedChange = onCountdownBeepsChange,
                     )
                 }
 
@@ -831,27 +835,27 @@ fun SettingsTab(
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Column(
-                        modifier = Modifier.weight(1f)
+                        modifier = Modifier.weight(1f),
                     ) {
                         Text(
                             "Rep Completion Sound",
                             style = MaterialTheme.typography.bodyLarge,
                             fontWeight = FontWeight.Medium,
-                            color = MaterialTheme.colorScheme.onSurface
+                            color = MaterialTheme.colorScheme.onSurface,
                         )
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
                             "Play sound when a rep is completed",
                             style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
                     Switch(
                         checked = repSoundEnabled,
-                        onCheckedChange = onRepSoundChange
+                        onCheckedChange = onRepSoundChange,
                     )
                 }
 
@@ -861,27 +865,27 @@ fun SettingsTab(
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Column(
-                        modifier = Modifier.weight(1f)
+                        modifier = Modifier.weight(1f),
                     ) {
                         Text(
                             "Motion-Triggered Set Start",
                             style = MaterialTheme.typography.bodyLarge,
                             fontWeight = FontWeight.Medium,
-                            color = MaterialTheme.colorScheme.onSurface
+                            color = MaterialTheme.colorScheme.onSurface,
                         )
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
                             "Start sets by holding the cable instead of countdown",
                             style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
                     Switch(
                         checked = motionStartEnabled,
-                        onCheckedChange = onMotionStartChange
+                        onCheckedChange = onMotionStartChange,
                     )
                 }
 
@@ -891,27 +895,27 @@ fun SettingsTab(
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Column(
-                        modifier = Modifier.weight(1f)
+                        modifier = Modifier.weight(1f),
                     ) {
                         Text(
                             "Gamification",
                             style = MaterialTheme.typography.bodyLarge,
                             fontWeight = FontWeight.Medium,
-                            color = MaterialTheme.colorScheme.onSurface
+                            color = MaterialTheme.colorScheme.onSurface,
                         )
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
                             "Show PR celebrations and award badges after workouts",
                             style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
                     Switch(
                         checked = gamificationEnabled,
-                        onCheckedChange = onGamificationEnabledChange
+                        onCheckedChange = onGamificationEnabledChange,
                     )
                 }
 
@@ -923,27 +927,27 @@ fun SettingsTab(
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Column(
-                        modifier = Modifier.weight(1f)
+                        modifier = Modifier.weight(1f),
                     ) {
                         Text(
                             stringResource(Res.string.settings_voice_stop_title),
                             style = MaterialTheme.typography.bodyLarge,
                             fontWeight = FontWeight.Medium,
-                            color = MaterialTheme.colorScheme.onSurface
+                            color = MaterialTheme.colorScheme.onSurface,
                         )
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
                             stringResource(Res.string.settings_voice_stop_description),
                             style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
                     Switch(
                         checked = voiceStopEnabled,
-                        onCheckedChange = onVoiceStopEnabledChange
+                        onCheckedChange = onVoiceStopEnabledChange,
                     )
                 }
 
@@ -960,7 +964,7 @@ fun SettingsTab(
                         placeholder = { Text(stringResource(Res.string.settings_safe_word_hint)) },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(12.dp)
+                        shape = RoundedCornerShape(12.dp),
                     )
 
                     Spacer(modifier = Modifier.height(Spacing.small))
@@ -968,7 +972,7 @@ fun SettingsTab(
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
+                        horizontalArrangement = Arrangement.SpaceBetween,
                     ) {
                         if (safeWordCalibrated && safeWord == localSafeWord) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -976,14 +980,14 @@ fun SettingsTab(
                                     Icons.Default.CheckCircle,
                                     contentDescription = stringResource(Res.string.cd_calibration_check),
                                     tint = Color(0xFF10B981),
-                                    modifier = Modifier.size(20.dp)
+                                    modifier = Modifier.size(20.dp),
                                 )
                                 Spacer(modifier = Modifier.width(4.dp))
                                 Text(
                                     stringResource(Res.string.settings_calibrated_badge),
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = Color(0xFF10B981),
-                                    fontWeight = FontWeight.Bold
+                                    fontWeight = FontWeight.Bold,
                                 )
                             }
                         } else {
@@ -991,7 +995,7 @@ fun SettingsTab(
                                 stringResource(Res.string.settings_calibrate_first),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.error,
-                                modifier = Modifier.weight(1f)
+                                modifier = Modifier.weight(1f),
                             )
                         }
 
@@ -1006,7 +1010,7 @@ fun SettingsTab(
                                 }
                             },
                             enabled = localSafeWord.isNotBlank(),
-                            shape = RoundedCornerShape(12.dp)
+                            shape = RoundedCornerShape(12.dp),
                         ) {
                             Text(stringResource(Res.string.settings_calibrate_button))
                         }
@@ -1015,272 +1019,282 @@ fun SettingsTab(
             }
         }
 
-    // Calibration dialog for voice emergency stop
-    if (showCalibrationDialog && localSafeWord.isNotBlank()) {
-        SafeWordCalibrationDialog(
-            safeWord = localSafeWord,
-            onCalibrated = {
-                onSafeWordChange(localSafeWord)
-                onSafeWordCalibratedChange(true)
-                showCalibrationDialog = false
-            },
-            onDismiss = {
-                showCalibrationDialog = false
-            }
-        )
-    }
+        // Calibration dialog for voice emergency stop
+        if (showCalibrationDialog && localSafeWord.isNotBlank()) {
+            SafeWordCalibrationDialog(
+                safeWord = localSafeWord,
+                onCalibrated = {
+                    onSafeWordChange(localSafeWord)
+                    onSafeWordCalibratedChange(true)
+                    showCalibrationDialog = false
+                },
+                onDismiss = {
+                    showCalibrationDialog = false
+                },
+            )
+        }
 
-    // Color Scheme Section - Compact with visual previews
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .shadow(8.dp, RoundedCornerShape(20.dp)),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest),
-        shape = RoundedCornerShape(20.dp),
-        elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
-        border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f))
-    ) {
-        Column(
+        // Color Scheme Section - Compact with visual previews
+        Card(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(Spacing.medium)
+                .shadow(8.dp, RoundedCornerShape(20.dp)),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest),
+            shape = RoundedCornerShape(20.dp),
+            elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
+            border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)),
         ) {
-            // Easter egg: tap the header 7 times rapidly to unlock disco mode
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.clickable {
-                    val currentTime = KmpUtils.currentTimeMillis()
-                    // Reset if more than 2 seconds since last tap
-                    if (currentTime - lastTapTime > 2000L) {
-                        easterEggTapCount = 1
-                    } else {
-                        easterEggTapCount++
-                    }
-                    lastTapTime = currentTime
-
-                    // Unlock disco mode after 7 rapid taps
-                    if (easterEggTapCount >= 7 && !discoModeUnlocked) {
-                        showDiscoUnlockDialog = true
-                        onPlayDiscoSound()
-                        onDiscoModeUnlocked()
-                        easterEggTapCount = 0
-                    }
-                }
-            ) {
-                Box(
-                    modifier = Modifier
-                        .size(48.dp)
-                        .shadow(8.dp, RoundedCornerShape(20.dp))
-                        .background(
-                            Brush.linearGradient(
-                                colors = if (discoModeActive) {
-                                    // Rainbow gradient when disco mode is active
-                                    listOf(Color(0xFFFF0000), Color(0xFFFF7F00), Color(0xFFFFFF00),
-                                           Color(0xFF00FF00), Color(0xFF0000FF), Color(0xFF8B00FF))
-                                } else {
-                                    listOf(Color(0xFF3B82F6), Color(0xFF6366F1))
-                                }
-                            ),
-                            RoundedCornerShape(20.dp)
-                        ),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        Icons.Default.ColorLens,
-                        contentDescription = stringResource(Res.string.cd_led_scheme),
-                        tint = MaterialTheme.colorScheme.onPrimary,
-                        modifier = Modifier.size(24.dp)
-                    )
-                }
-                Spacer(modifier = Modifier.width(Spacing.medium))
-                Text(
-                    "LED Color Scheme",
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-            }
-
-            Spacer(modifier = Modifier.height(Spacing.medium))
-
-            // Color scheme slider with preview
-            val colorSchemes = ColorSchemes.ALL
-            val currentScheme = colorSchemes.getOrElse(selectedColorSchemeIndex) { colorSchemes.first() }
-            val isNoneScheme = currentScheme.name == "None"
-
-            // Convert RGB colors to Compose Color for preview
-            val previewColors = if (isNoneScheme) {
-                listOf(Color.DarkGray, Color.Gray, Color.DarkGray)
-            } else {
-                currentScheme.colors.map { Color(it.r, it.g, it.b) }
-            }
-
-            // Color preview box with current scheme name
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(56.dp)
-                    .shadow(4.dp, RoundedCornerShape(12.dp))
-                    .background(
-                        Brush.horizontalGradient(previewColors),
-                        RoundedCornerShape(12.dp)
-                    ),
-                contentAlignment = Alignment.Center
-            ) {
-                Surface(
-                    shape = RoundedCornerShape(8.dp),
-                    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f)
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        if (isNoneScheme) {
-                            Icon(
-                                imageVector = Icons.Default.PowerSettingsNew,
-                                contentDescription = stringResource(Res.string.cd_leds_off),
-                                tint = MaterialTheme.colorScheme.onSurface,
-                                modifier = Modifier.size(20.dp)
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                        }
-                        Text(
-                            text = currentScheme.name,
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                    }
-                }
-            }
-
-            Spacer(modifier = Modifier.height(Spacing.medium))
-
-            // Slider for color selection
-            Slider(
-                value = selectedColorSchemeIndex.toFloat(),
-                onValueChange = { onColorSchemeChange(it.toInt()) },
-                valueRange = 0f..(colorSchemes.size - 1).toFloat(),
-                steps = colorSchemes.size - 2, // steps = divisions - 1
-                modifier = Modifier.fillMaxWidth(),
-                colors = SliderDefaults.colors(
-                    thumbColor = MaterialTheme.colorScheme.primary,
-                    activeTrackColor = MaterialTheme.colorScheme.primary,
-                    inactiveTrackColor = MaterialTheme.colorScheme.surfaceVariant
-                )
-            )
-
-            // Disco mode toggle (only visible when unlocked)
-            if (discoModeUnlocked) {
-                Spacer(modifier = Modifier.height(Spacing.medium))
-                HorizontalDivider(
-                    modifier = Modifier.padding(vertical = Spacing.small),
-                    color = MaterialTheme.colorScheme.outlineVariant
-                )
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            "🕺",
-                            style = MaterialTheme.typography.titleMedium
-                        )
-                        Spacer(modifier = Modifier.width(Spacing.small))
-                        Column {
-                            Text(
-                                "Disco Mode",
-                                style = MaterialTheme.typography.bodyLarge,
-                                fontWeight = FontWeight.Medium,
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-                            Text(
-                                if (!isConnected) "Connect to enable"
-                                else if (discoModeActive) "Party time!"
-                                else "Cycle through colors",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
-                    Switch(
-                        checked = discoModeActive,
-                        onCheckedChange = { onDiscoModeToggle(it) },
-                        enabled = isConnected
-                    )
-                }
-            }
-        }
-    }
-
-    // Data Management Section - Material 3 Expressive
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .shadow(8.dp, RoundedCornerShape(20.dp)), // Material 3 Expressive: More shadow, more rounded
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest), // Material 3 Expressive: Higher contrast
-        shape = RoundedCornerShape(20.dp), // Material 3 Expressive: More rounded (was 16dp)
-        elevation = CardDefaults.cardElevation(defaultElevation = 8.dp), // Material 3 Expressive: Higher elevation (was 4dp)
-        border = BorderStroke(2.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.2f)) // Material 3 Expressive: Thicker border, error color for destructive action
-    ) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(Spacing.medium)
+                    .padding(Spacing.medium),
             ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(
-                    modifier = Modifier
-                        .size(48.dp) // Material 3 Expressive: Larger (was 40dp)
-                        .shadow(8.dp, RoundedCornerShape(20.dp)) // Material 3 Expressive: More shadow, more rounded (was 16dp)
-                        .background(
-                            Brush.linearGradient(
-                                colors = listOf(Color(0xFFF97316), Color(0xFFEF4444))
-                            ),
-                            RoundedCornerShape(20.dp) // Material 3 Expressive: More rounded (was 16dp)
-                        ),
-                    contentAlignment = Alignment.Center
+                // Easter egg: tap the header 7 times rapidly to unlock disco mode
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.clickable {
+                        val currentTime = KmpUtils.currentTimeMillis()
+                        // Reset if more than 2 seconds since last tap
+                        if (currentTime - lastTapTime > 2000L) {
+                            easterEggTapCount = 1
+                        } else {
+                            easterEggTapCount++
+                        }
+                        lastTapTime = currentTime
+
+                        // Unlock disco mode after 7 rapid taps
+                        if (easterEggTapCount >= 7 && !discoModeUnlocked) {
+                            showDiscoUnlockDialog = true
+                            onPlayDiscoSound()
+                            onDiscoModeUnlocked()
+                            easterEggTapCount = 0
+                        }
+                    },
                 ) {
-                    Icon(
-                        Icons.Default.DeleteForever,
-                        contentDescription = stringResource(Res.string.cd_delete_workouts),
-                        tint = MaterialTheme.colorScheme.onPrimary,
-                        modifier = Modifier.size(24.dp) // Material 3 Expressive: Larger icon
+                    Box(
+                        modifier = Modifier
+                            .size(48.dp)
+                            .shadow(8.dp, RoundedCornerShape(20.dp))
+                            .background(
+                                Brush.linearGradient(
+                                    colors = if (discoModeActive) {
+                                        // Rainbow gradient when disco mode is active
+                                        listOf(
+                                            Color(0xFFFF0000),
+                                            Color(0xFFFF7F00),
+                                            Color(0xFFFFFF00),
+                                            Color(0xFF00FF00),
+                                            Color(0xFF0000FF),
+                                            Color(0xFF8B00FF),
+                                        )
+                                    } else {
+                                        listOf(Color(0xFF3B82F6), Color(0xFF6366F1))
+                                    },
+                                ),
+                                RoundedCornerShape(20.dp),
+                            ),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(
+                            Icons.Default.ColorLens,
+                            contentDescription = stringResource(Res.string.cd_led_scheme),
+                            tint = MaterialTheme.colorScheme.onPrimary,
+                            modifier = Modifier.size(24.dp),
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(Spacing.medium))
+                    Text(
+                        "LED Color Scheme",
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface,
                     )
                 }
-                Spacer(modifier = Modifier.width(Spacing.medium))
-                Text(
-                    "Data Management",
-                    style = MaterialTheme.typography.titleLarge, // Material 3 Expressive: Larger (was titleMedium)
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface
+
+                Spacer(modifier = Modifier.height(Spacing.medium))
+
+                // Color scheme slider with preview
+                val colorSchemes = ColorSchemes.ALL
+                val currentScheme = colorSchemes.getOrElse(selectedColorSchemeIndex) { colorSchemes.first() }
+                val isNoneScheme = currentScheme.name == "None"
+
+                // Convert RGB colors to Compose Color for preview
+                val previewColors = if (isNoneScheme) {
+                    listOf(Color.DarkGray, Color.Gray, Color.DarkGray)
+                } else {
+                    currentScheme.colors.map { Color(it.r, it.g, it.b) }
+                }
+
+                // Color preview box with current scheme name
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(56.dp)
+                        .shadow(4.dp, RoundedCornerShape(12.dp))
+                        .background(
+                            Brush.horizontalGradient(previewColors),
+                            RoundedCornerShape(12.dp),
+                        ),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            if (isNoneScheme) {
+                                Icon(
+                                    imageVector = Icons.Default.PowerSettingsNew,
+                                    contentDescription = stringResource(Res.string.cd_leds_off),
+                                    tint = MaterialTheme.colorScheme.onSurface,
+                                    modifier = Modifier.size(20.dp),
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                            }
+                            Text(
+                                text = currentScheme.name,
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface,
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(Spacing.medium))
+
+                // Slider for color selection
+                Slider(
+                    value = selectedColorSchemeIndex.toFloat(),
+                    onValueChange = { onColorSchemeChange(it.toInt()) },
+                    valueRange = 0f..(colorSchemes.size - 1).toFloat(),
+                    steps = colorSchemes.size - 2, // steps = divisions - 1
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = SliderDefaults.colors(
+                        thumbColor = MaterialTheme.colorScheme.primary,
+                        activeTrackColor = MaterialTheme.colorScheme.primary,
+                        inactiveTrackColor = MaterialTheme.colorScheme.surfaceVariant,
+                    ),
                 )
+
+                // Disco mode toggle (only visible when unlocked)
+                if (discoModeUnlocked) {
+                    Spacer(modifier = Modifier.height(Spacing.medium))
+                    HorizontalDivider(
+                        modifier = Modifier.padding(vertical = Spacing.small),
+                        color = MaterialTheme.colorScheme.outlineVariant,
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                "🕺",
+                                style = MaterialTheme.typography.titleMedium,
+                            )
+                            Spacer(modifier = Modifier.width(Spacing.small))
+                            Column {
+                                Text(
+                                    "Disco Mode",
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    fontWeight = FontWeight.Medium,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                )
+                                Text(
+                                    if (!isConnected) {
+                                        "Connect to enable"
+                                    } else if (discoModeActive) {
+                                        "Party time!"
+                                    } else {
+                                        "Cycle through colors"
+                                    },
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
+                        Switch(
+                            checked = discoModeActive,
+                            onCheckedChange = { onDiscoModeToggle(it) },
+                            enabled = isConnected,
+                        )
+                    }
+                }
             }
+        }
+
+        // Data Management Section - Material 3 Expressive
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .shadow(8.dp, RoundedCornerShape(20.dp)), // Material 3 Expressive: More shadow, more rounded
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest), // Material 3 Expressive: Higher contrast
+            shape = RoundedCornerShape(20.dp), // Material 3 Expressive: More rounded (was 16dp)
+            elevation = CardDefaults.cardElevation(defaultElevation = 8.dp), // Material 3 Expressive: Higher elevation (was 4dp)
+            border = BorderStroke(2.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.2f)), // Material 3 Expressive: Thicker border, error color for destructive action
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(Spacing.medium),
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        modifier = Modifier
+                            .size(48.dp) // Material 3 Expressive: Larger (was 40dp)
+                            .shadow(8.dp, RoundedCornerShape(20.dp)) // Material 3 Expressive: More shadow, more rounded (was 16dp)
+                            .background(
+                                Brush.linearGradient(
+                                    colors = listOf(Color(0xFFF97316), Color(0xFFEF4444)),
+                                ),
+                                RoundedCornerShape(20.dp), // Material 3 Expressive: More rounded (was 16dp)
+                            ),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(
+                            Icons.Default.DeleteForever,
+                            contentDescription = stringResource(Res.string.cd_delete_workouts),
+                            tint = MaterialTheme.colorScheme.onPrimary,
+                            modifier = Modifier.size(24.dp), // Material 3 Expressive: Larger icon
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(Spacing.medium))
+                    Text(
+                        "Data Management",
+                        style = MaterialTheme.typography.titleLarge, // Material 3 Expressive: Larger (was titleMedium)
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+                }
                 Spacer(modifier = Modifier.height(Spacing.small))
 
                 // Auto-backup toggle (Phase 36)
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
                             "Auto-Backup Workouts",
                             style = MaterialTheme.typography.bodyLarge,
                             fontWeight = FontWeight.Medium,
-                            color = MaterialTheme.colorScheme.onSurface
+                            color = MaterialTheme.colorScheme.onSurface,
                         )
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
                             "Automatically save each workout to a local backup file",
                             style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
                     Switch(
                         checked = autoBackupEnabled,
-                        onCheckedChange = onAutoBackupEnabledChange
+                        onCheckedChange = onAutoBackupEnabledChange,
                     )
                 }
 
@@ -1293,22 +1307,22 @@ fun SettingsTab(
                                 .fillMaxWidth()
                                 .background(
                                     MaterialTheme.colorScheme.surfaceContainerLow,
-                                    RoundedCornerShape(12.dp)
+                                    RoundedCornerShape(12.dp),
                                 )
                                 .padding(horizontal = Spacing.medium, vertical = Spacing.small),
                             horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
+                            verticalAlignment = Alignment.CenterVertically,
                         ) {
                             Text(
                                 "${stats.fileCount} backup file${if (stats.fileCount != 1) "s" else ""}",
                                 style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                             Text(
                                 stats.formattedSize,
                                 style = MaterialTheme.typography.bodySmall,
                                 fontWeight = FontWeight.Medium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
 
@@ -1320,19 +1334,19 @@ fun SettingsTab(
                             modifier = Modifier.fillMaxWidth(),
                             shape = RoundedCornerShape(12.dp),
                             colors = ButtonDefaults.outlinedButtonColors(
-                                contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                                contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
                             ),
-                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.5f))
+                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)),
                         ) {
                             Icon(
                                 Icons.Default.FolderOpen,
                                 contentDescription = stringResource(Res.string.cd_open_backup_folder),
-                                modifier = Modifier.size(18.dp)
+                                modifier = Modifier.size(18.dp),
                             )
                             Spacer(modifier = Modifier.width(Spacing.small))
                             Text(
                                 "Open Backup Folder",
-                                style = MaterialTheme.typography.bodyMedium
+                                style = MaterialTheme.typography.bodyMedium,
                             )
                         }
                     }
@@ -1348,20 +1362,20 @@ fun SettingsTab(
                         .height(56.dp),
                     shape = RoundedCornerShape(20.dp),
                     colors = ButtonDefaults.outlinedButtonColors(
-                        contentColor = MaterialTheme.colorScheme.primary
+                        contentColor = MaterialTheme.colorScheme.primary,
                     ),
-                    border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary)
+                    border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary),
                 ) {
                     Icon(
                         Icons.Default.CloudUpload,
                         contentDescription = stringResource(Res.string.cd_backup_data),
-                        modifier = Modifier.size(24.dp)
+                        modifier = Modifier.size(24.dp),
                     )
                     Spacer(modifier = Modifier.width(Spacing.small))
                     Text(
                         "Backup All Data",
                         style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold
+                        fontWeight = FontWeight.Bold,
                     )
                 }
 
@@ -1375,20 +1389,20 @@ fun SettingsTab(
                         .height(56.dp),
                     shape = RoundedCornerShape(20.dp),
                     colors = ButtonDefaults.outlinedButtonColors(
-                        contentColor = MaterialTheme.colorScheme.secondary
+                        contentColor = MaterialTheme.colorScheme.secondary,
                     ),
-                    border = BorderStroke(2.dp, MaterialTheme.colorScheme.secondary)
+                    border = BorderStroke(2.dp, MaterialTheme.colorScheme.secondary),
                 ) {
                     Icon(
                         Icons.Default.CloudDownload,
                         contentDescription = stringResource(Res.string.cd_restore_data),
-                        modifier = Modifier.size(24.dp)
+                        modifier = Modifier.size(24.dp),
                     )
                     Spacer(modifier = Modifier.width(Spacing.small))
                     Text(
                         "Restore from Backup",
                         style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold
+                        fontWeight = FontWeight.Bold,
                     )
                 }
 
@@ -1403,147 +1417,147 @@ fun SettingsTab(
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
                     elevation = ButtonDefaults.buttonElevation(
                         defaultElevation = 4.dp,
-                        pressedElevation = 2.dp
-                    )
+                        pressedElevation = 2.dp,
+                    ),
                 ) {
                     Icon(
                         Icons.Default.Delete,
                         contentDescription = stringResource(Res.string.cd_delete_workouts),
-                        modifier = Modifier.size(24.dp) // Material 3 Expressive: Larger icon
+                        modifier = Modifier.size(24.dp), // Material 3 Expressive: Larger icon
                     )
                     Spacer(modifier = Modifier.width(Spacing.small))
                     Text(
                         "Delete All Workouts",
                         style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold
+                        fontWeight = FontWeight.Bold,
                     )
                 }
             }
         }
 
-    // Achievements Section - Material 3 Expressive (hidden when gamification is disabled)
-    if (gamificationEnabled) {
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .shadow(8.dp, RoundedCornerShape(20.dp)),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest),
-        shape = RoundedCornerShape(20.dp),
-        elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
-        border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f))
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(Spacing.medium)
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(
-                    modifier = Modifier
-                        .size(48.dp)
-                        .shadow(8.dp, RoundedCornerShape(20.dp))
-                        .background(
-                            Brush.linearGradient(
-                                colors = listOf(Color(0xFFFFD700), Color(0xFFFFA500))
-                            ),
-                            RoundedCornerShape(20.dp)
-                        ),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        Icons.Default.MilitaryTech,
-                        contentDescription = stringResource(Res.string.cd_achievements),
-                        tint = MaterialTheme.colorScheme.onPrimary,
-                        modifier = Modifier.size(24.dp)
-                    )
-                }
-                Spacer(modifier = Modifier.width(Spacing.medium))
-                Text(
-                    "Achievements",
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-            }
-            Spacer(modifier = Modifier.height(Spacing.small))
-
-            OutlinedButton(
-                onClick = onNavigateToBadges,
+        // Achievements Section - Material 3 Expressive (hidden when gamification is disabled)
+        if (gamificationEnabled) {
+            Card(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(56.dp),
+                    .shadow(8.dp, RoundedCornerShape(20.dp)),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest),
                 shape = RoundedCornerShape(20.dp),
-                colors = ButtonDefaults.outlinedButtonColors(
-                    contentColor = MaterialTheme.colorScheme.primary
-                ),
-                border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary)
+                elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
+                border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)),
             ) {
-                Icon(
-                    Icons.Default.EmojiEvents,
-                    contentDescription = stringResource(Res.string.cd_view_badges),
-                    modifier = Modifier.size(24.dp)
-                )
-                Spacer(modifier = Modifier.width(Spacing.small))
-                Text(
-                    "View Badges & Streaks",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold
-                )
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(Spacing.medium),
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(
+                            modifier = Modifier
+                                .size(48.dp)
+                                .shadow(8.dp, RoundedCornerShape(20.dp))
+                                .background(
+                                    Brush.linearGradient(
+                                        colors = listOf(Color(0xFFFFD700), Color(0xFFFFA500)),
+                                    ),
+                                    RoundedCornerShape(20.dp),
+                                ),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Icon(
+                                Icons.Default.MilitaryTech,
+                                contentDescription = stringResource(Res.string.cd_achievements),
+                                tint = MaterialTheme.colorScheme.onPrimary,
+                                modifier = Modifier.size(24.dp),
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(Spacing.medium))
+                        Text(
+                            "Achievements",
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface,
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(Spacing.small))
+
+                    OutlinedButton(
+                        onClick = onNavigateToBadges,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(56.dp),
+                        shape = RoundedCornerShape(20.dp),
+                        colors = ButtonDefaults.outlinedButtonColors(
+                            contentColor = MaterialTheme.colorScheme.primary,
+                        ),
+                        border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary),
+                    ) {
+                        Icon(
+                            Icons.Default.EmojiEvents,
+                            contentDescription = stringResource(Res.string.cd_view_badges),
+                            modifier = Modifier.size(24.dp),
+                        )
+                        Spacer(modifier = Modifier.width(Spacing.small))
+                        Text(
+                            "View Badges & Streaks",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        "Track your progress, earn badges, and maintain your workout streak",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
-
-            Spacer(modifier = Modifier.height(4.dp))
-            Text(
-                "Track your progress, earn badges, and maintain your workout streak",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
         }
-    }
-    }
 
-    // Developer Tools Section - Material 3 Expressive
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .shadow(8.dp, RoundedCornerShape(20.dp)), // Material 3 Expressive: More shadow, more rounded
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest), // Material 3 Expressive: Higher contrast
-        shape = RoundedCornerShape(20.dp), // Material 3 Expressive: More rounded (was 16dp)
-        elevation = CardDefaults.cardElevation(defaultElevation = 8.dp), // Material 3 Expressive: Higher elevation (was 4dp)
-        border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)) // Material 3 Expressive: Thicker border (was 1dp)
-    ) {
+        // Developer Tools Section - Material 3 Expressive
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .shadow(8.dp, RoundedCornerShape(20.dp)), // Material 3 Expressive: More shadow, more rounded
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest), // Material 3 Expressive: Higher contrast
+            shape = RoundedCornerShape(20.dp), // Material 3 Expressive: More rounded (was 16dp)
+            elevation = CardDefaults.cardElevation(defaultElevation = 8.dp), // Material 3 Expressive: Higher elevation (was 4dp)
+            border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)), // Material 3 Expressive: Thicker border (was 1dp)
+        ) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(Spacing.medium)
+                    .padding(Spacing.medium),
             ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(
-                    modifier = Modifier
-                        .size(48.dp)
-                        .shadow(8.dp, RoundedCornerShape(20.dp))
-                        .background(
-                            Brush.linearGradient(
-                                colors = listOf(Color(0xFFF59E0B), Color(0xFFEF4444))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        modifier = Modifier
+                            .size(48.dp)
+                            .shadow(8.dp, RoundedCornerShape(20.dp))
+                            .background(
+                                Brush.linearGradient(
+                                    colors = listOf(Color(0xFFF59E0B), Color(0xFFEF4444)),
+                                ),
+                                RoundedCornerShape(20.dp),
                             ),
-                            RoundedCornerShape(20.dp)
-                        ),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        Icons.Default.BugReport,
-                        contentDescription = stringResource(Res.string.cd_developer_tools),
-                        tint = MaterialTheme.colorScheme.onPrimary,
-                        modifier = Modifier.size(24.dp)
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(
+                            Icons.Default.BugReport,
+                            contentDescription = stringResource(Res.string.cd_developer_tools),
+                            tint = MaterialTheme.colorScheme.onPrimary,
+                            modifier = Modifier.size(24.dp),
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(Spacing.medium))
+                    Text(
+                        "Developer Tools",
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface,
                     )
                 }
-                Spacer(modifier = Modifier.width(Spacing.medium))
-                Text(
-                    "Developer Tools",
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-            }
                 Spacer(modifier = Modifier.height(Spacing.small))
 
                 OutlinedButton(
@@ -1553,20 +1567,20 @@ fun SettingsTab(
                         .height(56.dp),
                     shape = RoundedCornerShape(20.dp),
                     colors = ButtonDefaults.outlinedButtonColors(
-                        contentColor = MaterialTheme.colorScheme.primary
+                        contentColor = MaterialTheme.colorScheme.primary,
                     ),
-                    border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary)
+                    border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary),
                 ) {
                     Icon(
                         Icons.Default.Timeline,
                         contentDescription = stringResource(Res.string.cd_connection_logs),
-                        modifier = Modifier.size(24.dp)
+                        modifier = Modifier.size(24.dp),
                     )
                     Spacer(modifier = Modifier.width(Spacing.small))
                     Text(
                         "Connection Logs",
                         style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold
+                        fontWeight = FontWeight.Bold,
                     )
                 }
 
@@ -1574,7 +1588,7 @@ fun SettingsTab(
                 Text(
                     "View Bluetooth connection debug logs to diagnose connectivity issues",
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
 
                 Spacer(modifier = Modifier.height(Spacing.medium))
@@ -1586,20 +1600,20 @@ fun SettingsTab(
                         .height(56.dp),
                     shape = RoundedCornerShape(20.dp),
                     colors = ButtonDefaults.outlinedButtonColors(
-                        contentColor = MaterialTheme.colorScheme.primary
+                        contentColor = MaterialTheme.colorScheme.primary,
                     ),
-                    border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary)
+                    border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary),
                 ) {
                     Icon(
                         Icons.Default.MusicNote,
                         contentDescription = stringResource(Res.string.cd_test_sounds),
-                        modifier = Modifier.size(24.dp)
+                        modifier = Modifier.size(24.dp),
                     )
                     Spacer(modifier = Modifier.width(Spacing.small))
                     Text(
                         "Test Sounds",
                         style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold
+                        fontWeight = FontWeight.Bold,
                     )
                 }
 
@@ -1607,62 +1621,61 @@ fun SettingsTab(
                 Text(
                     "Play workout sounds to test audio configuration and volume",
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-
             }
         }
 
-    // App Info Section - Material 3 Expressive
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .shadow(8.dp, RoundedCornerShape(20.dp)), // Material 3 Expressive: More shadow, more rounded
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest), // Material 3 Expressive: Higher contrast
-        shape = RoundedCornerShape(20.dp), // Material 3 Expressive: More rounded (was 16dp)
-        elevation = CardDefaults.cardElevation(defaultElevation = 8.dp), // Material 3 Expressive: Higher elevation (was 4dp)
-        border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)) // Material 3 Expressive: Thicker border (was 1dp)
-    ) {
+        // App Info Section - Material 3 Expressive
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .shadow(8.dp, RoundedCornerShape(20.dp)), // Material 3 Expressive: More shadow, more rounded
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest), // Material 3 Expressive: Higher contrast
+            shape = RoundedCornerShape(20.dp), // Material 3 Expressive: More rounded (was 16dp)
+            elevation = CardDefaults.cardElevation(defaultElevation = 8.dp), // Material 3 Expressive: Higher elevation (was 4dp)
+            border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)), // Material 3 Expressive: Thicker border (was 1dp)
+        ) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(Spacing.medium)
+                    .padding(Spacing.medium),
             ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(
-                    modifier = Modifier
-                        .size(48.dp) // Material 3 Expressive: Larger (was 40dp)
-                        .shadow(8.dp, RoundedCornerShape(20.dp)) // Material 3 Expressive: More shadow, more rounded (was 16dp)
-                        .background(
-                            Brush.linearGradient(
-                                colors = listOf(Color(0xFF22C55E), Color(0xFF3B82F6))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        modifier = Modifier
+                            .size(48.dp) // Material 3 Expressive: Larger (was 40dp)
+                            .shadow(8.dp, RoundedCornerShape(20.dp)) // Material 3 Expressive: More shadow, more rounded (was 16dp)
+                            .background(
+                                Brush.linearGradient(
+                                    colors = listOf(Color(0xFF22C55E), Color(0xFF3B82F6)),
+                                ),
+                                RoundedCornerShape(20.dp), // Material 3 Expressive: More rounded (was 16dp)
                             ),
-                            RoundedCornerShape(20.dp) // Material 3 Expressive: More rounded (was 16dp)
-                        ),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        Icons.Default.Info,
-                        contentDescription = stringResource(Res.string.cd_app_info),
-                        tint = MaterialTheme.colorScheme.onPrimary,
-                        modifier = Modifier.size(24.dp) // Material 3 Expressive: Larger icon
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(
+                            Icons.Default.Info,
+                            contentDescription = stringResource(Res.string.cd_app_info),
+                            tint = MaterialTheme.colorScheme.onPrimary,
+                            modifier = Modifier.size(24.dp), // Material 3 Expressive: Larger icon
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(Spacing.medium))
+                    Text(
+                        "App Info",
+                        style = MaterialTheme.typography.titleLarge, // Material 3 Expressive: Larger (was titleMedium)
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface,
                     )
                 }
-                Spacer(modifier = Modifier.width(Spacing.medium))
-                Text(
-                    "App Info",
-                    style = MaterialTheme.typography.titleLarge, // Material 3 Expressive: Larger (was titleMedium)
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-            }
                 Spacer(modifier = Modifier.height(Spacing.small))
                 Text(stringResource(Res.string.settings_version, DeviceInfo.appVersionName), color = MaterialTheme.colorScheme.onSurface)
                 Spacer(modifier = Modifier.height(Spacing.small))
                 Text(
                     "Open source community project to control Vitruvian Trainer machines locally.",
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
         }
@@ -1676,13 +1689,13 @@ fun SettingsTab(
                 Text(
                     "Delete All Workouts?",
                     style = MaterialTheme.typography.headlineSmall, // Material 3 Expressive: Larger
-                    fontWeight = FontWeight.Bold
+                    fontWeight = FontWeight.Bold,
                 )
             },
             text = {
                 Text(
                     "This will permanently delete all workout history. This action cannot be undone.",
-                    style = MaterialTheme.typography.bodyLarge // Material 3 Expressive: Larger
+                    style = MaterialTheme.typography.bodyLarge, // Material 3 Expressive: Larger
                 )
             },
             containerColor = MaterialTheme.colorScheme.surfaceContainerHighest, // Material 3 Expressive: Higher contrast
@@ -1694,13 +1707,13 @@ fun SettingsTab(
                         showDeleteAllDialog = false
                     },
                     modifier = Modifier.height(56.dp), // Material 3 Expressive: Taller button
-                    shape = RoundedCornerShape(20.dp) // Material 3 Expressive: More rounded
+                    shape = RoundedCornerShape(20.dp), // Material 3 Expressive: More rounded
                 ) {
                     Text(
                         "Delete All",
                         style = MaterialTheme.typography.titleLarge, // Material 3 Expressive: Larger text
                         fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.error
+                        color = MaterialTheme.colorScheme.error,
                     )
                 }
             },
@@ -1708,16 +1721,16 @@ fun SettingsTab(
                 TextButton(
                     onClick = { showDeleteAllDialog = false },
                     modifier = Modifier.height(56.dp), // Material 3 Expressive: Taller button
-                    shape = RoundedCornerShape(20.dp) // Material 3 Expressive: More rounded
+                    shape = RoundedCornerShape(20.dp), // Material 3 Expressive: More rounded
                 ) {
                     Text(
                         "Cancel",
                         style = MaterialTheme.typography.titleMedium, // Material 3 Expressive: Larger text
                         fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-            }
+            },
         )
     }
 
@@ -1725,14 +1738,14 @@ fun SettingsTab(
     connectionError?.let { error ->
         com.devil.phoenixproject.presentation.components.ConnectionErrorDialog(
             message = error,
-            onDismiss = onClearConnectionError
+            onDismiss = onClearConnectionError,
         )
     }
 
     // Disco Mode Unlock Celebration Dialog
     if (showDiscoUnlockDialog) {
         DiscoModeUnlockDialog(
-            onDismiss = { showDiscoUnlockDialog = false }
+            onDismiss = { showDiscoUnlockDialog = false },
         )
     }
 
@@ -1771,7 +1784,7 @@ fun SettingsTab(
                                     backupProgress = null
                                 }
                             }
-                        }
+                        },
                     ) {
                         Text(stringResource(Res.string.action_save))
                     }
@@ -1791,12 +1804,12 @@ fun SettingsTab(
                                     backupProgress = null
                                 }
                             }
-                        }
+                        },
                     ) {
                         Icon(
                             Icons.Default.Share,
                             contentDescription = null,
-                            modifier = Modifier.size(18.dp)
+                            modifier = Modifier.size(18.dp),
                         )
                         Spacer(modifier = Modifier.width(4.dp))
                         Text(stringResource(Res.string.action_share))
@@ -1807,7 +1820,7 @@ fun SettingsTab(
                 TextButton(onClick = { showBackupDialog = false }) {
                     Text(stringResource(Res.string.action_cancel))
                 }
-            }
+            },
         )
     }
 
@@ -1824,7 +1837,7 @@ fun SettingsTab(
                     onClick = {
                         showRestoreDialog = false
                         launchFilePicker = true
-                    }
+                    },
                 ) {
                     Text(stringResource(Res.string.select_file))
                 }
@@ -1833,7 +1846,7 @@ fun SettingsTab(
                 TextButton(onClick = { showRestoreDialog = false }) {
                     Text(stringResource(Res.string.action_cancel))
                 }
-            }
+            },
         )
     }
 
@@ -1850,7 +1863,7 @@ fun SettingsTab(
                         else -> "Restore Complete"
                     },
                     style = MaterialTheme.typography.headlineSmall,
-                    fontWeight = FontWeight.Bold
+                    fontWeight = FontWeight.Bold,
                 )
             },
             text = {
@@ -1858,9 +1871,11 @@ fun SettingsTab(
                     isError -> {
                         Text(backupError ?: "Unknown error")
                     }
+
                     backupResult != null -> {
                         Text(stringResource(Res.string.backup_success, backupResult ?: ""))
                     }
+
                     else -> {
                         restoreResult?.let { result ->
                             Column {
@@ -1882,7 +1897,7 @@ fun SettingsTab(
                 }) {
                     Text(stringResource(Res.string.action_ok))
                 }
-            }
+            },
         )
     }
 
@@ -1897,33 +1912,33 @@ fun SettingsTab(
                         Text(
                             progress.phase.displayName,
                             style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                         Spacer(modifier = Modifier.height(Spacing.small))
                         if (progress.total > 0) {
                             LinearProgressIndicator(
                                 progress = { (progress.current.toFloat() / progress.total.toFloat()).coerceIn(0f, 1f) },
-                                modifier = Modifier.fillMaxWidth()
+                                modifier = Modifier.fillMaxWidth(),
                             )
                             Spacer(modifier = Modifier.height(Spacing.small))
                             Text(
                                 "${formatCount(progress.current)} / ${formatCount(progress.total)}",
                                 style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         } else {
                             LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
                         }
                     } ?: Row(
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(Spacing.medium)
+                        horizontalArrangement = Arrangement.spacedBy(Spacing.medium),
                     ) {
                         CircularProgressIndicator()
                         Text(stringResource(Res.string.label_please_wait))
                     }
                 }
             },
-            confirmButton = { }
+            confirmButton = { },
         )
     }
 
@@ -1961,7 +1976,7 @@ fun SettingsTab(
 private fun SafeWordCalibrationDialog(
     safeWord: String,
     onCalibrated: () -> Unit,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
 ) {
     val listenerFactory: com.devil.phoenixproject.domain.voice.SafeWordListenerFactory = koinInject()
     var detectionCount by remember { mutableStateOf(0) }
@@ -1974,7 +1989,7 @@ private fun SafeWordCalibrationDialog(
     DisposableEffect(safeWord) {
         val newListener = try {
             listenerFactory.create(safeWord)
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             micError = true
             null
         }
@@ -2021,53 +2036,55 @@ private fun SafeWordCalibrationDialog(
         title = {
             Text(
                 stringResource(Res.string.settings_calibration_title),
-                fontWeight = FontWeight.Bold
+                fontWeight = FontWeight.Bold,
             )
         },
         text = {
             Column(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(Spacing.medium)
+                verticalArrangement = Arrangement.spacedBy(Spacing.medium),
             ) {
                 when {
                     micError -> {
                         Text(
                             stringResource(Res.string.settings_calibration_mic_error),
                             style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.error
+                            color = MaterialTheme.colorScheme.error,
                         )
                         OutlinedButton(
                             onClick = { com.devil.phoenixproject.util.openAppSettings() },
-                            shape = RoundedCornerShape(12.dp)
+                            shape = RoundedCornerShape(12.dp),
                         ) {
                             Text(stringResource(Res.string.settings_calibration_open_settings))
                         }
                     }
+
                     calibrationFailed -> {
                         Text(
                             stringResource(Res.string.settings_calibration_fail),
                             style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.error
+                            color = MaterialTheme.colorScheme.error,
                         )
                     }
+
                     else -> {
                         // Prompt
                         Text(
                             stringResource(Res.string.settings_calibration_prompt),
-                            style = MaterialTheme.typography.bodyLarge
+                            style = MaterialTheme.typography.bodyLarge,
                         )
                         Text(
                             safeWord,
                             style = MaterialTheme.typography.headlineMedium,
                             fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.primary
+                            color = MaterialTheme.colorScheme.primary,
                         )
 
                         // 3 circles showing progress
                         Row(
                             horizontalArrangement = Arrangement.spacedBy(Spacing.medium),
-                            modifier = Modifier.padding(vertical = Spacing.small)
+                            modifier = Modifier.padding(vertical = Spacing.small),
                         ) {
                             repeat(3) { index ->
                                 val filled = index < detectionCount
@@ -2076,16 +2093,16 @@ private fun SafeWordCalibrationDialog(
                                         .size(40.dp)
                                         .background(
                                             color = if (filled) Color(0xFF10B981) else MaterialTheme.colorScheme.surfaceVariant,
-                                            shape = RoundedCornerShape(50)
+                                            shape = RoundedCornerShape(50),
                                         ),
-                                    contentAlignment = Alignment.Center
+                                    contentAlignment = Alignment.Center,
                                 ) {
                                     if (filled) {
                                         Icon(
                                             Icons.Default.Check,
                                             contentDescription = stringResource(Res.string.cd_calibration_check),
                                             tint = Color.White,
-                                            modifier = Modifier.size(24.dp)
+                                            modifier = Modifier.size(24.dp),
                                         )
                                     }
                                 }
@@ -2096,14 +2113,14 @@ private fun SafeWordCalibrationDialog(
                         Text(
                             stringResource(Res.string.settings_calibration_progress, detectionCount),
                             style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
 
                         // Listening indicator
                         Text(
                             stringResource(Res.string.settings_calibration_listening),
                             style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.primary
+                            color = MaterialTheme.colorScheme.primary,
                         )
                     }
                 }
@@ -2113,7 +2130,7 @@ private fun SafeWordCalibrationDialog(
             TextButton(onClick = onDismiss) {
                 Text(stringResource(Res.string.action_cancel))
             }
-        }
+        },
     )
 }
 
@@ -2143,9 +2160,9 @@ private fun DiscoModeUnlockDialog(onDismiss: () -> Unit) {
         targetValue = if (isVisible) 1f else 0f,
         animationSpec = spring(
             dampingRatio = Spring.DampingRatioMediumBouncy,
-            stiffness = Spring.StiffnessMedium
+            stiffness = Spring.StiffnessMedium,
         ),
-        label = "dialog_scale"
+        label = "dialog_scale",
     )
 
     // Rotating disco ball effect - use coroutine-based animation
@@ -2176,7 +2193,7 @@ private fun DiscoModeUnlockDialog(onDismiss: () -> Unit) {
         title = {
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier.fillMaxWidth(),
             ) {
                 // Spinning disco ball emoji with glow
                 Box(
@@ -2188,15 +2205,15 @@ private fun DiscoModeUnlockDialog(onDismiss: () -> Unit) {
                             Brush.radialGradient(
                                 colors = listOf(
                                     Color.White.copy(alpha = glowAlpha),
-                                    Color.Transparent
-                                )
+                                    Color.Transparent,
+                                ),
                             ),
-                            shape = RoundedCornerShape(40.dp)
-                        )
+                            shape = RoundedCornerShape(40.dp),
+                        ),
                 ) {
                     Text(
                         "🪩",
-                        style = MaterialTheme.typography.displayLarge
+                        style = MaterialTheme.typography.displayLarge,
                     )
                 }
                 Spacer(modifier = Modifier.height(16.dp))
@@ -2208,32 +2225,36 @@ private fun DiscoModeUnlockDialog(onDismiss: () -> Unit) {
                     modifier = Modifier.background(
                         Brush.linearGradient(
                             colors = listOf(
-                                Color(0xFFFF0000), Color(0xFFFF7F00), Color(0xFFFFFF00),
-                                Color(0xFF00FF00), Color(0xFF0000FF), Color(0xFF8B00FF)
-                            )
+                                Color(0xFFFF0000),
+                                Color(0xFFFF7F00),
+                                Color(0xFFFFFF00),
+                                Color(0xFF00FF00),
+                                Color(0xFF0000FF),
+                                Color(0xFF8B00FF),
+                            ),
                         ),
-                        shape = RoundedCornerShape(8.dp)
-                    ).padding(horizontal = 12.dp, vertical = 4.dp)
+                        shape = RoundedCornerShape(8.dp),
+                    ).padding(horizontal = 12.dp, vertical = 4.dp),
                 )
             }
         },
         text = {
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier.fillMaxWidth(),
             ) {
                 Text(
                     "🕺 Time to get funky! 💃",
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Bold,
-                    color = Color.White
+                    color = Color.White,
                 )
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
                     "Toggle Disco Mode in the LED Color Scheme section to make your trainer party!",
                     style = MaterialTheme.typography.bodyMedium,
                     color = Color.White.copy(alpha = 0.8f),
-                    modifier = Modifier.padding(horizontal = 8.dp)
+                    modifier = Modifier.padding(horizontal = 8.dp),
                 )
             }
         },
@@ -2241,15 +2262,15 @@ private fun DiscoModeUnlockDialog(onDismiss: () -> Unit) {
             TextButton(
                 onClick = onDismiss,
                 modifier = Modifier.height(48.dp),
-                shape = RoundedCornerShape(20.dp)
+                shape = RoundedCornerShape(20.dp),
             ) {
                 Text(
                     "🎉 Let's Party!",
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
-                    color = Color(0xFFFFD700) // Gold
+                    color = Color(0xFFFFD700), // Gold
                 )
             }
-        }
+        },
     )
 }

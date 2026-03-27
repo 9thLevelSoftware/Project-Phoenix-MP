@@ -28,7 +28,7 @@ actual fun CompactNumberPicker(
     modifier: Modifier,
     label: String,
     suffix: String,
-    step: Float
+    step: Float,
 ) {
     // Generate array of values based on step
     val values = remember(range, step) {
@@ -44,13 +44,16 @@ actual fun CompactNumberPicker(
     // Find current index - use minByOrNull to find CLOSEST value regardless of precision
     // This handles unit conversions (e.g., 20kg -> 44.0924 lbs) where exact matching fails
     val currentIndex = remember(value, values) {
-        if (values.isEmpty()) 0
-        else values.indices.minByOrNull { kotlin.math.abs(values[it] - value) } ?: 0
+        if (values.isEmpty()) {
+            0
+        } else {
+            values.indices.minByOrNull { kotlin.math.abs(values[it] - value) } ?: 0
+        }
     }
 
     Column(
         modifier = modifier,
-        horizontalAlignment = Alignment.CenterHorizontally
+        horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         if (label.isNotEmpty()) {
             Text(
@@ -58,7 +61,7 @@ actual fun CompactNumberPicker(
                 style = MaterialTheme.typography.labelMedium,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier.padding(bottom = 8.dp)
+                modifier = Modifier.padding(bottom = 8.dp),
             )
         }
 
@@ -66,7 +69,7 @@ actual fun CompactNumberPicker(
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.Center,
-            verticalAlignment = Alignment.CenterVertically
+            verticalAlignment = Alignment.CenterVertically,
         ) {
             // Decrease button
             IconButton(
@@ -75,15 +78,16 @@ actual fun CompactNumberPicker(
                     onValueChange(values[newIndex])
                 },
                 enabled = currentIndex > 0,
-                modifier = Modifier.size(48.dp)
+                modifier = Modifier.size(48.dp),
             ) {
                 Icon(
                     imageVector = Icons.Default.Remove,
                     contentDescription = "Decrease $label",
-                    tint = if (currentIndex > 0)
+                    tint = if (currentIndex > 0) {
                         MaterialTheme.colorScheme.primary
-                    else
+                    } else {
                         MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+                    },
                 )
             }
 
@@ -129,25 +133,32 @@ actual fun CompactNumberPicker(
                                         when (child) {
                                             is android.widget.EditText -> {
                                                 child.setTextColor(textColor.toArgb())
-                                                child.setBackgroundColor(android.graphics.Color.TRANSPARENT)
+                                                child.setBackgroundColor(
+                                                    android.graphics.Color.TRANSPARENT,
+                                                )
                                             }
+
                                             is android.widget.TextView -> {
                                                 child.setTextColor(textColor.toArgb())
-                                                child.setBackgroundColor(android.graphics.Color.TRANSPARENT)
+                                                child.setBackgroundColor(
+                                                    android.graphics.Color.TRANSPARENT,
+                                                )
                                             }
                                         }
                                     }
 
                                     // Try to access and modify the Paint object
                                     try {
-                                        val paintField = NumberPicker::class.java.getDeclaredField("mSelectorWheelPaint")
+                                        val paintField = NumberPicker::class.java.getDeclaredField(
+                                            "mSelectorWheelPaint",
+                                        )
                                         paintField.isAccessible = true
                                         val paint = paintField.get(this) as? android.graphics.Paint
                                         paint?.color = textColor.toArgb()
-                                    } catch (e: Exception) {
+                                    } catch (_: Exception) {
                                         // Paint field not found - expected on some Android versions
                                     }
-                                } catch (e: Exception) {
+                                } catch (_: Exception) {
                                     // Reflection failed - fall back to default styling
                                 }
                             }
@@ -173,25 +184,32 @@ actual fun CompactNumberPicker(
                                     when (child) {
                                         is android.widget.EditText -> {
                                             child.setTextColor(textColor.toArgb())
-                                            child.setBackgroundColor(android.graphics.Color.TRANSPARENT)
+                                            child.setBackgroundColor(
+                                                android.graphics.Color.TRANSPARENT,
+                                            )
                                         }
+
                                         is android.widget.TextView -> {
                                             child.setTextColor(textColor.toArgb())
-                                            child.setBackgroundColor(android.graphics.Color.TRANSPARENT)
+                                            child.setBackgroundColor(
+                                                android.graphics.Color.TRANSPARENT,
+                                            )
                                         }
                                     }
                                 }
 
                                 // Try to access and modify the Paint object
                                 try {
-                                    val paintField = NumberPicker::class.java.getDeclaredField("mSelectorWheelPaint")
+                                    val paintField = NumberPicker::class.java.getDeclaredField(
+                                        "mSelectorWheelPaint",
+                                    )
                                     paintField.isAccessible = true
                                     val paint = paintField.get(picker) as? android.graphics.Paint
                                     paint?.color = textColor.toArgb()
-                                } catch (e: Exception) {
+                                } catch (_: Exception) {
                                     // Paint field not found - expected on some Android versions
                                 }
-                            } catch (e: Exception) {
+                            } catch (_: Exception) {
                                 // Reflection failed - fall back to default styling
                             }
                         }
@@ -199,7 +217,7 @@ actual fun CompactNumberPicker(
                 },
                 modifier = Modifier
                     .weight(1f)
-                    .height(120.dp)
+                    .height(120.dp),
             )
 
             // Increase button
@@ -209,15 +227,16 @@ actual fun CompactNumberPicker(
                     onValueChange(values[newIndex])
                 },
                 enabled = currentIndex < values.size - 1,
-                modifier = Modifier.size(48.dp)
+                modifier = Modifier.size(48.dp),
             ) {
                 Icon(
                     imageVector = Icons.Default.Add,
                     contentDescription = "Increase $label",
-                    tint = if (currentIndex < values.size - 1)
+                    tint = if (currentIndex < values.size - 1) {
                         MaterialTheme.colorScheme.primary
-                    else
+                    } else {
                         MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+                    },
                 )
             }
         }
@@ -234,7 +253,7 @@ actual fun CompactNumberPicker(
     range: IntRange,
     modifier: Modifier,
     label: String,
-    suffix: String
+    suffix: String,
 ) {
     CompactNumberPicker(
         value = value.toFloat(),
@@ -243,6 +262,6 @@ actual fun CompactNumberPicker(
         modifier = modifier,
         label = label,
         suffix = suffix,
-        step = 1.0f
+        step = 1.0f,
     )
 }

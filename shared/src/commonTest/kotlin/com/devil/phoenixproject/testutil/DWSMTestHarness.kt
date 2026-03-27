@@ -1,5 +1,9 @@
 package com.devil.phoenixproject.testutil
 
+import com.devil.phoenixproject.data.repository.ExerciseSignatureRepository
+import com.devil.phoenixproject.domain.detection.ExerciseClassifier
+import com.devil.phoenixproject.domain.detection.ExerciseSignature
+import com.devil.phoenixproject.domain.detection.SignatureExtractor
 import com.devil.phoenixproject.domain.model.HapticEvent
 import com.devil.phoenixproject.domain.usecase.RepCounterFromMachine
 import com.devil.phoenixproject.domain.usecase.ResolveRoutineWeightsUseCase
@@ -8,13 +12,8 @@ import com.devil.phoenixproject.presentation.manager.DefaultWorkoutSessionManage
 import com.devil.phoenixproject.presentation.manager.ExerciseDetectionManager
 import com.devil.phoenixproject.presentation.manager.GamificationManager
 import com.devil.phoenixproject.presentation.manager.SettingsManager
-import com.devil.phoenixproject.domain.detection.ExerciseClassifier
-import com.devil.phoenixproject.domain.detection.SignatureExtractor
-import com.devil.phoenixproject.domain.detection.ExerciseSignature
-import com.devil.phoenixproject.data.repository.ExerciseSignatureRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.test.TestScope
 
@@ -53,9 +52,12 @@ class DWSMTestHarness(val testScope: TestScope) {
 
     val settingsManager = SettingsManager(fakePrefsManager, fakeBleRepo, dwsmScope)
     val gamificationManager = GamificationManager(
-        fakeGamificationRepo, fakePRRepo, fakeExerciseRepo,
-        MutableSharedFlow<HapticEvent>(extraBufferCapacity = 10), dwsmScope,
-        settingsManager.gamificationEnabled
+        fakeGamificationRepo,
+        fakePRRepo,
+        fakeExerciseRepo,
+        MutableSharedFlow<HapticEvent>(extraBufferCapacity = 10),
+        dwsmScope,
+        settingsManager.gamificationEnabled,
     )
 
     private val fakeSignatureRepo = object : ExerciseSignatureRepository {
@@ -70,7 +72,7 @@ class DWSMTestHarness(val testScope: TestScope) {
         signatureExtractor = SignatureExtractor(),
         exerciseClassifier = ExerciseClassifier(),
         signatureRepository = fakeSignatureRepo,
-        exerciseRepository = fakeExerciseRepo
+        exerciseRepository = fakeExerciseRepo,
     )
 
     val dwsm = DefaultWorkoutSessionManager(
@@ -90,12 +92,16 @@ class DWSMTestHarness(val testScope: TestScope) {
         settingsManager = settingsManager,
         detectionManager = detectionManager,
         userProfileRepository = FakeUserProfileRepository(),
-        scope = dwsmScope
+        scope = dwsmScope,
     )
 
     // BleConnectionManager receives errors via coordinator.bleErrorEvents (no circular dependency)
     val bleConnectionManager = BleConnectionManager(
-        fakeBleRepo, settingsManager, dwsm, dwsm.coordinator.bleErrorEvents, dwsmScope
+        fakeBleRepo,
+        settingsManager,
+        dwsm,
+        dwsm.coordinator.bleErrorEvents,
+        dwsmScope,
     )
 
     /** Convenience accessor for the coordinator (shared state bus) */

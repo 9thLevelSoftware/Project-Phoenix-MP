@@ -1,16 +1,16 @@
 package com.devil.phoenixproject.data.sync
 
 import co.touchlab.kermit.Logger
-import com.devil.phoenixproject.data.local.BadgeDefinitions
-import com.devil.phoenixproject.data.integration.ExternalActivitySyncKey
 import com.devil.phoenixproject.data.integration.ExternalActivityRepository
+import com.devil.phoenixproject.data.integration.ExternalActivitySyncKey
+import com.devil.phoenixproject.data.local.BadgeDefinitions
 import com.devil.phoenixproject.data.repository.GamificationRepository
 import com.devil.phoenixproject.data.repository.RepMetricRepository
 import com.devil.phoenixproject.data.repository.SubscriptionStatus
 import com.devil.phoenixproject.data.repository.SyncRepository
 import com.devil.phoenixproject.data.repository.UserProfileRepository
-import com.devil.phoenixproject.domain.model.IntegrationProvider
 import com.devil.phoenixproject.domain.model.CharacterClass
+import com.devil.phoenixproject.domain.model.IntegrationProvider
 import com.devil.phoenixproject.domain.model.RpgProfile
 import com.devil.phoenixproject.domain.model.currentTimeMillis
 import com.devil.phoenixproject.domain.premium.RpgAttributeEngine
@@ -38,7 +38,7 @@ class SyncManager(
     private val gamificationRepository: GamificationRepository,
     private val repMetricRepository: RepMetricRepository,
     private val userProfileRepository: UserProfileRepository,
-    private val externalActivityRepository: ExternalActivityRepository
+    private val externalActivityRepository: ExternalActivityRepository,
 ) {
     companion object {
         /**
@@ -61,22 +61,18 @@ class SyncManager(
 
     // === Authentication ===
 
-    suspend fun login(email: String, password: String): Result<PortalUser> {
-        return apiClient.signIn(email, password).map { goTrueResponse ->
-            tokenStorage.saveGoTrueAuth(goTrueResponse)
-            _syncState.value = SyncState.Idle // Reset stale NotAuthenticated state
-            Logger.i("SyncManager") { "Login successful for ${goTrueResponse.user.email}" }
-            goTrueResponse.toPortalAuthResponse().user
-        }
+    suspend fun login(email: String, password: String): Result<PortalUser> = apiClient.signIn(email, password).map { goTrueResponse ->
+        tokenStorage.saveGoTrueAuth(goTrueResponse)
+        _syncState.value = SyncState.Idle // Reset stale NotAuthenticated state
+        Logger.i("SyncManager") { "Login successful for ${goTrueResponse.user.email}" }
+        goTrueResponse.toPortalAuthResponse().user
     }
 
-    suspend fun signup(email: String, password: String, displayName: String): Result<PortalUser> {
-        return apiClient.signUp(email, password, displayName).map { goTrueResponse ->
-            tokenStorage.saveGoTrueAuth(goTrueResponse)
-            _syncState.value = SyncState.Idle // Reset stale NotAuthenticated state
-            Logger.i("SyncManager") { "Signup successful for ${goTrueResponse.user.email}" }
-            goTrueResponse.toPortalAuthResponse().user
-        }
+    suspend fun signup(email: String, password: String, displayName: String): Result<PortalUser> = apiClient.signUp(email, password, displayName).map { goTrueResponse ->
+        tokenStorage.saveGoTrueAuth(goTrueResponse)
+        _syncState.value = SyncState.Idle // Reset stale NotAuthenticated state
+        Logger.i("SyncManager") { "Signup successful for ${goTrueResponse.user.email}" }
+        goTrueResponse.toPortalAuthResponse().user
     }
 
     fun logout() {
@@ -101,14 +97,20 @@ class SyncManager(
         val prePushLastSync = tokenStorage.getLastSyncTimestamp()
 
         // Push local changes (no status check -- Railway backend abandoned)
-        Logger.i("SyncManager") { "Token expired: ${tokenStorage.isTokenExpired()}, expiresAt: ${tokenStorage.getExpiresAt()}" }
+        Logger.i("SyncManager") {
+            "Token expired: ${tokenStorage.isTokenExpired()}, expiresAt: ${tokenStorage.getExpiresAt()}"
+        }
         val pushResult = pushLocalChanges()
         if (pushResult.isFailure) {
             val error = pushResult.exceptionOrNull()
-            Logger.e("SyncManager") { "Push FAILED: status=${(error as? PortalApiException)?.statusCode}, msg=${error?.message}" }
+            Logger.e("SyncManager") {
+                "Push FAILED: status=${(error as? PortalApiException)?.statusCode}, msg=${error?.message}"
+            }
             if (error is PortalApiException && error.statusCode == 401) {
                 _syncState.value = SyncState.NotAuthenticated
-            } else if (error is PortalApiException && (error.statusCode == 402 || error.statusCode == 403)) {
+            } else if (error is PortalApiException &&
+                (error.statusCode == 402 || error.statusCode == 403)
+            ) {
                 tokenStorage.updatePremiumStatus(false)
                 _syncState.value = SyncState.NotPremium
             } else {
@@ -127,12 +129,17 @@ class SyncManager(
         // earlier-batch sessions to be missed by the re-query.
         val stampTime = currentTimeMillis()
         val activeProfileId = userProfileRepository.activeProfile.value?.id ?: "default"
-        val pushedSessions = syncRepository.getWorkoutSessionsModifiedSince(prePushLastSync, activeProfileId)
+        val pushedSessions = syncRepository.getWorkoutSessionsModifiedSince(
+            prePushLastSync,
+            activeProfileId,
+        )
         pushedSessions.forEach { session ->
             syncRepository.updateSessionTimestamp(session.id, stampTime)
         }
         if (pushedSessions.isNotEmpty()) {
-            Logger.d("SyncManager") { "Stamped ${pushedSessions.size} pushed sessions with updatedAt=$stampTime" }
+            Logger.d("SyncManager") {
+                "Stamped ${pushedSessions.size} pushed sessions with updatedAt=$stampTime"
+            }
         }
 
         // Parse syncTime from ISO 8601 to epoch millis
@@ -140,7 +147,9 @@ class SyncManager(
         val syncTimeEpoch = try {
             kotlin.time.Instant.parse(pushResponse.syncTime).toEpochMilliseconds()
         } catch (e: Exception) {
-            Logger.w(e) { "Failed to parse syncTime '${pushResponse.syncTime}', using current time" }
+            Logger.w(e) {
+                "Failed to parse syncTime '${pushResponse.syncTime}', using current time"
+            }
             currentTimeMillis()
         }
 
@@ -187,7 +196,7 @@ class SyncManager(
                 repMetrics = repMetrics,
                 muscleGroup = "General",
                 isPr = prRecord != null,
-                prRecord = prRecord
+                prRecord = prRecord,
             )
         }
 
@@ -210,7 +219,7 @@ class SyncManager(
             mastery = rpgProfile.mastery,
             characterClass = rpgProfile.characterClass.name,
             level = 1,
-            experiencePoints = 0
+            experiencePoints = 0,
         )
 
         val earnedBadges = gamificationRepository.getEarnedBadges(activeProfileId).first()
@@ -222,7 +231,7 @@ class SyncManager(
                 badgeName = badgeDef?.name ?: earned.badgeId,
                 badgeDescription = badgeDef?.description,
                 badgeTier = badgeDef?.tier?.name?.lowercase() ?: "bronze",
-                earnedAt = kotlin.time.Instant.fromEpochMilliseconds(earned.earnedAt).toString()
+                earnedAt = kotlin.time.Instant.fromEpochMilliseconds(earned.earnedAt).toString(),
             )
         }
 
@@ -235,16 +244,20 @@ class SyncManager(
                 totalVolumeKg = stats.totalVolumeKg,
                 longestStreak = stats.longestStreak,
                 currentStreak = stats.currentStreak,
-                totalTimeSeconds = 0
+                totalTimeSeconds = 0,
             )
         }
 
         // 5b. External activities (paid users only)
-        val localPaid = userProfileRepository.activeProfile.value?.subscriptionStatus == SubscriptionStatus.ACTIVE
+        val localPaid =
+            userProfileRepository.activeProfile.value?.subscriptionStatus ==
+                SubscriptionStatus.ACTIVE
         val portalPaid = tokenStorage.currentUser.value?.isPremium == true
         val isPremium = localPaid || portalPaid
         val externalActivityDtos = if (isPremium) {
-            val unsyncedActivities = externalActivityRepository.getUnsyncedActivities(activeProfileId)
+            val unsyncedActivities = externalActivityRepository.getUnsyncedActivities(
+                activeProfileId,
+            )
             unsyncedActivities.map { activity ->
                 ExternalActivitySyncDto(
                     id = activity.id,
@@ -252,7 +265,9 @@ class SyncManager(
                     provider = activity.provider.key,
                     name = activity.name,
                     activityType = activity.activityType,
-                    startedAt = kotlin.time.Instant.fromEpochMilliseconds(activity.startedAt).toString(),
+                    startedAt = kotlin.time.Instant.fromEpochMilliseconds(
+                        activity.startedAt,
+                    ).toString(),
                     durationSeconds = activity.durationSeconds,
                     distanceMeters = activity.distanceMeters,
                     calories = activity.calories,
@@ -260,7 +275,9 @@ class SyncManager(
                     maxHeartRate = activity.maxHeartRate,
                     elevationGainMeters = activity.elevationGainMeters,
                     rawData = activity.rawData,
-                    syncedAt = kotlin.time.Instant.fromEpochMilliseconds(activity.syncedAt).toString()
+                    syncedAt = kotlin.time.Instant.fromEpochMilliseconds(
+                        activity.syncedAt,
+                    ).toString(),
                 )
             }
         } else {
@@ -278,7 +295,10 @@ class SyncManager(
             .map { PortalSyncAdapter.toPortalAssessmentResult(it) }
 
         // 7. Build portal session + telemetry DTOs (telemetry setIds match generated exercise set IDs)
-        val buildResult = PortalSyncAdapter.toPortalWorkoutSessionsWithTelemetry(sessionsWithReps, userId)
+        val buildResult = PortalSyncAdapter.toPortalWorkoutSessionsWithTelemetry(
+            sessionsWithReps,
+            userId,
+        )
 
         // Build a telemetry index keyed by set ID for batch slicing.
         // Each session's exercises contain sets whose IDs are referenced by telemetry rows.
@@ -292,7 +312,9 @@ class SyncManager(
         val activeProfile = userProfileRepository.activeProfile.value
         val allProfiles = userProfileRepository.allProfiles.value
         val routineDtos = routines.map { PortalSyncAdapter.toPortalRoutine(it, userId) }
-        val cycleDtos = cyclesWithContext.map { PortalSyncAdapter.toPortalTrainingCycle(it, userId) }
+        val cycleDtos = cyclesWithContext.map {
+            PortalSyncAdapter.toPortalTrainingCycle(it, userId)
+        }
         val profileDtos = allProfiles.map { LocalProfileDto(it.id, it.name, it.colorIndex) }
 
         // 8. Chunked push -- batch sessions to stay under Edge Function body limit (~1 MB).
@@ -309,11 +331,11 @@ class SyncManager(
 
         Logger.d("SyncManager") {
             "Pushing portal payload: ${allSessions.size} sessions ($totalBatches batch(es)), " +
-            "${buildResult.telemetry.size} telemetry points, " +
-            "${routineDtos.size} routines, ${cycleDtos.size} cycles, " +
-            "${phaseStatsBySessionId.size} sessions with phase stats, " +
-            "${signatureDtos.size} signatures, " +
-            "${assessmentDtos.size} assessments"
+                "${buildResult.telemetry.size} telemetry points, " +
+                "${routineDtos.size} routines, ${cycleDtos.size} cycles, " +
+                "${phaseStatsBySessionId.size} sessions with phase stats, " +
+                "${signatureDtos.size} signatures, " +
+                "${assessmentDtos.size} assessments"
         }
 
         var lastResponse: PortalSyncPushResponse? = null
@@ -337,7 +359,7 @@ class SyncManager(
                 profileId = activeProfile?.id,
                 profileName = activeProfile?.name,
                 allProfiles = profileDtos,
-                externalActivities = externalActivityDtos
+                externalActivities = externalActivityDtos,
             )
             val result = apiClient.pushPortalPayload(payload)
             if (result.isFailure) return result
@@ -349,7 +371,7 @@ class SyncManager(
                 val isLastBatch = index == batches.lastIndex
                 Logger.i("SyncManager") {
                     "Sync batch ${index + 1}/$totalBatches: ${batchSessions.size} sessions" +
-                    if (isLastBatch) " (+ non-session data)" else ""
+                        if (isLastBatch) " (+ non-session data)" else ""
                 }
 
                 // Slice telemetry to only rows belonging to this batch's sessions
@@ -381,7 +403,7 @@ class SyncManager(
                     profileId = activeProfile?.id,
                     profileName = activeProfile?.name,
                     allProfiles = if (isLastBatch) profileDtos else null,
-                    externalActivities = if (isLastBatch) externalActivityDtos else emptyList()
+                    externalActivities = if (isLastBatch) externalActivityDtos else emptyList(),
                 )
 
                 val result = apiClient.pushPortalPayload(payload)
@@ -404,16 +426,18 @@ class SyncManager(
                     currentTimeMillis()
                 }
                 tokenStorage.setLastSyncTimestamp(batchSyncEpoch)
-                Logger.d("SyncManager") { "Batch ${index + 1}/$totalBatches committed, syncTime=$batchSyncEpoch" }
+                Logger.d("SyncManager") {
+                    "Batch ${index + 1}/$totalBatches committed, syncTime=$batchSyncEpoch"
+                }
             }
         }
 
         // Mark external activities as synced based on server acknowledgement.
         // Only mark activities the server confirmed it persisted — prevents silently
         // dropping activities that the server soft-failed on.
-        if (externalActivityDtos.isNotEmpty() && lastResponse != null) {
-            val response = lastResponse!!
-            val acknowledgedSyncKeys = response.externalActivityKeys.mapNotNull { ack ->
+        val finalResponse = lastResponse
+        if (externalActivityDtos.isNotEmpty() && finalResponse != null) {
+            val acknowledgedSyncKeys = finalResponse.externalActivityKeys.mapNotNull { ack ->
                 IntegrationProvider.fromKey(ack.provider)?.let { provider ->
                     ExternalActivitySyncKey(externalId = ack.externalId, provider = provider)
                 }
@@ -422,21 +446,21 @@ class SyncManager(
                 // Server confirmed exact provider-scoped keys — mark only those.
                 externalActivityRepository.markSyncedBySyncKeys(
                     syncKeys = acknowledgedSyncKeys,
-                    profileId = activeProfileId
+                    profileId = activeProfileId,
                 )
                 Logger.d("SyncManager") {
                     "Marked ${acknowledgedSyncKeys.size} external activities as synced (by server-confirmed provider/externalId keys)"
                 }
-            } else if (response.externalActivityIds.isNotEmpty()) {
+            } else if (finalResponse.externalActivityIds.isNotEmpty()) {
                 Logger.w("SyncManager") {
                     "Server returned legacy externalActivityIds without provider scoping; skipping optimistic sync stamping"
                 }
-            } else if (response.externalActivitiesUpserted > 0) {
+            } else if (finalResponse.externalActivitiesUpserted > 0) {
                 // Backward compat: server confirmed a count but no IDs list
                 val syncedIds = externalActivityDtos.map { it.id }
                 externalActivityRepository.markSynced(syncedIds)
                 Logger.d("SyncManager") {
-                    "Marked ${syncedIds.size} external activities as synced (backward compat, server confirmed ${response.externalActivitiesUpserted})"
+                    "Marked ${syncedIds.size} external activities as synced (backward compat, server confirmed ${finalResponse.externalActivitiesUpserted})"
                 }
             } else {
                 // Server did not confirm any activities were persisted — do NOT mark as synced
@@ -460,7 +484,11 @@ class SyncManager(
 
         // Pull remote changes filtered by active profile to prevent cross-profile contamination.
         // The server filters by local_profile_id column; merge assigns the same profileId locally.
-        val pullResult = apiClient.pullPortalPayload(lastSync, deviceId, profileId = activeProfileId)
+        val pullResult = apiClient.pullPortalPayload(
+            lastSync,
+            deviceId,
+            profileId = activeProfileId,
+        )
         if (pullResult.isFailure) {
             Logger.w("SyncManager") {
                 "Pull failed (non-fatal): ${pullResult.exceptionOrNull()?.message}"
@@ -471,9 +499,9 @@ class SyncManager(
         val pullResponse = pullResult.getOrThrow()
         Logger.d("SyncManager") {
             "Pull response: ${pullResponse.routines.size} routines, " +
-            "${pullResponse.cycles.size} cycles, " +
-            "${pullResponse.badges.size} badges, " +
-            "sessions=${pullResponse.sessions.size}"
+                "${pullResponse.cycles.size} cycles, " +
+                "${pullResponse.badges.size} badges, " +
+                "sessions=${pullResponse.sessions.size}"
         }
 
         val mergeProfileId = activeProfileId ?: "default"
@@ -485,7 +513,9 @@ class SyncManager(
             }
             if (mobileSessions.isNotEmpty()) {
                 syncRepository.mergePortalSessions(mobileSessions)
-                Logger.d("SyncManager") { "Merged ${mobileSessions.size} portal sessions from ${pullResponse.sessions.size} workouts" }
+                Logger.d("SyncManager") {
+                    "Merged ${mobileSessions.size} portal sessions from ${pullResponse.sessions.size} workouts"
+                }
             }
         }
 
@@ -529,7 +559,7 @@ class SyncManager(
                 consistency = rpg.consistency,
                 mastery = rpg.mastery,
                 characterClass = characterClass,
-                lastComputed = currentTimeMillis()
+                lastComputed = currentTimeMillis(),
             )
             gamificationRepository.saveRpgProfile(rpgProfile, mergeProfileId)
             Logger.d("SyncManager") { "Merged portal RPG attributes: ${rpg.characterClass}" }
@@ -541,12 +571,16 @@ class SyncManager(
                 com.devil.phoenixproject.domain.model.ExternalActivity(
                     id = dto.id,
                     externalId = dto.externalId,
-                    provider = IntegrationProvider.fromKey(dto.provider) ?: IntegrationProvider.HEVY,
+                    provider = IntegrationProvider.fromKey(
+                        dto.provider,
+                    ) ?: IntegrationProvider.HEVY,
                     name = dto.name,
                     activityType = dto.activityType,
                     startedAt = try {
                         kotlin.time.Instant.parse(dto.startedAt).toEpochMilliseconds()
-                    } catch (_: Exception) { currentTimeMillis() },
+                    } catch (_: Exception) {
+                        currentTimeMillis()
+                    },
                     durationSeconds = dto.durationSeconds,
                     distanceMeters = dto.distanceMeters,
                     calories = dto.calories,
@@ -556,9 +590,11 @@ class SyncManager(
                     rawData = dto.rawData,
                     syncedAt = try {
                         kotlin.time.Instant.parse(dto.syncedAt).toEpochMilliseconds()
-                    } catch (_: Exception) { currentTimeMillis() },
+                    } catch (_: Exception) {
+                        currentTimeMillis()
+                    },
                     profileId = mergeProfileId,
-                    needsSync = false
+                    needsSync = false,
                 )
             }
             externalActivityRepository.upsertActivities(activities)

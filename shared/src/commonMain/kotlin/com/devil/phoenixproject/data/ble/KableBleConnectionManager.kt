@@ -13,9 +13,13 @@ import com.juul.kable.Peripheral
 import com.juul.kable.Scanner
 import com.juul.kable.State
 import com.juul.kable.WriteType
+import kotlin.concurrent.Volatile
+import kotlin.time.Clock
+import kotlin.uuid.ExperimentalUuidApi
+import kotlin.uuid.Uuid
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.delay
@@ -30,10 +34,6 @@ import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withTimeoutOrNull
-import kotlin.concurrent.Volatile
-import kotlin.time.Clock
-import kotlin.uuid.ExperimentalUuidApi
-import kotlin.uuid.Uuid
 
 /**
  * Manages the BLE connection lifecycle for Vitruvian machines.
@@ -83,6 +83,7 @@ class KableBleConnectionManager(
     // Characteristic references from BleConstants
     // -------------------------------------------------------------------------
     private val txCharacteristic = BleConstants.txCharacteristic
+
     @Suppress("unused") // Vitruvian doesn't use standard NUS RX (6e400003)
     private val rxCharacteristic = BleConstants.rxCharacteristic
     private val monitorCharacteristic = BleConstants.monitorCharacteristic
@@ -151,7 +152,7 @@ class KableBleConnectionManager(
     private val _commandResponses = MutableSharedFlow<UByte>(
         replay = 0,
         extraBufferCapacity = 16,
-        onBufferOverflow = BufferOverflow.DROP_OLDEST
+        onBufferOverflow = BufferOverflow.DROP_OLDEST,
     )
     val commandResponses: Flow<UByte> = _commandResponses.asSharedFlow()
 
@@ -192,15 +193,17 @@ class KableBleConnectionManager(
                             .advertisements
                             .onEach { advertisement ->
                                 // Debug logging for all advertisements
-                                log.d { "RAW ADV: name=${advertisement.name}, id=${advertisement.identifier}, uuids=${advertisement.uuids}, rssi=${advertisement.rssi}" }
+                                log.d {
+                                    "RAW ADV: name=${advertisement.name}, id=${advertisement.identifier}, uuids=${advertisement.uuids}, rssi=${advertisement.rssi}"
+                                }
                             }
                             .filter { advertisement ->
                                 // Filter by name if available
                                 val name = advertisement.name
                                 if (name != null) {
                                     val isVitruvian = name.startsWith("Vee_", ignoreCase = true) ||
-                                                      name.startsWith("VIT", ignoreCase = true) ||
-                                                      name.startsWith("Vitruvian", ignoreCase = true)
+                                        name.startsWith("VIT", ignoreCase = true) ||
+                                        name.startsWith("Vitruvian", ignoreCase = true)
                                     if (isVitruvian) {
                                         log.i { "Found Vitruvian by name: $name" }
                                     } else {
@@ -214,7 +217,7 @@ class KableBleConnectionManager(
                                 val hasVitruvianServiceUuid = serviceUuids.any { uuid ->
                                     val uuidStr = uuid.toString().lowercase()
                                     uuidStr.startsWith("0000fef3") ||
-                                    uuidStr == BleConstants.NUS_SERVICE_UUID_STRING
+                                        uuidStr == BleConstants.NUS_SERVICE_UUID_STRING
                                 }
 
                                 if (hasVitruvianServiceUuid) {
@@ -235,7 +238,9 @@ class KableBleConnectionManager(
                                     // Try to get data for FEF3 service UUID
                                     val fef3Data = advertisement.serviceData(fef3Uuid)
                                     if (fef3Data != null && fef3Data.isNotEmpty()) {
-                                        log.i { "Found Vitruvian by FEF3 serviceData: ${advertisement.identifier}, data size: ${fef3Data.size}" }
+                                        log.i {
+                                            "Found Vitruvian by FEF3 serviceData: ${advertisement.identifier}, data size: ${fef3Data.size}"
+                                        }
                                         true
                                     } else {
                                         false
@@ -251,8 +256,10 @@ class KableBleConnectionManager(
                                 val identifier = advertisement.identifier.toString()
                                 val advertisedName = advertisement.name
                                 val hasRealName = advertisedName != null &&
-                                    (advertisedName.startsWith("Vee_", ignoreCase = true) ||
-                                     advertisedName.startsWith("VIT", ignoreCase = true))
+                                    (
+                                        advertisedName.startsWith("Vee_", ignoreCase = true) ||
+                                            advertisedName.startsWith("VIT", ignoreCase = true)
+                                        )
 
                                 // Use name if available, otherwise use identifier as placeholder
                                 val name = advertisedName ?: "Vitruvian ($identifier)"
@@ -261,7 +268,7 @@ class KableBleConnectionManager(
                                 if (!hasRealName) {
                                     val alreadyHaveRealDevice = currentScannedDevices.any { existing ->
                                         existing.name.startsWith("Vee_", ignoreCase = true) ||
-                                        existing.name.startsWith("VIT", ignoreCase = true)
+                                            existing.name.startsWith("VIT", ignoreCase = true)
                                     }
                                     if (alreadyHaveRealDevice) {
                                         log.d { "Skipping nameless device $identifier - already have named Vitruvian device" }
@@ -277,7 +284,7 @@ class KableBleConnectionManager(
                                         "Found Vitruvian device",
                                         name,
                                         identifier,
-                                        "RSSI: ${advertisement.rssi} dBm"
+                                        "RSSI: ${advertisement.rssi} dBm",
                                     )
                                 }
 
@@ -288,7 +295,7 @@ class KableBleConnectionManager(
                                 val device = ScannedDevice(
                                     name = name,
                                     address = identifier,
-                                    rssi = advertisement.rssi
+                                    rssi = advertisement.rssi,
                                 )
                                 var devices = currentScannedDevices.toMutableList()
 
@@ -297,8 +304,8 @@ class KableBleConnectionManager(
                                 if (hasRealName) {
                                     devices = devices.filter { existing ->
                                         existing.name.startsWith("Vee_", ignoreCase = true) ||
-                                        existing.name.startsWith("VIT", ignoreCase = true) ||
-                                        existing.address == identifier  // Keep if same address (will update below)
+                                            existing.name.startsWith("VIT", ignoreCase = true) ||
+                                            existing.address == identifier // Keep if same address (will update below)
                                     }.toMutableList()
                                 }
 
@@ -326,7 +333,7 @@ class KableBleConnectionManager(
                         logRepo.info(
                             LogEventType.SCAN_STOP,
                             "Scan auto-stopped after timeout",
-                            details = "Found ${discoveredAdvertisements.size} device(s) in ${BleConstants.SCAN_TIMEOUT_MS}ms"
+                            details = "Found ${discoveredAdvertisements.size} device(s) in ${BleConstants.SCAN_TIMEOUT_MS}ms",
                         )
                         reportConnectionState(ConnectionState.Disconnected)
                     }
@@ -356,7 +363,7 @@ class KableBleConnectionManager(
         logRepo.info(
             LogEventType.SCAN_STOP,
             "BLE scan stopped",
-            details = "Found ${discoveredAdvertisements.size} Vitruvian device(s)"
+            details = "Found ${discoveredAdvertisements.size} Vitruvian device(s)",
         )
         scanJob?.cancel()
         scanJob = null
@@ -391,8 +398,8 @@ class KableBleConnectionManager(
                         val name = adv.name
                         name != null && (
                             name.startsWith("Vee_", ignoreCase = true) ||
-                            name.startsWith("VIT", ignoreCase = true)
-                        )
+                                name.startsWith("VIT", ignoreCase = true)
+                            )
                     }
                     .first()
             }
@@ -433,7 +440,7 @@ class KableBleConnectionManager(
             LogEventType.CONNECT_START,
             "Connecting to device",
             device.name,
-            device.address
+            device.address,
         )
 
         // Clean up any existing connection first (matches parent repo)
@@ -449,7 +456,7 @@ class KableBleConnectionManager(
                 LogEventType.CONNECT_FAIL,
                 "Device not found in scanned list",
                 device.name,
-                device.address
+                device.address,
             )
             // Return to Disconnected - device may have gone out of range, user can retry
             reportConnectionState(ConnectionState.Disconnected)
@@ -479,6 +486,7 @@ class KableBleConnectionManager(
                         is State.Connecting -> {
                             reportConnectionState(ConnectionState.Connecting)
                         }
+
                         is State.Connected -> {
                             // Mark that we successfully connected (for auto-reconnect logic)
                             wasEverConnected = true
@@ -487,13 +495,15 @@ class KableBleConnectionManager(
                                 LogEventType.CONNECT_SUCCESS,
                                 "Device connected successfully",
                                 connectedDeviceName,
-                                connectedDeviceAddress
+                                connectedDeviceAddress,
                             )
-                            reportConnectionState(ConnectionState.Connected(
-                                deviceName = device.name,
-                                deviceAddress = device.address,
-                                hardwareModel = HardwareDetection.detectModel(device.name)
-                            ))
+                            reportConnectionState(
+                                ConnectionState.Connected(
+                                    deviceName = device.name,
+                                    deviceAddress = device.address,
+                                    hardwareModel = HardwareDetection.detectModel(device.name),
+                                ),
+                            )
                             // Launch onDeviceReady with error handling (H3 fix)
                             scope.launch {
                                 try {
@@ -507,22 +517,24 @@ class KableBleConnectionManager(
                                         "Device initialization failed",
                                         connectedDeviceName,
                                         connectedDeviceAddress,
-                                        e.message
+                                        e.message,
                                     )
                                     cleanupExistingConnection()
                                     reportConnectionState(ConnectionState.Disconnected)
                                 }
                             }
                         }
+
                         is State.Disconnecting -> {
                             log.d { "Disconnecting from device" }
                             logRepo.info(
                                 LogEventType.DISCONNECT,
                                 "Device disconnecting",
                                 connectedDeviceName,
-                                connectedDeviceAddress
+                                connectedDeviceAddress,
                             )
                         }
+
                         is State.Disconnected -> {
                             // Capture device info and connection state BEFORE clearing
                             val deviceName = connectedDeviceName
@@ -535,7 +547,7 @@ class KableBleConnectionManager(
                                     LogEventType.DISCONNECT,
                                     "Device disconnected",
                                     deviceName,
-                                    deviceAddress
+                                    deviceAddress,
                                 )
 
                                 // Stop all polling jobs
@@ -548,7 +560,7 @@ class KableBleConnectionManager(
                                 // This is the initial Disconnected state when Peripheral is created
                                 // Don't reset state or peripheral - we're about to call connect()
                                 log.d { "Peripheral initial state: Disconnected (awaiting connect() call)" }
-                                return@onEach  // Skip the rest of this handler
+                                return@onEach // Skip the rest of this handler
                             }
 
                             // Request auto-reconnect ONLY if:
@@ -563,8 +575,8 @@ class KableBleConnectionManager(
                                             deviceName = deviceName,
                                             deviceAddress = deviceAddress,
                                             reason = "unexpected_disconnect",
-                                            timestamp = currentTimeMillis()
-                                        )
+                                            timestamp = currentTimeMillis(),
+                                        ),
                                     )
                                 }
                             }
@@ -595,7 +607,7 @@ class KableBleConnectionManager(
                     }
 
                     return Result.success(Unit) // Success, exit retry loop
-                } catch (e: TimeoutCancellationException) {
+                } catch (_: TimeoutCancellationException) {
                     lastException = Exception("Connection timeout after ${BleConstants.CONNECTION_TIMEOUT_MS}ms")
                     log.w { "Connection attempt $attempt timed out after ${BleConstants.CONNECTION_TIMEOUT_MS}ms" }
                     if (attempt < BleConstants.Timing.CONNECTION_RETRY_COUNT) {
@@ -615,7 +627,6 @@ class KableBleConnectionManager(
             peripheral = null
             reportConnectionState(ConnectionState.Disconnected)
             throw lastException ?: Exception("Connection failed after ${BleConstants.Timing.CONNECTION_RETRY_COUNT} attempts")
-
         } catch (e: Exception) {
             log.e { "Connection failed: ${e.message}" }
             logRepo.error(
@@ -623,7 +634,7 @@ class KableBleConnectionManager(
                 "Failed to connect to device",
                 device.name,
                 device.address,
-                e.message
+                e.message,
             )
             // Return to Disconnected instead of Error - connection failures are retryable
             reportConnectionState(ConnectionState.Disconnected)
@@ -660,14 +671,14 @@ class KableBleConnectionManager(
                 LogEventType.MTU_CHANGED,
                 "MTU negotiated: $mtu bytes",
                 connectedDeviceName,
-                connectedDeviceAddress
+                connectedDeviceAddress,
             )
         } else {
             // iOS returns null (handled by OS), or Android negotiation failed
             log.i { "MTU negotiation: using system default (iOS) or failed (Android)" }
             logRepo.debug(
                 LogEventType.MTU_CHANGED,
-                "MTU using system default"
+                "MTU using system default",
             )
         }
 
@@ -681,7 +692,7 @@ class KableBleConnectionManager(
                     LogEventType.SERVICE_DISCOVERED,
                     "No services found after connection",
                     connectedDeviceName,
-                    connectedDeviceAddress
+                    connectedDeviceAddress,
                 )
             } else {
                 // Log detailed GATT structure with characteristic properties
@@ -736,7 +747,7 @@ class KableBleConnectionManager(
                     "GATT services discovered",
                     connectedDeviceName,
                     connectedDeviceAddress,
-                    "Services: ${servicesList.size}"
+                    "Services: ${servicesList.size}",
                 )
             }
         } catch (e: Exception) {
@@ -746,7 +757,7 @@ class KableBleConnectionManager(
                 "Failed to access services",
                 connectedDeviceName,
                 connectedDeviceAddress,
-                e.message
+                e.message,
             )
         }
 
@@ -754,7 +765,7 @@ class KableBleConnectionManager(
             LogEventType.SERVICE_DISCOVERED,
             "Device ready, starting notifications and heartbeat",
             connectedDeviceName,
-            connectedDeviceAddress
+            connectedDeviceAddress,
         )
 
         startObservingNotifications()
@@ -771,7 +782,7 @@ class KableBleConnectionManager(
             LogEventType.NOTIFICATION,
             "Enabling BLE notifications and starting polling (matching parent repo)",
             connectedDeviceName,
-            connectedDeviceAddress
+            connectedDeviceAddress,
         )
 
         // ===== FIRMWARE VERSION READ (best effort) =====
@@ -800,7 +811,7 @@ class KableBleConnectionManager(
                             "Reps notification error",
                             connectedDeviceName,
                             connectedDeviceAddress,
-                            e.message
+                            e.message,
                         )
                     }
                     .collect { data ->
@@ -814,7 +825,7 @@ class KableBleConnectionManager(
                     "Failed to enable Reps notifications",
                     connectedDeviceName,
                     connectedDeviceAddress,
-                    e.message
+                    e.message,
                 )
             }
         }
@@ -874,7 +885,7 @@ class KableBleConnectionManager(
                     LogEventType.CONNECT_SUCCESS,
                     "Firmware version detected: $detectedFirmwareVersion",
                     connectedDeviceName,
-                    connectedDeviceAddress
+                    connectedDeviceAddress,
                 )
             }
         } catch (e: Exception) {
@@ -910,7 +921,7 @@ class KableBleConnectionManager(
 
     suspend fun disconnect() {
         log.i { "Disconnecting (explicit)" }
-        isExplicitDisconnect = true  // Mark as explicit disconnect to prevent auto-reconnect
+        isExplicitDisconnect = true // Mark as explicit disconnect to prevent auto-reconnect
 
         // Cancel all polling jobs
         pollingEngine.stopAll()
@@ -930,7 +941,7 @@ class KableBleConnectionManager(
 
     suspend fun cancelConnection() {
         log.i { "Cancelling in-progress connection" }
-        isExplicitDisconnect = true  // Prevent auto-reconnect
+        isExplicitDisconnect = true // Prevent auto-reconnect
         try {
             peripheral?.disconnect()
         } catch (e: Exception) {
@@ -959,7 +970,7 @@ class KableBleConnectionManager(
             LogEventType.DISCONNECT,
             "Cleaning up existing connection (pre-connect)",
             connectedDeviceName,
-            connectedDeviceAddress
+            connectedDeviceAddress,
         )
 
         // Cancel stale state observer to prevent ghost callbacks (H2 fix)
@@ -992,7 +1003,7 @@ class KableBleConnectionManager(
             log.w { "Not connected - cannot send command" }
             logRepo.warning(
                 LogEventType.ERROR,
-                "Cannot send command - not connected"
+                "Cannot send command - not connected",
             )
             return Result.failure(IllegalStateException("Not connected"))
         }
@@ -1040,7 +1051,7 @@ class KableBleConnectionManager(
                 "Command sent (NUS TX)",
                 connectedDeviceName,
                 connectedDeviceAddress,
-                "Size: ${command.size} bytes"
+                "Size: ${command.size} bytes",
             )
             return Result.success(Unit)
         } else {
@@ -1051,7 +1062,7 @@ class KableBleConnectionManager(
                 "Failed to send command",
                 connectedDeviceName,
                 connectedDeviceAddress,
-                ex?.message
+                ex?.message,
             )
             return Result.failure(ex ?: IllegalStateException("Unknown error"))
         }
@@ -1121,27 +1132,25 @@ class KableBleConnectionManager(
      * @return true if the expected opcode was received, false on timeout
      */
     @Suppress("unused") // Reserved for future protocol handshake commands
-    suspend fun awaitResponse(expectedOpcode: UByte, timeoutMs: Long = 5000L): Boolean {
-        return try {
-            val opcodeHex = expectedOpcode.toString(16).uppercase().padStart(2, '0')
-            log.d { "Waiting for response opcode 0x$opcodeHex (timeout: ${timeoutMs}ms)" }
+    suspend fun awaitResponse(expectedOpcode: UByte, timeoutMs: Long = 5000L): Boolean = try {
+        val opcodeHex = expectedOpcode.toString(16).uppercase().padStart(2, '0')
+        log.d { "Waiting for response opcode 0x$opcodeHex (timeout: ${timeoutMs}ms)" }
 
-            val result = withTimeoutOrNull(timeoutMs) {
-                commandResponses.filter { it == expectedOpcode }.first()
-            }
+        val result = withTimeoutOrNull(timeoutMs) {
+            commandResponses.filter { it == expectedOpcode }.first()
+        }
 
-            if (result != null) {
-                log.d { "Received expected response opcode 0x$opcodeHex" }
-                true
-            } else {
-                log.w { "Timeout waiting for response opcode 0x$opcodeHex" }
-                false
-            }
-        } catch (e: Exception) {
-            val opcodeHex = expectedOpcode.toString(16).uppercase().padStart(2, '0')
-            log.e { "Error waiting for response opcode 0x$opcodeHex: ${e.message}" }
+        if (result != null) {
+            log.d { "Received expected response opcode 0x$opcodeHex" }
+            true
+        } else {
+            log.w { "Timeout waiting for response opcode 0x$opcodeHex" }
             false
         }
+    } catch (e: Exception) {
+        val opcodeHex = expectedOpcode.toString(16).uppercase().padStart(2, '0')
+        log.e { "Error waiting for response opcode 0x$opcodeHex: ${e.message}" }
+        false
     }
 
     // -------------------------------------------------------------------------
@@ -1151,7 +1160,5 @@ class KableBleConnectionManager(
     /**
      * Get current time in milliseconds (KMP-compatible).
      */
-    private fun currentTimeMillis(): Long {
-        return Clock.System.now().toEpochMilliseconds()
-    }
+    private fun currentTimeMillis(): Long = Clock.System.now().toEpochMilliseconds()
 }

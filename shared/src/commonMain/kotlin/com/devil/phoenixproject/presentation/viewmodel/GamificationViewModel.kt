@@ -19,10 +19,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
-class GamificationViewModel(
-    private val repository: GamificationRepository,
-    private val userProfileRepository: UserProfileRepository
-) : ViewModel() {
+class GamificationViewModel(private val repository: GamificationRepository, private val userProfileRepository: UserProfileRepository) : ViewModel() {
 
     /** Resolved active profile ID, reactive to profile switches. */
     private val activeProfileId: StateFlow<String> = userProfileRepository.activeProfile
@@ -61,7 +58,7 @@ class GamificationViewModel(
     // Filtered badges based on selected category
     val filteredBadges: StateFlow<List<BadgeWithProgress>> = combine(
         _badgesWithProgress,
-        _selectedCategory
+        _selectedCategory,
     ) { badges, category ->
         if (category == null) {
             badges
@@ -88,7 +85,7 @@ class GamificationViewModel(
                 val profileId = activeProfileId.value
                 val badges = repository.getAllBadgesWithProgress(profileId)
                 _badgesWithProgress.value = badges
-            } catch (e: Exception) {
+            } catch (_: Exception) {
                 // Handle error
             } finally {
                 _isLoading.value = false
@@ -108,8 +105,11 @@ class GamificationViewModel(
                 val input = repository.getRpgInput(profileId)
                 val profile = RpgAttributeEngine.computeProfile(input)
                 _rpgProfile.value = profile
-                repository.saveRpgProfile(profile.copy(lastComputed = currentTimeMillis()), profileId)
-            } catch (e: Exception) {
+                repository.saveRpgProfile(
+                    profile.copy(lastComputed = currentTimeMillis()),
+                    profileId,
+                )
+            } catch (_: Exception) {
                 // Log error, leave profile null (card won't show)
             }
         }

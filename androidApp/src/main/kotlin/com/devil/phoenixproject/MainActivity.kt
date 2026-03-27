@@ -8,7 +8,6 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import co.touchlab.kermit.Logger
-import com.devil.phoenixproject.App
 import com.devil.phoenixproject.presentation.components.RequireBlePermissions
 import java.util.Locale
 

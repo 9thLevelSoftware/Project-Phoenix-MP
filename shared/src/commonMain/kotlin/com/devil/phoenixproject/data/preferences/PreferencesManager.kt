@@ -4,7 +4,6 @@ import com.devil.phoenixproject.domain.model.RepCountTiming
 import com.devil.phoenixproject.domain.model.UserPreferences
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.russhwolf.settings.Settings
-import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.serialization.Serializable
@@ -27,7 +26,7 @@ data class SingleExerciseDefaults(
     val echoLevelValue: Int,
     val duration: Int,
     val isAMRAP: Boolean,
-    val perSetRestTime: Boolean
+    val perSetRestTime: Boolean,
 ) {
     fun getEccentricLoad(): com.devil.phoenixproject.domain.model.EccentricLoad {
         // Handle legacy 125% -> fall back to 120%
@@ -36,21 +35,19 @@ data class SingleExerciseDefaults(
             ?: com.devil.phoenixproject.domain.model.EccentricLoad.LOAD_100
     }
 
-    fun getEchoLevel(): com.devil.phoenixproject.domain.model.EchoLevel {
-        return com.devil.phoenixproject.domain.model.EchoLevel.entries.find { it.levelValue == echoLevelValue }
-            ?: com.devil.phoenixproject.domain.model.EchoLevel.HARDER
+    fun getEchoLevel(): com.devil.phoenixproject.domain.model.EchoLevel = com.devil.phoenixproject.domain.model.EchoLevel.entries.find {
+        it.levelValue == echoLevelValue
     }
+        ?: com.devil.phoenixproject.domain.model.EchoLevel.HARDER
 
-    fun toProgramMode(): com.devil.phoenixproject.domain.model.ProgramMode {
-        return when (workoutModeId) {
-            0 -> com.devil.phoenixproject.domain.model.ProgramMode.OldSchool
-            2 -> com.devil.phoenixproject.domain.model.ProgramMode.Pump
-            3 -> com.devil.phoenixproject.domain.model.ProgramMode.TUT
-            4 -> com.devil.phoenixproject.domain.model.ProgramMode.TUTBeast
-            6 -> com.devil.phoenixproject.domain.model.ProgramMode.EccentricOnly
-            10 -> com.devil.phoenixproject.domain.model.ProgramMode.Echo
-            else -> com.devil.phoenixproject.domain.model.ProgramMode.OldSchool
-        }
+    fun toProgramMode(): com.devil.phoenixproject.domain.model.ProgramMode = when (workoutModeId) {
+        0 -> com.devil.phoenixproject.domain.model.ProgramMode.OldSchool
+        2 -> com.devil.phoenixproject.domain.model.ProgramMode.Pump
+        3 -> com.devil.phoenixproject.domain.model.ProgramMode.TUT
+        4 -> com.devil.phoenixproject.domain.model.ProgramMode.TUTBeast
+        6 -> com.devil.phoenixproject.domain.model.ProgramMode.EccentricOnly
+        10 -> com.devil.phoenixproject.domain.model.ProgramMode.Echo
+        else -> com.devil.phoenixproject.domain.model.ProgramMode.OldSchool
     }
 }
 
@@ -64,9 +61,9 @@ data class JustLiftDefaults(
     val weightChangePerRep: Float = 0f,
     val eccentricLoadPercentage: Int = 100,
     val echoLevelValue: Int = 2,
-    val stallDetectionEnabled: Boolean = true,  // Stall detection auto-stop toggle
-    val repCountTimingName: String = "TOP",  // RepCountTiming enum name
-    val restSeconds: Int = 60  // Rest timer between sets (0 = off, 5-300 in 5s increments)
+    val stallDetectionEnabled: Boolean = true, // Stall detection auto-stop toggle
+    val repCountTimingName: String = "TOP", // RepCountTiming enum name
+    val restSeconds: Int = 60, // Rest timer between sets (0 = off, 5-300 in 5s increments)
 ) {
     fun getEccentricLoad(): com.devil.phoenixproject.domain.model.EccentricLoad {
         // Handle legacy 125% -> fall back to 120%
@@ -75,21 +72,19 @@ data class JustLiftDefaults(
             ?: com.devil.phoenixproject.domain.model.EccentricLoad.LOAD_100
     }
 
-    fun getEchoLevel(): com.devil.phoenixproject.domain.model.EchoLevel {
-        return com.devil.phoenixproject.domain.model.EchoLevel.entries.find { it.levelValue == echoLevelValue }
-            ?: com.devil.phoenixproject.domain.model.EchoLevel.HARDER
+    fun getEchoLevel(): com.devil.phoenixproject.domain.model.EchoLevel = com.devil.phoenixproject.domain.model.EchoLevel.entries.find {
+        it.levelValue == echoLevelValue
     }
+        ?: com.devil.phoenixproject.domain.model.EchoLevel.HARDER
 
-    fun toProgramMode(): com.devil.phoenixproject.domain.model.ProgramMode {
-        return when (workoutModeId) {
-            0 -> com.devil.phoenixproject.domain.model.ProgramMode.OldSchool
-            2 -> com.devil.phoenixproject.domain.model.ProgramMode.Pump
-            3 -> com.devil.phoenixproject.domain.model.ProgramMode.TUT
-            4 -> com.devil.phoenixproject.domain.model.ProgramMode.TUTBeast
-            6 -> com.devil.phoenixproject.domain.model.ProgramMode.EccentricOnly
-            10 -> com.devil.phoenixproject.domain.model.ProgramMode.Echo
-            else -> com.devil.phoenixproject.domain.model.ProgramMode.OldSchool
-        }
+    fun toProgramMode(): com.devil.phoenixproject.domain.model.ProgramMode = when (workoutModeId) {
+        0 -> com.devil.phoenixproject.domain.model.ProgramMode.OldSchool
+        2 -> com.devil.phoenixproject.domain.model.ProgramMode.Pump
+        3 -> com.devil.phoenixproject.domain.model.ProgramMode.TUT
+        4 -> com.devil.phoenixproject.domain.model.ProgramMode.TUTBeast
+        6 -> com.devil.phoenixproject.domain.model.ProgramMode.EccentricOnly
+        10 -> com.devil.phoenixproject.domain.model.ProgramMode.Echo
+        else -> com.devil.phoenixproject.domain.model.ProgramMode.OldSchool
     }
 }
 
@@ -101,6 +96,7 @@ interface PreferencesManager {
     val preferencesFlow: StateFlow<UserPreferences>
 
     suspend fun setWeightUnit(unit: WeightUnit)
+
     // Issue #167: setAutoplayEnabled removed - autoplay now derived from summaryCountdownSeconds
     suspend fun setStopAtTop(enabled: Boolean)
     suspend fun setEnableVideoPlayback(enabled: Boolean)
@@ -113,21 +109,29 @@ interface PreferencesManager {
     suspend fun setSummaryCountdownSeconds(seconds: Int)
     suspend fun setAutoStartCountdownSeconds(seconds: Int)
     suspend fun setGamificationEnabled(enabled: Boolean)
+
     // Issue #266: Configurable weight increment
     suspend fun setWeightIncrement(increment: Float)
+
     // Issue #190: Auto-start routine
     suspend fun setAutoStartRoutine(enabled: Boolean)
+
     // Issue #229: Body weight for bodyweight exercise volume
     suspend fun setBodyWeightKg(weightKg: Float)
+
     // Issue #100: Per-sound toggles
     suspend fun setCountdownBeepsEnabled(enabled: Boolean)
     suspend fun setRepSoundEnabled(enabled: Boolean)
+
     // Issue #237: Motion-triggered set start
     suspend fun setMotionStartEnabled(enabled: Boolean)
+
     // Issue #293: Per-session auto-backup
     suspend fun setAutoBackupEnabled(enabled: Boolean)
+
     // Issue #238: Language/locale preference
     suspend fun setLanguage(language: String)
+
     // Issue #141: Voice-activated emergency stop
     suspend fun setVoiceStopEnabled(enabled: Boolean)
     suspend fun setSafeWord(word: String?)
@@ -148,9 +152,7 @@ interface PreferencesManager {
  * - Android: SharedPreferences
  * - iOS: NSUserDefaults
  */
-class SettingsPreferencesManager(
-    private val settings: Settings
-) : PreferencesManager {
+class SettingsPreferencesManager(private val settings: Settings) : PreferencesManager {
 
     private val json = Json {
         ignoreUnknownKeys = true
@@ -160,6 +162,7 @@ class SettingsPreferencesManager(
     companion object {
         // Preference keys
         private const val KEY_WEIGHT_UNIT = "weight_unit"
+
         // Issue #167: KEY_AUTOPLAY_ENABLED removed - autoplay now derived from summaryCountdownSeconds
         private const val KEY_STOP_AT_TOP = "stop_at_top"
         private const val KEY_VIDEO_PLAYBACK = "video_playback"
@@ -186,6 +189,7 @@ class SettingsPreferencesManager(
         private const val KEY_VOICE_STOP_ENABLED = "voice_stop_enabled"
         private const val KEY_SAFE_WORD = "safe_word"
         private const val KEY_SAFE_WORD_CALIBRATED = "safe_word_calibrated"
+
         // Permissions onboarding (health + microphone)
         private const val KEY_PERMISSIONS_ONBOARDING_SHOWN = "permissions_onboarding_shown"
     }
@@ -210,7 +214,11 @@ class SettingsPreferencesManager(
             discoModeUnlocked = settings.getBoolean(KEY_DISCO_MODE_UNLOCKED, false),
             audioRepCountEnabled = settings.getBoolean(KEY_AUDIO_REP_COUNT, false),
             repCountTiming = settings.getStringOrNull(KEY_REP_COUNT_TIMING)?.let {
-                try { RepCountTiming.valueOf(it) } catch (_: Exception) { null }
+                try {
+                    RepCountTiming.valueOf(it)
+                } catch (_: Exception) {
+                    null
+                }
             } ?: RepCountTiming.TOP,
             summaryCountdownSeconds = settings.getInt(KEY_SUMMARY_COUNTDOWN_SECONDS, 10),
             autoStartCountdownSeconds = settings.getInt(KEY_AUTOSTART_COUNTDOWN_SECONDS, 5),
@@ -225,7 +233,7 @@ class SettingsPreferencesManager(
             language = settings.getStringOrNull(KEY_LANGUAGE) ?: "en",
             voiceStopEnabled = settings.getBoolean(KEY_VOICE_STOP_ENABLED, false),
             safeWord = settings.getStringOrNull(KEY_SAFE_WORD),
-            safeWordCalibrated = settings.getBoolean(KEY_SAFE_WORD_CALIBRATED, false)
+            safeWordCalibrated = settings.getBoolean(KEY_SAFE_WORD_CALIBRATED, false),
         )
     }
 
@@ -289,9 +297,7 @@ class SettingsPreferencesManager(
         updateAndEmit { copy(autoStartCountdownSeconds = seconds) }
     }
 
-    fun isPermissionsOnboardingShown(): Boolean {
-        return settings.getBoolean(KEY_PERMISSIONS_ONBOARDING_SHOWN, false)
-    }
+    fun isPermissionsOnboardingShown(): Boolean = settings.getBoolean(KEY_PERMISSIONS_ONBOARDING_SHOWN, false)
 
     fun setPermissionsOnboardingShown(shown: Boolean) {
         settings.putBoolean(KEY_PERMISSIONS_ONBOARDING_SHOWN, shown)
@@ -322,7 +328,7 @@ class SettingsPreferencesManager(
 
         return try {
             json.decodeFromString<SingleExerciseDefaults>(jsonString)
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             null
         }
     }
@@ -343,7 +349,7 @@ class SettingsPreferencesManager(
         val jsonString = settings.getStringOrNull(KEY_JUST_LIFT_DEFAULTS) ?: return JustLiftDefaults()
         return try {
             json.decodeFromString<JustLiftDefaults>(jsonString)
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             JustLiftDefaults()
         }
     }

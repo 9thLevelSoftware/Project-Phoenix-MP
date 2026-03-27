@@ -1,6 +1,5 @@
 package com.devil.phoenixproject.ui
 
-import android.content.Context
 import android.media.AudioAttributes
 import android.media.SoundPool
 import androidx.compose.runtime.*
@@ -11,8 +10,8 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.R
 import com.devil.phoenixproject.domain.model.HapticEvent
-import kotlinx.coroutines.flow.SharedFlow
 import kotlin.random.Random
+import kotlinx.coroutines.flow.SharedFlow
 
 /**
  * Composable effect that handles haptic feedback and sound playback for workout events.
@@ -21,9 +20,7 @@ import kotlin.random.Random
  * @param hapticEvents SharedFlow of HapticEvent emissions from the ViewModel
  */
 @Composable
-fun HapticFeedbackEffect(
-    hapticEvents: SharedFlow<HapticEvent>
-) {
+fun HapticFeedbackEffect(hapticEvents: SharedFlow<HapticEvent>) {
     val context = LocalContext.current
     val hapticFeedback = LocalHapticFeedback.current
 
@@ -37,7 +34,7 @@ fun HapticFeedbackEffect(
                 AudioAttributes.Builder()
                     .setUsage(AudioAttributes.USAGE_ASSISTANCE_SONIFICATION)
                     .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-                    .build()
+                    .build(),
             )
             .build()
     }
@@ -157,14 +154,26 @@ fun HapticFeedbackEffect(
 
     // Issue #100: Load countdown tick sound (reuses beep)
     val countdownTickSoundId = remember(soundPool) {
-        try { soundPool.load(context, R.raw.beep, 1) } catch (_: Exception) { null }
+        try {
+            soundPool.load(context, R.raw.beep, 1)
+        } catch (_: Exception) {
+            null
+        }
     }
 
     // Collect haptic events and play feedback
     LaunchedEffect(hapticEvents) {
         hapticEvents.collect { event ->
             playHapticFeedback(event, hapticFeedback)
-            playSound(event, soundPool, soundIds, badgeSoundIds, prSoundIds, repCountSoundIds, countdownTickSoundId)
+            playSound(
+                event,
+                soundPool,
+                soundIds,
+                badgeSoundIds,
+                prSoundIds,
+                repCountSoundIds,
+                countdownTickSoundId,
+            )
         }
     }
 
@@ -186,7 +195,10 @@ private fun playHapticFeedback(event: HapticEvent, hapticFeedback: HapticFeedbac
     val feedbackType = when (event) {
         is HapticEvent.REP_COMPLETED,
         is HapticEvent.WORKOUT_START,
-        is HapticEvent.WORKOUT_END -> HapticFeedbackType.TextHandleMove // Light click
+        is HapticEvent.WORKOUT_END,
+        -> HapticFeedbackType.TextHandleMove
+
+        // Light click
 
         is HapticEvent.WARMUP_COMPLETE,
         is HapticEvent.WORKOUT_COMPLETE,
@@ -194,10 +206,17 @@ private fun playHapticFeedback(event: HapticEvent, hapticFeedback: HapticFeedbac
         is HapticEvent.ERROR,
         is HapticEvent.DISCO_MODE_UNLOCKED,
         is HapticEvent.BADGE_EARNED,
-        is HapticEvent.PERSONAL_RECORD -> HapticFeedbackType.LongPress // Strong vibration
+        is HapticEvent.PERSONAL_RECORD,
+        -> HapticFeedbackType.LongPress
 
-        is HapticEvent.COUNTDOWN_TICK -> HapticFeedbackType.TextHandleMove // Issue #100: Light tick for countdown
-        is HapticEvent.WARMUP_TO_WORKING -> HapticFeedbackType.LongPress // Issue #100: Distinct transition feedback
+        // Strong vibration
+
+        is HapticEvent.COUNTDOWN_TICK -> HapticFeedbackType.TextHandleMove
+
+        // Issue #100: Light tick for countdown
+        is HapticEvent.WARMUP_TO_WORKING -> HapticFeedbackType.LongPress
+
+        // Issue #100: Distinct transition feedback
 
         is HapticEvent.REP_COUNT_ANNOUNCED -> return // Already handled above
     }
@@ -219,7 +238,7 @@ private fun playSound(
     badgeSoundIds: List<Int>,
     prSoundIds: List<Int>,
     repCountSoundIds: List<Int>,
-    countdownTickSoundId: Int?
+    countdownTickSoundId: Int?,
 ) {
     // ERROR event has no sound
     if (event is HapticEvent.ERROR) return
@@ -228,20 +247,30 @@ private fun playSound(
         is HapticEvent.BADGE_EARNED -> {
             if (badgeSoundIds.isNotEmpty()) {
                 badgeSoundIds[Random.nextInt(badgeSoundIds.size)]
-            } else null
+            } else {
+                null
+            }
         }
+
         is HapticEvent.PERSONAL_RECORD -> {
             if (prSoundIds.isNotEmpty()) {
                 prSoundIds[Random.nextInt(prSoundIds.size)]
-            } else null
+            } else {
+                null
+            }
         }
+
         is HapticEvent.REP_COUNT_ANNOUNCED -> {
             val index = event.repNumber - 1
             if (index in repCountSoundIds.indices) {
                 repCountSoundIds[index]
-            } else null
+            } else {
+                null
+            }
         }
+
         is HapticEvent.COUNTDOWN_TICK -> countdownTickSoundId
+
         else -> soundIds[event]
     } ?: return
 
@@ -250,9 +279,9 @@ private fun playSound(
             soundId,
             0.8f, // Left volume
             0.8f, // Right volume
-            1,    // Priority
-            0,    // Loop (0 = no loop)
-            1.0f  // Playback rate
+            1, // Priority
+            0, // Loop (0 = no loop)
+            1.0f, // Playback rate
         )
     } catch (e: Exception) {
         Logger.w { "Sound playback failed: ${e.message}" }

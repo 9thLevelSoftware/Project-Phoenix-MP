@@ -37,13 +37,12 @@ import com.devil.phoenixproject.presentation.components.RpeIndicator
 import com.devil.phoenixproject.ui.theme.AccessibilityTheme
 import com.devil.phoenixproject.ui.theme.velocityZoneColor
 import com.devil.phoenixproject.ui.theme.velocityZoneLabel
-import kotlin.math.abs
 import kotlin.math.cos
 import kotlin.math.roundToInt
 import kotlin.math.sin
 import org.jetbrains.compose.resources.stringResource
-import vitruvianprojectphoenix.shared.generated.resources.Res
 import vitruvianprojectphoenix.shared.generated.resources.*
+import vitruvianprojectphoenix.shared.generated.resources.Res
 
 /**
  * Enhanced Set Summary Card - matches official Vitruvian app design
@@ -58,11 +57,11 @@ fun SetSummaryCard(
     formatWeight: (Float, WeightUnit) -> String,
     onContinue: () -> Unit,
     autoplayEnabled: Boolean,
-    summaryCountdownSeconds: Int,  // Configurable countdown duration (0 = Off, no auto-continue)
-    onRpeLogged: ((Int) -> Unit)? = null,  // Optional RPE callback
-    isHistoryView: Boolean = false,  // Hide interactive elements when viewing from history
-    savedRpe: Int? = null,  // Show saved RPE value in history view
-    buttonLabel: String = "Done"  // Contextual label: "Next Set", "Next Exercise", "Complete Routine"
+    summaryCountdownSeconds: Int, // Configurable countdown duration (0 = Off, no auto-continue)
+    onRpeLogged: ((Int) -> Unit)? = null, // Optional RPE callback
+    isHistoryView: Boolean = false, // Hide interactive elements when viewing from history
+    savedRpe: Int? = null, // Show saved RPE value in history view
+    buttonLabel: String = "Done", // Contextual label: "Next Set", "Next Exercise", "Complete Routine"
 ) {
     // State for RPE tracking
     var loggedRpe by remember { mutableStateOf<Int?>(null) }
@@ -101,7 +100,9 @@ fun SetSummaryCard(
     val setWeightDisplay = kgToDisplay(summary.configuredWeightKgPerCable, weightUnit)
 
     // Debug logging for Issue #5 investigation
-    co.touchlab.kermit.Logger.i { "WEIGHT_DEBUG[Summary]: configuredWeightKgPerCable=${summary.configuredWeightKgPerCable} kg → kgToDisplay → $setWeightDisplay ($weightUnit)" }
+    co.touchlab.kermit.Logger.i {
+        "WEIGHT_DEBUG[Summary]: configuredWeightKgPerCable=${summary.configuredWeightKgPerCable} kg → kgToDisplay → $setWeightDisplay ($weightUnit)"
+    }
     val durationSeconds = (summary.durationMs / 1000).toInt()
     val durationFormatted = "${durationSeconds / 60}:${(durationSeconds % 60).toString().padStart(2, '0')}"
 
@@ -115,13 +116,13 @@ fun SetSummaryCard(
 
     Column(
         modifier = Modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(8.dp)  // Reduced from 12dp to fit more content
+        verticalArrangement = Arrangement.spacedBy(8.dp), // Reduced from 12dp to fit more content
     ) {
         // Gradient header with Total Reps and Total Volume
         Card(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(20.dp),
-            colors = CardDefaults.cardColors(containerColor = Color.Transparent)
+            colors = CardDefaults.cardColors(containerColor = Color.Transparent),
         ) {
             Box(
                 modifier = Modifier
@@ -130,40 +131,40 @@ fun SetSummaryCard(
                         Brush.horizontalGradient(
                             colors = listOf(
                                 MaterialTheme.colorScheme.primary,
-                                MaterialTheme.colorScheme.tertiary
-                            )
-                        )
+                                MaterialTheme.colorScheme.tertiary,
+                            ),
+                        ),
                     )
-                    .padding(16.dp)  // Reduced from 20dp to fit more content
+                    .padding(16.dp), // Reduced from 20dp to fit more content
             ) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceEvenly
+                    horizontalArrangement = Arrangement.SpaceEvenly,
                 ) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Text(
                             "Total reps",
                             style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.9f)
+                            color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.9f),
                         )
                         Text(
                             "$displayReps",
                             style = MaterialTheme.typography.displaySmall,
                             fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onPrimary
+                            color = MaterialTheme.colorScheme.onPrimary,
                         )
                     }
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Text(
                             "Total volume ($unitLabel)",
                             style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.9f)
+                            color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.9f),
                         )
                         Text(
                             "${totalVolumeDisplay.roundToInt()}",
                             style = MaterialTheme.typography.displaySmall,
                             fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onPrimary
+                            color = MaterialTheme.colorScheme.onPrimary,
                         )
                     }
                 }
@@ -173,65 +174,65 @@ fun SetSummaryCard(
         // Stats Grid
         Column(
             modifier = Modifier.fillMaxWidth(),
-            verticalArrangement = Arrangement.spacedBy(6.dp)  // Reduced from 8dp to fit more content
+            verticalArrangement = Arrangement.spacedBy(6.dp), // Reduced from 8dp to fit more content
         ) {
             // Row 1: Mode and Heaviest Lift
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 SummaryStatCard(
                     label = "Mode",
                     value = workoutMode,
                     icon = Icons.Default.GridView,
-                    modifier = Modifier.weight(1f)
+                    modifier = Modifier.weight(1f),
                 )
                 SummaryStatCard(
                     label = "Set Weight",
                     value = "${setWeightDisplay.roundToInt()}",
                     unit = "($unitLabel/cable)",
                     icon = Icons.Default.FitnessCenter,
-                    modifier = Modifier.weight(1f)
+                    modifier = Modifier.weight(1f),
                 )
             }
 
             // Row 2: Peak Force (concentric/eccentric)
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 SummaryForceCard(
                     label = "Peak Dynamic ($unitLabel)",
                     concentricValue = peakConcentric,
                     eccentricValue = peakEccentric,
-                    modifier = Modifier.weight(1f)
+                    modifier = Modifier.weight(1f),
                 )
                 SummaryForceCard(
                     label = "Avg Active ($unitLabel)",
                     concentricValue = avgConcentric,
                     eccentricValue = avgEccentric,
-                    modifier = Modifier.weight(1f)
+                    modifier = Modifier.weight(1f),
                 )
             }
 
             // Row 3: Duration and Energy
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 SummaryStatCard(
                     label = "Duration",
                     value = durationFormatted,
                     unit = "sec",
                     icon = Icons.Default.Timer,
-                    modifier = Modifier.weight(1f)
+                    modifier = Modifier.weight(1f),
                 )
                 SummaryStatCard(
                     label = "Energy",
                     value = "${summary.estimatedCalories.roundToInt()}",
                     unit = "(kCal)",
                     icon = Icons.Default.LocalFireDepartment,
-                    modifier = Modifier.weight(1f)
+                    modifier = Modifier.weight(1f),
                 )
             }
 
@@ -245,7 +246,7 @@ fun SetSummaryCard(
                     workingAvgWeight = kgToDisplay(summary.workingAvgWeightKg, weightUnit),
                     burnoutAvgWeight = kgToDisplay(summary.burnoutAvgWeightKg, weightUnit),
                     peakWeight = kgToDisplay(summary.peakWeightKg, weightUnit),
-                    unitLabel = unitLabel
+                    unitLabel = unitLabel,
                 )
             }
 
@@ -264,7 +265,7 @@ fun SetSummaryCard(
                 biomechanics.avgForceCurve?.let { curve ->
                     ForceCurveSummaryCard(
                         avgForceCurve = curve,
-                        strengthProfile = biomechanics.strengthProfile
+                        strengthProfile = biomechanics.strengthProfile,
                     )
                 }
             }
@@ -280,27 +281,27 @@ fun SetSummaryCard(
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
+                        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
                     ),
-                    shape = RoundedCornerShape(16.dp)
+                    shape = RoundedCornerShape(16.dp),
                 ) {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(12.dp),  // Reduced from 16dp to fit more content
+                            .padding(12.dp), // Reduced from 16dp to fit more content
                         horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
+                        verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Text(
                             "RPE",
                             style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                         Text(
                             "$savedRpe/10",
                             style = MaterialTheme.typography.bodyLarge,
                             fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurface
+                            color = MaterialTheme.colorScheme.onSurface,
                         )
                     }
                 }
@@ -309,28 +310,28 @@ fun SetSummaryCard(
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
+                        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
                     ),
-                    shape = RoundedCornerShape(16.dp)
+                    shape = RoundedCornerShape(16.dp),
                 ) {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(12.dp),  // Reduced from 16dp to fit more content
+                            .padding(12.dp), // Reduced from 16dp to fit more content
                         horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
+                        verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Column {
                             Text(
                                 "How hard was that?",
                                 style = MaterialTheme.typography.titleSmall,
                                 fontWeight = FontWeight.Medium,
-                                color = MaterialTheme.colorScheme.onSurface
+                                color = MaterialTheme.colorScheme.onSurface,
                             )
                             Text(
                                 "Log your perceived exertion",
                                 style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
                         RpeIndicator(
@@ -338,7 +339,7 @@ fun SetSummaryCard(
                             onRpeChanged = { rpe ->
                                 loggedRpe = rpe
                                 onRpeLogged(rpe)
-                            }
+                            },
                         )
                     }
                 }
@@ -354,8 +355,8 @@ fun SetSummaryCard(
                     .height(56.dp),
                 shape = RoundedCornerShape(28.dp),
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = MaterialTheme.colorScheme.primary
-                )
+                    containerColor = MaterialTheme.colorScheme.primary,
+                ),
             ) {
                 Text(
                     text = if (autoplayEnabled && summaryCountdownSeconds > 0 && autoCountdown > 0) {
@@ -365,7 +366,7 @@ fun SetSummaryCard(
                     },
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onPrimary
+                    color = MaterialTheme.colorScheme.onPrimary,
                 )
             }
         }
@@ -381,56 +382,56 @@ private fun SummaryStatCard(
     value: String,
     unit: String? = null,
     icon: androidx.compose.ui.graphics.vector.ImageVector? = null,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
 ) {
     Card(
         modifier = modifier,
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
         ),
-        shape = RoundedCornerShape(16.dp)
+        shape = RoundedCornerShape(16.dp),
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(12.dp)  // Reduced from 16dp to fit more content
+                .padding(12.dp), // Reduced from 16dp to fit more content
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+                verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
                     label,
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 icon?.let {
                     Icon(
                         it,
                         contentDescription = null,
                         modifier = Modifier.size(18.dp),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
             }
-            Spacer(modifier = Modifier.height(4.dp))  // Reduced from 8dp to fit more content
+            Spacer(modifier = Modifier.height(4.dp)) // Reduced from 8dp to fit more content
             Row(
                 verticalAlignment = Alignment.Bottom,
-                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
             ) {
                 Text(
                     value,
                     style = MaterialTheme.typography.headlineSmall,
                     fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface
+                    color = MaterialTheme.colorScheme.onSurface,
                 )
                 unit?.let {
                     Text(
                         it,
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(bottom = 4.dp)
+                        modifier = Modifier.padding(bottom = 4.dp),
                     )
                 }
             }
@@ -442,33 +443,28 @@ private fun SummaryStatCard(
  * Force card showing concentric (up arrow) and eccentric (down arrow) values
  */
 @Composable
-private fun SummaryForceCard(
-    label: String,
-    concentricValue: Float,
-    eccentricValue: Float,
-    modifier: Modifier = Modifier
-) {
+private fun SummaryForceCard(label: String, concentricValue: Float, eccentricValue: Float, modifier: Modifier = Modifier) {
     Card(
         modifier = modifier,
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
         ),
-        shape = RoundedCornerShape(16.dp)
+        shape = RoundedCornerShape(16.dp),
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(12.dp)  // Reduced from 16dp to fit more content
+                .padding(12.dp), // Reduced from 16dp to fit more content
         ) {
             Text(
                 label,
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            Spacer(modifier = Modifier.height(4.dp))  // Reduced from 8dp to fit more content
+            Spacer(modifier = Modifier.height(4.dp)) // Reduced from 8dp to fit more content
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 // Concentric (lifting) with up arrow
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -476,12 +472,12 @@ private fun SummaryForceCard(
                         "${concentricValue.roundToInt()}",
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurface
+                        color = MaterialTheme.colorScheme.onSurface,
                     )
                     Text(
                         " \u2191", // Up arrow
                         style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.primary
+                        color = MaterialTheme.colorScheme.primary,
                     )
                 }
                 // Eccentric (lowering) with down arrow
@@ -490,12 +486,12 @@ private fun SummaryForceCard(
                         "${eccentricValue.roundToInt()}",
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurface
+                        color = MaterialTheme.colorScheme.onSurface,
                     )
                     Text(
                         " \u2193", // Down arrow
                         style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.secondary
+                        color = MaterialTheme.colorScheme.secondary,
                     )
                 }
             }
@@ -516,36 +512,36 @@ private fun EchoPhaseBreakdownCard(
     workingAvgWeight: Float,
     burnoutAvgWeight: Float,
     peakWeight: Float,
-    unitLabel: String
+    unitLabel: String,
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
         ),
-        shape = RoundedCornerShape(16.dp)
+        shape = RoundedCornerShape(16.dp),
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp)
+                .padding(16.dp),
         ) {
             // Header
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+                verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
                     "Echo Phase Breakdown",
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.primary
+                    color = MaterialTheme.colorScheme.primary,
                 )
                 Text(
                     "Peak: ${peakWeight.roundToInt()} $unitLabel",
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
 
@@ -554,7 +550,7 @@ private fun EchoPhaseBreakdownCard(
             // Phase breakdown row
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceEvenly
+                horizontalArrangement = Arrangement.SpaceEvenly,
             ) {
                 // Warmup Phase
                 if (warmupReps > 0 || warmupAvgWeight > 0) {
@@ -563,7 +559,7 @@ private fun EchoPhaseBreakdownCard(
                         reps = warmupReps,
                         avgWeight = warmupAvgWeight,
                         unitLabel = unitLabel,
-                        color = MaterialTheme.colorScheme.tertiary
+                        color = MaterialTheme.colorScheme.tertiary,
                     )
                 }
 
@@ -574,7 +570,7 @@ private fun EchoPhaseBreakdownCard(
                     avgWeight = workingAvgWeight,
                     unitLabel = unitLabel,
                     color = MaterialTheme.colorScheme.primary,
-                    isPrimary = true
+                    isPrimary = true,
                 )
 
                 // Burnout Phase
@@ -584,7 +580,7 @@ private fun EchoPhaseBreakdownCard(
                         reps = burnoutReps,
                         avgWeight = burnoutAvgWeight,
                         unitLabel = unitLabel,
-                        color = MaterialTheme.colorScheme.secondary
+                        color = MaterialTheme.colorScheme.secondary,
                     )
                 }
             }
@@ -596,39 +592,32 @@ private fun EchoPhaseBreakdownCard(
  * Individual phase stat column for Echo breakdown
  */
 @Composable
-private fun PhaseStatColumn(
-    phaseName: String,
-    reps: Int,
-    avgWeight: Float,
-    unitLabel: String,
-    color: Color,
-    isPrimary: Boolean = false
-) {
+private fun PhaseStatColumn(phaseName: String, reps: Int, avgWeight: Float, unitLabel: String, color: Color, isPrimary: Boolean = false) {
     Column(
-        horizontalAlignment = Alignment.CenterHorizontally
+        horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Text(
             phaseName,
             style = MaterialTheme.typography.labelMedium,
             color = color,
-            fontWeight = if (isPrimary) FontWeight.Bold else FontWeight.Normal
+            fontWeight = if (isPrimary) FontWeight.Bold else FontWeight.Normal,
         )
         Text(
             "${avgWeight.roundToInt()}",
             style = if (isPrimary) MaterialTheme.typography.headlineMedium else MaterialTheme.typography.titleLarge,
             fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.onSurface
+            color = MaterialTheme.colorScheme.onSurface,
         )
         Text(
             "$unitLabel/cable",
             style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         if (reps > 0) {
             Text(
                 "$reps reps",
                 style = MaterialTheme.typography.bodySmall,
-                color = color
+                color = color,
             )
         }
     }
@@ -658,37 +647,37 @@ private fun VelocitySummaryCard(biomechanics: BiomechanicsSetSummary) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
         ),
-        shape = RoundedCornerShape(16.dp)
+        shape = RoundedCornerShape(16.dp),
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(12.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+            verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             // Header row
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+                verticalAlignment = Alignment.CenterVertically,
             ) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
                     Icon(
                         Icons.Default.Speed,
                         contentDescription = stringResource(Res.string.cd_velocity),
                         modifier = Modifier.size(18.dp),
-                        tint = MaterialTheme.colorScheme.primary
+                        tint = MaterialTheme.colorScheme.primary,
                     )
                     Text(
                         "Velocity Analysis",
                         style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.primary
+                        color = MaterialTheme.colorScheme.primary,
                     )
                 }
             }
@@ -697,25 +686,25 @@ private fun VelocitySummaryCard(biomechanics: BiomechanicsSetSummary) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceEvenly,
-                verticalAlignment = Alignment.CenterVertically
+                verticalAlignment = Alignment.CenterVertically,
             ) {
                 // Avg MCV
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Text(
                         "Avg MCV",
                         style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     Text(
                         formatMcvDisplay(biomechanics.avgMcvMmS),
                         style = MaterialTheme.typography.headlineMedium,
                         fontWeight = FontWeight.Bold,
-                        color = velocityZoneColor(BiomechanicsVelocityZone.fromMcv(biomechanics.avgMcvMmS))
+                        color = velocityZoneColor(BiomechanicsVelocityZone.fromMcv(biomechanics.avgMcvMmS)),
                     )
                     Text(
                         "m/s",
                         style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
 
@@ -724,18 +713,18 @@ private fun VelocitySummaryCard(biomechanics: BiomechanicsSetSummary) {
                     Text(
                         "Peak",
                         style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     Text(
                         formatMcvDisplay(biomechanics.peakVelocityMmS),
                         style = MaterialTheme.typography.bodyLarge,
                         fontWeight = FontWeight.Medium,
-                        color = MaterialTheme.colorScheme.onSurface
+                        color = MaterialTheme.colorScheme.onSurface,
                     )
                     Text(
                         "m/s",
                         style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
 
@@ -744,7 +733,7 @@ private fun VelocitySummaryCard(biomechanics: BiomechanicsSetSummary) {
                     Text(
                         "Velocity Loss",
                         style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     val lossText = biomechanics.totalVelocityLossPercent?.let { loss ->
                         "${loss.toInt()}%"
@@ -761,7 +750,7 @@ private fun VelocitySummaryCard(biomechanics: BiomechanicsSetSummary) {
                         lossText,
                         style = MaterialTheme.typography.bodyLarge,
                         fontWeight = FontWeight.Medium,
-                        color = lossColor
+                        color = lossColor,
                     )
                 }
             }
@@ -776,7 +765,7 @@ private fun VelocitySummaryCard(biomechanics: BiomechanicsSetSummary) {
                         BiomechanicsVelocityZone.FAST,
                         BiomechanicsVelocityZone.MODERATE,
                         BiomechanicsVelocityZone.SLOW,
-                        BiomechanicsVelocityZone.GRIND
+                        BiomechanicsVelocityZone.GRIND,
                     )
                     val activeZones = zoneOrder.filter { (biomechanics.zoneDistribution[it] ?: 0) > 0 }
 
@@ -784,7 +773,7 @@ private fun VelocitySummaryCard(biomechanics: BiomechanicsSetSummary) {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(12.dp)
+                            .height(12.dp),
                     ) {
                         for (zone in activeZones) {
                             val count = biomechanics.zoneDistribution[zone] ?: 0
@@ -797,16 +786,20 @@ private fun VelocitySummaryCard(biomechanics: BiomechanicsSetSummary) {
                                         velocityZoneColor(zone),
                                         shape = when (zone) {
                                             activeZones.first() -> RoundedCornerShape(
-                                                topStart = 6.dp, bottomStart = 6.dp,
+                                                topStart = 6.dp,
+                                                bottomStart = 6.dp,
                                                 topEnd = if (activeZones.size == 1) 6.dp else 0.dp,
-                                                bottomEnd = if (activeZones.size == 1) 6.dp else 0.dp
+                                                bottomEnd = if (activeZones.size == 1) 6.dp else 0.dp,
                                             )
+
                                             activeZones.last() -> RoundedCornerShape(
-                                                topEnd = 6.dp, bottomEnd = 6.dp
+                                                topEnd = 6.dp,
+                                                bottomEnd = 6.dp,
                                             )
+
                                             else -> RoundedCornerShape(0.dp)
-                                        }
-                                    )
+                                        },
+                                    ),
                             )
                         }
                     }
@@ -814,23 +807,23 @@ private fun VelocitySummaryCard(biomechanics: BiomechanicsSetSummary) {
                     // Zone labels with counts
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceEvenly
+                        horizontalArrangement = Arrangement.SpaceEvenly,
                     ) {
                         for (zone in activeZones) {
                             val count = biomechanics.zoneDistribution[zone] ?: 0
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(3.dp)
+                                horizontalArrangement = Arrangement.spacedBy(3.dp),
                             ) {
                                 Box(
                                     modifier = Modifier
                                         .size(8.dp)
-                                        .background(velocityZoneColor(zone), RoundedCornerShape(2.dp))
+                                        .background(velocityZoneColor(zone), RoundedCornerShape(2.dp)),
                                 )
                                 Text(
                                     "${velocityZoneLabel(zone)}: $count",
                                     style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
                             }
                         }
@@ -859,10 +852,7 @@ private fun strengthProfileDisplayName(profile: StrengthProfile): String = when 
  * annotation, strength profile badge, and peak/min force stats.
  */
 @Composable
-private fun ForceCurveSummaryCard(
-    avgForceCurve: ForceCurveResult,
-    strengthProfile: StrengthProfile
-) {
+private fun ForceCurveSummaryCard(avgForceCurve: ForceCurveResult, strengthProfile: StrengthProfile) {
     val forceData = avgForceCurve.normalizedForceN
     if (forceData.isEmpty()) return
 
@@ -885,39 +875,39 @@ private fun ForceCurveSummaryCard(
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
         ),
-        shape = RoundedCornerShape(16.dp)
+        shape = RoundedCornerShape(16.dp),
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(12.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+            verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             // Header row: title + strength profile badge
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+                verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
                     "Force Curve",
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.primary
+                    color = MaterialTheme.colorScheme.primary,
                 )
                 // Strength profile badge
                 Surface(
                     color = MaterialTheme.colorScheme.secondaryContainer,
-                    shape = RoundedCornerShape(12.dp)
+                    shape = RoundedCornerShape(12.dp),
                 ) {
                     Text(
                         text = strengthProfileDisplayName(strengthProfile),
                         style = MaterialTheme.typography.labelSmall,
                         fontWeight = FontWeight.Medium,
                         color = MaterialTheme.colorScheme.onSecondaryContainer,
-                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
                     )
                 }
             }
@@ -926,7 +916,7 @@ private fun ForceCurveSummaryCard(
             Canvas(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(120.dp)
+                    .height(120.dp),
             ) {
                 val canvasWidth = size.width
                 val canvasHeight = size.height
@@ -966,15 +956,15 @@ private fun ForceCurveSummaryCard(
                         strokeWidth = 1.dp.toPx(),
                         pathEffect = PathEffect.dashPathEffect(
                             intervals = floatArrayOf(6.dp.toPx(), 4.dp.toPx()),
-                            phase = 0f
-                        )
+                            phase = 0f,
+                        ),
                     )
 
                     // Red circle at sticking point on curve
                     drawCircle(
                         color = Color.Red,
                         radius = 5.dp.toPx(),
-                        center = Offset(spX, spY)
+                        center = Offset(spX, spY),
                     )
                 }
             }
@@ -982,22 +972,22 @@ private fun ForceCurveSummaryCard(
             // X-axis labels: 0%, 50%, 100% ROM
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween
+                horizontalArrangement = Arrangement.SpaceBetween,
             ) {
                 Text(
                     "0%",
                     style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 Text(
                     "50%",
                     style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 Text(
                     "100%",
                     style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
 
@@ -1005,20 +995,20 @@ private fun ForceCurveSummaryCard(
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceEvenly,
-                verticalAlignment = Alignment.CenterVertically
+                verticalAlignment = Alignment.CenterVertically,
             ) {
                 // Sticking Point
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Text(
                         "Sticking Point",
                         style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     Text(
                         "${stickingPointPct?.toInt() ?: "--"}% ROM",
                         style = MaterialTheme.typography.bodyLarge,
                         fontWeight = FontWeight.Medium,
-                        color = if (stickingPointPct != null) Color.Red else MaterialTheme.colorScheme.onSurfaceVariant
+                        color = if (stickingPointPct != null) Color.Red else MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
                 // Peak Force
@@ -1026,13 +1016,13 @@ private fun ForceCurveSummaryCard(
                     Text(
                         "Peak Force",
                         style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     Text(
                         "${maxForce.toInt()} N",
                         style = MaterialTheme.typography.bodyLarge,
                         fontWeight = FontWeight.Medium,
-                        color = MaterialTheme.colorScheme.onSurface
+                        color = MaterialTheme.colorScheme.onSurface,
                     )
                 }
                 // Min Force (interior, excluding edges)
@@ -1040,13 +1030,13 @@ private fun ForceCurveSummaryCard(
                     Text(
                         "Min Force",
                         style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     Text(
                         "${interiorMinForce.toInt()} N",
                         style = MaterialTheme.typography.bodyLarge,
                         fontWeight = FontWeight.Medium,
-                        color = MaterialTheme.colorScheme.onSurface
+                        color = MaterialTheme.colorScheme.onSurface,
                     )
                 }
             }
@@ -1100,32 +1090,32 @@ private fun AsymmetrySummaryCard(biomechanics: BiomechanicsSetSummary) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
         ),
-        shape = RoundedCornerShape(16.dp)
+        shape = RoundedCornerShape(16.dp),
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(12.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+            verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             // Header row
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
             ) {
                 Icon(
                     Icons.AutoMirrored.Filled.CompareArrows,
                     contentDescription = stringResource(Res.string.cd_balance),
                     modifier = Modifier.size(18.dp),
-                    tint = MaterialTheme.colorScheme.primary
+                    tint = MaterialTheme.colorScheme.primary,
                 )
                 Text(
                     "Balance Analysis",
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.primary
+                    color = MaterialTheme.colorScheme.primary,
                 )
             }
 
@@ -1133,20 +1123,20 @@ private fun AsymmetrySummaryCard(biomechanics: BiomechanicsSetSummary) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceEvenly,
-                verticalAlignment = Alignment.CenterVertically
+                verticalAlignment = Alignment.CenterVertically,
             ) {
                 // Avg Asymmetry
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Text(
                         "Avg Asymmetry",
                         style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     Text(
                         "${biomechanics.avgAsymmetryPercent.toInt()}%",
                         style = MaterialTheme.typography.headlineMedium,
                         fontWeight = FontWeight.Bold,
-                        color = asymmetrySeverityColor(biomechanics.avgAsymmetryPercent)
+                        color = asymmetrySeverityColor(biomechanics.avgAsymmetryPercent),
                     )
                 }
 
@@ -1155,7 +1145,7 @@ private fun AsymmetrySummaryCard(biomechanics: BiomechanicsSetSummary) {
                     Text(
                         "Dominant Side",
                         style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     val sideLabel = when (biomechanics.dominantSide) {
                         "A" -> "Left (A)"
@@ -1166,7 +1156,7 @@ private fun AsymmetrySummaryCard(biomechanics: BiomechanicsSetSummary) {
                         sideLabel,
                         style = MaterialTheme.typography.bodyLarge,
                         fontWeight = FontWeight.Medium,
-                        color = MaterialTheme.colorScheme.onSurface
+                        color = MaterialTheme.colorScheme.onSurface,
                     )
                 }
 
@@ -1175,7 +1165,7 @@ private fun AsymmetrySummaryCard(biomechanics: BiomechanicsSetSummary) {
                     Text(
                         "Trend",
                         style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     val trendIcon = when (trend) {
                         AsymmetryTrend.WORSENING -> Icons.AutoMirrored.Filled.TrendingUp
@@ -1196,12 +1186,12 @@ private fun AsymmetrySummaryCard(biomechanics: BiomechanicsSetSummary) {
                         trendIcon,
                         contentDescription = trendLabel,
                         modifier = Modifier.size(20.dp),
-                        tint = trendColor
+                        tint = trendColor,
                     )
                     Text(
                         trendLabel,
                         style = MaterialTheme.typography.labelSmall,
-                        color = trendColor
+                        color = trendColor,
                     )
                 }
             }
@@ -1237,7 +1227,7 @@ private fun AsymmetrySparkline(asymmetryValues: List<Float>) {
     Canvas(
         modifier = Modifier
             .fillMaxWidth()
-            .height(40.dp)
+            .height(40.dp),
     ) {
         val canvasWidth = size.width
         val canvasHeight = size.height
@@ -1266,8 +1256,8 @@ private fun AsymmetrySparkline(asymmetryValues: List<Float>) {
             strokeWidth = 1.dp.toPx(),
             pathEffect = PathEffect.dashPathEffect(
                 intervals = floatArrayOf(6.dp.toPx(), 4.dp.toPx()),
-                phase = 0f
-            )
+                phase = 0f,
+            ),
         )
 
         // Draw line segments with severity colors
@@ -1276,7 +1266,7 @@ private fun AsymmetrySparkline(asymmetryValues: List<Float>) {
                 color = segmentColors[i],
                 start = points[i],
                 end = points[i + 1],
-                strokeWidth = 2.dp.toPx()
+                strokeWidth = 2.dp.toPx(),
             )
         }
 
@@ -1285,7 +1275,7 @@ private fun AsymmetrySparkline(asymmetryValues: List<Float>) {
             drawCircle(
                 color = dotColors[index],
                 radius = 3.dp.toPx(),
-                center = point
+                center = point,
             )
         }
     }
@@ -1319,31 +1309,31 @@ private fun QualityStatsSection(quality: SetQualitySummary) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
         ),
-        shape = RoundedCornerShape(16.dp)
+        shape = RoundedCornerShape(16.dp),
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(12.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+            verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             // Header with trend indicator
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+                verticalAlignment = Alignment.CenterVertically,
             ) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
                     Text(
                         "Rep Quality",
                         style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.primary
+                        color = MaterialTheme.colorScheme.primary,
                     )
                     val trendIcon = when (quality.trend) {
                         QualityTrend.IMPROVING -> Icons.AutoMirrored.Filled.TrendingUp
@@ -1359,7 +1349,7 @@ private fun QualityStatsSection(quality: SetQualitySummary) {
                         trendIcon,
                         contentDescription = quality.trend.name,
                         modifier = Modifier.size(18.dp),
-                        tint = trendColor
+                        tint = trendColor,
                     )
                 }
                 // Trend label
@@ -1376,7 +1366,7 @@ private fun QualityStatsSection(quality: SetQualitySummary) {
                 Text(
                     trendLabel,
                     style = MaterialTheme.typography.labelMedium,
-                    color = trendLabelColor
+                    color = trendLabelColor,
                 )
             }
 
@@ -1384,20 +1374,20 @@ private fun QualityStatsSection(quality: SetQualitySummary) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceEvenly,
-                verticalAlignment = Alignment.CenterVertically
+                verticalAlignment = Alignment.CenterVertically,
             ) {
                 // Average score (large, color-coded)
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Text(
                         "Average",
                         style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     Text(
                         "${quality.averageScore}",
                         style = MaterialTheme.typography.headlineMedium,
                         fontWeight = FontWeight.Bold,
-                        color = qualityColor(quality.averageScore)
+                        color = qualityColor(quality.averageScore),
                     )
                 }
                 // Best rep
@@ -1405,13 +1395,13 @@ private fun QualityStatsSection(quality: SetQualitySummary) {
                     Text(
                         "Best",
                         style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     Text(
                         "#${quality.bestRepNumber}: ${quality.bestScore}",
                         style = MaterialTheme.typography.bodyLarge,
                         fontWeight = FontWeight.Medium,
-                        color = qualityColor(quality.bestScore)
+                        color = qualityColor(quality.bestScore),
                     )
                 }
                 // Worst rep
@@ -1419,13 +1409,13 @@ private fun QualityStatsSection(quality: SetQualitySummary) {
                     Text(
                         "Worst",
                         style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     Text(
                         "#${quality.worstRepNumber}: ${quality.worstScore}",
                         style = MaterialTheme.typography.bodyLarge,
                         fontWeight = FontWeight.Medium,
-                        color = qualityColor(quality.worstScore)
+                        color = qualityColor(quality.worstScore),
                     )
                 }
             }
@@ -1435,7 +1425,7 @@ private fun QualityStatsSection(quality: SetQualitySummary) {
                 targetState = showRadar,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clickable { showRadar = !showRadar }
+                    .clickable { showRadar = !showRadar },
             ) { isRadar ->
                 if (isRadar) {
                     RadarChart(quality = quality)
@@ -1450,7 +1440,7 @@ private fun QualityStatsSection(quality: SetQualitySummary) {
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
                 modifier = Modifier.fillMaxWidth(),
-                textAlign = TextAlign.Center
+                textAlign = TextAlign.Center,
             )
 
             // Weakest component improvement tip
@@ -1477,7 +1467,7 @@ private fun QualitySparkline(quality: SetQualitySummary) {
                 red = (startColor.red + endColor.red) / 2f,
                 green = (startColor.green + endColor.green) / 2f,
                 blue = (startColor.blue + endColor.blue) / 2f,
-                alpha = 1f
+                alpha = 1f,
             )
         }
     } else {
@@ -1487,7 +1477,7 @@ private fun QualitySparkline(quality: SetQualitySummary) {
     Canvas(
         modifier = Modifier
             .fillMaxWidth()
-            .height(60.dp)
+            .height(60.dp),
     ) {
         val canvasWidth = size.width
         val canvasHeight = size.height
@@ -1512,7 +1502,7 @@ private fun QualitySparkline(quality: SetQualitySummary) {
                 color = segmentColors[i],
                 start = points[i],
                 end = points[i + 1],
-                strokeWidth = 2.dp.toPx()
+                strokeWidth = 2.dp.toPx(),
             )
         }
 
@@ -1521,7 +1511,7 @@ private fun QualitySparkline(quality: SetQualitySummary) {
             drawCircle(
                 color = dotColors[index],
                 radius = 3.dp.toPx(),
-                center = point
+                center = point,
             )
         }
     }
@@ -1554,7 +1544,7 @@ private fun RadarChart(quality: SetQualitySummary) {
     Column(
         modifier = Modifier.fillMaxWidth(),
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(4.dp)
+        verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
         // Top label: ROM
         Text(
@@ -1562,12 +1552,12 @@ private fun RadarChart(quality: SetQualitySummary) {
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center,
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier.fillMaxWidth(),
         )
 
         Row(
             modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically
+            verticalAlignment = Alignment.CenterVertically,
         ) {
             // Left label: Smoothness
             Text(
@@ -1575,14 +1565,14 @@ private fun RadarChart(quality: SetQualitySummary) {
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center,
-                modifier = Modifier.width(56.dp)
+                modifier = Modifier.width(56.dp),
             )
 
             // Canvas for radar chart (no text)
             Canvas(
                 modifier = Modifier
                     .weight(1f)
-                    .height(120.dp)
+                    .height(120.dp),
             ) {
                 val centerX = size.width / 2f
                 val centerY = size.height / 2f
@@ -1613,7 +1603,7 @@ private fun RadarChart(quality: SetQualitySummary) {
                         color = gridColor,
                         start = Offset(centerX, centerY),
                         end = Offset(endX, endY),
-                        strokeWidth = 1.dp.toPx()
+                        strokeWidth = 1.dp.toPx(),
                     )
                 }
 
@@ -1646,7 +1636,7 @@ private fun RadarChart(quality: SetQualitySummary) {
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center,
-                modifier = Modifier.width(56.dp)
+                modifier = Modifier.width(56.dp),
             )
         }
 
@@ -1656,7 +1646,7 @@ private fun RadarChart(quality: SetQualitySummary) {
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center,
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier.fillMaxWidth(),
         )
     }
 }
@@ -1680,7 +1670,7 @@ private fun WeakestComponentTip(quality: SetQualitySummary) {
         Component("ROM", avgRom / 30f, "Try to maintain consistent range of motion each rep"),
         Component("Velocity", avgVelocity / 25f, "Keep a steady tempo throughout the set"),
         Component("Eccentric", avgEccentric / 25f, "Focus on a controlled 2-second lowering phase"),
-        Component("Smoothness", avgSmoothness / 20f, "Avoid jerky movements -- smooth and steady wins")
+        Component("Smoothness", avgSmoothness / 20f, "Avoid jerky movements -- smooth and steady wins"),
     )
 
     val weakest = components.minByOrNull { it.percentage } ?: return
@@ -1688,27 +1678,27 @@ private fun WeakestComponentTip(quality: SetQualitySummary) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f)
+            containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f),
         ),
-        shape = RoundedCornerShape(12.dp)
+        shape = RoundedCornerShape(12.dp),
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(10.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             Icon(
                 Icons.Default.Lightbulb,
                 contentDescription = stringResource(Res.string.cd_tip),
                 modifier = Modifier.size(16.dp),
-                tint = MaterialTheme.colorScheme.secondary
+                tint = MaterialTheme.colorScheme.secondary,
             )
             Text(
                 "${weakest.name}: ${weakest.tip}",
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSecondaryContainer
+                color = MaterialTheme.colorScheme.onSecondaryContainer,
             )
         }
     }

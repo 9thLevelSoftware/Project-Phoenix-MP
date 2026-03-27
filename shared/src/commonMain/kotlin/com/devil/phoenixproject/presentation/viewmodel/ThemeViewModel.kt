@@ -16,9 +16,7 @@ import kotlinx.coroutines.launch
  * ViewModel for managing app theme preferences.
  * Uses multiplatform-settings for persistence across Android/iOS.
  */
-class ThemeViewModel(
-    private val settings: Settings
-) : ViewModel() {
+class ThemeViewModel(private val settings: Settings) : ViewModel() {
 
     private val log = Logger.withTag("ThemeViewModel")
 
@@ -40,7 +38,7 @@ class ThemeViewModel(
         return if (savedTheme != null) {
             try {
                 ThemeMode.valueOf(savedTheme)
-            } catch (e: IllegalArgumentException) {
+            } catch (_: IllegalArgumentException) {
                 log.w { "Invalid saved theme mode: $savedTheme, defaulting to SYSTEM" }
                 ThemeMode.SYSTEM
             }

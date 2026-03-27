@@ -1,8 +1,8 @@
 package com.devil.phoenixproject.data.integration
 
 import co.touchlab.kermit.Logger
-import com.devil.phoenixproject.data.sync.IntegrationSyncRequest
 import com.devil.phoenixproject.data.sync.IntegrationActivityDto
+import com.devil.phoenixproject.data.sync.IntegrationSyncRequest
 import com.devil.phoenixproject.data.sync.PortalApiClient
 import com.devil.phoenixproject.domain.model.ConnectionStatus
 import com.devil.phoenixproject.domain.model.ExternalActivity
@@ -18,10 +18,7 @@ import kotlinx.datetime.Instant
  * [ExternalActivityRepository]. Status updates are written transactionally
  * so local state always reflects the last known portal outcome.
  */
-class IntegrationManager(
-    private val apiClient: PortalApiClient,
-    private val repository: ExternalActivityRepository
-) {
+class IntegrationManager(private val apiClient: PortalApiClient, private val repository: ExternalActivityRepository) {
 
     /**
      * Connect a provider by submitting an API key to the portal Edge Function.
@@ -38,14 +35,14 @@ class IntegrationManager(
         provider: IntegrationProvider,
         apiKey: String,
         profileId: String,
-        isPaidUser: Boolean
+        isPaidUser: Boolean,
     ): Result<List<ExternalActivity>> {
         Logger.d("IntegrationManager") { "Connecting provider ${provider.key}" }
 
         val request = IntegrationSyncRequest(
             provider = provider.key,
             action = "connect",
-            apiKey = apiKey
+            apiKey = apiKey,
         )
 
         return apiClient.callIntegrationSync(request).fold(
@@ -58,7 +55,7 @@ class IntegrationManager(
                         provider = provider,
                         status = ConnectionStatus.ERROR,
                         profileId = profileId,
-                        errorMessage = response.error
+                        errorMessage = response.error,
                     )
                     Result.failure(Exception(response.error ?: "Unknown error from portal"))
                 } else {
@@ -72,7 +69,7 @@ class IntegrationManager(
                         provider = provider,
                         status = ConnectionStatus.CONNECTED,
                         profileId = profileId,
-                        lastSyncAt = currentTimeMillis()
+                        lastSyncAt = currentTimeMillis(),
                     )
                     Logger.i("IntegrationManager") {
                         "Connected ${provider.key}: ${activities.size} activities"
@@ -88,10 +85,10 @@ class IntegrationManager(
                     provider = provider,
                     status = ConnectionStatus.ERROR,
                     profileId = profileId,
-                    errorMessage = error.message
+                    errorMessage = error.message,
                 )
                 Result.failure(error)
-            }
+            },
         )
     }
 
@@ -103,16 +100,12 @@ class IntegrationManager(
      * @param profileId The local profile ID scoping the data.
      * @param isPaidUser Whether the user has an active paid subscription.
      */
-    suspend fun syncProvider(
-        provider: IntegrationProvider,
-        profileId: String,
-        isPaidUser: Boolean
-    ): Result<List<ExternalActivity>> {
+    suspend fun syncProvider(provider: IntegrationProvider, profileId: String, isPaidUser: Boolean): Result<List<ExternalActivity>> {
         Logger.d("IntegrationManager") { "Syncing provider ${provider.key}" }
 
         val request = IntegrationSyncRequest(
             provider = provider.key,
-            action = "sync"
+            action = "sync",
         )
 
         return apiClient.callIntegrationSync(request).fold(
@@ -125,7 +118,7 @@ class IntegrationManager(
                         provider = provider,
                         status = ConnectionStatus.ERROR,
                         profileId = profileId,
-                        errorMessage = response.error
+                        errorMessage = response.error,
                     )
                     Result.failure(Exception(response.error ?: "Unknown error from portal"))
                 } else {
@@ -139,7 +132,7 @@ class IntegrationManager(
                         provider = provider,
                         status = ConnectionStatus.CONNECTED,
                         profileId = profileId,
-                        lastSyncAt = currentTimeMillis()
+                        lastSyncAt = currentTimeMillis(),
                     )
                     Logger.i("IntegrationManager") {
                         "Synced ${provider.key}: ${activities.size} activities"
@@ -155,10 +148,10 @@ class IntegrationManager(
                     provider = provider,
                     status = ConnectionStatus.ERROR,
                     profileId = profileId,
-                    errorMessage = error.message
+                    errorMessage = error.message,
                 )
                 Result.failure(error)
-            }
+            },
         )
     }
 
@@ -172,15 +165,12 @@ class IntegrationManager(
      * @param provider  The integration provider to disconnect.
      * @param profileId The local profile ID scoping the data.
      */
-    suspend fun disconnectProvider(
-        provider: IntegrationProvider,
-        profileId: String
-    ): Result<Unit> {
+    suspend fun disconnectProvider(provider: IntegrationProvider, profileId: String): Result<Unit> {
         Logger.d("IntegrationManager") { "Disconnecting provider ${provider.key}" }
 
         val request = IntegrationSyncRequest(
             provider = provider.key,
-            action = "disconnect"
+            action = "disconnect",
         )
 
         // Notify portal (best-effort; we proceed regardless of outcome)
@@ -196,7 +186,7 @@ class IntegrationManager(
         repository.updateIntegrationStatus(
             provider = provider,
             status = ConnectionStatus.DISCONNECTED,
-            profileId = profileId
+            profileId = profileId,
         )
 
         Logger.i("IntegrationManager") { "Disconnected ${provider.key}" }
@@ -205,14 +195,10 @@ class IntegrationManager(
 
     // ─── Mapping ─────────────────────────────────────────────────────────────
 
-    private fun IntegrationActivityDto.toDomain(
-        provider: IntegrationProvider,
-        profileId: String,
-        isPaidUser: Boolean
-    ): ExternalActivity {
+    private fun IntegrationActivityDto.toDomain(provider: IntegrationProvider, profileId: String, isPaidUser: Boolean): ExternalActivity {
         val startEpochMillis = try {
             Instant.parse(startedAt).toEpochMilliseconds()
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             Logger.w("IntegrationManager") {
                 "Could not parse startedAt '$startedAt' for $externalId — using current time"
             }
@@ -235,7 +221,7 @@ class IntegrationManager(
             rawData = rawData,
             syncedAt = currentTimeMillis(),
             profileId = profileId,
-            needsSync = isPaidUser
+            needsSync = isPaidUser,
         )
     }
 }

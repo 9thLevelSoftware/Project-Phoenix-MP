@@ -32,7 +32,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.devil.phoenixproject.presentation.util.LocalWindowSizeClass
 import com.devil.phoenixproject.presentation.util.WindowWidthSizeClass
-import com.devil.phoenixproject.ui.theme.*
 
 /**
  * Countdown Card Component
@@ -55,7 +54,7 @@ fun CountdownCard(
     onEndWorkout: () -> Unit,
     modifier: Modifier = Modifier,
     // Issue #237: Motion-triggered set start progress (null = disabled, 0..1 = hold progress)
-    motionStartHoldProgress: Float? = null
+    motionStartHoldProgress: Float? = null,
 ) {
     // Responsive sizing based on window size class
     val windowSizeClass = LocalWindowSizeClass.current
@@ -77,9 +76,9 @@ fun CountdownCard(
         targetValue = 1.06f,
         animationSpec = infiniteRepeatable(
             animation = tween(durationMillis = 1000, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse
+            repeatMode = RepeatMode.Reverse,
         ),
-        label = "pulse"
+        label = "pulse",
     )
 
     // Background gradient
@@ -90,34 +89,34 @@ fun CountdownCard(
                 Brush.verticalGradient(
                     colors = listOf(
                         MaterialTheme.colorScheme.background,
-                        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-                    )
-                )
+                        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                    ),
+                ),
             )
             .systemBarsPadding()
-            .padding(horizontal = 24.dp, vertical = 16.dp)
+            .padding(horizontal = 24.dp, vertical = 16.dp),
     ) {
         Column(
             modifier = Modifier.fillMaxSize(),
-            horizontalAlignment = Alignment.CenterHorizontally
+            horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             // Top section: Exercise info
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
-                modifier = Modifier.padding(top = 8.dp)
+                modifier = Modifier.padding(top = 8.dp),
             ) {
                 // Progress indicator (if in routine)
                 if (currentExerciseIndex != null && totalExercises != null && totalExercises > 1) {
                     Surface(
                         color = MaterialTheme.colorScheme.primaryContainer,
-                        shape = RoundedCornerShape(16.dp)
+                        shape = RoundedCornerShape(16.dp),
                     ) {
                         Text(
                             text = "Exercise ${currentExerciseIndex + 1} of $totalExercises",
                             style = MaterialTheme.typography.labelMedium,
                             fontWeight = FontWeight.SemiBold,
                             color = MaterialTheme.colorScheme.onPrimaryContainer,
-                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
                         )
                     }
                     Spacer(modifier = Modifier.height(12.dp))
@@ -132,7 +131,7 @@ fun CountdownCard(
                     textAlign = TextAlign.Center,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(horizontal = 16.dp)
+                    modifier = Modifier.padding(horizontal = 16.dp),
                 )
             }
 
@@ -143,13 +142,13 @@ fun CountdownCard(
             val animatedHoldProgress by animateFloatAsState(
                 targetValue = motionStartHoldProgress ?: 0f,
                 animationSpec = tween(durationMillis = 100),
-                label = "motion-start-hold"
+                label = "motion-start-hold",
             )
             val motionStartArcColor = MaterialTheme.colorScheme.tertiary
 
             Box(
                 modifier = Modifier.size(countdownSize),
-                contentAlignment = Alignment.Center
+                contentAlignment = Alignment.Center,
             ) {
                 // Outer pulsing ring
                 Box(
@@ -161,10 +160,10 @@ fun CountdownCard(
                             Brush.radialGradient(
                                 colors = listOf(
                                     MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
-                                    MaterialTheme.colorScheme.primary.copy(alpha = 0.05f)
-                                )
-                            )
-                        )
+                                    MaterialTheme.colorScheme.primary.copy(alpha = 0.05f),
+                                ),
+                            ),
+                        ),
                 )
 
                 // Issue #237: Motion-start ring-fill arc overlay
@@ -175,7 +174,7 @@ fun CountdownCard(
                             startAngle = -90f,
                             sweepAngle = 360f * animatedHoldProgress,
                             useCenter = false,
-                            style = Stroke(width = 6.dp.toPx(), cap = StrokeCap.Round)
+                            style = Stroke(width = 6.dp.toPx(), cap = StrokeCap.Round),
                         )
                     }
                 }
@@ -186,7 +185,7 @@ fun CountdownCard(
                         .size(countdownSize - 24.dp)
                         .clip(CircleShape)
                         .background(MaterialTheme.colorScheme.surfaceContainerHigh),
-                    contentAlignment = Alignment.Center
+                    contentAlignment = Alignment.Center,
                 ) {
                     val countdownText = if (countdownSecondsRemaining > 0) {
                         countdownSecondsRemaining.toString()
@@ -198,10 +197,11 @@ fun CountdownCard(
                         text = countdownText,
                         fontSize = countdownFontSize,
                         fontWeight = FontWeight.Black,
-                        color = if (countdownSecondsRemaining == 0)
+                        color = if (countdownSecondsRemaining == 0) {
                             MaterialTheme.colorScheme.tertiary
-                        else
+                        } else {
                             MaterialTheme.colorScheme.primary
+                        },
                     )
                 }
             }
@@ -209,16 +209,18 @@ fun CountdownCard(
             Spacer(modifier = Modifier.weight(0.3f))
 
             // Parameters section
-            if (nextExerciseWeight != null || nextExerciseReps != null || nextExerciseMode != null) {
+            if (nextExerciseWeight != null || nextExerciseReps != null ||
+                nextExerciseMode != null
+            ) {
                 Surface(
                     modifier = Modifier.fillMaxWidth(),
                     color = MaterialTheme.colorScheme.surfaceContainerHigh,
                     shape = RoundedCornerShape(20.dp),
-                    tonalElevation = 2.dp
+                    tonalElevation = 2.dp,
                 ) {
                     Column(
                         modifier = Modifier.padding(20.dp),
-                        verticalArrangement = Arrangement.spacedBy(16.dp)
+                        verticalArrangement = Arrangement.spacedBy(16.dp),
                     ) {
                         // Section header
                         Text(
@@ -226,13 +228,13 @@ fun CountdownCard(
                             style = MaterialTheme.typography.labelMedium,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.primary,
-                            letterSpacing = 1.sp
+                            letterSpacing = 1.sp,
                         )
 
                         // Parameters in a clean grid
                         Row(
                             modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceEvenly
+                            horizontalArrangement = Arrangement.SpaceEvenly,
                         ) {
                             // Echo mode shows "Adaptive" instead of weight
                             if (isEchoMode) {
@@ -240,14 +242,14 @@ fun CountdownCard(
                                     icon = Icons.Default.FitnessCenter,
                                     label = "Weight",
                                     value = "Adaptive",
-                                    modifier = Modifier.weight(1f)
+                                    modifier = Modifier.weight(1f),
                                 )
                             } else if (nextExerciseWeight != null && formatWeight != null) {
                                 CountdownParamChip(
                                     icon = Icons.Default.FitnessCenter,
                                     label = "Weight",
                                     value = formatWeight(nextExerciseWeight),
-                                    modifier = Modifier.weight(1f)
+                                    modifier = Modifier.weight(1f),
                                 )
                             }
                             if (nextExerciseReps != null) {
@@ -255,7 +257,7 @@ fun CountdownCard(
                                     icon = Icons.Default.Repeat,
                                     label = "Reps",
                                     value = nextExerciseReps.toString(),
-                                    modifier = Modifier.weight(1f)
+                                    modifier = Modifier.weight(1f),
                                 )
                             }
                             if (nextExerciseMode != null) {
@@ -263,7 +265,7 @@ fun CountdownCard(
                                     icon = Icons.Default.Speed,
                                     label = "Mode",
                                     value = nextExerciseMode,
-                                    modifier = Modifier.weight(1f)
+                                    modifier = Modifier.weight(1f),
                                 )
                             }
                         }
@@ -278,7 +280,7 @@ fun CountdownCard(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(bottom = 8.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
+                verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 // Skip Countdown - Primary action
                 Button(
@@ -287,20 +289,20 @@ fun CountdownCard(
                         .fillMaxWidth()
                         .height(56.dp),
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.primary
+                        containerColor = MaterialTheme.colorScheme.primary,
                     ),
-                    shape = RoundedCornerShape(16.dp)
+                    shape = RoundedCornerShape(16.dp),
                 ) {
                     Icon(
                         Icons.Default.PlayArrow,
                         contentDescription = null,
-                        modifier = Modifier.size(24.dp)
+                        modifier = Modifier.size(24.dp),
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
                         text = "Start Now",
                         style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold
+                        fontWeight = FontWeight.Bold,
                     )
                 }
 
@@ -309,20 +311,20 @@ fun CountdownCard(
                     onClick = onEndWorkout,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(48.dp)
+                        .height(48.dp),
                 ) {
                     Icon(
                         Icons.Default.Close,
                         contentDescription = null,
                         modifier = Modifier.size(20.dp),
-                        tint = MaterialTheme.colorScheme.error
+                        tint = MaterialTheme.colorScheme.error,
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
                         text = "End Workout",
                         style = MaterialTheme.typography.labelLarge,
                         fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.error
+                        color = MaterialTheme.colorScheme.error,
                     )
                 }
             }
@@ -334,16 +336,11 @@ fun CountdownCard(
  * Individual parameter chip for the countdown card
  */
 @Composable
-private fun CountdownParamChip(
-    icon: ImageVector,
-    label: String,
-    value: String,
-    modifier: Modifier = Modifier
-) {
+private fun CountdownParamChip(icon: ImageVector, label: String, value: String, modifier: Modifier = Modifier) {
     Column(
         modifier = modifier.padding(horizontal = 4.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(6.dp)
+        verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         // Icon in a subtle circle
         Box(
@@ -351,13 +348,13 @@ private fun CountdownParamChip(
                 .size(36.dp)
                 .clip(CircleShape)
                 .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)),
-            contentAlignment = Alignment.Center
+            contentAlignment = Alignment.Center,
         ) {
             Icon(
                 icon,
                 contentDescription = label,
                 modifier = Modifier.size(20.dp),
-                tint = MaterialTheme.colorScheme.primary
+                tint = MaterialTheme.colorScheme.primary,
             )
         }
 
@@ -369,7 +366,7 @@ private fun CountdownParamChip(
             color = MaterialTheme.colorScheme.onSurface,
             textAlign = TextAlign.Center,
             maxLines = 1,
-            overflow = TextOverflow.Ellipsis
+            overflow = TextOverflow.Ellipsis,
         )
 
         // Label - subtle
@@ -377,7 +374,7 @@ private fun CountdownParamChip(
             text = label,
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
-            textAlign = TextAlign.Center
+            textAlign = TextAlign.Center,
         )
     }
 }
