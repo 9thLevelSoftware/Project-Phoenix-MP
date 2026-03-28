@@ -32,6 +32,7 @@ iosApp/**/*.xcworkspace/
 **/project.xcworkspace/xcuserdata/
 iosApp/**/DerivedData/
 iosApp/VitruvianPhoenix/compose-resources/
+iosApp/VitruvianPhoenix/VitruvianPhoenix/compose-resources/
 
 # Desktop
 /out/

@@ -70,38 +70,51 @@ jobs:
           echo "=== Compose resource directories ==="
           find shared/build -type d -name "composeResources" 2>/dev/null | head -10
 
-      - name: Copy Compose resources to framework bundle
+      - name: Copy Compose resources to app source directory
         run: |
-          # Compose MP looks for resources in the framework bundle when embedded as dynamic framework
-          # Copy resources into shared.framework so they can be found at runtime
-          # IMPORTANT: This must happen BEFORE creating XCFramework or symlinks
-          FRAMEWORK_PATH="shared/build/bin/iosArm64/releaseFramework/shared.framework"
-          RESOURCE_DST="$FRAMEWORK_PATH/composeResources"
+          # FIX: Compose MP's DefaultIOsResourceReader looks for resources in the
+          # app's main bundle at compose-resources/composeResources/[module]/...
+          # With isStatic=true, resources CANNOT live inside the framework — they
+          # are lost during static linking. They must be in the app bundle root.
+          #
+          # Xcode 16's fileSystemSynchronizedGroups auto-includes files in the
+          # project source directory as bundle resources. Copying here means
+          # xcodebuild archive picks them up automatically.
+          APP_SRC="iosApp/VitruvianPhoenix/VitruvianPhoenix"
+          RESOURCE_DST="$APP_SRC/compose-resources"
+          rm -rf "$RESOURCE_DST"
           mkdir -p "$RESOURCE_DST"
 
-          # Discover composeResources dirs dynamically (adapts to Compose MP version changes).
-          # Exclude framework dirs to avoid matching our own destination.
-          # Uses while-read instead of mapfile (bash 4+) for macOS bash 3.2 compatibility.
-          FOUND=false
-          while IFS= read -r d; do
-            if [ "$(find "$d" -type f 2>/dev/null | head -1)" ]; then
-              echo "Found compose resources at: $d"
-              cp -R "$d"/* "$RESOURCE_DST"/
-              FOUND=true
-              break
-            fi
-          done < <(find shared/build -type d -name composeResources \
-            -not -path "*/releaseFramework/*" \
-            -not -path "*/debugFramework/*" 2>/dev/null)
-
-          if [ "$FOUND" = true ]; then
-            echo "=== Copied compose resources to framework bundle ==="
+          # Copy processed compose resources into the compose-resources/ wrapper.
+          # The CMP runtime expects: Bundle.main/compose-resources/composeResources/[module]/...
+          PROCESSED="shared/build/processedResources/iosArm64/main"
+          if [ -d "$PROCESSED/composeResources" ]; then
+            cp -R "$PROCESSED/composeResources" "$RESOURCE_DST/"
+            echo "=== Copied compose resources to app source directory ==="
             find "$RESOURCE_DST" -type f | head -20
           else
-            echo "ERROR: No compose resources found under shared/build!"
-            echo "All composeResources dirs found:"
-            find shared/build -type d -name "composeResources" 2>/dev/null
-            exit 1
+            # Fallback: discover dynamically if processed path changed
+            FOUND=false
+            while IFS= read -r d; do
+              if [ "$(find "$d" -type f 2>/dev/null | head -1)" ]; then
+                echo "Found compose resources at: $d"
+                cp -R "$d" "$RESOURCE_DST/"
+                FOUND=true
+                break
+              fi
+            done < <(find shared/build -type d -name composeResources \
+              -not -path "*/releaseFramework/*" \
+              -not -path "*/debugFramework/*" \
+              -not -path "*/compose-resources/*" 2>/dev/null)
+
+            if [ "$FOUND" = true ]; then
+              echo "=== Copied compose resources (fallback) ==="
+              find "$RESOURCE_DST" -type f | head -20
+            else
+              echo "ERROR: No compose resources found under shared/build!"
+              find shared/build -type d -name "composeResources" 2>/dev/null
+              exit 1
+            fi
           fi
 
       - name: Create XCFramework
