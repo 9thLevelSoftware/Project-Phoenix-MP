@@ -37,6 +37,7 @@
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Info.plist,
+				"compose-resources",
 			);
 			target = DFE6BD462EEDF42200886589 /* VitruvianPhoenix */;
 		};
@@ -102,6 +103,7 @@
 				DFE6BD432EEDF42200886589 /* Sources */,
 				DFE6BD442EEDF42200886589 /* Frameworks */,
 				DFE6BD452EEDF42200886589 /* Resources */,
+				DFE6BD812EEE200000886589 /* Copy Compose Resources */,
 				DFE6BD592EEDF53700886589 /* Embed Frameworks */,
 				DFE6BD802EEE100000886589 /* Generate shared.framework dSYM */,
 			);
@@ -165,6 +167,22 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXShellScriptBuildPhase section */
+		DFE6BD812EEE200000886589 /* Copy Compose Resources */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+				"$(SRCROOT)/VitruvianPhoenix/compose-resources",
+			);
+			name = "Copy Compose Resources";
+			outputPaths = (
+				"$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/compose-resources",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "# Copy Compose Multiplatform resources preserving directory structure.\n# The fileSystemSynchronizedGroups feature flattens resource files,\n# causing locale-specific .cvr files with identical names to collide.\n# This script copies the compose-resources directory tree intact so\n# DefaultIOsResourceReader can find resources at their expected paths.\nCOMPOSE_RES=\"$SRCROOT/VitruvianPhoenix/compose-resources\"\nif [ -d \"$COMPOSE_RES\" ]; then\n    DEST=\"$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/compose-resources\"\n    rm -rf \"$DEST\"\n    mkdir -p \"$DEST\"\n    cp -R \"$COMPOSE_RES/\" \"$DEST/\"\n    echo \"Copied Compose resources to bundle: $(find \"$DEST\" -type f | wc -l | tr -d ' ') files\"\nelse\n    echo \"warning: Compose resources not found at $COMPOSE_RES (expected for local builds without Gradle resource processing)\"\nfi\n";
+		};
 		DFE6BD802EEE100000886589 /* Generate shared.framework dSYM */ = {
 			isa = PBXShellScriptBuildPhase;
 			buildActionMask = 2147483647;
