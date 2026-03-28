@@ -221,6 +221,7 @@ actual class DriverFactory {
     private fun verifySchemaIntegrity(driver: SqlDriver): Boolean {
         val checks = listOf(
             "WorkoutSession" to "profile_id",
+            "WorkoutSession" to "safetyFlags",
             "EarnedBadge" to "updatedAt",
             "PersonalRecord" to "profile_id",
         )

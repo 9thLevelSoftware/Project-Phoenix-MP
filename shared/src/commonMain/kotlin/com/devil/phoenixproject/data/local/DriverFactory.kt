@@ -40,6 +40,29 @@ private val knownLegacySchemaHeals = listOf(
         column = "cableCount",
         sql = "ALTER TABLE WorkoutSession ADD COLUMN cableCount INTEGER",
     ),
+    // Safety columns were added directly to VitruvianDatabase.sq ("parity with parent v23")
+    // but never given a numbered migration or schema heal. Every upgrade user is missing them.
+    // SQLDelight's generated mapper expects them — queries crash without them.
+    SchemaHealOperation(
+        table = "WorkoutSession",
+        column = "safetyFlags",
+        sql = "ALTER TABLE WorkoutSession ADD COLUMN safetyFlags INTEGER NOT NULL DEFAULT 0",
+    ),
+    SchemaHealOperation(
+        table = "WorkoutSession",
+        column = "deloadWarningCount",
+        sql = "ALTER TABLE WorkoutSession ADD COLUMN deloadWarningCount INTEGER NOT NULL DEFAULT 0",
+    ),
+    SchemaHealOperation(
+        table = "WorkoutSession",
+        column = "romViolationCount",
+        sql = "ALTER TABLE WorkoutSession ADD COLUMN romViolationCount INTEGER NOT NULL DEFAULT 0",
+    ),
+    SchemaHealOperation(
+        table = "WorkoutSession",
+        column = "spotterActivations",
+        sql = "ALTER TABLE WorkoutSession ADD COLUMN spotterActivations INTEGER NOT NULL DEFAULT 0",
+    ),
     SchemaHealOperation(
         table = "WorkoutSession",
         column = "profile_id",
