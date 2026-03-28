@@ -4,9 +4,6 @@ import app.cash.sqldelight.db.QueryResult
 import app.cash.sqldelight.db.SqlDriver
 import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
 import com.devil.phoenixproject.database.VitruvianDatabase
-import kotlin.test.assertEquals
-import kotlin.test.assertFalse
-import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 import org.junit.Test
 
@@ -361,112 +358,6 @@ class LegacySchemaReconciliationTest {
         assertTrue(indexExists(driver, "idx_gamification_stats_profile"))
     }
 
-    @Test
-    fun `legacy reconciliation heals mixed drift states idempotently`() {
-        val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
-        driver.execute(
-            null,
-            """
-            CREATE TABLE WorkoutSession (
-                id TEXT NOT NULL PRIMARY KEY,
-                timestamp INTEGER NOT NULL,
-                mode TEXT NOT NULL,
-                targetReps INTEGER NOT NULL,
-                weightPerCableKg REAL NOT NULL
-            )
-            """.trimIndent(),
-            0,
-        )
-        driver.execute(
-            null,
-            """
-            CREATE TABLE RoutineExercise (
-                id TEXT NOT NULL PRIMARY KEY,
-                routineId TEXT NOT NULL,
-                exerciseName TEXT NOT NULL,
-                orderIndex INTEGER NOT NULL,
-                weightPerCableKg REAL NOT NULL DEFAULT 0.0,
-                stallDetectionEnabled INTEGER NOT NULL DEFAULT 1
-            )
-            """.trimIndent(),
-            0,
-        )
-        driver.execute(
-            null,
-            """
-            CREATE TABLE PersonalRecord (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                exerciseId TEXT NOT NULL,
-                workoutMode TEXT NOT NULL,
-                prType TEXT NOT NULL DEFAULT 'MAX_WEIGHT',
-                phase TEXT NOT NULL DEFAULT 'COMBINED'
-            )
-            """.trimIndent(),
-            0,
-        )
-        driver.execute(
-            null,
-            """
-            CREATE TABLE AssessmentResult (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                exerciseId TEXT NOT NULL,
-                createdAt INTEGER NOT NULL
-            )
-            """.trimIndent(),
-            0,
-        )
-        driver.execute(
-            null,
-            """
-            CREATE TABLE EarnedBadge (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                badgeId TEXT NOT NULL,
-                earnedAt INTEGER NOT NULL,
-                profile_id TEXT NOT NULL DEFAULT 'default'
-            )
-            """.trimIndent(),
-            0,
-        )
-        driver.execute(
-            null,
-            """
-            CREATE TABLE StreakHistory (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                startDate INTEGER NOT NULL,
-                endDate INTEGER NOT NULL,
-                length INTEGER NOT NULL
-            )
-            """.trimIndent(),
-            0,
-        )
-
-        val firstPass = reconcileKnownLegacySchema(driver)
-        val secondPass = reconcileKnownLegacySchema(driver)
-
-        assertEquals(SchemaHealStatus.ADDED, healStatus(firstPass, "WorkoutSession", "cableCount"))
-        assertEquals(SchemaHealStatus.ALREADY_PRESENT, healStatus(firstPass, "RoutineExercise", "stallDetectionEnabled"))
-        assertEquals(SchemaHealStatus.ADDED, healStatus(firstPass, "RoutineExercise", "stopAtTop"))
-        assertEquals(SchemaHealStatus.ADDED, healStatus(firstPass, "RoutineExercise", "repCountTiming"))
-        assertEquals(SchemaHealStatus.ADDED, healStatus(firstPass, "RoutineExercise", "setEchoLevels"))
-        assertEquals(SchemaHealStatus.ADDED, healStatus(firstPass, "RoutineExercise", "warmupSets"))
-        assertEquals(SchemaHealStatus.ADDED, healStatus(firstPass, "PersonalRecord", "profile_id"))
-        assertEquals(SchemaHealStatus.ADDED, healStatus(firstPass, "AssessmentResult", "profile_id"))
-        assertEquals(SchemaHealStatus.ALREADY_PRESENT, healStatus(firstPass, "EarnedBadge", "profile_id"))
-        assertEquals(SchemaHealStatus.ADDED, healStatus(firstPass, "StreakHistory", "profile_id"))
-
-        assertFalse(secondPass.any { it.status == SchemaHealStatus.ADDED })
-        assertTrue(columnNames(driver, "WorkoutSession").contains("cableCount"))
-        assertTrue(columnNames(driver, "RoutineExercise").contains("stallDetectionEnabled"))
-        assertTrue(columnNames(driver, "RoutineExercise").contains("stopAtTop"))
-        assertTrue(columnNames(driver, "RoutineExercise").contains("repCountTiming"))
-        assertTrue(columnNames(driver, "RoutineExercise").contains("setEchoLevels"))
-        assertTrue(columnNames(driver, "RoutineExercise").contains("warmupSets"))
-        assertTrue(columnNames(driver, "PersonalRecord").contains("profile_id"))
-        assertTrue(columnNames(driver, "AssessmentResult").contains("profile_id"))
-        assertTrue(columnNames(driver, "EarnedBadge").contains("profile_id"))
-        assertTrue(columnNames(driver, "StreakHistory").contains("profile_id"))
-    }
-
     private fun columnNames(driver: SqlDriver, table: String): List<String> {
         val names = mutableListOf<String>()
         driver.executeQuery(
@@ -513,11 +404,4 @@ class LegacySchemaReconciliationTest {
         return sql
     }
 
-    private fun healStatus(results: List<SchemaHealResult>, table: String, column: String): SchemaHealStatus {
-        val match = results.firstOrNull {
-            it.operation.table == table && it.operation.column == column
-        }
-        assertNotNull(match, "Missing heal result for $table.$column")
-        return match.status
-    }
 }

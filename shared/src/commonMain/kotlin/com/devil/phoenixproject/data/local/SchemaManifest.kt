@@ -16,9 +16,10 @@ import app.cash.sqldelight.db.SqlDriver
 // ============================================================
 
 // ==================== DATA CLASSES ====================
-// NOTE: SchemaHealOperation is defined in DriverFactory.kt (same package) and
-// reused here. It is the canonical column-heal type shared between the legacy
-// reconcileKnownLegacySchema() path and this new full-manifest path.
+
+internal data class SchemaHealOperation(val table: String, val column: String, val sql: String) {
+    val target: String get() = "$table.$column"
+}
 
 internal data class SchemaTableOperation(val table: String, val createSql: String)
 
