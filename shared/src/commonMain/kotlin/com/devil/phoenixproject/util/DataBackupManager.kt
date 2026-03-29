@@ -416,6 +416,10 @@ abstract class BaseDataBackupManager(
             // existingPRIds removed — upsertPR handles duplicates via business-key INSERT OR REPLACE
             val existingCycleIds = queries.selectAllTrainingCyclesSync().executeAsList().map { it.id }.toSet()
             val existingUserProfileIds = queries.selectAllUserProfileIds().executeAsList().toSet()
+            // Resolve the active profile for adoption of skipped records.
+            // Uses the DB active profile (not the backup's profileId) so legacy backups
+            // with null profileId don't accidentally reassign visible data to "default".
+            val activeProfileId = queries.getActiveProfile().executeAsOneOrNull()?.id ?: "default"
             val importRoutineNameResolutionContext = buildRoutineNameResolutionContextFromBackup(
                 backup.data.routines,
                 backup.data.routineExercises,
@@ -445,6 +449,10 @@ abstract class BaseDataBackupManager(
             var earnedBadgesImported = 0
             var streakHistoryImported = 0
             var gamificationStatsImported = false
+
+            // Track adopted (profile_id updated) records
+            var sessionsAdopted = 0
+            var routinesAdopted = 0
 
             // Wrap all imports in a transaction for atomicity
             database.transaction {
@@ -516,6 +524,16 @@ abstract class BaseDataBackupManager(
                         )
                         sessionsImported++
                     } else {
+                        // Adopt orphaned records into the active profile (fixes #324).
+                        // Only adopt when the backup row has no explicit profile (legacy)
+                        // or already targets the active profile. If the backup explicitly
+                        // says the row belongs to a different profile, leave it alone to
+                        // avoid cross-contaminating multi-profile restores.
+                        val backupProfileId = session.profileId
+                        if (backupProfileId == null || backupProfileId == activeProfileId) {
+                            queries.adoptSessionProfile(profileId = activeProfileId, id = session.id)
+                            sessionsAdopted++
+                        }
                         sessionsSkipped++
                     }
                 }
@@ -558,6 +576,13 @@ abstract class BaseDataBackupManager(
                         )
                         routinesImported++
                     } else {
+                        // Same adoption guard as sessions — only adopt when backup has
+                        // no explicit profile or targets the active profile.
+                        val backupProfileId = routine.profileId
+                        if (backupProfileId == null || backupProfileId == activeProfileId) {
+                            queries.adoptRoutineProfile(profileId = activeProfileId, id = routine.id)
+                            routinesAdopted++
+                        }
                         routinesSkipped++
                     }
                 }
@@ -849,6 +874,10 @@ abstract class BaseDataBackupManager(
                     )
                     gamificationStatsImported = true
                 }
+            }
+
+            if (sessionsAdopted > 0 || routinesAdopted > 0) {
+                Logger.i { "Import adopted $sessionsAdopted session(s) and $routinesAdopted routine(s) into active profile" }
             }
 
             Result.success(

@@ -1607,6 +1607,16 @@ INSERT OR IGNORE INTO StreakHistory (startDate, endDate, length, profile_id) VAL
 insertUserProfileIgnore:
 INSERT OR IGNORE INTO UserProfile (id, name, colorIndex, createdAt, isActive) VALUES (?, ?, ?, ?, ?);
 
+-- ==================== PROFILE ADOPTION (restore fix) ====================
+-- Update profile_id on records that exist but belong to a different profile.
+-- Used during backup restore to "adopt" orphaned data into the active profile.
+
+adoptSessionProfile:
+UPDATE WorkoutSession SET profile_id = :profileId WHERE id = :id AND profile_id != :profileId;
+
+adoptRoutineProfile:
+UPDATE Routine SET profile_id = :profileId WHERE id = :id AND profile_id != :profileId;
+
 -- ==================== USER PROFILES ====================
 -- User Profiles for multi-user support
 

@@ -85,6 +85,15 @@ class SqlDelightUserProfileRepository(private val database: VitruvianDatabase) :
             )
         }
         refreshProfilesSync()
+        // If no profile is active (e.g., after a migration or data corruption),
+        // activate an existing profile so data filtered by profile_id remains visible.
+        if (_activeProfile.value == null && _allProfiles.value.isNotEmpty()) {
+            // Prefer "default" if it exists; otherwise activate the first available profile.
+            val targetId = _allProfiles.value.firstOrNull { it.id == "default" }?.id
+                ?: _allProfiles.value.first().id
+            queries.setActiveProfile(targetId)
+            refreshProfilesSync()
+        }
     }
 
     private fun refreshProfilesSync() {
