@@ -83,8 +83,8 @@ class WorkoutStateTest {
     fun `WorkoutState SetSummary stores burnoutReps`() {
         val state = WorkoutState.SetSummary(
             metrics = emptyList(),
-            peakPower = 500f,
-            averagePower = 300f,
+            peakLoadKgPerCable = 500f,
+            avgLoadKgPerCable = 300f,
             repCount = 15,
             warmupReps = 3,
             workingReps = 8,
@@ -99,8 +99,8 @@ class WorkoutStateTest {
     fun `WorkoutState SetSummary burnoutReps defaults to zero`() {
         val state = WorkoutState.SetSummary(
             metrics = emptyList(),
-            peakPower = 500f,
-            averagePower = 300f,
+            peakLoadKgPerCable = 500f,
+            avgLoadKgPerCable = 300f,
             repCount = 10,
             warmupReps = 2,
             workingReps = 8,

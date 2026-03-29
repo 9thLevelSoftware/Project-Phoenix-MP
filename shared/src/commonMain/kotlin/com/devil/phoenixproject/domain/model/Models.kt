@@ -70,8 +70,8 @@ sealed class WorkoutState {
     object Active : WorkoutState()
     data class SetSummary(
         val metrics: List<WorkoutMetric>,
-        val peakPower: Float,
-        val averagePower: Float,
+        val peakLoadKgPerCable: Float,
+        val avgLoadKgPerCable: Float,
         val repCount: Int,
         val durationMs: Long = 0L,
         val totalVolumeKg: Float = 0f,
@@ -538,8 +538,8 @@ fun WorkoutSession.toSetSummary(): WorkoutState.SetSummary? {
 
     return WorkoutState.SetSummary(
         metrics = emptyList(),
-        peakPower = 0f,
-        averagePower = 0f,
+        peakLoadKgPerCable = 0f,
+        avgLoadKgPerCable = 0f,
         repCount = totalReps,
         durationMs = duration,
         totalVolumeKg = effectiveTotalVolumeKg(),

@@ -555,8 +555,8 @@ private fun WorkoutTabSetSummaryPreview() {
             ),
             workoutState = WorkoutState.SetSummary(
                 metrics = mockMetrics,
-                peakPower = 450f,
-                averagePower = 320f,
+                peakLoadKgPerCable = 27.5f,
+                avgLoadKgPerCable = 25.0f,
                 repCount = 12,
                 durationMs = 95000L, // 1:35
                 totalVolumeKg = 600f, // 12 reps * 25kg * 2 cables
@@ -639,8 +639,8 @@ private fun WorkoutTabSetSummaryAutoplayPreview() {
             ),
             workoutState = WorkoutState.SetSummary(
                 metrics = emptyList(),
-                peakPower = 380f,
-                averagePower = 280f,
+                peakLoadKgPerCable = 22.0f,
+                avgLoadKgPerCable = 20.0f,
                 repCount = 15,
                 durationMs = 120000L, // 2:00
                 totalVolumeKg = 600f,

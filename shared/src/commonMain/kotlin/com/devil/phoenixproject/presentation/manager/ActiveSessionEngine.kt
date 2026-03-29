@@ -373,8 +373,8 @@ class ActiveSessionEngine(
         if (metrics.isEmpty()) {
             return WorkoutState.SetSummary(
                 metrics = metrics,
-                peakPower = 0f,
-                averagePower = 0f,
+                peakLoadKgPerCable = 0f,
+                avgLoadKgPerCable = 0f,
                 repCount = repCount,
                 cableCount = 1,
                 heaviestLiftKgPerCable = fallbackWeightKg,
@@ -485,8 +485,8 @@ class ActiveSessionEngine(
             }
         }
 
-        val peakPower = heaviestLiftKgPerCable
-        val averagePower = if (isSingleCable) {
+        val peakLoadKgPerCable = heaviestLiftKgPerCable
+        val avgLoadKgPerCable = if (isSingleCable) {
             metrics.map { maxOf(it.loadA, it.loadB) }.average().toFloat()
         } else {
             metrics.map { it.totalLoad / 2f }.average().toFloat()
@@ -548,8 +548,8 @@ class ActiveSessionEngine(
 
         return WorkoutState.SetSummary(
             metrics = metrics,
-            peakPower = peakPower,
-            averagePower = averagePower,
+            peakLoadKgPerCable = peakLoadKgPerCable,
+            avgLoadKgPerCable = avgLoadKgPerCable,
             repCount = repCount,
             durationMs = durationMs,
             totalVolumeKg = totalVolumeKg,
