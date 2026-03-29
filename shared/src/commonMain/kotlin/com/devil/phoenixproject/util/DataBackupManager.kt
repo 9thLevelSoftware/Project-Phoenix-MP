@@ -416,6 +416,10 @@ abstract class BaseDataBackupManager(
             // existingPRIds removed — upsertPR handles duplicates via business-key INSERT OR REPLACE
             val existingCycleIds = queries.selectAllTrainingCyclesSync().executeAsList().map { it.id }.toSet()
             val existingUserProfileIds = queries.selectAllUserProfileIds().executeAsList().toSet()
+            // Resolve the active profile for adoption of skipped records.
+            // Uses the DB active profile (not the backup's profileId) so legacy backups
+            // with null profileId don't accidentally reassign visible data to "default".
+            val activeProfileId = queries.getActiveProfile().executeAsOneOrNull()?.id ?: "default"
             val importRoutineNameResolutionContext = buildRoutineNameResolutionContextFromBackup(
                 backup.data.routines,
                 backup.data.routineExercises,
@@ -522,8 +526,7 @@ abstract class BaseDataBackupManager(
                     } else {
                         // Adopt: if session exists but has a different profile_id, update it
                         // so it becomes visible under the active profile (fixes #324).
-                        val targetProfileId = session.profileId ?: "default"
-                        queries.adoptSessionProfile(profileId = targetProfileId, id = session.id)
+                        queries.adoptSessionProfile(profileId = activeProfileId, id = session.id)
                         sessionsAdopted++
                         sessionsSkipped++
                     }
@@ -569,8 +572,7 @@ abstract class BaseDataBackupManager(
                     } else {
                         // Adopt: if routine exists but has a different profile_id, update it
                         // so it becomes visible under the active profile (fixes #324).
-                        val targetProfileId = routine.profileId ?: "default"
-                        queries.adoptRoutineProfile(profileId = targetProfileId, id = routine.id)
+                        queries.adoptRoutineProfile(profileId = activeProfileId, id = routine.id)
                         routinesAdopted++
                         routinesSkipped++
                     }

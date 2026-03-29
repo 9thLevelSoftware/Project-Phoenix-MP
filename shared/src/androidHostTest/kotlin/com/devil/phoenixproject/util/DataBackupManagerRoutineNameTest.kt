@@ -468,6 +468,135 @@ class DataBackupManagerRoutineNameTest {
         assertTrue(result.exceptionOrNull()?.message?.contains("Session not found") == true)
     }
 
+    /**
+     * Regression test for #324: restoring a legacy backup (null profileId) while the active
+     * profile is NOT "default" must adopt skipped records into the active profile, not
+     * reassign them to "default" (which would make them invisible).
+     */
+    @Test
+    fun `restore legacy backup adopts skipped records into active profile not default`() = runTest {
+        val queries = database.vitruvianDatabaseQueries
+
+        // 1. Create a non-default profile and make it active
+        queries.insertProfile(
+            id = "userA",
+            name = "User A",
+            colorIndex = 1L,
+            createdAt = 1_700_000_000_000,
+            isActive = 1L,
+        )
+
+        // 2. Insert a session and routine owned by "userA"
+        queries.insertSession(
+            id = "session-existing",
+            timestamp = 1_700_000_000_000,
+            mode = "Old School",
+            targetReps = 10,
+            weightPerCableKg = 20.0,
+            progressionKg = 0.0,
+            duration = 60_000L,
+            totalReps = 10,
+            warmupReps = 0,
+            workingReps = 10,
+            isJustLift = 0,
+            stopAtTop = 0,
+            eccentricLoad = 100,
+            echoLevel = 0,
+            exerciseId = "exercise-bench",
+            exerciseName = "Bench Press",
+            routineSessionId = null,
+            routineName = null,
+            routineId = null,
+            safetyFlags = 0,
+            deloadWarningCount = 0,
+            romViolationCount = 0,
+            spotterActivations = 0,
+            peakForceConcentricA = null,
+            peakForceConcentricB = null,
+            peakForceEccentricA = null,
+            peakForceEccentricB = null,
+            avgForceConcentricA = null,
+            avgForceConcentricB = null,
+            avgForceEccentricA = null,
+            avgForceEccentricB = null,
+            heaviestLiftKg = null,
+            totalVolumeKg = null,
+            cableCount = null,
+            estimatedCalories = null,
+            warmupAvgWeightKg = null,
+            workingAvgWeightKg = null,
+            burnoutAvgWeightKg = null,
+            peakWeightKg = null,
+            rpe = null,
+            avgMcvMmS = null,
+            avgAsymmetryPercent = null,
+            totalVelocityLossPercent = null,
+            dominantSide = null,
+            strengthProfile = null,
+            formScore = null,
+            profile_id = "userA",
+        )
+        queries.insertRoutine(
+            id = "routine-existing",
+            name = "Upper Day",
+            description = "",
+            createdAt = 1_700_000_000_000,
+            lastUsed = null,
+            useCount = 3,
+            profile_id = "userA",
+        )
+
+        // 3. Build a legacy backup with null profileId containing the same IDs
+        val legacyBackup = BackupData(
+            version = 1,
+            exportedAt = "2026-03-29T00:00:00Z",
+            appVersion = "test",
+            data = BackupContent(
+                workoutSessions = listOf(
+                    WorkoutSessionBackup(
+                        id = "session-existing",
+                        timestamp = 1_700_000_000_000,
+                        mode = "Old School",
+                        targetReps = 10,
+                        weightPerCableKg = 20f,
+                        progressionKg = 0f,
+                        duration = 60_000L,
+                        totalReps = 10,
+                        warmupReps = 0,
+                        workingReps = 10,
+                        isJustLift = false,
+                        stopAtTop = false,
+                        exerciseId = "exercise-bench",
+                        exerciseName = "Bench Press",
+                        profileId = null, // legacy backup — no profileId
+                    ),
+                ),
+                routines = listOf(
+                    RoutineBackup(
+                        id = "routine-existing",
+                        name = "Upper Day",
+                        createdAt = 1_700_000_000_000,
+                        profileId = null, // legacy backup — no profileId
+                    ),
+                ),
+            ),
+        )
+
+        // 4. Import the legacy backup
+        val result = backupManager.importFromJson(testJson.encodeToString(legacyBackup))
+        assertTrue(result.isSuccess)
+
+        // 5. Verify: records should still belong to "userA" (the active profile),
+        //    NOT reassigned to "default"
+        val session = queries.selectSessionById("session-existing").executeAsOneOrNull()
+        assertNotNull(session)
+        assertEquals("userA", session.profile_id, "Skipped session must stay in active profile, not be reassigned to default")
+
+        val routine = queries.selectRoutineById("routine-existing").executeAsOneOrNull()
+        assertNotNull(routine)
+        assertEquals("userA", routine.profile_id, "Skipped routine must stay in active profile, not be reassigned to default")
+    }
+
     private fun buildRoutine(routineId: String, routineName: String, exerciseId: String, exerciseName: String): Routine {
         val exercise = Exercise(
             id = exerciseId,
