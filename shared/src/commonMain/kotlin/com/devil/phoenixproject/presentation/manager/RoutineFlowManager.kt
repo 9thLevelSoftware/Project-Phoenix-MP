@@ -11,6 +11,7 @@ import com.devil.phoenixproject.domain.usecase.ResolveRoutineWeightsUseCase
 import com.devil.phoenixproject.util.Constants
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
@@ -72,14 +73,20 @@ class RoutineFlowManager(
 
     init {
         // Collector #1: Load routines (filter out cycle template routines)
+        // Uses flatMapLatest on activeProfile to reactively update when the profile
+        // changes — matches the pattern used by HistoryManager for sessions/PRs.
         // CRITICAL: try-catch required — on Kotlin/Native (iOS), unhandled exceptions
         // in scope.launch call abort(), causing SIGABRT crash on launch.
         scope.launch {
             try {
-                val activeProfileId = userProfileRepository.activeProfile.value?.id ?: "default"
-                workoutRepository.getAllRoutines(profileId = activeProfileId).collect { routinesList ->
-                    coordinator._routines.value = routinesList.filter { !it.id.startsWith("cycle_routine_") }
-                }
+                userProfileRepository.activeProfile
+                    .flatMapLatest { profile ->
+                        val profileId = profile?.id ?: "default"
+                        workoutRepository.getAllRoutines(profileId = profileId)
+                    }
+                    .collect { routinesList ->
+                        coordinator._routines.value = routinesList.filter { !it.id.startsWith("cycle_routine_") }
+                    }
             } catch (e: Exception) {
                 Logger.e(e) { "Error loading routines in RoutineFlowManager init" }
             }

@@ -446,6 +446,10 @@ abstract class BaseDataBackupManager(
             var streakHistoryImported = 0
             var gamificationStatsImported = false
 
+            // Track adopted (profile_id updated) records
+            var sessionsAdopted = 0
+            var routinesAdopted = 0
+
             // Wrap all imports in a transaction for atomicity
             database.transaction {
                 // Import workout sessions
@@ -516,6 +520,11 @@ abstract class BaseDataBackupManager(
                         )
                         sessionsImported++
                     } else {
+                        // Adopt: if session exists but has a different profile_id, update it
+                        // so it becomes visible under the active profile (fixes #324).
+                        val targetProfileId = session.profileId ?: "default"
+                        queries.adoptSessionProfile(profileId = targetProfileId, id = session.id)
+                        sessionsAdopted++
                         sessionsSkipped++
                     }
                 }
@@ -558,6 +567,11 @@ abstract class BaseDataBackupManager(
                         )
                         routinesImported++
                     } else {
+                        // Adopt: if routine exists but has a different profile_id, update it
+                        // so it becomes visible under the active profile (fixes #324).
+                        val targetProfileId = routine.profileId ?: "default"
+                        queries.adoptRoutineProfile(profileId = targetProfileId, id = routine.id)
+                        routinesAdopted++
                         routinesSkipped++
                     }
                 }
@@ -849,6 +863,10 @@ abstract class BaseDataBackupManager(
                     )
                     gamificationStatsImported = true
                 }
+            }
+
+            if (sessionsAdopted > 0 || routinesAdopted > 0) {
+                Logger.i { "Import adopted $sessionsAdopted session(s) and $routinesAdopted routine(s) into active profile" }
             }
 
             Result.success(

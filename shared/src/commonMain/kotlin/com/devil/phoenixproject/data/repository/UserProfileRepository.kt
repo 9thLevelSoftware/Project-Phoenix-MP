@@ -85,6 +85,12 @@ class SqlDelightUserProfileRepository(private val database: VitruvianDatabase) :
             )
         }
         refreshProfilesSync()
+        // If no profile is active (e.g., after a migration or data corruption),
+        // activate the "default" profile so data filtered by profile_id remains visible.
+        if (_activeProfile.value == null && _allProfiles.value.isNotEmpty()) {
+            queries.setActiveProfile("default")
+            refreshProfilesSync()
+        }
     }
 
     private fun refreshProfilesSync() {
