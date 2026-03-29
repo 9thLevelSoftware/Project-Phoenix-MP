@@ -2,15 +2,35 @@ package com.devil.phoenixproject.presentation.screen
 
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.navigation.NavController
 import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.data.repository.GamificationRepository
 import com.devil.phoenixproject.data.repository.UserProfileRepository
-import com.devil.phoenixproject.domain.model.*
+import com.devil.phoenixproject.domain.model.Badge
+import com.devil.phoenixproject.domain.model.PRCelebrationEvent
+import com.devil.phoenixproject.domain.model.RoutineFlowState
+import com.devil.phoenixproject.domain.model.WorkoutState
 import com.devil.phoenixproject.presentation.components.BatchedBadgeCelebrationDialog
 import com.devil.phoenixproject.presentation.components.ConnectionErrorDialog
 import com.devil.phoenixproject.presentation.components.PRCelebrationDialog
@@ -22,8 +42,16 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.koinInject
-import vitruvianprojectphoenix.shared.generated.resources.*
 import vitruvianprojectphoenix.shared.generated.resources.Res
+import vitruvianprojectphoenix.shared.generated.resources.action_cancel
+import vitruvianprojectphoenix.shared.generated.resources.action_exit
+import vitruvianprojectphoenix.shared.generated.resources.end_workout
+import vitruvianprojectphoenix.shared.generated.resources.exit_workout_message
+import vitruvianprojectphoenix.shared.generated.resources.exit_workout_title
+import vitruvianprojectphoenix.shared.generated.resources.skip_exercise
+import vitruvianprojectphoenix.shared.generated.resources.stop_current_set_message
+import vitruvianprojectphoenix.shared.generated.resources.stop_current_set_title
+import vitruvianprojectphoenix.shared.generated.resources.stop_set
 
 /**
  * Active Workout screen - displays workout controls and metrics during an active workout.
@@ -163,11 +191,18 @@ fun ActiveWorkoutScreen(navController: NavController, viewModel: MainViewModel, 
 
             if (isWorkoutActive) {
                 if (isRoutineFlow) {
-                    // Routine flow: Stop and return to SetReady for current set
-                    // This allows user to redo the set or navigate to a different set
+                    // Issue #320: When reps have been completed, stopAndReturnToSetReady
+                    // routes through handleSetCompletion (saves reps, shows summary,
+                    // auto-advances to rest timer). Only navigate to SetReady when
+                    // no reps were completed (true "retry from scratch" scenario).
+                    // Read fresh from StateFlow — the composed `repCount` is stale inside
+                    // this LaunchedEffect(Unit) callback.
+                    val hasCompletedReps = viewModel.repCount.value.workingReps > 0
                     viewModel.stopAndReturnToSetReady()
-                    navController.navigate(NavigationRoutes.SetReady.route) {
-                        popUpTo(NavigationRoutes.RoutineOverview.route) { inclusive = false }
+                    if (!hasCompletedReps) {
+                        navController.navigate(NavigationRoutes.SetReady.route) {
+                            popUpTo(NavigationRoutes.RoutineOverview.route) { inclusive = false }
+                        }
                     }
                 } else {
                     // Non-routine (Just Lift, Single Exercise): Show exit confirmation dialog
@@ -418,11 +453,15 @@ fun ActiveWorkoutScreen(navController: NavController, viewModel: MainViewModel, 
                 confirmButton = {
                     Button(
                         onClick = {
+                            // Issue #320: When reps completed, save and advance (no nav to SetReady)
+                            val hasCompletedReps = viewModel.repCount.value.workingReps > 0
                             viewModel.stopAndReturnToSetReady()
                             showExitConfirmation = false
-                            navController.navigate(NavigationRoutes.SetReady.route) {
-                                popUpTo(NavigationRoutes.RoutineOverview.route) {
-                                    inclusive = false
+                            if (!hasCompletedReps) {
+                                navController.navigate(NavigationRoutes.SetReady.route) {
+                                    popUpTo(NavigationRoutes.RoutineOverview.route) {
+                                        inclusive = false
+                                    }
                                 }
                             }
                         },

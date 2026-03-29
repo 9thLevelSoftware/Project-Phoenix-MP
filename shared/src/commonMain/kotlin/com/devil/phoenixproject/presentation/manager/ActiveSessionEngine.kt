@@ -17,7 +17,25 @@ import com.devil.phoenixproject.data.repository.TrainingCycleRepository
 import com.devil.phoenixproject.data.repository.UserProfileRepository
 import com.devil.phoenixproject.data.repository.WorkoutRepository
 import com.devil.phoenixproject.data.sync.SyncTriggerManager
-import com.devil.phoenixproject.domain.model.*
+import com.devil.phoenixproject.domain.model.CompletedSet
+import com.devil.phoenixproject.domain.model.ConnectionStatus
+import com.devil.phoenixproject.domain.model.HapticEvent
+import com.devil.phoenixproject.domain.model.IntegrationProvider
+import com.devil.phoenixproject.domain.model.ProgramMode
+import com.devil.phoenixproject.domain.model.RepCount
+import com.devil.phoenixproject.domain.model.RepCountTiming
+import com.devil.phoenixproject.domain.model.RepMetricData
+import com.devil.phoenixproject.domain.model.RepType
+import com.devil.phoenixproject.domain.model.Routine
+import com.devil.phoenixproject.domain.model.RoutineExercise
+import com.devil.phoenixproject.domain.model.RoutineFlowState
+import com.devil.phoenixproject.domain.model.SetType
+import com.devil.phoenixproject.domain.model.WorkoutMetric
+import com.devil.phoenixproject.domain.model.WorkoutParameters
+import com.devil.phoenixproject.domain.model.WorkoutSession
+import com.devil.phoenixproject.domain.model.WorkoutState
+import com.devil.phoenixproject.domain.model.currentTimeMillis
+import com.devil.phoenixproject.domain.model.generateUUID
 import com.devil.phoenixproject.domain.replay.RepBoundaryDetector
 import com.devil.phoenixproject.domain.usecase.RepCounterFromMachine
 import com.devil.phoenixproject.getPlatform
@@ -25,8 +43,6 @@ import com.devil.phoenixproject.util.BlePacketFactory
 import com.devil.phoenixproject.util.Constants
 import com.devil.phoenixproject.util.DataBackupManager
 import com.devil.phoenixproject.util.KmpUtils
-import kotlin.coroutines.cancellation.CancellationException
-import kotlin.math.ceil
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -36,6 +52,8 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlin.coroutines.cancellation.CancellationException
+import kotlin.math.ceil
 
 /**
  * Handles all workout lifecycle logic: start/stop, rep processing, auto-stop,
@@ -114,6 +132,9 @@ class ActiveSessionEngine(
 
         /** Clear cycle context */
         fun clearCycleContext()
+
+        /** Proceed from summary with full bookkeeping (RPE clear, exercise completion, routine check) */
+        fun proceedFromSummary()
     }
 
     /**
@@ -2071,6 +2092,25 @@ class ActiveSessionEngine(
         // C1: Atomic compareAndSet prevents TOCTOU race
         if (!coordinator.stopWorkoutInProgress.compareAndSet(expect = false, update = true)) return
 
+        // Issue #320: When user has completed working reps in a real routine AND the set is still
+        // Active, save partial reps and advance to next set instead of discarding.
+        // The Active check is critical: _repCount isn't cleared until the next set starts,
+        // so pressing Back during SetSummary/Resting would also match workingReps > 0 and
+        // double-save the set. Only intercept when genuinely mid-set.
+        // Excludes temp single-exercise routines (temp_single_*) — those should use the
+        // original discard-and-retry behavior since there's no multi-set routine to advance.
+        val isActiveSet = coordinator._workoutState.value is WorkoutState.Active
+        val hasCompletedReps = coordinator._repCount.value.workingReps > 0
+        val isRealRoutine = !isSingleExerciseMode(coordinator)
+
+        if (isActiveSet && hasCompletedReps && isRealRoutine) {
+            Logger.d { "stopAndReturnToSetReady: Issue #320 - workingReps=${coordinator._repCount.value.workingReps} > 0, routing through handleSetCompletion to save reps and advance" }
+            // Release stop guard before delegating — handleSetCompletion uses its own atomic guard (setCompletionInProgress)
+            coordinator.stopWorkoutInProgress.value = false
+            handleSetCompletion()
+            return
+        }
+
         coordinator.workoutJob?.cancel()
         coordinator.workoutJob = null
         coordinator.restTimerJob?.cancel()
@@ -2657,8 +2697,24 @@ class ActiveSessionEngine(
                     Logger.d("Routine mode: Parent-aligned - no polling restart/auto-start during rest")
 
                     startRestTimer()
+                } else if (summaryDelayMs > 0 && !isSingleExerciseMode(coordinator)) {
+                    // Issue #320: Auto-advance from summary via proceedFromSummary() which handles
+                    // full bookkeeping: clearing RPE, marking exercises completed, checking routine
+                    // completion, and starting rest timer. Direct startRestTimer() would bypass this.
+                    Logger.d("Routine mode: Auto-advancing from summary after ${summaryDelayMs}ms (Issue #320)")
+                    delay(summaryDelayMs)
+                    if (coordinator._workoutState.value is WorkoutState.SetSummary) {
+                        flowDelegate?.proceedFromSummary()
+                            ?: run {
+                                // Fallback if delegate not wired (shouldn't happen in production)
+                                Logger.w("Issue #320: flowDelegate null, falling back to direct startRestTimer")
+                                repCounter.reset()
+                                resetAutoStopState()
+                                startRestTimer()
+                            }
+                    }
                 } else {
-                    Logger.d("Routine mode: Waiting for UI countdown or user action to proceed from summary")
+                    Logger.d("Routine mode: Summary Unlimited - waiting for user action")
                 }
             }
         }

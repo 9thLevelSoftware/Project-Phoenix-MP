@@ -15,16 +15,16 @@ import com.devil.phoenixproject.testutil.DWSMTestHarness
 import com.devil.phoenixproject.testutil.TestFixtures
 import com.devil.phoenixproject.testutil.WorkoutStateFixtures.activeDWSM
 import com.devil.phoenixproject.testutil.WorkoutStateFixtures.createTestRoutine
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.test.advanceTimeBy
+import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
-import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.test.advanceTimeBy
-import kotlinx.coroutines.test.advanceUntilIdle
-import kotlinx.coroutines.test.runTest
 
 /**
  * Characterization tests for DefaultWorkoutSessionManager workout lifecycle.
@@ -1125,6 +1125,163 @@ class DWSMWorkoutLifecycleTest {
                 ),
             )
         }
+    }
+
+    // ===== Issue #320: Stall/stop saves partial reps in routine mode =====
+
+    @Test
+    fun `Issue 320 - routine set auto-advances from summary to rest timer after stall`() = runTest {
+        val harness = DWSMTestHarness(this)
+        harness.fakeBleRepo.simulateConnect("Vee_Test")
+        val routine = createTestRoutine(
+            exerciseCount = 1,
+            setsPerExercise = 3,
+            repsPerSet = 10,
+            weightKg = 25f,
+        )
+        routine.exercises.forEach { harness.fakeExerciseRepo.addExercise(it.exercise) }
+        advanceUntilIdle()
+
+        harness.dwsm.loadRoutine(routine)
+        advanceUntilIdle()
+        harness.dwsm.enterSetReady(0, 0)
+        advanceUntilIdle()
+
+        // Start the first set
+        harness.dwsm.startWorkout(skipCountdown = true)
+        advanceUntilIdle()
+        assertIs<WorkoutState.Active>(harness.dwsm.coordinator.workoutState.value)
+
+        // Simulate 5 completed working reps (partial set)
+        harness.dwsm.coordinator._repCount.value = RepCount(
+            warmupReps = 0,
+            workingReps = 5,
+            totalReps = 5,
+            isWarmupComplete = true,
+        )
+
+        // Trigger handleSetCompletion (stall auto-stop path)
+        harness.activeSessionEngine.handleSetCompletion()
+        // Use advanceTimeBy (not advanceUntilIdle) — the handleSetCompletion coroutine
+        // does delay(summaryDelayMs) then startRestTimer() which has an infinite tick loop.
+        // 1s is enough for BLE stop + session save + summary state transition.
+        advanceTimeBy(1_000)
+
+        // Summary should be shown first
+        assertIs<WorkoutState.SetSummary>(
+            harness.dwsm.coordinator.workoutState.value,
+            "Issue #320: Set should show summary with partial reps after stall completion",
+        )
+
+        // Advance past summary countdown (default 10s) into rest timer territory
+        advanceTimeBy(11_000)
+
+        // Should have auto-advanced to Resting (rest timer between sets)
+        assertIs<WorkoutState.Resting>(
+            harness.dwsm.coordinator.workoutState.value,
+            "Issue #320: Routine set should auto-advance from summary to rest timer",
+        )
+
+        // Verify session was saved with the partial reps
+        val sessions = harness.fakeWorkoutRepo.getAllSessions("default").first()
+        assertTrue(sessions.isNotEmpty(), "Session should have been saved")
+
+        harness.cleanup()
+    }
+
+    @Test
+    fun `Issue 320 - stopAndReturnToSetReady saves reps when workingReps greater than 0 in routine`() = runTest {
+        val harness = DWSMTestHarness(this)
+        harness.fakeBleRepo.simulateConnect("Vee_Test")
+        val routine = createTestRoutine(
+            exerciseCount = 1,
+            setsPerExercise = 3,
+            repsPerSet = 10,
+            weightKg = 25f,
+        )
+        routine.exercises.forEach { harness.fakeExerciseRepo.addExercise(it.exercise) }
+        advanceUntilIdle()
+
+        harness.dwsm.loadRoutine(routine)
+        advanceUntilIdle()
+        harness.dwsm.enterSetReady(0, 0)
+        advanceUntilIdle()
+
+        harness.dwsm.startWorkout(skipCountdown = true)
+        advanceUntilIdle()
+        assertIs<WorkoutState.Active>(harness.dwsm.coordinator.workoutState.value)
+
+        // Simulate 3 completed working reps
+        harness.dwsm.coordinator._repCount.value = RepCount(
+            warmupReps = 0,
+            workingReps = 3,
+            totalReps = 3,
+            isWarmupComplete = true,
+        )
+
+        // Manual stop (covers back button, stop dialog, and voice safe word)
+        harness.dwsm.stopAndReturnToSetReady()
+        // Use advanceTimeBy to avoid infinite re-dispatch from rest timer tick loop.
+        // 1s is enough for handleSetCompletion to save session and show SetSummary.
+        advanceTimeBy(1_000)
+
+        // Should route through handleSetCompletion → SetSummary (not back to SetReady)
+        val state = harness.dwsm.coordinator.workoutState.value
+        assertIs<WorkoutState.SetSummary>(
+            state,
+            "Issue #320: Manual stop with completed reps should save reps and show summary, got: $state",
+        )
+
+        // Verify session was saved
+        val sessions = harness.fakeWorkoutRepo.getAllSessions("default").first()
+        assertTrue(sessions.isNotEmpty(), "Issue #320: Session with partial reps should have been saved")
+
+        harness.cleanup()
+    }
+
+    @Test
+    fun `Issue 320 - stopAndReturnToSetReady discards when workingReps is 0 in routine`() = runTest {
+        val harness = DWSMTestHarness(this)
+        harness.fakeBleRepo.simulateConnect("Vee_Test")
+        val routine = createTestRoutine(
+            exerciseCount = 1,
+            setsPerExercise = 3,
+            repsPerSet = 10,
+            weightKg = 25f,
+        )
+        routine.exercises.forEach { harness.fakeExerciseRepo.addExercise(it.exercise) }
+        advanceUntilIdle()
+
+        harness.dwsm.loadRoutine(routine)
+        advanceUntilIdle()
+        harness.dwsm.enterSetReady(0, 0)
+        advanceUntilIdle()
+
+        harness.dwsm.startWorkout(skipCountdown = true)
+        advanceUntilIdle()
+        assertIs<WorkoutState.Active>(harness.dwsm.coordinator.workoutState.value)
+
+        // No reps completed (workingReps = 0)
+
+        // Manual stop
+        harness.dwsm.stopAndReturnToSetReady()
+        advanceTimeBy(1_000)
+
+        // Should use old path: discard and return to SetReady for same set
+        val flowState = harness.dwsm.coordinator.routineFlowState.value
+        assertIs<RoutineFlowState.SetReady>(
+            flowState,
+            "Issue #320: Manual stop with 0 reps should return to SetReady (existing behavior), got: $flowState",
+        )
+
+        // Set index should remain at 0 (not advanced)
+        assertEquals(
+            0,
+            harness.dwsm.coordinator.currentSetIndex.value,
+            "Issue #320: Set index should remain at 0 when discarding",
+        )
+
+        harness.cleanup()
     }
 
     private suspend fun completeFirstWorkingRep(harness: DWSMTestHarness, warmupTarget: Int = 3, workingTarget: Int = 8) {
