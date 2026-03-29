@@ -524,10 +524,16 @@ abstract class BaseDataBackupManager(
                         )
                         sessionsImported++
                     } else {
-                        // Adopt: if session exists but has a different profile_id, update it
-                        // so it becomes visible under the active profile (fixes #324).
-                        queries.adoptSessionProfile(profileId = activeProfileId, id = session.id)
-                        sessionsAdopted++
+                        // Adopt orphaned records into the active profile (fixes #324).
+                        // Only adopt when the backup row has no explicit profile (legacy)
+                        // or already targets the active profile. If the backup explicitly
+                        // says the row belongs to a different profile, leave it alone to
+                        // avoid cross-contaminating multi-profile restores.
+                        val backupProfileId = session.profileId
+                        if (backupProfileId == null || backupProfileId == activeProfileId) {
+                            queries.adoptSessionProfile(profileId = activeProfileId, id = session.id)
+                            sessionsAdopted++
+                        }
                         sessionsSkipped++
                     }
                 }
@@ -570,10 +576,13 @@ abstract class BaseDataBackupManager(
                         )
                         routinesImported++
                     } else {
-                        // Adopt: if routine exists but has a different profile_id, update it
-                        // so it becomes visible under the active profile (fixes #324).
-                        queries.adoptRoutineProfile(profileId = activeProfileId, id = routine.id)
-                        routinesAdopted++
+                        // Same adoption guard as sessions — only adopt when backup has
+                        // no explicit profile or targets the active profile.
+                        val backupProfileId = routine.profileId
+                        if (backupProfileId == null || backupProfileId == activeProfileId) {
+                            queries.adoptRoutineProfile(profileId = activeProfileId, id = routine.id)
+                            routinesAdopted++
+                        }
                         routinesSkipped++
                     }
                 }

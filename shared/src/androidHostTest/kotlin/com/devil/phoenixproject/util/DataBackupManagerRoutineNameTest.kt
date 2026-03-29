@@ -597,6 +597,80 @@ class DataBackupManagerRoutineNameTest {
         assertEquals("userA", routine.profile_id, "Skipped routine must stay in active profile, not be reassigned to default")
     }
 
+    /**
+     * Multi-profile restore: a backup with explicit profileId for another profile must NOT
+     * be adopted into the active profile. This prevents cross-contamination when restoring
+     * a full multi-profile backup.
+     */
+    @Test
+    fun `restore with explicit foreign profileId does not adopt into active profile`() = runTest {
+        val queries = database.vitruvianDatabaseQueries
+
+        // 1. Create two profiles; make "userA" active
+        queries.insertProfile(id = "userA", name = "User A", colorIndex = 1L, createdAt = 1_700_000_000_000, isActive = 1L)
+        queries.insertProfile(id = "userB", name = "User B", colorIndex = 2L, createdAt = 1_700_000_000_001, isActive = 0L)
+
+        // 2. Insert a session owned by "userB"
+        queries.insertSession(
+            id = "session-b", timestamp = 1_700_000_000_000, mode = "Old School",
+            targetReps = 10, weightPerCableKg = 20.0, progressionKg = 0.0,
+            duration = 60_000L, totalReps = 10, warmupReps = 0, workingReps = 10,
+            isJustLift = 0, stopAtTop = 0, eccentricLoad = 100, echoLevel = 0,
+            exerciseId = "exercise-bench", exerciseName = "Bench Press",
+            routineSessionId = null, routineName = null, routineId = null,
+            safetyFlags = 0, deloadWarningCount = 0, romViolationCount = 0, spotterActivations = 0,
+            peakForceConcentricA = null, peakForceConcentricB = null,
+            peakForceEccentricA = null, peakForceEccentricB = null,
+            avgForceConcentricA = null, avgForceConcentricB = null,
+            avgForceEccentricA = null, avgForceEccentricB = null,
+            heaviestLiftKg = null, totalVolumeKg = null, cableCount = null,
+            estimatedCalories = null, warmupAvgWeightKg = null, workingAvgWeightKg = null,
+            burnoutAvgWeightKg = null, peakWeightKg = null, rpe = null,
+            avgMcvMmS = null, avgAsymmetryPercent = null, totalVelocityLossPercent = null,
+            dominantSide = null, strengthProfile = null, formScore = null,
+            profile_id = "userB",
+        )
+        queries.insertRoutine(
+            id = "routine-b", name = "Leg Day", description = "",
+            createdAt = 1_700_000_000_000, lastUsed = null, useCount = 1, profile_id = "userB",
+        )
+
+        // 3. Restore a backup that explicitly says these rows belong to "userB"
+        val backup = BackupData(
+            version = 1, exportedAt = "2026-03-29T00:00:00Z", appVersion = "test",
+            data = BackupContent(
+                workoutSessions = listOf(
+                    WorkoutSessionBackup(
+                        id = "session-b", timestamp = 1_700_000_000_000, mode = "Old School",
+                        targetReps = 10, weightPerCableKg = 20f, progressionKg = 0f,
+                        duration = 60_000L, totalReps = 10, warmupReps = 0, workingReps = 10,
+                        isJustLift = false, stopAtTop = false,
+                        exerciseId = "exercise-bench", exerciseName = "Bench Press",
+                        profileId = "userB", // explicit foreign profile
+                    ),
+                ),
+                routines = listOf(
+                    RoutineBackup(
+                        id = "routine-b", name = "Leg Day", createdAt = 1_700_000_000_000,
+                        profileId = "userB", // explicit foreign profile
+                    ),
+                ),
+            ),
+        )
+
+        val result = backupManager.importFromJson(testJson.encodeToString(backup))
+        assertTrue(result.isSuccess)
+
+        // 4. Verify: records must still belong to "userB", not adopted into "userA"
+        val session = queries.selectSessionById("session-b").executeAsOneOrNull()
+        assertNotNull(session)
+        assertEquals("userB", session.profile_id, "Session with explicit foreign profileId must not be adopted")
+
+        val routine = queries.selectRoutineById("routine-b").executeAsOneOrNull()
+        assertNotNull(routine)
+        assertEquals("userB", routine.profile_id, "Routine with explicit foreign profileId must not be adopted")
+    }
+
     private fun buildRoutine(routineId: String, routineName: String, exerciseId: String, exerciseName: String): Routine {
         val exercise = Exercise(
             id = exerciseId,
