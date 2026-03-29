@@ -1,5 +1,6 @@
 package com.devil.phoenixproject.presentation.manager
 
+import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.data.repository.PersonalRecordEntity
 import com.devil.phoenixproject.data.repository.PersonalRecordRepository
 import com.devil.phoenixproject.data.repository.UserProfileRepository
@@ -94,7 +95,11 @@ class HistoryManager(
         userProfileRepository.activeProfile
             .flatMapLatest { profile ->
                 val profileId = profile?.id ?: "default"
-                personalRecordRepository.getAllPRsGrouped(profileId)
+                Logger.d { "PR_DISPLAY: Loading PRs for profile=$profileId (activeProfile=${profile?.id ?: "NULL"})" }
+                personalRecordRepository.getAllPRsGrouped(profileId).map { records ->
+                    Logger.d { "PR_DISPLAY: Got ${records.size} grouped PRs for profile=$profileId" }
+                    records
+                }
             }
             .stateIn(
                 scope = scope,

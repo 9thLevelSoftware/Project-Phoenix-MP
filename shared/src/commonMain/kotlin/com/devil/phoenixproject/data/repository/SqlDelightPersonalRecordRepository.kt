@@ -2,6 +2,7 @@ package com.devil.phoenixproject.data.repository
 
 import app.cash.sqldelight.coroutines.asFlow
 import app.cash.sqldelight.coroutines.mapToList
+import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.database.VitruvianDatabase
 import com.devil.phoenixproject.domain.model.PRType
 import com.devil.phoenixproject.domain.model.PersonalRecord
@@ -13,7 +14,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
 
-class SqlDelightPersonalRecordRepository(db: VitruvianDatabase) : PersonalRecordRepository {
+class SqlDelightPersonalRecordRepository(private val db: VitruvianDatabase) : PersonalRecordRepository {
     private val queries = db.vitruvianDatabaseQueries
 
     // SQLDelight mapper - parameters must match query columns even if not all are used
@@ -267,6 +268,12 @@ class SqlDelightPersonalRecordRepository(db: VitruvianDatabase) : PersonalRecord
         val isNewWeightPR =
             currentWeightPR == null || weightPRWeightPerCableKg > currentWeightPR.weightPerCableKg
 
+        // Issue #319: Diagnostic logging for PR comparison
+        Logger.d {
+            "PR_CHECK[$phaseName/WEIGHT]: exercise=$exerciseId, mode=$canonicalWorkoutMode, profile=$profileId — " +
+                "new=${weightPRWeightPerCableKg}kg vs current=${currentWeightPR?.weightPerCableKg ?: "NONE"} → ${if (isNewWeightPR) "NEW PR" else "no change"}"
+        }
+
         // Check volume PR for this phase
         val currentVolumePR = queries.selectPR(
             exerciseId,
@@ -280,50 +287,60 @@ class SqlDelightPersonalRecordRepository(db: VitruvianDatabase) : PersonalRecord
         val currentVolume = currentVolumePR?.volume ?: 0f
         val isNewVolumePR = volumeForVolumePR > currentVolume
 
-        if (isNewWeightPR) {
-            queries.upsertPR(
-                exerciseId = exerciseId,
-                exerciseName = "",
-                weight = weightPRWeightPerCableKg.toDouble(),
-                reps = reps.toLong(),
-                oneRepMax = estimatedOneRepMax.toDouble(),
-                achievedAt = timestamp,
-                workoutMode = canonicalWorkoutMode,
-                prType = PRType.MAX_WEIGHT.name,
-                volume = volumeForWeightPR.toDouble(),
-                phase = phaseName,
-                profile_id = profileId,
-            )
-            brokenPRs.add(PRType.MAX_WEIGHT)
+        Logger.d {
+            "PR_CHECK[$phaseName/VOLUME]: exercise=$exerciseId, mode=$canonicalWorkoutMode, profile=$profileId — " +
+                "new=${volumeForVolumePR} vs current=${currentVolume} → ${if (isNewVolumePR) "NEW PR" else "no change"}"
         }
 
-        if (isNewVolumePR) {
-            queries.upsertPR(
-                exerciseId = exerciseId,
-                exerciseName = "",
-                weight = volumePRWeightPerCableKg.toDouble(),
-                reps = reps.toLong(),
-                oneRepMax = estimatedOneRepMax.toDouble(),
-                achievedAt = timestamp,
-                workoutMode = canonicalWorkoutMode,
-                prType = PRType.MAX_VOLUME.name,
-                volume = volumeForVolumePR.toDouble(),
-                phase = phaseName,
-                profile_id = profileId,
-            )
-            brokenPRs.add(PRType.MAX_VOLUME)
-        }
-
-        // Sync estimated 1RM to Exercise table for %-based training features.
-        // Only update from COMBINED phase PRs to keep the canonical 1RM stable.
-        if (phase == WorkoutPhase.COMBINED && brokenPRs.isNotEmpty()) {
-            val currentExercise1RM = queries.selectExerciseById(exerciseId)
-                .executeAsOneOrNull()?.one_rep_max_kg?.toFloat() ?: 0f
-            if (estimatedOneRepMax > currentExercise1RM) {
-                queries.updateOneRepMax(
-                    one_rep_max_kg = estimatedOneRepMax.toDouble(),
-                    id = exerciseId,
+        // Issue #319/Codex review: Wrap all writes in a transaction so a partial failure
+        // (e.g., weight PR upsert succeeds but volume PR or 1RM sync throws) doesn't
+        // leave the DB in an inconsistent state while reporting Result.failure to the caller.
+        db.transaction {
+            if (isNewWeightPR) {
+                queries.upsertPR(
+                    exerciseId = exerciseId,
+                    exerciseName = "",
+                    weight = weightPRWeightPerCableKg.toDouble(),
+                    reps = reps.toLong(),
+                    oneRepMax = estimatedOneRepMax.toDouble(),
+                    achievedAt = timestamp,
+                    workoutMode = canonicalWorkoutMode,
+                    prType = PRType.MAX_WEIGHT.name,
+                    volume = volumeForWeightPR.toDouble(),
+                    phase = phaseName,
+                    profile_id = profileId,
                 )
+                brokenPRs.add(PRType.MAX_WEIGHT)
+            }
+
+            if (isNewVolumePR) {
+                queries.upsertPR(
+                    exerciseId = exerciseId,
+                    exerciseName = "",
+                    weight = volumePRWeightPerCableKg.toDouble(),
+                    reps = reps.toLong(),
+                    oneRepMax = estimatedOneRepMax.toDouble(),
+                    achievedAt = timestamp,
+                    workoutMode = canonicalWorkoutMode,
+                    prType = PRType.MAX_VOLUME.name,
+                    volume = volumeForVolumePR.toDouble(),
+                    phase = phaseName,
+                    profile_id = profileId,
+                )
+                brokenPRs.add(PRType.MAX_VOLUME)
+            }
+
+            // Sync estimated 1RM to Exercise table for %-based training features.
+            // Only update from COMBINED phase PRs to keep the canonical 1RM stable.
+            if (phase == WorkoutPhase.COMBINED && brokenPRs.isNotEmpty()) {
+                val currentExercise1RM = queries.selectExerciseById(exerciseId)
+                    .executeAsOneOrNull()?.one_rep_max_kg?.toFloat() ?: 0f
+                if (estimatedOneRepMax > currentExercise1RM) {
+                    queries.updateOneRepMax(
+                        one_rep_max_kg = estimatedOneRepMax.toDouble(),
+                        id = exerciseId,
+                    )
+                }
             }
         }
 

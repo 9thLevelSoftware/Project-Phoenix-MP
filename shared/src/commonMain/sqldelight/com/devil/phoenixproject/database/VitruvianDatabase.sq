@@ -1794,14 +1794,21 @@ WHERE e.archived = 0
 GROUP BY e.id;
 
 -- Per-exercise weight history (for plateau detection)
+-- Inner CASE converts heaviestLiftKg<=0 to NULL so COALESCE can fall back to
+-- the programmed weightPerCableKg. Wrapping in COALESCE keeps the SQLDelight-
+-- generated type non-nullable (Double, not Double?).
 selectExerciseWeightHistory:
 SELECT ws.exerciseId,
        ws.exerciseName,
-       COALESCE(ws.heaviestLiftKg, ws.weightPerCableKg) AS achievedWeightKg,
+       COALESCE(
+           CASE WHEN ws.heaviestLiftKg > 0 THEN ws.heaviestLiftKg ELSE NULL END,
+           ws.weightPerCableKg
+       ) AS achievedWeightKg,
        ws.timestamp
 FROM WorkoutSession ws
 WHERE ws.exerciseId IS NOT NULL
   AND ws.profile_id = :profileId
+  AND ws.totalReps > 0
 ORDER BY ws.exerciseId, ws.timestamp ASC;
 
 -- ==================== GHOST RACING QUERIES ====================

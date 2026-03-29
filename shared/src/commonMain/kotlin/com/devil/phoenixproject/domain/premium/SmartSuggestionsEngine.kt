@@ -1,9 +1,18 @@
 package com.devil.phoenixproject.domain.premium
 
-import com.devil.phoenixproject.domain.model.*
-import kotlin.time.Instant
+import com.devil.phoenixproject.domain.model.BalanceAnalysis
+import com.devil.phoenixproject.domain.model.BalanceImbalance
+import com.devil.phoenixproject.domain.model.MovementCategory
+import com.devil.phoenixproject.domain.model.MuscleGroupVolume
+import com.devil.phoenixproject.domain.model.NeglectedExercise
+import com.devil.phoenixproject.domain.model.PlateauDetection
+import com.devil.phoenixproject.domain.model.SessionSummary
+import com.devil.phoenixproject.domain.model.TimeOfDayAnalysis
+import com.devil.phoenixproject.domain.model.TimeWindow
+import com.devil.phoenixproject.domain.model.WeeklyVolumeReport
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
+import kotlin.time.Instant
 
 /**
  * Pure computation engine for training insight suggestions.
@@ -159,12 +168,34 @@ object SmartSuggestionsEngine {
     }
 
     /**
-     * SUGG-04: Detect exercises where weight hasn't changed across recent sessions.
-     * Plateau = weight hasn't changed by more than 0.5kg across last 4+ consecutive sessions.
-     * Requires at least 5 total sessions for the exercise.
+     * SUGG-04: Detect exercises where weight hasn't changed across recent workout days.
+     * Plateau = weight hasn't changed by more than 0.5kg across last 4+ consecutive workout days.
+     * Requires at least 5 distinct workout days for the exercise.
+     *
+     * Bug fix (Issue #318): Each completed set saves a separate WorkoutSession row, so a
+     * single routine workout with 5 sets would trigger false plateau detection. Sessions are
+     * now deduplicated by (exerciseId, calendar day) — multiple sets on the same day count
+     * as one data point, using the heaviest weight recorded that day.
      */
-    fun detectPlateaus(sessions: List<SessionSummary>): List<PlateauDetection> {
-        return sessions
+    fun detectPlateaus(
+        sessions: List<SessionSummary>,
+        timeZone: TimeZone = TimeZone.currentSystemDefault(),
+    ): List<PlateauDetection> {
+        // Deduplicate: collapse multiple sets on the same LOCAL day into one entry per exercise.
+        // Uses local date (not UTC epoch-day) so an evening workout in e.g. UTC-5 isn't split
+        // across two buckets. Same approach as classifyTimeWindow().
+        val deduplicatedByDay = sessions
+            .groupBy { session ->
+                val localDate = Instant.fromEpochMilliseconds(session.timestamp)
+                    .toLocalDateTime(timeZone).date
+                Pair(session.exerciseId, localDate)
+            }
+            .map { (_, sameDaySessions) ->
+                // Keep the entry with the highest weight for that day
+                sameDaySessions.maxBy { it.weightPerCableKg }
+            }
+
+        return deduplicatedByDay
             .groupBy { it.exerciseId }
             .mapNotNull { (_, exerciseSessions) ->
                 if (exerciseSessions.size < PLATEAU_MIN_SESSIONS) return@mapNotNull null
@@ -172,7 +203,7 @@ object SmartSuggestionsEngine {
                 val sorted = exerciseSessions.sortedBy { it.timestamp }
                 val latest = sorted.last()
 
-                // Count consecutive sessions from end with weight within tolerance
+                // Count consecutive workout days from end with weight within tolerance
                 var consecutiveCount = 1
                 val referenceWeight = latest.weightPerCableKg
                 for (i in sorted.size - 2 downTo 0) {
@@ -189,9 +220,9 @@ object SmartSuggestionsEngine {
                         exerciseId = latest.exerciseId,
                         exerciseName = latest.exerciseName,
                         currentWeightKg = referenceWeight,
-                        sessionCount = consecutiveCount,
+                        workoutDayCount = consecutiveCount,
                         suggestion =
-                            "You've been at ${referenceWeight}kg for $consecutiveCount sessions. " +
+                            "You've been at ${referenceWeight}kg for $consecutiveCount workout days. " +
                                 "Try eccentric overload, drop sets, or changing rep ranges to break through.",
                     )
                 } else {

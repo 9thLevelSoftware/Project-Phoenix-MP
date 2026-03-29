@@ -1,11 +1,13 @@
 package com.devil.phoenixproject.domain.premium
 
-import com.devil.phoenixproject.domain.model.*
+import com.devil.phoenixproject.domain.model.MovementCategory
+import com.devil.phoenixproject.domain.model.SessionSummary
+import com.devil.phoenixproject.domain.model.TimeWindow
+import kotlinx.datetime.TimeZone
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
-import kotlinx.datetime.TimeZone
 
 class SmartSuggestionsEngineTest {
 
@@ -193,11 +195,11 @@ class SmartSuggestionsEngineTest {
                 timestamp = NOW - ONE_DAY_MS * (5 - i),
             )
         }
-        val plateaus = SmartSuggestionsEngine.detectPlateaus(sessions)
+        val plateaus = SmartSuggestionsEngine.detectPlateaus(sessions, TimeZone.UTC)
         assertEquals(1, plateaus.size)
         assertEquals("ex1", plateaus.first().exerciseId)
         assertEquals(50f, plateaus.first().currentWeightKg)
-        assertTrue(plateaus.first().sessionCount >= 4)
+        assertTrue(plateaus.first().workoutDayCount >= 4)
     }
 
     @Test
@@ -209,7 +211,7 @@ class SmartSuggestionsEngineTest {
                 timestamp = NOW - ONE_DAY_MS * (3 - i),
             )
         }
-        val plateaus = SmartSuggestionsEngine.detectPlateaus(sessions)
+        val plateaus = SmartSuggestionsEngine.detectPlateaus(sessions, TimeZone.UTC)
         assertTrue(plateaus.isEmpty())
     }
 
@@ -222,7 +224,7 @@ class SmartSuggestionsEngineTest {
                 timestamp = NOW - ONE_DAY_MS * (5 - i),
             )
         }
-        val plateaus = SmartSuggestionsEngine.detectPlateaus(sessions)
+        val plateaus = SmartSuggestionsEngine.detectPlateaus(sessions, TimeZone.UTC)
         assertTrue(plateaus.isEmpty())
     }
 
@@ -237,8 +239,97 @@ class SmartSuggestionsEngineTest {
                 timestamp = NOW - ONE_DAY_MS * (5 - i),
             )
         }
-        val plateaus = SmartSuggestionsEngine.detectPlateaus(sessions)
+        val plateaus = SmartSuggestionsEngine.detectPlateaus(sessions, TimeZone.UTC)
         assertEquals(1, plateaus.size) // Should still detect plateau
+    }
+
+    @Test
+    fun noPlateauFromMultipleSetsOnSameDay_Issue318() {
+        // Bug #318: A routine with 5 sets of the same exercise at the same weight
+        // on a SINGLE day should NOT be flagged as a plateau.
+        // Each set creates a separate WorkoutSession row, but they're the same workout.
+        val sameDay = NOW - ONE_DAY_MS
+        val sessions = (0 until 5).map { i ->
+            session(
+                exerciseId = "ex1",
+                weightPerCableKg = 30f,
+                timestamp = sameDay + i * 60_000L, // Sets 1 minute apart
+            )
+        }
+        val plateaus = SmartSuggestionsEngine.detectPlateaus(sessions, TimeZone.UTC)
+        assertTrue(plateaus.isEmpty(), "5 sets on the same day should not trigger plateau")
+    }
+
+    @Test
+    fun plateauStillDetectedAcrossMultipleDays_Issue318() {
+        // Even with multiple sets per day, if the exercise is at the same weight
+        // across 5+ distinct DAYS, that IS a real plateau.
+        val sessions = (0 until 5).flatMap { day ->
+            // 4 sets each day, same weight
+            (0 until 4).map { set ->
+                session(
+                    exerciseId = "ex1",
+                    weightPerCableKg = 30f,
+                    timestamp = NOW - ONE_DAY_MS * (5 - day) + set * 60_000L,
+                )
+            }
+        }
+        val plateaus = SmartSuggestionsEngine.detectPlateaus(sessions, TimeZone.UTC)
+        assertEquals(1, plateaus.size, "Same weight across 5 distinct days is a real plateau")
+        assertEquals(30f, plateaus.first().currentWeightKg)
+        assertTrue(plateaus.first().workoutDayCount >= 4)
+    }
+
+    @Test
+    fun plateauDeduplicationKeepsHeaviestWeightPerDay() {
+        // If a user does warmup sets at lower weight then working sets at higher weight,
+        // the heaviest weight for that day should be used for plateau analysis.
+        val sessions = (0 until 5).flatMap { day ->
+            val dayTimestamp = NOW - ONE_DAY_MS * (5 - day)
+            listOf(
+                session(exerciseId = "ex1", weightPerCableKg = 20f, timestamp = dayTimestamp), // warmup
+                session(exerciseId = "ex1", weightPerCableKg = 50f, timestamp = dayTimestamp + 60_000L), // working set 1
+                session(exerciseId = "ex1", weightPerCableKg = 50f, timestamp = dayTimestamp + 120_000L), // working set 2
+            )
+        }
+        val plateaus = SmartSuggestionsEngine.detectPlateaus(sessions, TimeZone.UTC)
+        assertEquals(1, plateaus.size)
+        assertEquals(50f, plateaus.first().currentWeightKg, "Should use heaviest weight per day")
+    }
+
+    @Test
+    fun noPlateauFromTwoDaysOfRoutineSets_Issue318() {
+        // 2 routine days with 4 sets each = 8 session rows, but only 2 distinct days.
+        // PLATEAU_MIN_SESSIONS = 5 applies to distinct days, not individual rows.
+        val sessions = (0 until 2).flatMap { day ->
+            (0 until 4).map { set ->
+                session(
+                    exerciseId = "ex1",
+                    weightPerCableKg = 40f,
+                    timestamp = NOW - ONE_DAY_MS * (2 - day) + set * 60_000L,
+                )
+            }
+        }
+        val plateaus = SmartSuggestionsEngine.detectPlateaus(sessions, TimeZone.UTC)
+        assertTrue(plateaus.isEmpty(), "Only 2 distinct days should not meet 5-session threshold")
+    }
+
+    @Test
+    fun plateauSuggestionSaysWorkoutDays() {
+        // Verify the suggestion text references "workout days" not "sessions"
+        val sessions = (0 until 5).map { i ->
+            session(
+                exerciseId = "ex1",
+                weightPerCableKg = 50f,
+                timestamp = NOW - ONE_DAY_MS * (5 - i),
+            )
+        }
+        val plateaus = SmartSuggestionsEngine.detectPlateaus(sessions, TimeZone.UTC)
+        assertEquals(1, plateaus.size)
+        assertTrue(
+            plateaus.first().suggestion.contains("workout days"),
+            "Suggestion should reference 'workout days': ${plateaus.first().suggestion}",
+        )
     }
 
     // ==========================================================

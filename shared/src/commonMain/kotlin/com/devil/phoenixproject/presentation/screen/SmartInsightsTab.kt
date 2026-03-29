@@ -1,13 +1,39 @@
 package com.devil.phoenixproject.presentation.screen
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -17,19 +43,47 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.data.repository.SmartSuggestionsRepository
 import com.devil.phoenixproject.data.repository.UserProfileRepository
-import com.devil.phoenixproject.domain.model.*
+import com.devil.phoenixproject.domain.model.BalanceAnalysis
+import com.devil.phoenixproject.domain.model.NeglectedExercise
+import com.devil.phoenixproject.domain.model.PlateauDetection
+import com.devil.phoenixproject.domain.model.SessionSummary
+import com.devil.phoenixproject.domain.model.TimeOfDayAnalysis
+import com.devil.phoenixproject.domain.model.TimeWindow
+import com.devil.phoenixproject.domain.model.WeeklyVolumeReport
 import com.devil.phoenixproject.domain.model.currentTimeMillis
 import com.devil.phoenixproject.domain.premium.ReadinessEngine
 import com.devil.phoenixproject.domain.premium.SmartSuggestionsEngine
 import com.devil.phoenixproject.presentation.components.ReadinessBriefingCard
 import com.devil.phoenixproject.ui.theme.AccessibilityTheme
+import com.devil.phoenixproject.util.format
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
 import kotlinx.coroutines.withContext
 import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.koinInject
-import vitruvianprojectphoenix.shared.generated.resources.*
 import vitruvianprojectphoenix.shared.generated.resources.Res
+import vitruvianprojectphoenix.shared.generated.resources.great_variety
+import vitruvianprojectphoenix.shared.generated.resources.insights_best_window
+import vitruvianprojectphoenix.shared.generated.resources.insights_col_muscle_group
+import vitruvianprojectphoenix.shared.generated.resources.insights_col_reps
+import vitruvianprojectphoenix.shared.generated.resources.insights_col_sets
+import vitruvianprojectphoenix.shared.generated.resources.insights_col_total_kg
+import vitruvianprojectphoenix.shared.generated.resources.insights_days_ago
+import vitruvianprojectphoenix.shared.generated.resources.insights_exercise_variety
+import vitruvianprojectphoenix.shared.generated.resources.insights_legs
+import vitruvianprojectphoenix.shared.generated.resources.insights_need_more_sessions
+import vitruvianprojectphoenix.shared.generated.resources.insights_perform_best_in
+import vitruvianprojectphoenix.shared.generated.resources.insights_plateau_alert
+import vitruvianprojectphoenix.shared.generated.resources.insights_pull
+import vitruvianprojectphoenix.shared.generated.resources.insights_push
+import vitruvianprojectphoenix.shared.generated.resources.insights_subtitle
+import vitruvianprojectphoenix.shared.generated.resources.insights_title
+import vitruvianprojectphoenix.shared.generated.resources.insights_training_balance
+import vitruvianprojectphoenix.shared.generated.resources.insights_weekly_volume
+import vitruvianprojectphoenix.shared.generated.resources.insights_well_balanced
+import vitruvianprojectphoenix.shared.generated.resources.no_balance_data
+import vitruvianprojectphoenix.shared.generated.resources.no_plateaus
+import vitruvianprojectphoenix.shared.generated.resources.no_workouts_this_week
 
 /**
  * Smart Insights Tab - training insights powered by SmartSuggestionsEngine and ReadinessEngine.
@@ -434,8 +488,13 @@ private fun PlateauDetectionCard(plateaus: List<PlateauDetection>) {
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Column {
+                        val displayWeight = if (plateau.currentWeightKg % 1f == 0f) {
+                            "${plateau.currentWeightKg.toInt()}kg"
+                        } else {
+                            "${plateau.currentWeightKg.format(1)}kg"
+                        }
                         Text(
-                            "${plateau.exerciseName} at ${plateau.currentWeightKg}kg",
+                            "${plateau.exerciseName} at $displayWeight",
                             style = MaterialTheme.typography.bodyMedium,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onSurface,

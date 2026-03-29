@@ -2,10 +2,10 @@ package com.devil.phoenixproject.data.repository
 
 import com.devil.phoenixproject.database.VitruvianDatabase
 import com.devil.phoenixproject.testutil.createTestDatabase
-import kotlin.test.assertEquals
 import kotlinx.coroutines.test.runTest
 import org.junit.Before
 import org.junit.Test
+import kotlin.test.assertEquals
 
 class SqlDelightSmartSuggestionsRepositoryTest {
 
@@ -74,6 +74,38 @@ class SqlDelightSmartSuggestionsRepositoryTest {
         assertEquals(listOf(40.0f), profileBHistory.map { it.weightPerCableKg })
     }
 
+    @Test
+    fun `getExerciseWeightHistory includes assessment sessions with total reps`() = runTest {
+        insertWorkoutSession(
+            id = "session-assessment",
+            exerciseId = "bench",
+            exerciseName = "Bench Press",
+            timestamp = 1_000L,
+            weightPerCableKg = 13.0,
+            heaviestLiftKg = null,
+            profileId = "default",
+            totalReps = 9L,
+            workingReps = 0L,
+            routineName = SqlDelightAssessmentRepository.ASSESSMENT_ROUTINE_NAME,
+        )
+        insertWorkoutSession(
+            id = "session-empty",
+            exerciseId = "bench",
+            exerciseName = "Bench Press",
+            timestamp = 2_000L,
+            weightPerCableKg = 15.0,
+            heaviestLiftKg = null,
+            profileId = "default",
+            totalReps = 0L,
+            workingReps = 0L,
+        )
+
+        val history = repository.getExerciseWeightHistory("default")
+
+        assertEquals(1, history.size)
+        assertEquals(listOf(13.0f), history.map { it.weightPerCableKg })
+    }
+
     private fun insertWorkoutSession(
         id: String,
         exerciseId: String,
@@ -82,6 +114,9 @@ class SqlDelightSmartSuggestionsRepositoryTest {
         weightPerCableKg: Double,
         heaviestLiftKg: Double?,
         profileId: String,
+        totalReps: Long = 8L,
+        workingReps: Long = totalReps,
+        routineName: String? = null,
     ) {
         database.vitruvianDatabaseQueries.insertSession(
             id = id,
@@ -91,9 +126,9 @@ class SqlDelightSmartSuggestionsRepositoryTest {
             weightPerCableKg = weightPerCableKg,
             progressionKg = 0.0,
             duration = 0L,
-            totalReps = 8L,
+            totalReps = totalReps,
             warmupReps = 0L,
-            workingReps = 8L,
+            workingReps = workingReps,
             isJustLift = 0L,
             stopAtTop = 0L,
             eccentricLoad = 100L,
@@ -101,7 +136,7 @@ class SqlDelightSmartSuggestionsRepositoryTest {
             exerciseId = exerciseId,
             exerciseName = exerciseName,
             routineSessionId = null,
-            routineName = null,
+            routineName = routineName,
             routineId = null,
             safetyFlags = 0L,
             deloadWarningCount = 0L,

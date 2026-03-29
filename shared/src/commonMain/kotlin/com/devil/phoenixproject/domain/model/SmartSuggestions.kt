@@ -42,7 +42,7 @@ data class PlateauDetection(
     val exerciseId: String,
     val exerciseName: String,
     val currentWeightKg: Float,
-    val sessionCount: Int,
+    val workoutDayCount: Int,
     val suggestion: String,
 )
 

@@ -66,9 +66,27 @@ class GamificationManager(
     ): Boolean {
         var hasCelebrationSound = false
 
+        // Issue #319: Diagnostic logging for PR tracking pipeline
+        Logger.d {
+            "PR_TRACK: exerciseId=${exerciseId ?: "NULL"}, reps=$workingReps, " +
+                "weight=${achievedWeightKg}kg, volumeWeight=${volumeWeightKg}kg, " +
+                "mode=${programMode.displayName}, justLift=$isJustLift, echo=$isEchoMode, " +
+                "profile=$profileId"
+        }
+
         // Always track PRs (skip for Just Lift and Echo modes)
         // Uses mode-specific PR lookup to track PRs separately per workout mode (#111)
+        if (exerciseId == null) {
+            Logger.w { "PR_TRACK: Skipped — exerciseId is null (exercise not in library?)" }
+        }
         exerciseId?.let { exId ->
+            if (workingReps <= 0) {
+                Logger.w { "PR_TRACK: Skipped — workingReps=$workingReps (no completed reps)" }
+            } else if (isJustLift) {
+                Logger.d { "PR_TRACK: Skipped — Just Lift mode (PRs not tracked)" }
+            } else if (isEchoMode) {
+                Logger.d { "PR_TRACK: Skipped — Echo mode (PRs not tracked)" }
+            }
             if (workingReps > 0 && !isJustLift && !isEchoMode) {
                 try {
                     val workoutMode = programMode.displayName
@@ -85,6 +103,17 @@ class GamificationManager(
                         profileId = profileId,
                     )
 
+                    // Issue #319: Always log PR result, regardless of gamification setting
+                    result.onSuccess { brokenPRs ->
+                        if (brokenPRs.isNotEmpty()) {
+                            Logger.i { "PR_TRACK: New PR(s) broken: $brokenPRs for exercise=$exId, mode=$workoutMode, profile=$profileId" }
+                        } else {
+                            Logger.d { "PR_TRACK: No new PR — existing records are equal or better (exercise=$exId, mode=$workoutMode, profile=$profileId)" }
+                        }
+                    }.onFailure { e ->
+                        Logger.e(e) { "PR_TRACK: FAILED to save PR — exercise=$exId, mode=$workoutMode, profile=$profileId: ${e.message}" }
+                    }
+
                     // Check phase-specific PRs (Issue #111)
                     if (peakConcentricForceKg > 0f || peakEccentricForceKg > 0f) {
                         personalRecordRepository.updatePhaseSpecificPRs(
@@ -96,7 +125,7 @@ class GamificationManager(
                             peakEccentricForceKg = peakEccentricForceKg,
                             profileId = profileId,
                         ).onFailure { e ->
-                            Logger.e(e) { "Error updating phase-specific PRs: ${e.message}" }
+                            Logger.e(e) { "PR_TRACK: Error updating phase-specific PRs: ${e.message}" }
                         }
                     }
 
@@ -129,12 +158,10 @@ class GamificationManager(
                                     "NEW PR ($prTypeDescription): ${exercise?.name} - $achievedWeightKg kg x $workingReps reps in $workoutMode mode",
                                 )
                             }
-                        }.onFailure { e ->
-                            Logger.e(e) { "Error updating PR: ${e.message}" }
                         }
                     }
                 } catch (e: Exception) {
-                    Logger.e(e) { "Error checking PR: ${e.message}" }
+                    Logger.e(e) { "PR_TRACK: Uncaught exception in PR check: ${e.message}" }
                 }
             }
         }
