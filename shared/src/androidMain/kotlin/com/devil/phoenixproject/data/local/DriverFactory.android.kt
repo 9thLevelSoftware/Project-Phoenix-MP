@@ -31,6 +31,26 @@ actual class DriverFactory(private val context: Context) {
                             Log.w(TAG, "Reconciliation failure: ${failure.target} — ${failure.detail}")
                         }
                     }
+                    // Diagnostic: log Routine table state so we can debug #324
+                    try {
+                        val cursor = db.query("SELECT COUNT(*) AS cnt FROM Routine")
+                        if (cursor.moveToFirst()) {
+                            val count = cursor.getInt(0)
+                            Log.i(TAG, "ROUTINE_DIAG: Routine table has $count rows")
+                        }
+                        cursor.close()
+                        val profileCursor = db.query(
+                            "SELECT profile_id, COUNT(*) AS cnt FROM Routine GROUP BY profile_id"
+                        )
+                        while (profileCursor.moveToNext()) {
+                            val pid = profileCursor.getString(0)
+                            val cnt = profileCursor.getInt(1)
+                            Log.i(TAG, "ROUTINE_DIAG: profile_id='$pid' → $cnt routines")
+                        }
+                        profileCursor.close()
+                    } catch (e: Exception) {
+                        Log.e(TAG, "ROUTINE_DIAG: Failed to query Routine table — ${e.message}")
+                    }
                 }
 
                 override fun onUpgrade(db: SupportSQLiteDatabase, oldVersion: Int, newVersion: Int) {

@@ -77,18 +77,38 @@ class RoutineFlowManager(
         // changes — matches the pattern used by HistoryManager for sessions/PRs.
         // CRITICAL: try-catch required — on Kotlin/Native (iOS), unhandled exceptions
         // in scope.launch call abort(), causing SIGABRT crash on launch.
+        // CRITICAL: retry on failure — if the DB is mid-migration or temporarily
+        // inconsistent, the query may throw once and then succeed. Without retry
+        // the collector dies permanently and routines are invisible forever (#324).
         scope.launch {
-            try {
-                userProfileRepository.activeProfile
-                    .flatMapLatest { profile ->
-                        val profileId = profile?.id ?: "default"
-                        workoutRepository.getAllRoutines(profileId = profileId)
+            var retryCount = 0
+            val maxRetries = 3
+            while (retryCount <= maxRetries) {
+                try {
+                    userProfileRepository.activeProfile
+                        .flatMapLatest { profile ->
+                            val profileId = profile?.id ?: "default"
+                            Logger.d { "ROUTINE_LOAD: Subscribing to routines for profile=$profileId (attempt=${retryCount + 1})" }
+                            workoutRepository.getAllRoutines(profileId = profileId)
+                        }
+                        .collect { routinesList ->
+                            val filtered = routinesList.filter { !it.id.startsWith("cycle_routine_") }
+                            Logger.d { "ROUTINE_LOAD: Got ${filtered.size} routines (${routinesList.size} total, filtered ${routinesList.size - filtered.size} cycle templates)" }
+                            coordinator._routines.value = filtered
+                        }
+                    // collect() only returns when the flow completes (shouldn't happen
+                    // for a SQLDelight reactive query), so break if it does.
+                    break
+                } catch (e: Exception) {
+                    retryCount++
+                    Logger.e(e) { "ROUTINE_LOAD: Error loading routines (attempt $retryCount/$maxRetries)" }
+                    if (retryCount <= maxRetries) {
+                        delay(1000L * retryCount) // Back off: 1s, 2s, 3s
                     }
-                    .collect { routinesList ->
-                        coordinator._routines.value = routinesList.filter { !it.id.startsWith("cycle_routine_") }
-                    }
-            } catch (e: Exception) {
-                Logger.e(e) { "Error loading routines in RoutineFlowManager init" }
+                }
+            }
+            if (retryCount > maxRetries) {
+                Logger.e { "ROUTINE_LOAD: All $maxRetries retries exhausted — routine list will remain empty until app restart" }
             }
         }
 
@@ -379,15 +399,34 @@ class RoutineFlowManager(
     fun getRoutineById(routineId: String): Routine? = coordinator._routines.value.find { it.id == routineId }
 
     fun saveRoutine(routine: Routine) {
-        scope.launch { workoutRepository.saveRoutine(routine) }
+        scope.launch {
+            try {
+                workoutRepository.saveRoutine(routine)
+                Logger.d { "ROUTINE_SAVE: Saved routine '${routine.name}' (id=${routine.id}, profileId=${routine.profileId})" }
+            } catch (e: Exception) {
+                Logger.e(e) { "ROUTINE_SAVE: Failed to save routine '${routine.name}' (id=${routine.id}, profileId=${routine.profileId})" }
+            }
+        }
     }
 
     fun updateRoutine(routine: Routine) {
-        scope.launch { workoutRepository.updateRoutine(routine) }
+        scope.launch {
+            try {
+                workoutRepository.updateRoutine(routine)
+            } catch (e: Exception) {
+                Logger.e(e) { "ROUTINE_SAVE: Failed to update routine '${routine.name}' (id=${routine.id})" }
+            }
+        }
     }
 
     fun deleteRoutine(routineId: String) {
-        scope.launch { workoutRepository.deleteRoutine(routineId) }
+        scope.launch {
+            try {
+                workoutRepository.deleteRoutine(routineId)
+            } catch (e: Exception) {
+                Logger.e(e) { "ROUTINE_SAVE: Failed to delete routine (id=$routineId)" }
+            }
+        }
     }
 
     /**
