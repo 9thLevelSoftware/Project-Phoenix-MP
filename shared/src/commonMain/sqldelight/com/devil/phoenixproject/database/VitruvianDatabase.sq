@@ -836,6 +836,12 @@ UPDATE RoutineExercise
 SET supersetId = ?, orderInSuperset = ?
 WHERE id = ?;
 
+-- Heal legacy routine rows that are missing an exerciseId by resolving from exerciseName.
+updateRoutineExerciseId:
+UPDATE RoutineExercise
+SET exerciseId = ?
+WHERE id = ?;
+
 -- Analytics Queries
 selectVolumeHistory:
 SELECT timestamp, totalReps, weightPerCableKg FROM WorkoutSession WHERE profile_id = :profileId ORDER BY timestamp ASC;

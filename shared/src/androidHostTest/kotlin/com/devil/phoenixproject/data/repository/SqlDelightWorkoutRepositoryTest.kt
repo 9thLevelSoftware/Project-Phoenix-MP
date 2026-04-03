@@ -1,10 +1,14 @@
 package com.devil.phoenixproject.data.repository
 
 import app.cash.turbine.test
+import com.devil.phoenixproject.domain.model.Exercise
+import com.devil.phoenixproject.domain.model.Routine
+import com.devil.phoenixproject.domain.model.RoutineExercise
 import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.testutil.FakeExerciseRepository
 import com.devil.phoenixproject.testutil.createTestDatabase
 import kotlin.test.assertEquals
+import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.test.runTest
@@ -177,6 +181,46 @@ class SqlDelightWorkoutRepositoryTest {
         assertEquals(session.peakForceConcentricA, retrieved.peakForceConcentricA)
         assertEquals(session.peakForceConcentricB, retrieved.peakForceConcentricB)
         assertEquals(session.rpe, retrieved.rpe)
+    }
+
+    @Test
+    fun `getRoutineById heals missing exerciseId by resolving exercise name`() = runTest {
+        val customExercise = Exercise(
+            id = "custom_bayesian_curl",
+            name = "Bayesian Cable Curl",
+            muscleGroup = "Biceps",
+            equipment = "Cable",
+            isCustom = true,
+        )
+        exerciseRepository.addExercise(customExercise)
+
+        val legacyRoutine = Routine(
+            id = "routine-legacy",
+            name = "Legacy Routine",
+            exercises = listOf(
+                RoutineExercise(
+                    id = "re-1",
+                    exercise = Exercise(
+                        id = null,
+                        name = "Bayesian Cable Curl",
+                        muscleGroup = "Biceps",
+                        equipment = "Cable",
+                    ),
+                    orderIndex = 0,
+                    setReps = listOf(10),
+                    weightPerCableKg = 12.5f,
+                ),
+            ),
+        )
+        repository.saveRoutine(legacyRoutine)
+
+        val loaded = repository.getRoutineById("routine-legacy")
+        assertNotNull(loaded)
+        assertEquals("custom_bayesian_curl", loaded.exercises.first().exercise.id)
+
+        // Verify DB self-heal so subsequent loads don't regress to null ID.
+        val healedRow = database.vitruvianDatabaseQueries.selectExercisesByRoutine("routine-legacy").executeAsOne()
+        assertEquals("custom_bayesian_curl", healedRow.exerciseId)
     }
 
     // ========== Helper Methods ==========
