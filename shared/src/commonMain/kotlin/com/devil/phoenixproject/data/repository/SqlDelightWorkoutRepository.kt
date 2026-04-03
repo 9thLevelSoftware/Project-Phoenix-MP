@@ -760,7 +760,7 @@ class SqlDelightWorkoutRepository(private val db: VitruvianDatabase, private val
         )
     }.asFlow().mapToList(Dispatchers.IO)
 
-    override suspend fun updatePRIfBetter(exerciseId: String, weightKg: Float, reps: Int, mode: String) {
+    override suspend fun updatePRIfBetter(exerciseId: String, weightKg: Float, reps: Int, mode: String, profileId: String) {
         withContext(Dispatchers.IO) {
             if (exerciseId.isBlank() || reps <= 0) return@withContext
 
@@ -770,7 +770,7 @@ class SqlDelightWorkoutRepository(private val db: VitruvianDatabase, private val
 
             val combinedPhase = "COMBINED"
 
-            val defaultProfileId = "default"
+            val defaultProfileId = profileId.ifBlank { "default" }
 
             val currentWeightPR = queries.selectPR(
                 exerciseId,

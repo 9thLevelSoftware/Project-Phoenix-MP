@@ -126,7 +126,7 @@ class FakeWorkoutRepository : WorkoutRepository {
 
     override fun getAllPersonalRecords(profileId: String): Flow<List<PersonalRecordEntity>> = _personalRecordsFlow
 
-    override suspend fun updatePRIfBetter(exerciseId: String, weightKg: Float, reps: Int, mode: String) {
+    override suspend fun updatePRIfBetter(exerciseId: String, weightKg: Float, reps: Int, mode: String, profileId: String) {
         val key = "$exerciseId-$mode"
         val existing = personalRecords[key]
         val newVolume = weightKg * reps

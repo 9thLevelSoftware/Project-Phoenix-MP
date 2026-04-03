@@ -53,7 +53,7 @@ interface WorkoutRepository {
 
     // Personal records
     fun getAllPersonalRecords(profileId: String): Flow<List<PersonalRecordEntity>>
-    suspend fun updatePRIfBetter(exerciseId: String, weightKg: Float, reps: Int, mode: String)
+    suspend fun updatePRIfBetter(exerciseId: String, weightKg: Float, reps: Int, mode: String, profileId: String = "default")
 
     /**
      * Get average set duration in milliseconds for a specific exercise.
