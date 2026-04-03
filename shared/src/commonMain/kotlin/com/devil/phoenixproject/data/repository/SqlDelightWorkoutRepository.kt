@@ -190,21 +190,29 @@ class SqlDelightWorkoutRepository(private val db: VitruvianDatabase, private val
         val exercises = exerciseRows.mapNotNull { row ->
             try {
                 // Try to get exercise from library, or create from stored data
-                val exercise = row.exerciseId?.let { exerciseId ->
-                    exerciseRepository.getExerciseById(exerciseId) ?: run {
-                        Logger.w { "Exercise not found in database: $exerciseId (${row.exerciseName}), using stored data" }
-                        Exercise(
-                            id = row.exerciseId,
-                            name = row.exerciseName,
-                            muscleGroup = row.exerciseMuscleGroup,
-                            muscleGroups = row.exerciseMuscleGroup,
-                            equipment = row.exerciseEquipment,
-                            isFavorite = false,
-                            isCustom = false,
-                        )
+                val resolvedExercise = row.exerciseId?.let { exerciseId ->
+                    exerciseRepository.getExerciseById(exerciseId)
+                        ?: exerciseRepository.findByName(row.exerciseName)
+                            ?.also { byName ->
+                                Logger.w {
+                                    "Routine exercise had stale exerciseId=$exerciseId; resolved by name '${row.exerciseName}' -> ${byName.id} and healing row ${row.id}"
+                                }
+                                queries.updateRoutineExerciseId(byName.id, row.id)
+                            }
+                } ?: exerciseRepository.findByName(row.exerciseName)
+                    ?.also { byName ->
+                        Logger.i {
+                            "Routine exercise missing exerciseId for '${row.exerciseName}'; resolved to ${byName.id} and healing row ${row.id}"
+                        }
+                        queries.updateRoutineExerciseId(byName.id, row.id)
                     }
-                } ?: run {
-                    Logger.d { "No exerciseId stored for routine exercise ${row.exerciseName}, using stored data" }
+
+                val exercise = resolvedExercise ?: run {
+                    if (row.exerciseId != null) {
+                        Logger.w { "Exercise not found in database: ${row.exerciseId} (${row.exerciseName}), using stored data fallback" }
+                    } else {
+                        Logger.d { "No exerciseId stored for routine exercise ${row.exerciseName}, using stored data fallback" }
+                    }
                     Exercise(
                         id = row.exerciseId,
                         name = row.exerciseName,
