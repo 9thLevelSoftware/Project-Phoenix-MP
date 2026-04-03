@@ -223,6 +223,67 @@ class SqlDelightWorkoutRepositoryTest {
         assertEquals("custom_bayesian_curl", healedRow.exerciseId)
     }
 
+    // ========== Profile ID Preservation Tests ==========
+
+    @Test
+    fun `getAllRoutines preserves profileId from database`() = runTest {
+        val routine = Routine(
+            id = "routine-profile-b",
+            name = "Profile B Routine",
+            exercises = listOf(
+                RoutineExercise(
+                    id = "re-1",
+                    exercise = Exercise(
+                        id = "bench",
+                        name = "Bench Press",
+                        muscleGroup = "Chest",
+                    ),
+                    orderIndex = 0,
+                    setReps = listOf(10),
+                    weightPerCableKg = 50f,
+                ),
+            ),
+            profileId = "profile-b",
+        )
+        exerciseRepository.addExercise(Exercise(id = "bench", name = "Bench Press", muscleGroup = "Chest"))
+        repository.saveRoutine(routine)
+
+        repository.getAllRoutines("profile-b").test {
+            val routines = awaitItem()
+            assertEquals(1, routines.size)
+            assertEquals("profile-b", routines.first().profileId)
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `getRoutineById preserves profileId from database`() = runTest {
+        val routine = Routine(
+            id = "routine-profile-c",
+            name = "Profile C Routine",
+            exercises = listOf(
+                RoutineExercise(
+                    id = "re-1",
+                    exercise = Exercise(
+                        id = "bench",
+                        name = "Bench Press",
+                        muscleGroup = "Chest",
+                    ),
+                    orderIndex = 0,
+                    setReps = listOf(10),
+                    weightPerCableKg = 50f,
+                ),
+            ),
+            profileId = "profile-c",
+        )
+        exerciseRepository.addExercise(Exercise(id = "bench", name = "Bench Press", muscleGroup = "Chest"))
+        repository.saveRoutine(routine)
+
+        val loaded = repository.getRoutineById("routine-profile-c")
+        assertNotNull(loaded)
+        assertEquals("profile-c", loaded.profileId)
+    }
+
     // ========== Helper Methods ==========
 
     private fun createTestSession(id: String = "test-session", timestamp: Long = System.currentTimeMillis()) = WorkoutSession(
