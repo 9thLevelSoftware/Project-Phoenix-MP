@@ -18,7 +18,7 @@ val syncModule = module {
             tokenStorage = get<PortalTokenStorage>(),
         )
     }
-    single<SyncRepository> { SqlDelightSyncRepository(get()) }
+    single<SyncRepository> { SqlDelightSyncRepository(get(), get()) }
     single {
         SyncManager(
             apiClient = get(),

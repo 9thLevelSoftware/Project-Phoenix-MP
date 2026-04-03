@@ -40,7 +40,10 @@ import kotlinx.serialization.json.Json
  * SQLDelight implementation of SyncRepository.
  * Provides database operations for syncing data with the Phoenix Portal.
  */
-class SqlDelightSyncRepository(private val db: VitruvianDatabase) : SyncRepository {
+class SqlDelightSyncRepository(
+    private val db: VitruvianDatabase,
+    private val userProfileRepository: UserProfileRepository,
+) : SyncRepository {
 
     private val queries = db.vitruvianDatabaseQueries
     private val json = Json { ignoreUnknownKeys = true }
@@ -256,7 +259,7 @@ class SqlDelightSyncRepository(private val db: VitruvianDatabase) : SyncReposito
                         updatedAt = dto.updatedAt,
                         serverId = dto.serverId,
                         deletedAt = dto.deletedAt,
-                        profile_id = "default",
+                        profile_id = userProfileRepository.activeProfile.value?.id ?: "default",
                     )
                 }
             }
@@ -283,7 +286,7 @@ class SqlDelightSyncRepository(private val db: VitruvianDatabase) : SyncReposito
                         prType = dto.prType,
                         volume = effectiveVolume.toDouble(),
                         phase = dto.phase,
-                        profile_id = "default",
+                        profile_id = userProfileRepository.activeProfile.value?.id ?: "default",
                     )
                 }
             }
@@ -311,7 +314,7 @@ class SqlDelightSyncRepository(private val db: VitruvianDatabase) : SyncReposito
                         createdAt = dto.createdAt,
                         lastUsed = existing?.lastUsed,
                         useCount = existing?.useCount ?: 0L,
-                        profile_id = "default",
+                        profile_id = userProfileRepository.activeProfile.value?.id ?: "default",
                     )
 
                     // Update sync fields

@@ -4,6 +4,7 @@ import com.devil.phoenixproject.data.sync.PersonalRecordSyncDto
 import com.devil.phoenixproject.data.sync.RoutineSyncDto
 import com.devil.phoenixproject.data.sync.WorkoutSessionSyncDto
 import com.devil.phoenixproject.domain.model.PRType
+import com.devil.phoenixproject.testutil.FakeUserProfileRepository
 import com.devil.phoenixproject.testutil.createTestDatabase
 import kotlinx.coroutines.test.runTest
 import org.junit.Before
@@ -14,16 +15,19 @@ import kotlin.test.assertNotNull
 class SqlDelightSyncRepositoryTest {
 
     private lateinit var database: com.devil.phoenixproject.database.VitruvianDatabase
+    private lateinit var userProfileRepository: FakeUserProfileRepository
     private lateinit var repository: SqlDelightSyncRepository
 
     @Before
     fun setup() {
         database = createTestDatabase()
-        repository = SqlDelightSyncRepository(database)
+        userProfileRepository = FakeUserProfileRepository()
+        userProfileRepository.setActiveProfileForTest(id = "active-profile")
+        repository = SqlDelightSyncRepository(database, userProfileRepository)
     }
 
     @Test
-    fun `mergeSessions persists default profile id`() = runTest {
+    fun `mergeSessions uses active profile id`() = runTest {
         repository.mergeSessions(
             sessions = listOf(
                 WorkoutSessionSyncDto(
@@ -48,11 +52,11 @@ class SqlDelightSyncRepositoryTest {
             .executeAsOneOrNull()
 
         assertNotNull(session)
-        assertEquals("default", session.profile_id)
+        assertEquals("active-profile", session.profile_id)
     }
 
     @Test
-    fun `mergePRs persists default profile id`() = runTest {
+    fun `mergePRs uses active profile id`() = runTest {
         repository.mergePRs(
             records = listOf(
                 PersonalRecordSyncDto(
@@ -78,15 +82,15 @@ class SqlDelightSyncRepositoryTest {
             workoutMode = "Old School",
             prType = PRType.MAX_WEIGHT.name,
             phase = "COMBINED",
-            profileId = "default",
+            profileId = "active-profile",
         ).executeAsOneOrNull()
 
         assertNotNull(profileRecord)
-        assertEquals("default", profileRecord.profile_id)
+        assertEquals("active-profile", profileRecord.profile_id)
     }
 
     @Test
-    fun `mergeRoutines persists default profile id`() = runTest {
+    fun `mergeRoutines uses active profile id`() = runTest {
         repository.mergeRoutines(
             routines = listOf(
                 RoutineSyncDto(
@@ -105,6 +109,6 @@ class SqlDelightSyncRepositoryTest {
             .executeAsOneOrNull()
 
         assertNotNull(routine)
-        assertEquals("default", routine.profile_id)
+        assertEquals("active-profile", routine.profile_id)
     }
 }
