@@ -250,7 +250,9 @@ class SqlDelightPersonalRecordRepository(private val db: VitruvianDatabase) : Pe
     ): List<PRType> {
         // Issue #319: Defensive validation for profileId
         if (profileId.isBlank()) {
-            Logger.e { "PR_SAVE: CRITICAL - profileId is blank for exercise=$exerciseId, using 'default' as fallback. Stack trace: ${Throwable().stackTrace.take(5).joinToString()}" }
+            Logger.e(IllegalStateException("Blank profileId while updating PRs for exercise=$exerciseId")) {
+                "PR_SAVE: CRITICAL - profileId is blank for exercise=$exerciseId, using 'default' as fallback."
+            }
         }
         val effectiveProfileId = profileId.ifBlank { "default" }
 

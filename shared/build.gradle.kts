@@ -21,7 +21,7 @@ kotlin {
     }
 
     // Android target (AGP 9.0 new DSL)
-    androidLibrary {
+    android {
         namespace = "com.devil.phoenixproject.shared"
         compileSdk = 36
         minSdk = 26
