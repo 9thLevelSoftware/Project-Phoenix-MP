@@ -40,6 +40,10 @@ class GamificationManager(
     private val _badgeEarnedEvents = MutableSharedFlow<List<Badge>>()
     val badgeEarnedEvents: SharedFlow<List<Badge>> = _badgeEarnedEvents.asSharedFlow()
 
+    // Issue #319: Flow for PR tracking errors that UI can observe
+    private val _prTrackingErrorEvents = MutableSharedFlow<String>()
+    val prTrackingErrorEvents: SharedFlow<String> = _prTrackingErrorEvents.asSharedFlow()
+
     /** Consecutive sets with quality score above minimum threshold (session-scoped) */
     private var consecutiveQualitySets: Int = 0
 
@@ -67,12 +71,19 @@ class GamificationManager(
         var hasCelebrationSound = false
 
         // Issue #319: Diagnostic logging for PR tracking pipeline
-        Logger.d {
+        // Log at INFO level so it's captured in release builds
+        Logger.i {
             "PR_TRACK: exerciseId=${exerciseId ?: "NULL"}, reps=$workingReps, " +
                 "weight=${achievedWeightKg}kg, volumeWeight=${volumeWeightKg}kg, " +
                 "mode=${programMode.displayName}, justLift=$isJustLift, echo=$isEchoMode, " +
                 "profile=$profileId"
         }
+
+        // Issue #319: Validate profileId is not blank/empty (defensive)
+        if (profileId.isBlank()) {
+            Logger.e { "PR_TRACK: CRITICAL - profileId is blank, PR tracking may fail. Using 'default' as fallback." }
+        }
+        val effectiveProfileId = profileId.ifBlank { "default" }
 
         // Always track PRs (skip for Just Lift and Echo modes)
         // Uses mode-specific PR lookup to track PRs separately per workout mode (#111)
@@ -100,18 +111,21 @@ class GamificationManager(
                         reps = workingReps,
                         workoutMode = workoutMode,
                         timestamp = timestamp,
-                        profileId = profileId,
+                        profileId = effectiveProfileId,
                     )
 
-                    // Issue #319: Always log PR result, regardless of gamification setting
+                    // Issue #319: Always log PR result at INFO level for visibility
                     result.onSuccess { brokenPRs ->
                         if (brokenPRs.isNotEmpty()) {
-                            Logger.i { "PR_TRACK: New PR(s) broken: $brokenPRs for exercise=$exId, mode=$workoutMode, profile=$profileId" }
+                            Logger.i { "PR_TRACK: SUCCESS — New PR(s) broken: $brokenPRs for exercise=$exId, mode=$workoutMode, profile=$effectiveProfileId" }
                         } else {
-                            Logger.d { "PR_TRACK: No new PR — existing records are equal or better (exercise=$exId, mode=$workoutMode, profile=$profileId)" }
+                            Logger.i { "PR_TRACK: No new PR — existing records are equal or better (exercise=$exId, mode=$workoutMode, profile=$effectiveProfileId, weight=${achievedWeightKg}kg, reps=$workingReps)" }
                         }
                     }.onFailure { e ->
-                        Logger.e(e) { "PR_TRACK: FAILED to save PR — exercise=$exId, mode=$workoutMode, profile=$profileId: ${e.message}" }
+                        val errorMsg = "Failed to save PR for ${exerciseRepository.getExerciseById(exId)?.name ?: exId}: ${e.message}"
+                        Logger.e { "PR_TRACK: $errorMsg (profile=$effectiveProfileId)" }
+                        // Issue #319: Emit to UI-visible error flow
+                        _prTrackingErrorEvents.emit(errorMsg)
                     }
 
                     // Check phase-specific PRs (Issue #111)
@@ -123,9 +137,9 @@ class GamificationManager(
                             reps = workingReps,
                             peakConcentricForceKg = peakConcentricForceKg,
                             peakEccentricForceKg = peakEccentricForceKg,
-                            profileId = profileId,
+                            profileId = effectiveProfileId,
                         ).onFailure { e ->
-                            Logger.e(e) { "PR_TRACK: Error updating phase-specific PRs: ${e.message}" }
+                            Logger.e { "PR_TRACK: Error updating phase-specific PRs: ${e.message}" }
                         }
                     }
 
@@ -154,14 +168,17 @@ class GamificationManager(
                                         brokenPRTypes = brokenPRs,
                                     ),
                                 )
-                                Logger.d(
-                                    "NEW PR ($prTypeDescription): ${exercise?.name} - $achievedWeightKg kg x $workingReps reps in $workoutMode mode",
-                                )
+                                Logger.i {
+                                    "NEW PR ($prTypeDescription): ${exercise?.name} - $achievedWeightKg kg x $workingReps reps in $workoutMode mode (profile=$effectiveProfileId)"
+                                }
                             }
                         }
                     }
                 } catch (e: Exception) {
-                    Logger.e(e) { "PR_TRACK: Uncaught exception in PR check: ${e.message}" }
+                    val errorMsg = "Unexpected error checking PR: ${e.message}"
+                    Logger.e(e) { "PR_TRACK: $errorMsg" }
+                    // Issue #319: Emit to UI-visible error flow (direct emit in suspend function)
+                    _prTrackingErrorEvents.emit(errorMsg)
                 }
             }
         }
@@ -171,8 +188,8 @@ class GamificationManager(
 
         // Update gamification stats and check for badges
         try {
-            gamificationRepository.updateStats(profileId)
-            val newBadges = gamificationRepository.checkAndAwardBadges(profileId)
+            gamificationRepository.updateStats(effectiveProfileId)
+            val newBadges = gamificationRepository.checkAndAwardBadges(effectiveProfileId)
             if (newBadges.isNotEmpty()) {
                 // Only emit badge sound if no other celebration sound is playing (avoid sound stacking)
                 // PR celebration dialog plays its own sound via callback, so skip badge sound when PR earned

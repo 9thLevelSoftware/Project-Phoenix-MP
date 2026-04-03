@@ -248,6 +248,12 @@ class SqlDelightPersonalRecordRepository(private val db: VitruvianDatabase) : Pe
         phase: WorkoutPhase,
         profileId: String,
     ): List<PRType> {
+        // Issue #319: Defensive validation for profileId
+        if (profileId.isBlank()) {
+            Logger.e { "PR_SAVE: CRITICAL - profileId is blank for exercise=$exerciseId, using 'default' as fallback. Stack trace: ${Throwable().stackTrace.take(5).joinToString()}" }
+        }
+        val effectiveProfileId = profileId.ifBlank { "default" }
+
         val brokenPRs = mutableListOf<PRType>()
         val canonicalWorkoutMode = normalizeWorkoutModeKey(workoutMode)
         val volumeForWeightPR = weightPRWeightPerCableKg * reps
@@ -255,22 +261,31 @@ class SqlDelightPersonalRecordRepository(private val db: VitruvianDatabase) : Pe
         val estimatedOneRepMax = OneRepMaxCalculator.epley(weightPRWeightPerCableKg, reps)
         val phaseName = phase.name
 
+        // Issue #319: Log the profile context being used
+        Logger.d { "PR_SAVE: Checking for exercise=$exerciseId, mode=$canonicalWorkoutMode, phase=$phaseName, profile=$effectiveProfileId" }
+
         // Check weight PR for this phase
         val currentWeightPR = queries.selectPR(
             exerciseId,
             canonicalWorkoutMode,
             PRType.MAX_WEIGHT.name,
             phaseName,
-            profileId = profileId,
+            profileId = effectiveProfileId,
             mapper = ::mapToPR,
         )
             .executeAsOneOrNull()
+
+        // Issue #319: Detect profile mismatch if a PR exists with a different profile_id
+        if (currentWeightPR != null && currentWeightPR.profileId != effectiveProfileId) {
+            Logger.w { "PR_SAVE: Profile mismatch detected for exercise=$exerciseId — existing PR has profile=${currentWeightPR.profileId}, but saving with profile=$effectiveProfileId" }
+        }
+
         val isNewWeightPR =
             currentWeightPR == null || weightPRWeightPerCableKg > currentWeightPR.weightPerCableKg
 
         // Issue #319: Diagnostic logging for PR comparison
         Logger.d {
-            "PR_CHECK[$phaseName/WEIGHT]: exercise=$exerciseId, mode=$canonicalWorkoutMode, profile=$profileId — " +
+            "PR_CHECK[$phaseName/WEIGHT]: exercise=$exerciseId, mode=$canonicalWorkoutMode, profile=$effectiveProfileId — " +
                 "new=${weightPRWeightPerCableKg}kg vs current=${currentWeightPR?.weightPerCableKg ?: "NONE"} → ${if (isNewWeightPR) "NEW PR" else "no change"}"
         }
 
@@ -280,15 +295,21 @@ class SqlDelightPersonalRecordRepository(private val db: VitruvianDatabase) : Pe
             canonicalWorkoutMode,
             PRType.MAX_VOLUME.name,
             phaseName,
-            profileId = profileId,
+            profileId = effectiveProfileId,
             mapper = ::mapToPR,
         )
             .executeAsOneOrNull()
+
+        // Issue #319: Detect profile mismatch for volume PR too
+        if (currentVolumePR != null && currentVolumePR.profileId != effectiveProfileId) {
+            Logger.w { "PR_SAVE: Profile mismatch detected for volume PR — exercise=$exerciseId, existing=${currentVolumePR.profileId}, saving=$effectiveProfileId" }
+        }
+
         val currentVolume = currentVolumePR?.volume ?: 0f
         val isNewVolumePR = volumeForVolumePR > currentVolume
 
         Logger.d {
-            "PR_CHECK[$phaseName/VOLUME]: exercise=$exerciseId, mode=$canonicalWorkoutMode, profile=$profileId — " +
+            "PR_CHECK[$phaseName/VOLUME]: exercise=$exerciseId, mode=$canonicalWorkoutMode, profile=$effectiveProfileId — " +
                 "new=${volumeForVolumePR} vs current=${currentVolume} → ${if (isNewVolumePR) "NEW PR" else "no change"}"
         }
 
@@ -297,6 +318,7 @@ class SqlDelightPersonalRecordRepository(private val db: VitruvianDatabase) : Pe
         // leave the DB in an inconsistent state while reporting Result.failure to the caller.
         db.transaction {
             if (isNewWeightPR) {
+                Logger.i { "PR_SAVE: Writing WEIGHT PR for exercise=$exerciseId, weight=${weightPRWeightPerCableKg}kg, profile=$effectiveProfileId" }
                 queries.upsertPR(
                     exerciseId = exerciseId,
                     exerciseName = "",
@@ -308,12 +330,13 @@ class SqlDelightPersonalRecordRepository(private val db: VitruvianDatabase) : Pe
                     prType = PRType.MAX_WEIGHT.name,
                     volume = volumeForWeightPR.toDouble(),
                     phase = phaseName,
-                    profile_id = profileId,
+                    profile_id = effectiveProfileId,
                 )
                 brokenPRs.add(PRType.MAX_WEIGHT)
             }
 
             if (isNewVolumePR) {
+                Logger.i { "PR_SAVE: Writing VOLUME PR for exercise=$exerciseId, volume=${volumeForVolumePR}, profile=$effectiveProfileId" }
                 queries.upsertPR(
                     exerciseId = exerciseId,
                     exerciseName = "",
@@ -325,7 +348,7 @@ class SqlDelightPersonalRecordRepository(private val db: VitruvianDatabase) : Pe
                     prType = PRType.MAX_VOLUME.name,
                     volume = volumeForVolumePR.toDouble(),
                     phase = phaseName,
-                    profile_id = profileId,
+                    profile_id = effectiveProfileId,
                 )
                 brokenPRs.add(PRType.MAX_VOLUME)
             }
@@ -336,12 +359,17 @@ class SqlDelightPersonalRecordRepository(private val db: VitruvianDatabase) : Pe
                 val currentExercise1RM = queries.selectExerciseById(exerciseId)
                     .executeAsOneOrNull()?.one_rep_max_kg?.toFloat() ?: 0f
                 if (estimatedOneRepMax > currentExercise1RM) {
+                    Logger.d { "PR_SAVE: Updating 1RM for exercise=$exerciseId from $currentExercise1RM to $estimatedOneRepMax" }
                     queries.updateOneRepMax(
                         one_rep_max_kg = estimatedOneRepMax.toDouble(),
                         id = exerciseId,
                     )
                 }
             }
+        }
+
+        if (brokenPRs.isNotEmpty()) {
+            Logger.i { "PR_SAVE: SUCCESS — Broken ${brokenPRs.size} PR(s) for exercise=$exerciseId: $brokenPRs (profile=$effectiveProfileId)" }
         }
 
         return brokenPRs
