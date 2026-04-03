@@ -223,6 +223,44 @@ class SqlDelightWorkoutRepositoryTest {
         assertEquals("custom_bayesian_curl", healedRow.exerciseId)
     }
 
+    @Test
+    fun `getRoutineById auto-creates custom exercise when exerciseId is null and findByName fails`() = runTest {
+        // No exercise added to exerciseRepository — findByName will return null
+
+        val routineWithNullId = Routine(
+            id = "routine-null-ex",
+            name = "Null Exercise Routine",
+            exercises = listOf(
+                RoutineExercise(
+                    id = "re-null",
+                    exercise = Exercise(
+                        id = null,
+                        name = "Bayesian Cable Curl",
+                        muscleGroup = "Biceps",
+                        equipment = "Cable",
+                    ),
+                    orderIndex = 0,
+                    setReps = listOf(10),
+                    weightPerCableKg = 12.5f,
+                ),
+            ),
+        )
+        repository.saveRoutine(routineWithNullId)
+
+        val loaded = repository.getRoutineById("routine-null-ex")
+        assertNotNull(loaded)
+        val exercise = loaded.exercises.first().exercise
+
+        // Exercise ID must NOT be null — it should have been auto-created
+        assertNotNull(exercise.id, "Exercise ID should not be null after self-healing")
+        assertEquals("Bayesian Cable Curl", exercise.name)
+
+        // Verify DB was healed — subsequent loads should also have the ID
+        val reloaded = repository.getRoutineById("routine-null-ex")
+        assertNotNull(reloaded)
+        assertEquals(exercise.id, reloaded!!.exercises.first().exercise.id)
+    }
+
     // ========== Profile ID Preservation Tests ==========
 
     @Test

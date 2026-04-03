@@ -209,20 +209,42 @@ class SqlDelightWorkoutRepository(private val db: VitruvianDatabase, private val
                     }
 
                 val exercise = resolvedExercise ?: run {
-                    if (row.exerciseId != null) {
-                        Logger.w { "Exercise not found in database: ${row.exerciseId} (${row.exerciseName}), using stored data fallback" }
+                    // Self-healing: auto-create a custom exercise so exerciseId is never null.
+                    // A null exerciseId breaks the entire PR tracking pipeline (#319).
+                    val autoCreated = exerciseRepository.createCustomExercise(
+                        Exercise(
+                            name = row.exerciseName,
+                            muscleGroup = row.exerciseMuscleGroup,
+                            equipment = row.exerciseEquipment,
+                            isCustom = true,
+                        ),
+                    ).getOrNull()
+
+                    if (autoCreated != null) {
+                        Logger.i {
+                            "HEAL: Auto-created custom exercise '${row.exerciseName}' -> id=${autoCreated.id} " +
+                                "(was null in RoutineExercise ${row.id})"
+                        }
+                        // Heal the DB row so subsequent loads don't repeat this
+                        queries.updateRoutineExerciseId(autoCreated.id!!, row.id)
+                        autoCreated
                     } else {
-                        Logger.d { "No exerciseId stored for routine exercise ${row.exerciseName}, using stored data fallback" }
+                        // Last resort: generate a synthetic ID to prevent null propagation
+                        val syntheticId = generateUUID()
+                        Logger.w {
+                            "HEAL: createCustomExercise failed for '${row.exerciseName}', " +
+                                "using synthetic ID=$syntheticId"
+                        }
+                        Exercise(
+                            id = syntheticId,
+                            name = row.exerciseName,
+                            muscleGroup = row.exerciseMuscleGroup,
+                            muscleGroups = row.exerciseMuscleGroup,
+                            equipment = row.exerciseEquipment,
+                            isFavorite = false,
+                            isCustom = true,
+                        )
                     }
-                    Exercise(
-                        id = row.exerciseId,
-                        name = row.exerciseName,
-                        muscleGroup = row.exerciseMuscleGroup,
-                        muscleGroups = row.exerciseMuscleGroup,
-                        equipment = row.exerciseEquipment,
-                        isFavorite = false,
-                        isCustom = false,
-                    )
                 }
 
                 // Parse comma-separated setReps (supports "AMRAP" as null marker)
