@@ -401,8 +401,10 @@ class RoutineFlowManager(
     fun saveRoutine(routine: Routine) {
         scope.launch {
             try {
-                workoutRepository.saveRoutine(routine)
-                Logger.d { "ROUTINE_SAVE: Saved routine '${routine.name}' (id=${routine.id}, profileId=${routine.profileId})" }
+                val activeProfileId = userProfileRepository.activeProfile.value?.id ?: "default"
+                val routineWithProfile = routine.copy(profileId = activeProfileId)
+                workoutRepository.saveRoutine(routineWithProfile)
+                Logger.d { "ROUTINE_SAVE: Saved routine '${routineWithProfile.name}' (id=${routineWithProfile.id}, profileId=${routineWithProfile.profileId})" }
             } catch (e: Exception) {
                 Logger.e(e) { "ROUTINE_SAVE: Failed to save routine '${routine.name}' (id=${routine.id}, profileId=${routine.profileId})" }
             }
@@ -412,7 +414,10 @@ class RoutineFlowManager(
     fun updateRoutine(routine: Routine) {
         scope.launch {
             try {
-                workoutRepository.updateRoutine(routine)
+                val activeProfileId = userProfileRepository.activeProfile.value?.id ?: "default"
+                val routineWithProfile = routine.copy(profileId = activeProfileId)
+                workoutRepository.updateRoutine(routineWithProfile)
+                Logger.d { "ROUTINE_SAVE: Updated routine '${routineWithProfile.name}' (id=${routineWithProfile.id}, profileId=${routineWithProfile.profileId})" }
             } catch (e: Exception) {
                 Logger.e(e) { "ROUTINE_SAVE: Failed to update routine '${routine.name}' (id=${routine.id})" }
             }
