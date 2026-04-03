@@ -1659,6 +1659,37 @@ UPDATE UserProfile SET name = ?, colorIndex = ? WHERE id = ?;
 setActiveProfile:
 UPDATE UserProfile SET isActive = CASE WHEN id = ? THEN 1 ELSE 0 END;
 
+-- Profile data cascade: reassign all data from one profile to another
+reassignRoutineProfile:
+UPDATE Routine SET profile_id = ? WHERE profile_id = ?;
+
+reassignSessionProfile:
+UPDATE WorkoutSession SET profile_id = ? WHERE profile_id = ?;
+
+reassignPRProfile:
+UPDATE PersonalRecord SET profile_id = ? WHERE profile_id = ?;
+
+reassignTrainingCycleProfile:
+UPDATE TrainingCycle SET profile_id = ? WHERE profile_id = ?;
+
+reassignBadgeProfile:
+UPDATE EarnedBadge SET profile_id = ? WHERE profile_id = ?;
+
+reassignStreakProfile:
+UPDATE StreakHistory SET profile_id = ? WHERE profile_id = ?;
+
+reassignGamificationStatsProfile:
+UPDATE GamificationStats SET profile_id = ? WHERE profile_id = ?;
+
+reassignRpgAttributesProfile:
+UPDATE RpgAttributes SET profile_id = ? WHERE profile_id = ?;
+
+reassignAssessmentResultProfile:
+UPDATE AssessmentResult SET profile_id = ? WHERE profile_id = ?;
+
+reassignProgressionProfile:
+UPDATE ProgressionEvent SET profile_id = ? WHERE profile_id = ?;
+
 deleteProfile:
 DELETE FROM UserProfile WHERE id = ? AND id != 'default';
 

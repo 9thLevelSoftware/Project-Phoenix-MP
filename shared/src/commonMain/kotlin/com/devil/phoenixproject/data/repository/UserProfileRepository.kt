@@ -1,5 +1,6 @@
 package com.devil.phoenixproject.data.repository
 
+import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.database.VitruvianDatabase
 import com.devil.phoenixproject.domain.model.currentTimeMillis
 import com.devil.phoenixproject.domain.model.generateUUID
@@ -126,6 +127,23 @@ class SqlDelightUserProfileRepository(private val database: VitruvianDatabase) :
     override suspend fun deleteProfile(id: String): Boolean {
         if (id == "default") return false
         val wasActive = _activeProfile.value?.id == id
+        val targetProfileId = if (wasActive) "default" else (_activeProfile.value?.id ?: "default")
+
+        // Cascade: reassign all data from the deleted profile to the target profile
+        Logger.i { "PROFILE_DELETE: Reassigning data from profile '$id' to '$targetProfileId'" }
+        database.transaction {
+            queries.reassignRoutineProfile(targetProfileId, id)
+            queries.reassignSessionProfile(targetProfileId, id)
+            queries.reassignPRProfile(targetProfileId, id)
+            queries.reassignTrainingCycleProfile(targetProfileId, id)
+            queries.reassignBadgeProfile(targetProfileId, id)
+            queries.reassignStreakProfile(targetProfileId, id)
+            queries.reassignGamificationStatsProfile(targetProfileId, id)
+            queries.reassignRpgAttributesProfile(targetProfileId, id)
+            queries.reassignAssessmentResultProfile(targetProfileId, id)
+            queries.reassignProgressionProfile(targetProfileId, id)
+        }
+
         queries.deleteProfile(id)
         if (wasActive) {
             queries.setActiveProfile("default")

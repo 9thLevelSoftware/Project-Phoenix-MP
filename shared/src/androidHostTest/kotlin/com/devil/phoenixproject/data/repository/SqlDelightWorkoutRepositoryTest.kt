@@ -322,6 +322,41 @@ class SqlDelightWorkoutRepositoryTest {
         assertEquals("profile-c", loaded.profileId)
     }
 
+    // ========== Profile Cascade Reassignment Tests ==========
+
+    @Test
+    fun `routines survive profile deletion via reassignment`() = runTest {
+        val routine = Routine(
+            id = "routine-orphan",
+            name = "Orphan Routine",
+            exercises = emptyList(),
+            profileId = "profile-to-delete",
+        )
+        repository.saveRoutine(routine)
+
+        // Verify it's saved under profile-to-delete
+        val rawBefore = database.vitruvianDatabaseQueries
+            .selectRoutineById("routine-orphan")
+            .executeAsOneOrNull()
+        assertEquals("profile-to-delete", rawBefore?.profile_id)
+
+        // Simulate cascade reassignment (what deleteProfile does)
+        database.vitruvianDatabaseQueries.reassignRoutineProfile("default", "profile-to-delete")
+
+        // Verify routine now belongs to default profile
+        val rawAfter = database.vitruvianDatabaseQueries
+            .selectRoutineById("routine-orphan")
+            .executeAsOneOrNull()
+        assertEquals("default", rawAfter?.profile_id)
+
+        // Verify it shows up in getAllRoutines for default profile
+        repository.getAllRoutines("default").test {
+            val routines = awaitItem()
+            assertTrue(routines.any { it.id == "routine-orphan" })
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
     // ========== Helper Methods ==========
 
     private fun createTestSession(id: String = "test-session", timestamp: Long = System.currentTimeMillis()) = WorkoutSession(
