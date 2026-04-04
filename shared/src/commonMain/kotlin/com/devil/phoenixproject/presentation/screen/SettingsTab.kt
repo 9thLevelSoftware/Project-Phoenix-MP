@@ -34,6 +34,7 @@ import com.devil.phoenixproject.util.DataBackupManager
 import com.devil.phoenixproject.util.DeviceInfo
 import com.devil.phoenixproject.util.ImportResult
 import com.devil.phoenixproject.util.KmpUtils
+import com.devil.phoenixproject.util.PixelBleExperiments
 import com.devil.phoenixproject.util.rememberFilePicker
 import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.stringResource
@@ -1623,6 +1624,72 @@ fun SettingsTab(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+
+                // --- Pixel BLE Experiment Flags (Issue #333) ---
+                Spacer(modifier = Modifier.height(Spacing.medium))
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                Spacer(modifier = Modifier.height(Spacing.small))
+
+                Text(
+                    "Pixel 6/7 BLE Experiments",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = Color(0xFFEF4444),
+                )
+                Text(
+                    if (PixelBleExperiments.isAffectedPixel()) "This device IS affected (${DeviceInfo.model})"
+                    else "This device is NOT affected (${DeviceInfo.model})",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (PixelBleExperiments.isAffectedPixel()) Color(0xFFEF4444)
+                    else MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(modifier = Modifier.height(Spacing.small))
+
+                val flagA by PixelBleExperiments.skipMtu.collectAsState()
+                val flagB by PixelBleExperiments.pausePollingBeforeConfig.collectAsState()
+                val flagC by PixelBleExperiments.disablePostConfigDiagnostic.collectAsState()
+                val flagD by PixelBleExperiments.extendedConfigStartDelay.collectAsState()
+                val flagE by PixelBleExperiments.postMtuStabilizationDelay.collectAsState()
+
+                PixelExperimentToggle("A: Skip MTU", "Don't negotiate MTU (use default 23)", flagA) {
+                    PixelBleExperiments.setSkipMtu(it)
+                }
+                PixelExperimentToggle("B: Pause Polling", "Stop polling 500ms before CONFIG", flagB) {
+                    PixelBleExperiments.setPausePollingBeforeConfig(it)
+                }
+                PixelExperimentToggle("C: No Post-Config Read", "Skip diagnostic read after CONFIG", flagC) {
+                    PixelBleExperiments.setDisablePostConfigDiagnostic(it)
+                }
+                PixelExperimentToggle("D: Extended Delay", "1000ms CONFIG→START (vs 100ms)", flagD) {
+                    PixelBleExperiments.setExtendedConfigStartDelay(it)
+                }
+                PixelExperimentToggle("E: Post-MTU Delay", "1s stabilization after MTU change", flagE) {
+                    PixelBleExperiments.setPostMtuStabilizationDelay(it)
+                }
+
+                Spacer(modifier = Modifier.height(Spacing.small))
+                Row(horizontalArrangement = Arrangement.spacedBy(Spacing.small)) {
+                    OutlinedButton(
+                        onClick = { PixelBleExperiments.enableAll() },
+                        shape = RoundedCornerShape(12.dp),
+                        border = BorderStroke(1.dp, Color(0xFFEF4444)),
+                    ) {
+                        Text("Enable All", color = Color(0xFFEF4444), style = MaterialTheme.typography.labelMedium)
+                    }
+                    OutlinedButton(
+                        onClick = { PixelBleExperiments.disableAll() },
+                        shape = RoundedCornerShape(12.dp),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+                    ) {
+                        Text("Disable All", style = MaterialTheme.typography.labelMedium)
+                    }
+                }
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    "Toggle flags BEFORE connecting. Test one at a time to isolate root cause. Reconnect after changing.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
         }
 
@@ -2273,4 +2340,44 @@ private fun DiscoModeUnlockDialog(onDismiss: () -> Unit) {
             }
         },
     )
+}
+
+/**
+ * Toggle row for a single Pixel BLE experiment flag (Issue #333).
+ */
+@Composable
+private fun PixelExperimentToggle(
+    label: String,
+    description: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onCheckedChange(!checked) }
+            .padding(vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                label,
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.Medium,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            Text(
+                description,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        Switch(
+            checked = checked,
+            onCheckedChange = onCheckedChange,
+            colors = SwitchDefaults.colors(
+                checkedTrackColor = Color(0xFFEF4444),
+            ),
+        )
+    }
 }

@@ -43,6 +43,7 @@ import com.devil.phoenixproject.util.BlePacketFactory
 import com.devil.phoenixproject.util.Constants
 import com.devil.phoenixproject.util.DataBackupManager
 import com.devil.phoenixproject.util.KmpUtils
+import com.devil.phoenixproject.util.PixelBleExperiments
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -1751,6 +1752,16 @@ class ActiveSessionEngine(
                     stopMotionStartDetection()
                 }
 
+                // Flag B (Issue #333): Pause polling/heartbeat before CONFIG write.
+                // The heartbeat no-op write uses the same TX characteristic. On BCM4389,
+                // consecutive writes to the same characteristic may need more recovery time.
+                if (PixelBleExperiments.pausePollingBeforeConfig.value) {
+                    val pauseMs = PixelBleExperiments.POLLING_PAUSE_BEFORE_CONFIG_MS
+                    Logger.w { "FLAG B: Pausing polling ${pauseMs}ms before CONFIG write" }
+                    bleRepository.stopPolling()
+                    delay(pauseMs)
+                }
+
                 try {
                     bleRepository.sendWorkoutCommand(command).getOrThrow()
                     Logger.i { "CONFIG command sent: ${command.size} bytes for ${effectiveParams.programMode}" }
@@ -1767,11 +1778,24 @@ class ActiveSessionEngine(
                 } catch (e: Exception) {
                     Logger.e(e) { "Failed to send config command" }
                     coordinator._bleErrorEvents.tryEmit("Failed to send command: ${e.message}")
+                    // Resume polling if we paused it (Flag B) — startActiveWorkoutPolling
+                    // won't be reached, so restart here to maintain connection keep-alive
+                    if (PixelBleExperiments.pausePollingBeforeConfig.value) {
+                        bleRepository.startActiveWorkoutPolling()
+                    }
                     return@launch
                 }
 
                 if (!effectiveParams.isEchoMode) {
-                    delay(100)
+                    // Flag D (Issue #333): Extended CONFIG→START delay for BCM4389.
+                    val configStartDelayMs = if (PixelBleExperiments.extendedConfigStartDelay.value) {
+                        Logger.w { "FLAG D: Using extended CONFIG→START delay: ${PixelBleExperiments.EXTENDED_CONFIG_START_DELAY_MS}ms" }
+                        PixelBleExperiments.EXTENDED_CONFIG_START_DELAY_MS
+                    } else {
+                        100L
+                    }
+                    delay(configStartDelayMs)
+
                     try {
                         val startCommand = BlePacketFactory.createStartCommand()
                         bleRepository.sendWorkoutCommand(startCommand).getOrThrow()
