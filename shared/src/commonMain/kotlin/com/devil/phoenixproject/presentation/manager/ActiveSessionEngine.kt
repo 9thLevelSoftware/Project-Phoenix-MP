@@ -1183,7 +1183,7 @@ class ActiveSessionEngine(
                 return
             }
 
-            bleRepository.sendWorkoutCommand(command)
+            bleRepository.sendWorkoutCommand(command).getOrThrow()
             Logger.d("Weight update sent to machine: $weightKg kg")
         } catch (e: Exception) {
             Logger.e(e) { "Failed to send weight update: ${e.message}" }
@@ -1752,7 +1752,7 @@ class ActiveSessionEngine(
                 }
 
                 try {
-                    bleRepository.sendWorkoutCommand(command)
+                    bleRepository.sendWorkoutCommand(command).getOrThrow()
                     Logger.i { "CONFIG command sent: ${command.size} bytes for ${effectiveParams.programMode}" }
                     val preview = command.take(16).joinToString(" ") { it.toUByte().toString(16).padStart(2, '0').uppercase() }
                     Logger.d { "Config preview: $preview ..." }
@@ -1774,7 +1774,7 @@ class ActiveSessionEngine(
                     delay(100)
                     try {
                         val startCommand = BlePacketFactory.createStartCommand()
-                        bleRepository.sendWorkoutCommand(startCommand)
+                        bleRepository.sendWorkoutCommand(startCommand).getOrThrow()
                         Logger.i { "START command sent (0x03)" }
                     } catch (e: Exception) {
                         Logger.e(e) { "Failed to send START command" }
