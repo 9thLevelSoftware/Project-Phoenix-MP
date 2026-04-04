@@ -163,4 +163,10 @@ interface SyncRepository {
      * it is NOT overwritten (local data wins for immutable sessions).
      */
     suspend fun mergePortalSessions(sessions: List<WorkoutSession>)
+
+    /**
+     * Merge personal records from portal pull response, scoped to profile.
+     * Uses INSERT OR IGNORE — local PRs win on conflict.
+     */
+    suspend fun mergePersonalRecords(records: List<PersonalRecordSyncDto>, profileId: String = "default")
 }

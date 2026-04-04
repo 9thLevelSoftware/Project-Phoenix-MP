@@ -715,6 +715,11 @@ upsertPR:
 INSERT OR REPLACE INTO PersonalRecord (exerciseId, exerciseName, weight, reps, oneRepMax, achievedAt, workoutMode, prType, volume, phase, profile_id)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
+-- Insert PR but ignore on conflict (local wins) - for portal pull merge
+insertPRIgnore:
+INSERT OR IGNORE INTO PersonalRecord (exerciseId, exerciseName, weight, reps, oneRepMax, achievedAt, workoutMode, prType, volume, phase, profile_id)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+
 -- Delete PR by unique key (for upsert fallback)
 deletePRByKey:
 DELETE FROM PersonalRecord

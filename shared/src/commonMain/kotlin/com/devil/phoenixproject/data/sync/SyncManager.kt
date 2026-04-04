@@ -545,6 +545,17 @@ class SyncManager(
             Logger.d("SyncManager") { "Merged portal gamification stats" }
         }
 
+        // 5b. Personal records — merge from portal (insert if not exists, local wins)
+        if (pullResponse.personalRecords.isNotEmpty()) {
+            val prDtos = pullResponse.personalRecords.map { pr ->
+                PortalPullAdapter.toPersonalRecordSyncDto(pr)
+            }
+            syncRepository.mergePersonalRecords(prDtos, mergeProfileId)
+            Logger.d("SyncManager") {
+                "Merged ${prDtos.size} personal records from portal"
+            }
+        }
+
         // 6. RPG attributes — server wins (overwrite local)
         pullResponse.rpgAttributes?.let { rpg ->
             val characterClass = try {

@@ -1099,4 +1099,29 @@ class SqlDelightSyncRepository(
     override suspend fun getAllAssessments(profileId: String): List<com.devil.phoenixproject.database.AssessmentResult> = withContext(Dispatchers.IO) {
         queries.selectAllAssessments(profileId = profileId).executeAsList()
     }
+
+    override suspend fun mergePersonalRecords(records: List<PersonalRecordSyncDto>, profileId: String) {
+        withContext(Dispatchers.IO) {
+            db.transaction {
+                records.forEach { dto ->
+                    // INSERT OR IGNORE — local PRs win on conflict
+                    val effectiveVolume = if (dto.volume > 0f) dto.volume else dto.weight * dto.reps
+                    queries.insertPRIgnore(
+                        exerciseId = dto.exerciseId,
+                        exerciseName = dto.exerciseName,
+                        weight = dto.weight.toDouble(),
+                        reps = dto.reps.toLong(),
+                        oneRepMax = dto.oneRepMax.toDouble(),
+                        achievedAt = dto.achievedAt,
+                        workoutMode = dto.workoutMode,
+                        prType = dto.prType,
+                        volume = effectiveVolume.toDouble(),
+                        phase = dto.phase,
+                        profile_id = profileId,
+                    )
+                }
+            }
+            Logger.d { "Merged ${records.size} personal records from portal (profile=$profileId)" }
+        }
+    }
 }

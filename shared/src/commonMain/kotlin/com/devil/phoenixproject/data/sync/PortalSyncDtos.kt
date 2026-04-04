@@ -444,9 +444,10 @@ data class PortalSyncPullRequest(val deviceId: String, val lastSync: Long, val p
 @Serializable
 data class PortalSyncPullResponse(
     val syncTime: Long,
-    val sessions: List<PullWorkoutSessionDto> = emptyList(), // Skipped during merge (push-only)
+    val sessions: List<PullWorkoutSessionDto> = emptyList(), // Merged via INSERT OR IGNORE (local wins)
     val routines: List<PullRoutineDto> = emptyList(),
     val cycles: List<PullTrainingCycleDto> = emptyList(),
+    val personalRecords: List<PullPersonalRecordDto> = emptyList(),
     val rpgAttributes: PullRpgAttributesDto? = null,
     val badges: List<PullBadgeDto> = emptyList(),
     val gamificationStats: PullGamificationStatsDto? = null,
@@ -457,9 +458,9 @@ data class PortalSyncPullResponse(
 )
 
 /**
- * Pulled workout session — included in response but SKIPPED during merge.
- * Sessions are immutable/push-only per PULL-03.
- * Minimal fields to allow deserialization without error.
+ * Pulled workout session -- merged into local DB via INSERT OR IGNORE.
+ * Local data wins on conflict (existing sessions are not overwritten).
+ * Multi-device scenario: sessions from device A appear on device B after pull.
  */
 @Serializable
 data class PullWorkoutSessionDto(
@@ -632,4 +633,24 @@ data class PullGamificationStatsDto(
     val longestStreak: Int = 0,
     val currentStreak: Int = 0,
     val totalTimeSeconds: Int = 0,
+)
+
+/**
+ * Personal record from pull response.
+ * Maps from portal's personal_records table (snake_case in DB, camelCase in response).
+ */
+@Serializable
+data class PullPersonalRecordDto(
+    val id: String = "",
+    val userId: String = "",
+    val exerciseName: String = "",
+    val muscleGroup: String = "General",
+    val recordType: String = "1RM",
+    val value: Double = 0.0,
+    val weightKg: Double? = null,
+    val reps: Int? = null,
+    val workoutPhase: String? = "COMBINED",
+    val sessionId: String? = null,
+    val achievedAt: String? = null,
+    val updatedAt: String? = null,
 )

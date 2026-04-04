@@ -141,6 +141,37 @@ object PortalPullAdapter {
     }
 
     /**
+     * Convert a pulled personal record DTO to the legacy PersonalRecordSyncDto
+     * used by SyncRepository merge methods.
+     *
+     * Weight convention: value is stored per-cable in DB. No multiplication needed.
+     */
+    fun toPersonalRecordSyncDto(pr: PullPersonalRecordDto): PersonalRecordSyncDto {
+        val now = currentTimeMillis()
+        return PersonalRecordSyncDto(
+            clientId = pr.id,
+            serverId = pr.id,
+            exerciseId = pr.id, // PR records don't have a separate exerciseId
+            exerciseName = pr.exerciseName,
+            weight = pr.value.toFloat(),
+            reps = pr.reps ?: 0,
+            oneRepMax = 0f, // Portal doesn't send computed 1RM
+            achievedAt = pr.achievedAt?.let {
+                try {
+                    kotlinx.datetime.Instant.parse(it).toEpochMilliseconds()
+                } catch (_: Exception) { now }
+            } ?: now,
+            workoutMode = pr.recordType,
+            prType = pr.recordType,
+            phase = pr.workoutPhase ?: "COMBINED",
+            volume = pr.value.toFloat(),
+            deletedAt = null,
+            createdAt = now,
+            updatedAt = now,
+        )
+    }
+
+    /**
      * Parse portal eccentricLoad string to integer percentage.
      * Portal sends enum names like "LOAD_100", "LOAD_150", or null.
      */
