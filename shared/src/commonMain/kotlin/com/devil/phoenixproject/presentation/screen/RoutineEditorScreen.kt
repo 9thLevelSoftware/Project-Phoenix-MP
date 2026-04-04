@@ -1,20 +1,54 @@
 package com.devil.phoenixproject.presentation.screen
 
-import androidx.compose.animation.*
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExtendedFloatingActionButton
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableStateSetOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -23,7 +57,14 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.data.repository.PersonalRecordRepository
-import com.devil.phoenixproject.domain.model.*
+import com.devil.phoenixproject.domain.model.Routine
+import com.devil.phoenixproject.domain.model.RoutineExercise
+import com.devil.phoenixproject.domain.model.RoutineItem
+import com.devil.phoenixproject.domain.model.Superset
+import com.devil.phoenixproject.domain.model.SupersetColors
+import com.devil.phoenixproject.domain.model.WeightUnit
+import com.devil.phoenixproject.domain.model.generateSupersetId
+import com.devil.phoenixproject.domain.model.generateUUID
 import com.devil.phoenixproject.presentation.components.ExercisePickerDialog
 import com.devil.phoenixproject.presentation.components.ExerciseRowInSuperset
 import com.devil.phoenixproject.presentation.components.ExerciseRowWithConnector
@@ -37,8 +78,20 @@ import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.koinInject
 import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.rememberReorderableLazyListState
-import vitruvianprojectphoenix.shared.generated.resources.*
 import vitruvianprojectphoenix.shared.generated.resources.Res
+import vitruvianprojectphoenix.shared.generated.resources.action_cancel
+import vitruvianprojectphoenix.shared.generated.resources.action_delete
+import vitruvianprojectphoenix.shared.generated.resources.action_edit
+import vitruvianprojectphoenix.shared.generated.resources.action_save
+import vitruvianprojectphoenix.shared.generated.resources.add_exercise
+import vitruvianprojectphoenix.shared.generated.resources.cannot_be_undone
+import vitruvianprojectphoenix.shared.generated.resources.choose_color
+import vitruvianprojectphoenix.shared.generated.resources.delete_all
+import vitruvianprojectphoenix.shared.generated.resources.delete_selected_exercises
+import vitruvianprojectphoenix.shared.generated.resources.delete_superset_title
+import vitruvianprojectphoenix.shared.generated.resources.label_name
+import vitruvianprojectphoenix.shared.generated.resources.rename_superset
+import vitruvianprojectphoenix.shared.generated.resources.routine_name
 
 // State holder for the editor
 data class RoutineEditorState(
@@ -144,7 +197,19 @@ fun RoutineEditorScreen(
     val lazyListState = rememberLazyListState()
 
     fun normalizeRoutine(routine: Routine): Routine {
-        val reindexedExercises = routine.exercises.mapIndexed { index, ex ->
+        // Issue #334: Reorder exercises so superset members are contiguous.
+        // When exercises are added to a superset they get appended to the end
+        // of the flat list. getNextStep() Phase C assumes superset members are
+        // contiguous, so we must group them before reindexing.
+        val reorderedExercises = routine.getItems().flatMap { item ->
+            when (item) {
+                is RoutineItem.Single -> listOf(item.exercise)
+                is RoutineItem.SupersetItem ->
+                    item.superset.exercises.sortedBy { it.orderInSuperset }
+            }
+        }
+
+        val reindexedExercises = reorderedExercises.mapIndexed { index, ex ->
             ex.copy(orderIndex = index)
         }
         val exercisesBySuperset = reindexedExercises.groupBy { it.supersetId }

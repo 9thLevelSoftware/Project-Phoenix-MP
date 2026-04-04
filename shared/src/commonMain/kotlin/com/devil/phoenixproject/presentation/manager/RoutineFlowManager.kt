@@ -6,7 +6,20 @@ import com.devil.phoenixproject.data.repository.CompletedSetRepository
 import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.data.repository.UserProfileRepository
 import com.devil.phoenixproject.data.repository.WorkoutRepository
-import com.devil.phoenixproject.domain.model.*
+import com.devil.phoenixproject.domain.model.EccentricLoad
+import com.devil.phoenixproject.domain.model.EchoLevel
+import com.devil.phoenixproject.domain.model.ProgramMode
+import com.devil.phoenixproject.domain.model.RepCount
+import com.devil.phoenixproject.domain.model.Routine
+import com.devil.phoenixproject.domain.model.RoutineExercise
+import com.devil.phoenixproject.domain.model.RoutineFlowState
+import com.devil.phoenixproject.domain.model.RoutineItem
+import com.devil.phoenixproject.domain.model.Superset
+import com.devil.phoenixproject.domain.model.SupersetColors
+import com.devil.phoenixproject.domain.model.WorkoutParameters
+import com.devil.phoenixproject.domain.model.WorkoutState
+import com.devil.phoenixproject.domain.model.currentTimeMillis
+import com.devil.phoenixproject.domain.model.generateSupersetId
 import com.devil.phoenixproject.domain.usecase.ResolveRoutineWeightsUseCase
 import com.devil.phoenixproject.util.Constants
 import kotlinx.coroutines.CoroutineScope
@@ -203,13 +216,27 @@ class RoutineFlowManager(
         val currentSupersetId = currentExercise.supersetId
 
         if (currentSupersetId != null) {
-            val supersetExerciseIndices = routine.exercises
-                .mapIndexedNotNull { index, ex ->
-                    if (ex.supersetId == currentSupersetId) index else null
+            // Issue #334: Use display ordering to find next exercise after superset,
+            // handles non-contiguous superset members in the flat list.
+            val items = routine.getItems()
+            val currentSupersetItemIdx = items.indexOfFirst { item ->
+                item is RoutineItem.SupersetItem && item.superset.exercises.any {
+                    it.supersetId == currentSupersetId
                 }
-            val lastSupersetIndex = supersetExerciseIndices.maxOrNull() ?: coordinator._currentExerciseIndex.value
-            val nextIndex = lastSupersetIndex + 1
-            return if (nextIndex < routine.exercises.size) nextIndex else null
+            }
+            if (currentSupersetItemIdx >= 0) {
+                for (i in (currentSupersetItemIdx + 1) until items.size) {
+                    val nextExercises = when (val item = items[i]) {
+                        is RoutineItem.Single -> listOf(item.exercise)
+                        is RoutineItem.SupersetItem ->
+                            item.superset.exercises.sortedBy { it.orderInSuperset }
+                    }
+                    val firstEx = nextExercises.firstOrNull() ?: continue
+                    val idx = routine.exercises.indexOf(firstEx)
+                    if (idx >= 0) return idx
+                }
+            }
+            return null
         }
 
         val nextIndex = coordinator._currentExerciseIndex.value + 1
@@ -252,10 +279,29 @@ class RoutineFlowManager(
             }
 
             // C. Superset Complete -> Move to next exercise after superset
-            val maxIndex = supersetExercises.maxOf { routine.exercises.indexOf(it) }
-            for (nextExIndex in (maxIndex + 1) until routine.exercises.size) {
-                if (nextExIndex !in skippedIndices) {
-                    return nextExIndex to 0
+            // Issue #334: Use display ordering (getItems) to find what comes after
+            // this superset. This handles the case where superset members are
+            // non-contiguous in the flat exercise list (e.g., when an exercise
+            // was added to a superset and appended to the end of the list).
+            val items = routine.getItems()
+            val currentSupersetItemIdx = items.indexOfFirst { item ->
+                item is RoutineItem.SupersetItem && item.superset.exercises.any {
+                    it.supersetId == currentExercise.supersetId
+                }
+            }
+            if (currentSupersetItemIdx >= 0) {
+                for (i in (currentSupersetItemIdx + 1) until items.size) {
+                    val nextExercises = when (val item = items[i]) {
+                        is RoutineItem.Single -> listOf(item.exercise)
+                        is RoutineItem.SupersetItem ->
+                            item.superset.exercises.sortedBy { it.orderInSuperset }
+                    }
+                    for (nextEx in nextExercises) {
+                        val nextExIndex = routine.exercises.indexOf(nextEx)
+                        if (nextExIndex >= 0 && nextExIndex !in skippedIndices) {
+                            return nextExIndex to 0
+                        }
+                    }
                 }
             }
             return null
@@ -312,11 +358,25 @@ class RoutineFlowManager(
             }
 
             // C. Start of Superset -> Go to previous exercise before superset
-            val minIndex = supersetExercises.minOf { routine.exercises.indexOf(it) }
-            for (prevExIndex in (minIndex - 1) downTo 0) {
-                if (prevExIndex !in skippedIndices) {
-                    val prevEx = routine.exercises[prevExIndex]
-                    return prevExIndex to (prevEx.setReps.size - 1)
+            // Issue #334: Use display ordering to handle non-contiguous superset members
+            val items = routine.getItems()
+            val currentSupersetItemIdx = items.indexOfFirst { item ->
+                item is RoutineItem.SupersetItem && item.superset.exercises.any {
+                    it.supersetId == currentExercise.supersetId
+                }
+            }
+            if (currentSupersetItemIdx > 0) {
+                for (i in (currentSupersetItemIdx - 1) downTo 0) {
+                    val prevExercises = when (val item = items[i]) {
+                        is RoutineItem.Single -> listOf(item.exercise)
+                        is RoutineItem.SupersetItem ->
+                            item.superset.exercises.sortedBy { it.orderInSuperset }
+                    }
+                    val lastEx = prevExercises.lastOrNull() ?: continue
+                    val prevExIndex = routine.exercises.indexOf(lastEx)
+                    if (prevExIndex >= 0 && prevExIndex !in skippedIndices) {
+                        return prevExIndex to (lastEx.setReps.size - 1)
+                    }
                 }
             }
             return null
@@ -473,10 +533,40 @@ class RoutineFlowManager(
     }
 
     /**
+     * Issue #334: Normalize exercise ordering so superset members are contiguous.
+     * Existing routines saved before the editor fix may have scattered superset
+     * exercises in the flat list, which breaks getNextStep() Phase C navigation.
+     * This heals the data at load time using the same getItems().flatMap pattern
+     * the editor now uses.
+     */
+    private fun normalizeExerciseOrder(routine: Routine): Routine {
+        val reordered = routine.getItems().flatMap { item ->
+            when (item) {
+                is RoutineItem.Single -> listOf(item.exercise)
+                is RoutineItem.SupersetItem ->
+                    item.superset.exercises.sortedBy { it.orderInSuperset }
+            }
+        }
+        // Fast path: skip copy if order already matches
+        if (reordered.map { it.id } == routine.exercises.map { it.id }) return routine
+
+        Logger.w { "HEAL: Routine '${routine.name}' had non-contiguous superset exercises — reordering" }
+        val reindexed = reordered.mapIndexed { index, ex -> ex.copy(orderIndex = index) }
+        val normalizedSupersets = routine.supersets.mapNotNull { superset ->
+            val minOrder = reindexed
+                .filter { it.supersetId == superset.id }
+                .minOfOrNull { it.orderIndex }
+            minOrder?.let { superset.copy(orderIndex = it) }
+        }
+        return routine.copy(exercises = reindexed, supersets = normalizedSupersets)
+    }
+
+    /**
      * Internal function to load a routine after weights have been resolved.
      */
     private fun loadRoutineInternal(routine: Routine) {
-        coordinator._loadedRoutine.value = routine
+        val normalized = normalizeExerciseOrder(routine)
+        coordinator._loadedRoutine.value = normalized
         coordinator._currentExerciseIndex.value = 0
         coordinator._currentSetIndex.value = 0
         coordinator._skippedExercises.value = emptySet()
@@ -492,7 +582,7 @@ class RoutineFlowManager(
         coordinator._workoutState.value = WorkoutState.Idle
 
         // Load parameters from first exercise (matching parent repo behavior)
-        val firstExercise = routine.exercises[0]
+        val firstExercise = normalized.exercises[0]
         val firstSetReps = firstExercise.setReps.firstOrNull() // Can be null for AMRAP sets
         // Get per-set weight for first set, falling back to exercise default
         val firstSetWeight = firstExercise.setWeightsPerCableKg.getOrNull(0)
@@ -580,14 +670,15 @@ class RoutineFlowManager(
     fun enterRoutineOverview(routine: Routine) {
         scope.launch {
             val resolvedRoutine = resolveRoutineWeights(routine)
-            coordinator._loadedRoutine.value = resolvedRoutine
+            val normalized = normalizeExerciseOrder(resolvedRoutine)
+            coordinator._loadedRoutine.value = normalized
             coordinator._currentExerciseIndex.value = 0
             coordinator._currentSetIndex.value = 0
             coordinator._skippedExercises.value = emptySet()
             coordinator._completedExercises.value = emptySet()
             coordinator._workoutState.value = WorkoutState.Idle
             coordinator._routineFlowState.value = RoutineFlowState.Overview(
-                routine = resolvedRoutine,
+                routine = normalized,
                 selectedExerciseIndex = 0,
             )
         }
