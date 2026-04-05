@@ -162,9 +162,9 @@ internal fun reconcileFullSchema(driver: SqlDriver): SchemaReconciliationReport 
 }
 
 // ============================================================
-// TASK 3: manifestTables -- 13 reconciled tables
+// TASK 3: manifestTables -- 29 reconciled tables
 //
-// Two categories of tables that need reconciliation on every open:
+// Three categories of tables that need reconciliation on every open:
 //
 // A) Bootstrap tables (6): Originally created by ensureGamificationTablesExist(),
 //    ensureAllTablesExist(), or platform-specific DriverFactory bootstrap code.
@@ -174,11 +174,17 @@ internal fun reconcileFullSchema(driver: SqlDriver): SchemaReconciliationReport 
 //    here because branch merging can cause migration version numbers to be "already
 //    applied" on a device that never actually ran the SQL, leaving the table missing.
 //    CREATE TABLE IF NOT EXISTS is idempotent and safe to run on every open.
+//
+// C) Initial-schema tables (16): Tables defined in VitruvianDatabase.sq from the
+//    initial schema. Included with their FULL current shape (all columns including
+//    those added by later migrations). applyColumnHeal in manifestColumns handles
+//    "duplicate column" errors gracefully, so having ALL columns is safe and ensures
+//    fresh installs get the complete schema immediately.
 // ============================================================
 
 internal val manifestTables: List<SchemaTableOperation> = listOf(
     // EarnedBadge -- originally bootstrapped by ensureGamificationTablesExist()
-    // Base shape: id, badgeId, earnedAt, celebratedAt (no sync/profile columns)
+    // Full current shape: sync fields (m11), profile_id (m22)
     SchemaTableOperation(
         table = "EarnedBadge",
         createSql = """
@@ -186,13 +192,17 @@ internal val manifestTables: List<SchemaTableOperation> = listOf(
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 badgeId TEXT NOT NULL,
                 earnedAt INTEGER NOT NULL,
-                celebratedAt INTEGER
+                celebratedAt INTEGER,
+                updatedAt INTEGER,
+                serverId TEXT,
+                deletedAt INTEGER,
+                profile_id TEXT NOT NULL DEFAULT 'default'
             )
         """.trimIndent(),
     ),
 
     // StreakHistory -- originally bootstrapped by ensureGamificationTablesExist()
-    // Base shape: id, startDate, endDate, length (no profile_id column)
+    // Full current shape: profile_id (m22)
     SchemaTableOperation(
         table = "StreakHistory",
         createSql = """
@@ -200,13 +210,14 @@ internal val manifestTables: List<SchemaTableOperation> = listOf(
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 startDate INTEGER NOT NULL,
                 endDate INTEGER NOT NULL,
-                length INTEGER NOT NULL
+                length INTEGER NOT NULL,
+                profile_id TEXT NOT NULL DEFAULT 'default'
             )
         """.trimIndent(),
     ),
 
     // GamificationStats -- originally bootstrapped by ensureGamificationTablesExist()
-    // Base shape: all stat columns + lastUpdated (no sync/profile columns)
+    // Full current shape: sync fields (m11), profile_id (m22)
     SchemaTableOperation(
         table = "GamificationStats",
         createSql = """
@@ -221,7 +232,10 @@ internal val manifestTables: List<SchemaTableOperation> = listOf(
                 prsAchieved INTEGER NOT NULL DEFAULT 0,
                 lastWorkoutDate INTEGER,
                 streakStartDate INTEGER,
-                lastUpdated INTEGER NOT NULL
+                lastUpdated INTEGER NOT NULL,
+                updatedAt INTEGER,
+                serverId TEXT,
+                profile_id TEXT NOT NULL DEFAULT 'default'
             )
         """.trimIndent(),
     ),
@@ -397,7 +411,7 @@ internal val manifestTables: List<SchemaTableOperation> = listOf(
     ),
 
     // AssessmentResult -- migration 14 (VBT strength assessment results)
-    // Base shape: profile_id added by migration 21 (handled by manifestColumns)
+    // Full current shape: profile_id (m21)
     SchemaTableOperation(
         table = "AssessmentResult",
         createSql = """
@@ -409,6 +423,7 @@ internal val manifestTables: List<SchemaTableOperation> = listOf(
                 assessmentSessionId TEXT,
                 userOverrideKg REAL,
                 createdAt INTEGER NOT NULL,
+                profile_id TEXT NOT NULL DEFAULT 'default',
                 FOREIGN KEY (exerciseId) REFERENCES Exercise(id) ON DELETE CASCADE,
                 FOREIGN KEY (assessmentSessionId) REFERENCES WorkoutSession(id) ON DELETE SET NULL
             )
@@ -416,7 +431,7 @@ internal val manifestTables: List<SchemaTableOperation> = listOf(
     ),
 
     // RpgAttributes -- migration 17 (RPG attribute scores)
-    // Base shape: profile_id added by migration 22 (handled by manifestColumns)
+    // Full current shape: profile_id (m22)
     SchemaTableOperation(
         table = "RpgAttributes",
         createSql = """
@@ -428,7 +443,8 @@ internal val manifestTables: List<SchemaTableOperation> = listOf(
                 consistency INTEGER NOT NULL DEFAULT 0,
                 mastery INTEGER NOT NULL DEFAULT 0,
                 characterClass TEXT NOT NULL DEFAULT 'Phoenix',
-                lastComputed INTEGER NOT NULL DEFAULT 0
+                lastComputed INTEGER NOT NULL DEFAULT 0,
+                profile_id TEXT NOT NULL DEFAULT 'default'
             )
         """.trimIndent(),
     ),
@@ -471,6 +487,402 @@ internal val manifestTables: List<SchemaTableOperation> = listOf(
                 errorMessage TEXT,
                 profileId TEXT NOT NULL DEFAULT 'default',
                 PRIMARY KEY(provider, profileId)
+            )
+        """.trimIndent(),
+    ),
+
+    // ── Initial-schema tables ──────────────────────────────────────────
+    // Tables below are defined in VitruvianDatabase.sq from the initial schema.
+    // They use the FULL current shape (all columns including migration-added ones)
+    // because applyColumnHeal handles "duplicate column" errors gracefully.
+
+    // Exercise -- initial schema, full current shape
+    // Columns added by later migrations: one_rep_max_kg (m1), updatedAt/serverId/deletedAt (m11)
+    SchemaTableOperation(
+        table = "Exercise",
+        createSql = """
+            CREATE TABLE IF NOT EXISTS Exercise (
+                id TEXT NOT NULL PRIMARY KEY,
+                name TEXT NOT NULL,
+                description TEXT,
+                created INTEGER NOT NULL DEFAULT 0,
+                muscleGroup TEXT NOT NULL,
+                muscleGroups TEXT NOT NULL,
+                muscles TEXT,
+                equipment TEXT NOT NULL,
+                movement TEXT,
+                sidedness TEXT,
+                grip TEXT,
+                gripWidth TEXT,
+                minRepRange REAL,
+                popularity REAL NOT NULL DEFAULT 0,
+                archived INTEGER NOT NULL DEFAULT 0,
+                isFavorite INTEGER NOT NULL DEFAULT 0,
+                isCustom INTEGER NOT NULL DEFAULT 0,
+                timesPerformed INTEGER NOT NULL DEFAULT 0,
+                lastPerformed INTEGER,
+                aliases TEXT,
+                defaultCableConfig TEXT NOT NULL,
+                one_rep_max_kg REAL DEFAULT NULL,
+                updatedAt INTEGER,
+                serverId TEXT,
+                deletedAt INTEGER
+            )
+        """.trimIndent(),
+    ),
+
+    // ExerciseVideo -- initial schema, full shape (no later migrations add columns)
+    SchemaTableOperation(
+        table = "ExerciseVideo",
+        createSql = """
+            CREATE TABLE IF NOT EXISTS ExerciseVideo (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                exerciseId TEXT NOT NULL,
+                angle TEXT NOT NULL,
+                videoUrl TEXT NOT NULL,
+                thumbnailUrl TEXT NOT NULL,
+                isTutorial INTEGER NOT NULL DEFAULT 0,
+                FOREIGN KEY (exerciseId) REFERENCES Exercise(id) ON DELETE CASCADE
+            )
+        """.trimIndent(),
+    ),
+
+    // WorkoutSession -- initial schema, full current shape
+    // Columns added by later migrations: set summary metrics (m5), sync fields (m11),
+    // biomechanics summary (m15), formScore (m16), safety tracking (no migration),
+    // cableCount (m13), profile_id (m21)
+    SchemaTableOperation(
+        table = "WorkoutSession",
+        createSql = """
+            CREATE TABLE IF NOT EXISTS WorkoutSession (
+                id TEXT NOT NULL PRIMARY KEY,
+                timestamp INTEGER NOT NULL,
+                mode TEXT NOT NULL,
+                targetReps INTEGER NOT NULL,
+                weightPerCableKg REAL NOT NULL,
+                progressionKg REAL NOT NULL DEFAULT 0.0,
+                duration INTEGER NOT NULL DEFAULT 0,
+                totalReps INTEGER NOT NULL DEFAULT 0,
+                warmupReps INTEGER NOT NULL DEFAULT 0,
+                workingReps INTEGER NOT NULL DEFAULT 0,
+                isJustLift INTEGER NOT NULL DEFAULT 0,
+                stopAtTop INTEGER NOT NULL DEFAULT 0,
+                eccentricLoad INTEGER NOT NULL DEFAULT 100,
+                echoLevel INTEGER NOT NULL DEFAULT 1,
+                exerciseId TEXT,
+                exerciseName TEXT,
+                routineSessionId TEXT,
+                routineName TEXT,
+                routineId TEXT,
+                safetyFlags INTEGER NOT NULL DEFAULT 0,
+                deloadWarningCount INTEGER NOT NULL DEFAULT 0,
+                romViolationCount INTEGER NOT NULL DEFAULT 0,
+                spotterActivations INTEGER NOT NULL DEFAULT 0,
+                peakForceConcentricA REAL,
+                peakForceConcentricB REAL,
+                peakForceEccentricA REAL,
+                peakForceEccentricB REAL,
+                avgForceConcentricA REAL,
+                avgForceConcentricB REAL,
+                avgForceEccentricA REAL,
+                avgForceEccentricB REAL,
+                heaviestLiftKg REAL,
+                totalVolumeKg REAL,
+                cableCount INTEGER,
+                estimatedCalories REAL,
+                warmupAvgWeightKg REAL,
+                workingAvgWeightKg REAL,
+                burnoutAvgWeightKg REAL,
+                peakWeightKg REAL,
+                rpe INTEGER,
+                avgMcvMmS REAL,
+                avgAsymmetryPercent REAL,
+                totalVelocityLossPercent REAL,
+                dominantSide TEXT,
+                strengthProfile TEXT,
+                formScore INTEGER,
+                updatedAt INTEGER,
+                serverId TEXT,
+                deletedAt INTEGER,
+                profile_id TEXT NOT NULL DEFAULT 'default'
+            )
+        """.trimIndent(),
+    ),
+
+    // MetricSample -- initial schema, full shape (no later migrations add columns)
+    SchemaTableOperation(
+        table = "MetricSample",
+        createSql = """
+            CREATE TABLE IF NOT EXISTS MetricSample (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                sessionId TEXT NOT NULL,
+                timestamp INTEGER NOT NULL,
+                position REAL,
+                positionB REAL,
+                velocity REAL,
+                velocityB REAL,
+                load REAL,
+                loadB REAL,
+                power REAL,
+                status INTEGER NOT NULL DEFAULT 0,
+                FOREIGN KEY (sessionId) REFERENCES WorkoutSession(id) ON DELETE CASCADE
+            )
+        """.trimIndent(),
+    ),
+
+    // PersonalRecord -- initial schema, full current shape
+    // Columns added by later migrations: sync fields (m11), phase (m19), profile_id (m21)
+    SchemaTableOperation(
+        table = "PersonalRecord",
+        createSql = """
+            CREATE TABLE IF NOT EXISTS PersonalRecord (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                exerciseId TEXT NOT NULL,
+                exerciseName TEXT NOT NULL,
+                weight REAL NOT NULL,
+                reps INTEGER NOT NULL,
+                oneRepMax REAL NOT NULL,
+                achievedAt INTEGER NOT NULL,
+                workoutMode TEXT NOT NULL,
+                prType TEXT NOT NULL DEFAULT 'MAX_WEIGHT',
+                volume REAL NOT NULL DEFAULT 0.0,
+                phase TEXT NOT NULL DEFAULT 'COMBINED',
+                updatedAt INTEGER,
+                serverId TEXT,
+                deletedAt INTEGER,
+                profile_id TEXT NOT NULL DEFAULT 'default'
+            )
+        """.trimIndent(),
+    ),
+
+    // Routine -- initial schema, full current shape
+    // Columns added by later migrations: sync fields (m11), profile_id (m21)
+    SchemaTableOperation(
+        table = "Routine",
+        createSql = """
+            CREATE TABLE IF NOT EXISTS Routine (
+                id TEXT NOT NULL PRIMARY KEY,
+                name TEXT NOT NULL,
+                description TEXT NOT NULL DEFAULT '',
+                createdAt INTEGER NOT NULL,
+                lastUsed INTEGER,
+                useCount INTEGER NOT NULL DEFAULT 0,
+                updatedAt INTEGER,
+                serverId TEXT,
+                deletedAt INTEGER,
+                profile_id TEXT NOT NULL DEFAULT 'default'
+            )
+        """.trimIndent(),
+    ),
+
+    // RoutineExercise -- initial schema, full current shape
+    // Columns added by later migrations: superset fields (m4), PR scaling (m7),
+    // routine programming (m18), behavior overrides (m20)
+    SchemaTableOperation(
+        table = "RoutineExercise",
+        createSql = """
+            CREATE TABLE IF NOT EXISTS RoutineExercise (
+                id TEXT NOT NULL PRIMARY KEY,
+                routineId TEXT NOT NULL,
+                exerciseName TEXT NOT NULL,
+                exerciseMuscleGroup TEXT NOT NULL DEFAULT '',
+                exerciseEquipment TEXT NOT NULL DEFAULT '',
+                exerciseDefaultCableConfig TEXT NOT NULL DEFAULT 'DOUBLE',
+                exerciseId TEXT,
+                cableConfig TEXT NOT NULL DEFAULT 'DOUBLE',
+                orderIndex INTEGER NOT NULL,
+                setReps TEXT NOT NULL DEFAULT '10,10,10',
+                weightPerCableKg REAL NOT NULL DEFAULT 0.0,
+                setWeights TEXT NOT NULL DEFAULT '',
+                mode TEXT NOT NULL DEFAULT 'OldSchool',
+                eccentricLoad INTEGER NOT NULL DEFAULT 100,
+                echoLevel INTEGER NOT NULL DEFAULT 1,
+                progressionKg REAL NOT NULL DEFAULT 0.0,
+                restSeconds INTEGER NOT NULL DEFAULT 60,
+                duration INTEGER,
+                setRestSeconds TEXT NOT NULL DEFAULT '[]',
+                perSetRestTime INTEGER NOT NULL DEFAULT 0,
+                isAMRAP INTEGER NOT NULL DEFAULT 0,
+                supersetId TEXT,
+                orderInSuperset INTEGER NOT NULL DEFAULT 0,
+                usePercentOfPR INTEGER NOT NULL DEFAULT 0,
+                weightPercentOfPR INTEGER NOT NULL DEFAULT 80,
+                prTypeForScaling TEXT NOT NULL DEFAULT 'MAX_WEIGHT',
+                setWeightsPercentOfPR TEXT,
+                stallDetectionEnabled INTEGER NOT NULL DEFAULT 1,
+                stopAtTop INTEGER NOT NULL DEFAULT 0,
+                repCountTiming TEXT NOT NULL DEFAULT 'TOP',
+                setEchoLevels TEXT NOT NULL DEFAULT '',
+                warmupSets TEXT NOT NULL DEFAULT '',
+                FOREIGN KEY (routineId) REFERENCES Routine(id) ON DELETE CASCADE,
+                FOREIGN KEY (exerciseId) REFERENCES Exercise(id) ON DELETE SET NULL,
+                FOREIGN KEY (supersetId) REFERENCES Superset(id) ON DELETE SET NULL
+            )
+        """.trimIndent(),
+    ),
+
+    // Superset -- initial schema, full shape (no later migrations add columns)
+    SchemaTableOperation(
+        table = "Superset",
+        createSql = """
+            CREATE TABLE IF NOT EXISTS Superset (
+                id TEXT PRIMARY KEY NOT NULL,
+                routineId TEXT NOT NULL,
+                name TEXT NOT NULL,
+                colorIndex INTEGER NOT NULL DEFAULT 0,
+                restBetweenSeconds INTEGER NOT NULL DEFAULT 10,
+                orderIndex INTEGER NOT NULL,
+                FOREIGN KEY (routineId) REFERENCES Routine(id) ON DELETE CASCADE
+            )
+        """.trimIndent(),
+    ),
+
+    // TrainingCycle -- migration 10, full current shape
+    // Columns added by later migrations: profile_id (m21)
+    SchemaTableOperation(
+        table = "TrainingCycle",
+        createSql = """
+            CREATE TABLE IF NOT EXISTS TrainingCycle (
+                id TEXT PRIMARY KEY NOT NULL,
+                name TEXT NOT NULL,
+                description TEXT,
+                created_at INTEGER NOT NULL,
+                is_active INTEGER NOT NULL DEFAULT 0,
+                profile_id TEXT NOT NULL DEFAULT 'default'
+            )
+        """.trimIndent(),
+    ),
+
+    // CycleDay -- migration 10, full shape (no later migrations add columns)
+    SchemaTableOperation(
+        table = "CycleDay",
+        createSql = """
+            CREATE TABLE IF NOT EXISTS CycleDay (
+                id TEXT PRIMARY KEY NOT NULL,
+                cycle_id TEXT NOT NULL,
+                day_number INTEGER NOT NULL,
+                name TEXT,
+                routine_id TEXT,
+                is_rest_day INTEGER NOT NULL DEFAULT 0,
+                echo_level TEXT,
+                eccentric_load_percent INTEGER,
+                weight_progression_percent REAL,
+                rep_modifier INTEGER,
+                rest_time_override_seconds INTEGER,
+                FOREIGN KEY (cycle_id) REFERENCES TrainingCycle(id) ON DELETE CASCADE,
+                FOREIGN KEY (routine_id) REFERENCES Routine(id) ON DELETE SET NULL
+            )
+        """.trimIndent(),
+    ),
+
+    // CycleProgress -- migration 10, full shape (no later migrations add columns)
+    SchemaTableOperation(
+        table = "CycleProgress",
+        createSql = """
+            CREATE TABLE IF NOT EXISTS CycleProgress (
+                id TEXT PRIMARY KEY NOT NULL,
+                cycle_id TEXT NOT NULL UNIQUE,
+                current_day_number INTEGER NOT NULL DEFAULT 1,
+                last_completed_date INTEGER,
+                cycle_start_date INTEGER NOT NULL,
+                last_advanced_at INTEGER,
+                completed_days TEXT,
+                missed_days TEXT,
+                rotation_count INTEGER NOT NULL DEFAULT 0,
+                FOREIGN KEY (cycle_id) REFERENCES TrainingCycle(id) ON DELETE CASCADE
+            )
+        """.trimIndent(),
+    ),
+
+    // CycleProgression -- migration 10, full shape (no later migrations add columns)
+    SchemaTableOperation(
+        table = "CycleProgression",
+        createSql = """
+            CREATE TABLE IF NOT EXISTS CycleProgression (
+                cycle_id TEXT PRIMARY KEY NOT NULL,
+                frequency_cycles INTEGER NOT NULL DEFAULT 2,
+                weight_increase_percent REAL,
+                echo_level_increase INTEGER NOT NULL DEFAULT 0,
+                eccentric_load_increase_percent INTEGER,
+                FOREIGN KEY (cycle_id) REFERENCES TrainingCycle(id) ON DELETE CASCADE
+            )
+        """.trimIndent(),
+    ),
+
+    // PlannedSet -- migration 10, full shape (no later migrations add columns)
+    SchemaTableOperation(
+        table = "PlannedSet",
+        createSql = """
+            CREATE TABLE IF NOT EXISTS PlannedSet (
+                id TEXT PRIMARY KEY NOT NULL,
+                routine_exercise_id TEXT NOT NULL,
+                set_number INTEGER NOT NULL,
+                set_type TEXT NOT NULL DEFAULT 'STANDARD',
+                target_reps INTEGER,
+                target_weight_kg REAL,
+                target_rpe INTEGER,
+                rest_seconds INTEGER,
+                FOREIGN KEY (routine_exercise_id) REFERENCES RoutineExercise(id) ON DELETE CASCADE
+            )
+        """.trimIndent(),
+    ),
+
+    // CompletedSet -- migration 10, full shape (no later migrations add columns)
+    SchemaTableOperation(
+        table = "CompletedSet",
+        createSql = """
+            CREATE TABLE IF NOT EXISTS CompletedSet (
+                id TEXT PRIMARY KEY NOT NULL,
+                session_id TEXT NOT NULL,
+                planned_set_id TEXT,
+                set_number INTEGER NOT NULL,
+                set_type TEXT NOT NULL DEFAULT 'STANDARD',
+                actual_reps INTEGER NOT NULL,
+                actual_weight_kg REAL NOT NULL,
+                logged_rpe INTEGER,
+                is_pr INTEGER NOT NULL DEFAULT 0,
+                completed_at INTEGER NOT NULL,
+                FOREIGN KEY (session_id) REFERENCES WorkoutSession(id) ON DELETE CASCADE,
+                FOREIGN KEY (planned_set_id) REFERENCES PlannedSet(id) ON DELETE SET NULL
+            )
+        """.trimIndent(),
+    ),
+
+    // ProgressionEvent -- migration 10, full current shape
+    // Columns added by later migrations: profile_id (m21)
+    SchemaTableOperation(
+        table = "ProgressionEvent",
+        createSql = """
+            CREATE TABLE IF NOT EXISTS ProgressionEvent (
+                id TEXT PRIMARY KEY NOT NULL,
+                exercise_id TEXT NOT NULL,
+                suggested_weight_kg REAL NOT NULL,
+                previous_weight_kg REAL NOT NULL,
+                reason TEXT NOT NULL,
+                user_response TEXT,
+                actual_weight_kg REAL,
+                timestamp INTEGER NOT NULL,
+                profile_id TEXT NOT NULL DEFAULT 'default',
+                FOREIGN KEY (exercise_id) REFERENCES Exercise(id) ON DELETE CASCADE
+            )
+        """.trimIndent(),
+    ),
+
+    // UserProfile -- initial schema, full current shape
+    // Columns added by later migrations: subscription fields (m5)
+    SchemaTableOperation(
+        table = "UserProfile",
+        createSql = """
+            CREATE TABLE IF NOT EXISTS UserProfile (
+                id TEXT PRIMARY KEY NOT NULL,
+                name TEXT NOT NULL,
+                colorIndex INTEGER NOT NULL DEFAULT 0,
+                createdAt INTEGER NOT NULL,
+                isActive INTEGER NOT NULL DEFAULT 0,
+                supabase_user_id TEXT,
+                subscription_status TEXT DEFAULT 'free',
+                subscription_expires_at INTEGER,
+                last_auth_at INTEGER
             )
         """.trimIndent(),
     ),
