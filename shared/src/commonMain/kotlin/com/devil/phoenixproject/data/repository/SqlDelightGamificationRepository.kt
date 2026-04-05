@@ -514,7 +514,11 @@ class SqlDelightGamificationRepository(db: VitruvianDatabase) : GamificationRepo
                 ?: 0.0
 
         // Peak power: try RepMetric first, fall back to MetricSample
-        val peakRepPower = queries.selectPeakRepPower().executeAsOneOrNull()?.MAX
+        val peakRepPower = try {
+            queries.selectPeakRepPower().executeAsOneOrNull()?.MAX
+        } catch (_: Exception) {
+            null // RepMetric table may not exist due to migration gap
+        }
         val peakPowerWatts = peakRepPower
             ?: queries.selectPeakPower().executeAsOneOrNull()?.peakPower
             ?: 0.0

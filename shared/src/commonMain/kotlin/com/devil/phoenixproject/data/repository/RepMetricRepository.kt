@@ -70,38 +70,44 @@ class SqlDelightRepMetricRepository(private val db: VitruvianDatabase) : RepMetr
     }
 
     override suspend fun getRepMetrics(sessionId: String): List<RepMetricData> = withContext(Dispatchers.IO) {
-        queries.selectRepMetricsBySession(sessionId).executeAsList().map { row ->
-            RepMetricData(
-                repNumber = row.repNumber.toInt(),
-                isWarmup = row.isWarmup != 0L,
-                startTimestamp = row.startTimestamp,
-                endTimestamp = row.endTimestamp,
-                durationMs = row.durationMs,
-                concentricDurationMs = row.concentricDurationMs,
-                concentricPositions = row.concentricPositions.toFloatArrayFromJson(),
-                concentricLoadsA = row.concentricLoadsA.toFloatArrayFromJson(),
-                concentricLoadsB = row.concentricLoadsB.toFloatArrayFromJson(),
-                concentricVelocities = row.concentricVelocities.toFloatArrayFromJson(),
-                concentricTimestamps = row.concentricTimestamps.toLongArrayFromJson(),
-                eccentricDurationMs = row.eccentricDurationMs,
-                eccentricPositions = row.eccentricPositions.toFloatArrayFromJson(),
-                eccentricLoadsA = row.eccentricLoadsA.toFloatArrayFromJson(),
-                eccentricLoadsB = row.eccentricLoadsB.toFloatArrayFromJson(),
-                eccentricVelocities = row.eccentricVelocities.toFloatArrayFromJson(),
-                eccentricTimestamps = row.eccentricTimestamps.toLongArrayFromJson(),
-                peakForceA = row.peakForceA.toFloat(),
-                peakForceB = row.peakForceB.toFloat(),
-                avgForceConcentricA = row.avgForceConcentricA.toFloat(),
-                avgForceConcentricB = row.avgForceConcentricB.toFloat(),
-                avgForceEccentricA = row.avgForceEccentricA.toFloat(),
-                avgForceEccentricB = row.avgForceEccentricB.toFloat(),
-                peakVelocity = row.peakVelocity.toFloat(),
-                avgVelocityConcentric = row.avgVelocityConcentric.toFloat(),
-                avgVelocityEccentric = row.avgVelocityEccentric.toFloat(),
-                rangeOfMotionMm = row.rangeOfMotionMm.toFloat(),
-                peakPowerWatts = row.peakPowerWatts.toFloat(),
-                avgPowerWatts = row.avgPowerWatts.toFloat(),
-            )
+        try {
+            queries.selectRepMetricsBySession(sessionId).executeAsList().map { row ->
+                RepMetricData(
+                    repNumber = row.repNumber.toInt(),
+                    isWarmup = row.isWarmup != 0L,
+                    startTimestamp = row.startTimestamp,
+                    endTimestamp = row.endTimestamp,
+                    durationMs = row.durationMs,
+                    concentricDurationMs = row.concentricDurationMs,
+                    concentricPositions = row.concentricPositions.toFloatArrayFromJson(),
+                    concentricLoadsA = row.concentricLoadsA.toFloatArrayFromJson(),
+                    concentricLoadsB = row.concentricLoadsB.toFloatArrayFromJson(),
+                    concentricVelocities = row.concentricVelocities.toFloatArrayFromJson(),
+                    concentricTimestamps = row.concentricTimestamps.toLongArrayFromJson(),
+                    eccentricDurationMs = row.eccentricDurationMs,
+                    eccentricPositions = row.eccentricPositions.toFloatArrayFromJson(),
+                    eccentricLoadsA = row.eccentricLoadsA.toFloatArrayFromJson(),
+                    eccentricLoadsB = row.eccentricLoadsB.toFloatArrayFromJson(),
+                    eccentricVelocities = row.eccentricVelocities.toFloatArrayFromJson(),
+                    eccentricTimestamps = row.eccentricTimestamps.toLongArrayFromJson(),
+                    peakForceA = row.peakForceA.toFloat(),
+                    peakForceB = row.peakForceB.toFloat(),
+                    avgForceConcentricA = row.avgForceConcentricA.toFloat(),
+                    avgForceConcentricB = row.avgForceConcentricB.toFloat(),
+                    avgForceEccentricA = row.avgForceEccentricA.toFloat(),
+                    avgForceEccentricB = row.avgForceEccentricB.toFloat(),
+                    peakVelocity = row.peakVelocity.toFloat(),
+                    avgVelocityConcentric = row.avgVelocityConcentric.toFloat(),
+                    avgVelocityEccentric = row.avgVelocityEccentric.toFloat(),
+                    rangeOfMotionMm = row.rangeOfMotionMm.toFloat(),
+                    peakPowerWatts = row.peakPowerWatts.toFloat(),
+                    avgPowerWatts = row.avgPowerWatts.toFloat(),
+                )
+            }
+        } catch (e: Exception) {
+            // Defensive: return empty if table is missing due to migration gap.
+            // The reconciler should have created it, but we never crash-loop over this.
+            emptyList()
         }
     }
 
@@ -112,7 +118,12 @@ class SqlDelightRepMetricRepository(private val db: VitruvianDatabase) : RepMetr
     }
 
     override suspend fun getRepMetricCount(sessionId: String): Long = withContext(Dispatchers.IO) {
-        queries.countRepMetricsBySession(sessionId).executeAsOne()
+        try {
+            queries.countRepMetricsBySession(sessionId).executeAsOne()
+        } catch (e: Exception) {
+            // Defensive: return 0 if table is missing due to migration gap.
+            0L
+        }
     }
 }
 

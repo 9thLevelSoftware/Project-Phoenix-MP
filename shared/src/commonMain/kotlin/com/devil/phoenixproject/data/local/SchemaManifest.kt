@@ -10,9 +10,11 @@ import app.cash.sqldelight.db.SqlDriver
 // legacy heals, platform-specific fallbacks, ensureAllTablesExist) with one
 // comprehensive manifest that is COMPLETE, IDEMPOTENT, and CROSS-PLATFORM.
 //
-// Every table without a creation migration, every column added after its
-// table's initial CREATE, and every index from VitruvianDatabase.sq is
-// declared here with provenance comments tracing back to migration numbers.
+// Every table that needs guaranteed existence (both bootstrap tables and
+// migration-created tables vulnerable to branch-merge gaps), every column
+// added after its table's initial CREATE, and every index from
+// VitruvianDatabase.sq is declared here with provenance comments tracing
+// back to migration numbers.
 // ============================================================
 
 // ==================== DATA CLASSES ====================
@@ -160,13 +162,18 @@ internal fun reconcileFullSchema(driver: SqlDriver): SchemaReconciliationReport 
 }
 
 // ============================================================
-// TASK 3: manifestTables -- 6 bootstrap tables
+// TASK 3: manifestTables -- 13 reconciled tables
 //
-// Tables that have NO creation migration. These were originally created
-// by ensureGamificationTablesExist(), ensureAllTablesExist(), or
-// platform-specific DriverFactory bootstrap code. Declared here as
-// CREATE TABLE IF NOT EXISTS with their BASE shape only (without
-// columns added by later migrations, since those are in manifestColumns).
+// Two categories of tables that need reconciliation on every open:
+//
+// A) Bootstrap tables (6): Originally created by ensureGamificationTablesExist(),
+//    ensureAllTablesExist(), or platform-specific DriverFactory bootstrap code.
+//    Declared with BASE shape (columns added by later migrations are in manifestColumns).
+//
+// B) Migration-created tables (7): Created by numbered .sqm migrations. Included
+//    here because branch merging can cause migration version numbers to be "already
+//    applied" on a device that never actually ran the SQL, leaving the table missing.
+//    CREATE TABLE IF NOT EXISTS is idempotent and safe to run on every open.
 // ============================================================
 
 internal val manifestTables: List<SchemaTableOperation> = listOf(
@@ -283,6 +290,187 @@ internal val manifestTables: List<SchemaTableOperation> = listOf(
                 eccentricWattMax REAL NOT NULL,
                 timestamp INTEGER NOT NULL,
                 FOREIGN KEY (sessionId) REFERENCES WorkoutSession(id) ON DELETE CASCADE
+            )
+        """.trimIndent(),
+    ),
+
+    // ── Migration-created tables ────────────────────────────────────
+    // Tables below were created by numbered migrations. They are included
+    // here because branch merging can cause migration version numbers to
+    // be "already applied" on a device that never actually ran the SQL,
+    // leaving the table missing. CREATE TABLE IF NOT EXISTS is idempotent
+    // and safe to run on every open.
+
+    // RepMetric -- migration 12 (per-rep force curve data for premium analytics)
+    // Full shape: no later migrations add columns
+    SchemaTableOperation(
+        table = "RepMetric",
+        createSql = """
+            CREATE TABLE IF NOT EXISTS RepMetric (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                sessionId TEXT NOT NULL,
+                repNumber INTEGER NOT NULL,
+                isWarmup INTEGER NOT NULL DEFAULT 0,
+                startTimestamp INTEGER NOT NULL,
+                endTimestamp INTEGER NOT NULL,
+                durationMs INTEGER NOT NULL,
+                concentricDurationMs INTEGER NOT NULL,
+                concentricPositions TEXT NOT NULL,
+                concentricLoadsA TEXT NOT NULL,
+                concentricLoadsB TEXT NOT NULL,
+                concentricVelocities TEXT NOT NULL,
+                concentricTimestamps TEXT NOT NULL,
+                eccentricDurationMs INTEGER NOT NULL,
+                eccentricPositions TEXT NOT NULL,
+                eccentricLoadsA TEXT NOT NULL,
+                eccentricLoadsB TEXT NOT NULL,
+                eccentricVelocities TEXT NOT NULL,
+                eccentricTimestamps TEXT NOT NULL,
+                peakForceA REAL NOT NULL,
+                peakForceB REAL NOT NULL,
+                avgForceConcentricA REAL NOT NULL,
+                avgForceConcentricB REAL NOT NULL,
+                avgForceEccentricA REAL NOT NULL,
+                avgForceEccentricB REAL NOT NULL,
+                peakVelocity REAL NOT NULL,
+                avgVelocityConcentric REAL NOT NULL,
+                avgVelocityEccentric REAL NOT NULL,
+                rangeOfMotionMm REAL NOT NULL,
+                peakPowerWatts REAL NOT NULL,
+                avgPowerWatts REAL NOT NULL,
+                updatedAt INTEGER,
+                serverId TEXT,
+                FOREIGN KEY (sessionId) REFERENCES WorkoutSession(id) ON DELETE CASCADE
+            )
+        """.trimIndent(),
+    ),
+
+    // RepBiomechanics -- migration 15 (VBT, force curve, asymmetry per rep)
+    // Full shape: no later migrations add columns
+    SchemaTableOperation(
+        table = "RepBiomechanics",
+        createSql = """
+            CREATE TABLE IF NOT EXISTS RepBiomechanics (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                sessionId TEXT NOT NULL,
+                repNumber INTEGER NOT NULL,
+                mcvMmS REAL NOT NULL,
+                peakVelocityMmS REAL NOT NULL,
+                velocityZone TEXT NOT NULL,
+                velocityLossPercent REAL,
+                estimatedRepsRemaining INTEGER,
+                shouldStopSet INTEGER NOT NULL DEFAULT 0,
+                normalizedForceN TEXT NOT NULL,
+                normalizedPositionPct TEXT NOT NULL,
+                stickingPointPct REAL,
+                strengthProfile TEXT NOT NULL,
+                asymmetryPercent REAL NOT NULL,
+                dominantSide TEXT NOT NULL,
+                avgLoadA REAL NOT NULL,
+                avgLoadB REAL NOT NULL,
+                timestamp INTEGER NOT NULL,
+                FOREIGN KEY (sessionId) REFERENCES WorkoutSession(id) ON DELETE CASCADE
+            )
+        """.trimIndent(),
+    ),
+
+    // ExerciseSignature -- migration 14 (movement signatures for auto-detection)
+    // Full shape: no later migrations add columns
+    SchemaTableOperation(
+        table = "ExerciseSignature",
+        createSql = """
+            CREATE TABLE IF NOT EXISTS ExerciseSignature (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                exerciseId TEXT NOT NULL,
+                romMm REAL NOT NULL,
+                durationMs INTEGER NOT NULL,
+                symmetryRatio REAL NOT NULL,
+                velocityProfile TEXT NOT NULL,
+                cableConfig TEXT NOT NULL,
+                sampleCount INTEGER NOT NULL DEFAULT 1,
+                confidence REAL NOT NULL DEFAULT 0.0,
+                createdAt INTEGER NOT NULL,
+                updatedAt INTEGER NOT NULL,
+                FOREIGN KEY (exerciseId) REFERENCES Exercise(id) ON DELETE CASCADE
+            )
+        """.trimIndent(),
+    ),
+
+    // AssessmentResult -- migration 14 (VBT strength assessment results)
+    // Base shape: profile_id added by migration 21 (handled by manifestColumns)
+    SchemaTableOperation(
+        table = "AssessmentResult",
+        createSql = """
+            CREATE TABLE IF NOT EXISTS AssessmentResult (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                exerciseId TEXT NOT NULL,
+                estimatedOneRepMaxKg REAL NOT NULL,
+                loadVelocityData TEXT NOT NULL,
+                assessmentSessionId TEXT,
+                userOverrideKg REAL,
+                createdAt INTEGER NOT NULL,
+                FOREIGN KEY (exerciseId) REFERENCES Exercise(id) ON DELETE CASCADE,
+                FOREIGN KEY (assessmentSessionId) REFERENCES WorkoutSession(id) ON DELETE SET NULL
+            )
+        """.trimIndent(),
+    ),
+
+    // RpgAttributes -- migration 17 (RPG attribute scores)
+    // Base shape: profile_id added by migration 22 (handled by manifestColumns)
+    SchemaTableOperation(
+        table = "RpgAttributes",
+        createSql = """
+            CREATE TABLE IF NOT EXISTS RpgAttributes (
+                id INTEGER PRIMARY KEY DEFAULT 1,
+                strength INTEGER NOT NULL DEFAULT 0,
+                power INTEGER NOT NULL DEFAULT 0,
+                stamina INTEGER NOT NULL DEFAULT 0,
+                consistency INTEGER NOT NULL DEFAULT 0,
+                mastery INTEGER NOT NULL DEFAULT 0,
+                characterClass TEXT NOT NULL DEFAULT 'Phoenix',
+                lastComputed INTEGER NOT NULL DEFAULT 0
+            )
+        """.trimIndent(),
+    ),
+
+    // ExternalActivity -- migration 23 (third-party integration activities)
+    // Full shape: all columns present at creation
+    SchemaTableOperation(
+        table = "ExternalActivity",
+        createSql = """
+            CREATE TABLE IF NOT EXISTS ExternalActivity (
+                id TEXT NOT NULL PRIMARY KEY,
+                externalId TEXT NOT NULL,
+                provider TEXT NOT NULL,
+                name TEXT NOT NULL,
+                activityType TEXT NOT NULL DEFAULT 'strength',
+                startedAt INTEGER NOT NULL,
+                durationSeconds INTEGER NOT NULL DEFAULT 0,
+                distanceMeters REAL,
+                calories INTEGER,
+                avgHeartRate INTEGER,
+                maxHeartRate INTEGER,
+                elevationGainMeters REAL,
+                rawData TEXT,
+                syncedAt INTEGER NOT NULL,
+                profileId TEXT NOT NULL DEFAULT 'default',
+                needsSync INTEGER NOT NULL DEFAULT 1
+            )
+        """.trimIndent(),
+    ),
+
+    // IntegrationStatus -- migration 23 (third-party integration connection state)
+    // Full shape: all columns present at creation
+    SchemaTableOperation(
+        table = "IntegrationStatus",
+        createSql = """
+            CREATE TABLE IF NOT EXISTS IntegrationStatus (
+                provider TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'disconnected',
+                lastSyncAt INTEGER,
+                errorMessage TEXT,
+                profileId TEXT NOT NULL DEFAULT 'default',
+                PRIMARY KEY(provider, profileId)
             )
         """.trimIndent(),
     ),
