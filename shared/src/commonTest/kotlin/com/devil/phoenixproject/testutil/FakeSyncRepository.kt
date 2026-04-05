@@ -146,4 +146,12 @@ class FakeSyncRepository : SyncRepository {
         mergePortalSessionsCallCount++
         mergedPortalSessions = sessions
     }
+
+    var mergedPersonalRecords: List<PersonalRecordSyncDto> = emptyList()
+    var mergePersonalRecordsCallCount = 0
+
+    override suspend fun mergePersonalRecords(records: List<PersonalRecordSyncDto>, profileId: String) {
+        mergePersonalRecordsCallCount++
+        mergedPersonalRecords = records
+    }
 }
