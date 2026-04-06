@@ -1752,16 +1752,6 @@ class ActiveSessionEngine(
                     stopMotionStartDetection()
                 }
 
-                // Flag B (Issue #333): Pause polling/heartbeat before CONFIG write.
-                // The heartbeat no-op write uses the same TX characteristic. On BCM4389,
-                // consecutive writes to the same characteristic may need more recovery time.
-                if (PixelBleExperiments.pausePollingBeforeConfig.value) {
-                    val pauseMs = PixelBleExperiments.POLLING_PAUSE_BEFORE_CONFIG_MS
-                    Logger.w { "FLAG B: Pausing polling ${pauseMs}ms before CONFIG write" }
-                    bleRepository.stopPolling()
-                    delay(pauseMs)
-                }
-
                 try {
                     bleRepository.sendWorkoutCommand(command).getOrThrow()
                     Logger.i { "CONFIG command sent: ${command.size} bytes for ${effectiveParams.programMode}" }
@@ -1778,18 +1768,14 @@ class ActiveSessionEngine(
                 } catch (e: Exception) {
                     Logger.e(e) { "Failed to send config command" }
                     coordinator._bleErrorEvents.tryEmit("Failed to send command: ${e.message}")
-                    // Resume polling if we paused it (Flag B) — startActiveWorkoutPolling
-                    // won't be reached, so restart here to maintain connection keep-alive
-                    if (PixelBleExperiments.pausePollingBeforeConfig.value) {
-                        bleRepository.startActiveWorkoutPolling()
-                    }
                     return@launch
                 }
 
                 if (!effectiveParams.isEchoMode) {
-                    // Flag D (Issue #333): Extended CONFIG→START delay for BCM4389.
-                    val configStartDelayMs = if (PixelBleExperiments.extendedConfigStartDelay.value) {
-                        Logger.w { "FLAG D: Using extended CONFIG→START delay: ${PixelBleExperiments.EXTENDED_CONFIG_START_DELAY_MS}ms" }
+                    // Issue #333 mitigation D: BCM4389 Pixels need more time between CONFIG
+                    // and START to avoid GATT_ERROR(133). 1000ms vs 100ms default.
+                    val configStartDelayMs = if (PixelBleExperiments.isAffectedPixel()) {
+                        Logger.i { "BCM4389: extended CONFIG→START delay ${PixelBleExperiments.EXTENDED_CONFIG_START_DELAY_MS}ms" }
                         PixelBleExperiments.EXTENDED_CONFIG_START_DELAY_MS
                     } else {
                         100L

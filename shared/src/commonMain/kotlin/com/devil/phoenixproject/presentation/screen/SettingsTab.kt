@@ -6,14 +6,80 @@ import androidx.compose.animation.core.spring
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material.icons.filled.BugReport
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Cloud
+import androidx.compose.material.icons.filled.CloudDownload
+import androidx.compose.material.icons.filled.CloudUpload
+import androidx.compose.material.icons.filled.ColorLens
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.DeleteForever
+import androidx.compose.material.icons.filled.EmojiEvents
+import androidx.compose.material.icons.filled.Extension
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.FolderOpen
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Language
+import androidx.compose.material.icons.filled.MilitaryTech
+import androidx.compose.material.icons.filled.MusicNote
+import androidx.compose.material.icons.filled.Palette
+import androidx.compose.material.icons.filled.PowerSettingsNew
+import androidx.compose.material.icons.filled.Scale
+import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.Sync
+import androidx.compose.material.icons.filled.Timeline
+import androidx.compose.material.icons.filled.Tune
+import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExposedDropdownMenuAnchorType
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExposedDropdownMenuDefaults
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.rotate
@@ -27,20 +93,82 @@ import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.data.sync.SyncTriggerManager
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.presentation.components.CountdownDropdown
-import com.devil.phoenixproject.ui.theme.*
+import com.devil.phoenixproject.ui.theme.Spacing
 import com.devil.phoenixproject.util.BackupProgress
 import com.devil.phoenixproject.util.ColorSchemes
 import com.devil.phoenixproject.util.DataBackupManager
 import com.devil.phoenixproject.util.DeviceInfo
 import com.devil.phoenixproject.util.ImportResult
 import com.devil.phoenixproject.util.KmpUtils
-import com.devil.phoenixproject.util.PixelBleExperiments
 import com.devil.phoenixproject.util.rememberFilePicker
 import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.koinInject
-import vitruvianprojectphoenix.shared.generated.resources.*
 import vitruvianprojectphoenix.shared.generated.resources.Res
+import vitruvianprojectphoenix.shared.generated.resources.action_cancel
+import vitruvianprojectphoenix.shared.generated.resources.action_ok
+import vitruvianprojectphoenix.shared.generated.resources.action_save
+import vitruvianprojectphoenix.shared.generated.resources.action_share
+import vitruvianprojectphoenix.shared.generated.resources.backup_all_data
+import vitruvianprojectphoenix.shared.generated.resources.backup_description
+import vitruvianprojectphoenix.shared.generated.resources.backup_success
+import vitruvianprojectphoenix.shared.generated.resources.cd_achievements
+import vitruvianprojectphoenix.shared.generated.resources.cd_advanced_settings
+import vitruvianprojectphoenix.shared.generated.resources.cd_app_info
+import vitruvianprojectphoenix.shared.generated.resources.cd_appearance
+import vitruvianprojectphoenix.shared.generated.resources.cd_backup_data
+import vitruvianprojectphoenix.shared.generated.resources.cd_calibration_check
+import vitruvianprojectphoenix.shared.generated.resources.cd_cloud_sync
+import vitruvianprojectphoenix.shared.generated.resources.cd_connection_logs
+import vitruvianprojectphoenix.shared.generated.resources.cd_delete_workouts
+import vitruvianprojectphoenix.shared.generated.resources.cd_developer_tools
+import vitruvianprojectphoenix.shared.generated.resources.cd_led_scheme
+import vitruvianprojectphoenix.shared.generated.resources.cd_leds_off
+import vitruvianprojectphoenix.shared.generated.resources.cd_link_portal
+import vitruvianprojectphoenix.shared.generated.resources.cd_open_backup_folder
+import vitruvianprojectphoenix.shared.generated.resources.cd_restore_data
+import vitruvianprojectphoenix.shared.generated.resources.cd_support_developer
+import vitruvianprojectphoenix.shared.generated.resources.cd_sync_error
+import vitruvianprojectphoenix.shared.generated.resources.cd_test_sounds
+import vitruvianprojectphoenix.shared.generated.resources.cd_view_badges
+import vitruvianprojectphoenix.shared.generated.resources.cd_weight_unit
+import vitruvianprojectphoenix.shared.generated.resources.import_completed
+import vitruvianprojectphoenix.shared.generated.resources.import_records_imported
+import vitruvianprojectphoenix.shared.generated.resources.import_records_skipped
+import vitruvianprojectphoenix.shared.generated.resources.label_kg
+import vitruvianprojectphoenix.shared.generated.resources.label_lbs
+import vitruvianprojectphoenix.shared.generated.resources.label_please_wait
+import vitruvianprojectphoenix.shared.generated.resources.language_dutch
+import vitruvianprojectphoenix.shared.generated.resources.language_english
+import vitruvianprojectphoenix.shared.generated.resources.language_french
+import vitruvianprojectphoenix.shared.generated.resources.language_german
+import vitruvianprojectphoenix.shared.generated.resources.language_spanish
+import vitruvianprojectphoenix.shared.generated.resources.restore_description
+import vitruvianprojectphoenix.shared.generated.resources.restore_from_backup
+import vitruvianprojectphoenix.shared.generated.resources.select_file
+import vitruvianprojectphoenix.shared.generated.resources.settings_appearance
+import vitruvianprojectphoenix.shared.generated.resources.settings_calibrate_button
+import vitruvianprojectphoenix.shared.generated.resources.settings_calibrate_first
+import vitruvianprojectphoenix.shared.generated.resources.settings_calibrated_badge
+import vitruvianprojectphoenix.shared.generated.resources.settings_calibration_fail
+import vitruvianprojectphoenix.shared.generated.resources.settings_calibration_listening
+import vitruvianprojectphoenix.shared.generated.resources.settings_calibration_mic_error
+import vitruvianprojectphoenix.shared.generated.resources.settings_calibration_open_settings
+import vitruvianprojectphoenix.shared.generated.resources.settings_calibration_progress
+import vitruvianprojectphoenix.shared.generated.resources.settings_calibration_prompt
+import vitruvianprojectphoenix.shared.generated.resources.settings_calibration_title
+import vitruvianprojectphoenix.shared.generated.resources.settings_cloud_sync
+import vitruvianprojectphoenix.shared.generated.resources.settings_dark_mode
+import vitruvianprojectphoenix.shared.generated.resources.settings_dark_mode_description
+import vitruvianprojectphoenix.shared.generated.resources.settings_language
+import vitruvianprojectphoenix.shared.generated.resources.settings_language_help
+import vitruvianprojectphoenix.shared.generated.resources.settings_safe_word_hint
+import vitruvianprojectphoenix.shared.generated.resources.settings_safe_word_label
+import vitruvianprojectphoenix.shared.generated.resources.settings_title
+import vitruvianprojectphoenix.shared.generated.resources.settings_version
+import vitruvianprojectphoenix.shared.generated.resources.settings_voice_stop_description
+import vitruvianprojectphoenix.shared.generated.resources.settings_voice_stop_title
+import vitruvianprojectphoenix.shared.generated.resources.settings_weight_unit
 
 @Composable
 fun SettingsTab(
@@ -1625,71 +1753,6 @@ fun SettingsTab(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
 
-                // --- Pixel BLE Experiment Flags (Issue #333) ---
-                Spacer(modifier = Modifier.height(Spacing.medium))
-                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                Spacer(modifier = Modifier.height(Spacing.small))
-
-                Text(
-                    "Pixel 6/7 BLE Experiments",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = Color(0xFFEF4444),
-                )
-                Text(
-                    if (PixelBleExperiments.isAffectedPixel()) "This device IS affected (${DeviceInfo.model})"
-                    else "This device is NOT affected (${DeviceInfo.model})",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = if (PixelBleExperiments.isAffectedPixel()) Color(0xFFEF4444)
-                    else MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Spacer(modifier = Modifier.height(Spacing.small))
-
-                val flagA by PixelBleExperiments.skipMtu.collectAsState()
-                val flagB by PixelBleExperiments.pausePollingBeforeConfig.collectAsState()
-                val flagC by PixelBleExperiments.disablePostConfigDiagnostic.collectAsState()
-                val flagD by PixelBleExperiments.extendedConfigStartDelay.collectAsState()
-                val flagE by PixelBleExperiments.postMtuStabilizationDelay.collectAsState()
-
-                PixelExperimentToggle("A: Skip MTU", "Don't negotiate MTU (use default 23)", flagA) {
-                    PixelBleExperiments.setSkipMtu(it)
-                }
-                PixelExperimentToggle("B: Pause Polling", "Stop polling 500ms before CONFIG", flagB) {
-                    PixelBleExperiments.setPausePollingBeforeConfig(it)
-                }
-                PixelExperimentToggle("C: No Post-Config Read", "Skip diagnostic read after CONFIG", flagC) {
-                    PixelBleExperiments.setDisablePostConfigDiagnostic(it)
-                }
-                PixelExperimentToggle("D: Extended Delay", "1000ms CONFIG→START (vs 100ms)", flagD) {
-                    PixelBleExperiments.setExtendedConfigStartDelay(it)
-                }
-                PixelExperimentToggle("E: Post-MTU Delay", "1s stabilization after MTU change", flagE) {
-                    PixelBleExperiments.setPostMtuStabilizationDelay(it)
-                }
-
-                Spacer(modifier = Modifier.height(Spacing.small))
-                Row(horizontalArrangement = Arrangement.spacedBy(Spacing.small)) {
-                    OutlinedButton(
-                        onClick = { PixelBleExperiments.enableAll() },
-                        shape = RoundedCornerShape(12.dp),
-                        border = BorderStroke(1.dp, Color(0xFFEF4444)),
-                    ) {
-                        Text("Enable All", color = Color(0xFFEF4444), style = MaterialTheme.typography.labelMedium)
-                    }
-                    OutlinedButton(
-                        onClick = { PixelBleExperiments.disableAll() },
-                        shape = RoundedCornerShape(12.dp),
-                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
-                    ) {
-                        Text("Disable All", style = MaterialTheme.typography.labelMedium)
-                    }
-                }
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    "Toggle flags BEFORE connecting. Test one at a time to isolate root cause. Reconnect after changing.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
             }
         }
 
@@ -2342,42 +2405,3 @@ private fun DiscoModeUnlockDialog(onDismiss: () -> Unit) {
     )
 }
 
-/**
- * Toggle row for a single Pixel BLE experiment flag (Issue #333).
- */
-@Composable
-private fun PixelExperimentToggle(
-    label: String,
-    description: String,
-    checked: Boolean,
-    onCheckedChange: (Boolean) -> Unit,
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable { onCheckedChange(!checked) }
-            .padding(vertical = 4.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                label,
-                style = MaterialTheme.typography.bodyMedium,
-                fontWeight = FontWeight.Medium,
-                color = MaterialTheme.colorScheme.onSurface,
-            )
-            Text(
-                description,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-        Switch(
-            checked = checked,
-            onCheckedChange = onCheckedChange,
-            colors = SwitchDefaults.colors(
-                checkedTrackColor = Color(0xFFEF4444),
-            ),
-        )
-    }
-}

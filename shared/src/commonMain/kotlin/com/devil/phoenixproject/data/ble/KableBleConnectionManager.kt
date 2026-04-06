@@ -14,10 +14,6 @@ import com.juul.kable.Peripheral
 import com.juul.kable.Scanner
 import com.juul.kable.State
 import com.juul.kable.WriteType
-import kotlin.concurrent.Volatile
-import kotlin.time.Clock
-import kotlin.uuid.ExperimentalUuidApi
-import kotlin.uuid.Uuid
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -35,6 +31,10 @@ import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlin.concurrent.Volatile
+import kotlin.time.Clock
+import kotlin.uuid.ExperimentalUuidApi
+import kotlin.uuid.Uuid
 
 /**
  * Manages the BLE connection lifecycle for Vitruvian machines.
@@ -657,55 +657,31 @@ class KableBleConnectionManager(
     private suspend fun onDeviceReady() {
         val p = peripheral ?: return
 
-        // Log Pixel experiment flags at connection time (Issue #333)
-        log.i { PixelBleExperiments.getSummary() }
+        // Log BCM4389 mitigation status at connection time (Issue #333)
+        PixelBleExperiments.logConnectionSummary()
 
         // Request High Connection Priority (Android only - via expect/actual extension)
         // Critical for maintaining ~20Hz polling rate without lag
         p.requestHighPriority()
 
-        // Flag A (Issue #333): Skip MTU negotiation on affected Pixel devices.
-        // Android 14+ forces MTU to 517 regardless of app request. With MTU 517,
-        // the 96-byte CONFIG is sent as a single ATT Write Request instead of
-        // Long Write (Prepare+Execute). The BCM4389 on Pixel 6/7 may not handle
-        // single large writes correctly. The official Vitruvian app does NOT call
-        // requestMtu() in its connection flow.
-        if (PixelBleExperiments.skipMtu.value) {
-            log.w { "FLAG A: Skipping MTU negotiation (Pixel BCM4389 workaround)" }
+        // Request MTU negotiation (Android only - iOS handles automatically)
+        val mtu = p.requestMtuIfSupported(BleConstants.Timing.DESIRED_MTU)
+        if (mtu != null) {
+            negotiatedMtu = mtu
+            log.i { "MTU negotiated: $mtu bytes (requested: ${BleConstants.Timing.DESIRED_MTU})" }
             logRepo.info(
                 LogEventType.MTU_CHANGED,
-                "MTU skipped (Pixel experiment flag A)",
+                "MTU negotiated: $mtu bytes",
                 connectedDeviceName,
                 connectedDeviceAddress,
             )
         } else {
-            // Request MTU negotiation (Android only - iOS handles automatically)
-            val mtu = p.requestMtuIfSupported(BleConstants.Timing.DESIRED_MTU)
-            if (mtu != null) {
-                negotiatedMtu = mtu
-                log.i { "MTU negotiated: $mtu bytes (requested: ${BleConstants.Timing.DESIRED_MTU})" }
-                logRepo.info(
-                    LogEventType.MTU_CHANGED,
-                    "MTU negotiated: $mtu bytes",
-                    connectedDeviceName,
-                    connectedDeviceAddress,
-                )
-
-                // Flag E (Issue #333): Add stabilization delay after MTU negotiation.
-                // The BCM4389 may need time to stabilize ATT parameters after MTU change.
-                if (PixelBleExperiments.postMtuStabilizationDelay.value) {
-                    val delayMs = PixelBleExperiments.POST_MTU_STABILIZATION_MS
-                    log.w { "FLAG E: Post-MTU stabilization delay: ${delayMs}ms" }
-                    delay(delayMs)
-                }
-            } else {
-                // iOS returns null (handled by OS), or Android negotiation failed
-                log.i { "MTU negotiation: using system default (iOS) or failed (Android)" }
-                logRepo.debug(
-                    LogEventType.MTU_CHANGED,
-                    "MTU using system default",
-                )
-            }
+            // iOS returns null (handled by OS), or Android negotiation failed
+            log.i { "MTU negotiation: using system default (iOS) or failed (Android)" }
+            logRepo.debug(
+                LogEventType.MTU_CHANGED,
+                "MTU using system default",
+            )
         }
 
         // Verify services are discovered and log GATT structure
@@ -1050,11 +1026,12 @@ class KableBleConnectionManager(
             log.i { "Command sent via NUS TX: ${command.size} bytes" }
 
             // Issue #222 v16 (optional): One-shot diagnostic read after CONFIG to catch early faults.
-            // Flag C (Issue #333): Disable this on affected Pixel devices — the diagnostic
-            // read may create mutex contention with the START command that follows 100ms later.
+            // Issue #333 mitigation C: Skip on BCM4389 Pixels — this read contends with the
+            // CONFIG→START command sequence and triggers GATT_ERROR(133). Fault detection
+            // continues via the regular 1Hz diagnostic polling loop.
             val isEchoConfig = command.size == 32 && command[0] == 0x4E.toByte()
             val isProgramConfig = command.size == 96 && command[0] == 0x04.toByte()
-            if ((isEchoConfig || isProgramConfig) && !PixelBleExperiments.disablePostConfigDiagnostic.value) {
+            if ((isEchoConfig || isProgramConfig) && !PixelBleExperiments.isAffectedPixel()) {
                 val delayMs = if (isProgramConfig) 350L else 200L
                 scope.launch {
                     delay(delayMs)
