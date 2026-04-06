@@ -2254,10 +2254,29 @@ class ActiveSessionEngine(
      * Save workout session to database and check for personal records.
      */
     private suspend fun saveWorkoutSession() {
-        val sessionId = coordinator.currentSessionId ?: return
+        val sessionId = coordinator.currentSessionId
+        if (sessionId == null) {
+            Logger.e {
+                "PR_TRACK: CRITICAL — saveWorkoutSession() aborted: currentSessionId is null! " +
+                    "No session or PR will be saved. workingReps=${coordinator._repCount.value.workingReps}, " +
+                    "exerciseId=${coordinator._workoutParameters.value.selectedExerciseId}"
+            }
+            return
+        }
         val params = coordinator._workoutParameters.value
         val warmup = coordinator._repCount.value.warmupReps
         val working = coordinator._repCount.value.workingReps
+
+        // Issue #319: Log rep counts and exercise context entering the save pipeline
+        Logger.i {
+            "PR_TRACK: saveWorkoutSession — sessionId=$sessionId, " +
+                "workingReps=$working, warmupReps=$warmup, " +
+                "exerciseId=${params.selectedExerciseId ?: "NULL"}, " +
+                "weight=${params.weightPerCableKg}kg, mode=${params.programMode.displayName}, " +
+                "isJustLift=${params.isJustLift}, isEcho=${params.isEchoMode}, " +
+                "metricsCount=${coordinator.collectedMetrics.value.size}"
+        }
+
         // Issue #252: Exclude warmup time from session duration
         val effectiveStart = if (coordinator.warmupCompleteTimeMs > 0L) coordinator.warmupCompleteTimeMs else coordinator.workoutStartTime
         val duration = currentTimeMillis() - effectiveStart
@@ -2435,6 +2454,20 @@ class ActiveSessionEngine(
             Logger.d("handleSetCompletion: already in progress - ignoring")
             return
         }
+
+        // Issue #319: Log full context at entry so we can diagnose what the pipeline receives
+        val repCount = coordinator._repCount.value
+        val entryParams = coordinator._workoutParameters.value
+        Logger.i {
+            "PR_TRACK: handleSetCompletion — workingReps=${repCount.workingReps}, " +
+                "warmupReps=${repCount.warmupReps}, " +
+                "exerciseId=${entryParams.selectedExerciseId ?: "NULL"}, " +
+                "mode=${entryParams.programMode.displayName}, " +
+                "isJustLift=${entryParams.isJustLift}, isEcho=${entryParams.isEchoMode}, " +
+                "sessionId=${coordinator.currentSessionId ?: "NULL"}, " +
+                "weight=${entryParams.weightPerCableKg}kg"
+        }
+
         coordinator.bodyweightTimerJob?.cancel()
         coordinator.bodyweightTimerJob = null
         coordinator._timedExerciseRemainingSeconds.value = null
