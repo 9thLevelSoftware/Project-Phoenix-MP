@@ -495,6 +495,38 @@ class RoutineFlowManager(
     }
 
     /**
+     * Save a routine to a specific profile, bypassing active profile injection.
+     * Used for cross-profile copy operations.
+     */
+    fun saveRoutineToProfile(routine: Routine, targetProfileId: String) {
+        scope.launch {
+            try {
+                val routineWithProfile = routine.copy(profileId = targetProfileId)
+                workoutRepository.saveRoutine(routineWithProfile)
+                Logger.d { "ROUTINE_SAVE: Saved routine '${routine.name}' to profile $targetProfileId" }
+            } catch (e: Exception) {
+                Logger.e(e) { "ROUTINE_SAVE: Failed to save routine '${routine.name}' to profile $targetProfileId" }
+            }
+        }
+    }
+
+    /**
+     * Move routines to a different profile (changes profile_id in-place).
+     */
+    fun moveRoutinesToProfile(routineIds: Set<String>, targetProfileId: String) {
+        scope.launch {
+            try {
+                routineIds.forEach { id ->
+                    workoutRepository.moveRoutineToProfile(id, targetProfileId)
+                }
+                Logger.d { "ROUTINE_MOVE: Moved ${routineIds.size} routines to profile $targetProfileId" }
+            } catch (e: Exception) {
+                Logger.e(e) { "ROUTINE_MOVE: Failed to move routines to profile $targetProfileId" }
+            }
+        }
+    }
+
+    /**
      * Batch delete multiple routines (for multi-select feature)
      */
     fun deleteRoutines(routineIds: Set<String>) {

@@ -172,6 +172,19 @@
     <string name="delete_selected_routines">%1$d routines verwijderen?</string>
     <string name="duplicate_selected_routines">%1$d routines dupliceren?</string>
     <string name="duplicate_routines_message">Nieuwe kopieën worden aangemaakt met \'(Kopie)\' achtervoegsel.</string>
+    <string name="move_to_profile">Verplaatsen naar profiel</string>
+    <string name="copy_to_profile">Kopiëren naar profiel</string>
+    <string name="select_target_profile">Selecteer doelprofiel</string>
+    <string name="move_routine_confirm">\'%1$s\' verplaatsen naar %2$s?</string>
+    <string name="move_routines_confirm">%1$d routines verplaatsen naar %2$s?</string>
+    <string name="copy_routine_confirm">\'%1$s\' kopiëren naar %2$s?</string>
+    <string name="copy_routines_confirm">%1$d routines kopiëren naar %2$s?</string>
+    <string name="routine_moved">Routine verplaatst naar %1$s</string>
+    <string name="routines_moved">%1$d routines verplaatst naar %2$s</string>
+    <string name="routine_copied">Routine gekopieerd naar %1$s</string>
+    <string name="routines_copied">%1$d routines gekopieerd naar %2$s</string>
+    <string name="action_move">Verplaatsen</string>
+    <string name="no_other_profiles">Geen andere profielen beschikbaar. Maak eerst een nieuw profiel aan.</string>
     <string name="cannot_be_undone">Dit kan niet ongedaan worden gemaakt.</string>
     <string name="delete_all">Alles verwijderen</string>
 

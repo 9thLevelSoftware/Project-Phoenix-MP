@@ -16,22 +16,26 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.DriveFileMove
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.data.repository.PersonalRecordRepository
+import com.devil.phoenixproject.data.repository.UserProfile
 import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.domain.model.generateSupersetId
 import com.devil.phoenixproject.domain.model.generateUUID
 import com.devil.phoenixproject.presentation.components.EmptyState
+import com.devil.phoenixproject.presentation.components.ProfileColors
 import com.devil.phoenixproject.ui.theme.*
 import com.devil.phoenixproject.ui.theme.screenBackgroundBrush
 import com.devil.phoenixproject.util.KmpUtils
@@ -60,6 +64,10 @@ fun RoutinesTab(
     // onUpdateRoutine removed as it is replaced by Editor Screen
     onEditRoutine: (String) -> Unit,
     onCreateRoutine: () -> Unit,
+    profiles: List<UserProfile> = emptyList(),
+    activeProfileId: String = "default",
+    onMoveToProfile: (routineIds: Set<String>, targetProfileId: String) -> Unit = { _, _ -> },
+    onSaveRoutineToProfile: (routine: Routine, targetProfileId: String) -> Unit = { _, _ -> },
     themeMode: ThemeMode,
     modifier: Modifier = Modifier,
 ) {
@@ -72,6 +80,17 @@ fun RoutinesTab(
     val selectedIds = remember { mutableStateSetOf<String>() }
     var showBatchDeleteDialog by remember { mutableStateOf(false) }
     var showBatchCopyDialog by remember { mutableStateOf(false) }
+
+    // Profile picker state for move/copy to profile
+    var profilePickerRoutineId by remember { mutableStateOf<String?>(null) }
+    var profilePickerIsMoveAction by remember { mutableStateOf(true) }
+    var showBatchMoveProfilePicker by remember { mutableStateOf(false) }
+    var showBatchCopyProfilePicker by remember { mutableStateOf(false) }
+
+    // Profiles available as targets (exclude current active profile)
+    val targetProfiles = remember(profiles, activeProfileId) {
+        profiles.filter { it.id != activeProfileId }
+    }
 
     // Helper to clear selection
     fun clearSelection() {
@@ -136,6 +155,15 @@ fun RoutinesTab(
                             onStartWorkout = { onStartWorkout(routine) },
                             onEdit = { onEditRoutine(routine.id) },
                             onDelete = { onDeleteRoutine(routine.id) },
+                            onMoveToProfile = {
+                                profilePickerRoutineId = routine.id
+                                profilePickerIsMoveAction = true
+                            },
+                            onCopyToProfile = {
+                                profilePickerRoutineId = routine.id
+                                profilePickerIsMoveAction = false
+                            },
+                            hasOtherProfiles = targetProfiles.isNotEmpty(),
                             onDuplicate = {
                                 // Generate new IDs explicitly and create deep copies
                                 val newRoutineId = generateUUID()
@@ -243,7 +271,27 @@ fun RoutinesTab(
                         Icon(Icons.Default.Close, contentDescription = stringResource(Res.string.cd_cancel_selection))
                     }
 
-                    // Copy button
+                    // Move to Profile button (only if other profiles exist)
+                    if (targetProfiles.isNotEmpty()) {
+                        SmallFloatingActionButton(
+                            onClick = { showBatchMoveProfilePicker = true },
+                            containerColor = MaterialTheme.colorScheme.tertiaryContainer,
+                            contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
+                        ) {
+                            Icon(Icons.AutoMirrored.Default.DriveFileMove, contentDescription = stringResource(Res.string.move_to_profile))
+                        }
+
+                        // Copy to Profile button
+                        SmallFloatingActionButton(
+                            onClick = { showBatchCopyProfilePicker = true },
+                            containerColor = MaterialTheme.colorScheme.tertiaryContainer,
+                            contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
+                        ) {
+                            Icon(Icons.Default.FileCopy, contentDescription = stringResource(Res.string.copy_to_profile))
+                        }
+                    }
+
+                    // Copy (duplicate) button
                     FloatingActionButton(
                         onClick = { showBatchCopyDialog = true },
                         containerColor = MaterialTheme.colorScheme.secondaryContainer,
@@ -382,6 +430,194 @@ fun RoutinesTab(
             },
         )
     }
+
+    // Individual routine profile picker (Move or Copy)
+    profilePickerRoutineId?.let { routineId ->
+        val routine = routines.find { it.id == routineId }
+        if (routine != null) {
+            ProfilePickerDialog(
+                title = if (profilePickerIsMoveAction) {
+                    stringResource(Res.string.move_to_profile)
+                } else {
+                    stringResource(Res.string.copy_to_profile)
+                },
+                subtitle = routine.name,
+                profiles = targetProfiles,
+                onProfileSelected = { targetProfile ->
+                    if (profilePickerIsMoveAction) {
+                        onMoveToProfile(setOf(routineId), targetProfile.id)
+                    } else {
+                        val copied = deepCopyRoutine(routine, routines)
+                        onSaveRoutineToProfile(copied, targetProfile.id)
+                    }
+                    profilePickerRoutineId = null
+                },
+                onDismiss = { profilePickerRoutineId = null },
+            )
+        }
+    }
+
+    // Batch Move to Profile picker
+    if (showBatchMoveProfilePicker) {
+        ProfilePickerDialog(
+            title = stringResource(Res.string.move_to_profile),
+            subtitle = stringResource(Res.string.move_routines_confirm, selectedIds.size, "…"),
+            profiles = targetProfiles,
+            onProfileSelected = { targetProfile ->
+                onMoveToProfile(selectedIds.toSet(), targetProfile.id)
+                showBatchMoveProfilePicker = false
+                clearSelection()
+            },
+            onDismiss = { showBatchMoveProfilePicker = false },
+        )
+    }
+
+    // Batch Copy to Profile picker
+    if (showBatchCopyProfilePicker) {
+        ProfilePickerDialog(
+            title = stringResource(Res.string.copy_to_profile),
+            subtitle = stringResource(Res.string.copy_routines_confirm, selectedIds.size, "…"),
+            profiles = targetProfiles,
+            onProfileSelected = { targetProfile ->
+                selectedIds.forEach { routineId ->
+                    routines.find { it.id == routineId }?.let { routine ->
+                        val copied = deepCopyRoutine(routine, routines)
+                        onSaveRoutineToProfile(copied, targetProfile.id)
+                    }
+                }
+                showBatchCopyProfilePicker = false
+                clearSelection()
+            },
+            onDismiss = { showBatchCopyProfilePicker = false },
+        )
+    }
+}
+
+/**
+ * Deep-copy a routine with new IDs for duplication/cross-profile copy.
+ */
+private fun deepCopyRoutine(routine: Routine, allRoutines: List<Routine>): Routine {
+    val newRoutineId = generateUUID()
+
+    // Deep-copy supersets with new IDs and remap to new routine
+    val supersetIdMap = routine.supersets.associate { it.id to generateSupersetId() }
+    val newSupersets = routine.supersets.map { superset ->
+        superset.copy(
+            id = supersetIdMap[superset.id] ?: generateSupersetId(),
+            routineId = newRoutineId,
+        )
+    }
+
+    // Deep-copy exercises, remapping supersetId references
+    val newExercises = routine.exercises.map { exercise ->
+        exercise.copy(
+            id = generateUUID(),
+            exercise = exercise.exercise.copy(),
+            supersetId = exercise.supersetId?.let { supersetIdMap[it] },
+        )
+    }
+
+    // Smart duplicate naming: extract base name and find next copy number
+    val baseName = routine.name.replace(Regex(""" \(Copy( \d+)?\)$"""), "")
+    val copyPattern = Regex("""^${Regex.escape(baseName)} \(Copy( (\d+))?\)$""")
+    val existingCopyNumbers = allRoutines
+        .mapNotNull { r ->
+            when {
+                r.name == baseName -> 0
+                r.name == "$baseName (Copy)" -> 1
+                else -> copyPattern.find(r.name)?.groups?.get(2)?.value?.toIntOrNull()
+            }
+        }
+    val nextCopyNumber = (existingCopyNumbers.maxOrNull() ?: 0) + 1
+    val newName = if (nextCopyNumber == 1) {
+        "$baseName (Copy)"
+    } else {
+        "$baseName (Copy $nextCopyNumber)"
+    }
+
+    return routine.copy(
+        id = newRoutineId,
+        name = newName,
+        createdAt = KmpUtils.currentTimeMillis(),
+        useCount = 0,
+        lastUsed = null,
+        exercises = newExercises,
+        supersets = newSupersets,
+    )
+}
+
+/**
+ * Dialog for selecting a target profile for move/copy operations.
+ * Shows a list of available profiles with colored avatars.
+ */
+@Composable
+private fun ProfilePickerDialog(
+    title: String,
+    subtitle: String,
+    profiles: List<UserProfile>,
+    onProfileSelected: (UserProfile) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title) },
+        text = {
+            if (profiles.isEmpty()) {
+                Text(stringResource(Res.string.no_other_profiles))
+            } else {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(
+                        text = subtitle,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    profiles.forEach { profile ->
+                        val profileColor = ProfileColors.getOrElse(profile.colorIndex) { ProfileColors[0] }
+                        Surface(
+                            onClick = { onProfileSelected(profile) },
+                            shape = RoundedCornerShape(12.dp),
+                            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                // Profile color dot
+                                Surface(
+                                    shape = androidx.compose.foundation.shape.CircleShape,
+                                    color = profileColor,
+                                    modifier = Modifier.size(32.dp),
+                                ) {
+                                    Box(contentAlignment = Alignment.Center) {
+                                        Text(
+                                            text = profile.name.take(1).uppercase(),
+                                            style = MaterialTheme.typography.labelMedium,
+                                            fontWeight = FontWeight.Bold,
+                                            color = Color.White,
+                                        )
+                                    }
+                                }
+                                Text(
+                                    text = profile.name,
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    fontWeight = FontWeight.Medium,
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(Res.string.action_cancel))
+            }
+        },
+    )
 }
 
 /**
@@ -399,6 +635,9 @@ fun RoutineCard(
     onEdit: () -> Unit,
     onDelete: () -> Unit,
     onDuplicate: () -> Unit,
+    onMoveToProfile: () -> Unit = {},
+    onCopyToProfile: () -> Unit = {},
+    hasOtherProfiles: Boolean = false,
 ) {
     var expanded by remember { mutableStateOf(false) }
     var showDeleteDialog by remember { mutableStateOf(false) }
@@ -550,6 +789,7 @@ fun RoutineCard(
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceEvenly,
+                        verticalAlignment = Alignment.CenterVertically,
                     ) {
                         OutlinedButton(
                             onClick = onEdit,
@@ -595,6 +835,58 @@ fun RoutineCard(
                             )
                             Spacer(Modifier.width(4.dp))
                             Text(stringResource(Res.string.action_delete), maxLines = 1)
+                        }
+
+                        // Overflow menu for Move/Copy to Profile
+                        if (hasOtherProfiles) {
+                            var showOverflow by remember { mutableStateOf(false) }
+                            Spacer(Modifier.width(2.dp))
+                            Box {
+                                IconButton(
+                                    onClick = { showOverflow = true },
+                                    modifier = Modifier.size(36.dp),
+                                ) {
+                                    Icon(
+                                        Icons.Default.MoreVert,
+                                        contentDescription = stringResource(Res.string.select_target_profile),
+                                        modifier = Modifier.size(20.dp),
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                                DropdownMenu(
+                                    expanded = showOverflow,
+                                    onDismissRequest = { showOverflow = false },
+                                ) {
+                                    DropdownMenuItem(
+                                        text = { Text(stringResource(Res.string.move_to_profile)) },
+                                        onClick = {
+                                            showOverflow = false
+                                            onMoveToProfile()
+                                        },
+                                        leadingIcon = {
+                                            Icon(
+                                                Icons.AutoMirrored.Default.DriveFileMove,
+                                                contentDescription = null,
+                                                modifier = Modifier.size(20.dp),
+                                            )
+                                        },
+                                    )
+                                    DropdownMenuItem(
+                                        text = { Text(stringResource(Res.string.copy_to_profile)) },
+                                        onClick = {
+                                            showOverflow = false
+                                            onCopyToProfile()
+                                        },
+                                        leadingIcon = {
+                                            Icon(
+                                                Icons.Default.FileCopy,
+                                                contentDescription = null,
+                                                modifier = Modifier.size(20.dp),
+                                            )
+                                        },
+                                    )
+                                }
+                            }
                         }
                     }
                 }

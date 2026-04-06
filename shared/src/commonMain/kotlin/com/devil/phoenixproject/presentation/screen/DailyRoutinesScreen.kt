@@ -7,12 +7,14 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.navigation.NavController
 import com.devil.phoenixproject.data.repository.ExerciseRepository
+import com.devil.phoenixproject.data.repository.UserProfileRepository
 import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.presentation.components.ResumeRoutineDialog
 import com.devil.phoenixproject.presentation.navigation.NavigationRoutes
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
 import com.devil.phoenixproject.ui.theme.screenBackgroundBrush
 import org.jetbrains.compose.resources.stringResource
+import org.koin.compose.koinInject
 import vitruvianprojectphoenix.shared.generated.resources.*
 import vitruvianprojectphoenix.shared.generated.resources.Res
 
@@ -35,6 +37,11 @@ fun DailyRoutinesScreen(
     @Suppress("UNUSED_VARIABLE") // Reserved for future connecting overlay
     val isAutoConnecting by viewModel.isAutoConnecting.collectAsState()
     val connectionError by viewModel.connectionError.collectAsState()
+
+    // Profile data for move/copy to profile feature (#330)
+    val profileRepository: UserProfileRepository = koinInject()
+    val profiles by profileRepository.allProfiles.collectAsState()
+    val activeProfile by profileRepository.activeProfile.collectAsState()
 
     // Resume/Restart dialog state (Issue #101)
     var showResumeDialog by remember { mutableStateOf(false) }
@@ -80,6 +87,14 @@ fun DailyRoutinesScreen(
             onDeleteRoutine = { routineId -> viewModel.deleteRoutine(routineId) },
             onDeleteRoutines = { routineIds -> viewModel.deleteRoutines(routineIds) },
             onSaveRoutine = { routine -> viewModel.saveRoutine(routine) },
+            profiles = profiles,
+            activeProfileId = activeProfile?.id ?: "default",
+            onMoveToProfile = { routineIds, targetProfileId ->
+                viewModel.moveRoutinesToProfile(routineIds, targetProfileId)
+            },
+            onSaveRoutineToProfile = { routine, targetProfileId ->
+                viewModel.saveRoutineToProfile(routine, targetProfileId)
+            },
             onEditRoutine = { routineId ->
                 // Issue #130: Block editing during active workout
                 if (viewModel.isWorkoutActive) {
