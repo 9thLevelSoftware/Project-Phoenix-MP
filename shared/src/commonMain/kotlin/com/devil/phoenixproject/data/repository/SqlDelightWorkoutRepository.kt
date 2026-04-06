@@ -709,6 +709,13 @@ class SqlDelightWorkoutRepository(private val db: VitruvianDatabase, private val
         }
     }
 
+    override suspend fun moveRoutineToProfile(routineId: String, targetProfileId: String) {
+        withContext(Dispatchers.IO) {
+            queries.adoptRoutineProfile(profileId = targetProfileId, id = routineId)
+            Logger.d { "Moved routine $routineId to profile $targetProfileId" }
+        }
+    }
+
     override suspend fun getRoutineById(routineId: String): Routine? {
         return withContext(Dispatchers.IO) {
             if (routineId.isBlank()) return@withContext null

@@ -172,6 +172,19 @@
     <string name="delete_selected_routines">Delete %1$d routines?</string>
     <string name="duplicate_selected_routines">Duplicate %1$d routines?</string>
     <string name="duplicate_routines_message">New copies will be created with \'(Copy)\' suffix.</string>
+    <string name="move_to_profile">Move to Profile</string>
+    <string name="copy_to_profile">Copy to Profile</string>
+    <string name="select_target_profile">Select Target Profile</string>
+    <string name="move_routine_confirm">Move \'%1$s\' to %2$s?</string>
+    <string name="move_routines_confirm">Move %1$d routines to %2$s?</string>
+    <string name="copy_routine_confirm">Copy \'%1$s\' to %2$s?</string>
+    <string name="copy_routines_confirm">Copy %1$d routines to %2$s?</string>
+    <string name="routine_moved">Routine moved to %1$s</string>
+    <string name="routines_moved">%1$d routines moved to %2$s</string>
+    <string name="routine_copied">Routine copied to %1$s</string>
+    <string name="routines_copied">%1$d routines copied to %2$s</string>
+    <string name="action_move">Move</string>
+    <string name="no_other_profiles">No other profiles available. Create a new profile first.</string>
     <string name="cannot_be_undone">This cannot be undone.</string>
     <string name="delete_all">Delete All</string>
 

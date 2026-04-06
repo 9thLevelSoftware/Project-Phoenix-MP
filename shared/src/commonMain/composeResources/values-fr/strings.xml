@@ -172,6 +172,19 @@
     <string name="delete_selected_routines">Supprimer %1$d routines ?</string>
     <string name="duplicate_selected_routines">Dupliquer %1$d routines ?</string>
     <string name="duplicate_routines_message">De nouvelles copies seront créées avec le suffixe \'(Copie)\'.</string>
+    <string name="move_to_profile">Déplacer vers le profil</string>
+    <string name="copy_to_profile">Copier vers le profil</string>
+    <string name="select_target_profile">Sélectionner le profil cible</string>
+    <string name="move_routine_confirm">Déplacer \'%1$s\' vers %2$s ?</string>
+    <string name="move_routines_confirm">Déplacer %1$d routines vers %2$s ?</string>
+    <string name="copy_routine_confirm">Copier \'%1$s\' vers %2$s ?</string>
+    <string name="copy_routines_confirm">Copier %1$d routines vers %2$s ?</string>
+    <string name="routine_moved">Routine déplacée vers %1$s</string>
+    <string name="routines_moved">%1$d routines déplacées vers %2$s</string>
+    <string name="routine_copied">Routine copiée vers %1$s</string>
+    <string name="routines_copied">%1$d routines copiées vers %2$s</string>
+    <string name="action_move">Déplacer</string>
+    <string name="no_other_profiles">Aucun autre profil disponible. Créez d\'abord un nouveau profil.</string>
     <string name="cannot_be_undone">Cette action est irréversible.</string>
     <string name="delete_all">Tout supprimer</string>
 

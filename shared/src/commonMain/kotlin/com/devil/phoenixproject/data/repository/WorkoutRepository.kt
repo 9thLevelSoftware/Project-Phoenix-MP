@@ -44,6 +44,7 @@ interface WorkoutRepository {
     suspend fun saveRoutine(routine: Routine)
     suspend fun updateRoutine(routine: Routine)
     suspend fun deleteRoutine(routineId: String)
+    suspend fun moveRoutineToProfile(routineId: String, targetProfileId: String)
     suspend fun getRoutineById(routineId: String): Routine?
 
     /**

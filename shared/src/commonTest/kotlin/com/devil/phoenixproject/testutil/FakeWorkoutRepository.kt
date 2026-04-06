@@ -110,6 +110,13 @@ class FakeWorkoutRepository : WorkoutRepository {
         updateRoutinesFlow()
     }
 
+    override suspend fun moveRoutineToProfile(routineId: String, targetProfileId: String) {
+        routines[routineId]?.let { routine ->
+            routines[routineId] = routine.copy(profileId = targetProfileId)
+            updateRoutinesFlow()
+        }
+    }
+
     override suspend fun getRoutineById(routineId: String): Routine? = routines[routineId]
 
     override suspend fun markRoutineUsed(routineId: String) {
