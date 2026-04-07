@@ -17,6 +17,11 @@ import co.touchlab.kermit.Logger
  *   Android's generic "something went wrong" status — and the connection drops.
  *
  * Mitigations applied automatically on affected devices:
+ *   B — Pause all 4 polling loops 500ms before CONFIG write. Drains the BCM4389's
+ *       internal GATT queue so the 96-byte CONFIG hits a clean bus. Happens during
+ *       countdown — no UX impact. Polling resumes after CONFIG+START completes.
+ *       StuGotz's Pixel 6 Pro survived without B (C+D alone sufficed), but the
+ *       original reporter's Pixel 6 needs the bus fully clear for CONFIG to land.
  *   C — Skip the optional post-CONFIG diagnostic read (removes a BLE operation that
  *       can contend with the CONFIG→START command sequence). Fault detection continues
  *       via the regular 1Hz diagnostic polling loop — this only skips the one-shot
@@ -27,7 +32,6 @@ import co.touchlab.kermit.Logger
  * Ruled out by testing:
  *   A (Skip MTU) — Made things WORSE. With default 23-byte MTU, the 96-byte CONFIG
  *       becomes a Long Write (6+ ATT segments), generating MORE GATT traffic.
- *   B (Pause polling) — Works, but too disruptive. Stops all 4 polling loops.
  *   E (Post-MTU delay) — Works, but adds 1s to every connection. Overkill.
  */
 object PixelBleExperiments {
@@ -35,6 +39,9 @@ object PixelBleExperiments {
     private val log = Logger.withTag("PixelBleExperiments")
 
     // ── Timing Constants ──────────────────────────────────────────────────
+
+    /** How long to pause polling before CONFIG write on BCM4389 (mitigation B). */
+    const val POLLING_PAUSE_BEFORE_CONFIG_MS = 500L
 
     /** Extended delay between CONFIG and START commands on BCM4389 (mitigation D). Default is 100ms. */
     const val EXTENDED_CONFIG_START_DELAY_MS = 1000L
@@ -69,7 +76,8 @@ object PixelBleExperiments {
     fun logConnectionSummary() {
         val affected = isAffectedPixel()
         if (affected) {
-            log.i { "BCM4389 detected (${DeviceInfo.model}): auto-applying mitigations C+D for Issue #333" }
+            log.i { "BCM4389 detected (${DeviceInfo.model}): auto-applying mitigations B+C+D for Issue #333" }
+            log.i { "  B — Pause polling ${POLLING_PAUSE_BEFORE_CONFIG_MS}ms before CONFIG write" }
             log.i { "  C — Skip post-CONFIG diagnostic read (regular 1Hz polling still active)" }
             log.i { "  D — Extended CONFIG→START delay: ${EXTENDED_CONFIG_START_DELAY_MS}ms" }
         } else {

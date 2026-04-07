@@ -7,6 +7,7 @@ import com.devil.phoenixproject.data.repository.ReconnectionRequest
 import com.devil.phoenixproject.data.repository.ScannedDevice
 import com.devil.phoenixproject.domain.model.ConnectionState
 import com.devil.phoenixproject.util.BleConstants
+import com.devil.phoenixproject.util.DeviceInfo
 import com.devil.phoenixproject.util.HardwareDetection
 import com.devil.phoenixproject.util.PixelBleExperiments
 import com.juul.kable.Advertisement
@@ -659,6 +660,16 @@ class KableBleConnectionManager(
 
         // Log BCM4389 mitigation status at connection time (Issue #333)
         PixelBleExperiments.logConnectionSummary()
+        // Also log to connection log export so users can confirm mitigations are active
+        if (PixelBleExperiments.isAffectedPixel()) {
+            logRepo.info(
+                LogEventType.SERVICE_DISCOVERED,
+                "BCM4389 mitigations active (B+C+D) for Issue #333",
+                connectedDeviceName,
+                connectedDeviceAddress,
+                "Model: ${DeviceInfo.model}",
+            )
+        }
 
         // Request High Connection Priority (Android only - via expect/actual extension)
         // Critical for maintaining ~20Hz polling rate without lag

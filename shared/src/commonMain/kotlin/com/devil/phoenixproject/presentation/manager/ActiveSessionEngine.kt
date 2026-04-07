@@ -1752,6 +1752,18 @@ class ActiveSessionEngine(
                     stopMotionStartDetection()
                 }
 
+                // Issue #333 mitigation B: Pause polling before CONFIG write on BCM4389 Pixels.
+                // The 4 polling loops (monitor 10-20Hz, heuristic 4Hz, diagnostic 2Hz,
+                // heartbeat 0.5Hz) saturate the BCM4389's internal GATT queue. Pausing
+                // 500ms before CONFIG lets in-flight operations drain so the 96-byte
+                // CONFIG write hits a clean bus. Happens during countdown — no UX impact.
+                val pausedForBcm4389 = PixelBleExperiments.isAffectedPixel()
+                if (pausedForBcm4389) {
+                    Logger.i { "BCM4389: pausing polling ${PixelBleExperiments.POLLING_PAUSE_BEFORE_CONFIG_MS}ms before CONFIG write" }
+                    bleRepository.stopPolling()
+                    delay(PixelBleExperiments.POLLING_PAUSE_BEFORE_CONFIG_MS)
+                }
+
                 try {
                     bleRepository.sendWorkoutCommand(command).getOrThrow()
                     Logger.i { "CONFIG command sent: ${command.size} bytes for ${effectiveParams.programMode}" }
@@ -1768,6 +1780,11 @@ class ActiveSessionEngine(
                 } catch (e: Exception) {
                     Logger.e(e) { "Failed to send config command" }
                     coordinator._bleErrorEvents.tryEmit("Failed to send command: ${e.message}")
+                    // Resume polling if we paused for BCM4389 — startActiveWorkoutPolling
+                    // won't be reached, so restart here to maintain connection keep-alive
+                    if (pausedForBcm4389) {
+                        bleRepository.startActiveWorkoutPolling()
+                    }
                     return@launch
                 }
 
