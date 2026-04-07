@@ -28,6 +28,14 @@ import co.touchlab.kermit.Logger
  *       immediate probe. Does NOT affect Issue #222 fix (BleOperationQueue mutex).
  *   D — Extend CONFIG→START delay from 100ms to 1000ms (gives the BCM4389 time to
  *       fully process the CONFIG write before the START command arrives).
+ *   F — Throttle monitor polling with 25ms inter-read delay. The monitor loop runs
+ *       back-to-back reads (~20Hz). Combined with diagnostic (2Hz), heuristic (4Hz),
+ *       and heartbeat (0.5Hz), this generates ~27 GATT ops/sec. After ~19 seconds the
+ *       BCM4389's internal queue overflows → GATT_ERROR(133) even during idle polling.
+ *       The 25ms delay reduces monitor rate to ~14Hz (total ~21 ops/sec).
+ *   G — Skip heartbeat read on write-only TX characteristic. The read always fails
+ *       (TX is write-only), generating a GATT Error Response round-trip for nothing.
+ *       Go straight to the no-op write, halving heartbeat GATT traffic.
  *
  * Ruled out by testing:
  *   A (Skip MTU) — Made things WORSE. With default 23-byte MTU, the 96-byte CONFIG
@@ -45,6 +53,9 @@ object PixelBleExperiments {
 
     /** Extended delay between CONFIG and START commands on BCM4389 (mitigation D). Default is 100ms. */
     const val EXTENDED_CONFIG_START_DELAY_MS = 1000L
+
+    /** Inter-read delay for monitor polling on BCM4389 (mitigation F). Reduces ~20Hz to ~14Hz. */
+    const val MONITOR_POLL_THROTTLE_MS = 25L
 
     // ── Device Detection ──────────────────────────────────────────────────
 
@@ -76,10 +87,12 @@ object PixelBleExperiments {
     fun logConnectionSummary() {
         val affected = isAffectedPixel()
         if (affected) {
-            log.i { "BCM4389 detected (${DeviceInfo.model}): auto-applying mitigations B+C+D for Issue #333" }
+            log.i { "BCM4389 detected (${DeviceInfo.model}): auto-applying mitigations B+C+D+F+G for Issue #333" }
             log.i { "  B — Pause polling ${POLLING_PAUSE_BEFORE_CONFIG_MS}ms before CONFIG write" }
             log.i { "  C — Skip post-CONFIG diagnostic read (regular 1Hz polling still active)" }
             log.i { "  D — Extended CONFIG→START delay: ${EXTENDED_CONFIG_START_DELAY_MS}ms" }
+            log.i { "  F — Monitor poll throttle: ${MONITOR_POLL_THROTTLE_MS}ms inter-read delay (~14Hz vs ~20Hz)" }
+            log.i { "  G — Skip heartbeat read on write-only TX (go straight to no-op write)" }
         } else {
             log.d { "Device: ${DeviceInfo.model} — not a BCM4389 Pixel, no BLE mitigations needed" }
         }

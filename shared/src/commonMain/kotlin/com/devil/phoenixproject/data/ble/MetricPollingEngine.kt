@@ -6,6 +6,7 @@ import com.devil.phoenixproject.domain.model.WorkoutMetric
 import com.devil.phoenixproject.domain.model.currentTimeMillis
 import com.devil.phoenixproject.util.BleConstants
 import com.devil.phoenixproject.util.DeviceInfo
+import com.devil.phoenixproject.util.PixelBleExperiments
 import com.juul.kable.Peripheral
 import com.juul.kable.WriteType
 import kotlinx.coroutines.CoroutineScope
@@ -243,7 +244,13 @@ class MetricPollingEngine(
                                 }
                                 parseMonitorData(data)
                                 failCount = 0
-                                // NO DELAY on success — BLE response time naturally rate-limits
+                                // Issue #333: BCM4389 cannot sustain back-to-back GATT reads at
+                                // full speed (~20Hz). After ~19s the internal queue overflows →
+                                // GATT_ERROR(133). A 25ms inter-read delay reduces rate to ~14Hz
+                                // while keeping metrics responsive. Non-BCM4389 devices skip this.
+                                if (PixelBleExperiments.isAffectedPixel()) {
+                                    delay(PixelBleExperiments.MONITOR_POLL_THROTTLE_MS)
+                                }
                             } else {
                                 consecutiveTimeouts++
                                 if (consecutiveTimeouts <= 3 || consecutiveTimeouts % 10 == 0) {
@@ -368,27 +375,40 @@ class MetricPollingEngine(
      * Start heartbeat to keep BLE connection alive.
      * Read-then-write pattern: tries to read TX characteristic first, falls back to no-op write.
      * Issue #222 v15.1: V-Form requires WriteType.WithResponse.
+     *
+     * Issue #333: On BCM4389, skip the read attempt entirely. TX (6e400002) is a write-only
+     * characteristic — the read always fails, generating a GATT Error Response from the remote
+     * device. On most BLE stacks this is harmless, but on BCM4389 it contributes to cumulative
+     * GATT queue saturation. Going straight to the no-op write halves the heartbeat GATT traffic.
      */
     fun startHeartbeat(peripheral: Peripheral) {
         heartbeatJob?.cancel()
+        val skipHeartbeatRead = PixelBleExperiments.isAffectedPixel()
         heartbeatJob = scope.launch {
             log.d {
-                "Starting BLE heartbeat (interval=${BleConstants.Timing.HEARTBEAT_INTERVAL_MS}ms, read timeout=${BleConstants.Timing.HEARTBEAT_READ_TIMEOUT_MS}ms)"
+                "Starting BLE heartbeat (interval=${BleConstants.Timing.HEARTBEAT_INTERVAL_MS}ms, " +
+                    "read timeout=${BleConstants.Timing.HEARTBEAT_READ_TIMEOUT_MS}ms, " +
+                    "skipRead=$skipHeartbeatRead)"
             }
             while (isActive) {
                 delay(BleConstants.Timing.HEARTBEAT_INTERVAL_MS)
 
-                val readSucceeded = try {
-                    withTimeoutOrNull(BleConstants.Timing.HEARTBEAT_READ_TIMEOUT_MS) {
-                        performHeartbeatRead(peripheral)
-                    } ?: false
-                } catch (e: Exception) {
-                    log.e { "Heartbeat read attempt crashed: ${e.message}" }
-                    false
-                }
-
-                if (!readSucceeded) {
+                if (skipHeartbeatRead) {
+                    // BCM4389: skip the read that always fails, go straight to no-op write
                     sendHeartbeatNoOp(peripheral)
+                } else {
+                    val readSucceeded = try {
+                        withTimeoutOrNull(BleConstants.Timing.HEARTBEAT_READ_TIMEOUT_MS) {
+                            performHeartbeatRead(peripheral)
+                        } ?: false
+                    } catch (e: Exception) {
+                        log.e { "Heartbeat read attempt crashed: ${e.message}" }
+                        false
+                    }
+
+                    if (!readSucceeded) {
+                        sendHeartbeatNoOp(peripheral)
+                    }
                 }
             }
         }

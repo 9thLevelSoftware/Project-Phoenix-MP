@@ -664,7 +664,7 @@ class KableBleConnectionManager(
         if (PixelBleExperiments.isAffectedPixel()) {
             logRepo.info(
                 LogEventType.SERVICE_DISCOVERED,
-                "BCM4389 mitigations active (B+C+D) for Issue #333",
+                "BCM4389 mitigations active (B+C+D+F+G) for Issue #333",
                 connectedDeviceName,
                 connectedDeviceAddress,
                 "Model: ${DeviceInfo.model}",
