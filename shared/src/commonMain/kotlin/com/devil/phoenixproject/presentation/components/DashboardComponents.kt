@@ -24,6 +24,7 @@ import androidx.compose.ui.unit.sp
 import com.devil.phoenixproject.domain.model.PersonalRecord
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.domain.model.WorkoutSession
+import com.devil.phoenixproject.domain.model.effectiveTotalVolumeKg
 import com.devil.phoenixproject.domain.model.currentTimeMillis
 import com.devil.phoenixproject.ui.theme.AccessibilityTheme
 import com.devil.phoenixproject.ui.theme.Spacing
@@ -183,7 +184,7 @@ fun ThisWeekStatsCard(
     }
 
     val thisWeekVolume = remember(thisWeekSessions) {
-        thisWeekSessions.sumOf { (it.weightPerCableKg * it.totalReps * (if (it.cableCount == 2) 2 else 1)).toDouble() }.toFloat()
+        thisWeekSessions.sumOf { it.effectiveTotalVolumeKg().toDouble() }.toFloat()
     }
 
     Card(

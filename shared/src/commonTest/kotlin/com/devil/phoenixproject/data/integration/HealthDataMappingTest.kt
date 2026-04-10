@@ -38,9 +38,22 @@ class HealthDataMappingTest {
 
     @Test
     fun titleWeightIsDoubledForDualCable() {
-        // Weight convention: stored per-cable, displayed as total (x2)
-        val title = buildTitle(exerciseName = "Squat", weightPerCableKg = 110f)
+        // Weight convention: stored per-cable, displayed as total (x2) for dual-cable
+        val title = buildTitle(exerciseName = "Squat", weightPerCableKg = 110f, cableCount = 2)
         assertEquals("Squat \u2014 220.0kg", title)
+    }
+
+    @Test
+    fun titleWeightNotDoubledForSingleCable() {
+        val title = buildTitle(exerciseName = "Reverse Lunge", weightPerCableKg = 30f, cableCount = 1)
+        assertEquals("Reverse Lunge \u2014 30.0kg", title)
+    }
+
+    @Test
+    fun titleWeightDefaultsToDualWhenCableCountNull() {
+        // Legacy sessions without cableCount should still show doubled weight
+        val title = buildTitle(exerciseName = "Bench Press", weightPerCableKg = 50f, cableCount = null)
+        assertEquals("Bench Press \u2014 100.0kg", title)
     }
 
     // ---- Duration clamping ----
@@ -84,9 +97,9 @@ class HealthDataMappingTest {
 
     // ---- Extracted pure functions matching both platform implementations ----
 
-    private fun buildTitle(exerciseName: String?, weightPerCableKg: Float): String {
+    private fun buildTitle(exerciseName: String?, weightPerCableKg: Float, cableCount: Int? = null): String {
         val name = exerciseName?.takeIf { it.isNotBlank() } ?: "Phoenix Workout"
-        val totalWeightKg = weightPerCableKg * 2f
+        val totalWeightKg = weightPerCableKg * (cableCount ?: 2).toFloat()
         return if (totalWeightKg > 0f) {
             val rounded = (totalWeightKg * 10).toInt() / 10.0
             "$name \u2014 ${rounded}kg"

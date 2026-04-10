@@ -140,7 +140,7 @@ actual class HealthIntegration {
      * - Optional calorie data from session.estimatedCalories
      * - Metadata with external UUID (session.id) for deduplication
      *
-     * Weight display follows the dual-cable convention: weightPerCableKg * 2.
+     * Weight display uses actual cableCount: weightPerCableKg * cableCount (defaults to 2 for legacy data).
      */
     actual suspend fun writeWorkout(session: WorkoutSession): Result<Unit> {
         if (!isAvailable()) {
@@ -238,11 +238,11 @@ actual class HealthIntegration {
 
     /**
      * Builds a human-readable title for the exercise session.
-     * Total weight shown is per-cable x 2 (dual-cable machine convention).
+     * Total weight shown is per-cable x cableCount (respects single vs dual cable).
      */
     private fun buildExerciseTitle(session: WorkoutSession): String {
         val exerciseName = session.exerciseName?.takeIf { it.isNotBlank() } ?: "Phoenix Workout"
-        val totalWeightKg = session.weightPerCableKg * 2f
+        val totalWeightKg = session.weightPerCableKg * (session.cableCount ?: 2).toFloat()
         return if (totalWeightKg > 0f) {
             "$exerciseName — ${totalWeightKg.toInt()}kg"
         } else {

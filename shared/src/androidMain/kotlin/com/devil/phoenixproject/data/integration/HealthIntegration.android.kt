@@ -122,11 +122,11 @@ actual class HealthIntegration(private val context: Context) {
 
     /**
      * Builds a human-readable title for the exercise session.
-     * Total weight shown is per-cable × 2 (dual-cable machine convention).
+     * Total weight shown is per-cable × cableCount (respects single vs dual cable).
      */
     private fun buildExerciseTitle(session: WorkoutSession): String {
         val exerciseName = session.exerciseName?.takeIf { it.isNotBlank() } ?: "Phoenix Workout"
-        val totalWeightKg = session.weightPerCableKg * 2f
+        val totalWeightKg = session.weightPerCableKg * (session.cableCount ?: 2).toFloat()
         return if (totalWeightKg > 0f) {
             "$exerciseName — ${totalWeightKg.toInt()}kg"
         } else {
