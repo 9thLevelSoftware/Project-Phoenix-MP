@@ -92,6 +92,17 @@ fun RequireBlePermissions(content: @Composable () -> Unit) {
         )
     }
 
+    // Re-check permissions after activity recreation (defense layer).
+    // With android:configChanges the activity is NOT recreated on rotation,
+    // but this guards against other recreation scenarios (e.g., system process death).
+    LaunchedEffect(Unit) {
+        if (permissionState !is BlePermissionState.Denied &&
+            BlePermissions.arePermissionsGranted(context)
+        ) {
+            permissionState = BlePermissionState.Granted
+        }
+    }
+
     val permissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestMultiplePermissions(),
     ) { permissions ->

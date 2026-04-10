@@ -85,6 +85,7 @@
         <activity
             android:name=".MainActivity"
             android:exported="true"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|density|uiMode"
             android:theme="@style/Theme.VitruvianProjectPhoenix">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
