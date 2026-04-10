@@ -10,6 +10,7 @@ import com.devil.phoenixproject.domain.usecase.ResolveRoutineWeightsUseCase
 import com.devil.phoenixproject.e2e.robot.WorkoutRobot
 import com.devil.phoenixproject.e2e.robot.workoutRobot
 import com.devil.phoenixproject.presentation.manager.ExerciseDetectionManager
+import com.devil.phoenixproject.presentation.manager.NoOpWorkoutServiceController
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
 import com.devil.phoenixproject.testutil.FakeBiomechanicsRepository
 import com.devil.phoenixproject.testutil.FakeBleRepository
@@ -98,6 +99,7 @@ class WorkoutFlowE2ETest {
             detectionManager = detectionManager,
             dataBackupManager = FakeDataBackupManager(),
             userProfileRepository = com.devil.phoenixproject.testutil.FakeUserProfileRepository(),
+            workoutServiceController = NoOpWorkoutServiceController,
         )
 
         robot = WorkoutRobot(viewModel, fakeBleRepository)

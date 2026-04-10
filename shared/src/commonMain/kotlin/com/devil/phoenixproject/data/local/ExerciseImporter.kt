@@ -107,10 +107,12 @@ class ExerciseImporter(private val database: VitruvianDatabase) {
 
             // Insert exercises and videos
             queries.transaction {
-                for (exerciseJson in exercises) {
+                for (rawExerciseJson in exercises) {
                     try {
+                        val exerciseJson = normalizeCableMetadata(rawExerciseJson)
+
                         // Map sidedness to cable config
-                        val cableConfig = mapSidednessToConfig(exerciseJson.sidedness)
+                        val cableConfig = mapSidednessToCableConfig(exerciseJson.sidedness)
 
                         // Get primary muscle group
                         val primaryMuscle = exerciseJson.muscleGroups?.firstOrNull() ?: "OTHER"
@@ -181,7 +183,7 @@ class ExerciseImporter(private val database: VitruvianDatabase) {
                             videoCount++
                         }
                     } catch (e: Exception) {
-                        Logger.w { "Failed to import exercise ${exerciseJson.name}: ${e.message}" }
+                        Logger.w { "Failed to import exercise ${rawExerciseJson.name}: ${e.message}" }
                         // Continue with other exercises
                     }
                 }
@@ -201,11 +203,17 @@ class ExerciseImporter(private val database: VitruvianDatabase) {
      * - unilateral (one arm/leg) → SINGLE (one cable)
      * - alternating (one at a time) → EITHER (user choice)
      */
-    private fun mapSidednessToConfig(sidedness: String?): String = when (sidedness?.lowercase()) {
-        "bilateral" -> "DOUBLE"
-        "unilateral" -> "SINGLE"
-        "alternating" -> "EITHER"
-        else -> "DOUBLE" // Safe default
+    private fun normalizeCableMetadata(exercise: ExerciseJson): ExerciseJson {
+        val normalizedSidedness = when (exercise.name.trim()) {
+            in FORCED_SINGLE_CABLE_EXERCISE_NAMES -> "unilateral"
+            else -> exercise.sidedness
+        }
+
+        return if (normalizedSidedness == exercise.sidedness) {
+            exercise
+        } else {
+            exercise.copy(sidedness = normalizedSidedness)
+        }
     }
 
     companion object {
@@ -213,6 +221,18 @@ class ExerciseImporter(private val database: VitruvianDatabase) {
         // Update this to point to your actual exercise data repository
         private const val GITHUB_EXERCISES_URL =
             "https://raw.githubusercontent.com/VitruvianFitness/exercise-library/main/exercise_dump.json"
+
+        private val FORCED_SINGLE_CABLE_EXERCISE_NAMES = setOf(
+            "Bent Over Row - Reverse Grip (SC)",
+            "Bent Over Row (SC)",
+            "Bent Over Row SA",
+            "Bicep Curl (SC)",
+            "Calf Raise (SC)",
+            "Front Raise (SC)",
+            "Hammer Curl (SC)",
+            "Hip Thrust (SC)",
+            "Upright Row (SC)",
+        )
     }
 
     /**
@@ -247,7 +267,9 @@ class ExerciseImporter(private val database: VitruvianDatabase) {
 
             var updatedCount = 0
 
-            exercises.forEach { exercise ->
+            exercises.forEach { rawExercise ->
+                val exercise = normalizeCableMetadata(rawExercise)
+
                 // Skip archived exercises
                 if (exercise.archived != null) {
                     return@forEach

@@ -6,6 +6,7 @@ import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.data.local.ExerciseImporter
 import com.devil.phoenixproject.database.VitruvianDatabase
 import com.devil.phoenixproject.domain.model.Exercise
+import com.devil.phoenixproject.domain.model.ExerciseCableIntent
 import com.devil.phoenixproject.domain.model.currentTimeMillis
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
@@ -46,7 +47,6 @@ class SqlDelightExerciseRepository(db: VitruvianDatabase, private val exerciseIm
         serverId: String?,
         deletedAt: Long?,
     ): Exercise {
-        // Note: defaultCableConfig is stored in DB but no longer used
         return Exercise(
             id = id,
             name = name,
@@ -57,7 +57,31 @@ class SqlDelightExerciseRepository(db: VitruvianDatabase, private val exerciseIm
             isCustom = isCustom == 1L,
             timesPerformed = timesPerformed.toInt(),
             oneRepMaxKg = one_rep_max_kg?.toFloat(),
+            cableIntent = resolveCableIntent(
+                sidedness = sidedness,
+                defaultCableConfig = defaultCableConfig,
+                isCustom = isCustom == 1L,
+            ),
         )
+    }
+
+    private fun resolveCableIntent(
+        sidedness: String?,
+        defaultCableConfig: String,
+        isCustom: Boolean,
+    ): ExerciseCableIntent? {
+        if (isCustom) return null
+
+        return when (sidedness?.trim()?.lowercase()) {
+            "single", "unilateral" -> ExerciseCableIntent.SINGLE
+            "double", "bilateral" -> ExerciseCableIntent.DUAL
+            "alternating" -> ExerciseCableIntent.EITHER
+            else -> when (defaultCableConfig.trim().uppercase()) {
+                "SINGLE" -> ExerciseCableIntent.SINGLE
+                "EITHER" -> ExerciseCableIntent.EITHER
+                else -> null
+            }
+        }
     }
 
     override fun getAllExercises(): Flow<List<Exercise>> = queries.selectAllExercises(::mapToExercise)
@@ -194,7 +218,7 @@ class SqlDelightExerciseRepository(db: VitruvianDatabase, private val exerciseIm
             Logger.d { "Created custom exercise: ${exercise.name} with ID: $customId" }
 
             // Return the created exercise with the generated ID
-            Result.success(exercise.copy(id = customId, isCustom = true))
+            Result.success(exercise.copy(id = customId, isCustom = true, cableIntent = null))
         } catch (e: Exception) {
             Logger.e(e) { "Failed to create custom exercise: ${exercise.name}" }
             Result.failure(e)
@@ -241,7 +265,7 @@ class SqlDelightExerciseRepository(db: VitruvianDatabase, private val exerciseIm
                 )
 
                 Logger.d { "Updated custom exercise: ${exercise.name}" }
-                Result.success(exercise)
+                Result.success(exercise.copy(cableIntent = null))
             } catch (e: Exception) {
                 Logger.e(e) { "Failed to update custom exercise: ${exercise.name}" }
                 Result.failure(e)

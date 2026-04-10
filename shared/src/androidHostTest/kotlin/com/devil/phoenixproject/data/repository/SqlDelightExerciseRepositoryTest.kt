@@ -3,9 +3,11 @@ package com.devil.phoenixproject.data.repository
 import app.cash.turbine.test
 import com.devil.phoenixproject.data.local.ExerciseImporter
 import com.devil.phoenixproject.database.VitruvianDatabase
+import com.devil.phoenixproject.domain.model.ExerciseCableIntent
 import com.devil.phoenixproject.testutil.createTestDatabase
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.test.runTest
 import org.junit.Before
@@ -14,12 +16,14 @@ import org.junit.Test
 class SqlDelightExerciseRepositoryTest {
 
     private lateinit var database: VitruvianDatabase
+    private lateinit var importer: ExerciseImporter
     private lateinit var repository: SqlDelightExerciseRepository
 
     @Before
     fun setup() {
         database = createTestDatabase()
-        repository = SqlDelightExerciseRepository(database, ExerciseImporter(database))
+        importer = ExerciseImporter(database)
+        repository = SqlDelightExerciseRepository(database, importer)
     }
 
     @Test
@@ -106,12 +110,77 @@ class SqlDelightExerciseRepositoryTest {
         assertEquals("front", videos.first().angle)
     }
 
+    @Test
+    fun `getExerciseById maps explicit cable intent conservatively`() = runTest {
+        insertExercise(
+            id = "dual-explicit",
+            name = "Bench Press",
+            muscleGroup = "Chest",
+            equipment = "BAR",
+            sidedness = "bilateral",
+        )
+        insertExercise(
+            id = "legacy-placeholder",
+            name = "Unknown Cable Exercise",
+            muscleGroup = "Back",
+            equipment = "HANDLES",
+            defaultCableConfig = "DOUBLE",
+            sidedness = null,
+        )
+
+        assertEquals(ExerciseCableIntent.DUAL, repository.getExerciseById("dual-explicit")?.cableIntent)
+        assertNull(repository.getExerciseById("legacy-placeholder")?.cableIntent)
+    }
+
+    @Test
+    fun `import normalizes audited single cable names while preserving correct entries`() = runTest {
+        val result = importer.importFromJsonString(
+            """
+            [
+              {
+                "id": "row-sc",
+                "name": "Bent Over Row (SC)",
+                "equipment": ["HANDLES"],
+                "muscleGroups": ["BACK"],
+                "muscles": ["lats"],
+                "sidedness": "bilateral"
+              },
+              {
+                "id": "reverse-lunge-sc",
+                "name": "Reverse Lunge (SC)",
+                "equipment": ["HANDLES"],
+                "muscleGroups": ["LEGS"],
+                "muscles": ["glutes"],
+                "movement": "unilateral_leg",
+                "sidedness": "unilateral"
+              }
+            ]
+            """.trimIndent(),
+        )
+
+        assertTrue(result.isSuccess)
+
+        val normalizedRow = database.vitruvianDatabaseQueries.selectExerciseById("row-sc").executeAsOneOrNull()
+        val reverseLunge = database.vitruvianDatabaseQueries.selectExerciseById("reverse-lunge-sc").executeAsOneOrNull()
+
+        assertNotNull(normalizedRow)
+        assertEquals("unilateral", normalizedRow.sidedness)
+        assertEquals("SINGLE", normalizedRow.defaultCableConfig)
+        assertEquals(ExerciseCableIntent.SINGLE, repository.getExerciseById("row-sc")?.cableIntent)
+
+        assertNotNull(reverseLunge)
+        assertEquals("unilateral", reverseLunge.sidedness)
+        assertEquals("SINGLE", reverseLunge.defaultCableConfig)
+        assertEquals(ExerciseCableIntent.SINGLE, repository.getExerciseById("reverse-lunge-sc")?.cableIntent)
+    }
+
     private fun insertExercise(
         id: String,
         name: String,
         muscleGroup: String,
         equipment: String,
         defaultCableConfig: String = "DOUBLE",
+        sidedness: String? = null,
         isFavorite: Long = 0L,
         isCustom: Long = 0L,
         oneRepMaxKg: Double? = null,
@@ -126,7 +195,7 @@ class SqlDelightExerciseRepositoryTest {
             muscles = null,
             equipment = equipment,
             movement = null,
-            sidedness = null,
+            sidedness = sidedness,
             grip = null,
             gripWidth = null,
             minRepRange = null,

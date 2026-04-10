@@ -35,6 +35,7 @@ import com.devil.phoenixproject.data.repository.UserProfileRepository
 import com.devil.phoenixproject.data.sync.SyncManager
 import com.devil.phoenixproject.data.sync.SyncState
 import com.devil.phoenixproject.domain.model.ConnectionState
+import com.devil.phoenixproject.domain.model.WorkoutState
 import com.devil.phoenixproject.presentation.components.AddProfileDialog
 import com.devil.phoenixproject.presentation.components.ConnectionLostDialog
 import com.devil.phoenixproject.presentation.components.HapticFeedbackEffect
@@ -66,6 +67,7 @@ fun EnhancedMainScreen(
     onThemeModeChange: (ThemeMode) -> Unit,
     navController: NavHostController = rememberNavController(),
 ) {
+    val workoutState by viewModel.workoutState.collectAsState()
     val connectionState by viewModel.connectionState.collectAsState()
     val connectionLostDuringWorkout by viewModel.connectionLostDuringWorkout.collectAsState()
     val topBarTitle by viewModel.topBarTitle.collectAsState()
@@ -110,12 +112,22 @@ fun EnhancedMainScreen(
         ThemeMode.DARK -> true
     }
 
-    var currentRoute by remember { mutableStateOf(NavigationRoutes.Home.route) }
+    var currentRoute by remember(navController) {
+        mutableStateOf(navController.currentBackStackEntry?.destination?.route ?: NavigationRoutes.Home.route)
+    }
 
     // Track navigation changes
     LaunchedEffect(navController) {
         navController.currentBackStackEntryFlow.collect { backStackEntry ->
             currentRoute = backStackEntry.destination.route ?: NavigationRoutes.Home.route
+        }
+    }
+
+    LaunchedEffect(currentRoute, workoutState, navController) {
+        if (shouldResumeActiveWorkout(workoutState) && currentRoute != NavigationRoutes.ActiveWorkout.route) {
+            navController.navigate(NavigationRoutes.ActiveWorkout.route) {
+                launchSingleTop = true
+            }
         }
     }
 
@@ -753,4 +765,15 @@ private fun getScreenTitle(route: String, routineName: String = "", exerciseName
 
     // Fallback
     else -> "Project Phoenix"
+}
+
+private fun shouldResumeActiveWorkout(workoutState: WorkoutState): Boolean = when (workoutState) {
+    is WorkoutState.Initializing,
+    is WorkoutState.Countdown,
+    is WorkoutState.Active,
+    is WorkoutState.Resting,
+    is WorkoutState.SetSummary,
+    -> true
+
+    else -> false
 }

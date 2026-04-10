@@ -35,6 +35,7 @@ import com.devil.phoenixproject.domain.model.WorkoutParameters
 import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.domain.model.WorkoutState
 import com.devil.phoenixproject.domain.model.currentTimeMillis
+import com.devil.phoenixproject.domain.model.elapsedRealtimeMillis
 import com.devil.phoenixproject.domain.model.generateUUID
 import com.devil.phoenixproject.domain.replay.RepBoundaryDetector
 import com.devil.phoenixproject.domain.usecase.RepCounterFromMachine
@@ -53,7 +54,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlin.coroutines.cancellation.CancellationException
-import kotlin.math.ceil
+import kotlin.coroutines.coroutineContext
 
 /**
  * Handles all workout lifecycle logic: start/stop, rep processing, auto-stop,
@@ -90,6 +91,7 @@ class ActiveSessionEngine(
     private val dataBackupManager: DataBackupManager? = null,
     private val healthIntegration: HealthIntegration? = null,
     private val externalActivityRepository: ExternalActivityRepository? = null,
+    private val elapsedRealtimeProvider: () -> Long = ::elapsedRealtimeMillis,
 ) {
 
     /**
@@ -357,6 +359,14 @@ class ActiveSessionEngine(
 
     // ===== Calculation Helpers =====
 
+    private suspend fun resolveSelectedExercise(params: WorkoutParameters) =
+        params.selectedExerciseId?.let { exerciseId -> exerciseRepository.getExerciseById(exerciseId) }
+
+    private fun roundUpRemainingSeconds(seconds: Float): Int {
+        val wholeSeconds = seconds.toInt()
+        return if (seconds > wholeSeconds.toFloat()) wholeSeconds + 1 else wholeSeconds
+    }
+
     /**
      * Calculate enhanced metrics for the set summary display.
      */
@@ -369,6 +379,7 @@ class ActiveSessionEngine(
         warmupRepsCount: Int = 0,
         workingRepsCount: Int = 0,
         warmupCompleteTimeMs: Long = 0L,
+        cableCountHint: Int? = null,
     ): WorkoutState.SetSummary {
         if (metrics.isEmpty()) {
             return WorkoutState.SetSummary(
@@ -376,7 +387,7 @@ class ActiveSessionEngine(
                 peakLoadKgPerCable = 0f,
                 avgLoadKgPerCable = 0f,
                 repCount = repCount,
-                cableCount = 1,
+                cableCount = cableCountHint ?: 1,
                 heaviestLiftKgPerCable = fallbackWeightKg,
                 configuredWeightKgPerCable = configuredWeightKgPerCable,
             )
@@ -396,12 +407,19 @@ class ActiveSessionEngine(
         // Issue #6 Fix: Detect single-cable (unilateral) exercises and don't halve the weight.
         // Heuristic: if one cable's peak load is > 5x the other's, treat as single-cable.
         // For single-cable, use the max of the active cable. For double-cable, use totalLoad/2.
-        val isSingleCable = (
+        val heuristicIsSingleCable = (
             peakCableA > 0f && peakCableB > 0f &&
                 (peakCableA / peakCableB > 5f || peakCableB / peakCableA > 5f)
             ) ||
             (peakCableA > 0f && peakCableB == 0f) ||
             (peakCableB > 0f && peakCableA == 0f)
+
+        val cableCount = when (cableCountHint) {
+            1 -> 1
+            2 -> 2
+            else -> if (heuristicIsSingleCable) 1 else 2
+        }
+        val isSingleCable = cableCount == 1
 
         val heaviestLiftKgPerCable = if (isSingleCable) {
             // Single-cable: use the active cable's load (don't halve)
@@ -417,7 +435,6 @@ class ActiveSessionEngine(
             configuredWeightKgPerCable
         }
         // Fixed-load modes should log the prescribed working load, while Echo uses measured force.
-        val cableCount = if (isSingleCable) 1 else 2
         val totalVolumeKg = volumeWeightKgPerCable * cableCount.toFloat() * repCount
 
         val concentricMetrics = metrics.filter { it.velocityA > 10 || it.velocityB > 10 }
@@ -1052,7 +1069,7 @@ class ActiveSessionEngine(
                     coordinator._autoStopState.value = AutoStopUiState(
                         isActive = true,
                         progress = progress,
-                        secondsRemaining = ceil(remaining).toInt(),
+                        secondsRemaining = roundUpRemainingSeconds(remaining),
                     )
                 }
             }
@@ -1085,7 +1102,7 @@ class ActiveSessionEngine(
                 coordinator._autoStopState.value = AutoStopUiState(
                     isActive = true,
                     progress = progress,
-                    secondsRemaining = ceil(remaining).toInt(),
+                    secondsRemaining = roundUpRemainingSeconds(remaining),
                 )
             }
 
@@ -1152,7 +1169,7 @@ class ActiveSessionEngine(
                 coordinator._autoStopState.value = AutoStopUiState(
                     isActive = true,
                     progress = progress,
-                    secondsRemaining = ceil(remaining).toInt(),
+                    secondsRemaining = roundUpRemainingSeconds(remaining),
                 )
             }
 
@@ -1495,6 +1512,11 @@ class ActiveSessionEngine(
     // ===== Core Workout Lifecycle =====
 
     fun resetForNewWorkout() {
+        cancelJustLiftEggTimer()
+        coordinator.restDeadlineElapsedRealtimeMs = null
+        coordinator._restSecondsRemaining.value = 0
+        coordinator._restOriginalDuration.value = 0
+        coordinator._isRestPaused.value = false
         coordinator._workoutState.value = WorkoutState.Idle
         coordinator._repCount.value = RepCount()
         coordinator._repRanges.value = null
@@ -1548,6 +1570,7 @@ class ActiveSessionEngine(
         Logger.d { "startWorkout called: skipCountdown=$skipCountdown, isJustLiftMode=$isJustLiftMode" }
         Logger.d { "startWorkout: loadedRoutine=${coordinator._loadedRoutine.value?.name}, params=${coordinator._workoutParameters.value}" }
 
+        cancelJustLiftEggTimer()
         coordinator.stopWorkoutInProgress.value = false
         coordinator.setCompletionInProgress.value = false
         resetAutoStopState()
@@ -1937,6 +1960,8 @@ class ActiveSessionEngine(
 
         coordinator.restTimerJob?.cancel()
         coordinator.restTimerJob = null
+        coordinator.restDeadlineElapsedRealtimeMs = null
+        cancelJustLiftEggTimer()
 
         scope.launch {
             coordinator.isCurrentWorkoutTimed = false
@@ -1966,9 +1991,8 @@ class ActiveSessionEngine(
             // Re-read params after potential auto-accept update
             val params = coordinator._workoutParameters.value
 
-            val exerciseName = params.selectedExerciseId?.let { exerciseId ->
-                exerciseRepository.getExerciseById(exerciseId)?.name
-            }
+            val selectedExercise = resolveSelectedExercise(params)
+            val exerciseName = selectedExercise?.name
 
             val metrics = coordinator.collectedMetrics.value
             Logger.i { "WEIGHT_DEBUG[Session]: At set completion - params.weightPerCableKg=${params.weightPerCableKg} kg" }
@@ -1981,6 +2005,7 @@ class ActiveSessionEngine(
                 warmupRepsCount = repCount.warmupReps,
                 workingRepsCount = repCount.workingReps,
                 warmupCompleteTimeMs = coordinator.warmupCompleteTimeMs,
+                cableCountHint = selectedExercise?.preferredCableCount,
             )
 
             // Issue #252: Exclude warmup time from session duration
@@ -2115,9 +2140,11 @@ class ActiveSessionEngine(
         coordinator.workoutJob = null
         coordinator.restTimerJob?.cancel()
         coordinator.restTimerJob = null
+        coordinator.restDeadlineElapsedRealtimeMs = null
         coordinator.bodyweightTimerJob?.cancel()
         coordinator.bodyweightTimerJob = null
         coordinator._timedExerciseRemainingSeconds.value = null
+        cancelJustLiftEggTimer()
 
         scope.launch {
             try {
@@ -2153,9 +2180,11 @@ class ActiveSessionEngine(
         coordinator.workoutJob = null
         coordinator.restTimerJob?.cancel()
         coordinator.restTimerJob = null
+        coordinator.restDeadlineElapsedRealtimeMs = null
         coordinator.bodyweightTimerJob?.cancel()
         coordinator.bodyweightTimerJob = null
         coordinator._timedExerciseRemainingSeconds.value = null
+        cancelJustLiftEggTimer()
 
         scope.launch {
             try {
@@ -2283,9 +2312,8 @@ class ActiveSessionEngine(
 
         val metricsSnapshot = coordinator.collectedMetrics.value
 
-        val exerciseName = params.selectedExerciseId?.let { exerciseId ->
-            exerciseRepository.getExerciseById(exerciseId)?.name
-        }
+        val selectedExercise = resolveSelectedExercise(params)
+        val exerciseName = selectedExercise?.name
 
         val summary = calculateSetSummaryMetrics(
             metrics = metricsSnapshot,
@@ -2296,6 +2324,7 @@ class ActiveSessionEngine(
             warmupRepsCount = warmup,
             workingRepsCount = working,
             warmupCompleteTimeMs = coordinator.warmupCompleteTimeMs,
+            cableCountHint = selectedExercise?.preferredCableCount,
         )
 
         // Capture biomechanics summary for WorkoutSession fields.
@@ -2608,6 +2637,7 @@ class ActiveSessionEngine(
             val completedReps = coordinator._repCount.value.workingReps
             val warmupReps = coordinator._repCount.value.warmupReps
             val metricsList = coordinator.collectedMetrics.value
+            val selectedExercise = resolveSelectedExercise(params)
 
             val baseSummary = calculateSetSummaryMetrics(
                 metrics = metricsList,
@@ -2617,6 +2647,7 @@ class ActiveSessionEngine(
                 isEchoMode = params.isEchoMode,
                 warmupRepsCount = warmupReps,
                 workingRepsCount = completedReps,
+                cableCountHint = selectedExercise?.preferredCableCount,
             )
 
             // Attach quality and biomechanics summaries to the set summary
@@ -2755,6 +2786,42 @@ class ActiveSessionEngine(
 
     // ===== Rest Timer and Flow Control =====
 
+    private fun computeRemainingSeconds(
+        deadlineElapsedRealtimeMs: Long,
+        nowElapsedRealtimeMs: Long = elapsedRealtimeProvider(),
+    ): Int {
+        val remainingMs = deadlineElapsedRealtimeMs - nowElapsedRealtimeMs
+        if (remainingMs <= 0L) return 0
+        return ((remainingMs + 999L) / 1000L).toInt()
+    }
+
+    private fun armRestDeadline(
+        remainingSeconds: Int,
+        nowElapsedRealtimeMs: Long = elapsedRealtimeProvider(),
+    ) {
+        coordinator.restDeadlineElapsedRealtimeMs =
+            nowElapsedRealtimeMs + (remainingSeconds.coerceAtLeast(0).toLong() * 1000L)
+    }
+
+    private fun currentRestRemainingSeconds(): Int {
+        val deadline = coordinator.restDeadlineElapsedRealtimeMs ?: return coordinator._restSecondsRemaining.value.coerceAtLeast(0)
+        return computeRemainingSeconds(deadline)
+    }
+
+    private fun armJustLiftRestDeadline(
+        remainingSeconds: Int,
+        nowElapsedRealtimeMs: Long = elapsedRealtimeProvider(),
+    ) {
+        coordinator.justLiftRestDeadlineElapsedRealtimeMs =
+            nowElapsedRealtimeMs + (remainingSeconds.coerceAtLeast(0).toLong() * 1000L)
+    }
+
+    private fun currentJustLiftRestRemainingSeconds(): Int {
+        val deadline = coordinator.justLiftRestDeadlineElapsedRealtimeMs
+            ?: return coordinator._justLiftRestCountdown.value?.coerceAtLeast(0) ?: 0
+        return computeRemainingSeconds(deadline)
+    }
+
     /**
      * Start the rest timer between sets.
      */
@@ -2762,6 +2829,7 @@ class ActiveSessionEngine(
         coordinator.restTimerJob?.cancel()
 
         coordinator.restTimerJob = scope.launch {
+            val timerJob = coroutineContext[kotlinx.coroutines.Job]
             val routine = coordinator._loadedRoutine.value
             val currentExercise = routine?.exercises?.getOrNull(coordinator._currentExerciseIndex.value)
             val exerciseId = currentExercise?.exercise?.id ?: coordinator._workoutParameters.value.selectedExerciseId
@@ -2868,6 +2936,7 @@ class ActiveSessionEngine(
             coordinator._restOriginalDuration.value = restDuration
             coordinator._restSecondsRemaining.value = restDuration
             coordinator._isRestPaused.value = false
+            armRestDeadline(restDuration)
 
             // Emit Resting immediately so the UI timer starts without waiting on repository lookups.
             coordinator._workoutState.value = WorkoutState.Resting(
@@ -2891,71 +2960,54 @@ class ActiveSessionEngine(
                 }
             }
 
-            var lastTickedSecond = -1 // Issue #100: track emitted ticks to fire once per second
-            var lastDecrementTime = currentTimeMillis()
+            var lastRenderedSecond = restDuration + 1
+            var lastTickedSecond = -1
 
-            // Issue #297, #228: Tick-based loop that respects pause/extend/reset via StateFlow.
-            // Each 100ms tick checks _isRestPaused; when paused, time does not decrement.
-            // _restSecondsRemaining is the source of truth — extendRestTime() and resetRestTimer()
-            // mutate it directly and the loop picks up the new value on the next tick.
-            //
-            // In non-autoplay mode, the loop continues at 0 so +30s/Reset remain functional.
-            // It exits only when autoplay advances, or skipRest/startNextSet is called externally.
-            var hasReachedZero = false
-            while (isActive) {
-                val remainingSeconds = coordinator._restSecondsRemaining.value
+            try {
+                // Issue #339: Deadline-based loop so timers catch up after background suspension.
+                while (isActive) {
+                    val remainingSeconds = currentRestRemainingSeconds()
 
-                // Issue #100: Emit countdown tick during last 10 seconds of rest
-                if (remainingSeconds in 1..10 && remainingSeconds != lastTickedSecond) {
-                    lastTickedSecond = remainingSeconds
-                    val prefs = settingsManager.userPreferences.value
-                    if (prefs.beepsEnabled && prefs.countdownBeepsEnabled) {
-                        coordinator._hapticEvents.emit(HapticEvent.COUNTDOWN_TICK(remainingSeconds))
+                    if (remainingSeconds != coordinator._restSecondsRemaining.value) {
+                        coordinator._restSecondsRemaining.value = remainingSeconds
                     }
+
+                    if (!coordinator._isRestPaused.value &&
+                        remainingSeconds in 1..10 &&
+                        remainingSeconds != lastTickedSecond
+                    ) {
+                        lastTickedSecond = remainingSeconds
+                        val prefs = settingsManager.userPreferences.value
+                        if (prefs.beepsEnabled && prefs.countdownBeepsEnabled) {
+                            coordinator._hapticEvents.emit(HapticEvent.COUNTDOWN_TICK(remainingSeconds))
+                        }
+                    }
+
+                    if (remainingSeconds != lastRenderedSecond) {
+                        lastRenderedSecond = remainingSeconds
+                        val nextName = flowDelegate?.calculateNextExerciseName(isSingleExercise, currentExercise, routine) ?: ""
+
+                        coordinator._workoutState.value = WorkoutState.Resting(
+                            restSecondsRemaining = remainingSeconds,
+                            nextExerciseName = nextName,
+                            isLastExercise = isLastExerciseOverall,
+                            currentSet = displaySetIndex,
+                            totalSets = displayTotalSets,
+                            isSupersetTransition = useSupersetQuickRest,
+                            supersetLabel = supersetLabel,
+                        )
+                    }
+
+                    if (remainingSeconds <= 0 && autoplay && !coordinator._isRestPaused.value) break
+
+                    delay(100)
                 }
-
-                val nextName = flowDelegate?.calculateNextExerciseName(isSingleExercise, currentExercise, routine) ?: ""
-
-                coordinator._workoutState.value = WorkoutState.Resting(
-                    restSecondsRemaining = remainingSeconds,
-                    nextExerciseName = nextName,
-                    isLastExercise = isLastExerciseOverall,
-                    currentSet = displaySetIndex,
-                    totalSets = displayTotalSets,
-                    isSupersetTransition = useSupersetQuickRest,
-                    supersetLabel = supersetLabel,
-                )
-
-                // In autoplay mode, break when timer hits 0 to auto-advance
-                if (remainingSeconds <= 0 && autoplay) break
-                // Track zero-crossing for beeps reset
-                if (remainingSeconds <= 0) {
-                    if (!hasReachedZero) {
-                        hasReachedZero = true
-                    }
-                } else {
-                    hasReachedZero = false
-                }
-
-                delay(100)
-
-                // Decrement once per second, but only when not paused and remaining > 0
-                if (remainingSeconds > 0 && !coordinator._isRestPaused.value) {
-                    val now = currentTimeMillis()
-                    if (now - lastDecrementTime >= 1000L) {
-                        coordinator._restSecondsRemaining.value =
-                            (coordinator._restSecondsRemaining.value - 1).coerceAtLeast(0)
-                        lastDecrementTime = now
-                    }
-                } else {
-                    // While paused (or at zero), keep resetting the decrement anchor so we don't
-                    // get a burst of decrements when unpaused or extended.
-                    lastDecrementTime = currentTimeMillis()
+            } finally {
+                if (coordinator.restTimerJob === timerJob) {
+                    coordinator._isRestPaused.value = false
+                    coordinator.restDeadlineElapsedRealtimeMs = null
                 }
             }
-
-            // Clean up rest timer control state
-            coordinator._isRestPaused.value = false
 
             if (autoplay) {
                 Logger.d("ActiveSessionEngine") { "autoplay rest complete: advancing to next set (no BLE stop - already sent at set end)" }
@@ -2978,38 +3030,58 @@ class ActiveSessionEngine(
      *
      * Issue #113: Configurable rest timer for Just Lift mode.
      */
-    private fun startJustLiftEggTimer(restSeconds: Int) {
+    internal fun startJustLiftEggTimer(restSeconds: Int) {
         coordinator.justLiftRestTimerJob?.cancel()
         coordinator._justLiftRestCountdown.value = restSeconds
+        armJustLiftRestDeadline(restSeconds)
 
         coordinator.justLiftRestTimerJob = scope.launch {
+            val timerJob = coroutineContext[kotlinx.coroutines.Job]
             Logger.d("startJustLiftEggTimer: starting $restSeconds s visual countdown")
 
-            var remaining = restSeconds
-            while (remaining > 0 && isActive) {
-                coordinator._justLiftRestCountdown.value = remaining
+            var lastRenderedSecond = restSeconds + 1
+            var lastTickedSecond = -1
 
-                // Beeps in last 10 seconds
-                if (remaining in 1..10) {
-                    val prefs = settingsManager.userPreferences.value
-                    if (prefs.beepsEnabled && prefs.countdownBeepsEnabled) {
-                        coordinator._hapticEvents.emit(HapticEvent.COUNTDOWN_TICK(remaining))
+            try {
+                while (isActive) {
+                    val remaining = currentJustLiftRestRemainingSeconds()
+                    if (coordinator._justLiftRestCountdown.value != remaining) {
+                        coordinator._justLiftRestCountdown.value = remaining
                     }
+
+                    if (remaining in 1..10 && remaining != lastTickedSecond) {
+                        lastTickedSecond = remaining
+                        val prefs = settingsManager.userPreferences.value
+                        if (prefs.beepsEnabled && prefs.countdownBeepsEnabled) {
+                            coordinator._hapticEvents.emit(HapticEvent.COUNTDOWN_TICK(remaining))
+                        }
+                    }
+
+                    if (remaining != lastRenderedSecond) {
+                        lastRenderedSecond = remaining
+                    }
+
+                    if (remaining <= 0) break
+
+                    delay(100)
                 }
 
-                delay(1000)
-                remaining--
+                coordinator._justLiftRestCountdown.value = 0
+                Logger.d("startJustLiftEggTimer: countdown complete")
+            } finally {
+                if (coordinator.justLiftRestTimerJob === timerJob) {
+                    coordinator.justLiftRestDeadlineElapsedRealtimeMs = null
+                }
             }
-
-            coordinator._justLiftRestCountdown.value = 0
-            Logger.d("startJustLiftEggTimer: countdown complete")
         }
     }
 
     /** Cancel the Just Lift egg timer (called when auto-start fires). */
     internal fun cancelJustLiftEggTimer() {
-        coordinator.justLiftRestTimerJob?.cancel()
+        val timerJob = coordinator.justLiftRestTimerJob
         coordinator.justLiftRestTimerJob = null
+        timerJob?.cancel()
+        coordinator.justLiftRestDeadlineElapsedRealtimeMs = null
         coordinator._justLiftRestCountdown.value = null
     }
 
@@ -3220,7 +3292,15 @@ class ActiveSessionEngine(
     fun extendRestTime(seconds: Int) {
         if (coordinator._workoutState.value !is WorkoutState.Resting) return
         coordinator._restOriginalDuration.value += seconds
-        coordinator._restSecondsRemaining.value += seconds
+        val now = elapsedRealtimeProvider()
+        val activeDeadline = coordinator.restDeadlineElapsedRealtimeMs
+        if (activeDeadline != null && !coordinator._isRestPaused.value) {
+            coordinator.restDeadlineElapsedRealtimeMs = maxOf(activeDeadline, now) + (seconds * 1000L)
+            coordinator._restSecondsRemaining.value =
+                computeRemainingSeconds(coordinator.restDeadlineElapsedRealtimeMs!!, now)
+        } else {
+            coordinator._restSecondsRemaining.value += seconds
+        }
         Logger.d("ActiveSessionEngine") { "extendRestTime: +${seconds}s, remaining=${coordinator._restSecondsRemaining.value}, original=${coordinator._restOriginalDuration.value}" }
     }
 
@@ -3231,7 +3311,14 @@ class ActiveSessionEngine(
     fun toggleRestPause() {
         if (coordinator._workoutState.value !is WorkoutState.Resting) return
         val newPaused = !coordinator._isRestPaused.value
-        coordinator._isRestPaused.value = newPaused
+        if (!newPaused) {
+            coordinator._isRestPaused.value = false
+            armRestDeadline(coordinator._restSecondsRemaining.value)
+        } else {
+            coordinator._restSecondsRemaining.value = currentRestRemainingSeconds()
+            coordinator.restDeadlineElapsedRealtimeMs = null
+            coordinator._isRestPaused.value = true
+        }
         Logger.d("ActiveSessionEngine") { "toggleRestPause: paused=$newPaused" }
     }
 
@@ -3243,6 +3330,7 @@ class ActiveSessionEngine(
         if (coordinator._workoutState.value !is WorkoutState.Resting) return
         coordinator._isRestPaused.value = false
         coordinator._restSecondsRemaining.value = coordinator._restOriginalDuration.value
+        armRestDeadline(coordinator._restOriginalDuration.value)
         Logger.d("ActiveSessionEngine") { "resetRestTimer: reset to ${coordinator._restOriginalDuration.value}s" }
     }
 
@@ -3322,6 +3410,8 @@ class ActiveSessionEngine(
         coordinator.monitorDataCollectionJob?.cancel()
         coordinator.autoStartJob?.cancel()
         coordinator.restTimerJob?.cancel()
+        coordinator.restDeadlineElapsedRealtimeMs = null
+        cancelJustLiftEggTimer()
         coordinator.bodyweightTimerJob?.cancel()
         coordinator.repEventsCollectionJob?.cancel()
         coordinator.workoutJob?.cancel()
