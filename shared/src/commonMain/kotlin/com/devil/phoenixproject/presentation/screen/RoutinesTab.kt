@@ -24,6 +24,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import co.touchlab.kermit.Logger
@@ -36,6 +37,7 @@ import com.devil.phoenixproject.domain.model.generateSupersetId
 import com.devil.phoenixproject.domain.model.generateUUID
 import com.devil.phoenixproject.presentation.components.EmptyState
 import com.devil.phoenixproject.presentation.components.ProfileColors
+import com.devil.phoenixproject.presentation.util.TestTags
 import com.devil.phoenixproject.ui.theme.*
 import com.devil.phoenixproject.ui.theme.screenBackgroundBrush
 import com.devil.phoenixproject.util.KmpUtils
@@ -772,7 +774,8 @@ fun RoutineCard(
                         onClick = onStartWorkout,
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(56.dp),
+                            .height(56.dp)
+                            .testTag(TestTags.ACTION_ROUTINE_CARD_START),
                         shape = RoundedCornerShape(16.dp),
                     ) {
                         Icon(Icons.Default.PlayArrow, contentDescription = null)

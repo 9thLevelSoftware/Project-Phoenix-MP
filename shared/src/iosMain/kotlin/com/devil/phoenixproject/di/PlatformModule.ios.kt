@@ -7,6 +7,7 @@ import com.devil.phoenixproject.data.repository.KableBleRepository
 import com.devil.phoenixproject.data.sync.SupabaseConfig
 import com.devil.phoenixproject.domain.voice.IosSafeWordListenerFactory
 import com.devil.phoenixproject.domain.voice.SafeWordListenerFactory
+import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
 import com.devil.phoenixproject.util.ConnectivityChecker
 import com.devil.phoenixproject.util.CsvExporter
 import com.devil.phoenixproject.util.CsvImporter
@@ -44,4 +45,26 @@ actual val platformModule: Module = module {
     single { ConnectivityChecker() }
     single<SafeWordListenerFactory> { IosSafeWordListenerFactory() }
     single { HealthIntegration() }
+    factory {
+        MainViewModel(
+            get(),
+            get(),
+            get(),
+            get(),
+            get(),
+            get(),
+            get(),
+            get(),
+            get(),
+            get(),
+            get(),
+            get(),
+            get(),
+            get(),
+            get(),
+            get(),
+            get(),
+            get(),
+        )
+    }
 }

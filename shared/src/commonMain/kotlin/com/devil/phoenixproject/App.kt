@@ -11,20 +11,24 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.navigation.compose.rememberNavController
 import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.data.sync.SyncTriggerManager
 import com.devil.phoenixproject.presentation.screen.EnhancedMainScreen
 import com.devil.phoenixproject.presentation.screen.EulaScreen
 import com.devil.phoenixproject.presentation.screen.SplashScreen
+import com.devil.phoenixproject.presentation.util.TestTags
 import com.devil.phoenixproject.presentation.viewmodel.EulaViewModel
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
 import com.devil.phoenixproject.presentation.viewmodel.ThemeViewModel
@@ -91,8 +95,16 @@ private fun CrashErrorScreen(error: String) {
     }
 }
 
+private data class AppDependencies(
+    val mainViewModel: MainViewModel,
+    val themeViewModel: ThemeViewModel,
+    val eulaViewModel: EulaViewModel,
+    val exerciseRepository: ExerciseRepository,
+    val syncTriggerManager: SyncTriggerManager,
+)
+
 @Composable
-fun App() {
+fun App(mainViewModel: MainViewModel? = null) {
     co.touchlab.kermit.Logger.i { "iOS App: App() composable starting..." }
 
     // Resolve dependencies via direct Koin access inside remember{} to enable try-catch.
@@ -102,17 +114,23 @@ fun App() {
     // through StandaloneCoroutine → propagateExceptionFinalResort → abort().
     // This catch-and-display approach turns SIGABRT into a visible diagnostic screen.
     val koin = KoinPlatform.getKoin()
-    val depsResult = remember {
+    val depsResult = remember(mainViewModel) {
         runCatching {
             co.touchlab.kermit.Logger.i { "iOS App: Resolving dependencies via Koin..." }
-            val vm = koin.get<MainViewModel>()
+            val resolvedMainViewModel = mainViewModel ?: koin.get<MainViewModel>()
             co.touchlab.kermit.Logger.i { "iOS App: MainViewModel resolved" }
             val themeVm = koin.get<ThemeViewModel>()
             val eulaVm = koin.get<EulaViewModel>()
             val exRepo = koin.get<ExerciseRepository>()
             val syncMgr = koin.get<SyncTriggerManager>()
             co.touchlab.kermit.Logger.i { "iOS App: All dependencies resolved" }
-            listOf<Any>(vm, themeVm, eulaVm, exRepo, syncMgr)
+            AppDependencies(
+                mainViewModel = resolvedMainViewModel,
+                themeViewModel = themeVm,
+                eulaViewModel = eulaVm,
+                exerciseRepository = exRepo,
+                syncTriggerManager = syncMgr,
+            )
         }
     }
 
@@ -135,11 +153,11 @@ fun App() {
     }
 
     val deps = depsResult.getOrThrow()
-    val vm = deps[0] as MainViewModel
-    val themeVm = deps[1] as ThemeViewModel
-    val eulaVm = deps[2] as EulaViewModel
-    val exRepo = deps[3] as ExerciseRepository
-    val syncMgr = deps[4] as SyncTriggerManager
+    val vm = deps.mainViewModel
+    val themeVm = deps.themeViewModel
+    val eulaVm = deps.eulaViewModel
+    val exRepo = deps.exerciseRepository
+    val syncMgr = deps.syncTriggerManager
 
     // Locale is applied BEFORE composition in platform-specific startup code:
     // - Android: MainActivity.applyStoredLocaleBeforeComposition() in onCreate()
@@ -152,16 +170,24 @@ fun App() {
     // EULA acceptance state
     val eulaAccepted by eulaVm.eulaAccepted.collectAsState()
 
-    // Splash screen state - only show splash if EULA is already accepted
-    var showSplash by remember { mutableStateOf(eulaAccepted) }
+    val navController = rememberNavController()
 
-    // Hide splash after animation completes (2500ms for full effect)
-    // Only run if EULA is accepted
-    LaunchedEffect(eulaAccepted) {
-        if (eulaAccepted) {
+    // Splash screen state - play once after EULA acceptance and restore across config changes.
+    var hasPlayedSplash by rememberSaveable { mutableStateOf(false) }
+    var showSplash by rememberSaveable { mutableStateOf(eulaAccepted) }
+
+    LaunchedEffect(eulaAccepted, hasPlayedSplash) {
+        if (!eulaAccepted) {
+            hasPlayedSplash = false
+            showSplash = false
+            return@LaunchedEffect
+        }
+
+        if (!hasPlayedSplash) {
             showSplash = true
             delay(2500)
             showSplash = false
+            hasPlayedSplash = true
         }
     }
 
@@ -169,25 +195,35 @@ fun App() {
     AppLifecycleObserver(syncMgr)
 
     VitruvianTheme(themeMode = themeMode) {
-        Box(modifier = Modifier.fillMaxSize()) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .testTag(TestTags.APP_ROOT),
+        ) {
             // EULA acceptance screen - shown first if not accepted
             if (!eulaAccepted) {
                 EulaScreen(
                     onAccept = { eulaVm.acceptEula() },
+                    modifier = Modifier.testTag(TestTags.SCREEN_EULA),
                 )
             } else {
-                // Main content (only rendered after EULA accepted)
-                if (!showSplash) {
-                    EnhancedMainScreen(
-                        viewModel = vm,
-                        exerciseRepository = exRepo,
-                        themeMode = themeMode,
-                        onThemeModeChange = { themeVm.setThemeMode(it) },
+                if (showSplash) {
+                    SplashScreen(
+                        visible = true,
+                        modifier = Modifier.testTag(TestTags.APP_SPLASH),
                     )
+                } else {
+                    // Main content (only rendered after EULA accepted)
+                    Box(modifier = Modifier.fillMaxSize().testTag(TestTags.APP_MAIN_SHELL)) {
+                        EnhancedMainScreen(
+                            viewModel = vm,
+                            exerciseRepository = exRepo,
+                            themeMode = themeMode,
+                            onThemeModeChange = { themeVm.setThemeMode(it) },
+                            navController = navController,
+                        )
+                    }
                 }
-
-                // Splash screen overlay with fade animation
-                SplashScreen(visible = showSplash)
             }
         }
     }

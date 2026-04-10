@@ -5,12 +5,14 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.navigation.NavController
 import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.data.repository.UserProfileRepository
 import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.presentation.components.ResumeRoutineDialog
 import com.devil.phoenixproject.presentation.navigation.NavigationRoutes
+import com.devil.phoenixproject.presentation.util.TestTags
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
 import com.devil.phoenixproject.ui.theme.screenBackgroundBrush
 import org.jetbrains.compose.resources.stringResource
@@ -61,6 +63,7 @@ fun DailyRoutinesScreen(
         modifier = Modifier
             .fillMaxSize()
             .background(backgroundGradient),
+            
     ) {
         // Reuse RoutinesTab content
         RoutinesTab(
@@ -112,7 +115,9 @@ fun DailyRoutinesScreen(
                 }
             },
             themeMode = themeMode,
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier
+                .fillMaxSize()
+                .testTag(TestTags.SCREEN_DAILY_ROUTINES),
         )
 
         // Connection error dialog (ConnectingOverlay removed - status shown in top bar button)

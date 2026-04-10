@@ -16,6 +16,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -28,6 +29,7 @@ import com.devil.phoenixproject.presentation.components.BackHandler
 import com.devil.phoenixproject.presentation.components.SliderWithButtons
 import com.devil.phoenixproject.presentation.components.VideoPlayer
 import com.devil.phoenixproject.presentation.navigation.NavigationRoutes
+import com.devil.phoenixproject.presentation.util.TestTags
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
 import com.devil.phoenixproject.ui.theme.Spacing
 import org.jetbrains.compose.resources.stringResource
@@ -107,7 +109,9 @@ fun RoutineOverviewScreen(navController: NavController, viewModel: MainViewModel
                             MaterialTheme.colorScheme.surfaceVariant,
                         ),
                     ),
-                ),
+                    
+                )
+                .testTag(TestTags.SCREEN_ROUTINE_OVERVIEW),
         ) {
             // Horizontal pager for exercises
             HorizontalPager(
@@ -448,7 +452,8 @@ private fun ExerciseOverviewCard(
                     onClick = onStartExercise,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(56.dp),
+                        .height(56.dp)
+                        .testTag(TestTags.ACTION_START_ROUTINE),
                     shape = RoundedCornerShape(16.dp),
                 ) {
                     Icon(Icons.Default.PlayArrow, null)

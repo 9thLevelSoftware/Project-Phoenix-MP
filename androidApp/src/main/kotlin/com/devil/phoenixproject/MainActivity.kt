@@ -9,7 +9,9 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.presentation.components.RequireBlePermissions
+import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
 import java.util.Locale
+import org.koin.compose.viewmodel.koinViewModel
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -22,10 +24,12 @@ class MainActivity : ComponentActivity() {
 
         enableEdgeToEdge()
         setContent {
+            val mainViewModel: MainViewModel = koinViewModel()
+
             // Require BLE permissions before showing the app
             // Permission screens have their own theme, App provides its own theme
             RequireBlePermissions {
-                App()
+                App(mainViewModel = mainViewModel)
             }
         }
     }

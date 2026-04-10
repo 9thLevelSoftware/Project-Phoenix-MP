@@ -17,6 +17,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
@@ -31,6 +32,7 @@ import com.devil.phoenixproject.presentation.components.ConnectionErrorDialog
 import com.devil.phoenixproject.presentation.components.IconAnimation
 import com.devil.phoenixproject.presentation.navigation.NavigationRoutes
 import com.devil.phoenixproject.presentation.util.LocalWindowSizeClass
+import com.devil.phoenixproject.presentation.util.TestTags
 import com.devil.phoenixproject.presentation.util.WindowWidthSizeClass
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
 import com.devil.phoenixproject.ui.theme.ThemeMode
@@ -104,9 +106,12 @@ fun HomeScreen(navController: NavController, viewModel: MainViewModel, themeMode
                 .fillMaxSize()
                 .background(MaterialTheme.colorScheme.background)
                 .padding(paddingValues),
+            
         ) {
             LazyColumn(
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier
+                    .fillMaxSize()
+                    .testTag(TestTags.SCREEN_HOME),
                 contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 4.dp, bottom = 16.dp),
                 verticalArrangement = Arrangement.spacedBy(24.dp),
             ) {
@@ -210,6 +215,7 @@ fun HomeScreen(navController: NavController, viewModel: MainViewModel, themeMode
                         onClick = { navController.navigate(NavigationRoutes.TrainingCycles.route) },
                         isPrimary = false,
                         iconAnimation = IconAnimation.ROTATE,
+                        modifier = Modifier.testTag(TestTags.ACTION_CYCLES),
                     )
                     AnimatedActionButton(
                         label = "Routines",
@@ -217,6 +223,7 @@ fun HomeScreen(navController: NavController, viewModel: MainViewModel, themeMode
                         onClick = { navController.navigate(NavigationRoutes.DailyRoutines.route) },
                         isPrimary = false,
                         iconAnimation = IconAnimation.NONE,
+                        modifier = Modifier.testTag(TestTags.ACTION_ROUTINES),
                     )
                 }
 
@@ -231,6 +238,7 @@ fun HomeScreen(navController: NavController, viewModel: MainViewModel, themeMode
                         onClick = { navController.navigate(NavigationRoutes.SingleExercise.route) },
                         isPrimary = false,
                         iconAnimation = IconAnimation.TILT,
+                        modifier = Modifier.testTag(TestTags.ACTION_SINGLE_EXERCISE),
                     )
                     AnimatedActionButton(
                         label = "Just Lift",
@@ -241,6 +249,7 @@ fun HomeScreen(navController: NavController, viewModel: MainViewModel, themeMode
                         isPrimary = true,
                         isFireButton = true, // Fire animation effect
                         iconAnimation = IconAnimation.NONE,
+                        modifier = Modifier.testTag(TestTags.ACTION_JUST_LIFT),
                     )
                 }
             }

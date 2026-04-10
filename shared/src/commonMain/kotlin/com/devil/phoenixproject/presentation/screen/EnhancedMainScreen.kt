@@ -23,13 +23,13 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
-import androidx.navigation.compose.rememberNavController
 import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.data.repository.UserProfileRepository
 import com.devil.phoenixproject.data.sync.SyncManager
@@ -41,6 +41,7 @@ import com.devil.phoenixproject.presentation.components.HapticFeedbackEffect
 import com.devil.phoenixproject.presentation.components.ProfileSidePanel
 import com.devil.phoenixproject.presentation.navigation.NavGraph
 import com.devil.phoenixproject.presentation.navigation.NavigationRoutes
+import com.devil.phoenixproject.presentation.util.TestTags
 import com.devil.phoenixproject.presentation.util.LocalWindowSizeClass
 import com.devil.phoenixproject.presentation.util.calculateWindowSizeClass
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
@@ -64,7 +65,7 @@ fun EnhancedMainScreen(
     exerciseRepository: ExerciseRepository,
     themeMode: ThemeMode,
     onThemeModeChange: (ThemeMode) -> Unit,
-    navController: NavHostController = rememberNavController(),
+    navController: NavHostController,
 ) {
     val connectionState by viewModel.connectionState.collectAsState()
     val connectionLostDuringWorkout by viewModel.connectionLostDuringWorkout.collectAsState()
@@ -413,7 +414,9 @@ fun EnhancedMainScreen(
                         exerciseRepository = exerciseRepository,
                         themeMode = themeMode,
                         onThemeModeChange = onThemeModeChange,
-                        modifier = Modifier.padding(padding),
+                        modifier = Modifier
+                            .padding(padding)
+                            .testTag(TestTags.APP_NAV_HOST),
                     )
 
                     // Profile side panel (only on Home screen)
