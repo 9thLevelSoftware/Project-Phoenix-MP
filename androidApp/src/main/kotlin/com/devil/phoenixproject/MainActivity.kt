@@ -25,7 +25,7 @@ class MainActivity : ComponentActivity() {
             // Require BLE permissions before showing the app
             // Permission screens have their own theme, App provides its own theme
             RequireBlePermissions {
-                App()
+                AndroidAppHost()
             }
         }
     }

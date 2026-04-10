@@ -7,6 +7,7 @@ import com.devil.phoenixproject.data.repository.KableBleRepository
 import com.devil.phoenixproject.data.sync.SupabaseConfig
 import com.devil.phoenixproject.domain.voice.IosSafeWordListenerFactory
 import com.devil.phoenixproject.domain.voice.SafeWordListenerFactory
+import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
 import com.devil.phoenixproject.util.ConnectivityChecker
 import com.devil.phoenixproject.util.CsvExporter
 import com.devil.phoenixproject.util.CsvImporter
@@ -37,11 +38,33 @@ actual val platformModule: Module = module {
     // iOS apps are sandboxed; use the same Settings for secure storage.
     // Keychain-backed storage is a future enhancement.
     single<Settings>(SecureSettingsQualifier) { get() }
-    factory<BleRepository> { KableBleRepository() }
+    single<BleRepository> { KableBleRepository() }
     single<CsvExporter> { IosCsvExporter() }
     single<CsvImporter> { IosCsvImporter(get()) }
     single<DataBackupManager> { IosDataBackupManager(get()) }
     single { ConnectivityChecker() }
     single<SafeWordListenerFactory> { IosSafeWordListenerFactory() }
     single { HealthIntegration() }
+    single {
+        MainViewModel(
+            bleRepository = get(),
+            workoutRepository = get(),
+            exerciseRepository = get(),
+            personalRecordRepository = get(),
+            repCounter = get(),
+            preferencesManager = get(),
+            gamificationRepository = get(),
+            trainingCycleRepository = get(),
+            completedSetRepository = get(),
+            syncTriggerManager = get(),
+            repMetricRepository = get(),
+            biomechanicsRepository = get(),
+            resolveWeightsUseCase = get(),
+            detectionManager = get(),
+            dataBackupManager = get(),
+            userProfileRepository = get(),
+            healthIntegration = get(),
+            externalActivityRepository = get(),
+        )
+    }
 }

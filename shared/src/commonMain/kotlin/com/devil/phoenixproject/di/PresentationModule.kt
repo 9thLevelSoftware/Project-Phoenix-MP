@@ -7,7 +7,6 @@ import com.devil.phoenixproject.presentation.viewmodel.CycleEditorViewModel
 import com.devil.phoenixproject.presentation.viewmodel.EulaViewModel
 import com.devil.phoenixproject.presentation.viewmodel.GamificationViewModel
 import com.devil.phoenixproject.presentation.viewmodel.IntegrationsViewModel
-import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
 import com.devil.phoenixproject.presentation.viewmodel.ThemeViewModel
 import com.devil.phoenixproject.ui.sync.LinkAccountViewModel
 import org.koin.dsl.module
@@ -17,7 +16,6 @@ val presentationModule = module {
     factory { ExerciseDetectionManager(get(), get(), get(), get()) }
 
     // ViewModels
-    factory { MainViewModel(get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get()) }
     factory { ConnectionLogsViewModel() }
     factory { CycleEditorViewModel(get()) }
     factory { GamificationViewModel(get(), get()) }

@@ -20,10 +20,10 @@ fun MainViewController() = run {
         NSLog("iOS UI: ComposeUIViewController content block executing...")
         NSLog("iOS UI: Setting up image loader...")
         ensureImageLoader()
-        NSLog("iOS UI: Image loader ready, loading App()...")
+        NSLog("iOS UI: Image loader ready, loading IosAppHost()...")
         RequireBlePermissions {
-            NSLog("iOS UI: BLE permissions checked, rendering App()...")
-            App()
+            NSLog("iOS UI: BLE permissions checked, rendering IosAppHost()...")
+            IosAppHost()
         }
     }
 }

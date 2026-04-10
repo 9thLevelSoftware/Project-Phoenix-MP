@@ -9,6 +9,7 @@ import com.devil.phoenixproject.data.integration.HealthIntegration
 import com.devil.phoenixproject.data.local.DriverFactory
 import com.devil.phoenixproject.data.repository.BleRepository
 import com.devil.phoenixproject.data.repository.KableBleRepository
+import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
 import com.devil.phoenixproject.domain.voice.AndroidSafeWordListenerFactory
 import com.devil.phoenixproject.domain.voice.SafeWordListenerFactory
 import com.devil.phoenixproject.util.AndroidCsvExporter
@@ -22,6 +23,7 @@ import com.russhwolf.settings.Settings
 import com.russhwolf.settings.SharedPreferencesSettings
 import org.koin.android.ext.koin.androidContext
 import org.koin.core.module.Module
+import org.koin.core.module.dsl.viewModel
 import org.koin.dsl.module
 
 private const val ENCRYPTED_PREFS_FILE = "vitruvian_secure_preferences"
@@ -52,13 +54,35 @@ actual val platformModule: Module = module {
         SharedPreferencesSettings(encryptedPrefs)
     }
 
-    factory<BleRepository> { KableBleRepository() }
+    single<BleRepository> { KableBleRepository() }
     single<CsvExporter> { AndroidCsvExporter(androidContext()) }
     single<CsvImporter> { AndroidCsvImporter(androidContext(), get()) }
     single<DataBackupManager> { AndroidDataBackupManager(androidContext(), get()) }
     single { ConnectivityChecker(androidContext()) }
     single<SafeWordListenerFactory> { AndroidSafeWordListenerFactory(androidContext()) }
     single { HealthIntegration(androidContext()) }
+    viewModel {
+        MainViewModel(
+            bleRepository = get(),
+            workoutRepository = get(),
+            exerciseRepository = get(),
+            personalRecordRepository = get(),
+            repCounter = get(),
+            preferencesManager = get(),
+            gamificationRepository = get(),
+            trainingCycleRepository = get(),
+            completedSetRepository = get(),
+            syncTriggerManager = get(),
+            repMetricRepository = get(),
+            biomechanicsRepository = get(),
+            resolveWeightsUseCase = get(),
+            detectionManager = get(),
+            dataBackupManager = get(),
+            userProfileRepository = get(),
+            healthIntegration = get(),
+            externalActivityRepository = get(),
+        )
+    }
 }
 
 /**

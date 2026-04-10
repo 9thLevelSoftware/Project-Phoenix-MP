@@ -10,7 +10,15 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
-import androidx.compose.runtime.*
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -29,19 +37,18 @@ import com.devil.phoenixproject.presentation.viewmodel.EulaViewModel
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
 import com.devil.phoenixproject.presentation.viewmodel.ThemeViewModel
 import com.devil.phoenixproject.ui.theme.VitruvianTheme
+import com.devil.phoenixproject.util.KmpUtils
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import org.koin.mp.KoinPlatform
 
-/**
- * Observes app lifecycle and triggers sync on foreground.
- */
+private const val LAUNCH_SPLASH_DURATION_MS = 2500L
+
 @Composable
 private fun AppLifecycleObserver(syncTriggerManager: SyncTriggerManager) {
     val lifecycleOwner = LocalLifecycleOwner.current
     val scope = rememberCoroutineScope()
 
-    DisposableEffect(lifecycleOwner) {
+    DisposableEffect(lifecycleOwner, syncTriggerManager) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
                 scope.launch {
@@ -49,6 +56,7 @@ private fun AppLifecycleObserver(syncTriggerManager: SyncTriggerManager) {
                 }
             }
         }
+
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose {
             lifecycleOwner.lifecycle.removeObserver(observer)
@@ -56,14 +64,13 @@ private fun AppLifecycleObserver(syncTriggerManager: SyncTriggerManager) {
     }
 }
 
-/**
- * Crash-safe error screen shown when DI resolution fails.
- * Displays the exception details so the user can report them via TestFlight feedback.
- */
 @Composable
-private fun CrashErrorScreen(error: String) {
+internal fun CrashErrorScreen(error: String) {
     Box(
-        modifier = Modifier.fillMaxSize().background(Color(0xFF1A1A2E)).padding(24.dp),
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color(0xFF1A1A2E))
+            .padding(24.dp),
         contentAlignment = Alignment.Center,
     ) {
         Column(
@@ -92,102 +99,63 @@ private fun CrashErrorScreen(error: String) {
 }
 
 @Composable
-fun App() {
-    co.touchlab.kermit.Logger.i { "iOS App: App() composable starting..." }
+fun AppContent(
+    mainViewModel: MainViewModel,
+    themeViewModel: ThemeViewModel,
+    eulaViewModel: EulaViewModel,
+    exerciseRepository: ExerciseRepository,
+    syncTriggerManager: SyncTriggerManager,
+) {
+    val themeMode by themeViewModel.themeMode.collectAsState()
+    val eulaAccepted by eulaViewModel.eulaAccepted.collectAsState()
 
-    // Resolve dependencies via direct Koin access inside remember{} to enable try-catch.
-    // koinViewModel() is @Composable and Compose forbids try-catch around @Composable calls.
-    // Direct koin.get<T>() is a regular function. We cache in remember{} for lifecycle.
-    // On iOS/Kotlin Native, unhandled exceptions during Compose recomposition propagate
-    // through StandaloneCoroutine → propagateExceptionFinalResort → abort().
-    // This catch-and-display approach turns SIGABRT into a visible diagnostic screen.
-    val koin = KoinPlatform.getKoin()
-    val depsResult = remember {
-        runCatching {
-            co.touchlab.kermit.Logger.i { "iOS App: Resolving dependencies via Koin..." }
-            val vm = koin.get<MainViewModel>()
-            co.touchlab.kermit.Logger.i { "iOS App: MainViewModel resolved" }
-            val themeVm = koin.get<ThemeViewModel>()
-            val eulaVm = koin.get<EulaViewModel>()
-            val exRepo = koin.get<ExerciseRepository>()
-            val syncMgr = koin.get<SyncTriggerManager>()
-            co.touchlab.kermit.Logger.i { "iOS App: All dependencies resolved" }
-            listOf<Any>(vm, themeVm, eulaVm, exRepo, syncMgr)
-        }
-    }
+    var launchSplashCompleted by rememberSaveable { mutableStateOf(false) }
+    var launchSplashStartedAtMillis by rememberSaveable { mutableStateOf<Long?>(null) }
 
-    if (depsResult.isFailure) {
-        val e = depsResult.exceptionOrNull()!!
-        // Traverse full cause chain for complete diagnostics
-        val causes = buildString {
-            var current: Throwable? = e
-            var depth = 0
-            while (current != null && depth < 10) {
-                if (depth > 0) append("\n")
-                append("[$depth] ${current::class.simpleName}: ${current.message?.take(200)}")
-                current = current.cause
-                depth++
-            }
-        }
-        co.touchlab.kermit.Logger.e(e) { "FATAL DI resolution:\n$causes" }
-        CrashErrorScreen(causes)
-        return
-    }
-
-    val deps = depsResult.getOrThrow()
-    val vm = deps[0] as MainViewModel
-    val themeVm = deps[1] as ThemeViewModel
-    val eulaVm = deps[2] as EulaViewModel
-    val exRepo = deps[3] as ExerciseRepository
-    val syncMgr = deps[4] as SyncTriggerManager
-
-    // Locale is applied BEFORE composition in platform-specific startup code:
-    // - Android: MainActivity.applyStoredLocaleBeforeComposition() in onCreate()
-    // - iOS: Applied via NSUserDefaults AppleLanguages before Compose entry point
-    // This prevents the first-frame English flicker on non-EN locales.
-
-    // Theme state - persisted via ThemeViewModel
-    val themeMode by themeVm.themeMode.collectAsState()
-
-    // EULA acceptance state
-    val eulaAccepted by eulaVm.eulaAccepted.collectAsState()
-
-    // Splash screen state - only show splash if EULA is already accepted
-    var showSplash by remember { mutableStateOf(eulaAccepted) }
-
-    // Hide splash after animation completes (2500ms for full effect)
-    // Only run if EULA is accepted
     LaunchedEffect(eulaAccepted) {
-        if (eulaAccepted) {
-            showSplash = true
-            delay(2500)
-            showSplash = false
+        if (!eulaAccepted) {
+            launchSplashCompleted = false
+            launchSplashStartedAtMillis = null
+            return@LaunchedEffect
         }
+
+        if (launchSplashCompleted) return@LaunchedEffect
+
+        val startedAt = launchSplashStartedAtMillis ?: KmpUtils.currentTimeMillis().also {
+            launchSplashStartedAtMillis = it
+        }
+        val elapsed = (KmpUtils.currentTimeMillis() - startedAt).coerceAtLeast(0L)
+        val remaining = (LAUNCH_SPLASH_DURATION_MS - elapsed).coerceAtLeast(0L)
+
+        if (remaining > 0L) {
+            delay(remaining)
+        }
+
+        launchSplashCompleted = true
+        launchSplashStartedAtMillis = null
     }
 
-    // Lifecycle observer for foreground sync
-    AppLifecycleObserver(syncMgr)
+    val showLaunchSplash = eulaAccepted && !launchSplashCompleted
+
+    AppLifecycleObserver(syncTriggerManager)
 
     VitruvianTheme(themeMode = themeMode) {
         Box(modifier = Modifier.fillMaxSize()) {
-            // EULA acceptance screen - shown first if not accepted
             if (!eulaAccepted) {
                 EulaScreen(
-                    onAccept = { eulaVm.acceptEula() },
+                    onAccept = { eulaViewModel.acceptEula() },
                 )
             } else {
-                // Main content (only rendered after EULA accepted)
-                if (!showSplash) {
+                if (!showLaunchSplash) {
                     EnhancedMainScreen(
-                        viewModel = vm,
-                        exerciseRepository = exRepo,
+                        viewModel = mainViewModel,
+                        exerciseRepository = exerciseRepository,
                         themeMode = themeMode,
-                        onThemeModeChange = { themeVm.setThemeMode(it) },
+                        onThemeModeChange = themeViewModel::setThemeMode,
                     )
                 }
 
-                // Splash screen overlay with fade animation
-                SplashScreen(visible = showSplash)
+                SplashScreen(visible = showLaunchSplash)
             }
         }
     }

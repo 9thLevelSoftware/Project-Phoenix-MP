@@ -1,22 +1,22 @@
 package com.devil.phoenixproject.e2e
 
 import androidx.activity.ComponentActivity
+import androidx.compose.runtime.SideEffect
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
-import androidx.compose.ui.test.hasClickAction
-import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import com.devil.phoenixproject.App
+import com.devil.phoenixproject.AndroidAppHost
 import com.devil.phoenixproject.data.preferences.PreferencesManager
 import com.devil.phoenixproject.data.repository.BiomechanicsRepository
 import com.devil.phoenixproject.data.repository.BleRepository
 import com.devil.phoenixproject.data.repository.CompletedSetRepository
 import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.data.repository.GamificationRepository
-import com.devil.phoenixproject.data.repository.PersonalRecordRepository
 import com.devil.phoenixproject.data.repository.RepMetricRepository
 import com.devil.phoenixproject.data.repository.SyncRepository
 import com.devil.phoenixproject.data.repository.TrainingCycleRepository
@@ -42,8 +42,11 @@ import com.devil.phoenixproject.database.ExerciseSignature
 import com.devil.phoenixproject.database.PhaseStatistics
 import com.devil.phoenixproject.di.appModule
 import com.devil.phoenixproject.di.platformModule
-import com.devil.phoenixproject.domain.model.Routine
+import com.devil.phoenixproject.domain.model.Exercise
+import com.devil.phoenixproject.domain.model.ProgramMode
+import com.devil.phoenixproject.domain.model.WorkoutParameters
 import com.devil.phoenixproject.domain.model.WorkoutSession
+import com.devil.phoenixproject.domain.model.WorkoutState
 import com.devil.phoenixproject.domain.usecase.RepCounterFromMachine
 import com.devil.phoenixproject.domain.usecase.ResolveRoutineWeightsUseCase
 import com.devil.phoenixproject.presentation.viewmodel.EulaViewModel
@@ -71,11 +74,15 @@ import com.devil.phoenixproject.util.DataBackupManager
 import com.russhwolf.settings.MapSettings
 import com.russhwolf.settings.Settings
 import org.junit.After
+import org.junit.Assert.assertSame
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.koin.android.ext.koin.androidContext
+import org.koin.compose.viewmodel.koinActivityViewModel
+import org.koin.core.context.GlobalContext
 import org.koin.core.context.startKoin
 import org.koin.core.context.stopKoin
 import org.koin.dsl.module
@@ -86,6 +93,8 @@ class AppE2ETest : KoinTest {
 
     @get:Rule
     val composeRule = createAndroidComposeRule<ComponentActivity>()
+
+    private var resolvedMainViewModel: MainViewModel? = null
 
     @Before
     fun setUp() {
@@ -112,7 +121,7 @@ class AppE2ETest : KoinTest {
 
         composeRule.onNodeWithText("Recent Activity").assertIsDisplayed()
         composeRule.onNodeWithText("Click to Connect").assertIsDisplayed()
-        composeRule.onNodeWithText("PROJECT PHOENIX").assertDoesNotExist()
+        composeRule.onAllNodesWithText("PROJECT PHOENIX").assertCountEquals(0)
     }
 
     @Test
@@ -120,27 +129,130 @@ class AppE2ETest : KoinTest {
         launchApp()
         advancePastSplash()
 
-        composeRule.onNode(hasText("Settings") and hasClickAction()).performClick()
+        composeRule.onNodeWithText("Settings").performClick()
         composeRule.mainClock.advanceTimeBy(500)
         composeRule.waitForIdle()
 
         composeRule.onNodeWithText("Like My Work?").assertIsDisplayed()
     }
 
+    @Test
+    fun activeWorkoutSurvivesActivityRecreationWithoutReplayingSplash() {
+        launchApp()
+        advancePastSplash()
+        startWorkoutAndWaitForActiveState()
+
+        composeRule.activityRule.scenario.recreate()
+        composeRule.mainClock.advanceTimeBy(500)
+        composeRule.waitForIdle()
+
+        val recreatedViewModel = waitForMainViewModel()
+        composeRule.waitUntil(timeoutMillis = 5_000) {
+            recreatedViewModel.workoutState.value == WorkoutState.Active
+        }
+        composeRule.mainClock.advanceTimeBy(500)
+        composeRule.waitForIdle()
+
+        composeRule.onAllNodesWithText("PROJECT PHOENIX").assertCountEquals(0)
+        composeRule.onAllNodesWithText("Recent Activity").assertCountEquals(0)
+        assertTrue(recreatedViewModel.workoutState.value == WorkoutState.Active)
+    }
+
+    @Test
+    fun androidScopedDependenciesRemainStableAcrossRecreation() {
+        launchApp()
+        advancePastSplash()
+
+        val initialBleRepository = requireFakeBleRepository()
+        val initialViewModel = waitForMainViewModel()
+
+        composeRule.activityRule.scenario.recreate()
+        composeRule.mainClock.advanceTimeBy(500)
+        composeRule.waitForIdle()
+
+        val recreatedViewModel = requireNotNull(resolvedMainViewModel)
+        val recreatedBleRepository = requireFakeBleRepository()
+
+        assertSame(initialBleRepository, recreatedBleRepository)
+        assertSame(initialViewModel, recreatedViewModel)
+    }
+
     private fun launchApp() {
+        resolvedMainViewModel = null
         composeRule.mainClock.autoAdvance = false
         composeRule.setContent {
-            App()
+            val activityMainViewModel: MainViewModel = koinActivityViewModel()
+            SideEffect {
+                resolvedMainViewModel = activityMainViewModel
+            }
+            AndroidAppHost(mainViewModel = activityMainViewModel)
         }
+        waitForMainViewModel()
     }
 
     private fun advancePastSplash() {
         composeRule.mainClock.advanceTimeBy(SPLASH_DURATION_MS)
         composeRule.waitForIdle()
+        composeRule.onNodeWithText("Recent Activity").assertIsDisplayed()
+        composeRule.onAllNodesWithText("PROJECT PHOENIX").assertCountEquals(0)
     }
 
+    private fun startWorkoutAndWaitForActiveState() {
+        val fakeExerciseRepository = requireFakeExerciseRepository()
+        val fakeBleRepository = requireFakeBleRepository()
+        val mainViewModel = waitForMainViewModel()
+        val exerciseId = "e2e-just-lift-exercise"
+
+        fakeExerciseRepository.addExercise(
+            Exercise(
+                id = exerciseId,
+                name = "E2E Pulldown",
+                muscleGroup = "Back",
+                equipment = "Handles",
+            ),
+        )
+        fakeBleRepository.simulateConnect("Vee_Test")
+
+        composeRule.runOnIdle {
+            mainViewModel.updateWorkoutParameters(
+                WorkoutParameters(
+                    programMode = ProgramMode.OldSchool,
+                    reps = 6,
+                    weightPerCableKg = 20f,
+                    isJustLift = true,
+                    useAutoStart = false,
+                    warmupReps = 0,
+                    selectedExerciseId = exerciseId,
+                ),
+            )
+            mainViewModel.startWorkout(skipCountdown = true, isJustLiftMode = true)
+        }
+
+        composeRule.mainClock.advanceTimeBy(500)
+        composeRule.waitForIdle()
+        composeRule.waitUntil(timeoutMillis = 5_000) {
+            mainViewModel.workoutState.value == WorkoutState.Active
+        }
+        composeRule.mainClock.advanceTimeBy(500)
+        composeRule.waitForIdle()
+        composeRule.onAllNodesWithText("Recent Activity").assertCountEquals(0)
+    }
+
+    private fun waitForMainViewModel(): MainViewModel {
+        composeRule.waitUntil(timeoutMillis = 5_000) {
+            resolvedMainViewModel != null
+        }
+        return requireNotNull(resolvedMainViewModel)
+    }
+
+    private fun requireFakeBleRepository(): FakeBleRepository =
+        GlobalContext.get().get<BleRepository>() as FakeBleRepository
+
+    private fun requireFakeExerciseRepository(): FakeExerciseRepository =
+        GlobalContext.get().get<ExerciseRepository>() as FakeExerciseRepository
+
     private companion object {
-        const val SPLASH_DURATION_MS = 3000L
+        const val SPLASH_DURATION_MS = 3_000L
     }
 }
 
@@ -150,7 +262,7 @@ private val testModule = module {
     single<BleRepository> { FakeBleRepository() }
     single<WorkoutRepository> { FakeWorkoutRepository() }
     single<ExerciseRepository> { FakeExerciseRepository() }
-    single<PersonalRecordRepository> { FakePersonalRecordRepository() }
+    single<com.devil.phoenixproject.data.repository.PersonalRecordRepository> { com.devil.phoenixproject.testutil.FakePersonalRecordRepository() }
     single<GamificationRepository> { FakeGamificationRepository() }
     single<TrainingCycleRepository> { FakeTrainingCycleRepository() }
     single<UserProfileRepository> { FakeUserProfileRepository() }
@@ -165,7 +277,13 @@ private val testModule = module {
             override suspend fun getBadgesModifiedSince(timestamp: Long, profileId: String): List<EarnedBadgeSyncDto> = emptyList()
             override suspend fun getGamificationStatsForSync(profileId: String): GamificationStatsSyncDto? = null
             override suspend fun getWorkoutSessionsModifiedSince(timestamp: Long, profileId: String): List<WorkoutSession> = emptyList()
-            override suspend fun getFullRoutinesModifiedSince(timestamp: Long, profileId: String): List<Routine> = emptyList()
+            override suspend fun getFullRoutinesModifiedSince(timestamp: Long, profileId: String): List<com.devil.phoenixproject.domain.model.Routine> = emptyList()
+            override suspend fun getFullCyclesForSync(profileId: String): List<PortalSyncAdapter.CycleWithContext> = emptyList()
+            override suspend fun getFullPRsModifiedSince(timestamp: Long, profileId: String): List<com.devil.phoenixproject.domain.model.PersonalRecord> = emptyList()
+            override suspend fun getPhaseStatisticsForSessions(sessionIds: List<String>): List<PhaseStatistics> = emptyList()
+            override suspend fun getAllExerciseSignatures(): List<ExerciseSignature> = emptyList()
+            override suspend fun getAllAssessments(profileId: String): List<AssessmentResult> = emptyList()
+            override suspend fun updateSessionTimestamp(sessionId: String, timestamp: Long) = Unit
             override suspend fun updateServerIds(mappings: IdMappings) = Unit
             override suspend fun mergeSessions(sessions: List<WorkoutSessionSyncDto>) = Unit
             override suspend fun mergePRs(records: List<PersonalRecordSyncDto>) = Unit
@@ -174,14 +292,9 @@ private val testModule = module {
             override suspend fun mergeBadges(badges: List<EarnedBadgeSyncDto>, profileId: String) = Unit
             override suspend fun mergeGamificationStats(stats: GamificationStatsSyncDto?, profileId: String) = Unit
             override suspend fun mergePortalRoutines(routines: List<PullRoutineDto>, lastSync: Long, profileId: String) = Unit
-            override suspend fun getFullCyclesForSync(profileId: String): List<PortalSyncAdapter.CycleWithContext> = emptyList()
-            override suspend fun getFullPRsModifiedSince(timestamp: Long, profileId: String): List<com.devil.phoenixproject.domain.model.PersonalRecord> = emptyList()
-            override suspend fun getPhaseStatisticsForSessions(sessionIds: List<String>): List<PhaseStatistics> = emptyList()
-            override suspend fun getAllExerciseSignatures(): List<ExerciseSignature> = emptyList()
-            override suspend fun getAllAssessments(profileId: String): List<AssessmentResult> = emptyList()
-            override suspend fun updateSessionTimestamp(sessionId: String, timestamp: Long) = Unit
             override suspend fun mergePortalCycles(cycles: List<PullTrainingCycleDto>, profileId: String) = Unit
             override suspend fun mergePortalSessions(sessions: List<WorkoutSession>) = Unit
+            override suspend fun mergePersonalRecords(records: List<PersonalRecordSyncDto>, profileId: String) = Unit
         }
     }
     single { ConnectivityChecker(ApplicationProvider.getApplicationContext()) }
@@ -205,35 +318,41 @@ private val testModule = module {
     single<DataBackupManager> { FakeDataBackupManager() }
     single<com.devil.phoenixproject.data.integration.ExternalActivityRepository> {
         object : com.devil.phoenixproject.data.integration.ExternalActivityRepository {
-            override fun getAll(profileId: String, provider: com.devil.phoenixproject.domain.model.IntegrationProvider?): kotlinx.coroutines.flow.Flow<List<com.devil.phoenixproject.domain.model.ExternalActivity>> = kotlinx.coroutines.flow.flowOf(emptyList())
+            override fun getAll(
+                profileId: String,
+                provider: com.devil.phoenixproject.domain.model.IntegrationProvider?,
+            ) = kotlinx.coroutines.flow.flowOf(emptyList<com.devil.phoenixproject.domain.model.ExternalActivity>())
+
             override suspend fun getUnsyncedActivities(profileId: String): List<com.devil.phoenixproject.domain.model.ExternalActivity> = emptyList()
             override suspend fun upsertActivities(activities: List<com.devil.phoenixproject.domain.model.ExternalActivity>) = Unit
             override suspend fun markSynced(ids: List<String>) = Unit
-            override suspend fun markSyncedBySyncKeys(syncKeys: List<com.devil.phoenixproject.data.integration.ExternalActivitySyncKey>, profileId: String) = Unit
-            override suspend fun deleteActivities(provider: com.devil.phoenixproject.domain.model.IntegrationProvider, profileId: String) = Unit
-            override fun getIntegrationStatus(provider: com.devil.phoenixproject.domain.model.IntegrationProvider, profileId: String): kotlinx.coroutines.flow.Flow<com.devil.phoenixproject.domain.model.IntegrationStatus?> = kotlinx.coroutines.flow.flowOf(null)
-            override fun getAllIntegrationStatuses(profileId: String): kotlinx.coroutines.flow.Flow<List<com.devil.phoenixproject.domain.model.IntegrationStatus>> = kotlinx.coroutines.flow.flowOf(emptyList())
-            override suspend fun updateIntegrationStatus(provider: com.devil.phoenixproject.domain.model.IntegrationProvider, status: com.devil.phoenixproject.domain.model.ConnectionStatus, profileId: String, lastSyncAt: Long?, errorMessage: String?) = Unit
+            override suspend fun markSyncedBySyncKeys(
+                syncKeys: List<com.devil.phoenixproject.data.integration.ExternalActivitySyncKey>,
+                profileId: String,
+            ) = Unit
+
+            override suspend fun deleteActivities(
+                provider: com.devil.phoenixproject.domain.model.IntegrationProvider,
+                profileId: String,
+            ) = Unit
+
+            override fun getIntegrationStatus(
+                provider: com.devil.phoenixproject.domain.model.IntegrationProvider,
+                profileId: String,
+            ) = kotlinx.coroutines.flow.flowOf<com.devil.phoenixproject.domain.model.IntegrationStatus?>(null)
+
+            override fun getAllIntegrationStatuses(
+                profileId: String,
+            ) = kotlinx.coroutines.flow.flowOf(emptyList<com.devil.phoenixproject.domain.model.IntegrationStatus>())
+
+            override suspend fun updateIntegrationStatus(
+                provider: com.devil.phoenixproject.domain.model.IntegrationProvider,
+                status: com.devil.phoenixproject.domain.model.ConnectionStatus,
+                profileId: String,
+                lastSyncAt: Long?,
+                errorMessage: String?,
+            ) = Unit
         }
-    }
-    factory {
-        MainViewModel(
-            bleRepository = get(),
-            workoutRepository = get(),
-            exerciseRepository = get(),
-            personalRecordRepository = get(),
-            repCounter = get(),
-            preferencesManager = get(),
-            gamificationRepository = get(),
-            trainingCycleRepository = get(),
-            completedSetRepository = get(),
-            repMetricRepository = get(),
-            biomechanicsRepository = get(),
-            resolveWeightsUseCase = get(),
-            detectionManager = get(),
-            dataBackupManager = get(),
-            userProfileRepository = get(),
-        )
     }
     single { ThemeViewModel(get()) }
     single { EulaViewModel(get()) }
