@@ -1098,12 +1098,33 @@ class RoutineFlowManager(
     }
 
     /**
-     * Go back to the previous exercise in the routine.
+     * Go back to the previous exercise in the routine (display order).
+     *
+     * Unlike advanceToNextExercise/skipCurrentExercise which follow
+     * superset-interleaved set progression, this is a simple "previous
+     * in display order" navigation. Uses getItems() for ordering so
+     * non-contiguous superset members are handled correctly.
      */
     fun goToPreviousExercise() {
-        val prevIndex = coordinator._currentExerciseIndex.value - 1
-        if (prevIndex >= 0) {
-            jumpToExercise(prevIndex)
+        val routine = coordinator._loadedRoutine.value ?: return
+        val currentExIndex = coordinator._currentExerciseIndex.value
+        val currentExercise = routine.exercises.getOrNull(currentExIndex) ?: return
+
+        // Build display-order list and find the previous exercise
+        val displayOrder = routine.getItems().flatMap { item ->
+            when (item) {
+                is RoutineItem.Single -> listOf(item.exercise)
+                is RoutineItem.SupersetItem ->
+                    item.superset.exercises.sortedBy { it.orderInSuperset }
+            }
+        }
+        val currentDisplayIdx = displayOrder.indexOf(currentExercise)
+        if (currentDisplayIdx > 0) {
+            val prevExercise = displayOrder[currentDisplayIdx - 1]
+            val prevFlatIdx = routine.exercises.indexOf(prevExercise)
+            if (prevFlatIdx >= 0) {
+                jumpToExercise(prevFlatIdx)
+            }
         }
     }
 

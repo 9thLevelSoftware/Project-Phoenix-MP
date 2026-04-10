@@ -1591,9 +1591,9 @@ class ActiveSessionEngine(
         // are loaded, writing the hardcoded initial value (0.453592f). Guard
         // against this race by preserving the current weight when the incoming
         // value is suspiciously low and Just Lift mode is active.
-        val safeParams = if (params.isJustLift && params.weightPerCableKg < 1f) {
+        val safeParams = if (params.isJustLift && params.weightPerCableKg < Constants.JUST_LIFT_MIN_VALID_WEIGHT_KG) {
             val currentWeight = coordinator._workoutParameters.value.weightPerCableKg
-            if (currentWeight >= 1f) {
+            if (currentWeight >= Constants.JUST_LIFT_MIN_VALID_WEIGHT_KG) {
                 Logger.w { "updateWorkoutParameters: Rejected near-zero weight ${params.weightPerCableKg}kg in Just Lift — preserving ${currentWeight}kg" }
                 params.copy(weightPerCableKg = currentWeight)
             } else {

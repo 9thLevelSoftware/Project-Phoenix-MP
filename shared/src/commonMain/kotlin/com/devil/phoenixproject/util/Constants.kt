@@ -25,6 +25,11 @@ object Constants {
     const val DEFAULT_WEIGHT_INCREMENT_KG = 0.5f
     const val DEFAULT_WEIGHT_INCREMENT_LB = 1.0f
 
+    // Just Lift weight guard: threshold below which a weight write is considered
+    // a race-condition artifact (e.g., the 0.453592f hardcoded initial in JustLiftScreen).
+    // 1 kg per cable = 2 kg total, well below any practical training weight.
+    const val JUST_LIFT_MIN_VALID_WEIGHT_KG = 1f
+
     // Reps limits
     const val MIN_REPS = 1
     const val MAX_REPS = 100
