@@ -223,6 +223,7 @@ class ExerciseImporter(private val database: VitruvianDatabase) {
             "https://raw.githubusercontent.com/VitruvianFitness/exercise-library/main/exercise_dump.json"
 
         private val FORCED_SINGLE_CABLE_EXERCISE_NAMES = setOf(
+            // Explicit single-cable variants (SC/SA suffix)
             "Bent Over Row - Reverse Grip (SC)",
             "Bent Over Row (SC)",
             "Bent Over Row SA",
@@ -232,6 +233,10 @@ class ExerciseImporter(private val database: VitruvianDatabase) {
             "Hammer Curl (SC)",
             "Hip Thrust (SC)",
             "Upright Row (SC)",
+            // Base exercises that are inherently single-cable on Vitruvian
+            // but have null sidedness in some exercise_dump.json entries
+            "Reverse Lunge",
+            "Bulgarian Split Squat",
         )
     }
 
@@ -355,6 +360,6 @@ class ExerciseImporter(private val database: VitruvianDatabase) {
         "single", "unilateral" -> "SINGLE"
         "double", "bilateral" -> "DOUBLE"
         "alternating" -> "EITHER"
-        else -> "DOUBLE" // Safe default
+        else -> "EITHER" // Unknown sidedness — let heuristic decide at runtime
     }
 }

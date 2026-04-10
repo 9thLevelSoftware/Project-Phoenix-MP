@@ -450,7 +450,7 @@ fun VolumeVsIntensityCard(workoutSessions: List<WorkoutSession>, weightUnit: Wei
 
             val lines = sortedSessions.mapIndexed { index, session ->
                 val label = "S${index + 1}"
-                val maxWeight = session.effectiveHeaviestKgPerCable() * 2f // Total across both cables
+                val maxWeight = session.effectiveHeaviestKgPerCable() * (session.cableCount ?: 1).toFloat() // Total across cables (default 1 matches effectiveTotalVolumeKg)
                 // Convert to lbs if needed
                 val adjustedWeight = if (weightUnit == WeightUnit.LB) maxWeight * 2.20462f else maxWeight
                 label to adjustedWeight

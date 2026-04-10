@@ -65,7 +65,7 @@ object PortalPullAdapter {
                 routineName = portalSession.routineName,
                 heaviestLiftKg = maxWeight,
                 totalVolumeKg = null, // Let effectiveTotalVolumeKg() compute from weightPerCableKg * cableCount * totalReps
-                cableCount = 2,
+                cableCount = null, // Let effectiveTotalVolumeKg() use session-level cableCount if available
                 profileId = profileId,
             )
         }
