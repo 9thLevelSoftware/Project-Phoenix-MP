@@ -27,6 +27,7 @@ import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -91,14 +92,17 @@ fun JustLiftScreen(navController: NavController, viewModel: MainViewModel, theme
 
     var selectedMode by remember { mutableStateOf(workoutParameters.programMode.toWorkoutMode(workoutParameters.echoLevel)) }
     // Initialize to match the picker's default: 1 lb = 0.453592 kg
-    var weightPerCable by remember { mutableStateOf(0.453592f) }
-    var weightChangePerRep by remember { mutableStateOf(0) } // Progression/Regression value
+    // Float, Int, and Boolean types are natively saveable — use rememberSaveable
+    // so values survive configuration changes and iOS composition recreation (#344).
+    var weightPerCable by rememberSaveable { mutableStateOf(0.453592f) }
+    var weightChangePerRep by rememberSaveable { mutableStateOf(0) } // Progression/Regression value
+    // Keep enum/sealed types as `remember` — they need custom Savers:
     var eccentricLoad by remember { mutableStateOf(EccentricLoad.LOAD_100) }
     var echoLevel by remember { mutableStateOf(EchoLevel.HARDER) }
     var repCountTiming by remember { mutableStateOf(RepCountTiming.TOP) }
-    var stallDetectionEnabled by remember { mutableStateOf(true) }
-    var restSeconds by remember { mutableStateOf(60) } // Rest timer between sets (0 = off)
-    var defaultsLoaded by remember { mutableStateOf(false) }
+    var stallDetectionEnabled by rememberSaveable { mutableStateOf(true) }
+    var restSeconds by rememberSaveable { mutableStateOf(60) } // Rest timer between sets (0 = off)
+    var defaultsLoaded by rememberSaveable { mutableStateOf(false) }
     // Profile management
     val scope = rememberCoroutineScope()
     val profileRepository: UserProfileRepository = koinInject()
@@ -193,7 +197,14 @@ fun JustLiftScreen(navController: NavController, viewModel: MainViewModel, theme
         echoLevel,
         repCountTiming,
         restSeconds,
+        defaultsLoaded,
     ) {
+        // Don't write params until saved defaults have been loaded.
+        // Without this guard, the effect fires immediately with the hardcoded
+        // initial weightPerCable (0.453592f) before the defaults-loading
+        // LaunchedEffect(Unit) has returned from disk, causing #344.
+        if (!defaultsLoaded) return@LaunchedEffect
+
         val weightChangeKg = if (weightUnit == WeightUnit.LB) {
             weightChangePerRep / 2.20462f
         } else {

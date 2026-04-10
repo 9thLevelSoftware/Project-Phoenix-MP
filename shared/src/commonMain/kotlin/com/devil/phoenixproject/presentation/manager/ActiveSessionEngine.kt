@@ -105,6 +105,9 @@ class ActiveSessionEngine(
         /** Enter SetReady screen for a specific exercise/set */
         fun enterSetReady(exerciseIndex: Int, setIndex: Int)
 
+        /** Enter SetReady screen with recovery-adjusted weight/reps */
+        fun enterSetReadyWithAdjustments(exerciseIndex: Int, setIndex: Int, adjustedWeight: Float, adjustedReps: Int)
+
         /** Skip the current exercise and move to the next available routine step in SetReady */
         fun skipCurrentExerciseAndEnterNextStep(): Boolean
 
@@ -144,6 +147,42 @@ class ActiveSessionEngine(
      * Set by DWSM after construction.
      */
     var flowDelegate: WorkoutFlowDelegate? = null
+
+    private data class InterruptedSetRecoverySnapshot(
+        val routineId: String,
+        val exerciseIndex: Int,
+        val setIndex: Int,
+        val warmupSetIndex: Int,
+        val repCount: RepCount,
+    )
+
+    private data class StartWorkoutOverride(
+        val params: WorkoutParameters,
+        val preserveWarmupReps: Boolean,
+        val skipVariableWarmupOverride: Boolean,
+    )
+
+    private sealed interface InterruptedWorkoutRecoveryPlan {
+        data class Resume(
+            val params: WorkoutParameters,
+            val warmupSetIndex: Int,
+            val preserveWarmupReps: Boolean,
+            val skipVariableWarmupOverride: Boolean,
+        ) : InterruptedWorkoutRecoveryPlan
+
+        data class EnterSetReady(
+            val exerciseIndex: Int,
+            val setIndex: Int,
+            val adjustedWeight: Float,
+            val adjustedReps: Int,
+            val feedback: String,
+        ) : InterruptedWorkoutRecoveryPlan
+
+        data class ShowRoutineComplete(val feedback: String) : InterruptedWorkoutRecoveryPlan
+    }
+
+    private var interruptedSetRecovery: InterruptedSetRecoverySnapshot? = null
+    private var pendingStartOverride: StartWorkoutOverride? = null
 
     /** Detector for identifying rep phase boundaries from position data */
     private val repBoundaryDetector = RepBoundaryDetector()
@@ -1513,6 +1552,8 @@ class ActiveSessionEngine(
 
     fun resetForNewWorkout() {
         cancelJustLiftEggTimer()
+        interruptedSetRecovery = null
+        pendingStartOverride = null
         coordinator.restDeadlineElapsedRealtimeMs = null
         coordinator._restSecondsRemaining.value = 0
         coordinator._restOriginalDuration.value = 0
@@ -1545,6 +1586,23 @@ class ActiveSessionEngine(
     }
 
     fun updateWorkoutParameters(params: WorkoutParameters) {
+        // Defense: reject near-zero weight writes in Just Lift mode.
+        // The JustLiftScreen param-sync LaunchedEffect can fire before defaults
+        // are loaded, writing the hardcoded initial value (0.453592f). Guard
+        // against this race by preserving the current weight when the incoming
+        // value is suspiciously low and Just Lift mode is active.
+        val safeParams = if (params.isJustLift && params.weightPerCableKg < 1f) {
+            val currentWeight = coordinator._workoutParameters.value.weightPerCableKg
+            if (currentWeight >= 1f) {
+                Logger.w { "updateWorkoutParameters: Rejected near-zero weight ${params.weightPerCableKg}kg in Just Lift — preserving ${currentWeight}kg" }
+                params.copy(weightPerCableKg = currentWeight)
+            } else {
+                params
+            }
+        } else {
+            params
+        }
+
         val currentState = coordinator._workoutState.value
         if (currentState is WorkoutState.Idle ||
             currentState is WorkoutState.Resting ||
@@ -1553,7 +1611,7 @@ class ActiveSessionEngine(
             coordinator._userAdjustedWeightDuringRest = true
             Logger.d("updateWorkoutParameters: User edited params in ${currentState::class.simpleName} - will preserve on transition")
         }
-        coordinator._workoutParameters.value = params
+        coordinator._workoutParameters.value = safeParams
     }
 
     /**
@@ -1564,6 +1622,288 @@ class ActiveSessionEngine(
      */
     fun setWorkoutParametersInternal(params: WorkoutParameters) {
         coordinator._workoutParameters.value = params
+    }
+
+    fun captureInterruptedWorkoutForRecovery() {
+        val routine = coordinator._loadedRoutine.value
+        if (coordinator._workoutState.value !is WorkoutState.Active || routine == null) {
+            interruptedSetRecovery = null
+            return
+        }
+
+        interruptedSetRecovery = InterruptedSetRecoverySnapshot(
+            routineId = routine.id,
+            exerciseIndex = coordinator._currentExerciseIndex.value,
+            setIndex = coordinator._currentSetIndex.value,
+            warmupSetIndex = coordinator._currentWarmupSetIndex.value,
+            repCount = coordinator._repCount.value,
+        )
+        Logger.w {
+            "Captured interrupted set recovery snapshot: routine=${routine.name}, " +
+                "exerciseIndex=${coordinator._currentExerciseIndex.value}, setIndex=${coordinator._currentSetIndex.value}, " +
+                "warmupSetIndex=${coordinator._currentWarmupSetIndex.value}, reps=${coordinator._repCount.value}"
+        }
+    }
+
+    fun reconnectInterruptedWorkout() {
+        val plan = buildInterruptedWorkoutRecoveryPlan()
+        applyInterruptedWorkoutRecoveryPlan(plan)
+    }
+
+    private fun buildInterruptedWorkoutRecoveryPlan(): InterruptedWorkoutRecoveryPlan {
+        val snapshot = interruptedSetRecovery
+        val routine = coordinator._loadedRoutine.value
+        if (snapshot == null || routine == null || routine.id != snapshot.routineId) {
+            return InterruptedWorkoutRecoveryPlan.EnterSetReady(
+                exerciseIndex = coordinator._currentExerciseIndex.value,
+                setIndex = coordinator._currentSetIndex.value,
+                adjustedWeight = coordinator._workoutParameters.value.weightPerCableKg,
+                adjustedReps = coordinator._workoutParameters.value.reps,
+                feedback = "Phoenix reconnected, but couldn't rebuild the interrupted set. Restart it from Set Ready.",
+            )
+        }
+
+        val exercise = routine.exercises.getOrNull(snapshot.exerciseIndex) ?: return InterruptedWorkoutRecoveryPlan.EnterSetReady(
+            exerciseIndex = snapshot.exerciseIndex,
+            setIndex = snapshot.setIndex,
+            adjustedWeight = coordinator._workoutParameters.value.weightPerCableKg,
+            adjustedReps = coordinator._workoutParameters.value.reps,
+            feedback = "Phoenix reconnected, but the interrupted exercise could not be resolved safely.",
+        )
+
+        val baseParams = buildRoutineRecoveryBaseParameters(exercise, snapshot.setIndex)
+        if (isBodyweightExercise(exercise) || exercise.duration != null || baseParams.isAMRAP || baseParams.isJustLift) {
+            return InterruptedWorkoutRecoveryPlan.EnterSetReady(
+                exerciseIndex = snapshot.exerciseIndex,
+                setIndex = snapshot.setIndex,
+                adjustedWeight = baseParams.weightPerCableKg,
+                adjustedReps = baseParams.reps,
+                feedback = "Phoenix reconnected, but this set type needs a manual restart from Set Ready.",
+            )
+        }
+
+        return if (snapshot.warmupSetIndex >= 0) {
+            buildVariableWarmupRecoveryPlan(snapshot, routine, exercise, baseParams)
+        } else {
+            buildStandardRecoveryPlan(snapshot, routine, exercise, baseParams)
+        }
+    }
+
+    private fun buildStandardRecoveryPlan(
+        snapshot: InterruptedSetRecoverySnapshot,
+        routine: Routine,
+        exercise: RoutineExercise,
+        baseParams: WorkoutParameters,
+    ): InterruptedWorkoutRecoveryPlan {
+        val warmupRemaining = (baseParams.warmupReps - snapshot.repCount.warmupReps).coerceAtLeast(0)
+        val workingRemaining = if (warmupRemaining > 0) {
+            baseParams.reps
+        } else {
+            (baseParams.reps - snapshot.repCount.workingReps).coerceAtLeast(0)
+        }
+
+        if (warmupRemaining == 0 && workingRemaining == 0) {
+            return nextRoutineStepPlan(
+                routine = routine,
+                exercise = exercise,
+                exerciseIndex = snapshot.exerciseIndex,
+                setIndex = snapshot.setIndex,
+                feedback = "Phoenix reconnected after the set had already completed. Continue from the next step.",
+            )
+        }
+
+        return InterruptedWorkoutRecoveryPlan.Resume(
+            params = baseParams.copy(
+                warmupReps = warmupRemaining,
+                reps = workingRemaining,
+            ),
+            warmupSetIndex = -1,
+            preserveWarmupReps = true,
+            skipVariableWarmupOverride = false,
+        )
+    }
+
+    private fun buildVariableWarmupRecoveryPlan(
+        snapshot: InterruptedSetRecoverySnapshot,
+        routine: Routine,
+        exercise: RoutineExercise,
+        baseParams: WorkoutParameters,
+    ): InterruptedWorkoutRecoveryPlan {
+        val warmupSet = exercise.warmupSets.getOrNull(snapshot.warmupSetIndex)
+            ?: return InterruptedWorkoutRecoveryPlan.EnterSetReady(
+                exerciseIndex = snapshot.exerciseIndex,
+                setIndex = snapshot.setIndex,
+                adjustedWeight = baseParams.weightPerCableKg,
+                adjustedReps = baseParams.reps,
+                feedback = "Phoenix reconnected, but the interrupted warm-up set could not be rebuilt safely.",
+            )
+
+        val completedReps = snapshot.repCount.workingReps
+        val remainingReps = (warmupSet.reps - completedReps).coerceAtLeast(0)
+        if (remainingReps > 0) {
+            return InterruptedWorkoutRecoveryPlan.Resume(
+                params = buildWarmupOverrideParams(
+                    baseParams = baseParams,
+                    workingWeightKg = baseParams.weightPerCableKg,
+                    warmupSet = warmupSet,
+                    reps = remainingReps,
+                ),
+                warmupSetIndex = snapshot.warmupSetIndex,
+                preserveWarmupReps = true,
+                skipVariableWarmupOverride = true,
+            )
+        }
+
+        val nextWarmupIndex = snapshot.warmupSetIndex + 1
+        if (nextWarmupIndex < exercise.warmupSets.size) {
+            return InterruptedWorkoutRecoveryPlan.Resume(
+                params = buildWarmupOverrideParams(
+                    baseParams = baseParams,
+                    workingWeightKg = baseParams.weightPerCableKg,
+                    warmupSet = exercise.warmupSets[nextWarmupIndex],
+                    reps = exercise.warmupSets[nextWarmupIndex].reps,
+                ),
+                warmupSetIndex = nextWarmupIndex,
+                preserveWarmupReps = true,
+                skipVariableWarmupOverride = true,
+            )
+        }
+
+        return InterruptedWorkoutRecoveryPlan.Resume(
+            params = baseParams,
+            warmupSetIndex = -1,
+            preserveWarmupReps = true,
+            skipVariableWarmupOverride = false,
+        )
+    }
+
+    private fun nextRoutineStepPlan(
+        routine: Routine,
+        exercise: RoutineExercise,
+        exerciseIndex: Int,
+        setIndex: Int,
+        feedback: String,
+    ): InterruptedWorkoutRecoveryPlan {
+        val nextStep = flowDelegate?.getNextStep(routine, exerciseIndex, setIndex)
+        if (nextStep == null) {
+            return InterruptedWorkoutRecoveryPlan.ShowRoutineComplete(feedback)
+        }
+
+        val (nextExerciseIndex, nextSetIndex) = nextStep
+        val nextExercise = routine.exercises.getOrNull(nextExerciseIndex) ?: return InterruptedWorkoutRecoveryPlan.ShowRoutineComplete(feedback)
+        val nextParams = buildRoutineRecoveryBaseParameters(nextExercise, nextSetIndex)
+        return InterruptedWorkoutRecoveryPlan.EnterSetReady(
+            exerciseIndex = nextExerciseIndex,
+            setIndex = nextSetIndex,
+            adjustedWeight = nextParams.weightPerCableKg,
+            adjustedReps = nextParams.reps,
+            feedback = feedback,
+        )
+    }
+
+    private fun buildRoutineRecoveryBaseParameters(exercise: RoutineExercise, setIndex: Int): WorkoutParameters {
+        val rawSetReps = exercise.setReps.getOrNull(setIndex)
+        val resolvedSetReps = rawSetReps ?: exercise.reps
+        return coordinator._workoutParameters.value.copy(
+            programMode = exercise.programMode,
+            weightPerCableKg = exercise.setWeightsPerCableKg.getOrNull(setIndex) ?: exercise.weightPerCableKg,
+            reps = resolvedSetReps,
+            warmupReps = Constants.DEFAULT_WARMUP_REPS,
+            echoLevel = exercise.getEchoLevelForSet(setIndex),
+            eccentricLoad = exercise.eccentricLoad,
+            selectedExerciseId = exercise.exercise.id,
+            stallDetectionEnabled = exercise.stallDetectionEnabled,
+            repCountTiming = exercise.repCountTiming,
+            stopAtTop = exercise.stopAtTop,
+            isAMRAP = rawSetReps == null,
+            progressionRegressionKg = exercise.progressionKg,
+            isJustLift = false,
+            useAutoStart = false,
+        )
+    }
+
+    private fun buildWarmupOverrideParams(
+        baseParams: WorkoutParameters,
+        workingWeightKg: Float,
+        warmupSet: com.devil.phoenixproject.domain.model.WarmupSet,
+        reps: Int,
+    ): WorkoutParameters {
+        val warmupWeight = (workingWeightKg * warmupSet.percentOfWorking / 100f).coerceIn(0f, 110f)
+        return baseParams.copy(
+            weightPerCableKg = warmupWeight,
+            reps = reps,
+            warmupReps = 0,
+            isAMRAP = false,
+        )
+    }
+
+    private fun applyInterruptedWorkoutRecoveryPlan(plan: InterruptedWorkoutRecoveryPlan) {
+        when (plan) {
+            is InterruptedWorkoutRecoveryPlan.Resume -> {
+                Logger.i {
+                    "Rebuilding interrupted set: exerciseIndex=${coordinator._currentExerciseIndex.value}, " +
+                        "setIndex=${coordinator._currentSetIndex.value}, warmupSetIndex=${plan.warmupSetIndex}, params=${plan.params}"
+                }
+                interruptedSetRecovery = null
+                pendingStartOverride = StartWorkoutOverride(
+                    params = plan.params,
+                    preserveWarmupReps = plan.preserveWarmupReps,
+                    skipVariableWarmupOverride = plan.skipVariableWarmupOverride,
+                )
+                coordinator._currentWarmupSetIndex.value = plan.warmupSetIndex
+                coordinator._workoutParameters.value = plan.params
+                resetInterruptedWorkoutTrackingState()
+                startWorkout(skipCountdown = true)
+            }
+
+            is InterruptedWorkoutRecoveryPlan.EnterSetReady -> {
+                Logger.w { "Interrupted workout requires manual restart from Set Ready" }
+                interruptedSetRecovery = null
+                pendingStartOverride = null
+                resetInterruptedWorkoutTrackingState()
+                coordinator._workoutState.value = WorkoutState.Idle
+                flowDelegate?.enterSetReadyWithAdjustments(
+                    exerciseIndex = plan.exerciseIndex,
+                    setIndex = plan.setIndex,
+                    adjustedWeight = plan.adjustedWeight,
+                    adjustedReps = plan.adjustedReps,
+                )
+                coordinator._userFeedbackEvents.tryEmit(plan.feedback)
+            }
+
+            is InterruptedWorkoutRecoveryPlan.ShowRoutineComplete -> {
+                Logger.w { "Interrupted workout already completed before reconnect; showing routine complete" }
+                interruptedSetRecovery = null
+                pendingStartOverride = null
+                resetInterruptedWorkoutTrackingState()
+                coordinator._workoutState.value = WorkoutState.Idle
+                flowDelegate?.showRoutineComplete()
+                coordinator._userFeedbackEvents.tryEmit(plan.feedback)
+            }
+        }
+    }
+
+    private fun resetInterruptedWorkoutTrackingState() {
+        coordinator.workoutJob?.cancel()
+        coordinator.workoutJob = null
+        repCounter.reset()
+        resetAutoStopState()
+        coordinator._repCount.value = RepCount()
+        coordinator._repRanges.value = null
+        coordinator._timedExerciseRemainingSeconds.value = null
+        coordinator._currentHeuristicKgMax.value = 0f
+        coordinator.collectedMetrics.value = emptyList()
+        coordinator.setRepMetrics.value = emptyList()
+        coordinator.repBoundaryTimestamps.value = emptyList()
+        coordinator.biomechanicsEngine.reset()
+        coordinator.repQualityScorer.reset()
+        coordinator._latestRepQuality.value = null
+        coordinator._loadBaselineA.value = 0f
+        coordinator._loadBaselineB.value = 0f
+        coordinator.warmupCompleteTimeMs = 0
+        coordinator.currentSessionId = null
+        coordinator.bodyweightTimerJob?.cancel()
+        coordinator.bodyweightTimerJob = null
     }
 
     fun startWorkout(skipCountdown: Boolean = false, isJustLiftMode: Boolean = false) {
@@ -1592,7 +1932,11 @@ class ActiveSessionEngine(
 
         coordinator.workoutJob = scope.launch {
             try {
-                val params = coordinator._workoutParameters.value
+                val startOverride = pendingStartOverride.also { pendingStartOverride = null }
+                if (startOverride != null) {
+                    coordinator._workoutParameters.value = startOverride.params
+                }
+                val params = startOverride?.params ?: coordinator._workoutParameters.value
 
                 val currentExercise = coordinator._loadedRoutine.value?.exercises?.getOrNull(coordinator._currentExerciseIndex.value)
                 val isBodyweight = isBodyweightExercise(currentExercise)
@@ -1669,7 +2013,8 @@ class ActiveSessionEngine(
                 }
 
                 val effectiveWarmupReps = Constants.DEFAULT_WARMUP_REPS
-                val effectiveParams = if (params.warmupReps != effectiveWarmupReps) {
+                val preserveWarmupReps = startOverride?.preserveWarmupReps == true
+                val effectiveParams = if (!preserveWarmupReps && params.warmupReps != effectiveWarmupReps) {
                     Logger.d("ActiveSessionEngine") { "Issue #222: Forcing warmupReps=$effectiveWarmupReps for cable exercise (was ${params.warmupReps})" }
                     val updated = params.copy(warmupReps = effectiveWarmupReps)
                     coordinator._workoutParameters.value = updated
@@ -1694,7 +2039,8 @@ class ActiveSessionEngine(
                 // Each warm-up set is a separate BLE stop/start cycle at a percentage of working weight.
                 val warmupSetIndex = coordinator._currentWarmupSetIndex.value
                 val isInWarmupPhase = warmupSetIndex >= 0
-                val warmupOverrideParams = if (isInWarmupPhase && currentExercise != null) {
+                val skipVariableWarmupOverride = startOverride?.skipVariableWarmupOverride == true
+                val warmupOverrideParams = if (!skipVariableWarmupOverride && isInWarmupPhase && currentExercise != null) {
                     val warmupSet = currentExercise.warmupSets.getOrNull(warmupSetIndex)
                     if (warmupSet != null) {
                         val warmupWeight = (effectiveParams.weightPerCableKg * warmupSet.percentOfWorking / 100f)

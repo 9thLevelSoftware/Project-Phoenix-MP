@@ -197,6 +197,61 @@ class MainViewModelTest {
         assertEquals(5, viewModel.workoutParameters.value.warmupReps)
     }
 
+    @Test
+    fun `updateWorkoutParameters rejects near-zero weight in Just Lift mode`() = runTest(testCoroutineRule.dispatcher) {
+        // Set up Just Lift state with known weight
+        val initialParams = WorkoutParameters(
+            programMode = ProgramMode.OldSchool,
+            reps = 10,
+            weightPerCableKg = 30f,
+            isJustLift = true,
+        )
+        viewModel.updateWorkoutParameters(initialParams)
+        assertEquals(30f, viewModel.workoutParameters.value.weightPerCableKg,
+            "Precondition: weight should be 30f after initial set")
+
+        // Attempt to write near-zero weight (simulates the Compose race condition
+        // where param-sync LaunchedEffect fires with the hardcoded initial 0.453592f)
+        viewModel.updateWorkoutParameters(initialParams.copy(weightPerCableKg = 0.453592f))
+
+        // The coordinator should still have 30f, not 0.453592f
+        assertEquals(30f, viewModel.workoutParameters.value.weightPerCableKg,
+            "Near-zero weight should be rejected when isJustLift is true")
+    }
+
+    @Test
+    fun `updateWorkoutParameters accepts valid weight in Just Lift mode`() = runTest(testCoroutineRule.dispatcher) {
+        val initialParams = WorkoutParameters(
+            programMode = ProgramMode.OldSchool,
+            reps = 10,
+            weightPerCableKg = 30f,
+            isJustLift = true,
+        )
+        viewModel.updateWorkoutParameters(initialParams)
+
+        viewModel.updateWorkoutParameters(initialParams.copy(weightPerCableKg = 35f))
+
+        assertEquals(35f, viewModel.workoutParameters.value.weightPerCableKg,
+            "Valid weight should be accepted in Just Lift mode")
+    }
+
+    @Test
+    fun `updateWorkoutParameters allows near-zero weight in non-Just-Lift mode`() = runTest(testCoroutineRule.dispatcher) {
+        // Non-Just-Lift mode should still allow low weights (e.g. for warm-up configs)
+        val initialParams = WorkoutParameters(
+            programMode = ProgramMode.OldSchool,
+            reps = 10,
+            weightPerCableKg = 30f,
+            isJustLift = false,
+        )
+        viewModel.updateWorkoutParameters(initialParams)
+
+        viewModel.updateWorkoutParameters(initialParams.copy(weightPerCableKg = 0.453592f))
+
+        assertEquals(0.453592f, viewModel.workoutParameters.value.weightPerCableKg,
+            "Near-zero weight should be allowed in non-Just-Lift mode")
+    }
+
     // ========== Disconnect Tests ==========
 
     @Test
@@ -433,6 +488,81 @@ class MainViewModelTest {
         advanceUntilIdle()
 
         assertTrue(viewModel.connectionLostDuringWorkout.value)
+    }
+
+    @Test
+    fun `reconnect interrupted workout resumes same routine set with remaining reps`() = runTest(testCoroutineRule.dispatcher) {
+        fakeBleRepository.simulateConnect("Vee_Test", "AA:BB:CC:DD:EE:FF")
+        advanceUntilIdle()
+
+        val routine = Routine(
+            id = "routine-recovery-1",
+            name = "Recovery Routine",
+            exercises = listOf(
+                RoutineExercise(
+                    id = "routine-ex-1",
+                    exercise = Exercise(
+                        id = "bench",
+                        name = "Bench Press",
+                        muscleGroup = "Chest",
+                        equipment = "HANDLES",
+                    ),
+                    orderIndex = 0,
+                    setReps = listOf(5),
+                    weightPerCableKg = 20f,
+                    warmupSets = emptyList(),
+                ),
+            ),
+        )
+        viewModel.loadRoutine(routine)
+        advanceUntilIdle()
+        viewModel.enterSetReady(0, 0)
+        advanceUntilIdle()
+
+        val metric = WorkoutMetric(positionA = 100f, positionB = 100f, loadA = 10f, loadB = 10f)
+        fakeBleRepository.emitMetric(metric)
+        viewModel.startWorkout(skipCountdown = true)
+        advanceUntilIdle()
+
+        assertEquals(2, fakeBleRepository.commandsReceived.size)
+
+        emitRepNotification(
+            repIndex = 2,
+            metric = metric,
+            warmupCount = 3,
+            warmupTarget = 3,
+            workingTarget = 5,
+        )
+        advanceUntilIdle()
+        assertEquals(2, viewModel.repCount.value.workingReps)
+
+        fakeBleRepository.simulateDisconnect()
+        advanceUntilIdle()
+        assertTrue(viewModel.connectionLostDuringWorkout.value)
+
+        viewModel.reconnectInterruptedWorkout()
+        advanceUntilIdle()
+
+        assertFalse(viewModel.connectionLostDuringWorkout.value)
+        assertEquals(4, fakeBleRepository.commandsReceived.size)
+        assertEquals(0, viewModel.repCount.value.workingReps)
+        assertEquals(3, viewModel.workoutParameters.value.reps)
+        assertEquals(0, viewModel.workoutParameters.value.warmupReps)
+        assertEquals(WorkoutState.Active, viewModel.workoutState.value)
+
+        for (repIndex in 1..3) {
+            emitRepNotification(
+                repIndex = repIndex,
+                metric = metric,
+                warmupCount = 0,
+                warmupTarget = 0,
+                workingTarget = 3,
+            )
+        }
+        advanceUntilIdle()
+
+        assertIs<WorkoutState.SetSummary>(viewModel.workoutState.value)
+        assertEquals(1, fakeWorkoutRepository.getRecentSessionsSync("default", 10).size)
     }
 
     @Test
