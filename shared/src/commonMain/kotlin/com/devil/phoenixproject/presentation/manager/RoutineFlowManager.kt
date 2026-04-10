@@ -997,9 +997,14 @@ class RoutineFlowManager(
 
     fun advanceToNextExercise() {
         val routine = coordinator._loadedRoutine.value ?: return
-        val nextIndex = coordinator._currentExerciseIndex.value + 1
-        if (nextIndex < routine.exercises.size) {
-            jumpToExercise(nextIndex)
+        val currentExIndex = coordinator._currentExerciseIndex.value
+        val currentExercise = routine.exercises.getOrNull(currentExIndex) ?: return
+        // Pass the last set index so getNextStep treats all sets as complete
+        // and advances to the next exercise (respecting superset grouping and skips).
+        val lastSetIndex = (currentExercise.setReps.size - 1).coerceAtLeast(0)
+        val next = getNextStep(routine, currentExIndex, currentSetIndex = lastSetIndex)
+        if (next != null) {
+            jumpToExercise(next.first)
         }
     }
 
@@ -1065,10 +1070,13 @@ class RoutineFlowManager(
      */
     fun skipCurrentExercise() {
         val routine = coordinator._loadedRoutine.value ?: return
-        val nextIndex = coordinator._currentExerciseIndex.value + 1
-        if (nextIndex < routine.exercises.size) {
-            coordinator._skippedExercises.update { it + coordinator._currentExerciseIndex.value }
-            jumpToExercise(nextIndex)
+        val currentExIndex = coordinator._currentExerciseIndex.value
+        // Mark as skipped first so getNextStep skips past the current exercise
+        // when looking for the next navigable exercise.
+        coordinator._skippedExercises.update { it + currentExIndex }
+        val next = getNextStep(routine, currentExIndex, currentSetIndex = 0)
+        if (next != null) {
+            jumpToExercise(next.first)
         }
     }
 

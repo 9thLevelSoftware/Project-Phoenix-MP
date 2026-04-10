@@ -93,4 +93,55 @@ object WorkoutStateFixtures {
             ),
         )
     }
+
+    /**
+     * Creates a routine where superset members are NOT contiguous in the flat list.
+     * Member A at index 0, standalone at index 1, member B at index 2.
+     * This reproduces issue #334 where an exercise was added to a superset
+     * and appended to the end of the list instead of being placed adjacent.
+     */
+    fun createNonContiguousSupersetRoutine(): Routine {
+        val supersetId = "ss-nc"
+        val exercises = listOf(
+            RoutineExercise(
+                id = "re-nc-0",
+                exercise = TestFixtures.benchPress,
+                orderIndex = 0,
+                setReps = listOf(10, 10, 10),
+                weightPerCableKg = 25f,
+                supersetId = supersetId,
+                orderInSuperset = 0,
+            ),
+            RoutineExercise(
+                id = "re-nc-1",
+                exercise = TestFixtures.squat,
+                orderIndex = 1,
+                setReps = listOf(8, 8, 8),
+                weightPerCableKg = 40f,
+            ),
+            RoutineExercise(
+                id = "re-nc-2",
+                exercise = TestFixtures.bicepCurl,
+                orderIndex = 2,
+                setReps = listOf(12, 12, 12),
+                weightPerCableKg = 15f,
+                supersetId = supersetId,
+                orderInSuperset = 1,
+            ),
+        )
+        return Routine(
+            id = "test-nc-superset-routine",
+            name = "Non-Contiguous Superset Routine",
+            exercises = exercises,
+            supersets = listOf(
+                Superset(
+                    id = supersetId,
+                    routineId = "test-nc-superset-routine",
+                    name = "Chest/Arms",
+                    restBetweenSeconds = 10,
+                    orderIndex = 0,
+                ),
+            ),
+        )
+    }
 }

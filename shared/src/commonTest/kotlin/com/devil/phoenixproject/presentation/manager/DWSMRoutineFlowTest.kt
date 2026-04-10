@@ -8,6 +8,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
 import kotlin.test.assertNotNull
+import kotlin.test.assertTrue
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
@@ -622,6 +623,117 @@ class DWSMRoutineFlowTest {
             harness.dwsm.coordinator.workoutState.value,
             "exitRoutineFlow should reset workoutState to Idle",
         )
+        harness.cleanup()
+    }
+
+    // ===== F. Non-contiguous superset regression (Issue #334) =====
+
+    @Test
+    fun nonContiguousSuperset_getNextStep_navigatesToStandaloneAfterSuperset() = runTest {
+        val harness = DWSMTestHarness(this)
+        // Non-contiguous: superset A at 0, standalone at 1, superset B at 2
+        val routine = WorkoutStateFixtures.createNonContiguousSupersetRoutine()
+        routine.exercises.forEach { harness.fakeExerciseRepo.addExercise(it.exercise) }
+        advanceUntilIdle() // Let init block settle
+
+        harness.dwsm.loadRoutine(routine)
+        advanceUntilIdle()
+
+        // After loading, normalizeExerciseOrder heals the routine so superset
+        // members are adjacent. The loaded routine should have exercises
+        // reordered: [BenchPress(ss), BicepCurl(ss), Squat(standalone)].
+        val loaded = harness.dwsm.coordinator.loadedRoutine.value
+        assertNotNull(loaded, "Routine should be loaded")
+
+        // After completing the last set of the last superset exercise (BicepCurl),
+        // getNextStep should return the standalone exercise (Squat), not null.
+        // The superset has 3 sets each. Simulate completing all sets by asking
+        // for the next step after the last set of the last superset member.
+        val lastSupersetExIndex = loaded.exercises.indexOfFirst {
+            it.supersetId != null && it.orderInSuperset == 1
+        }
+        assertTrue(lastSupersetExIndex >= 0, "Should find the second superset member")
+
+        // Ask what comes after the last set (index 2) of the last superset member
+        val nextStep = harness.routineFlowManager.getNextStep(
+            loaded,
+            lastSupersetExIndex,
+            currentSetIndex = 2, // last set (0-indexed, 3 sets = indices 0,1,2)
+        )
+
+        assertNotNull(
+            nextStep,
+            "getNextStep should return standalone exercise after superset completion, not null",
+        )
+        val nextExercise = loaded.exercises[nextStep.first]
+        assertEquals(
+            TestFixtures.squat.id,
+            nextExercise.exercise.id,
+            "Next exercise after superset should be the standalone Squat",
+        )
+        assertEquals(
+            0,
+            nextStep.second,
+            "Next step should start at set index 0",
+        )
+        harness.cleanup()
+    }
+
+    @Test
+    fun nonContiguousSuperset_normalizeExerciseOrder_healsOnLoad() = runTest {
+        val harness = DWSMTestHarness(this)
+        val routine = WorkoutStateFixtures.createNonContiguousSupersetRoutine()
+        routine.exercises.forEach { harness.fakeExerciseRepo.addExercise(it.exercise) }
+        advanceUntilIdle() // Let init block settle
+
+        // Before loading, exercises are non-contiguous:
+        // [BenchPress(ss,order=0), Squat(standalone), BicepCurl(ss,order=1)]
+        assertEquals(
+            TestFixtures.benchPress.id,
+            routine.exercises[0].exercise.id,
+            "Pre-load: index 0 should be BenchPress (superset A)",
+        )
+        assertEquals(
+            TestFixtures.squat.id,
+            routine.exercises[1].exercise.id,
+            "Pre-load: index 1 should be Squat (standalone, splitting the superset)",
+        )
+        assertEquals(
+            TestFixtures.bicepCurl.id,
+            routine.exercises[2].exercise.id,
+            "Pre-load: index 2 should be BicepCurl (superset B)",
+        )
+
+        harness.dwsm.loadRoutine(routine)
+        advanceUntilIdle()
+
+        // After loading, normalizeExerciseOrder should heal the routine so
+        // superset members are adjacent: [BenchPress(ss), BicepCurl(ss), Squat]
+        val loaded = harness.dwsm.coordinator.loadedRoutine.value
+        assertNotNull(loaded, "Routine should be loaded")
+        assertEquals(3, loaded.exercises.size, "Should still have 3 exercises")
+
+        assertEquals(
+            TestFixtures.benchPress.id,
+            loaded.exercises[0].exercise.id,
+            "Post-heal: index 0 should be BenchPress (superset member A)",
+        )
+        assertEquals(
+            TestFixtures.bicepCurl.id,
+            loaded.exercises[1].exercise.id,
+            "Post-heal: index 1 should be BicepCurl (superset member B, now adjacent)",
+        )
+        assertEquals(
+            TestFixtures.squat.id,
+            loaded.exercises[2].exercise.id,
+            "Post-heal: index 2 should be Squat (standalone, moved after superset)",
+        )
+
+        // Verify orderIndex values were updated correctly
+        assertEquals(0, loaded.exercises[0].orderIndex, "BenchPress orderIndex should be 0")
+        assertEquals(1, loaded.exercises[1].orderIndex, "BicepCurl orderIndex should be 1")
+        assertEquals(2, loaded.exercises[2].orderIndex, "Squat orderIndex should be 2")
+
         harness.cleanup()
     }
 }
