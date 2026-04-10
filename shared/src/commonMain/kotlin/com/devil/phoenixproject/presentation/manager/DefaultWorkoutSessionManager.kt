@@ -18,12 +18,14 @@ import com.devil.phoenixproject.domain.model.EccentricLoad
 import com.devil.phoenixproject.domain.model.EchoLevel
 import com.devil.phoenixproject.domain.model.HapticEvent
 import com.devil.phoenixproject.domain.model.ProgramMode
+import com.devil.phoenixproject.domain.model.RepCount
 import com.devil.phoenixproject.domain.model.RepCountTiming
 import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.domain.model.RoutineExercise
 import com.devil.phoenixproject.domain.model.Superset
 import com.devil.phoenixproject.domain.model.WorkoutParameters
 import com.devil.phoenixproject.domain.model.WorkoutState
+import com.devil.phoenixproject.domain.model.elapsedRealtimeMillis
 import com.devil.phoenixproject.domain.usecase.RepCounterFromMachine
 import com.devil.phoenixproject.domain.usecase.ResolveRoutineWeightsUseCase
 import com.devil.phoenixproject.getPlatform
@@ -32,6 +34,8 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 
 // ===== Data classes that move with DefaultWorkoutSessionManager =====
@@ -142,7 +146,9 @@ class DefaultWorkoutSessionManager(
     private val userProfileRepository: UserProfileRepository,
     private val healthIntegration: HealthIntegration? = null,
     private val externalActivityRepository: ExternalActivityRepository? = null,
+    private val workoutServiceController: WorkoutServiceController,
     private val scope: CoroutineScope,
+    private val elapsedRealtimeProvider: () -> Long = ::elapsedRealtimeMillis,
     private val _hapticEvents: MutableSharedFlow<HapticEvent> = MutableSharedFlow(
         extraBufferCapacity = 10,
         onBufferOverflow = kotlinx.coroutines.channels.BufferOverflow.DROP_OLDEST,
@@ -150,6 +156,14 @@ class DefaultWorkoutSessionManager(
 ) : WorkoutStateProvider {
     private val isIosPlatform = getPlatform().name.startsWith("iOS")
     private var summaryAutoAdvanceJob: Job? = null
+
+    private data class WorkoutServiceInputs(
+        val workoutState: WorkoutState,
+        val justLiftRestCountdown: Int?,
+        val loadedRoutine: Routine?,
+        val currentExerciseIndex: Int,
+        val currentSetIndex: Int,
+    )
 
     // ===== Coordinator: Shared state bus for all workout state =====
     val coordinator = WorkoutCoordinator(_hapticEvents)
@@ -206,6 +220,7 @@ class DefaultWorkoutSessionManager(
         dataBackupManager = dataBackupManager,
         healthIntegration = healthIntegration,
         externalActivityRepository = externalActivityRepository,
+        elapsedRealtimeProvider = elapsedRealtimeProvider,
     )
 
     companion object {
@@ -275,6 +290,48 @@ class DefaultWorkoutSessionManager(
                 Logger.e(e) { "Error in summary auto-advance collector" }
             }
         }
+
+        scope.launch {
+            try {
+                val serviceInputsFlow = combine(
+                    coordinator.workoutState,
+                    coordinator.justLiftRestCountdown,
+                    coordinator.loadedRoutine,
+                    coordinator.currentExerciseIndex,
+                    coordinator.currentSetIndex,
+                ) { workoutState, justLiftRestCountdown, loadedRoutine, currentExerciseIndex, currentSetIndex ->
+                    WorkoutServiceInputs(
+                        workoutState = workoutState,
+                        justLiftRestCountdown = justLiftRestCountdown,
+                        loadedRoutine = loadedRoutine,
+                        currentExerciseIndex = currentExerciseIndex,
+                        currentSetIndex = currentSetIndex,
+                    )
+                }
+
+                combine(
+                    serviceInputsFlow,
+                    coordinator.workoutParameters,
+                    coordinator.repCount,
+                ) { inputs, params, repCount ->
+                    buildWorkoutServiceSnapshot(
+                        inputs = inputs,
+                        params = params,
+                        repCount = repCount,
+                    )
+                }
+                    .distinctUntilChanged()
+                    .collect { snapshot ->
+                        if (snapshot == null) {
+                            workoutServiceController.stop()
+                        } else {
+                            workoutServiceController.showOrUpdate(snapshot)
+                        }
+                    }
+            } catch (e: Exception) {
+                Logger.e(e) { "Error in workout foreground service collector" }
+            }
+        }
     }
 
     fun clearCycleDayCompletionEvent() {
@@ -291,6 +348,99 @@ class DefaultWorkoutSessionManager(
 
     override val isWorkoutMidSet: Boolean
         get() = coordinator._workoutState.value is WorkoutState.Active
+
+    private fun buildWorkoutServiceSnapshot(
+        inputs: WorkoutServiceInputs,
+        params: WorkoutParameters,
+        repCount: RepCount,
+    ): WorkoutServiceSnapshot? {
+        val currentExercise = inputs.loadedRoutine?.exercises?.getOrNull(inputs.currentExerciseIndex)
+        val currentExerciseName = currentExercise?.exercise?.displayName ?: currentExercise?.exercise?.name
+        val defaultSetNumber = currentExercise?.let { inputs.currentSetIndex + 1 }
+        val defaultTotalSets = currentExercise?.setReps?.size
+
+        return when (val state = inputs.workoutState) {
+            is WorkoutState.Idle -> {
+                val remaining = inputs.justLiftRestCountdown
+                if (remaining == null || remaining <= 0) {
+                    null
+                } else {
+                    WorkoutServiceSnapshot(
+                        phase = WorkoutServicePhase.JUST_LIFT_REST,
+                        workoutModeName = params.programMode.displayName,
+                        exerciseName = currentExerciseName,
+                        currentSet = defaultSetNumber,
+                        totalSets = defaultTotalSets,
+                        completedReps = repCount.totalReps.takeIf { it > 0 },
+                        targetReps = params.reps.takeIf { it > 0 },
+                        secondsRemaining = remaining,
+                    )
+                }
+            }
+
+            is WorkoutState.Initializing -> WorkoutServiceSnapshot(
+                phase = WorkoutServicePhase.INITIALIZING,
+                workoutModeName = params.programMode.displayName,
+                exerciseName = currentExerciseName,
+                currentSet = defaultSetNumber,
+                totalSets = defaultTotalSets,
+                targetReps = params.reps.takeIf { it > 0 },
+            )
+
+            is WorkoutState.Countdown -> WorkoutServiceSnapshot(
+                phase = WorkoutServicePhase.COUNTDOWN,
+                workoutModeName = params.programMode.displayName,
+                exerciseName = currentExerciseName,
+                currentSet = defaultSetNumber,
+                totalSets = defaultTotalSets,
+                targetReps = params.reps.takeIf { it > 0 },
+                secondsRemaining = state.secondsRemaining,
+            )
+
+            is WorkoutState.Active -> WorkoutServiceSnapshot(
+                phase = WorkoutServicePhase.ACTIVE,
+                workoutModeName = params.programMode.displayName,
+                exerciseName = currentExerciseName,
+                currentSet = defaultSetNumber,
+                totalSets = defaultTotalSets,
+                completedReps = repCount.totalReps.takeIf { it > 0 },
+                targetReps = params.reps.takeIf { it > 0 },
+            )
+
+            is WorkoutState.SetSummary -> WorkoutServiceSnapshot(
+                phase = WorkoutServicePhase.SET_SUMMARY,
+                workoutModeName = params.programMode.displayName,
+                exerciseName = currentExerciseName,
+                currentSet = defaultSetNumber,
+                totalSets = defaultTotalSets,
+                completedReps = state.repCount.takeIf { it > 0 },
+                targetReps = params.reps.takeIf { it > 0 },
+            )
+
+            is WorkoutState.Resting -> WorkoutServiceSnapshot(
+                phase = WorkoutServicePhase.RESTING,
+                workoutModeName = params.programMode.displayName,
+                exerciseName = currentExerciseName,
+                nextExerciseName = state.nextExerciseName.takeIf { it.isNotBlank() },
+                currentSet = state.currentSet,
+                totalSets = state.totalSets,
+                targetReps = params.reps.takeIf { it > 0 },
+                secondsRemaining = state.restSecondsRemaining,
+            )
+
+            is WorkoutState.Paused -> WorkoutServiceSnapshot(
+                phase = WorkoutServicePhase.PAUSED,
+                workoutModeName = params.programMode.displayName,
+                exerciseName = currentExerciseName,
+                currentSet = defaultSetNumber,
+                totalSets = defaultTotalSets,
+                completedReps = repCount.totalReps.takeIf { it > 0 },
+                targetReps = params.reps.takeIf { it > 0 },
+            )
+
+            else -> null
+        }
+    }
 
     // ===== Routine CRUD — delegated to RoutineFlowManager =====
 
@@ -561,5 +711,6 @@ class DefaultWorkoutSessionManager(
     fun cleanup() {
         summaryAutoAdvanceJob?.cancel()
         activeSessionEngine.cleanup()
+        workoutServiceController.stop()
     }
 }

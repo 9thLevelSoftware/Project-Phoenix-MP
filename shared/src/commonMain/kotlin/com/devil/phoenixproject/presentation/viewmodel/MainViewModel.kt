@@ -32,6 +32,7 @@ import com.devil.phoenixproject.presentation.manager.HistoryManager
 import com.devil.phoenixproject.presentation.manager.JustLiftDefaults
 import com.devil.phoenixproject.presentation.manager.ResumableProgressInfo
 import com.devil.phoenixproject.presentation.manager.SettingsManager
+import com.devil.phoenixproject.presentation.manager.WorkoutServiceController
 import com.devil.phoenixproject.util.BackupStats
 import com.devil.phoenixproject.util.DataBackupManager
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -69,6 +70,7 @@ class MainViewModel constructor(
     private val userProfileRepository: UserProfileRepository,
     private val healthIntegration: HealthIntegration? = null,
     private val externalActivityRepository: ExternalActivityRepository? = null,
+    private val workoutServiceController: WorkoutServiceController,
 ) : ViewModel() {
 
     // Shared haptic events flow - created here, passed to both GamificationManager and WorkoutSessionManager
@@ -114,6 +116,7 @@ class MainViewModel constructor(
         userProfileRepository = userProfileRepository,
         healthIntegration = healthIntegration,
         externalActivityRepository = externalActivityRepository,
+        workoutServiceController = workoutServiceController,
         scope = viewModelScope,
         _hapticEvents = _hapticEvents,
     )

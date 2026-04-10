@@ -139,6 +139,8 @@ class WorkoutCoordinator(
     internal val _justLiftRestCountdown = MutableStateFlow<Int?>(null)
     val justLiftRestCountdown: StateFlow<Int?> = _justLiftRestCountdown.asStateFlow()
     internal var justLiftRestTimerJob: Job? = null
+    @Volatile
+    internal var justLiftRestDeadlineElapsedRealtimeMs: Long? = null
 
     // ===== Workout Parameters =====
 
@@ -282,9 +284,11 @@ class WorkoutCoordinator(
     internal val _restOriginalDuration = MutableStateFlow(0)
     val restOriginalDuration: StateFlow<Int> = _restOriginalDuration.asStateFlow()
 
-    // Tracks remaining seconds for extend/reset manipulation by control methods.
-    // The coroutine loop reads this each tick instead of computing from wall-clock.
+    // Derived remaining seconds shown in the UI. The live countdown source of truth is the
+    // monotonic deadline below so background suspension can catch up correctly.
     internal val _restSecondsRemaining = MutableStateFlow(0)
+    @Volatile
+    internal var restDeadlineElapsedRealtimeMs: Long? = null
 
     // ===== Job Tracking =====
 

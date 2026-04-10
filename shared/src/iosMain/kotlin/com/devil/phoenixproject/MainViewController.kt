@@ -23,7 +23,7 @@ fun MainViewController() = run {
         NSLog("iOS UI: Image loader ready, loading App()...")
         RequireBlePermissions {
             NSLog("iOS UI: BLE permissions checked, rendering App()...")
-            App()
+            IosAppHost()
         }
     }
 }

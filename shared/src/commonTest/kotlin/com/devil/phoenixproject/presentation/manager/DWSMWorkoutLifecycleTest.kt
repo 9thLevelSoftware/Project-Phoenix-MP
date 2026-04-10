@@ -2,6 +2,8 @@ package com.devil.phoenixproject.presentation.manager
 
 import app.cash.turbine.test
 import com.devil.phoenixproject.data.repository.RepNotification
+import com.devil.phoenixproject.domain.model.Exercise
+import com.devil.phoenixproject.domain.model.ExerciseCableIntent
 import com.devil.phoenixproject.domain.model.PRType
 import com.devil.phoenixproject.domain.model.PersonalRecord
 import com.devil.phoenixproject.domain.model.ProgramMode
@@ -10,6 +12,7 @@ import com.devil.phoenixproject.domain.model.RoutineFlowState
 import com.devil.phoenixproject.domain.model.WorkoutMetric
 import com.devil.phoenixproject.domain.model.WorkoutParameters
 import com.devil.phoenixproject.domain.model.WorkoutState
+import com.devil.phoenixproject.presentation.manager.WorkoutServicePhase
 import com.devil.phoenixproject.domain.model.currentTimeMillis
 import com.devil.phoenixproject.testutil.DWSMTestHarness
 import com.devil.phoenixproject.testutil.TestFixtures
@@ -18,6 +21,7 @@ import com.devil.phoenixproject.testutil.WorkoutStateFixtures.createTestRoutine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -447,6 +451,178 @@ class DWSMWorkoutLifecycleTest {
         harness.cleanup()
     }
 
+    @Test
+    fun `rest timer catches up after background delay shorter than rest duration`() = runTest {
+        val harness = DWSMTestHarness(this)
+        val routine = createTestRoutine(exerciseCount = 1, setsPerExercise = 2)
+        routine.exercises.forEach { harness.fakeExerciseRepo.addExercise(it.exercise) }
+        harness.fakePrefsManager.setSummaryCountdownSeconds(0)
+
+        harness.dwsm.loadRoutine(routine)
+        advanceUntilIdle()
+
+        harness.activeSessionEngine.startRestTimer()
+        advanceTimeBy(30_000)
+        runCurrent()
+
+        val state = assertIs<WorkoutState.Resting>(harness.dwsm.coordinator.workoutState.value)
+        assertEquals(30, state.restSecondsRemaining)
+        harness.cleanup()
+    }
+
+    @Test
+    fun `rest timer clamps to zero after background delay longer than rest duration without autoplay`() = runTest {
+        val harness = DWSMTestHarness(this)
+        val routine = createTestRoutine(exerciseCount = 1, setsPerExercise = 2)
+        routine.exercises.forEach { harness.fakeExerciseRepo.addExercise(it.exercise) }
+        harness.fakePrefsManager.setSummaryCountdownSeconds(0)
+
+        harness.dwsm.loadRoutine(routine)
+        advanceUntilIdle()
+
+        harness.activeSessionEngine.startRestTimer()
+        advanceTimeBy(70_000)
+        runCurrent()
+
+        val state = assertIs<WorkoutState.Resting>(harness.dwsm.coordinator.workoutState.value)
+        assertEquals(0, state.restSecondsRemaining)
+        harness.cleanup()
+    }
+
+    @Test
+    fun `rest timer pause resume preserves remaining time across elapsed time`() = runTest {
+        val harness = DWSMTestHarness(this)
+        val routine = createTestRoutine(exerciseCount = 1, setsPerExercise = 2)
+        routine.exercises.forEach { harness.fakeExerciseRepo.addExercise(it.exercise) }
+        harness.fakePrefsManager.setSummaryCountdownSeconds(0)
+
+        harness.dwsm.loadRoutine(routine)
+        advanceUntilIdle()
+
+        harness.activeSessionEngine.startRestTimer()
+        advanceTimeBy(15_000)
+        runCurrent()
+
+        var state = assertIs<WorkoutState.Resting>(harness.dwsm.coordinator.workoutState.value)
+        assertEquals(45, state.restSecondsRemaining)
+
+        harness.dwsm.toggleRestPause()
+        advanceTimeBy(10_000)
+        runCurrent()
+        state = assertIs<WorkoutState.Resting>(harness.dwsm.coordinator.workoutState.value)
+        assertEquals(45, state.restSecondsRemaining)
+        assertTrue(harness.dwsm.coordinator.isRestPaused.value)
+
+        harness.dwsm.toggleRestPause()
+        advanceTimeBy(10_000)
+        runCurrent()
+        state = assertIs<WorkoutState.Resting>(harness.dwsm.coordinator.workoutState.value)
+        assertEquals(35, state.restSecondsRemaining)
+        assertFalse(harness.dwsm.coordinator.isRestPaused.value)
+        harness.cleanup()
+    }
+
+    @Test
+    fun `rest timer extend and reset operate on deadline based state`() = runTest {
+        val harness = DWSMTestHarness(this)
+        val routine = createTestRoutine(exerciseCount = 1, setsPerExercise = 2)
+        routine.exercises.forEach { harness.fakeExerciseRepo.addExercise(it.exercise) }
+        harness.fakePrefsManager.setSummaryCountdownSeconds(0)
+
+        harness.dwsm.loadRoutine(routine)
+        advanceUntilIdle()
+
+        harness.activeSessionEngine.startRestTimer()
+        advanceTimeBy(30_000)
+        runCurrent()
+
+        harness.dwsm.extendRestTime(30)
+        advanceTimeBy(100)
+        runCurrent()
+        var state = assertIs<WorkoutState.Resting>(harness.dwsm.coordinator.workoutState.value)
+        assertEquals(60, state.restSecondsRemaining)
+
+        advanceTimeBy(10_000)
+        runCurrent()
+        state = assertIs<WorkoutState.Resting>(harness.dwsm.coordinator.workoutState.value)
+        assertEquals(50, state.restSecondsRemaining)
+
+        harness.dwsm.resetRestTimer()
+        advanceTimeBy(100)
+        runCurrent()
+        state = assertIs<WorkoutState.Resting>(harness.dwsm.coordinator.workoutState.value)
+        assertEquals(90, state.restSecondsRemaining)
+        harness.cleanup()
+    }
+
+    @Test
+    fun `just lift rest countdown catches up after elapsed time`() = runTest {
+        val harness = DWSMTestHarness(this)
+
+        harness.activeSessionEngine.startJustLiftEggTimer(60)
+        advanceTimeBy(30_000)
+        runCurrent()
+        assertEquals(30, harness.dwsm.coordinator.justLiftRestCountdown.value)
+
+        advanceTimeBy(40_000)
+        runCurrent()
+        assertEquals(0, harness.dwsm.coordinator.justLiftRestCountdown.value)
+        harness.cleanup()
+    }
+
+    @Test
+    fun `workout service snapshot follows workout phases and stops when idle`() = runTest {
+        val harness = DWSMTestHarness(this)
+        val routine = createTestRoutine(exerciseCount = 1, setsPerExercise = 2)
+        routine.exercises.forEach { harness.fakeExerciseRepo.addExercise(it.exercise) }
+
+        harness.dwsm.loadRoutine(routine)
+        advanceUntilIdle()
+        harness.fakeWorkoutServiceController.reset()
+
+        harness.dwsm.coordinator._workoutState.value = WorkoutState.Active
+        harness.dwsm.coordinator._repCount.value = RepCount(
+            warmupReps = 0,
+            workingReps = 3,
+            totalReps = 3,
+            isWarmupComplete = true,
+        )
+        advanceUntilIdle()
+        assertEquals(WorkoutServicePhase.ACTIVE, harness.fakeWorkoutServiceController.snapshots.last().phase)
+        assertEquals(3, harness.fakeWorkoutServiceController.snapshots.last().completedReps)
+
+        harness.dwsm.coordinator._workoutState.value = WorkoutState.SetSummary(
+            metrics = emptyList(),
+            peakLoadKgPerCable = 20f,
+            avgLoadKgPerCable = 15f,
+            repCount = 3,
+        )
+        advanceUntilIdle()
+        assertEquals(WorkoutServicePhase.SET_SUMMARY, harness.fakeWorkoutServiceController.snapshots.last().phase)
+
+        harness.dwsm.coordinator._workoutState.value = WorkoutState.Resting(
+            restSecondsRemaining = 42,
+            nextExerciseName = "Next Exercise",
+            isLastExercise = false,
+            currentSet = 1,
+            totalSets = 2,
+        )
+        advanceUntilIdle()
+        assertEquals(WorkoutServicePhase.RESTING, harness.fakeWorkoutServiceController.snapshots.last().phase)
+        assertEquals(42, harness.fakeWorkoutServiceController.snapshots.last().secondsRemaining)
+
+        harness.dwsm.coordinator._justLiftRestCountdown.value = 18
+        harness.dwsm.coordinator._workoutState.value = WorkoutState.Idle
+        advanceUntilIdle()
+        assertEquals(WorkoutServicePhase.JUST_LIFT_REST, harness.fakeWorkoutServiceController.snapshots.last().phase)
+        assertEquals(18, harness.fakeWorkoutServiceController.snapshots.last().secondsRemaining)
+
+        harness.dwsm.coordinator._justLiftRestCountdown.value = null
+        advanceUntilIdle()
+        assertTrue(harness.fakeWorkoutServiceController.stopCount >= 1)
+        harness.cleanup()
+    }
+
     // ===== E. Auto-stop behavior (indirect) =====
 
     @Test
@@ -864,6 +1040,44 @@ class DWSMWorkoutLifecycleTest {
         harness.cleanup()
     }
 
+    @Test
+    fun `set summary honors unilateral cable hint when inactive side has noisy load`() = runTest {
+        val harness = DWSMTestHarness(this)
+
+        val summary = harness.activeSessionEngine.calculateSetSummaryMetrics(
+            metrics = listOf(
+                WorkoutMetric(
+                    timestamp = 100L,
+                    loadA = 30f,
+                    loadB = 10f,
+                    positionA = 180f,
+                    positionB = 110f,
+                    velocityA = 90.0,
+                    velocityB = 45.0,
+                ),
+                WorkoutMetric(
+                    timestamp = 200L,
+                    loadA = 24f,
+                    loadB = 8f,
+                    positionA = 120f,
+                    positionB = 90f,
+                    velocityA = -70.0,
+                    velocityB = -30.0,
+                ),
+            ),
+            repCount = 10,
+            fallbackWeightKg = 30f,
+            configuredWeightKgPerCable = 30f,
+            isEchoMode = false,
+            cableCountHint = 1,
+        )
+
+        assertEquals(30f, summary.heaviestLiftKgPerCable)
+        assertEquals(300f, summary.totalVolumeKg)
+        assertEquals(1, summary.cableCount)
+        harness.cleanup()
+    }
+
     // ===== F. saveWorkoutSession side effects =====
 
     @Test
@@ -922,6 +1136,70 @@ class DWSMWorkoutLifecycleTest {
         assertEquals(24f, session.heaviestLiftKg)
         assertEquals(192f, session.totalVolumeKg)
         assertEquals(2, session.cableCount)
+        harness.cleanup()
+    }
+
+    @Test
+    fun `fixed weight unilateral session does not double volume when selected exercise metadata is explicit`() = runTest {
+        val harness = DWSMTestHarness(this)
+        val singleCableRow = Exercise(
+            name = "Bent Over Row (SC)",
+            muscleGroup = "Back",
+            muscleGroups = "Back,Biceps",
+            equipment = "HANDLES",
+            id = "single-row-001",
+            cableIntent = ExerciseCableIntent.SINGLE,
+        )
+
+        harness.fakeBleRepo.simulateConnect("Vee_Test")
+        harness.fakeExerciseRepo.addExercise(singleCableRow)
+
+        harness.dwsm.updateWorkoutParameters(
+            WorkoutParameters(
+                programMode = ProgramMode.OldSchool,
+                reps = 10,
+                warmupReps = 0,
+                weightPerCableKg = 30f,
+                selectedExerciseId = singleCableRow.id,
+            ),
+        )
+        harness.dwsm.startWorkout(skipCountdown = true)
+        advanceUntilIdle()
+
+        harness.dwsm.coordinator._repCount.value = RepCount(
+            warmupReps = 0,
+            workingReps = 10,
+            totalReps = 10,
+            isWarmupComplete = true,
+        )
+        harness.dwsm.coordinator.collectedMetrics.value = listOf(
+            WorkoutMetric(
+                timestamp = 100L,
+                loadA = 30f,
+                loadB = 10f,
+                positionA = 180f,
+                positionB = 120f,
+                velocityA = 90.0,
+                velocityB = 45.0,
+            ),
+            WorkoutMetric(
+                timestamp = 200L,
+                loadA = 25f,
+                loadB = 9f,
+                positionA = 130f,
+                positionB = 100f,
+                velocityA = -70.0,
+                velocityB = -25.0,
+            ),
+        )
+
+        harness.activeSessionEngine.handleSetCompletion()
+        advanceUntilIdle()
+
+        val session = harness.fakeWorkoutRepo.getAllSessions("default").first().first()
+        assertEquals(30f, session.heaviestLiftKg)
+        assertEquals(300f, session.totalVolumeKg)
+        assertEquals(1, session.cableCount)
         harness.cleanup()
     }
 
