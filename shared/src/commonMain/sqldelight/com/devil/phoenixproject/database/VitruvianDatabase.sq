@@ -1076,7 +1076,7 @@ CREATE TABLE GamificationStats (
     profile_id TEXT NOT NULL DEFAULT 'default'
 );
 
-CREATE INDEX idx_gamification_stats_profile ON GamificationStats(profile_id);
+CREATE UNIQUE INDEX idx_gamification_stats_profile ON GamificationStats(profile_id);
 
 -- RPG Attributes (dedicated table per STATE.md decision, not GamificationStats singleton)
 CREATE TABLE RpgAttributes (
@@ -1130,7 +1130,11 @@ INSERT INTO StreakHistory (startDate, endDate, length, profile_id) VALUES (?, ?,
 
 -- Gamification Stats Queries
 selectGamificationStats:
-SELECT * FROM GamificationStats WHERE profile_id = :profileId;
+SELECT *
+FROM GamificationStats
+WHERE profile_id = :profileId
+ORDER BY COALESCE(lastUpdated, 0) DESC, COALESCE(updatedAt, 0) DESC, id DESC
+LIMIT 1;
 
 upsertGamificationStats:
 INSERT OR REPLACE INTO GamificationStats
@@ -1686,8 +1690,14 @@ UPDATE StreakHistory SET profile_id = ? WHERE profile_id = ?;
 reassignGamificationStatsProfile:
 UPDATE GamificationStats SET profile_id = ? WHERE profile_id = ?;
 
+deleteGamificationStatsByProfile:
+DELETE FROM GamificationStats WHERE profile_id = ?;
+
 reassignRpgAttributesProfile:
 UPDATE RpgAttributes SET profile_id = ? WHERE profile_id = ?;
+
+deleteRpgAttributesByProfile:
+DELETE FROM RpgAttributes WHERE profile_id = ?;
 
 reassignAssessmentResultProfile:
 UPDATE AssessmentResult SET profile_id = ? WHERE profile_id = ?;
@@ -1800,7 +1810,11 @@ UPDATE EarnedBadge SET serverId = ? WHERE id = ?;
 
 -- Get gamification stats for sync (profile-scoped)
 selectGamificationStatsForSync:
-SELECT * FROM GamificationStats WHERE profile_id = :profileId;
+SELECT *
+FROM GamificationStats
+WHERE profile_id = :profileId
+ORDER BY COALESCE(lastUpdated, 0) DESC, COALESCE(updatedAt, 0) DESC, id DESC
+LIMIT 1;
 
 -- Update gamification stats server ID (profile-scoped)
 updateGamificationStatsServerId:
@@ -1827,7 +1841,7 @@ UPDATE WorkoutSession SET updatedAt = ? WHERE id = ?;
 -- Session summaries with exercise muscle group data (for volume/balance analysis)
 selectSessionSummariesSince:
 SELECT ws.exerciseId, ws.exerciseName, e.muscleGroup, ws.timestamp,
-       ws.weightPerCableKg, ws.totalReps, ws.workingReps
+       ws.weightPerCableKg, ws.totalReps, ws.workingReps, ws.cableCount
 FROM WorkoutSession ws
 LEFT JOIN Exercise e ON ws.exerciseId = e.id
 WHERE ws.exerciseId IS NOT NULL

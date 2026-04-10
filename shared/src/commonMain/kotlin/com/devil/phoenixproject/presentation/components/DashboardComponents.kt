@@ -183,7 +183,7 @@ fun ThisWeekStatsCard(
     }
 
     val thisWeekVolume = remember(thisWeekSessions) {
-        thisWeekSessions.sumOf { (it.weightPerCableKg * it.totalReps * 2).toDouble() }.toFloat()
+        thisWeekSessions.sumOf { (it.weightPerCableKg * it.totalReps * (if (it.cableCount == 2) 2 else 1)).toDouble() }.toFloat()
     }
 
     Card(

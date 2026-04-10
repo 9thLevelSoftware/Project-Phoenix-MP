@@ -18,7 +18,11 @@ data class SessionSummary(
     val weightPerCableKg: Float,
     val totalReps: Int,
     val workingReps: Int,
+    val cableCount: Int? = null, // null for legacy data without cable metadata
 )
+
+/** Effective cable multiplier: 2 for known dual-cable, 1 otherwise (safe default for unknown). */
+val SessionSummary.cableMultiplier: Int get() = if (cableCount == 2) 2 else 1
 
 // SUGG-01: Volume per muscle group
 

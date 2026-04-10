@@ -59,6 +59,7 @@ class SqlDelightSmartSuggestionsRepository(private val database: VitruvianDataba
                 weightPerCableKg = row.weightPerCableKg.toFloat(),
                 totalReps = row.totalReps.toInt(),
                 workingReps = row.workingReps.toInt(),
+                cableCount = row.cableCount?.toInt(),
             )
         }
     }

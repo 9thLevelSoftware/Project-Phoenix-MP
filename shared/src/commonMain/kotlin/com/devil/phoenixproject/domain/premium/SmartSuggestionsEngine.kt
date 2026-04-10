@@ -7,6 +7,7 @@ import com.devil.phoenixproject.domain.model.MuscleGroupVolume
 import com.devil.phoenixproject.domain.model.NeglectedExercise
 import com.devil.phoenixproject.domain.model.PlateauDetection
 import com.devil.phoenixproject.domain.model.SessionSummary
+import com.devil.phoenixproject.domain.model.cableMultiplier
 import com.devil.phoenixproject.domain.model.TimeOfDayAnalysis
 import com.devil.phoenixproject.domain.model.TimeWindow
 import com.devil.phoenixproject.domain.model.WeeklyVolumeReport
@@ -38,7 +39,7 @@ object SmartSuggestionsEngine {
     /**
      * SUGG-01: Compute weekly volume per muscle group.
      * Filters sessions from current 7-day window (nowMs - 7 days to nowMs).
-     * totalKg = sum of (weightPerCableKg * 2 * workingReps) per session.
+     * totalKg = sum of (weightPerCableKg * cableMultiplier * workingReps) per session.
      */
     fun computeWeeklyVolume(sessions: List<SessionSummary>, nowMs: Long): WeeklyVolumeReport {
         val weekStart = nowMs - SEVEN_DAYS_MS
@@ -52,7 +53,7 @@ object SmartSuggestionsEngine {
                     sets = groupSessions.size,
                     reps = groupSessions.sumOf { it.workingReps },
                     totalKg = groupSessions.sumOf {
-                        (it.weightPerCableKg * 2 * it.workingReps).toDouble()
+                        (it.weightPerCableKg * it.cableMultiplier * it.workingReps).toDouble()
                     }.toFloat(),
                 )
             }
@@ -77,7 +78,7 @@ object SmartSuggestionsEngine {
         var legsVol = 0f
 
         for (s in recentSessions) {
-            val vol = s.weightPerCableKg * 2 * s.workingReps
+            val vol = s.weightPerCableKg * s.cableMultiplier * s.workingReps
             when (classifyMuscleGroup(s.muscleGroup)) {
                 MovementCategory.PUSH -> pushVol += vol
                 MovementCategory.PULL -> pullVol += vol
@@ -255,7 +256,7 @@ object SmartSuggestionsEngine {
         for ((window, windowSessions) in byWindow) {
             windowCounts[window] = windowSessions.size
             val totalVolume = windowSessions.sumOf {
-                (it.weightPerCableKg * 2 * it.workingReps).toDouble()
+                (it.weightPerCableKg * it.cableMultiplier * it.workingReps).toDouble()
             }.toFloat()
             windowAvgVolumes[window] = totalVolume / windowSessions.size
         }

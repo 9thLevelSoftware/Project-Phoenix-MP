@@ -24,6 +24,7 @@ class ReadinessEngineTest {
         weightPerCableKg: Float = 50f,
         totalReps: Int = 10,
         workingReps: Int = 8,
+        cableCount: Int? = 2, // default dual-cable (Vitruvian Trainer standard)
     ) = SessionSummary(
         exerciseId = exerciseId,
         exerciseName = exerciseName,
@@ -32,6 +33,7 @@ class ReadinessEngineTest {
         weightPerCableKg = weightPerCableKg,
         totalReps = totalReps,
         workingReps = workingReps,
+        cableCount = cableCount,
     )
 
     /**
