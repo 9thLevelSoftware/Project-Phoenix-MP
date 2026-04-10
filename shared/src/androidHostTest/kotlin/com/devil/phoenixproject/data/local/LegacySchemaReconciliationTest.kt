@@ -4,8 +4,9 @@ import app.cash.sqldelight.db.QueryResult
 import app.cash.sqldelight.db.SqlDriver
 import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
 import com.devil.phoenixproject.database.VitruvianDatabase
-import kotlin.test.assertTrue
 import org.junit.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 
 class LegacySchemaReconciliationTest {
 
@@ -358,6 +359,54 @@ class LegacySchemaReconciliationTest {
         assertTrue(indexExists(driver, "idx_gamification_stats_profile"))
     }
 
+    @Test
+    fun `migration 25 deduplicates gamification stats before recreating unique profile index`() {
+        val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
+        driver.execute(
+            null,
+            """
+            CREATE TABLE GamificationStats (
+                id INTEGER PRIMARY KEY,
+                totalWorkouts INTEGER NOT NULL DEFAULT 0,
+                totalReps INTEGER NOT NULL DEFAULT 0,
+                totalVolumeKg INTEGER NOT NULL DEFAULT 0,
+                longestStreak INTEGER NOT NULL DEFAULT 0,
+                currentStreak INTEGER NOT NULL DEFAULT 0,
+                uniqueExercisesUsed INTEGER NOT NULL DEFAULT 0,
+                prsAchieved INTEGER NOT NULL DEFAULT 0,
+                lastWorkoutDate INTEGER,
+                streakStartDate INTEGER,
+                lastUpdated INTEGER NOT NULL,
+                updatedAt INTEGER,
+                serverId TEXT,
+                profile_id TEXT NOT NULL DEFAULT 'default'
+            )
+            """.trimIndent(),
+            0,
+        )
+        driver.execute(
+            null,
+            "CREATE INDEX idx_gamification_stats_profile ON GamificationStats(profile_id)",
+            0,
+        )
+        driver.execute(
+            null,
+            "INSERT INTO GamificationStats (id, totalWorkouts, totalReps, lastUpdated, profile_id) VALUES (1, 1, 10, 100, 'default')",
+            0,
+        )
+        driver.execute(
+            null,
+            "INSERT INTO GamificationStats (id, totalWorkouts, totalReps, lastUpdated, profile_id) VALUES (2, 2, 20, 200, 'default')",
+            0,
+        )
+
+        VitruvianDatabase.Schema.migrate(driver, 25, 26)
+
+        assertTrue(indexExists(driver, "idx_gamification_stats_profile"))
+        assertEquals(1, countGamificationStatsRows(driver, "default"))
+        assertEquals(200L, latestGamificationLastUpdated(driver, "default"))
+    }
+
     private fun columnNames(driver: SqlDriver, table: String): List<String> {
         val names = mutableListOf<String>()
         driver.executeQuery(
@@ -402,6 +451,42 @@ class LegacySchemaReconciliationTest {
             parameters = 0,
         )
         return sql
+    }
+
+    private fun countGamificationStatsRows(driver: SqlDriver, profileId: String): Int {
+        var count = 0
+        driver.executeQuery(
+            identifier = null,
+            sql = "SELECT COUNT(*) FROM GamificationStats WHERE profile_id = ?",
+            mapper = { cursor ->
+                if (cursor.next().value) {
+                    count = cursor.getLong(0)?.toInt() ?: 0
+                }
+                QueryResult.Value(Unit)
+            },
+            parameters = 1,
+        ) {
+            bindString(0, profileId)
+        }
+        return count
+    }
+
+    private fun latestGamificationLastUpdated(driver: SqlDriver, profileId: String): Long? {
+        var value: Long? = null
+        driver.executeQuery(
+            identifier = null,
+            sql = "SELECT lastUpdated FROM GamificationStats WHERE profile_id = ?",
+            mapper = { cursor ->
+                if (cursor.next().value) {
+                    value = cursor.getLong(0)
+                }
+                QueryResult.Value(Unit)
+            },
+            parameters = 1,
+        ) {
+            bindString(0, profileId)
+        }
+        return value
     }
 
 }

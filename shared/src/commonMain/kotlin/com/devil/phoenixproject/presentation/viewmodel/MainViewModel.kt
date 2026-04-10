@@ -20,7 +20,24 @@ import com.devil.phoenixproject.data.repository.TrainingCycleRepository
 import com.devil.phoenixproject.data.repository.UserProfileRepository
 import com.devil.phoenixproject.data.repository.WorkoutRepository
 import com.devil.phoenixproject.data.sync.SyncTriggerManager
-import com.devil.phoenixproject.domain.model.*
+import com.devil.phoenixproject.domain.model.Badge
+import com.devil.phoenixproject.domain.model.ConnectionState
+import com.devil.phoenixproject.domain.model.EchoLevel
+import com.devil.phoenixproject.domain.model.HapticEvent
+import com.devil.phoenixproject.domain.model.PRCelebrationEvent
+import com.devil.phoenixproject.domain.model.PersonalRecord
+import com.devil.phoenixproject.domain.model.RepCount
+import com.devil.phoenixproject.domain.model.RepCountTiming
+import com.devil.phoenixproject.domain.model.Routine
+import com.devil.phoenixproject.domain.model.RoutineExercise
+import com.devil.phoenixproject.domain.model.RoutineFlowState
+import com.devil.phoenixproject.domain.model.Superset
+import com.devil.phoenixproject.domain.model.UserPreferences
+import com.devil.phoenixproject.domain.model.WeightUnit
+import com.devil.phoenixproject.domain.model.WorkoutMetric
+import com.devil.phoenixproject.domain.model.WorkoutParameters
+import com.devil.phoenixproject.domain.model.WorkoutSession
+import com.devil.phoenixproject.domain.model.WorkoutState
 import com.devil.phoenixproject.domain.usecase.RepCounterFromMachine
 import com.devil.phoenixproject.domain.usecase.ResolveRoutineWeightsUseCase
 import com.devil.phoenixproject.presentation.manager.BleConnectionManager
@@ -200,6 +217,13 @@ class MainViewModel constructor(
     fun dismissConnectionLostAlert() = bleConnectionManager.dismissConnectionLostAlert()
     fun cancelAutoConnecting() = bleConnectionManager.cancelAutoConnecting()
     fun ensureConnection(onConnected: () -> Unit, onFailed: () -> Unit = {}) = bleConnectionManager.ensureConnection(onConnected, onFailed)
+    fun reconnectInterruptedWorkout() {
+        bleConnectionManager.dismissConnectionLostAlert()
+        bleConnectionManager.ensureConnection(
+            onConnected = { workoutSessionManager.reconnectInterruptedWorkout() },
+            onFailed = {},
+        )
+    }
     fun cancelConnection() = bleConnectionManager.cancelConnection()
 
     // ===== History Delegation =====

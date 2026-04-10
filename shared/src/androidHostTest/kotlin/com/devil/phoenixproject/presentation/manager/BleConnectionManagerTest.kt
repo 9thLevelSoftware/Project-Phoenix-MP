@@ -4,9 +4,6 @@ import com.devil.phoenixproject.domain.model.ConnectionState
 import com.devil.phoenixproject.testutil.FakeBleRepository
 import com.devil.phoenixproject.testutil.FakePreferencesManager
 import com.devil.phoenixproject.testutil.TestCoroutineRule
-import kotlin.test.assertEquals
-import kotlin.test.assertFalse
-import kotlin.test.assertTrue
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.SupervisorJob
@@ -18,6 +15,9 @@ import kotlinx.coroutines.test.runTest
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class BleConnectionManagerTest {
@@ -57,6 +57,7 @@ class BleConnectionManagerTest {
             advanceUntilIdle()
 
             assertTrue(manager.connectionLostDuringWorkout.value)
+            assertEquals(1, workoutStateProvider.connectionLostCallbacks)
 
             manager.dismissConnectionLostAlert()
             assertFalse(manager.connectionLostDuringWorkout.value)
@@ -189,9 +190,15 @@ class BleConnectionManagerTest {
     }
 
     private class FakeWorkoutStateProvider(var active: Boolean, var midSet: Boolean = false) : WorkoutStateProvider {
+        var connectionLostCallbacks = 0
+
         override val isWorkoutActiveForConnectionAlert: Boolean
             get() = active
         override val isWorkoutMidSet: Boolean
             get() = midSet
+
+        override fun onWorkoutConnectionLost() {
+            connectionLostCallbacks++
+        }
     }
 }

@@ -240,6 +240,7 @@ class DefaultWorkoutSessionManager(
         activeSessionEngine.flowDelegate = object : ActiveSessionEngine.WorkoutFlowDelegate {
             override fun loadRoutine(routine: Routine) = routineFlowManager.loadRoutine(routine)
             override fun enterSetReady(exerciseIndex: Int, setIndex: Int) = routineFlowManager.enterSetReady(exerciseIndex, setIndex)
+            override fun enterSetReadyWithAdjustments(exerciseIndex: Int, setIndex: Int, adjustedWeight: Float, adjustedReps: Int) = routineFlowManager.enterSetReadyWithAdjustments(exerciseIndex, setIndex, adjustedWeight, adjustedReps)
             override fun skipCurrentExerciseAndEnterNextStep(): Boolean = routineFlowManager.skipCurrentExerciseAndEnterNextStep()
             override fun showRoutineComplete() = routineFlowManager.showRoutineComplete()
             override fun getCurrentExercise(): RoutineExercise? = routineFlowManager.getCurrentExercise()
@@ -348,6 +349,10 @@ class DefaultWorkoutSessionManager(
 
     override val isWorkoutMidSet: Boolean
         get() = coordinator._workoutState.value is WorkoutState.Active
+
+    override fun onWorkoutConnectionLost() {
+        activeSessionEngine.captureInterruptedWorkoutForRecovery()
+    }
 
     private fun buildWorkoutServiceSnapshot(
         inputs: WorkoutServiceInputs,
@@ -517,6 +522,7 @@ class DefaultWorkoutSessionManager(
     fun stopAndSkipCurrentExercise() = activeSessionEngine.stopAndSkipCurrentExercise()
     fun pauseWorkout() = activeSessionEngine.pauseWorkout()
     fun resumeWorkout() = activeSessionEngine.resumeWorkout()
+    fun reconnectInterruptedWorkout() = activeSessionEngine.reconnectInterruptedWorkout()
 
     // ===== Weight Adjustment — delegated to ActiveSessionEngine =====
 

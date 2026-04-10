@@ -6,10 +6,10 @@ import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.data.local.ReconciliationStatus
 import com.devil.phoenixproject.data.local.SchemaIndexOperation
 import com.devil.phoenixproject.data.local.applyIndexCreate
+import com.devil.phoenixproject.data.repository.GamificationRepository
 import com.devil.phoenixproject.data.repository.SqlDelightPersonalRecordRepository
 import com.devil.phoenixproject.data.repository.UserProfile
 import com.devil.phoenixproject.data.repository.UserProfileRepository
-import com.devil.phoenixproject.data.repository.GamificationRepository
 import com.devil.phoenixproject.data.repository.normalizeWorkoutModeKey
 import com.devil.phoenixproject.database.Routine
 import com.devil.phoenixproject.database.RoutineExercise
@@ -20,11 +20,11 @@ import com.devil.phoenixproject.domain.premium.RpgAttributeEngine
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -844,10 +844,20 @@ class MigrationManager(
                     bindString(1, orphanProfileId)
                 }
 
-                // Also migrate related gamification stats
+                // Derived profile aggregates are recomputed after the move to avoid
+                // carrying duplicate singleton rows across profiles.
                 driver?.execute(
                     identifier = null,
-                    sql = "UPDATE GamificationStats SET profile_id = ? WHERE profile_id = ?",
+                    sql = "DELETE FROM GamificationStats WHERE profile_id IN (?, ?)",
+                    parameters = 2,
+                ) {
+                    bindString(0, targetProfileId)
+                    bindString(1, orphanProfileId)
+                }
+
+                driver?.execute(
+                    identifier = null,
+                    sql = "DELETE FROM RpgAttributes WHERE profile_id IN (?, ?)",
                     parameters = 2,
                 ) {
                     bindString(0, targetProfileId)

@@ -4,8 +4,8 @@ import app.cash.sqldelight.db.QueryResult
 import app.cash.sqldelight.db.SqlDriver
 import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
 import com.devil.phoenixproject.database.VitruvianDatabase
-import kotlin.test.fail
 import org.junit.Test
+import kotlin.test.fail
 
 /**
  * SchemaParityTest -- the definitive CI safety net for schema convergence.
@@ -14,9 +14,9 @@ import org.junit.Test
  * identical result:
  *
  * 1. A fresh install (Schema.create) must match an upgrade-from-v1 path
- *    (manual v1 + migrate 1->25 + reconcileFullSchema).
+ *    (manual v1 + migrate 1->26 + reconcileFullSchema).
  *
- * 2. Every intermediate version (1..24) must upgrade cleanly to 25 with all
+ * 2. Every intermediate version (1..25) must upgrade cleanly to 26 with all
  *    manifest columns and indexes present after reconciliation.
  */
 class SchemaParityTest {
@@ -29,7 +29,7 @@ class SchemaParityTest {
         val freshDriver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
         VitruvianDatabase.Schema.create(freshDriver)
 
-        // Database B: v1 base -> migrate 1..25 with resilient fallback -> reconcile
+        // Database B: v1 base -> migrate 1..26 with resilient fallback -> reconcile
         val upgradeDriver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
         buildMinimalV1Schema(upgradeDriver)
         migrateWithResilience(upgradeDriver, 1, CURRENT_VERSION)
@@ -149,7 +149,7 @@ class SchemaParityTest {
     // ==================== HELPERS ====================
 
     companion object {
-        private const val CURRENT_VERSION = 25L
+        private const val CURRENT_VERSION = 26L
 
         /**
          * Transient tables are intermediate artifacts of table-rebuild migrations

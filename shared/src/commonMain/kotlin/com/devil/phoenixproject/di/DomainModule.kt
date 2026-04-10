@@ -3,6 +3,8 @@ package com.devil.phoenixproject.di
 import com.devil.phoenixproject.data.migration.MigrationManager
 import com.devil.phoenixproject.data.preferences.PreferencesManager
 import com.devil.phoenixproject.data.preferences.SettingsPreferencesManager
+import com.devil.phoenixproject.data.repository.GamificationRepository
+import com.devil.phoenixproject.data.repository.UserProfileRepository
 import com.devil.phoenixproject.domain.assessment.AssessmentEngine
 import com.devil.phoenixproject.domain.detection.ExerciseClassifier
 import com.devil.phoenixproject.domain.detection.SignatureExtractor
@@ -33,7 +35,7 @@ val domainModule = module {
     single { ExerciseClassifier() }
 
     // Migration
-    single { MigrationManager(get()) }
+    single { MigrationManager(get(), get<UserProfileRepository>(), get<GamificationRepository>()) }
 
     // Voice / Safe Word (Issue #141)
     // SafeWordListenerFactory is provided by platformModule

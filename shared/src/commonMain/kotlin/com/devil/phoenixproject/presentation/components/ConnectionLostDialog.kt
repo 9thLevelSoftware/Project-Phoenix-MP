@@ -15,8 +15,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import org.jetbrains.compose.resources.stringResource
-import vitruvianprojectphoenix.shared.generated.resources.*
 import vitruvianprojectphoenix.shared.generated.resources.Res
+import vitruvianprojectphoenix.shared.generated.resources.action_dismiss
+import vitruvianprojectphoenix.shared.generated.resources.cd_bluetooth_lost
 
 /**
  * Critical alert dialog shown when BLE connection is lost during an active workout.
@@ -48,7 +49,7 @@ fun ConnectionLostDialog(onReconnect: () -> Unit, onDismiss: () -> Unit) {
                 )
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    "Rep tracking may have been interrupted. Please reconnect to continue.",
+                    "Phoenix will reconnect, recalibrate, and rebuild the interrupted set from your routine progress when possible.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )

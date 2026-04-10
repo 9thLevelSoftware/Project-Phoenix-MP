@@ -4,6 +4,7 @@ import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.database.VitruvianDatabase
 import com.devil.phoenixproject.domain.model.currentTimeMillis
 import com.devil.phoenixproject.domain.model.generateUUID
+import com.devil.phoenixproject.domain.premium.RpgAttributeEngine
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -128,6 +129,7 @@ class SqlDelightUserProfileRepository(private val database: VitruvianDatabase) :
         if (id == "default") return false
         val wasActive = _activeProfile.value?.id == id
         val targetProfileId = if (wasActive) "default" else (_activeProfile.value?.id ?: "default")
+        val gamificationRepository = SqlDelightGamificationRepository(database)
 
         // Cascade: reassign all data from the deleted profile to the target profile
         Logger.i { "PROFILE_DELETE: Reassigning data from profile '$id' to '$targetProfileId'" }
@@ -138,8 +140,10 @@ class SqlDelightUserProfileRepository(private val database: VitruvianDatabase) :
             queries.reassignTrainingCycleProfile(targetProfileId, id)
             queries.reassignBadgeProfile(targetProfileId, id)
             queries.reassignStreakProfile(targetProfileId, id)
-            queries.reassignGamificationStatsProfile(targetProfileId, id)
-            queries.reassignRpgAttributesProfile(targetProfileId, id)
+            queries.deleteGamificationStatsByProfile(id)
+            queries.deleteGamificationStatsByProfile(targetProfileId)
+            queries.deleteRpgAttributesByProfile(id)
+            queries.deleteRpgAttributesByProfile(targetProfileId)
             queries.reassignAssessmentResultProfile(targetProfileId, id)
             queries.reassignProgressionProfile(targetProfileId, id)
         }
@@ -148,6 +152,11 @@ class SqlDelightUserProfileRepository(private val database: VitruvianDatabase) :
         if (wasActive) {
             queries.setActiveProfile("default")
         }
+
+        gamificationRepository.updateStats(targetProfileId)
+        val rpgInput = gamificationRepository.getRpgInput(targetProfileId)
+        gamificationRepository.saveRpgProfile(RpgAttributeEngine.computeProfile(rpgInput), targetProfileId)
+
         refreshProfilesSync()
         return true
     }

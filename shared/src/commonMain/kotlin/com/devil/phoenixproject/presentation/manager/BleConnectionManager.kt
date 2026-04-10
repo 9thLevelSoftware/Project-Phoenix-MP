@@ -4,7 +4,6 @@ import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.data.repository.BleRepository
 import com.devil.phoenixproject.data.repository.ScannedDevice
 import com.devil.phoenixproject.domain.model.ConnectionState
-import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -16,6 +15,7 @@ import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlin.coroutines.cancellation.CancellationException
 
 /**
  * Narrow interface for checking workout state from BleConnectionManager.
@@ -32,6 +32,8 @@ interface WorkoutStateProvider {
      * Use this to guard auto-reconnect attempts.
      */
     val isWorkoutMidSet: Boolean
+
+    fun onWorkoutConnectionLost()
 }
 
 /**
@@ -108,6 +110,7 @@ class BleConnectionManager(
                             // and users need to interact with it to save workout history
                             if (wasConnected && workoutStateProvider.isWorkoutActiveForConnectionAlert) {
                                 Logger.w { "Connection lost during active workout! Showing reconnection dialog." }
+                                workoutStateProvider.onWorkoutConnectionLost()
                                 _connectionLostDuringWorkout.value = true
                             }
                             wasConnected = false
