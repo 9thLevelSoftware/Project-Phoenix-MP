@@ -281,6 +281,7 @@ private val testModule = module {
             override suspend fun updateSessionTimestamp(sessionId: String, timestamp: Long) = Unit
             override suspend fun mergePortalCycles(cycles: List<PullTrainingCycleDto>, profileId: String) = Unit
             override suspend fun mergePortalSessions(sessions: List<WorkoutSession>) = Unit
+            override suspend fun mergePersonalRecords(records: List<PersonalRecordSyncDto>, profileId: String) = Unit
         }
     }
     single { ConnectivityChecker(ApplicationProvider.getApplicationContext()) }
