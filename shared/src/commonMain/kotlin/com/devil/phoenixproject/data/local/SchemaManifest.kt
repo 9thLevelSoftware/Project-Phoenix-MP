@@ -1109,7 +1109,11 @@ internal val manifestIndexes: List<SchemaIndexOperation> = listOf(
     SchemaIndexOperation("idx_streak_history_profile", "CREATE INDEX IF NOT EXISTS idx_streak_history_profile ON StreakHistory(profile_id)"),
 
     // ── GamificationStats ───────────────────────────────────────────────
-    SchemaIndexOperation("idx_gamification_stats_profile", "CREATE INDEX IF NOT EXISTS idx_gamification_stats_profile ON GamificationStats(profile_id)"),
+    SchemaIndexOperation(
+        "idx_gamification_stats_profile",
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_gamification_stats_profile ON GamificationStats(profile_id)",
+        preDropSql = "DROP INDEX IF EXISTS idx_gamification_stats_profile",
+    ),
 
     // ── RpgAttributes ───────────────────────────────────────────────────
     SchemaIndexOperation("idx_rpg_attributes_profile", "CREATE INDEX IF NOT EXISTS idx_rpg_attributes_profile ON RpgAttributes(profile_id)"),

@@ -49,7 +49,7 @@ internal fun applyMigrationResilient(
  * Get the SQL statements for a specific migration version.
  *
  * These mirror the .sqm files exactly, split into individual statements so
- * the resilient executor can apply them one-by-one. Every version from 1-24
+ * the resilient executor can apply them one-by-one. Every version from 1-25
  * is covered. Version 18 is intentionally empty (NOOP).
  */
 internal fun getMigrationStatements(version: Int): List<String> = when (version) {
@@ -585,6 +585,69 @@ FROM EarnedBadge""",
         "DROP TABLE IF EXISTS EarnedBadge",
         "ALTER TABLE EarnedBadge_rebuild RENAME TO EarnedBadge",
         "CREATE UNIQUE INDEX IF NOT EXISTS idx_earned_badge_profile ON EarnedBadge(badgeId, profile_id)",
+    )
+
+    // Migration 25: Deduplicate GamificationStats rows and enforce one row per profile
+    25 -> listOf(
+        "DROP INDEX IF EXISTS idx_gamification_stats_profile",
+        """CREATE TABLE IF NOT EXISTS GamificationStats_rebuild (
+            id INTEGER PRIMARY KEY,
+            totalWorkouts INTEGER NOT NULL DEFAULT 0,
+            totalReps INTEGER NOT NULL DEFAULT 0,
+            totalVolumeKg INTEGER NOT NULL DEFAULT 0,
+            longestStreak INTEGER NOT NULL DEFAULT 0,
+            currentStreak INTEGER NOT NULL DEFAULT 0,
+            uniqueExercisesUsed INTEGER NOT NULL DEFAULT 0,
+            prsAchieved INTEGER NOT NULL DEFAULT 0,
+            lastWorkoutDate INTEGER,
+            streakStartDate INTEGER,
+            lastUpdated INTEGER NOT NULL,
+            updatedAt INTEGER,
+            serverId TEXT,
+            profile_id TEXT NOT NULL DEFAULT 'default'
+        )""",
+        """INSERT INTO GamificationStats_rebuild (
+            id,
+            totalWorkouts,
+            totalReps,
+            totalVolumeKg,
+            longestStreak,
+            currentStreak,
+            uniqueExercisesUsed,
+            prsAchieved,
+            lastWorkoutDate,
+            streakStartDate,
+            lastUpdated,
+            updatedAt,
+            serverId,
+            profile_id
+        )
+SELECT
+    gs.id,
+    gs.totalWorkouts,
+    gs.totalReps,
+    gs.totalVolumeKg,
+    gs.longestStreak,
+    gs.currentStreak,
+    gs.uniqueExercisesUsed,
+    gs.prsAchieved,
+    gs.lastWorkoutDate,
+    gs.streakStartDate,
+    gs.lastUpdated,
+    gs.updatedAt,
+    gs.serverId,
+    gs.profile_id
+FROM GamificationStats gs
+WHERE gs.rowid = (
+    SELECT candidate.rowid
+    FROM GamificationStats candidate
+    WHERE candidate.profile_id = gs.profile_id
+    ORDER BY COALESCE(candidate.lastUpdated, 0) DESC, COALESCE(candidate.updatedAt, 0) DESC, candidate.id DESC
+    LIMIT 1
+)""",
+        "DROP TABLE IF EXISTS GamificationStats",
+        "ALTER TABLE GamificationStats_rebuild RENAME TO GamificationStats",
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_gamification_stats_profile ON GamificationStats(profile_id)",
     )
 
     else -> emptyList()
