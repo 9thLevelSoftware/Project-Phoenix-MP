@@ -1262,7 +1262,7 @@ class BlePacketFactoryTest {
     }
 
     @Test
-    fun `TUTBeast uses default RepConfig (not Eccentric override)`() {
+    fun `TUTBeast uses default RepConfig not Eccentric override`() {
         val packet = BlePacketFactory.createProgramParams(
             WorkoutParameters(ProgramMode.TUTBeast, reps = 6, weightPerCableKg = 70f),
         )
