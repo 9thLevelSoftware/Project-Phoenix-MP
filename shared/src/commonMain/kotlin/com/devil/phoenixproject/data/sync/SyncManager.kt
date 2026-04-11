@@ -153,12 +153,12 @@ class SyncManager(
             currentTimeMillis()
         }
 
-        // Pull remote changes using the STORED lastSync (before push), not the push
-        // response time. Using the push response time would ask "what changed since NOW"
-        // which always returns 0 results. The stored lastSync tells the server "give me
-        // everything that changed since my last successful sync."
-        val storedLastSync = tokenStorage.getLastSyncTimestamp()
-        val pullSyncTime = pullRemoteChanges(lastSync = storedLastSync)
+        // Pull remote changes using the PRE-PUSH lastSync, not the current stored value.
+        // The batched push path (line ~428) advances tokenStorage.lastSyncTimestamp after
+        // each batch, so re-reading it here would skip remote changes that arrived between
+        // the original sync checkpoint and the last batch's server timestamp.
+        // Fix for Codex P1: use prePushLastSync captured at line ~97 before any push.
+        val pullSyncTime = pullRemoteChanges(lastSync = prePushLastSync)
         val finalSyncTime = pullSyncTime ?: syncTimeEpoch
 
         tokenStorage.setLastSyncTimestamp(finalSyncTime)
@@ -291,7 +291,7 @@ class SyncManager(
             .groupBy { it.sessionId }
         val signatureDtos = syncRepository.getAllExerciseSignatures()
             .map { PortalSyncAdapter.toPortalExerciseSignature(it) }
-        val assessmentDtos = syncRepository.getAllAssessments()
+        val assessmentDtos = syncRepository.getAllAssessments(activeProfileId)
             .map { PortalSyncAdapter.toPortalAssessmentResult(it) }
 
         // 7. Build portal session + telemetry DTOs (telemetry setIds match generated exercise set IDs)

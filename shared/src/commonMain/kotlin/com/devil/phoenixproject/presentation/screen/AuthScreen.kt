@@ -34,6 +34,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -60,8 +61,13 @@ import com.devil.phoenixproject.data.repository.AuthRepository
 import com.devil.phoenixproject.data.repository.AuthState
 import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.stringResource
-import vitruvianprojectphoenix.shared.generated.resources.*
 import vitruvianprojectphoenix.shared.generated.resources.Res
+import vitruvianprojectphoenix.shared.generated.resources.auth_apple
+import vitruvianprojectphoenix.shared.generated.resources.auth_google
+import vitruvianprojectphoenix.shared.generated.resources.cd_back
+import vitruvianprojectphoenix.shared.generated.resources.label_confirm_password
+import vitruvianprojectphoenix.shared.generated.resources.label_email
+import vitruvianprojectphoenix.shared.generated.resources.label_password
 
 enum class AuthMode {
     SIGN_IN,
@@ -83,11 +89,14 @@ fun AuthScreen(authRepository: AuthRepository, onAuthSuccess: () -> Unit, onBack
     var isLoading by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
 
-    // Check if already authenticated
-    if (authState is AuthState.Authenticated) {
-        onAuthSuccess()
-        return
+    // Navigate away when already authenticated — wrapped in LaunchedEffect to avoid
+    // calling the navigation side-effect during composition (causes duplicate nav on recomposition).
+    LaunchedEffect(authState) {
+        if (authState is AuthState.Authenticated) {
+            onAuthSuccess()
+        }
     }
+    if (authState is AuthState.Authenticated) return
 
     Scaffold(
         topBar = {
@@ -282,7 +291,8 @@ fun AuthScreen(authRepository: AuthRepository, onAuthSuccess: () -> Unit, onBack
 
             Spacer(modifier = Modifier.height(24.dp))
 
-            // Social login options (placeholders)
+            // Social login options — disabled until platform implementations exist.
+            // signInWithGoogle()/signInWithApple() currently return NotImplementedError.
             Text(
                 text = "Or continue with",
                 style = MaterialTheme.typography.bodySmall,
@@ -293,17 +303,8 @@ fun AuthScreen(authRepository: AuthRepository, onAuthSuccess: () -> Unit, onBack
                 horizontalArrangement = Arrangement.spacedBy(16.dp),
             ) {
                 OutlinedButton(
-                    onClick = {
-                        scope.launch {
-                            isLoading = true
-                            authRepository.signInWithGoogle().fold(
-                                onSuccess = { onAuthSuccess() },
-                                onFailure = { e -> errorMessage = e.message ?: "Google sign-in failed" },
-                            )
-                            isLoading = false
-                        }
-                    },
-                    enabled = !isLoading,
+                    onClick = { /* TODO: Wire platform Google sign-in */ },
+                    enabled = false,
                 ) {
                     GoogleIcon(modifier = Modifier.size(18.dp))
                     Spacer(modifier = Modifier.width(8.dp))
@@ -311,17 +312,8 @@ fun AuthScreen(authRepository: AuthRepository, onAuthSuccess: () -> Unit, onBack
                 }
 
                 OutlinedButton(
-                    onClick = {
-                        scope.launch {
-                            isLoading = true
-                            authRepository.signInWithApple().fold(
-                                onSuccess = { onAuthSuccess() },
-                                onFailure = { e -> errorMessage = e.message ?: "Apple sign-in failed" },
-                            )
-                            isLoading = false
-                        }
-                    },
-                    enabled = !isLoading,
+                    onClick = { /* TODO: Wire platform Apple sign-in */ },
+                    enabled = false,
                 ) {
                     AppleIcon(modifier = Modifier.size(18.dp))
                     Spacer(modifier = Modifier.width(8.dp))
