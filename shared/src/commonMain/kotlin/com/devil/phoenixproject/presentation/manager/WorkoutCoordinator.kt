@@ -2,11 +2,19 @@ package com.devil.phoenixproject.presentation.manager
 
 import com.devil.phoenixproject.data.repository.AutoStopUiState
 import com.devil.phoenixproject.data.repository.HandleState
-import com.devil.phoenixproject.domain.model.*
 import com.devil.phoenixproject.domain.model.BiomechanicsRepResult
+import com.devil.phoenixproject.domain.model.HapticEvent
+import com.devil.phoenixproject.domain.model.ProgramMode
+import com.devil.phoenixproject.domain.model.RepCount
+import com.devil.phoenixproject.domain.model.RepMetricData
+import com.devil.phoenixproject.domain.model.RepQualityScore
+import com.devil.phoenixproject.domain.model.Routine
+import com.devil.phoenixproject.domain.model.RoutineFlowState
+import com.devil.phoenixproject.domain.model.WorkoutMetric
+import com.devil.phoenixproject.domain.model.WorkoutParameters
+import com.devil.phoenixproject.domain.model.WorkoutState
 import com.devil.phoenixproject.domain.premium.BiomechanicsEngine
 import com.devil.phoenixproject.domain.premium.RepQualityScorer
-import kotlin.concurrent.Volatile
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -15,6 +23,8 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlin.concurrent.Volatile
 
 /**
  * Shared state bus for all workout state. Contains zero business logic methods —
@@ -105,6 +115,20 @@ class WorkoutCoordinator(
 
     internal val _routineFlowState = MutableStateFlow<RoutineFlowState>(RoutineFlowState.NotInRoutine)
     val routineFlowState: StateFlow<RoutineFlowState> = _routineFlowState.asStateFlow()
+
+    /**
+     * Issue #348: Session-scoped workout detection for wake lock.
+     * Returns true when the user is anywhere in an active workout session,
+     * including between sets on the SetReady screen during routines.
+     * Unlike [isWorkoutActive], this covers the full session lifecycle:
+     * - Active workout states (Initializing, Countdown, Active, Resting, SetSummary)
+     * - Between-set routine states (SetReady screen where workoutState is Idle)
+     */
+    val isInWorkoutSession = combine(_workoutState, _routineFlowState) { ws, rfs ->
+        val workoutInProgress = ws !is WorkoutState.Idle && ws !is WorkoutState.Completed
+        val betweenRoutineSets = rfs is RoutineFlowState.SetReady
+        workoutInProgress || betweenRoutineSets
+    }
 
     // ===== Metrics State =====
 

@@ -37,7 +37,6 @@ import com.devil.phoenixproject.presentation.components.PRCelebrationDialog
 import com.devil.phoenixproject.presentation.manager.DefaultWorkoutSessionManager
 import com.devil.phoenixproject.presentation.navigation.NavigationRoutes
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
-import com.devil.phoenixproject.util.setKeepScreenOn
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.stringResource
@@ -154,13 +153,8 @@ fun ActiveWorkoutScreen(navController: NavController, viewModel: MainViewModel, 
         }
     }
 
-    // Keep screen on during workout
-    DisposableEffect(Unit) {
-        setKeepScreenOn(true)
-        onDispose {
-            setKeepScreenOn(false)
-        }
-    }
+    // Issue #348: Wake lock moved to EnhancedMainScreen (session-scoped) so it
+    // stays active across SetReady ↔ ActiveWorkout navigation during routines.
 
     // Dynamic title based on workout type
     val screenTitle = remember(loadedRoutine, workoutParameters.isJustLift) {

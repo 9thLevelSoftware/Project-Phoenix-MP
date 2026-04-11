@@ -46,6 +46,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -83,6 +84,7 @@ import com.devil.phoenixproject.presentation.util.calculateWindowSizeClass
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
 import com.devil.phoenixproject.ui.theme.AccessibilityTheme
 import com.devil.phoenixproject.ui.theme.ThemeMode
+import com.devil.phoenixproject.util.setKeepScreenOn
 import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.koinInject
 import vitruvianprojectphoenix.shared.generated.resources.Res
@@ -175,6 +177,18 @@ fun EnhancedMainScreen(
             navController.navigate(NavigationRoutes.ActiveWorkout.route) {
                 launchSingleTop = true
             }
+        }
+    }
+
+    // Issue #348: Session-scoped wake lock — keeps screen on across ALL workout screens
+    // (ActiveWorkout, SetReady, rest timers) instead of just ActiveWorkoutScreen.
+    // The isInWorkoutSession flow combines workoutState and routineFlowState so
+    // the wake lock stays active during between-set navigation in routines.
+    val isInWorkoutSession by viewModel.isInWorkoutSession.collectAsState(initial = false)
+    DisposableEffect(isInWorkoutSession) {
+        setKeepScreenOn(isInWorkoutSession)
+        onDispose {
+            setKeepScreenOn(false)
         }
     }
 

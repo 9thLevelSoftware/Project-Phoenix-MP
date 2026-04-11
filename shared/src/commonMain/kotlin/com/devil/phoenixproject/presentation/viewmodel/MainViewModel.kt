@@ -154,6 +154,9 @@ class MainViewModel constructor(
     val workoutState: StateFlow<WorkoutState> get() = workoutSessionManager.coordinator.workoutState
     val isWorkoutActive: Boolean get() = workoutSessionManager.coordinator.isWorkoutActive
     val routineFlowState: StateFlow<RoutineFlowState> get() = workoutSessionManager.coordinator.routineFlowState
+
+    /** Issue #348: Session-scoped flag covering active sets AND between-set routine screens */
+    val isInWorkoutSession get() = workoutSessionManager.coordinator.isInWorkoutSession
     val currentMetric: StateFlow<WorkoutMetric?> get() = workoutSessionManager.coordinator.currentMetric
     val currentHeuristicKgMax: StateFlow<Float> get() = workoutSessionManager.coordinator.currentHeuristicKgMax
     val loadBaselineA: StateFlow<Float> get() = workoutSessionManager.coordinator.loadBaselineA
