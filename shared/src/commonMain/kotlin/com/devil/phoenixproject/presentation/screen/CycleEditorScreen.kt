@@ -9,22 +9,25 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import co.touchlab.kermit.Logger
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.domain.model.*
 import com.devil.phoenixproject.presentation.components.cycle.AddDaySheet
 import com.devil.phoenixproject.presentation.components.cycle.ProgressionSettingsSheet
 import com.devil.phoenixproject.presentation.components.cycle.SwipeableCycleItem
 import com.devil.phoenixproject.presentation.navigation.NavigationRoutes
-import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
 import com.devil.phoenixproject.presentation.viewmodel.CycleEditorViewModel
+import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
 import kotlinx.coroutines.launch
+import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.koinInject
 import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.rememberReorderableLazyListState
+import vitruvianprojectphoenix.shared.generated.resources.*
+import vitruvianprojectphoenix.shared.generated.resources.Res
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -33,7 +36,7 @@ fun CycleEditorScreen(
     navController: androidx.navigation.NavController,
     viewModel: MainViewModel,
     routines: List<Routine>,
-    cycleEditorViewModel: CycleEditorViewModel = koinInject()
+    cycleEditorViewModel: CycleEditorViewModel = koinInject(),
 ) {
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
@@ -79,17 +82,17 @@ fun CycleEditorScreen(
         contentWindowInsets = WindowInsets.navigationBars,
         floatingActionButton = {
             FloatingActionButton(
-                onClick = { cycleEditorViewModel.showAddDaySheet(true) }
+                onClick = { cycleEditorViewModel.showAddDaySheet(true) },
             ) {
                 Icon(Icons.Default.Add, "Add Day")
             }
         },
-        snackbarHost = { SnackbarHost(snackbarHostState) }
+        snackbarHost = { SnackbarHost(snackbarHostState) },
     ) { padding ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(padding)
+                .padding(padding),
         ) {
             // Editable cycle name with Preview button
             Row(
@@ -97,18 +100,20 @@ fun CycleEditorScreen(
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 OutlinedTextField(
                     value = uiState.cycleName,
                     onValueChange = { cycleEditorViewModel.updateCycleName(it) },
                     modifier = Modifier.weight(1f),
-                    placeholder = { Text("Cycle Name") },
-                    textStyle = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
-                    singleLine = true
+                    placeholder = { Text(stringResource(Res.string.cycle_name)) },
+                    textStyle = MaterialTheme.typography.titleLarge.copy(
+                        fontWeight = FontWeight.Bold,
+                    ),
+                    singleLine = true,
                 )
                 Button(onClick = { saveCycle() }) {
-                    Text("Preview")
+                    Text(stringResource(Res.string.action_preview))
                 }
             }
 
@@ -116,11 +121,11 @@ fun CycleEditorScreen(
             OutlinedTextField(
                 value = uiState.description,
                 onValueChange = { cycleEditorViewModel.updateDescription(it) },
-                label = { Text("Description (optional)") },
+                label = { Text(stringResource(Res.string.label_description_optional)) },
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp, vertical = 8.dp),
-                singleLine = true
+                singleLine = true,
             )
 
             // Cycle length header with progression settings
@@ -129,18 +134,18 @@ fun CycleEditorScreen(
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp, vertical = 8.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+                verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
                     text = "CYCLE LENGTH: ${uiState.items.size} days",
                     style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 IconButton(onClick = { cycleEditorViewModel.showProgressionSheet(true) }) {
                     Icon(
                         Icons.Default.Settings,
-                        contentDescription = "Progression Settings",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        contentDescription = stringResource(Res.string.cd_progression_settings),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
             }
@@ -151,27 +156,27 @@ fun CycleEditorScreen(
                     modifier = Modifier
                         .fillMaxSize()
                         .padding(32.dp),
-                    contentAlignment = Alignment.Center
+                    contentAlignment = Alignment.Center,
                 ) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Text(
                             text = "No days added yet.",
-                            style = MaterialTheme.typography.bodyLarge
+                            style = MaterialTheme.typography.bodyLarge,
                         )
                         Text(
                             text = "Build your cycle by adding workout or rest days.",
                             style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                         Spacer(modifier = Modifier.height(24.dp))
                         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                             OutlinedButton(
-                                onClick = { cycleEditorViewModel.showAddDaySheet(true) }
+                                onClick = { cycleEditorViewModel.showAddDaySheet(true) },
                             ) {
-                                Text("+ Add Workout")
+                                Text(stringResource(Res.string.add_workout))
                             }
                             OutlinedButton(onClick = { cycleEditorViewModel.addRestDay() }) {
-                                Text("+ Add Rest")
+                                Text(stringResource(Res.string.add_rest))
                             }
                         }
                     }
@@ -181,7 +186,7 @@ fun CycleEditorScreen(
                     state = lazyListState,
                     modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     itemsIndexed(uiState.items, key = { _, item -> item.id }) { index, item ->
                         ReorderableItem(reorderState, key = item.id) { isDragging ->
@@ -193,7 +198,7 @@ fun CycleEditorScreen(
                                         val result = snackbarHostState.showSnackbar(
                                             message = "Day removed",
                                             actionLabel = "UNDO",
-                                            duration = SnackbarDuration.Short
+                                            duration = SnackbarDuration.Short,
                                         )
                                         if (result == SnackbarResult.ActionPerformed) {
                                             cycleEditorViewModel.undoDelete()
@@ -207,7 +212,7 @@ fun CycleEditorScreen(
                                     // Workout: change routine; Rest: convert to workout
                                     cycleEditorViewModel.setEditingItemIndex(index)
                                 },
-                                dragModifier = Modifier.draggableHandle()
+                                dragModifier = Modifier.draggableHandle(),
                             )
                         }
                     }
@@ -227,7 +232,7 @@ fun CycleEditorScreen(
                 cycleEditorViewModel.addWorkoutDay(routine)
             },
             onAddRestDay = { cycleEditorViewModel.addRestDay() },
-            onDismiss = { cycleEditorViewModel.showAddDaySheet(false) }
+            onDismiss = { cycleEditorViewModel.showAddDaySheet(false) },
         )
     }
 
@@ -240,7 +245,7 @@ fun CycleEditorScreen(
                 onSave = { newProgression ->
                     cycleEditorViewModel.updateProgression(newProgression)
                 },
-                onDismiss = { cycleEditorViewModel.showProgressionSheet(false) }
+                onDismiss = { cycleEditorViewModel.showProgressionSheet(false) },
             )
         }
     }
@@ -261,9 +266,10 @@ fun CycleEditorScreen(
                         cycleEditorViewModel.convertToRest(index)
                         cycleEditorViewModel.setEditingItemIndex(null)
                     },
-                    onDismiss = { cycleEditorViewModel.setEditingItemIndex(null) }
+                    onDismiss = { cycleEditorViewModel.setEditingItemIndex(null) },
                 )
             }
+
             is CycleItem.Rest -> {
                 AddDaySheet(
                     routines = routines,
@@ -273,10 +279,13 @@ fun CycleEditorScreen(
                         cycleEditorViewModel.convertToWorkout(index, routine)
                     },
                     onAddRestDay = { /* Already a rest day */ },
-                    onDismiss = { cycleEditorViewModel.setEditingItemIndex(null) }
+                    onDismiss = { cycleEditorViewModel.setEditingItemIndex(null) },
                 )
             }
-            else -> { cycleEditorViewModel.setEditingItemIndex(null) }
+
+            else -> {
+                cycleEditorViewModel.setEditingItemIndex(null)
+            }
         }
     }
 }

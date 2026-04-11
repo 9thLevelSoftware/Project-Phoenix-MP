@@ -17,6 +17,4 @@ import kotlinx.coroutines.flow.SharedFlow
  * - ERROR: Long press + error tone
  */
 @Composable
-expect fun HapticFeedbackEffect(
-    hapticEvents: SharedFlow<HapticEvent>
-)
+expect fun HapticFeedbackEffect(hapticEvents: SharedFlow<HapticEvent>)

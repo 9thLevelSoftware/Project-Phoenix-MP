@@ -1,12 +1,13 @@
 package com.devil.phoenixproject
 
+import androidx.compose.ui.window.ComposeUIViewController
 import coil3.ImageLoader
 import coil3.SingletonImageLoader
 import coil3.network.ktor3.KtorNetworkFetcherFactory
 import coil3.request.crossfade
 import coil3.util.DebugLogger
-import androidx.compose.ui.window.ComposeUIViewController
 import com.devil.phoenixproject.presentation.components.RequireBlePermissions
+import kotlin.native.Platform as NativePlatform
 import platform.Foundation.NSLog
 
 /**
@@ -22,7 +23,7 @@ fun MainViewController() = run {
         NSLog("iOS UI: Image loader ready, loading App()...")
         RequireBlePermissions {
             NSLog("iOS UI: BLE permissions checked, rendering App()...")
-            App()
+            IosAppHost()
         }
     }
 }
@@ -38,7 +39,11 @@ private fun ensureImageLoader() {
                 add(KtorNetworkFetcherFactory())
             }
             .crossfade(true)
-            .logger(DebugLogger())
+            // DebugLogger only in debug builds — iOS has no BuildConfig, use kotlin.native.Platform
+            .apply {
+                @OptIn(kotlin.experimental.ExperimentalNativeApi::class)
+                if (NativePlatform.isDebugBinary) logger(DebugLogger())
+            }
             .build()
     }
 }

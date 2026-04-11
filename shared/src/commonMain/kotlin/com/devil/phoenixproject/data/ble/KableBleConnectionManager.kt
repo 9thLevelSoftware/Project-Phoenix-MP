@@ -13,6 +13,11 @@ import com.juul.kable.Peripheral
 import com.juul.kable.Scanner
 import com.juul.kable.State
 import com.juul.kable.WriteType
+import kotlin.concurrent.Volatile
+import kotlin.time.Clock
+import kotlin.uuid.ExperimentalUuidApi
+import kotlin.uuid.Uuid
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.TimeoutCancellationException
@@ -29,10 +34,6 @@ import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withTimeoutOrNull
-import kotlin.concurrent.Volatile
-import kotlin.time.Clock
-import kotlin.uuid.ExperimentalUuidApi
-import kotlin.uuid.Uuid
 
 /**
  * Manages the BLE connection lifecycle for Vitruvian machines.
@@ -82,6 +83,7 @@ class KableBleConnectionManager(
     // Characteristic references from BleConstants
     // -------------------------------------------------------------------------
     private val txCharacteristic = BleConstants.txCharacteristic
+
     @Suppress("unused") // Vitruvian doesn't use standard NUS RX (6e400003)
     private val rxCharacteristic = BleConstants.rxCharacteristic
     private val monitorCharacteristic = BleConstants.monitorCharacteristic
@@ -107,6 +109,9 @@ class KableBleConnectionManager(
 
     /** Active scanning job reference. */
     private var scanJob: Job? = null
+
+    /** Active state observer job — must be cancelled before launching a new one. */
+    private var stateObserverJob: Job? = null
 
     /** Connected device name (for logging). */
     private var connectedDeviceName: String = ""
@@ -147,7 +152,7 @@ class KableBleConnectionManager(
     private val _commandResponses = MutableSharedFlow<UByte>(
         replay = 0,
         extraBufferCapacity = 16,
-        onBufferOverflow = BufferOverflow.DROP_OLDEST
+        onBufferOverflow = BufferOverflow.DROP_OLDEST,
     )
     val commandResponses: Flow<UByte> = _commandResponses.asSharedFlow()
 
@@ -179,138 +184,167 @@ class KableBleConnectionManager(
             // Track scanned devices locally for filtering logic
             var currentScannedDevices = emptyList<ScannedDevice>()
 
-            scanJob = Scanner {
-                // No specific filters - we'll filter manually
-            }
-                .advertisements
-                .onEach { advertisement ->
-                    // Debug logging for all advertisements
-                    log.d { "RAW ADV: name=${advertisement.name}, id=${advertisement.identifier}, uuids=${advertisement.uuids}, rssi=${advertisement.rssi}" }
-                }
-                .filter { advertisement ->
-                    // Filter by name if available
-                    val name = advertisement.name
-                    if (name != null) {
-                        val isVitruvian = name.startsWith("Vee_", ignoreCase = true) ||
-                                          name.startsWith("VIT", ignoreCase = true) ||
-                                          name.startsWith("Vitruvian", ignoreCase = true)
-                        if (isVitruvian) {
-                            log.i { "Found Vitruvian by name: $name" }
-                        } else {
-                            log.d { "Ignoring device: $name (not Vitruvian)" }
+            scanJob = scope.launch {
+                try {
+                    withTimeoutOrNull(BleConstants.SCAN_TIMEOUT_MS) {
+                        Scanner {
+                            // No specific filters - we'll filter manually
                         }
-                        return@filter isVitruvian
+                            .advertisements
+                            .onEach { advertisement ->
+                                // Debug logging for all advertisements
+                                log.d {
+                                    "RAW ADV: name=${advertisement.name}, id=${advertisement.identifier}, uuids=${advertisement.uuids}, rssi=${advertisement.rssi}"
+                                }
+                            }
+                            .filter { advertisement ->
+                                // Filter by name if available
+                                val name = advertisement.name
+                                if (name != null) {
+                                    val isVitruvian = name.startsWith("Vee_", ignoreCase = true) ||
+                                        name.startsWith("VIT", ignoreCase = true) ||
+                                        name.startsWith("Vitruvian", ignoreCase = true)
+                                    if (isVitruvian) {
+                                        log.i { "Found Vitruvian by name: $name" }
+                                    } else {
+                                        log.d { "Ignoring device: $name (not Vitruvian)" }
+                                    }
+                                    return@filter isVitruvian
+                                }
+
+                                // Check for Vitruvian service UUIDs (mServiceUuids)
+                                val serviceUuids = advertisement.uuids
+                                val hasVitruvianServiceUuid = serviceUuids.any { uuid ->
+                                    val uuidStr = uuid.toString().lowercase()
+                                    uuidStr.startsWith("0000fef3") ||
+                                        uuidStr == BleConstants.NUS_SERVICE_UUID_STRING
+                                }
+
+                                if (hasVitruvianServiceUuid) {
+                                    log.i { "Found Vitruvian by service UUID: ${advertisement.identifier}" }
+                                    return@filter true
+                                }
+
+                                // CRITICAL: Check for FEF3 service data
+                                // The Vitruvian device advertises FEF3 in serviceData, not serviceUuids!
+                                // In Kable, serviceData is accessed differently - try to get FEF3 directly
+                                val fef3Uuid = try {
+                                    Uuid.parse("0000fef3-0000-1000-8000-00805f9b34fb")
+                                } catch (_: Exception) {
+                                    null
+                                }
+
+                                val hasVitruvianServiceData = if (fef3Uuid != null) {
+                                    // Try to get data for FEF3 service UUID
+                                    val fef3Data = advertisement.serviceData(fef3Uuid)
+                                    if (fef3Data != null && fef3Data.isNotEmpty()) {
+                                        log.i {
+                                            "Found Vitruvian by FEF3 serviceData: ${advertisement.identifier}, data size: ${fef3Data.size}"
+                                        }
+                                        true
+                                    } else {
+                                        false
+                                    }
+                                } else {
+                                    false
+                                }
+
+                                hasVitruvianServiceData
+                            }
+                            .onEach { advertisement ->
+                                @Suppress("REDUNDANT_CALL_OF_CONVERSION_METHOD") // Needed for iOS where identifier is Uuid
+                                val identifier = advertisement.identifier.toString()
+                                val advertisedName = advertisement.name
+                                val hasRealName = advertisedName != null &&
+                                    (
+                                        advertisedName.startsWith("Vee_", ignoreCase = true) ||
+                                            advertisedName.startsWith("VIT", ignoreCase = true)
+                                        )
+
+                                // Use name if available, otherwise use identifier as placeholder
+                                val name = advertisedName ?: "Vitruvian ($identifier)"
+
+                                // Skip devices without a real Vitruvian name if we already have one
+                                if (!hasRealName) {
+                                    val alreadyHaveRealDevice = currentScannedDevices.any { existing ->
+                                        existing.name.startsWith("Vee_", ignoreCase = true) ||
+                                            existing.name.startsWith("VIT", ignoreCase = true)
+                                    }
+                                    if (alreadyHaveRealDevice) {
+                                        log.d { "Skipping nameless device $identifier - already have named Vitruvian device" }
+                                        return@onEach
+                                    }
+                                }
+
+                                // Only log if this is a new device
+                                if (!discoveredAdvertisements.containsKey(identifier)) {
+                                    log.d { "Discovered device: $name ($identifier) RSSI: ${advertisement.rssi}" }
+                                    logRepo.info(
+                                        LogEventType.DEVICE_FOUND,
+                                        "Found Vitruvian device",
+                                        name,
+                                        identifier,
+                                        "RSSI: ${advertisement.rssi} dBm",
+                                    )
+                                }
+
+                                // Store advertisement reference
+                                discoveredAdvertisements[identifier] = advertisement
+
+                                // Update scanned devices list
+                                val device = ScannedDevice(
+                                    name = name,
+                                    address = identifier,
+                                    rssi = advertisement.rssi,
+                                )
+                                var devices = currentScannedDevices.toMutableList()
+
+                                // If this is a real-named device, remove any placeholder devices first
+                                // (same physical device can advertise with different identifiers)
+                                if (hasRealName) {
+                                    devices = devices.filter { existing ->
+                                        existing.name.startsWith("Vee_", ignoreCase = true) ||
+                                            existing.name.startsWith("VIT", ignoreCase = true) ||
+                                            existing.address == identifier // Keep if same address (will update below)
+                                    }.toMutableList()
+                                }
+
+                                val existingIndex = devices.indexOfFirst { it.address == identifier }
+                                if (existingIndex >= 0) {
+                                    devices[existingIndex] = device
+                                } else {
+                                    devices.add(device)
+                                }
+                                val sorted = devices.sortedByDescending { it.rssi }
+                                currentScannedDevices = sorted
+                                onScannedDevicesChanged(sorted)
+                            }
+                            .catch { e ->
+                                log.e { "Scan error: ${e.message}" }
+                                logRepo.error(LogEventType.ERROR, "BLE scan failed", details = e.message)
+                                // Return to Disconnected instead of Error for scan failures - user can retry
+                                reportConnectionState(ConnectionState.Disconnected)
+                            }
+                            .collect {}
                     }
-
-                    // Check for Vitruvian service UUIDs (mServiceUuids)
-                    val serviceUuids = advertisement.uuids
-                    val hasVitruvianServiceUuid = serviceUuids.any { uuid ->
-                        val uuidStr = uuid.toString().lowercase()
-                        uuidStr.startsWith("0000fef3") ||
-                        uuidStr == BleConstants.NUS_SERVICE_UUID_STRING
-                    }
-
-                    if (hasVitruvianServiceUuid) {
-                        log.i { "Found Vitruvian by service UUID: ${advertisement.identifier}" }
-                        return@filter true
-                    }
-
-                    // CRITICAL: Check for FEF3 service data
-                    // The Vitruvian device advertises FEF3 in serviceData, not serviceUuids!
-                    // In Kable, serviceData is accessed differently - try to get FEF3 directly
-                    val fef3Uuid = try {
-                        Uuid.parse("0000fef3-0000-1000-8000-00805f9b34fb")
-                    } catch (_: Exception) {
-                        null
-                    }
-
-                    val hasVitruvianServiceData = if (fef3Uuid != null) {
-                        // Try to get data for FEF3 service UUID
-                        val fef3Data = advertisement.serviceData(fef3Uuid)
-                        if (fef3Data != null && fef3Data.isNotEmpty()) {
-                            log.i { "Found Vitruvian by FEF3 serviceData: ${advertisement.identifier}, data size: ${fef3Data.size}" }
-                            true
-                        } else {
-                            false
-                        }
-                    } else {
-                        false
-                    }
-
-                    hasVitruvianServiceData
-                }
-                .onEach { advertisement ->
-                    val identifier = advertisement.identifier.toString()
-                    val advertisedName = advertisement.name
-                    val hasRealName = advertisedName != null &&
-                        (advertisedName.startsWith("Vee_", ignoreCase = true) ||
-                         advertisedName.startsWith("VIT", ignoreCase = true))
-
-                    // Use name if available, otherwise use identifier as placeholder
-                    val name = advertisedName ?: "Vitruvian ($identifier)"
-
-                    // Skip devices without a real Vitruvian name if we already have one
-                    if (!hasRealName) {
-                        val alreadyHaveRealDevice = currentScannedDevices.any { existing ->
-                            existing.name.startsWith("Vee_", ignoreCase = true) ||
-                            existing.name.startsWith("VIT", ignoreCase = true)
-                        }
-                        if (alreadyHaveRealDevice) {
-                            log.d { "Skipping nameless device $identifier - already have named Vitruvian device" }
-                            return@onEach
-                        }
-                    }
-
-                    // Only log if this is a new device
-                    if (!discoveredAdvertisements.containsKey(identifier)) {
-                        log.d { "Discovered device: $name ($identifier) RSSI: ${advertisement.rssi}" }
+                    // withTimeoutOrNull returned null = timeout reached, auto-stop scan
+                    if (lastReportedState == ConnectionState.Scanning) {
+                        log.w { "Scan timeout reached (${BleConstants.SCAN_TIMEOUT_MS}ms)" }
                         logRepo.info(
-                            LogEventType.DEVICE_FOUND,
-                            "Found Vitruvian device",
-                            name,
-                            identifier,
-                            "RSSI: ${advertisement.rssi} dBm"
+                            LogEventType.SCAN_STOP,
+                            "Scan auto-stopped after timeout",
+                            details = "Found ${discoveredAdvertisements.size} device(s) in ${BleConstants.SCAN_TIMEOUT_MS}ms",
                         )
+                        reportConnectionState(ConnectionState.Disconnected)
                     }
-
-                    // Store advertisement reference
-                    discoveredAdvertisements[identifier] = advertisement
-
-                    // Update scanned devices list
-                    val device = ScannedDevice(
-                        name = name,
-                        address = identifier,
-                        rssi = advertisement.rssi
-                    )
-                    var devices = currentScannedDevices.toMutableList()
-
-                    // If this is a real-named device, remove any placeholder devices first
-                    // (same physical device can advertise with different identifiers)
-                    if (hasRealName) {
-                        devices = devices.filter { existing ->
-                            existing.name.startsWith("Vee_", ignoreCase = true) ||
-                            existing.name.startsWith("VIT", ignoreCase = true) ||
-                            existing.address == identifier  // Keep if same address (will update below)
-                        }.toMutableList()
-                    }
-
-                    val existingIndex = devices.indexOfFirst { it.address == identifier }
-                    if (existingIndex >= 0) {
-                        devices[existingIndex] = device
-                    } else {
-                        devices.add(device)
-                    }
-                    val sorted = devices.sortedByDescending { it.rssi }
-                    currentScannedDevices = sorted
-                    onScannedDevicesChanged(sorted)
-                }
-                .catch { e ->
-                    log.e { "Scan error: ${e.message}" }
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    log.e(e) { "Scan error: ${e.message}" }
                     logRepo.error(LogEventType.ERROR, "BLE scan failed", details = e.message)
-                    // Return to Disconnected instead of Error for scan failures - user can retry
                     reportConnectionState(ConnectionState.Disconnected)
                 }
-                .launchIn(scope)
+            }
 
             Result.success(Unit)
         } catch (e: Exception) {
@@ -329,7 +363,7 @@ class KableBleConnectionManager(
         logRepo.info(
             LogEventType.SCAN_STOP,
             "BLE scan stopped",
-            details = "Found ${discoveredAdvertisements.size} Vitruvian device(s)"
+            details = "Found ${discoveredAdvertisements.size} Vitruvian device(s)",
         )
         scanJob?.cancel()
         scanJob = null
@@ -364,8 +398,8 @@ class KableBleConnectionManager(
                         val name = adv.name
                         name != null && (
                             name.startsWith("Vee_", ignoreCase = true) ||
-                            name.startsWith("VIT", ignoreCase = true)
-                        )
+                                name.startsWith("VIT", ignoreCase = true)
+                            )
                     }
                     .first()
             }
@@ -377,6 +411,7 @@ class KableBleConnectionManager(
                 return Result.failure(Exception("No Vitruvian device found"))
             }
 
+            @Suppress("REDUNDANT_CALL_OF_CONVERSION_METHOD") // Needed for iOS where identifier is Uuid
             val identifier = advertisement.identifier.toString()
             val name = advertisement.name ?: "Vitruvian"
             log.i { "scanAndConnect: Found device $name ($identifier), connecting..." }
@@ -405,7 +440,7 @@ class KableBleConnectionManager(
             LogEventType.CONNECT_START,
             "Connecting to device",
             device.name,
-            device.address
+            device.address,
         )
 
         // Clean up any existing connection first (matches parent repo)
@@ -421,7 +456,7 @@ class KableBleConnectionManager(
                 LogEventType.CONNECT_FAIL,
                 "Device not found in scanned list",
                 device.name,
-                device.address
+                device.address,
             )
             // Return to Disconnected - device may have gone out of range, user can retry
             reportConnectionState(ConnectionState.Disconnected)
@@ -441,13 +476,17 @@ class KableBleConnectionManager(
             // platform-specific AndroidPeripheral cast
             peripheral = Peripheral(advertisement)
 
+            // Cancel any stale state observer before launching a new one (H2 fix)
+            stateObserverJob?.cancel()
+
             // Observe connection state
-            peripheral?.state
+            stateObserverJob = peripheral?.state
                 ?.onEach { state ->
                     when (state) {
                         is State.Connecting -> {
                             reportConnectionState(ConnectionState.Connecting)
                         }
+
                         is State.Connected -> {
                             // Mark that we successfully connected (for auto-reconnect logic)
                             wasEverConnected = true
@@ -456,25 +495,46 @@ class KableBleConnectionManager(
                                 LogEventType.CONNECT_SUCCESS,
                                 "Device connected successfully",
                                 connectedDeviceName,
-                                connectedDeviceAddress
+                                connectedDeviceAddress,
                             )
-                            reportConnectionState(ConnectionState.Connected(
-                                deviceName = device.name,
-                                deviceAddress = device.address,
-                                hardwareModel = HardwareDetection.detectModel(device.name)
-                            ))
-                            // Launch onDeviceReady in a coroutine since we're in a non-suspend context
-                            scope.launch { onDeviceReady() }
+                            reportConnectionState(
+                                ConnectionState.Connected(
+                                    deviceName = device.name,
+                                    deviceAddress = device.address,
+                                    hardwareModel = HardwareDetection.detectModel(device.name),
+                                ),
+                            )
+                            // Launch onDeviceReady with error handling (H3 fix)
+                            scope.launch {
+                                try {
+                                    onDeviceReady()
+                                } catch (e: CancellationException) {
+                                    throw e
+                                } catch (e: Exception) {
+                                    log.e(e) { "onDeviceReady failed: ${e.message}" }
+                                    logRepo.error(
+                                        LogEventType.ERROR,
+                                        "Device initialization failed",
+                                        connectedDeviceName,
+                                        connectedDeviceAddress,
+                                        e.message,
+                                    )
+                                    cleanupExistingConnection()
+                                    reportConnectionState(ConnectionState.Disconnected)
+                                }
+                            }
                         }
+
                         is State.Disconnecting -> {
                             log.d { "Disconnecting from device" }
                             logRepo.info(
                                 LogEventType.DISCONNECT,
                                 "Device disconnecting",
                                 connectedDeviceName,
-                                connectedDeviceAddress
+                                connectedDeviceAddress,
                             )
                         }
+
                         is State.Disconnected -> {
                             // Capture device info and connection state BEFORE clearing
                             val deviceName = connectedDeviceName
@@ -487,7 +547,7 @@ class KableBleConnectionManager(
                                     LogEventType.DISCONNECT,
                                     "Device disconnected",
                                     deviceName,
-                                    deviceAddress
+                                    deviceAddress,
                                 )
 
                                 // Stop all polling jobs
@@ -500,7 +560,7 @@ class KableBleConnectionManager(
                                 // This is the initial Disconnected state when Peripheral is created
                                 // Don't reset state or peripheral - we're about to call connect()
                                 log.d { "Peripheral initial state: Disconnected (awaiting connect() call)" }
-                                return@onEach  // Skip the rest of this handler
+                                return@onEach // Skip the rest of this handler
                             }
 
                             // Request auto-reconnect ONLY if:
@@ -515,8 +575,8 @@ class KableBleConnectionManager(
                                             deviceName = deviceName,
                                             deviceAddress = deviceAddress,
                                             reason = "unexpected_disconnect",
-                                            timestamp = currentTimeMillis()
-                                        )
+                                            timestamp = currentTimeMillis(),
+                                        ),
                                     )
                                 }
                             }
@@ -547,7 +607,7 @@ class KableBleConnectionManager(
                     }
 
                     return Result.success(Unit) // Success, exit retry loop
-                } catch (e: TimeoutCancellationException) {
+                } catch (_: TimeoutCancellationException) {
                     lastException = Exception("Connection timeout after ${BleConstants.CONNECTION_TIMEOUT_MS}ms")
                     log.w { "Connection attempt $attempt timed out after ${BleConstants.CONNECTION_TIMEOUT_MS}ms" }
                     if (attempt < BleConstants.Timing.CONNECTION_RETRY_COUNT) {
@@ -567,7 +627,6 @@ class KableBleConnectionManager(
             peripheral = null
             reportConnectionState(ConnectionState.Disconnected)
             throw lastException ?: Exception("Connection failed after ${BleConstants.Timing.CONNECTION_RETRY_COUNT} attempts")
-
         } catch (e: Exception) {
             log.e { "Connection failed: ${e.message}" }
             logRepo.error(
@@ -575,7 +634,7 @@ class KableBleConnectionManager(
                 "Failed to connect to device",
                 device.name,
                 device.address,
-                e.message
+                e.message,
             )
             // Return to Disconnected instead of Error - connection failures are retryable
             reportConnectionState(ConnectionState.Disconnected)
@@ -612,14 +671,14 @@ class KableBleConnectionManager(
                 LogEventType.MTU_CHANGED,
                 "MTU negotiated: $mtu bytes",
                 connectedDeviceName,
-                connectedDeviceAddress
+                connectedDeviceAddress,
             )
         } else {
             // iOS returns null (handled by OS), or Android negotiation failed
             log.i { "MTU negotiation: using system default (iOS) or failed (Android)" }
             logRepo.debug(
                 LogEventType.MTU_CHANGED,
-                "MTU using system default"
+                "MTU using system default",
             )
         }
 
@@ -633,7 +692,7 @@ class KableBleConnectionManager(
                     LogEventType.SERVICE_DISCOVERED,
                     "No services found after connection",
                     connectedDeviceName,
-                    connectedDeviceAddress
+                    connectedDeviceAddress,
                 )
             } else {
                 // Log detailed GATT structure with characteristic properties
@@ -688,7 +747,7 @@ class KableBleConnectionManager(
                     "GATT services discovered",
                     connectedDeviceName,
                     connectedDeviceAddress,
-                    "Services: ${servicesList.size}"
+                    "Services: ${servicesList.size}",
                 )
             }
         } catch (e: Exception) {
@@ -698,7 +757,7 @@ class KableBleConnectionManager(
                 "Failed to access services",
                 connectedDeviceName,
                 connectedDeviceAddress,
-                e.message
+                e.message,
             )
         }
 
@@ -706,7 +765,7 @@ class KableBleConnectionManager(
             LogEventType.SERVICE_DISCOVERED,
             "Device ready, starting notifications and heartbeat",
             connectedDeviceName,
-            connectedDeviceAddress
+            connectedDeviceAddress,
         )
 
         startObservingNotifications()
@@ -723,7 +782,7 @@ class KableBleConnectionManager(
             LogEventType.NOTIFICATION,
             "Enabling BLE notifications and starting polling (matching parent repo)",
             connectedDeviceName,
-            connectedDeviceAddress
+            connectedDeviceAddress,
         )
 
         // ===== FIRMWARE VERSION READ (best effort) =====
@@ -752,7 +811,7 @@ class KableBleConnectionManager(
                             "Reps notification error",
                             connectedDeviceName,
                             connectedDeviceAddress,
-                            e.message
+                            e.message,
                         )
                     }
                     .collect { data ->
@@ -766,7 +825,7 @@ class KableBleConnectionManager(
                     "Failed to enable Reps notifications",
                     connectedDeviceName,
                     connectedDeviceAddress,
-                    e.message
+                    e.message,
                 )
             }
         }
@@ -826,7 +885,7 @@ class KableBleConnectionManager(
                     LogEventType.CONNECT_SUCCESS,
                     "Firmware version detected: $detectedFirmwareVersion",
                     connectedDeviceName,
-                    connectedDeviceAddress
+                    connectedDeviceAddress,
                 )
             }
         } catch (e: Exception) {
@@ -862,7 +921,7 @@ class KableBleConnectionManager(
 
     suspend fun disconnect() {
         log.i { "Disconnecting (explicit)" }
-        isExplicitDisconnect = true  // Mark as explicit disconnect to prevent auto-reconnect
+        isExplicitDisconnect = true // Mark as explicit disconnect to prevent auto-reconnect
 
         // Cancel all polling jobs
         pollingEngine.stopAll()
@@ -882,7 +941,7 @@ class KableBleConnectionManager(
 
     suspend fun cancelConnection() {
         log.i { "Cancelling in-progress connection" }
-        isExplicitDisconnect = true  // Prevent auto-reconnect
+        isExplicitDisconnect = true // Prevent auto-reconnect
         try {
             peripheral?.disconnect()
         } catch (e: Exception) {
@@ -911,8 +970,12 @@ class KableBleConnectionManager(
             LogEventType.DISCONNECT,
             "Cleaning up existing connection (pre-connect)",
             connectedDeviceName,
-            connectedDeviceAddress
+            connectedDeviceAddress,
         )
+
+        // Cancel stale state observer to prevent ghost callbacks (H2 fix)
+        stateObserverJob?.cancel()
+        stateObserverJob = null
 
         // Cancel all polling jobs (matches disconnect() behavior)
         pollingEngine.stopAll()
@@ -940,7 +1003,7 @@ class KableBleConnectionManager(
             log.w { "Not connected - cannot send command" }
             logRepo.warning(
                 LogEventType.ERROR,
-                "Cannot send command - not connected"
+                "Cannot send command - not connected",
             )
             return Result.failure(IllegalStateException("Not connected"))
         }
@@ -988,7 +1051,7 @@ class KableBleConnectionManager(
                 "Command sent (NUS TX)",
                 connectedDeviceName,
                 connectedDeviceAddress,
-                "Size: ${command.size} bytes"
+                "Size: ${command.size} bytes",
             )
             return Result.success(Unit)
         } else {
@@ -999,7 +1062,7 @@ class KableBleConnectionManager(
                 "Failed to send command",
                 connectedDeviceName,
                 connectedDeviceAddress,
-                ex?.message
+                ex?.message,
             )
             return Result.failure(ex ?: IllegalStateException("Unknown error"))
         }
@@ -1069,27 +1132,25 @@ class KableBleConnectionManager(
      * @return true if the expected opcode was received, false on timeout
      */
     @Suppress("unused") // Reserved for future protocol handshake commands
-    suspend fun awaitResponse(expectedOpcode: UByte, timeoutMs: Long = 5000L): Boolean {
-        return try {
-            val opcodeHex = expectedOpcode.toString(16).uppercase().padStart(2, '0')
-            log.d { "Waiting for response opcode 0x$opcodeHex (timeout: ${timeoutMs}ms)" }
+    suspend fun awaitResponse(expectedOpcode: UByte, timeoutMs: Long = 5000L): Boolean = try {
+        val opcodeHex = expectedOpcode.toString(16).uppercase().padStart(2, '0')
+        log.d { "Waiting for response opcode 0x$opcodeHex (timeout: ${timeoutMs}ms)" }
 
-            val result = withTimeoutOrNull(timeoutMs) {
-                commandResponses.filter { it == expectedOpcode }.first()
-            }
+        val result = withTimeoutOrNull(timeoutMs) {
+            commandResponses.filter { it == expectedOpcode }.first()
+        }
 
-            if (result != null) {
-                log.d { "Received expected response opcode 0x$opcodeHex" }
-                true
-            } else {
-                log.w { "Timeout waiting for response opcode 0x$opcodeHex" }
-                false
-            }
-        } catch (e: Exception) {
-            val opcodeHex = expectedOpcode.toString(16).uppercase().padStart(2, '0')
-            log.e { "Error waiting for response opcode 0x$opcodeHex: ${e.message}" }
+        if (result != null) {
+            log.d { "Received expected response opcode 0x$opcodeHex" }
+            true
+        } else {
+            log.w { "Timeout waiting for response opcode 0x$opcodeHex" }
             false
         }
+    } catch (e: Exception) {
+        val opcodeHex = expectedOpcode.toString(16).uppercase().padStart(2, '0')
+        log.e { "Error waiting for response opcode 0x$opcodeHex: ${e.message}" }
+        false
     }
 
     // -------------------------------------------------------------------------
@@ -1099,7 +1160,5 @@ class KableBleConnectionManager(
     /**
      * Get current time in milliseconds (KMP-compatible).
      */
-    private fun currentTimeMillis(): Long {
-        return Clock.System.now().toEpochMilliseconds()
-    }
+    private fun currentTimeMillis(): Long = Clock.System.now().toEpochMilliseconds()
 }

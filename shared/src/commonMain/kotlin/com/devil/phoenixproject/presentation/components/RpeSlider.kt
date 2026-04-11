@@ -18,11 +18,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.devil.phoenixproject.ui.theme.AccessibilityTheme
 import com.devil.phoenixproject.ui.theme.Spacing
 import kotlin.math.roundToInt
+import org.jetbrains.compose.resources.stringResource
+import vitruvianprojectphoenix.shared.generated.resources.*
+import vitruvianprojectphoenix.shared.generated.resources.Res
 
 /**
  * RPE (Rate of Perceived Exertion) data.
@@ -31,7 +34,8 @@ data class RpeInfo(
     val value: Int,
     val emoji: String,
     val label: String,
-    val riR: String // Reps in Reserve
+    /** Reps in Reserve */
+    val riR: String,
 )
 
 /**
@@ -42,7 +46,7 @@ val rpeScale = listOf(
     RpeInfo(7, "🙂", "Moderate", "3 RiR"),
     RpeInfo(8, "😐", "Challenging", "2 RiR"),
     RpeInfo(9, "😰", "Hard", "1 RiR"),
-    RpeInfo(10, "😵", "Max Effort", "0 RiR")
+    RpeInfo(10, "😵", "Max Effort", "0 RiR"),
 )
 
 /**
@@ -50,11 +54,7 @@ val rpeScale = listOf(
  * Tapping expands to show the full slider.
  */
 @Composable
-fun RpeIndicator(
-    currentRpe: Int?,
-    onRpeChanged: (Int) -> Unit,
-    modifier: Modifier = Modifier
-) {
+fun RpeIndicator(currentRpe: Int?, onRpeChanged: (Int) -> Unit, modifier: Modifier = Modifier) {
     var expanded by remember { mutableStateOf(false) }
 
     Column(modifier = modifier) {
@@ -65,22 +65,22 @@ fun RpeIndicator(
                 onClick = { expanded = !expanded },
                 shape = RoundedCornerShape(12.dp),
                 color = getRpeColor(currentRpe).copy(alpha = 0.2f),
-                modifier = Modifier.height(40.dp)
+                modifier = Modifier.height(40.dp),
             ) {
                 Row(
                     modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
                     Text(
                         text = rpeInfo.emoji,
-                        fontSize = 18.sp
+                        fontSize = 18.sp,
                     )
                     Text(
                         text = "RPE $currentRpe",
                         style = MaterialTheme.typography.labelMedium,
                         fontWeight = FontWeight.SemiBold,
-                        color = getRpeColor(currentRpe)
+                        color = getRpeColor(currentRpe),
                     )
                 }
             }
@@ -89,17 +89,17 @@ fun RpeIndicator(
                 onClick = { expanded = true },
                 shape = RoundedCornerShape(12.dp),
                 contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
-                modifier = Modifier.height(40.dp)
+                modifier = Modifier.height(40.dp),
             ) {
                 Icon(
                     Icons.Default.Add,
                     contentDescription = null,
-                    modifier = Modifier.size(16.dp)
+                    modifier = Modifier.size(16.dp),
                 )
                 Spacer(Modifier.width(4.dp))
                 Text(
                     text = "Log RPE",
-                    style = MaterialTheme.typography.labelMedium
+                    style = MaterialTheme.typography.labelMedium,
                 )
             }
         }
@@ -108,7 +108,7 @@ fun RpeIndicator(
         AnimatedVisibility(
             visible = expanded,
             enter = fadeIn() + expandVertically(),
-            exit = fadeOut() + shrinkVertically()
+            exit = fadeOut() + shrinkVertically(),
         ) {
             RpeSlider(
                 selectedRpe = currentRpe ?: 8,
@@ -117,7 +117,7 @@ fun RpeIndicator(
                     expanded = false
                 },
                 onDismiss = { expanded = false },
-                modifier = Modifier.padding(top = Spacing.small)
+                modifier = Modifier.padding(top = Spacing.small),
             )
         }
     }
@@ -127,12 +127,7 @@ fun RpeIndicator(
  * Full RPE slider with emoji faces.
  */
 @Composable
-fun RpeSlider(
-    selectedRpe: Int,
-    onRpeSelected: (Int) -> Unit,
-    onDismiss: () -> Unit,
-    modifier: Modifier = Modifier
-) {
+fun RpeSlider(selectedRpe: Int, onRpeSelected: (Int) -> Unit, onDismiss: () -> Unit, modifier: Modifier = Modifier) {
     var sliderValue by remember(selectedRpe) { mutableStateOf(selectedRpe.toFloat()) }
     val currentRpeInfo = rpeScale.find { it.value == sliderValue.roundToInt() } ?: rpeScale[2]
 
@@ -140,22 +135,22 @@ fun RpeSlider(
         modifier = modifier.fillMaxWidth(),
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
-        )
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+        ),
     ) {
         Column(
             modifier = Modifier.padding(Spacing.medium),
-            horizontalAlignment = Alignment.CenterHorizontally
+            horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             // Header with emoji and description
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.Center,
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier.fillMaxWidth(),
             ) {
                 Text(
                     text = currentRpeInfo.emoji,
-                    fontSize = 32.sp
+                    fontSize = 32.sp,
                 )
                 Spacer(Modifier.width(12.dp))
                 Column {
@@ -163,12 +158,12 @@ fun RpeSlider(
                         text = "RPE ${sliderValue.roundToInt()}",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
-                        color = getRpeColor(sliderValue.roundToInt())
+                        color = getRpeColor(sliderValue.roundToInt()),
                     )
                     Text(
                         text = "${currentRpeInfo.label} • ${currentRpeInfo.riR}",
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
             }
@@ -178,7 +173,7 @@ fun RpeSlider(
             // Emoji row
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween
+                horizontalArrangement = Arrangement.SpaceBetween,
             ) {
                 rpeScale.forEach { rpeInfo ->
                     val isSelected = sliderValue.roundToInt() == rpeInfo.value
@@ -188,21 +183,27 @@ fun RpeSlider(
                             .clip(RoundedCornerShape(8.dp))
                             .clickable { sliderValue = rpeInfo.value.toFloat() }
                             .background(
-                                if (isSelected) getRpeColor(rpeInfo.value).copy(alpha = 0.2f)
-                                else Color.Transparent
+                                if (isSelected) {
+                                    getRpeColor(rpeInfo.value).copy(alpha = 0.2f)
+                                } else {
+                                    Color.Transparent
+                                },
                             )
-                            .padding(8.dp)
+                            .padding(8.dp),
                     ) {
                         Text(
                             text = rpeInfo.emoji,
-                            fontSize = if (isSelected) 28.sp else 22.sp
+                            fontSize = if (isSelected) 28.sp else 22.sp,
                         )
                         Text(
                             text = rpeInfo.value.toString(),
                             style = MaterialTheme.typography.labelSmall,
                             fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                            color = if (isSelected) getRpeColor(rpeInfo.value)
-                            else MaterialTheme.colorScheme.onSurfaceVariant
+                            color = if (isSelected) {
+                                getRpeColor(rpeInfo.value)
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            },
                         )
                     }
                 }
@@ -218,9 +219,9 @@ fun RpeSlider(
                 steps = 3,
                 colors = SliderDefaults.colors(
                     thumbColor = getRpeColor(sliderValue.roundToInt()),
-                    activeTrackColor = getRpeColor(sliderValue.roundToInt())
+                    activeTrackColor = getRpeColor(sliderValue.roundToInt()),
                 ),
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier.fillMaxWidth(),
             )
 
             Spacer(Modifier.height(Spacing.medium))
@@ -228,24 +229,24 @@ fun RpeSlider(
             // Confirm button
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(Spacing.small)
+                horizontalArrangement = Arrangement.spacedBy(Spacing.small),
             ) {
                 OutlinedButton(
                     onClick = onDismiss,
                     modifier = Modifier.weight(1f),
-                    shape = RoundedCornerShape(12.dp)
+                    shape = RoundedCornerShape(12.dp),
                 ) {
-                    Text("Cancel")
+                    Text(stringResource(Res.string.action_cancel))
                 }
                 Button(
                     onClick = { onRpeSelected(sliderValue.roundToInt()) },
                     modifier = Modifier.weight(1f),
                     shape = RoundedCornerShape(12.dp),
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = getRpeColor(sliderValue.roundToInt())
-                    )
+                        containerColor = getRpeColor(sliderValue.roundToInt()),
+                    ),
                 ) {
-                    Text("Confirm")
+                    Text(stringResource(Res.string.action_confirm))
                 }
             }
         }
@@ -256,42 +257,44 @@ fun RpeSlider(
  * Inline RPE quick selector - compact horizontal buttons.
  */
 @Composable
-fun RpeQuickSelect(
-    selectedRpe: Int?,
-    onRpeSelected: (Int) -> Unit,
-    modifier: Modifier = Modifier
-) {
+fun RpeQuickSelect(selectedRpe: Int?, onRpeSelected: (Int) -> Unit, modifier: Modifier = Modifier) {
     Row(
         modifier = modifier,
-        horizontalArrangement = Arrangement.spacedBy(4.dp)
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
     ) {
         rpeScale.forEach { rpeInfo ->
             val isSelected = selectedRpe == rpeInfo.value
             Surface(
                 onClick = { onRpeSelected(rpeInfo.value) },
                 shape = RoundedCornerShape(8.dp),
-                color = if (isSelected) getRpeColor(rpeInfo.value).copy(alpha = 0.3f)
-                else MaterialTheme.colorScheme.surfaceContainerHigh,
-                modifier = Modifier.size(44.dp)
+                color = if (isSelected) {
+                    getRpeColor(rpeInfo.value).copy(alpha = 0.3f)
+                } else {
+                    MaterialTheme.colorScheme.surfaceContainerHigh
+                },
+                modifier = Modifier.size(44.dp),
             ) {
                 Box(
                     contentAlignment = Alignment.Center,
-                    modifier = Modifier.fillMaxSize()
+                    modifier = Modifier.fillMaxSize(),
                 ) {
                     Column(
-                        horizontalAlignment = Alignment.CenterHorizontally
+                        horizontalAlignment = Alignment.CenterHorizontally,
                     ) {
                         Text(
                             text = rpeInfo.emoji,
-                            fontSize = 16.sp
+                            fontSize = 16.sp,
                         )
                         Text(
                             text = rpeInfo.value.toString(),
                             style = MaterialTheme.typography.labelSmall,
                             fontSize = 10.sp,
                             fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                            color = if (isSelected) getRpeColor(rpeInfo.value)
-                            else MaterialTheme.colorScheme.onSurfaceVariant
+                            color = if (isSelected) {
+                                getRpeColor(rpeInfo.value)
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            },
                         )
                     }
                 }
@@ -305,12 +308,23 @@ fun RpeQuickSelect(
  */
 @Composable
 fun getRpeColor(rpe: Int): Color {
+    val colors = AccessibilityTheme.colors
     return when (rpe) {
-        6 -> Color(0xFF4CAF50)  // Green - easy
-        7 -> Color(0xFF8BC34A)  // Light green
-        8 -> Color(0xFFFFC107)  // Amber - moderate
-        9 -> Color(0xFFFF9800)  // Orange - hard
-        10 -> Color(0xFFF44336) // Red - max effort
+        6 -> colors.success
+
+        // Easy
+        7 -> colors.qualityGood
+
+        // Light effort
+        8 -> colors.warning
+
+        // Moderate
+        9 -> colors.qualityBelowAverage
+
+        // Hard
+        10 -> colors.error
+
+        // Max effort
         else -> MaterialTheme.colorScheme.primary
     }
 }

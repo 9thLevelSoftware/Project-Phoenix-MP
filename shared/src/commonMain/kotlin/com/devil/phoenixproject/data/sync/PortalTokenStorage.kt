@@ -1,10 +1,11 @@
 package com.devil.phoenixproject.data.sync
 
+import com.devil.phoenixproject.domain.model.currentTimeMillis
 import com.devil.phoenixproject.domain.model.generateUUID
+import com.devil.phoenixproject.util.withPlatformLock
 import com.russhwolf.settings.Settings
 import com.russhwolf.settings.get
 import com.russhwolf.settings.set
-import com.devil.phoenixproject.util.withPlatformLock
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -17,6 +18,8 @@ class PortalTokenStorage(private val settings: Settings) {
         private const val KEY_USER_EMAIL = "portal_user_email"
         private const val KEY_USER_NAME = "portal_user_display_name"
         private const val KEY_IS_PREMIUM = "portal_user_is_premium"
+        private const val KEY_REFRESH_TOKEN = "portal_refresh_token"
+        private const val KEY_EXPIRES_AT = "portal_token_expires_at"
         private const val KEY_LAST_SYNC = "portal_last_sync_timestamp"
         private const val KEY_DEVICE_ID = "portal_device_id"
     }
@@ -38,6 +41,34 @@ class PortalTokenStorage(private val settings: Settings) {
 
         _isAuthenticated.value = true
         _currentUser.value = response.user
+    }
+
+    fun saveGoTrueAuth(response: GoTrueAuthResponse) {
+        // Preserve existing premium status — GoTrue auth response does not include it,
+        // and overwriting would reset paid users to non-premium on every sign-in.
+        val existingPremium: Boolean = settings[KEY_IS_PREMIUM, false]
+
+        settings[KEY_TOKEN] = response.accessToken
+        settings[KEY_REFRESH_TOKEN] = response.refreshToken
+        val expiresAt = response.expiresAt
+            ?: (currentTimeMillis() / 1000 + response.expiresIn)
+        settings.putLong(KEY_EXPIRES_AT, expiresAt)
+        settings[KEY_USER_ID] = response.user.id
+        settings[KEY_USER_EMAIL] = response.user.email ?: ""
+        settings[KEY_USER_NAME] = response.user.displayName ?: ""
+        settings[KEY_IS_PREMIUM] = existingPremium
+        _isAuthenticated.value = true
+        _currentUser.value = loadUser()
+    }
+
+    fun getRefreshToken(): String? = settings.getStringOrNull(KEY_REFRESH_TOKEN)
+
+    fun getExpiresAt(): Long = settings.getLong(KEY_EXPIRES_AT, 0L)
+
+    fun isTokenExpired(): Boolean {
+        val expiresAt = getExpiresAt()
+        if (expiresAt == 0L) return true
+        return currentTimeMillis() / 1000 >= (expiresAt - 60)
     }
 
     fun getToken(): String? = settings[KEY_TOKEN]
@@ -66,11 +97,14 @@ class PortalTokenStorage(private val settings: Settings) {
 
     fun clearAuth() {
         settings.remove(KEY_TOKEN)
+        settings.remove(KEY_REFRESH_TOKEN)
+        settings.remove(KEY_EXPIRES_AT)
         settings.remove(KEY_USER_ID)
         settings.remove(KEY_USER_EMAIL)
         settings.remove(KEY_USER_NAME)
         settings.remove(KEY_IS_PREMIUM)
-        // Keep device ID and last sync for re-auth
+        settings.remove(KEY_LAST_SYNC) // Reset so re-link does a full pull
+        // Keep device ID for stable identity
 
         _isAuthenticated.value = false
         _currentUser.value = null

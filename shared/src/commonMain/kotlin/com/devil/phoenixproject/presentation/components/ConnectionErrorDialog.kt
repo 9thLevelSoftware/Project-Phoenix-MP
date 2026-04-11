@@ -8,29 +8,33 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import org.jetbrains.compose.resources.stringResource
+import vitruvianprojectphoenix.shared.generated.resources.*
+import vitruvianprojectphoenix.shared.generated.resources.Res
 
 /**
  * Error dialog shown when auto-connect fails
  * Includes helpful troubleshooting suggestions for users
  */
 @Composable
-fun ConnectionErrorDialog(
-    message: String,
-    onDismiss: () -> Unit,
-    onRetry: (() -> Unit)? = null
-) {
+fun ConnectionErrorDialog(message: String, onDismiss: () -> Unit, onRetry: (() -> Unit)? = null) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        icon = { Icon(Icons.Default.Warning, contentDescription = "Connection error") },
-        title = { Text("Connection Failed") },
+        icon = {
+            Icon(
+                Icons.Default.Warning,
+                contentDescription = stringResource(Res.string.cd_connection_error),
+            )
+        },
+        title = { Text(stringResource(Res.string.connection_failed)) },
         text = {
             Column(
                 modifier = Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
+                verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 Text(
                     text = message,
-                    style = MaterialTheme.typography.bodyMedium
+                    style = MaterialTheme.typography.bodyMedium,
                 )
 
                 HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
@@ -39,7 +43,7 @@ fun ConnectionErrorDialog(
                     text = "Troubleshooting tips:",
                     style = MaterialTheme.typography.labelLarge,
                     fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.primary
+                    color = MaterialTheme.colorScheme.primary,
                 )
 
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -56,15 +60,15 @@ fun ConnectionErrorDialog(
                     onDismiss()
                     onRetry()
                 }) {
-                    Text("Retry")
+                    Text(stringResource(Res.string.action_retry))
                 }
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("OK")
+                Text(stringResource(Res.string.action_ok))
             }
-        }
+        },
     )
 }
 
@@ -73,6 +77,6 @@ private fun TroubleshootingItem(text: String) {
     Text(
         text = text,
         style = MaterialTheme.typography.bodySmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
     )
 }

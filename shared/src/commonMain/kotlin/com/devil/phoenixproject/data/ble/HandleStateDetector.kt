@@ -28,7 +28,7 @@ import kotlinx.coroutines.flow.asStateFlow
  * @param timeProvider Injectable time source (default: currentTimeMillis() for production)
  */
 class HandleStateDetector(
-    private val timeProvider: () -> Long = { currentTimeMillis() }
+    private val timeProvider: () -> Long = { currentTimeMillis() },
 ) {
     private val log = Logger.withTag("HandleStateDetector")
 
@@ -195,10 +195,18 @@ class HandleStateDetector(
 
         // Issue #176: Use relative position change when baseline is set (for overhead pulley setups)
         // When cables can't reach absolute rest position, detect grabs via delta from baseline
-        val handleAGrabbed = isAboveThreshold(posA, restBaselinePosA,
-            BleConstants.Thresholds.GRAB_DELTA_THRESHOLD, BleConstants.Thresholds.HANDLE_GRABBED_THRESHOLD)
-        val handleBGrabbed = isAboveThreshold(posB, restBaselinePosB,
-            BleConstants.Thresholds.GRAB_DELTA_THRESHOLD, BleConstants.Thresholds.HANDLE_GRABBED_THRESHOLD)
+        val handleAGrabbed = isAboveThreshold(
+            posA,
+            restBaselinePosA,
+            BleConstants.Thresholds.GRAB_DELTA_THRESHOLD,
+            BleConstants.Thresholds.HANDLE_GRABBED_THRESHOLD,
+        )
+        val handleBGrabbed = isAboveThreshold(
+            posB,
+            restBaselinePosB,
+            BleConstants.Thresholds.GRAB_DELTA_THRESHOLD,
+            BleConstants.Thresholds.HANDLE_GRABBED_THRESHOLD,
+        )
         val handleAMoving = kotlin.math.abs(velocityA) > velocityThreshold
         val handleBMoving = kotlin.math.abs(velocityB) > velocityThreshold
 
@@ -218,7 +226,7 @@ class HandleStateDetector(
                     // Issue #176: Capture baseline position (will be ~0 for normal setups)
                     restBaselinePosA = posA
                     restBaselinePosB = posB
-                    HandleState.Released  // SetComplete = "Released/Armed" state
+                    HandleState.Released // SetComplete = "Released/Armed" state
                 } else {
                     // iOS autostart fix: Add timeout to escape WaitingForRest trap
                     // If user holds handles before screen loads (pre-tensioned cables),
@@ -244,7 +252,7 @@ class HandleStateDetector(
                             restBaselinePosB = posB
                         }
                         waitingForRestStartTime = null
-                        HandleState.Released  // Force arm after timeout
+                        HandleState.Released // Force arm after timeout
                     } else {
                         // Still waiting for timeout
                         HandleState.WaitingForRest
@@ -264,7 +272,7 @@ class HandleStateDetector(
                         if (pendingGrabbedStartTime == null) {
                             // Start dwell timer
                             pendingGrabbedStartTime = currentTime
-                            currentState  // Stay in current state
+                            currentState // Stay in current state
                         } else if (currentTime - pendingGrabbedStartTime!! >= BleConstants.Timing.STATE_TRANSITION_DWELL_MS) {
                             // GRAB CONFIRMED - position AND velocity thresholds met for 200ms
                             val activeHandle = when {
@@ -278,17 +286,19 @@ class HandleStateDetector(
                             pendingGrabbedStartTime = null
                             HandleState.Grabbed
                         } else {
-                            currentState  // Still dwelling
+                            currentState // Still dwelling
                         }
                     }
+
                     handleAGrabbed || handleBGrabbed -> {
                         // Position extended but no significant movement yet
-                        pendingGrabbedStartTime = null  // Reset grab timer
+                        pendingGrabbedStartTime = null // Reset grab timer
                         HandleState.Moving
                     }
+
                     else -> {
                         // Back to rest position
-                        pendingGrabbedStartTime = null  // Reset grab timer
+                        pendingGrabbedStartTime = null // Reset grab timer
                         HandleState.Released
                     }
                 }
@@ -297,18 +307,32 @@ class HandleStateDetector(
             HandleState.Grabbed -> {
                 // Release detection: only check handles that were actually grabbed
                 // Issue #176: Use baseline-relative release detection for overhead pulley setups
-                val aReleased = isBelowThreshold(posA, restBaselinePosA,
-                    BleConstants.Thresholds.RELEASE_DELTA_THRESHOLD, BleConstants.Thresholds.HANDLE_REST_THRESHOLD)
-                val bReleased = isBelowThreshold(posB, restBaselinePosB,
-                    BleConstants.Thresholds.RELEASE_DELTA_THRESHOLD, BleConstants.Thresholds.HANDLE_REST_THRESHOLD)
+                val aReleased = isBelowThreshold(
+                    posA,
+                    restBaselinePosA,
+                    BleConstants.Thresholds.RELEASE_DELTA_THRESHOLD,
+                    BleConstants.Thresholds.HANDLE_REST_THRESHOLD,
+                )
+                val bReleased = isBelowThreshold(
+                    posB,
+                    restBaselinePosB,
+                    BleConstants.Thresholds.RELEASE_DELTA_THRESHOLD,
+                    BleConstants.Thresholds.HANDLE_REST_THRESHOLD,
+                )
 
                 // Only check release on the handle(s) that were actually grabbed.
                 // This prevents premature release detection when unused cable is at rest.
                 val isReleased = when (activeHandlesMask) {
-                    1 -> aReleased           // Only A was active - check A only
-                    2 -> bReleased           // Only B was active - check B only
-                    3 -> aReleased && bReleased  // Both active - both must release
-                    else -> aReleased || bReleased  // Fallback (shouldn't happen)
+                    1 -> aReleased
+
+                    // Only A was active - check A only
+                    2 -> bReleased
+
+                    // Only B was active - check B only
+                    3 -> aReleased && bReleased
+
+                    // Both active - both must release
+                    else -> aReleased || bReleased // Fallback (shouldn't happen)
                 }
 
                 if (isReleased) {
@@ -317,17 +341,17 @@ class HandleStateDetector(
                     if (pendingReleasedStartTime == null) {
                         // Start dwell timer
                         pendingReleasedStartTime = currentTime
-                        HandleState.Grabbed  // Stay grabbed
+                        HandleState.Grabbed // Stay grabbed
                     } else if (currentTime - pendingReleasedStartTime!! >= BleConstants.Timing.STATE_TRANSITION_DWELL_MS) {
                         log.d { "RELEASE DETECTED (mask=$activeHandlesMask): posA=$posA (baseline=${restBaselinePosA ?: "none"}), posB=$posB (baseline=${restBaselinePosB ?: "none"}) after ${BleConstants.Timing.STATE_TRANSITION_DWELL_MS}ms dwell" }
                         pendingReleasedStartTime = null
-                        activeHandlesMask = 0  // Reset for next grab
+                        activeHandlesMask = 0 // Reset for next grab
                         HandleState.Released
                     } else {
-                        HandleState.Grabbed  // Still dwelling
+                        HandleState.Grabbed // Still dwelling
                     }
                 } else {
-                    pendingReleasedStartTime = null  // Reset release timer if handles move away from rest
+                    pendingReleasedStartTime = null // Reset release timer if handles move away from rest
                     HandleState.Grabbed
                 }
             }
@@ -348,7 +372,7 @@ class HandleStateDetector(
         position: Double,
         baseline: Double?,
         deltaThreshold: Double,
-        absoluteThreshold: Double
+        absoluteThreshold: Double,
     ): Boolean = if (baseline != null) {
         (position - baseline) > deltaThreshold
     } else {
@@ -363,7 +387,7 @@ class HandleStateDetector(
         position: Double,
         baseline: Double?,
         deltaThreshold: Double,
-        absoluteThreshold: Double
+        absoluteThreshold: Double,
     ): Boolean = if (baseline != null) {
         (position - baseline) < deltaThreshold
     } else {

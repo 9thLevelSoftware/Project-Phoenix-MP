@@ -1,6 +1,5 @@
 package com.devil.phoenixproject.data.repository
 
-import com.devil.phoenixproject.domain.model.PersonalRecord
 import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.domain.model.WorkoutSession
 import kotlinx.coroutines.flow.Flow
@@ -14,7 +13,7 @@ data class PersonalRecordEntity(
     val weightPerCableKg: Float,
     val reps: Int,
     val timestamp: Long,
-    val workoutMode: String
+    val workoutMode: String,
 )
 
 /**
@@ -23,16 +22,17 @@ data class PersonalRecordEntity(
  */
 interface WorkoutRepository {
     // Workout sessions
-    fun getAllSessions(): Flow<List<WorkoutSession>>
+    fun getAllSessions(profileId: String): Flow<List<WorkoutSession>>
     suspend fun saveSession(session: WorkoutSession)
     suspend fun deleteSession(sessionId: String)
     suspend fun deleteAllSessions()
 
     /**
      * Get recent workout sessions
+     * @param profileId Profile to filter by
      * @param limit Maximum number of sessions to return
      */
-    fun getRecentSessions(limit: Int = 10): Flow<List<WorkoutSession>>
+    fun getRecentSessions(profileId: String, limit: Int = 10): Flow<List<WorkoutSession>>
 
     /**
      * Get a specific workout session by ID
@@ -40,10 +40,11 @@ interface WorkoutRepository {
     suspend fun getSession(sessionId: String): WorkoutSession?
 
     // Routines
-    fun getAllRoutines(): Flow<List<Routine>>
+    fun getAllRoutines(profileId: String): Flow<List<Routine>>
     suspend fun saveRoutine(routine: Routine)
     suspend fun updateRoutine(routine: Routine)
     suspend fun deleteRoutine(routineId: String)
+    suspend fun moveRoutineToProfile(routineId: String, targetProfileId: String)
     suspend fun getRoutineById(routineId: String): Routine?
 
     /**
@@ -52,8 +53,15 @@ interface WorkoutRepository {
     suspend fun markRoutineUsed(routineId: String)
 
     // Personal records
-    fun getAllPersonalRecords(): Flow<List<PersonalRecordEntity>>
-    suspend fun updatePRIfBetter(exerciseId: String, weightKg: Float, reps: Int, mode: String)
+    fun getAllPersonalRecords(profileId: String): Flow<List<PersonalRecordEntity>>
+    suspend fun updatePRIfBetter(exerciseId: String, weightKg: Float, reps: Int, mode: String, profileId: String = "default")
+
+    /**
+     * Get average set duration in milliseconds for a specific exercise.
+     * Returns null if no historical data is available.
+     * Issue #225: Used by RoutineTimeEstimator.
+     */
+    suspend fun getAverageSetDurationMs(exerciseId: String, profileId: String): Long?
 
     // Metrics storage
     suspend fun saveMetrics(sessionId: String, metrics: List<com.devil.phoenixproject.domain.model.WorkoutMetric>)
@@ -71,9 +79,10 @@ interface WorkoutRepository {
     /**
      * Get recent workout sessions synchronously (for export)
      */
-    suspend fun getRecentSessionsSync(limit: Int = 10): List<WorkoutSession>
+    suspend fun getRecentSessionsSync(profileId: String, limit: Int = 10): List<WorkoutSession>
 
     // Phase Statistics (heuristic data from machine)
+
     /**
      * Save phase statistics for a workout session
      */
@@ -103,6 +112,5 @@ data class PhaseStatisticsData(
     val eccentricVelMax: Float,
     val eccentricWattAvg: Float,
     val eccentricWattMax: Float,
-    val timestamp: Long
+    val timestamp: Long,
 )
-

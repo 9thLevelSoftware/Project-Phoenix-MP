@@ -1,15 +1,17 @@
 package com.devil.phoenixproject.data.ble
 
-import com.juul.kable.Peripheral
-import com.juul.kable.AndroidPeripheral
 import co.touchlab.kermit.Logger
+import com.juul.kable.AndroidPeripheral
+import com.juul.kable.Peripheral
 import kotlinx.coroutines.delay
 
 actual suspend fun Peripheral.requestHighPriority() {
     // Cast to AndroidPeripheral to access Android-specific connection priority method
     val androidPeripheral = this as? AndroidPeripheral
     if (androidPeripheral == null) {
-        Logger.w("BleExtensions") { "⚠️ Cannot request connection priority: not an AndroidPeripheral" }
+        Logger.w("BleExtensions") {
+            "⚠️ Cannot request connection priority: not an AndroidPeripheral"
+        }
         return
     }
 

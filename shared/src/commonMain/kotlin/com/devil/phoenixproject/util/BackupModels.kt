@@ -63,7 +63,17 @@ data class WorkoutSessionBackup(
     val workingAvgWeightKg: Float? = null,
     val burnoutAvgWeightKg: Float? = null,
     val peakWeightKg: Float? = null,
-    val rpe: Int? = null
+    val rpe: Int? = null,
+    // Biomechanics Summary (added in v0.5.0 Phase 13)
+    val avgMcvMmS: Float? = null,
+    val avgAsymmetryPercent: Float? = null,
+    val totalVelocityLossPercent: Float? = null,
+    val dominantSide: String? = null,
+    val strengthProfile: String? = null,
+    // Form Check score (added in v0.5.1 Phase 19 CV-06)
+    val formScore: Long? = null,
+    // Profile separation (profile data separation plan)
+    val profileId: String? = null, // null for backward compat with pre-profile backups
 )
 
 /**
@@ -81,7 +91,7 @@ data class MetricSampleBackup(
     val load: Float?,
     val loadB: Float? = null,
     val power: Float?,
-    val status: Int = 0
+    val status: Int = 0,
 )
 
 /**
@@ -94,7 +104,8 @@ data class RoutineBackup(
     val description: String = "",
     val createdAt: Long,
     val lastUsed: Long? = null,
-    val useCount: Int = 0
+    val useCount: Int = 0,
+    val profileId: String? = null, // null for backward compat with pre-profile backups
 )
 
 /**
@@ -121,6 +132,7 @@ data class RoutineExerciseBackup(
     val restSeconds: Int = 60,
     val duration: Int? = null,
     val setRestSeconds: String = "[]",
+    val setEchoLevels: String = "",
     val perSetRestTime: Boolean = false,
     val isAMRAP: Boolean = false,
     // KMP extension: superset support (updated field names)
@@ -130,11 +142,13 @@ data class RoutineExerciseBackup(
     val usePercentOfPR: Boolean = false,
     val weightPercentOfPR: Int = 80,
     val prTypeForScaling: String = "MAX_WEIGHT",
-    val setWeightsPercentOfPR: String? = null,  // JSON array as string
+    val setWeightsPercentOfPR: String? = null, // JSON array as string
     // Per-exercise behavior overrides (PR #245)
     val stallDetectionEnabled: Boolean = true,
     val stopAtTop: Boolean = false,
-    val repCountTiming: String = "TOP"
+    val repCountTiming: String = "TOP",
+    // Variable warm-up sets (Phase 35C)
+    val warmupSets: String = "",
 )
 
 /**
@@ -151,7 +165,9 @@ data class PersonalRecordBackup(
     val achievedAt: Long,
     val workoutMode: String,
     val prType: String = "MAX_WEIGHT",
-    val volume: Float = 0f
+    val volume: Float = 0f,
+    val phase: String? = "COMBINED", // Nullable for backward compat with pre-v0.7.0 backups
+    val profileId: String? = null, // null for backward compat with pre-profile backups
 )
 
 /**
@@ -164,7 +180,7 @@ data class SupersetBackup(
     val name: String,
     val colorIndex: Int = 0,
     val restBetweenSeconds: Int = 10,
-    val orderIndex: Int = 0
+    val orderIndex: Int = 0,
 )
 
 /**
@@ -176,7 +192,8 @@ data class TrainingCycleBackup(
     val name: String,
     val description: String? = null,
     val createdAt: Long,
-    val isActive: Boolean = false
+    val isActive: Boolean = false,
+    val profileId: String? = null, // null for backward compat with pre-profile backups
 )
 
 /**
@@ -189,20 +206,14 @@ data class CycleDayBackup(
     val dayNumber: Int,
     val name: String? = null,
     val routineId: String? = null,
-    val isRestDay: Boolean = false
+    val isRestDay: Boolean = false,
 )
 
 /**
  * Backup representation of UserProfile
  */
 @Serializable
-data class UserProfileBackup(
-    val id: String,
-    val name: String,
-    val colorIndex: Int = 0,
-    val createdAt: Long,
-    val isActive: Boolean = false
-)
+data class UserProfileBackup(val id: String, val name: String, val colorIndex: Int = 0, val createdAt: Long, val isActive: Boolean = false)
 
 /**
  * Backup representation of CycleProgress (current position in training cycle)
@@ -217,7 +228,7 @@ data class CycleProgressBackup(
     val lastAdvancedAt: Long? = null,
     val completedDays: String? = null,
     val missedDays: String? = null,
-    val rotationCount: Int = 0
+    val rotationCount: Int = 0,
 )
 
 /**
@@ -229,7 +240,7 @@ data class CycleProgressionBackup(
     val frequencyCycles: Int = 2,
     val weightIncreasePercent: Float? = null,
     val echoLevelIncrease: Int = 0,
-    val eccentricLoadIncreasePercent: Int? = null
+    val eccentricLoadIncreasePercent: Int? = null,
 )
 
 /**
@@ -244,7 +255,7 @@ data class PlannedSetBackup(
     val targetReps: Int? = null,
     val targetWeightKg: Float? = null,
     val targetRpe: Int? = null,
-    val restSeconds: Int? = null
+    val restSeconds: Int? = null,
 )
 
 /**
@@ -261,7 +272,7 @@ data class CompletedSetBackup(
     val actualWeightKg: Float,
     val loggedRpe: Int? = null,
     val isPr: Boolean = false,
-    val completedAt: Long
+    val completedAt: Long,
 )
 
 /**
@@ -276,7 +287,8 @@ data class ProgressionEventBackup(
     val reason: String,
     val userResponse: String? = null,
     val actualWeightKg: Float? = null,
-    val timestamp: Long
+    val timestamp: Long,
+    val profileId: String? = null, // null for backward compat with pre-profile backups
 )
 
 /**
@@ -287,19 +299,15 @@ data class EarnedBadgeBackup(
     val id: Long = 0,
     val badgeId: String,
     val earnedAt: Long,
-    val celebratedAt: Long? = null
+    val celebratedAt: Long? = null,
+    val profileId: String = "default",
 )
 
 /**
  * Backup representation of StreakHistory
  */
 @Serializable
-data class StreakHistoryBackup(
-    val id: Long = 0,
-    val startDate: Long,
-    val endDate: Long,
-    val length: Int
-)
+data class StreakHistoryBackup(val id: Long = 0, val startDate: Long, val endDate: Long, val length: Int, val profileId: String = "default")
 
 /**
  * Backup representation of GamificationStats
@@ -315,17 +323,38 @@ data class GamificationStatsBackup(
     val prsAchieved: Int = 0,
     val lastWorkoutDate: Long? = null,
     val streakStartDate: Long? = null,
-    val lastUpdated: Long
+    val lastUpdated: Long,
+    val profileId: String = "default",
 )
 
 /**
  * Progress tracking for streaming backup export
  */
-data class BackupProgress(
-    val phase: BackupPhase,
-    val current: Long,
-    val total: Long
-)
+data class BackupProgress(val phase: BackupPhase, val current: Long, val total: Long)
+
+/**
+ * Statistics about session auto-backup files on disk.
+ */
+data class BackupStats(val fileCount: Int, val totalBytes: Long) {
+    /**
+     * Human-readable total size using binary units (e.g. "12.3 MB", "456 KB").
+     * Uses 1024-based divisions to match platform file manager conventions.
+     */
+    val formattedSize: String
+        get() = when {
+            totalBytes >= 1_048_576 -> { // 1024 * 1024
+                val tenths = (totalBytes * 10 / 1_048_576)
+                "${tenths / 10}.${tenths % 10} MB"
+            }
+
+            totalBytes >= 1_024 -> {
+                val tenths = (totalBytes * 10 / 1_024)
+                "${tenths / 10}.${tenths % 10} KB"
+            }
+
+            else -> "$totalBytes B"
+        }
+}
 
 /**
  * Phases of the streaming backup export process
@@ -336,19 +365,14 @@ enum class BackupPhase(val displayName: String) {
     METRICS("Exporting metrics"),
     ROUTINES("Exporting routines"),
     OTHER("Exporting remaining data"),
-    FINALIZING("Finalizing backup")
+    FINALIZING("Finalizing backup"),
 }
 
 /**
  * Root backup data structure containing all exportable data
  */
 @Serializable
-data class BackupData(
-    val version: Int = 1,
-    val exportedAt: String,
-    val appVersion: String,
-    val data: BackupContent
-)
+data class BackupData(val version: Int = 1, val exportedAt: String, val appVersion: String, val data: BackupContent)
 
 /**
  * Container for all backup data entities
@@ -372,7 +396,7 @@ data class BackupContent(
     val earnedBadges: List<EarnedBadgeBackup> = emptyList(),
     val streakHistory: List<StreakHistoryBackup> = emptyList(),
     val gamificationStats: GamificationStatsBackup? = null,
-    val userProfiles: List<UserProfileBackup> = emptyList()
+    val userProfiles: List<UserProfileBackup> = emptyList(),
 )
 
 /**
@@ -401,17 +425,17 @@ data class ImportResult(
     val streakHistoryImported: Int = 0,
     val gamificationStatsImported: Boolean = false,
     val userProfilesImported: Int = 0,
-    val userProfilesSkipped: Int = 0
+    val userProfilesSkipped: Int = 0,
 ) {
     val totalImported: Int
         get() = sessionsImported + metricsImported + routinesImported +
-                routineExercisesImported + supersetsImported + personalRecordsImported +
-                trainingCyclesImported + cycleDaysImported + cycleProgressImported +
-                cycleProgressionsImported + plannedSetsImported + completedSetsImported +
-                progressionEventsImported + earnedBadgesImported + streakHistoryImported +
-                (if (gamificationStatsImported) 1 else 0) + userProfilesImported
+            routineExercisesImported + supersetsImported + personalRecordsImported +
+            trainingCyclesImported + cycleDaysImported + cycleProgressImported +
+            cycleProgressionsImported + plannedSetsImported + completedSetsImported +
+            progressionEventsImported + earnedBadgesImported + streakHistoryImported +
+            (if (gamificationStatsImported) 1 else 0) + userProfilesImported
 
     val totalSkipped: Int
         get() = sessionsSkipped + routinesSkipped + supersetsSkipped + personalRecordsSkipped +
-                trainingCyclesSkipped + userProfilesSkipped
+            trainingCyclesSkipped + userProfilesSkipped
 }

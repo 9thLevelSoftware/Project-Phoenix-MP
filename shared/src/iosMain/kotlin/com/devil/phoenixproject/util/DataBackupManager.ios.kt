@@ -7,12 +7,12 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
 import kotlinx.coroutines.withContext
 import platform.Foundation.*
-import platform.darwin.NSObject
 import platform.UIKit.UIActivityViewController
 import platform.UIKit.UIApplication
-import platform.UIKit.UIWindowScene
 import platform.UIKit.UIDevice
 import platform.UIKit.UIUserInterfaceIdiomPad
+import platform.UIKit.UIWindowScene
+import platform.darwin.NSObject
 import platform.darwin.dispatch_async
 import platform.darwin.dispatch_get_main_queue
 
@@ -21,9 +21,7 @@ import platform.darwin.dispatch_get_main_queue
  * Uses NSFileManager for file operations and Documents directory for storage.
  */
 @OptIn(ExperimentalForeignApi::class, BetaInteropApi::class)
-class IosDataBackupManager(
-    database: VitruvianDatabase
-) : BaseDataBackupManager(database) {
+class IosDataBackupManager(database: VitruvianDatabase) : BaseDataBackupManager(database) {
 
     private val fileManager = NSFileManager.defaultManager
 
@@ -32,25 +30,102 @@ class IosDataBackupManager(
             val paths = NSSearchPathForDirectoriesInDomains(
                 NSDocumentDirectory,
                 NSUserDomainMask,
-                true
+                true,
             )
             return paths.firstOrNull() as? String ?: ""
         }
 
     private val backupDirectory: String
         get() {
-            val dir = "$documentsDirectory/VitruvianBackups"
+            val dir = "$documentsDirectory/PhoenixBackups"
             val url = NSURL.fileURLWithPath(dir)
             if (!fileManager.fileExistsAtPath(dir)) {
                 fileManager.createDirectoryAtURL(
                     url,
                     withIntermediateDirectories = true,
                     attributes = null,
-                    error = null
+                    error = null,
                 )
             }
             return dir
         }
+
+    override fun getSessionBackupDirectory(): String {
+        val dir = "$documentsDirectory/PhoenixBackups"
+        if (!fileManager.fileExistsAtPath(dir)) {
+            val url = NSURL.fileURLWithPath(dir)
+            fileManager.createDirectoryAtURL(
+                url,
+                withIntermediateDirectories = true,
+                attributes = null,
+                error = null,
+            )
+        }
+        return dir
+    }
+
+    override fun listBackupFileSizes(): List<Long> {
+        val dir = getSessionBackupDirectory()
+        val contents = fileManager.contentsOfDirectoryAtPath(dir, error = null) ?: return emptyList()
+        val sizes = mutableListOf<Long>()
+        for (item in contents) {
+            val fileName = item as? String ?: continue
+            if (!fileName.endsWith(".json")) continue
+            val filePath = "$dir/$fileName"
+            val attrs = fileManager.attributesOfItemAtPath(filePath, error = null) ?: continue
+            val size = (attrs[NSFileSize] as? NSNumber)?.longValue ?: 0L
+            sizes.add(size)
+        }
+        return sizes
+    }
+
+    /**
+     * iOS does not support opening arbitrary folders in Files.app programmatically.
+     * Present a share sheet for the backup directory so the user can interact with it
+     * via any installed file manager or sharing target.
+     */
+    override fun pruneOldBackups(keepCount: Int) {
+        val dir = getSessionBackupDirectory()
+        val contents = fileManager.contentsOfDirectoryAtPath(dir, error = null) ?: return
+        val backupFiles = contents
+            .mapNotNull { it as? String }
+            .filter { it.startsWith("phoenix-workout-") && it.endsWith(".json") }
+            .sorted() // Filename starts with date, so lexicographic sort = chronological
+        val excess = backupFiles.size - keepCount
+        if (excess > 0) {
+            backupFiles.take(excess).forEach { fileName ->
+                fileManager.removeItemAtPath("$dir/$fileName", error = null)
+            }
+        }
+    }
+
+    override fun openBackupFolder() {
+        val dir = getSessionBackupDirectory()
+        val fileURL = NSURL.fileURLWithPath(dir)
+
+        dispatch_async(dispatch_get_main_queue()) {
+            val scenes = UIApplication.sharedApplication.connectedScenes
+            val windowScene = scenes.firstOrNull { it is UIWindowScene } as? UIWindowScene
+            val rootViewController = windowScene?.keyWindow?.rootViewController ?: return@dispatch_async
+
+            val activityVC = UIActivityViewController(
+                activityItems = listOf(fileURL),
+                applicationActivities = null,
+            )
+
+            if (UIDevice.currentDevice.userInterfaceIdiom == UIUserInterfaceIdiomPad) {
+                activityVC.valueForKey("popoverPresentationController")?.let { popover ->
+                    (popover as? NSObject)?.setValue(rootViewController.view, forKey = "sourceView")
+                }
+            }
+
+            rootViewController.presentViewController(
+                activityVC,
+                animated = true,
+                completion = null,
+            )
+        }
+    }
 
     override fun createBackupWriter(): BackupJsonWriter {
         val timestamp = KmpUtils.formatTimestamp(KmpUtils.currentTimeMillis(), "yyyy-MM-dd")
@@ -62,23 +137,21 @@ class IosDataBackupManager(
         return BackupJsonWriter("$tempDir$fileName")
     }
 
-    override suspend fun finalizeExport(tempFilePath: String): Result<String> {
-        return try {
-            val fileName = tempFilePath.substringAfterLast('/')
-            val destPath = "$backupDirectory/$fileName"
+    override suspend fun finalizeExport(tempFilePath: String): Result<String> = try {
+        val fileName = tempFilePath.substringAfterLast('/')
+        val destPath = "$backupDirectory/$fileName"
 
-            // Remove existing file if present
-            if (fileManager.fileExistsAtPath(destPath)) {
-                fileManager.removeItemAtPath(destPath, error = null)
-            }
-
-            val success = fileManager.moveItemAtPath(tempFilePath, toPath = destPath, error = null)
-            if (!success) throw Exception("Failed to move backup to Documents")
-
-            Result.success(destPath)
-        } catch (e: Exception) {
-            Result.failure(e)
+        // Remove existing file if present
+        if (fileManager.fileExistsAtPath(destPath)) {
+            fileManager.removeItemAtPath(destPath, error = null)
         }
+
+        val success = fileManager.moveItemAtPath(tempFilePath, toPath = destPath, error = null)
+        if (!success) throw Exception("Failed to move backup to Documents")
+
+        Result.success(destPath)
+    } catch (e: Exception) {
+        Result.failure(e)
     }
 
     // Legacy save path (kept for backward compatibility)
@@ -135,7 +208,7 @@ class IosDataBackupManager(
 
             val activityVC = UIActivityViewController(
                 activityItems = listOf(fileURL),
-                applicationActivities = null
+                applicationActivities = null,
             )
 
             // Configure popover for iPad - required to prevent crash
@@ -149,7 +222,7 @@ class IosDataBackupManager(
             rootViewController.presentViewController(
                 activityVC,
                 animated = true,
-                completion = null
+                completion = null,
             )
         }
     }

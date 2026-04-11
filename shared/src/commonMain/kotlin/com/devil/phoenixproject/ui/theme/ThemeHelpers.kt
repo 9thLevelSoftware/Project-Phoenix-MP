@@ -27,13 +27,13 @@ fun screenBackgroundBrush(): Brush {
         Brush.verticalGradient(
             0.0f to Slate950,
             0.5f to HomeButtonColors.AccentPlum.copy(alpha = 0.15f),
-            1.0f to Slate950
+            1.0f to Slate950,
         )
     } else {
         Brush.verticalGradient(
             0.0f to Slate50,
             0.5f to HomeButtonColors.SecondaryMint.copy(alpha = 0.1f),
-            1.0f to Color.White
+            1.0f to Color.White,
         )
     }
 }

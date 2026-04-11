@@ -21,7 +21,7 @@ import kotlinx.coroutines.launch
 class SettingsManager(
     private val preferencesManager: PreferencesManager,
     private val bleRepository: BleRepository,
-    private val scope: CoroutineScope
+    private val scope: CoroutineScope,
 ) {
     val userPreferences: StateFlow<UserPreferences> = preferencesManager.preferencesFlow
         .stateIn(scope, SharingStarted.Eagerly, UserPreferences())
@@ -37,14 +37,6 @@ class SettingsManager(
     val gamificationEnabled: StateFlow<Boolean> = userPreferences
         .map { it.gamificationEnabled }
         .stateIn(scope, SharingStarted.Eagerly, true)
-
-    val simulatorModeUnlocked: StateFlow<Boolean> = userPreferences
-        .map { it.simulatorModeUnlocked }
-        .stateIn(scope, SharingStarted.Eagerly, false)
-
-    val simulatorModeEnabled: StateFlow<Boolean> = userPreferences
-        .map { it.simulatorModeEnabled }
-        .stateIn(scope, SharingStarted.Eagerly, false)
 
     // Issue #167: Autoplay is now derived from summaryCountdownSeconds
     // - summaryCountdownSeconds == 0 (Unlimited) = autoplay OFF (manual control)
@@ -86,16 +78,56 @@ class SettingsManager(
         scope.launch { preferencesManager.setAutoStartCountdownSeconds(seconds) }
     }
 
+    fun setWeightIncrement(increment: Float) {
+        scope.launch { preferencesManager.setWeightIncrement(increment) }
+    }
+
+    fun setAutoStartRoutine(enabled: Boolean) {
+        scope.launch { preferencesManager.setAutoStartRoutine(enabled) }
+    }
+
+    fun setBodyWeightKg(weightKg: Float) {
+        scope.launch { preferencesManager.setBodyWeightKg(weightKg) }
+    }
+
     fun setGamificationEnabled(enabled: Boolean) {
         scope.launch { preferencesManager.setGamificationEnabled(enabled) }
     }
 
-    fun setSimulatorModeUnlocked(unlocked: Boolean) {
-        scope.launch { preferencesManager.setSimulatorModeUnlocked(unlocked) }
+    fun setCountdownBeepsEnabled(enabled: Boolean) {
+        scope.launch { preferencesManager.setCountdownBeepsEnabled(enabled) }
     }
 
-    fun setSimulatorModeEnabled(enabled: Boolean) {
-        scope.launch { preferencesManager.setSimulatorModeEnabled(enabled) }
+    fun setRepSoundEnabled(enabled: Boolean) {
+        scope.launch { preferencesManager.setRepSoundEnabled(enabled) }
+    }
+
+    fun setMotionStartEnabled(enabled: Boolean) {
+        scope.launch { preferencesManager.setMotionStartEnabled(enabled) }
+    }
+
+    fun setAutoBackupEnabled(enabled: Boolean) {
+        scope.launch { preferencesManager.setAutoBackupEnabled(enabled) }
+    }
+
+    fun setLanguage(language: String) {
+        scope.launch { preferencesManager.setLanguage(language) }
+        // Apply locale to the platform so the UI updates immediately (Android)
+        // or on next launch (iOS). The preference is persisted above for cold starts.
+        com.devil.phoenixproject.util.applyAppLocale(language)
+    }
+
+    // Issue #141: Voice-activated emergency stop
+    fun setVoiceStopEnabled(enabled: Boolean) {
+        scope.launch { preferencesManager.setVoiceStopEnabled(enabled) }
+    }
+
+    fun setSafeWord(word: String?) {
+        scope.launch { preferencesManager.setSafeWord(word) }
+    }
+
+    fun setSafeWordCalibrated(calibrated: Boolean) {
+        scope.launch { preferencesManager.setSafeWordCalibrated(calibrated) }
     }
 
     fun setColorScheme(schemeIndex: Int) {
@@ -109,17 +141,15 @@ class SettingsManager(
 
     // Weight conversion functions — keep original signatures with explicit unit parameter
     // to preserve backward compatibility with all call sites
-    fun kgToDisplay(kg: Float, unit: WeightUnit): Float =
-        when (unit) {
-            WeightUnit.KG -> kg
-            WeightUnit.LB -> kg * 2.20462f
-        }
+    fun kgToDisplay(kg: Float, unit: WeightUnit): Float = when (unit) {
+        WeightUnit.KG -> kg
+        WeightUnit.LB -> kg * 2.20462f
+    }
 
-    fun displayToKg(display: Float, unit: WeightUnit): Float =
-        when (unit) {
-            WeightUnit.KG -> display
-            WeightUnit.LB -> display / 2.20462f
-        }
+    fun displayToKg(display: Float, unit: WeightUnit): Float = when (unit) {
+        WeightUnit.KG -> display
+        WeightUnit.LB -> display / 2.20462f
+    }
 
     fun formatWeight(kg: Float, unit: WeightUnit): String {
         val value = kgToDisplay(kg, unit)

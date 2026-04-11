@@ -39,17 +39,15 @@ import androidx.compose.ui.window.DialogProperties
 import com.devil.phoenixproject.domain.model.Badge
 import com.devil.phoenixproject.domain.model.BadgeCategory
 import kotlinx.coroutines.delay
+import org.jetbrains.compose.resources.stringResource
+import vitruvianprojectphoenix.shared.generated.resources.*
+import vitruvianprojectphoenix.shared.generated.resources.Res
 
 /**
  * Celebratory dialog shown when a user earns a new badge
  */
 @Composable
-fun BadgeCelebrationDialog(
-    badge: Badge,
-    onDismiss: () -> Unit,
-    onMarkCelebrated: () -> Unit,
-    onSoundTrigger: () -> Unit = {}
-) {
+fun BadgeCelebrationDialog(badge: Badge, onDismiss: () -> Unit, onMarkCelebrated: () -> Unit, onSoundTrigger: () -> Unit = {}) {
     val tierColor = Color(badge.tier.colorHex.toInt())
 
     // Animation states
@@ -63,14 +61,14 @@ fun BadgeCelebrationDialog(
         targetValue = if (showDialog) 1f else 0f,
         animationSpec = spring(
             dampingRatio = Spring.DampingRatioMediumBouncy,
-            stiffness = Spring.StiffnessLow
+            stiffness = Spring.StiffnessLow,
         ),
-        label = "scale"
+        label = "scale",
     )
     val alpha by animateFloatAsState(
         targetValue = if (showDialog) 1f else 0f,
         animationSpec = tween(300),
-        label = "alpha"
+        label = "alpha",
     )
 
     // Badge icon animation
@@ -80,9 +78,9 @@ fun BadgeCelebrationDialog(
         targetValue = 5f,
         animationSpec = infiniteRepeatable(
             animation = tween(2000, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse
+            repeatMode = RepeatMode.Reverse,
         ),
-        label = "rotation"
+        label = "rotation",
     )
 
     // Start animation
@@ -97,8 +95,8 @@ fun BadgeCelebrationDialog(
         },
         properties = DialogProperties(
             dismissOnBackPress = true,
-            dismissOnClickOutside = false
-        )
+            dismissOnClickOutside = false,
+        ),
     ) {
         Card(
             modifier = Modifier
@@ -107,22 +105,22 @@ fun BadgeCelebrationDialog(
                 .alpha(alpha),
             shape = RoundedCornerShape(24.dp),
             colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surface
+                containerColor = MaterialTheme.colorScheme.surface,
             ),
-            elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
+            elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
         ) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(24.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
+                horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 // Celebration header
                 Text(
                     text = "Achievement Unlocked!",
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Bold,
-                    color = Color(0xFFFFD700)
+                    color = Color(0xFFFFD700),
                 )
 
                 Spacer(modifier = Modifier.height(24.dp))
@@ -130,13 +128,13 @@ fun BadgeCelebrationDialog(
                 // Animated badge icon with Lottie trophy animation
                 Box(
                     modifier = Modifier.size(140.dp),
-                    contentAlignment = Alignment.Center
+                    contentAlignment = Alignment.Center,
                 ) {
                     // Lottie trophy animation in background
                     LottieAnimation(
                         animationJson = CelebrationAnimations.trophy,
                         size = 140.dp,
-                        contentDescription = "Trophy celebration"
+                        contentDescription = stringResource(Res.string.cd_trophy),
                     )
 
                     // Main badge icon overlay
@@ -147,16 +145,16 @@ fun BadgeCelebrationDialog(
                             .clip(CircleShape)
                             .background(
                                 Brush.linearGradient(
-                                    listOf(tierColor, tierColor.copy(alpha = 0.7f))
-                                )
+                                    listOf(tierColor, tierColor.copy(alpha = 0.7f)),
+                                ),
                             ),
-                        contentAlignment = Alignment.Center
+                        contentAlignment = Alignment.Center,
                     ) {
                         Icon(
                             imageVector = getBadgeIcon(badge.iconResource),
                             contentDescription = null,
                             tint = Color.White,
-                            modifier = Modifier.size(44.dp)
+                            modifier = Modifier.size(44.dp),
                         )
                     }
                 }
@@ -169,21 +167,21 @@ fun BadgeCelebrationDialog(
                     style = MaterialTheme.typography.headlineSmall,
                     fontWeight = FontWeight.Bold,
                     textAlign = TextAlign.Center,
-                    color = MaterialTheme.colorScheme.onSurface
+                    color = MaterialTheme.colorScheme.onSurface,
                 )
 
                 // Tier badge
                 Surface(
                     color = tierColor.copy(alpha = 0.2f),
                     shape = RoundedCornerShape(8.dp),
-                    modifier = Modifier.padding(vertical = 8.dp)
+                    modifier = Modifier.padding(vertical = 8.dp),
                 ) {
                     Text(
                         text = badge.tier.displayName,
                         style = MaterialTheme.typography.labelLarge,
                         fontWeight = FontWeight.Bold,
                         color = tierColor,
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
                     )
                 }
 
@@ -193,7 +191,7 @@ fun BadgeCelebrationDialog(
                     style = MaterialTheme.typography.bodyMedium,
                     textAlign = TextAlign.Center,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(horizontal = 8.dp)
+                    modifier = Modifier.padding(horizontal = 8.dp),
                 )
 
                 Spacer(modifier = Modifier.height(24.dp))
@@ -206,9 +204,9 @@ fun BadgeCelebrationDialog(
                         Icon(
                             imageVector = getCategoryIcon(badge.category),
                             contentDescription = null,
-                            modifier = Modifier.size(18.dp)
+                            modifier = Modifier.size(18.dp),
                         )
-                    }
+                    },
                 )
 
                 Spacer(modifier = Modifier.height(24.dp))
@@ -223,18 +221,18 @@ fun BadgeCelebrationDialog(
                         .fillMaxWidth()
                         .height(48.dp),
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = tierColor
-                    )
+                        containerColor = tierColor,
+                    ),
                 ) {
                     Icon(
                         imageVector = Icons.Default.Celebration,
                         contentDescription = null,
-                        modifier = Modifier.size(20.dp)
+                        modifier = Modifier.size(20.dp),
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
                         text = "Awesome!",
-                        fontWeight = FontWeight.Bold
+                        fontWeight = FontWeight.Bold,
                     )
                 }
             }
@@ -250,7 +248,7 @@ fun BadgeCelebrationQueue(
     badges: List<Badge>,
     onAllCelebrated: () -> Unit,
     onMarkCelebrated: (String) -> Unit,
-    onSoundTrigger: () -> Unit = {}
+    onSoundTrigger: () -> Unit = {},
 ) {
     var currentIndex by remember { mutableStateOf(0) }
 
@@ -267,7 +265,7 @@ fun BadgeCelebrationQueue(
             onMarkCelebrated = {
                 onMarkCelebrated(badges[currentIndex].id)
             },
-            onSoundTrigger = onSoundTrigger
+            onSoundTrigger = onSoundTrigger,
         )
     }
 }
@@ -281,7 +279,7 @@ fun BatchedBadgeCelebrationDialog(
     badges: List<Badge>,
     onDismiss: () -> Unit,
     onMarkAllCelebrated: (List<String>) -> Unit,
-    onSoundTrigger: () -> Unit = {}
+    onSoundTrigger: () -> Unit = {},
 ) {
     if (badges.isEmpty()) return
 
@@ -299,14 +297,14 @@ fun BatchedBadgeCelebrationDialog(
         targetValue = if (showDialog) 1f else 0f,
         animationSpec = spring(
             dampingRatio = Spring.DampingRatioMediumBouncy,
-            stiffness = Spring.StiffnessLow
+            stiffness = Spring.StiffnessLow,
         ),
-        label = "scale"
+        label = "scale",
     )
     val alpha by animateFloatAsState(
         targetValue = if (showDialog) 1f else 0f,
         animationSpec = tween(300),
-        label = "alpha"
+        label = "alpha",
     )
 
     // Selected badge for expanded details
@@ -322,8 +320,8 @@ fun BatchedBadgeCelebrationDialog(
         properties = DialogProperties(
             dismissOnBackPress = true,
             dismissOnClickOutside = false,
-            usePlatformDefaultWidth = false
-        )
+            usePlatformDefaultWidth = false,
+        ),
     ) {
         Card(
             modifier = Modifier
@@ -332,25 +330,25 @@ fun BatchedBadgeCelebrationDialog(
                 .alpha(alpha),
             shape = RoundedCornerShape(24.dp),
             colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surface
+                containerColor = MaterialTheme.colorScheme.surface,
             ),
-            elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
+            elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
         ) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(24.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
+                horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 // Lottie trophy animation in background
                 Box(
                     modifier = Modifier.size(80.dp),
-                    contentAlignment = Alignment.Center
+                    contentAlignment = Alignment.Center,
                 ) {
                     LottieAnimation(
                         animationJson = CelebrationAnimations.trophy,
                         size = 80.dp,
-                        contentDescription = "Trophy celebration"
+                        contentDescription = stringResource(Res.string.cd_trophy),
                     )
                 }
 
@@ -358,11 +356,17 @@ fun BatchedBadgeCelebrationDialog(
 
                 // Header with badge count
                 Text(
-                    text = if (badges.size == 1) "Badge Earned!" else "${badges.size} Badges Earned!",
+                    text = if (badges.size ==
+                        1
+                    ) {
+                        "Badge Earned!"
+                    } else {
+                        "${badges.size} Badges Earned!"
+                    },
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Bold,
                     color = Color(0xFFFFD700),
-                    textAlign = TextAlign.Center
+                    textAlign = TextAlign.Center,
                 )
 
                 Spacer(modifier = Modifier.height(20.dp))
@@ -383,19 +387,20 @@ fun BatchedBadgeCelebrationDialog(
                         .heightIn(max = gridHeight),
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp),
-                    userScrollEnabled = badges.size > 6
+                    userScrollEnabled = badges.size > 6,
                 ) {
                     itemsIndexed(
                         items = badges,
-                        key = { _, badge -> badge.id }
+                        key = { _, badge -> badge.id },
                     ) { index, badge ->
                         BadgeGridItem(
                             badge = badge,
                             isSelected = badge.id == selectedBadgeId,
                             onClick = {
-                                selectedBadgeId = if (selectedBadgeId == badge.id) null else badge.id
+                                selectedBadgeId =
+                                    if (selectedBadgeId == badge.id) null else badge.id
                             },
-                            animationDelay = index * 50
+                            animationDelay = index * 50,
                         )
                     }
                 }
@@ -404,7 +409,7 @@ fun BatchedBadgeCelebrationDialog(
                 AnimatedVisibility(
                     visible = selectedBadge != null,
                     enter = fadeIn() + expandVertically(),
-                    exit = fadeOut() + shrinkVertically()
+                    exit = fadeOut() + shrinkVertically(),
                 ) {
                     selectedBadge?.let { badge ->
                         val tierColor = Color(badge.tier.colorHex.toInt())
@@ -414,16 +419,18 @@ fun BatchedBadgeCelebrationDialog(
                                 .fillMaxWidth()
                                 .padding(top = 16.dp)
                                 .clip(RoundedCornerShape(12.dp))
-                                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                                .background(
+                                    MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                                )
                                 .padding(16.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally
+                            horizontalAlignment = Alignment.CenterHorizontally,
                         ) {
                             // Badge name
                             Text(
                                 text = badge.name,
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onSurface
+                                color = MaterialTheme.colorScheme.onSurface,
                             )
 
                             Spacer(modifier = Modifier.height(4.dp))
@@ -433,7 +440,7 @@ fun BatchedBadgeCelebrationDialog(
                                 text = badge.description,
                                 style = MaterialTheme.typography.bodyMedium,
                                 textAlign = TextAlign.Center,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
 
                             Spacer(modifier = Modifier.height(8.dp))
@@ -446,12 +453,12 @@ fun BatchedBadgeCelebrationDialog(
                                     Icon(
                                         imageVector = getCategoryIcon(badge.category),
                                         contentDescription = null,
-                                        modifier = Modifier.size(16.dp)
+                                        modifier = Modifier.size(16.dp),
                                     )
                                 },
                                 colors = AssistChipDefaults.assistChipColors(
-                                    containerColor = tierColor.copy(alpha = 0.15f)
-                                )
+                                    containerColor = tierColor.copy(alpha = 0.15f),
+                                ),
                             )
                         }
                     }
@@ -469,20 +476,20 @@ fun BatchedBadgeCelebrationDialog(
                         .fillMaxWidth()
                         .height(48.dp),
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = Color(0xFFFFD700)
-                    )
+                        containerColor = Color(0xFFFFD700),
+                    ),
                 ) {
                     Icon(
                         imageVector = Icons.Default.Celebration,
                         contentDescription = null,
                         modifier = Modifier.size(20.dp),
-                        tint = Color.Black
+                        tint = Color.Black,
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
                         text = "Awesome!",
                         fontWeight = FontWeight.Bold,
-                        color = Color.Black
+                        color = Color.Black,
                     )
                 }
             }
@@ -495,12 +502,7 @@ fun BatchedBadgeCelebrationDialog(
  * Shows a circular icon with tier-colored border and the tier name below.
  */
 @Composable
-private fun BadgeGridItem(
-    badge: Badge,
-    isSelected: Boolean,
-    onClick: () -> Unit,
-    animationDelay: Int
-) {
+private fun BadgeGridItem(badge: Badge, isSelected: Boolean, onClick: () -> Unit, animationDelay: Int) {
     val tierColor = Color(badge.tier.colorHex.toInt())
 
     // Stagger fade-in animation
@@ -513,16 +515,16 @@ private fun BadgeGridItem(
     val itemAlpha by animateFloatAsState(
         targetValue = if (isVisible) 1f else 0f,
         animationSpec = tween(durationMillis = 300),
-        label = "itemAlpha"
+        label = "itemAlpha",
     )
 
     val itemScale by animateFloatAsState(
         targetValue = if (isVisible) 1f else 0.5f,
         animationSpec = spring(
             dampingRatio = Spring.DampingRatioMediumBouncy,
-            stiffness = Spring.StiffnessMedium
+            stiffness = Spring.StiffnessMedium,
         ),
-        label = "itemScale"
+        label = "itemScale",
     )
 
     // Pulse animation only for selected badge (avoids wasteful infinite transitions on unselected items)
@@ -533,9 +535,9 @@ private fun BadgeGridItem(
             targetValue = 1.08f,
             animationSpec = infiniteRepeatable(
                 animation = tween(600, easing = FastOutSlowInEasing),
-                repeatMode = RepeatMode.Reverse
+                repeatMode = RepeatMode.Reverse,
             ),
-            label = "pulseScale"
+            label = "pulseScale",
         ).value
     } else {
         1f
@@ -551,9 +553,10 @@ private fun BadgeGridItem(
             .clickable(onClick = onClick)
             .padding(4.dp)
             .semantics {
-                contentDescription = "${badge.name}, ${badge.tier.displayName} tier, ${badge.category.displayName} category"
+                contentDescription =
+                    "${badge.name}, ${badge.tier.displayName} tier, ${badge.category.displayName} category"
             },
-        horizontalAlignment = Alignment.CenterHorizontally
+        horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         // Circular badge icon with tier border
         Box(
@@ -562,24 +565,24 @@ private fun BadgeGridItem(
                 .border(
                     width = if (isSelected) 3.dp else 2.dp,
                     color = if (isSelected) tierColor else tierColor.copy(alpha = 0.7f),
-                    shape = CircleShape
+                    shape = CircleShape,
                 )
                 .clip(CircleShape)
                 .background(
                     Brush.linearGradient(
                         listOf(
                             tierColor.copy(alpha = 0.3f),
-                            tierColor.copy(alpha = 0.15f)
-                        )
-                    )
+                            tierColor.copy(alpha = 0.15f),
+                        ),
+                    ),
                 ),
-            contentAlignment = Alignment.Center
+            contentAlignment = Alignment.Center,
         ) {
             Icon(
                 imageVector = getBadgeIcon(badge.iconResource),
                 contentDescription = null,
                 tint = tierColor,
-                modifier = Modifier.size(28.dp)
+                modifier = Modifier.size(28.dp),
             )
         }
 
@@ -592,38 +595,49 @@ private fun BadgeGridItem(
             fontWeight = FontWeight.Medium,
             color = tierColor,
             maxLines = 1,
-            overflow = TextOverflow.Ellipsis
+            overflow = TextOverflow.Ellipsis,
         )
     }
 }
 
 // Helper functions
-private fun getCategoryIcon(category: BadgeCategory): ImageVector {
-    return when (category) {
-        BadgeCategory.CONSISTENCY -> Icons.Default.LocalFireDepartment
-        BadgeCategory.STRENGTH -> Icons.Default.EmojiEvents
-        BadgeCategory.VOLUME -> Icons.Default.Repeat
-        BadgeCategory.EXPLORER -> Icons.Default.Explore
-        BadgeCategory.DEDICATION -> Icons.Default.FitnessCenter
-    }
+private fun getCategoryIcon(category: BadgeCategory): ImageVector = when (category) {
+    BadgeCategory.CONSISTENCY -> Icons.Default.LocalFireDepartment
+    BadgeCategory.STRENGTH -> Icons.Default.EmojiEvents
+    BadgeCategory.VOLUME -> Icons.Default.Repeat
+    BadgeCategory.EXPLORER -> Icons.Default.Explore
+    BadgeCategory.DEDICATION -> Icons.Default.FitnessCenter
 }
 
-private fun getBadgeIcon(iconResource: String): ImageVector {
-    return when (iconResource) {
-        "fire" -> Icons.Default.LocalFireDepartment
-        "trophy" -> Icons.Default.EmojiEvents
-        "dumbbell" -> Icons.Default.FitnessCenter
-        "repeat" -> Icons.Default.Repeat
-        "compass" -> Icons.Default.Explore
-        "calendar" -> Icons.Default.CalendarMonth
-        "sun" -> Icons.Default.WbSunny
-        "moon" -> Icons.Default.NightsStay
-        "weight" -> Icons.Default.FitnessCenter
-        "lightning" -> Icons.Default.Bolt
-        "body" -> Icons.Default.Accessibility
-        "phoenix" -> Icons.Default.LocalFireDepartment // Phoenix uses fire icon
-        "shield" -> Icons.Default.Shield
-        "list" -> Icons.Default.Checklist
-        else -> Icons.Default.Star
-    }
+private fun getBadgeIcon(iconResource: String): ImageVector = when (iconResource) {
+    "fire" -> Icons.Default.LocalFireDepartment
+
+    "trophy" -> Icons.Default.EmojiEvents
+
+    "dumbbell" -> Icons.Default.FitnessCenter
+
+    "repeat" -> Icons.Default.Repeat
+
+    "compass" -> Icons.Default.Explore
+
+    "calendar" -> Icons.Default.CalendarMonth
+
+    "sun" -> Icons.Default.WbSunny
+
+    "moon" -> Icons.Default.NightsStay
+
+    "weight" -> Icons.Default.FitnessCenter
+
+    "lightning" -> Icons.Default.Bolt
+
+    "body" -> Icons.Default.Accessibility
+
+    "phoenix" -> Icons.Default.LocalFireDepartment
+
+    // Phoenix uses fire icon
+    "shield" -> Icons.Default.Shield
+
+    "list" -> Icons.Default.Checklist
+
+    else -> Icons.Default.Star
 }

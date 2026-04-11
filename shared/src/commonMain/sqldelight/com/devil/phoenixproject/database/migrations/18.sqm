@@ -1,0 +1,5 @@
+-- Migration 18: Phase 4 Routine Programming (Issues #29, #30)
+-- RoutineExercise.setEchoLevels and RoutineExercise.warmupSets are intentionally
+-- healed outside this numbered migration. These columns were later absorbed into
+-- create-time schemas and platform fallback paths, so replaying ALTER TABLE here
+-- can crash existing installs with duplicate-column errors.

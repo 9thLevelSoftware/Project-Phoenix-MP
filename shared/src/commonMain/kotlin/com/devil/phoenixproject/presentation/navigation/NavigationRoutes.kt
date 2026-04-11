@@ -33,13 +33,21 @@ sealed class NavigationRoutes(val route: String) {
         fun createRoute(cycleId: String) = "cycleReview/$cycleId"
     }
 
-    // Premium/Account routes
-    object Auth : NavigationRoutes("auth")
-    object Paywall : NavigationRoutes("paywall")
-    object Account : NavigationRoutes("account")
+    // Smart Insights - training suggestions and readiness
+    object SmartInsights : NavigationRoutes("smart_insights")
 
     // Cloud Sync routes
     object LinkAccount : NavigationRoutes("link_account")
+
+    // Strength Assessment - VBT-based 1RM estimation with BLE velocity capture
+    object StrengthAssessment : NavigationRoutes("strength_assessment/{exerciseId}") {
+        fun createRoute(exerciseId: String) = "strength_assessment/$exerciseId"
+    }
+    object StrengthAssessmentPicker : NavigationRoutes("strength_assessment_picker")
+
+    // Integration routes
+    object Integrations : NavigationRoutes("integrations")
+    object ExternalActivities : NavigationRoutes("external_activities")
 }
 
 /**
@@ -49,5 +57,5 @@ sealed class NavigationRoutes(val route: String) {
 enum class BottomNavItem(val route: String, val label: String) {
     WORKOUT("home", "Workout"),
     ANALYTICS("analytics", "Analytics"),
-    SETTINGS("settings", "Settings")
+    SETTINGS("settings", "Settings"),
 }

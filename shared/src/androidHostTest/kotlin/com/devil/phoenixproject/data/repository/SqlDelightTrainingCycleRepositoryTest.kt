@@ -7,12 +7,12 @@ import com.devil.phoenixproject.domain.model.CycleProgression
 import com.devil.phoenixproject.domain.model.TrainingCycle
 import com.devil.phoenixproject.domain.model.generateUUID
 import com.devil.phoenixproject.testutil.createTestDatabase
-import kotlinx.coroutines.test.runTest
-import org.junit.Before
-import org.junit.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
+import kotlinx.coroutines.test.runTest
+import org.junit.Before
+import org.junit.Test
 
 class SqlDelightTrainingCycleRepositoryTest {
 
@@ -30,7 +30,7 @@ class SqlDelightTrainingCycleRepositoryTest {
         val cycleId = "cycle-1"
         val days = listOf(
             CycleDay.create(cycleId = cycleId, dayNumber = 1, name = "Day 1"),
-            CycleDay.restDay(cycleId = cycleId, dayNumber = 2)
+            CycleDay.restDay(cycleId = cycleId, dayNumber = 2),
         )
         val cycle = TrainingCycle.create(id = cycleId, name = "Test", days = days)
 
@@ -46,9 +46,9 @@ class SqlDelightTrainingCycleRepositoryTest {
         val cycle = TrainingCycle.create(id = "cycle-2", name = "Active Cycle")
         repository.saveCycle(cycle)
 
-        repository.setActiveCycle("cycle-2")
+        repository.setActiveCycle("cycle-2", profileId = "default")
 
-        repository.getActiveCycle().test {
+        repository.getActiveCycle(profileId = "default").test {
             val active = awaitItem()
             assertNotNull(active)
             assertEquals("cycle-2", active.id)
@@ -64,8 +64,8 @@ class SqlDelightTrainingCycleRepositoryTest {
             name = "Cycle",
             days = listOf(
                 CycleDay.create(cycleId = cycleId, dayNumber = 1, name = "Day 1"),
-                CycleDay.create(cycleId = cycleId, dayNumber = 2, name = "Day 2")
-            )
+                CycleDay.create(cycleId = cycleId, dayNumber = 2, name = "Day 2"),
+            ),
         )
         repository.saveCycle(cycle)
         repository.initializeProgress(cycleId)
@@ -85,14 +85,21 @@ class SqlDelightTrainingCycleRepositoryTest {
             name = "Cycle",
             days = listOf(
                 CycleDay.create(cycleId = cycleId, dayNumber = 1, name = "Day 1"),
-                CycleDay.create(cycleId = cycleId, dayNumber = 2, name = "Day 2")
-            )
+                CycleDay.create(cycleId = cycleId, dayNumber = 2, name = "Day 2"),
+            ),
         )
         repository.saveCycle(cycle)
         val progress = repository.initializeProgress(cycleId)
 
+        // Use midnight-of-yesterday to guarantee exactly 1 calendar day difference.
+        // pendingAutoAdvanceDays() compares calendar dates in the system timezone,
+        // so raw "25 hours ago" millis can still be the same calendar day near midnight
+        // depending on timezone. Using yesterday's midnight is deterministic.
+        val yesterdayMidnight = java.time.LocalDate.now().minusDays(1)
+            .atStartOfDay(java.time.ZoneId.systemDefault())
+            .toInstant().toEpochMilli()
         repository.updateCycleProgress(
-            progress.copy(lastAdvancedAt = System.currentTimeMillis() - (25 * 60 * 60 * 1000L))
+            progress.copy(lastAdvancedAt = yesterdayMidnight),
         )
 
         val updated = repository.checkAndAutoAdvance(cycleId)
@@ -109,17 +116,22 @@ class SqlDelightTrainingCycleRepositoryTest {
                 CycleDay.create(cycleId = cycleId, dayNumber = 1, name = "Day 1"),
                 CycleDay.create(cycleId = cycleId, dayNumber = 2, name = "Day 2"),
                 CycleDay.create(cycleId = cycleId, dayNumber = 3, name = "Day 3"),
-                CycleDay.create(cycleId = cycleId, dayNumber = 4, name = "Day 4")
-            )
+                CycleDay.create(cycleId = cycleId, dayNumber = 4, name = "Day 4"),
+            ),
         )
         repository.saveCycle(cycle)
         val progress = repository.initializeProgress(cycleId)
 
+        // Use midnight-of-2-days-ago for timezone-safe day comparison.
+        // pendingAutoAdvanceDays() compares calendar dates, not raw millis.
+        val twoDaysAgoMidnight = java.time.LocalDate.now().minusDays(2)
+            .atStartOfDay(java.time.ZoneId.systemDefault())
+            .toInstant().toEpochMilli()
         repository.updateCycleProgress(
             progress.copy(
-                cycleStartDate = System.currentTimeMillis() - (2 * 24 * 60 * 60 * 1000L),
-                lastAdvancedAt = null
-            )
+                cycleStartDate = twoDaysAgoMidnight,
+                lastAdvancedAt = null,
+            ),
         )
 
         val updated = repository.checkAndAutoAdvance(cycleId)
@@ -134,14 +146,14 @@ class SqlDelightTrainingCycleRepositoryTest {
             TrainingCycle.create(
                 id = cycleId,
                 name = "Cycle",
-                days = listOf(CycleDay.restDay(cycleId = cycleId, dayNumber = 1))
-            )
+                days = listOf(CycleDay.restDay(cycleId = cycleId, dayNumber = 1)),
+            ),
         )
         val progression = CycleProgression(
             cycleId = cycleId,
             frequencyCycles = 3,
             weightIncreasePercent = 2.5f,
-            echoLevelIncrease = true
+            echoLevelIncrease = true,
         )
 
         repository.saveCycleProgression(progression)
@@ -166,9 +178,9 @@ class SqlDelightTrainingCycleRepositoryTest {
                     cycleId = cycleId,
                     dayNumber = 1,
                     name = "Day 1",
-                    routineId = routineId
-                )
-            )
+                    routineId = routineId,
+                ),
+            ),
         )
         repository.saveCycle(cycle)
 
@@ -185,7 +197,8 @@ class SqlDelightTrainingCycleRepositoryTest {
             description = "",
             createdAt = 0L,
             lastUsed = null,
-            useCount = 0L
+            useCount = 0L,
+            profile_id = "default",
         )
     }
 
@@ -220,7 +233,9 @@ class SqlDelightTrainingCycleRepositoryTest {
             setWeightsPercentOfPR = null,
             stallDetectionEnabled = 1L,
             stopAtTop = 0L,
-            repCountTiming = "TOP"
+            repCountTiming = "TOP",
+            setEchoLevels = "",
+            warmupSets = "",
         )
     }
 }

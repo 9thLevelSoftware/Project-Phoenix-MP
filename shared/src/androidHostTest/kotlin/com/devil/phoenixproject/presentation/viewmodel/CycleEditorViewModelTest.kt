@@ -8,14 +8,14 @@ import com.devil.phoenixproject.domain.model.RoutineExercise
 import com.devil.phoenixproject.domain.model.generateUUID
 import com.devil.phoenixproject.testutil.FakeTrainingCycleRepository
 import com.devil.phoenixproject.testutil.TestCoroutineRule
+import kotlin.test.assertEquals
+import kotlin.test.assertNotNull
+import kotlin.test.assertTrue
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
-import kotlin.test.assertEquals
-import kotlin.test.assertNotNull
-import kotlin.test.assertTrue
 
 class CycleEditorViewModelTest {
 
@@ -32,8 +32,7 @@ class CycleEditorViewModelTest {
     }
 
     /** Helper to create N rest day template items */
-    private fun createRestDayTemplateItems(count: Int): List<CycleItem> =
-        (1..count).map { CycleItem.Rest(id = generateUUID(), dayNumber = it) }
+    private fun createRestDayTemplateItems(count: Int): List<CycleItem> = (1..count).map { CycleItem.Rest(id = generateUUID(), dayNumber = it) }
 
     @Test
     fun `initialize new cycle with template creates rest days`() = runTest {
@@ -60,13 +59,13 @@ class CycleEditorViewModelTest {
                         name = "Bench Press",
                         muscleGroup = "Chest",
                         muscleGroups = "Chest",
-                        equipment = "BAR"
+                        equipment = "BAR",
                     ),
                     orderIndex = 0,
                     programMode = ProgramMode.OldSchool,
-                    weightPerCableKg = 20f
-                )
-            )
+                    weightPerCableKg = 20f,
+                ),
+            ),
         )
 
         viewModel.addWorkoutDay(routine)

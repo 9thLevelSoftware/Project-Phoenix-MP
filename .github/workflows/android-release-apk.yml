@@ -151,6 +151,11 @@ jobs:
           echo "Selected version code: $SELECTED_VERSION_CODE"
           echo "Version code source: $VERSION_CODE_SOURCE"
 
+      - name: Write Supabase credentials to local.properties
+        run: |
+          echo "supabase.url=${{ secrets.SUPABASE_URL }}" >> local.properties
+          echo "supabase.anon.key=${{ secrets.SUPABASE_ANON_KEY }}" >> local.properties
+
       - name: Build Release APK (signed)
         env:
           KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}

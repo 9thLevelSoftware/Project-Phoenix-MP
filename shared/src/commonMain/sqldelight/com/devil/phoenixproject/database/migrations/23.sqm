@@ -1,0 +1,36 @@
+-- Migration 23: Add ExternalActivity and IntegrationStatus tables for third-party integrations.
+-- ExternalActivity stores normalized workout data from Hevy, Liftosaur, Strong CSV, etc.
+-- IntegrationStatus tracks connection state per provider per profile.
+
+CREATE TABLE IF NOT EXISTS ExternalActivity (
+    id TEXT NOT NULL PRIMARY KEY,
+    externalId TEXT NOT NULL,
+    provider TEXT NOT NULL,
+    name TEXT NOT NULL,
+    activityType TEXT NOT NULL DEFAULT 'strength',
+    startedAt INTEGER NOT NULL,
+    durationSeconds INTEGER NOT NULL DEFAULT 0,
+    distanceMeters REAL,
+    calories INTEGER,
+    avgHeartRate INTEGER,
+    maxHeartRate INTEGER,
+    elevationGainMeters REAL,
+    rawData TEXT,
+    syncedAt INTEGER NOT NULL,
+    profileId TEXT NOT NULL DEFAULT 'default',
+    needsSync INTEGER NOT NULL DEFAULT 1
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_external_activity_dedup ON ExternalActivity(externalId, provider);
+CREATE INDEX IF NOT EXISTS idx_external_activity_profile ON ExternalActivity(profileId);
+CREATE INDEX IF NOT EXISTS idx_external_activity_provider ON ExternalActivity(provider);
+CREATE INDEX IF NOT EXISTS idx_external_activity_started ON ExternalActivity(startedAt DESC);
+
+CREATE TABLE IF NOT EXISTS IntegrationStatus (
+    provider TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'disconnected',
+    lastSyncAt INTEGER,
+    errorMessage TEXT,
+    profileId TEXT NOT NULL DEFAULT 'default',
+    PRIMARY KEY(provider, profileId)
+);

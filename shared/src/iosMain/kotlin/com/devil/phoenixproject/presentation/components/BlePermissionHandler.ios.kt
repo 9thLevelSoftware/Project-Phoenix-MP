@@ -33,8 +33,9 @@ sealed class BlePermissionState {
  */
 @OptIn(ExperimentalForeignApi::class)
 private class BluetoothPermissionManager(
-    private val onStateChange: (BlePermissionState) -> Unit
-) : NSObject(), CBCentralManagerDelegateProtocol {
+    private val onStateChange: (BlePermissionState) -> Unit,
+) : NSObject(),
+    CBCentralManagerDelegateProtocol {
 
     private val log = Logger.withTag("BluetoothPermissionManager")
     private var centralManager: CBCentralManager? = null
@@ -42,28 +43,30 @@ private class BluetoothPermissionManager(
     /**
      * Check current Bluetooth authorization status without triggering permission request.
      */
-    fun getCurrentAuthorizationState(): BlePermissionState {
-        return when (CBCentralManager.authorization) {
-            CBManagerAuthorizationAllowedAlways -> {
-                log.d { "Bluetooth authorization: AllowedAlways" }
-                BlePermissionState.Granted
-            }
-            CBManagerAuthorizationDenied -> {
-                log.d { "Bluetooth authorization: Denied" }
-                BlePermissionState.Denied
-            }
-            CBManagerAuthorizationRestricted -> {
-                log.d { "Bluetooth authorization: Restricted" }
-                BlePermissionState.Denied
-            }
-            CBManagerAuthorizationNotDetermined -> {
-                log.d { "Bluetooth authorization: NotDetermined" }
-                BlePermissionState.NotGranted
-            }
-            else -> {
-                log.d { "Bluetooth authorization: Unknown" }
-                BlePermissionState.NotGranted
-            }
+    fun getCurrentAuthorizationState(): BlePermissionState = when (CBCentralManager.authorization) {
+        CBManagerAuthorizationAllowedAlways -> {
+            log.d { "Bluetooth authorization: AllowedAlways" }
+            BlePermissionState.Granted
+        }
+
+        CBManagerAuthorizationDenied -> {
+            log.d { "Bluetooth authorization: Denied" }
+            BlePermissionState.Denied
+        }
+
+        CBManagerAuthorizationRestricted -> {
+            log.d { "Bluetooth authorization: Restricted" }
+            BlePermissionState.Denied
+        }
+
+        CBManagerAuthorizationNotDetermined -> {
+            log.d { "Bluetooth authorization: NotDetermined" }
+            BlePermissionState.NotGranted
+        }
+
+        else -> {
+            log.d { "Bluetooth authorization: Unknown" }
+            BlePermissionState.NotGranted
         }
     }
 
@@ -96,6 +99,7 @@ private class BluetoothPermissionManager(
                 log.d { "Bluetooth is powered on and authorized" }
                 BlePermissionState.Granted
             }
+
             CBManagerStatePoweredOff -> {
                 // Bluetooth is off but may be authorized
                 // Check authorization separately
@@ -105,22 +109,27 @@ private class BluetoothPermissionManager(
                     else -> BlePermissionState.NotGranted
                 }
             }
+
             CBManagerStateUnauthorized -> {
                 log.d { "Bluetooth is unauthorized" }
                 BlePermissionState.Denied
             }
+
             CBManagerStateUnsupported -> {
                 log.d { "Bluetooth is unsupported on this device" }
                 BlePermissionState.Denied
             }
+
             CBManagerStateResetting -> {
                 log.d { "Bluetooth is resetting" }
                 BlePermissionState.Requesting
             }
+
             CBManagerStateUnknown -> {
                 log.d { "Bluetooth state is unknown" }
                 BlePermissionState.Requesting
             }
+
             else -> {
                 log.d { "Bluetooth state: unknown value ${central.state}" }
                 BlePermissionState.NotGranted
@@ -141,7 +150,7 @@ private class BluetoothPermissionManager(
 @OptIn(ExperimentalForeignApi::class)
 @Composable
 fun RequireBlePermissions(
-    content: @Composable () -> Unit
+    content: @Composable () -> Unit,
 ) {
     val log = remember { Logger.withTag("RequireBlePermissions") }
 
@@ -174,20 +183,23 @@ fun RequireBlePermissions(
         is BlePermissionState.Granted -> {
             content()
         }
+
         is BlePermissionState.NotGranted -> {
             PermissionScreenTheme {
                 BlePermissionRequestScreen(
                     onRequestPermission = {
                         permissionManager.requestPermission()
-                    }
+                    },
                 )
             }
         }
+
         is BlePermissionState.Requesting -> {
             PermissionScreenTheme {
                 BlePermissionRequestingScreen()
             }
         }
+
         is BlePermissionState.Denied -> {
             PermissionScreenTheme {
                 BlePermissionDeniedScreen(
@@ -196,7 +208,7 @@ fun RequireBlePermissions(
                         // User might have enabled it in Settings
                         val currentState = permissionManager.getCurrentAuthorizationState()
                         permissionState = currentState
-                    }
+                    },
                 )
             }
         }
@@ -218,24 +230,24 @@ private fun PermissionScreenTheme(content: @Composable () -> Unit) {
  */
 @Composable
 private fun BlePermissionRequestScreen(
-    onRequestPermission: () -> Unit
+    onRequestPermission: () -> Unit,
 ) {
     Surface(
         modifier = Modifier.fillMaxSize(),
-        color = MaterialTheme.colorScheme.background
+        color = MaterialTheme.colorScheme.background,
     ) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(32.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center
+            verticalArrangement = Arrangement.Center,
         ) {
             Icon(
                 imageVector = Icons.Default.Bluetooth,
                 contentDescription = null,
                 modifier = Modifier.size(80.dp),
-                tint = MaterialTheme.colorScheme.primary
+                tint = MaterialTheme.colorScheme.primary,
             )
 
             Spacer(modifier = Modifier.height(24.dp))
@@ -244,7 +256,7 @@ private fun BlePermissionRequestScreen(
                 text = "Bluetooth Permission Required",
                 style = MaterialTheme.typography.headlineSmall,
                 fontWeight = FontWeight.Bold,
-                textAlign = TextAlign.Center
+                textAlign = TextAlign.Center,
             )
 
             Spacer(modifier = Modifier.height(16.dp))
@@ -253,7 +265,7 @@ private fun BlePermissionRequestScreen(
                 text = "Project Phoenix needs Bluetooth permission to scan for and connect to your Vitruvian Trainer machine. When you tap Continue, iOS will ask for permission.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                textAlign = TextAlign.Center
+                textAlign = TextAlign.Center,
             )
 
             Spacer(modifier = Modifier.height(32.dp))
@@ -262,12 +274,12 @@ private fun BlePermissionRequestScreen(
                 onClick = onRequestPermission,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(56.dp)
+                    .height(56.dp),
             ) {
                 Text(
                     text = "Continue",
                     style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold
+                    fontWeight = FontWeight.Bold,
                 )
             }
         }
@@ -281,18 +293,18 @@ private fun BlePermissionRequestScreen(
 private fun BlePermissionRequestingScreen() {
     Surface(
         modifier = Modifier.fillMaxSize(),
-        color = MaterialTheme.colorScheme.background
+        color = MaterialTheme.colorScheme.background,
     ) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(32.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center
+            verticalArrangement = Arrangement.Center,
         ) {
             CircularProgressIndicator(
                 modifier = Modifier.size(60.dp),
-                color = MaterialTheme.colorScheme.primary
+                color = MaterialTheme.colorScheme.primary,
             )
 
             Spacer(modifier = Modifier.height(24.dp))
@@ -301,7 +313,7 @@ private fun BlePermissionRequestingScreen() {
                 text = "Requesting Permission...",
                 style = MaterialTheme.typography.headlineSmall,
                 fontWeight = FontWeight.Bold,
-                textAlign = TextAlign.Center
+                textAlign = TextAlign.Center,
             )
 
             Spacer(modifier = Modifier.height(16.dp))
@@ -310,7 +322,7 @@ private fun BlePermissionRequestingScreen() {
                 text = "Please respond to the iOS permission dialog.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                textAlign = TextAlign.Center
+                textAlign = TextAlign.Center,
             )
         }
     }
@@ -321,24 +333,24 @@ private fun BlePermissionRequestingScreen() {
  */
 @Composable
 private fun BlePermissionDeniedScreen(
-    onRetry: () -> Unit
+    onRetry: () -> Unit,
 ) {
     Surface(
         modifier = Modifier.fillMaxSize(),
-        color = MaterialTheme.colorScheme.background
+        color = MaterialTheme.colorScheme.background,
     ) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(32.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center
+            verticalArrangement = Arrangement.Center,
         ) {
             Icon(
                 imageVector = Icons.Default.Warning,
                 contentDescription = null,
                 modifier = Modifier.size(80.dp),
-                tint = MaterialTheme.colorScheme.error
+                tint = MaterialTheme.colorScheme.error,
             )
 
             Spacer(modifier = Modifier.height(24.dp))
@@ -347,7 +359,7 @@ private fun BlePermissionDeniedScreen(
                 text = "Permission Denied",
                 style = MaterialTheme.typography.headlineSmall,
                 fontWeight = FontWeight.Bold,
-                textAlign = TextAlign.Center
+                textAlign = TextAlign.Center,
             )
 
             Spacer(modifier = Modifier.height(16.dp))
@@ -356,7 +368,7 @@ private fun BlePermissionDeniedScreen(
                 text = "Bluetooth permission is required to connect to your Vitruvian Trainer. Please enable Bluetooth permission in Settings > Project Phoenix > Bluetooth, then return to the app.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                textAlign = TextAlign.Center
+                textAlign = TextAlign.Center,
             )
 
             Spacer(modifier = Modifier.height(32.dp))
@@ -365,12 +377,12 @@ private fun BlePermissionDeniedScreen(
                 onClick = onRetry,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(56.dp)
+                    .height(56.dp),
             ) {
                 Text(
                     text = "Check Again",
                     style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold
+                    fontWeight = FontWeight.Bold,
                 )
             }
 
@@ -380,7 +392,7 @@ private fun BlePermissionDeniedScreen(
                 text = "If Bluetooth is disabled system-wide, please enable it in Control Center or Settings.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                textAlign = TextAlign.Center
+                textAlign = TextAlign.Center,
             )
         }
     }

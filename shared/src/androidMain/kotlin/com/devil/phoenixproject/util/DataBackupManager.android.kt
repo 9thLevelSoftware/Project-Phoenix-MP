@@ -10,19 +10,16 @@ import androidx.core.content.FileProvider
 import androidx.core.net.toUri
 import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.database.VitruvianDatabase
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.InputStream
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 /**
  * Android implementation of DataBackupManager.
  * Uses MediaStore for Android 10+ and direct file access for older versions.
  */
-class AndroidDataBackupManager(
-    private val context: Context,
-    database: VitruvianDatabase
-) : BaseDataBackupManager(database) {
+class AndroidDataBackupManager(private val context: Context, database: VitruvianDatabase) : BaseDataBackupManager(database) {
 
     private val cacheDir: File
         get() {
@@ -30,6 +27,146 @@ class AndroidDataBackupManager(
             if (!dir.exists()) dir.mkdirs()
             return dir
         }
+
+    override fun getSessionBackupDirectory(): String {
+        // On Q+ we write via MediaStore, but need a staging path for base class path construction.
+        // On pre-Q we write directly to public Downloads (survives uninstall).
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val dir = File(context.cacheDir, "PhoenixBackups")
+            if (!dir.exists()) dir.mkdirs()
+            dir.absolutePath
+        } else {
+            @Suppress("DEPRECATION")
+            val dir = File(
+                Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
+                "PhoenixBackups",
+            )
+            if (!dir.exists()) dir.mkdirs()
+            dir.absolutePath
+        }
+    }
+
+    /**
+     * On Android Q+, write session backups to MediaStore Downloads so they survive
+     * app uninstall. On pre-Q, the base class writes directly to public Downloads.
+     */
+    override fun writeSessionBackupFile(filePath: String, content: String) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val fileName = File(filePath).name
+            val contentValues = ContentValues().apply {
+                put(MediaStore.Downloads.DISPLAY_NAME, fileName)
+                put(MediaStore.Downloads.MIME_TYPE, "application/json")
+                put(MediaStore.Downloads.RELATIVE_PATH, "Download/PhoenixBackups")
+            }
+            val resolver = context.contentResolver
+            val destUri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, contentValues)
+                ?: throw Exception("Failed to create backup file in Downloads")
+            resolver.openOutputStream(destUri)?.use { outputStream ->
+                outputStream.write(content.toByteArray(Charsets.UTF_8))
+            }
+        } else {
+            // Pre-Q: write directly to public Downloads path (already set by getSessionBackupDirectory)
+            super.writeSessionBackupFile(filePath, content)
+        }
+    }
+
+    override fun listBackupFileSizes(): List<Long> = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+        val sizes = mutableListOf<Long>()
+        val resolver = context.contentResolver
+        resolver.query(
+            MediaStore.Downloads.EXTERNAL_CONTENT_URI,
+            arrayOf(MediaStore.Downloads.SIZE),
+            "${MediaStore.Downloads.RELATIVE_PATH} = ? AND ${MediaStore.Downloads.DISPLAY_NAME} LIKE ?",
+            arrayOf("Download/PhoenixBackups/", "phoenix-workout-%.json"),
+            null,
+        )?.use { cursor ->
+            val sizeColumn = cursor.getColumnIndexOrThrow(MediaStore.Downloads.SIZE)
+            while (cursor.moveToNext()) {
+                sizes.add(cursor.getLong(sizeColumn))
+            }
+        }
+        sizes
+    } else {
+        @Suppress("DEPRECATION")
+        val dir = File(
+            Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
+            "PhoenixBackups",
+        )
+        dir.listFiles()
+            ?.filter { it.isFile && it.name.endsWith(".json") }
+            ?.map { it.length() }
+            ?: emptyList()
+    }
+
+    override fun pruneOldBackups(keepCount: Int) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val resolver = context.contentResolver
+            // Query all session backups sorted by date_added ascending (oldest first)
+            val toDelete = mutableListOf<android.net.Uri>()
+            resolver.query(
+                MediaStore.Downloads.EXTERNAL_CONTENT_URI,
+                arrayOf(MediaStore.Downloads._ID),
+                "${MediaStore.Downloads.RELATIVE_PATH} = ? AND ${MediaStore.Downloads.DISPLAY_NAME} LIKE ?",
+                arrayOf("Download/PhoenixBackups/", "phoenix-workout-%.json"),
+                "${MediaStore.Downloads.DATE_ADDED} ASC",
+            )?.use { cursor ->
+                val idColumn = cursor.getColumnIndexOrThrow(MediaStore.Downloads._ID)
+                val excess = cursor.count - keepCount
+                var deleted = 0
+                while (cursor.moveToNext() && deleted < excess) {
+                    val id = cursor.getLong(idColumn)
+                    toDelete.add(
+                        android.content.ContentUris.withAppendedId(
+                            MediaStore.Downloads.EXTERNAL_CONTENT_URI,
+                            id,
+                        ),
+                    )
+                    deleted++
+                }
+            }
+            toDelete.forEach { uri ->
+                try {
+                    resolver.delete(uri, null, null)
+                } catch (_: Exception) {}
+            }
+        } else {
+            @Suppress("DEPRECATION")
+            val dir = File(
+                Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
+                "PhoenixBackups",
+            )
+            val files = dir.listFiles()
+                ?.filter { it.isFile && it.name.startsWith("phoenix-workout-") && it.name.endsWith(".json") }
+                ?.sortedBy { it.lastModified() }
+                ?: return
+            val excess = files.size - keepCount
+            if (excess > 0) {
+                files.take(excess).forEach { it.delete() }
+            }
+        }
+    }
+
+    override fun openBackupFolder() {
+        try {
+            // Open Downloads/PhoenixBackups in system file manager
+            val intent = Intent(Intent.ACTION_VIEW).apply {
+                val downloadsUri = "content://com.android.externalstorage.documents/document/primary:Download%2FPhoenixBackups".toUri()
+                data = downloadsUri
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            context.startActivity(intent)
+        } catch (_: Exception) {
+            // Fallback: open general Downloads folder
+            try {
+                val fallbackIntent = Intent(android.app.DownloadManager.ACTION_VIEW_DOWNLOADS).apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                context.startActivity(fallbackIntent)
+            } catch (_: Exception) {
+                Logger.w { "Could not open backup folder - no compatible file manager found" }
+            }
+        }
+    }
 
     override fun createBackupWriter(): BackupJsonWriter {
         val timestamp = KmpUtils.formatTimestamp(KmpUtils.currentTimeMillis(), "yyyy-MM-dd")
@@ -67,7 +204,7 @@ class AndroidDataBackupManager(
                 @Suppress("DEPRECATION")
                 val downloadsDir = File(
                     Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
-                    "VitruvianPhoenix"
+                    "VitruvianPhoenix",
                 )
                 downloadsDir.mkdirs()
                 val destFile = File(downloadsDir, fileName)
@@ -115,7 +252,7 @@ class AndroidDataBackupManager(
                 @Suppress("DEPRECATION")
                 val downloadsDir = File(
                     Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
-                    "VitruvianPhoenix"
+                    "VitruvianPhoenix",
                 )
                 downloadsDir.mkdirs()
 
@@ -165,7 +302,7 @@ class AndroidDataBackupManager(
             val uri = FileProvider.getUriForFile(
                 context,
                 "${context.packageName}.fileprovider",
-                file
+                file,
             )
 
             val shareIntent = Intent(Intent.ACTION_SEND).apply {
@@ -187,5 +324,4 @@ class AndroidDataBackupManager(
             throw e
         }
     }
-
 }

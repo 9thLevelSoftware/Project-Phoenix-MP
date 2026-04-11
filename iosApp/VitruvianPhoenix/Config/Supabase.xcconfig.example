@@ -1,0 +1,6 @@
+// Supabase Configuration
+// Copy this file to Supabase.xcconfig and fill in your values
+// Supabase.xcconfig is excluded from git via .gitignore
+
+SUPABASE_URL = https:/$()/your-project.supabase.co
+SUPABASE_ANON_KEY = your-supabase-anon-key

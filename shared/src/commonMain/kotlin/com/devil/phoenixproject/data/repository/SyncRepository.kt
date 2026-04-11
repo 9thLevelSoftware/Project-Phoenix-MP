@@ -5,8 +5,14 @@ import com.devil.phoenixproject.data.sync.EarnedBadgeSyncDto
 import com.devil.phoenixproject.data.sync.GamificationStatsSyncDto
 import com.devil.phoenixproject.data.sync.IdMappings
 import com.devil.phoenixproject.data.sync.PersonalRecordSyncDto
+import com.devil.phoenixproject.data.sync.PortalSyncAdapter.CycleWithContext
+import com.devil.phoenixproject.data.sync.PullRoutineDto
+import com.devil.phoenixproject.data.sync.PullTrainingCycleDto
 import com.devil.phoenixproject.data.sync.RoutineSyncDto
 import com.devil.phoenixproject.data.sync.WorkoutSessionSyncDto
+import com.devil.phoenixproject.domain.model.PersonalRecord
+import com.devil.phoenixproject.domain.model.Routine
+import com.devil.phoenixproject.domain.model.WorkoutSession
 
 /**
  * Repository interface for sync operations.
@@ -17,19 +23,19 @@ interface SyncRepository {
     // === Push Operations (get local changes) ===
 
     /**
-     * Get workout sessions modified since the given timestamp
+     * Get workout sessions modified since the given timestamp, scoped to profile
      */
-    suspend fun getSessionsModifiedSince(timestamp: Long): List<WorkoutSessionSyncDto>
+    suspend fun getSessionsModifiedSince(timestamp: Long, profileId: String = "default"): List<WorkoutSessionSyncDto>
 
     /**
-     * Get personal records modified since the given timestamp
+     * Get personal records modified since the given timestamp, scoped to profile
      */
-    suspend fun getPRsModifiedSince(timestamp: Long): List<PersonalRecordSyncDto>
+    suspend fun getPRsModifiedSince(timestamp: Long, profileId: String = "default"): List<PersonalRecordSyncDto>
 
     /**
-     * Get routines modified since the given timestamp
+     * Get routines modified since the given timestamp, scoped to profile
      */
-    suspend fun getRoutinesModifiedSince(timestamp: Long): List<RoutineSyncDto>
+    suspend fun getRoutinesModifiedSince(timestamp: Long, profileId: String = "default"): List<RoutineSyncDto>
 
     /**
      * Get custom exercises modified since the given timestamp
@@ -37,14 +43,64 @@ interface SyncRepository {
     suspend fun getCustomExercisesModifiedSince(timestamp: Long): List<CustomExerciseSyncDto>
 
     /**
-     * Get earned badges modified since the given timestamp
+     * Get earned badges modified since the given timestamp, scoped to profile
      */
-    suspend fun getBadgesModifiedSince(timestamp: Long): List<EarnedBadgeSyncDto>
+    suspend fun getBadgesModifiedSince(timestamp: Long, profileId: String): List<EarnedBadgeSyncDto>
 
     /**
-     * Get current gamification stats for sync
+     * Get current gamification stats for sync, scoped to profile
      */
-    suspend fun getGamificationStatsForSync(): GamificationStatsSyncDto?
+    suspend fun getGamificationStatsForSync(profileId: String): GamificationStatsSyncDto?
+
+    // === Portal Push Operations (full domain objects) ===
+
+    /**
+     * Get full WorkoutSession domain objects modified since timestamp, scoped to profile.
+     * Returns rich objects with routineSessionId, totalVolumeKg, etc. needed by PortalSyncAdapter.
+     */
+    suspend fun getWorkoutSessionsModifiedSince(timestamp: Long, profileId: String = "default"): List<WorkoutSession>
+
+    /**
+     * Get full Routine domain objects modified since timestamp, scoped to profile.
+     * Returns rich objects with exercises, supersets, etc. needed by PortalSyncAdapter.toPortalRoutine().
+     */
+    suspend fun getFullRoutinesModifiedSince(timestamp: Long, profileId: String = "default"): List<Routine>
+
+    /**
+     * Get training cycles scoped to the given profile, with progress and progression context for push.
+     * Returns all matching cycles (no delta — cycles lack updatedAt timestamps).
+     */
+    suspend fun getFullCyclesForSync(profileId: String = "default"): List<CycleWithContext>
+
+    /**
+     * Get full PersonalRecord domain objects modified since timestamp, scoped to profile.
+     * Returns rich objects with prType, phase, and volume for PortalSyncAdapter PR metadata.
+     */
+    suspend fun getFullPRsModifiedSince(timestamp: Long, profileId: String = "default"): List<PersonalRecord>
+
+    /**
+     * Get phase statistics for the given session IDs.
+     * Returns SQLDelight PhaseStatistics rows for conversion to portal DTOs.
+     */
+    suspend fun getPhaseStatisticsForSessions(sessionIds: List<String>): List<com.devil.phoenixproject.database.PhaseStatistics>
+
+    /**
+     * Get all exercise signatures for sync push.
+     */
+    suspend fun getAllExerciseSignatures(): List<com.devil.phoenixproject.database.ExerciseSignature>
+
+    /**
+     * Get all VBT assessment results for sync push.
+     */
+    suspend fun getAllAssessments(profileId: String = "default"): List<com.devil.phoenixproject.database.AssessmentResult>
+
+    // === Post-Push Stamping ===
+
+    /**
+     * Stamp pushed sessions with current timestamp so they are not re-sent on next sync.
+     * Sessions with NULL updatedAt would otherwise match every delta query indefinitely.
+     */
+    suspend fun updateSessionTimestamp(sessionId: String, timestamp: Long)
 
     // === ID Mapping (after push) ===
 
@@ -76,12 +132,41 @@ interface SyncRepository {
     suspend fun mergeCustomExercises(exercises: List<CustomExerciseSyncDto>)
 
     /**
-     * Merge badges from server
+     * Merge badges from server, scoped to profile
      */
-    suspend fun mergeBadges(badges: List<EarnedBadgeSyncDto>)
+    suspend fun mergeBadges(badges: List<EarnedBadgeSyncDto>, profileId: String = "default")
 
     /**
-     * Merge gamification stats from server
+     * Merge gamification stats from server, scoped to profile
      */
-    suspend fun mergeGamificationStats(stats: GamificationStatsSyncDto?)
+    suspend fun mergeGamificationStats(stats: GamificationStatsSyncDto?, profileId: String = "default")
+
+    /**
+     * Merge portal routines with exercises. Handles full routine + exercise replacement.
+     * Respects local modifications: if local updatedAt > lastSync, keeps local version.
+     *
+     * @param routines Portal routine DTOs with nested exercises
+     * @param lastSync The lastSync timestamp — routines modified locally after this are preserved
+     */
+    suspend fun mergePortalRoutines(routines: List<PullRoutineDto>, lastSync: Long, profileId: String = "default")
+
+    /**
+     * Merge portal training cycles with days into local database.
+     * Server wins: portal cycles overwrite local versions.
+     * Uses delete-then-reinsert for cycle days (same pattern as portal edge function).
+     */
+    suspend fun mergePortalCycles(cycles: List<PullTrainingCycleDto>, profileId: String = "default")
+
+    /**
+     * Merge pulled workout sessions into local database.
+     * Uses INSERT OR IGNORE — if a session with the same ID already exists locally,
+     * it is NOT overwritten (local data wins for immutable sessions).
+     */
+    suspend fun mergePortalSessions(sessions: List<WorkoutSession>)
+
+    /**
+     * Merge personal records from portal pull response, scoped to profile.
+     * Uses INSERT OR IGNORE — local PRs win on conflict.
+     */
+    suspend fun mergePersonalRecords(records: List<PersonalRecordSyncDto>, profileId: String = "default")
 }

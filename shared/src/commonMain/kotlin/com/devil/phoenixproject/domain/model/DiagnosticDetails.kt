@@ -5,5 +5,5 @@ data class DiagnosticDetails(
     val faults: List<Short>,
     val temps: List<Byte>,
     val containsFaults: Boolean,
-    val timestamp: Long = currentTimeMillis()
+    val timestamp: Long = currentTimeMillis(),
 )

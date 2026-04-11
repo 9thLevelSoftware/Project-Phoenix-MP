@@ -22,17 +22,13 @@ import com.devil.phoenixproject.ui.theme.SupersetTheme
  * with a colored left border stripe for visual grouping.
  */
 @Composable
-fun SupersetContainer(
-    colorIndex: Int,
-    modifier: Modifier = Modifier,
-    content: @Composable () -> Unit
-) {
+fun SupersetContainer(colorIndex: Int, modifier: Modifier = Modifier, content: @Composable () -> Unit) {
     val color = SupersetTheme.colorForIndex(colorIndex)
 
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .height(IntrinsicSize.Min)
+            .height(IntrinsicSize.Min),
     ) {
         // Colored left border stripe
         Box(
@@ -40,14 +36,14 @@ fun SupersetContainer(
                 .width(4.dp)
                 .fillMaxHeight()
                 .clip(RoundedCornerShape(2.dp))
-                .background(color)
+                .background(color),
         )
 
         // Content (header + exercises)
         Column(
             modifier = Modifier
                 .weight(1f)
-                .padding(start = 8.dp)
+                .padding(start = 8.dp),
         ) {
             content()
         }

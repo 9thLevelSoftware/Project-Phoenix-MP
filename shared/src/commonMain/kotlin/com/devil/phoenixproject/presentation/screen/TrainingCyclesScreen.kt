@@ -20,7 +20,6 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
@@ -31,22 +30,23 @@ import com.devil.phoenixproject.data.repository.WorkoutRepository
 import com.devil.phoenixproject.domain.model.CycleDay
 import com.devil.phoenixproject.domain.model.CycleProgress
 import com.devil.phoenixproject.domain.model.CycleTemplate
-import com.devil.phoenixproject.domain.model.ExerciseConfig
-import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.domain.model.TrainingCycle
 import com.devil.phoenixproject.domain.usecase.TemplateConverter
 import com.devil.phoenixproject.presentation.components.DayStrip
 import com.devil.phoenixproject.presentation.components.EmptyState
 import com.devil.phoenixproject.presentation.components.ResumeRoutineDialog
+import com.devil.phoenixproject.presentation.components.cycle.UnifiedCycleCreationSheet
+import com.devil.phoenixproject.presentation.navigation.NavigationRoutes
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
 import com.devil.phoenixproject.ui.theme.ThemeMode
+import com.devil.phoenixproject.ui.theme.screenBackgroundBrush
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import com.devil.phoenixproject.presentation.navigation.NavigationRoutes
+import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.koinInject
-import com.devil.phoenixproject.ui.theme.screenBackgroundBrush
-import com.devil.phoenixproject.presentation.components.cycle.UnifiedCycleCreationSheet
+import vitruvianprojectphoenix.shared.generated.resources.*
+import vitruvianprojectphoenix.shared.generated.resources.Res
 
 /**
  * State machine for cycle creation flow
@@ -58,7 +58,7 @@ sealed class CycleCreationState {
     data class ModeConfirmation(
         val template: CycleTemplate,
         val oneRepMaxValues: Map<String, Float>,
-        val prWeightValues: Map<String, Float> = emptyMap()
+        val prWeightValues: Map<String, Float> = emptyMap(),
     ) : CycleCreationState()
     data class Creating(val template: CycleTemplate) : CycleCreationState()
 }
@@ -69,24 +69,23 @@ sealed class CycleCreationState {
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun TrainingCyclesScreen(
-    navController: NavController,
-    viewModel: MainViewModel,
-    themeMode: ThemeMode
-) {
+fun TrainingCyclesScreen(navController: NavController, viewModel: MainViewModel, themeMode: ThemeMode) {
     val cycleRepository: TrainingCycleRepository = koinInject()
     val exerciseRepository: ExerciseRepository = koinInject()
     val workoutRepository: WorkoutRepository = koinInject()
     val templateConverter: TemplateConverter = koinInject()
     val personalRecordRepository: com.devil.phoenixproject.data.repository.PersonalRecordRepository = koinInject()
+    val userProfileRepository: com.devil.phoenixproject.data.repository.UserProfileRepository = koinInject()
+    val activeProfile by userProfileRepository.activeProfile.collectAsState()
+    val profileId = activeProfile?.id ?: "default"
     val scope = rememberCoroutineScope()
 
     // User preferences for weight unit
     val weightUnit by viewModel.weightUnit.collectAsState()
 
     // Collect cycles from repository
-    val cycles by cycleRepository.getAllCycles().collectAsState(initial = emptyList())
-    val activeCycle by cycleRepository.getActiveCycle().collectAsState(initial = null)
+    val cycles by cycleRepository.getAllCycles(profileId).collectAsState(initial = emptyList())
+    val activeCycle by cycleRepository.getActiveCycle(profileId).collectAsState(initial = null)
     val routines by viewModel.routines.collectAsState()
 
     // State
@@ -125,10 +124,7 @@ fun TrainingCyclesScreen(
     var pendingCycleId by remember { mutableStateOf<String?>(null) }
     var pendingDayNumber by remember { mutableStateOf(0) }
 
-    suspend fun loadProgressMap(
-        cycleList: List<TrainingCycle>,
-        activeCycleId: String?
-    ): Map<String, CycleProgress> {
+    suspend fun loadProgressMap(cycleList: List<TrainingCycle>, activeCycleId: String?): Map<String, CycleProgress> {
         val progressMap = mutableMapOf<String, CycleProgress>()
         cycleList.forEach { cycle ->
             val progress = if (cycle.id == activeCycleId) {
@@ -175,7 +171,7 @@ fun TrainingCyclesScreen(
                     !day.isRestDay &&
                         day.routineId == null &&
                         !day.name.isNullOrBlank() &&
-                        !day.name!!.trim().matches(Regex("^Day\\s+\\d+$", RegexOption.IGNORE_CASE))
+                        !day.name.trim().matches(Regex("^Day\\s+\\d+$", RegexOption.IGNORE_CASE))
                 }
                 .forEach { day ->
                     val matches = routines.filter { it.name.equals(day.name, ignoreCase = true) }
@@ -200,27 +196,27 @@ fun TrainingCyclesScreen(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(backgroundGradient)
+            .background(backgroundGradient),
     ) {
         if (cycles.isEmpty()) {
             Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(20.dp)
+                    .padding(20.dp),
             ) {
                 EmptyState(
                     icon = Icons.Default.Loop,
-                    title = "No Training Cycles Yet",
-                    message = "Create a rolling workout schedule that adapts to your life, not the calendar",
-                    actionText = "Create Your First Cycle",
-                    onAction = { showCreationSheet = true }
+                    title = stringResource(Res.string.empty_no_cycles_title),
+                    message = stringResource(Res.string.empty_no_cycles_message),
+                    actionText = stringResource(Res.string.create_cycle),
+                    onAction = { showCreationSheet = true },
                 )
             }
         } else {
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(20.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
+                verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
                 // Active Cycle Section
                 if (activeCycle != null) {
@@ -250,7 +246,7 @@ fun TrainingCyclesScreen(
                                                 viewModel.startWorkout()
                                                 navController.navigate(NavigationRoutes.ActiveWorkout.route)
                                             },
-                                            onFailed = { /* Error shown via StateFlow */ }
+                                            onFailed = { /* Error shown via StateFlow */ },
                                         )
                                     }
                                 }
@@ -281,7 +277,7 @@ fun TrainingCyclesScreen(
                             },
                             onEditCycle = {
                                 navController.navigate(NavigationRoutes.CycleEditor.createRoute(activeCycle!!.id))
-                            }
+                            },
                         )
                     }
                 }
@@ -291,22 +287,22 @@ fun TrainingCyclesScreen(
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
+                        verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Text(
                             text = "All Cycles",
                             style = MaterialTheme.typography.titleLarge,
                             fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurface
+                            color = MaterialTheme.colorScheme.onSurface,
                         )
                         TextButton(onClick = { showCreationSheet = true }) {
                             Icon(
                                 Icons.Default.Add,
                                 contentDescription = null,
-                                modifier = Modifier.size(18.dp)
+                                modifier = Modifier.size(18.dp),
                             )
                             Spacer(Modifier.width(4.dp))
-                            Text("Create Cycle")
+                            Text(stringResource(Res.string.create_cycle))
                         }
                     }
                 }
@@ -320,12 +316,12 @@ fun TrainingCyclesScreen(
                         isActive = cycle.id == activeCycle?.id,
                         onActivate = {
                             scope.launch {
-                                cycleRepository.setActiveCycle(cycle.id)
+                                cycleRepository.setActiveCycle(cycle.id, profileId)
                             }
                         },
                         onDeactivate = {
                             scope.launch {
-                                cycleRepository.clearActiveCycle()
+                                cycleRepository.clearActiveCycle(profileId)
                             }
                         },
                         onEdit = {
@@ -333,7 +329,7 @@ fun TrainingCyclesScreen(
                         },
                         onDelete = {
                             showDeleteConfirmDialog = cycle
-                        }
+                        },
                     )
                 }
             }
@@ -346,9 +342,9 @@ fun TrainingCyclesScreen(
                 .align(Alignment.BottomEnd)
                 .navigationBarsPadding()
                 .padding(20.dp),
-            containerColor = MaterialTheme.colorScheme.primary
+            containerColor = MaterialTheme.colorScheme.primary,
         ) {
-            Icon(Icons.Default.Add, contentDescription = "Create Cycle")
+            Icon(Icons.Default.Add, contentDescription = stringResource(Res.string.cd_create_cycle))
         }
 
         // Snackbar for cycle completion feedback
@@ -356,7 +352,7 @@ fun TrainingCyclesScreen(
             hostState = snackbarHostState,
             modifier = Modifier
                 .align(Alignment.BottomCenter)
-                .navigationBarsPadding()
+                .navigationBarsPadding(),
         )
     }
 
@@ -404,7 +400,7 @@ fun TrainingCyclesScreen(
                     navController.navigate(NavigationRoutes.CycleEditor.createRoute("new"))
                 }
             },
-            onDismiss = { showCreationSheet = false }
+            onDismiss = { showCreationSheet = false },
         )
     }
 
@@ -439,7 +435,7 @@ fun TrainingCyclesScreen(
                         val exerciseId = exercise.id ?: return@let
 
                         // First try to get the PR (best weight ever achieved)
-                        val pr = personalRecordRepository.getBestWeightPR(exerciseId)
+                        val pr = personalRecordRepository.getBestWeightPR(exerciseId, profileId)
                         val prOneRepMax = pr?.oneRepMax
 
                         // Use PR's 1RM if available, else fall back to stored exercise 1RM
@@ -468,14 +464,15 @@ fun TrainingCyclesScreen(
                     creationState = CycleCreationState.ModeConfirmation(
                         template = state.template,
                         oneRepMaxValues = oneRepMaxValues,
-                        prWeightValues = existingPrWeightValues.toMap()
+                        prWeightValues = existingPrWeightValues.toMap(),
                     )
                 },
                 onCancel = {
                     creationState = CycleCreationState.Idle
-                }
+                },
             )
         }
+
         is CycleCreationState.ModeConfirmation -> {
             ModeConfirmationScreen(
                 template = state.template,
@@ -497,7 +494,7 @@ fun TrainingCyclesScreen(
                             // 2. Convert template using TemplateConverter (with user's exercise configs)
                             val conversionResult = templateConverter.convert(
                                 template = state.template,
-                                exerciseConfigs = exerciseConfigs
+                                exerciseConfigs = exerciseConfigs,
                             )
 
                             // 3. Save routines FIRST (CycleDay has FK to Routine)
@@ -528,9 +525,10 @@ fun TrainingCyclesScreen(
                 },
                 onCancel = {
                     creationState = CycleCreationState.Idle
-                }
+                },
             )
         }
+
         else -> {
             // Idle or Creating state - don't show anything
         }
@@ -540,8 +538,8 @@ fun TrainingCyclesScreen(
     showDeleteConfirmDialog?.let { cycle ->
         AlertDialog(
             onDismissRequest = { showDeleteConfirmDialog = null },
-            title = { Text("Delete Cycle?") },
-            text = { Text("Are you sure you want to delete \"${cycle.name}\"? This cannot be undone.") },
+            title = { Text(stringResource(Res.string.delete_cycle_title)) },
+            text = { Text(stringResource(Res.string.delete_cycle_message, cycle.name)) },
             confirmButton = {
                 TextButton(
                     onClick = {
@@ -551,17 +549,17 @@ fun TrainingCyclesScreen(
                         }
                     },
                     colors = ButtonDefaults.textButtonColors(
-                        contentColor = MaterialTheme.colorScheme.error
-                    )
+                        contentColor = MaterialTheme.colorScheme.error,
+                    ),
                 ) {
-                    Text("Delete")
+                    Text(stringResource(Res.string.action_delete))
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showDeleteConfirmDialog = null }) {
-                    Text("Cancel")
+                    Text(stringResource(Res.string.action_cancel))
                 }
-            }
+            },
         )
     }
 
@@ -573,37 +571,37 @@ fun TrainingCyclesScreen(
                 Icon(
                     Icons.Default.Warning,
                     contentDescription = null,
-                    tint = MaterialTheme.colorScheme.tertiary
+                    tint = MaterialTheme.colorScheme.tertiary,
                 )
             },
-            title = { Text("Exercises Not Found") },
+            title = { Text(stringResource(Res.string.exercises_not_found)) },
             text = {
                 Column {
                     Text(
                         "The cycle was created, but the following exercises weren't found in your library:",
-                        style = MaterialTheme.typography.bodyMedium
+                        style = MaterialTheme.typography.bodyMedium,
                     )
                     Spacer(modifier = Modifier.height(8.dp))
                     warnings.forEach { warning ->
                         Text(
                             "• $warning",
                             style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
                         "You may need to add these exercises or update the routines manually.",
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
             },
             confirmButton = {
                 TextButton(onClick = { showWarningDialog = null }) {
-                    Text("OK")
+                    Text(stringResource(Res.string.action_ok))
                 }
-            }
+            },
         )
     }
 
@@ -615,21 +613,21 @@ fun TrainingCyclesScreen(
                 Icon(
                     Icons.Default.Error,
                     contentDescription = null,
-                    tint = MaterialTheme.colorScheme.error
+                    tint = MaterialTheme.colorScheme.error,
                 )
             },
-            title = { Text("Error") },
+            title = { Text(stringResource(Res.string.label_error)) },
             text = {
                 Text(
                     "Failed to create training cycle: $errorMessage",
-                    style = MaterialTheme.typography.bodyMedium
+                    style = MaterialTheme.typography.bodyMedium,
                 )
             },
             confirmButton = {
                 TextButton(onClick = { showErrorDialog = null }) {
-                    Text("OK")
+                    Text(stringResource(Res.string.action_ok))
                 }
-            }
+            },
         )
     }
 
@@ -646,7 +644,7 @@ fun TrainingCyclesScreen(
                             viewModel.startWorkout()
                             navController.navigate(NavigationRoutes.ActiveWorkout.route)
                         },
-                        onFailed = { /* Error shown via StateFlow */ }
+                        onFailed = { /* Error shown via StateFlow */ },
                     )
                 },
                 onRestart = {
@@ -659,11 +657,11 @@ fun TrainingCyclesScreen(
                                 viewModel.startWorkout()
                                 navController.navigate(NavigationRoutes.ActiveWorkout.route)
                             },
-                            onFailed = { /* Error shown via StateFlow */ }
+                            onFailed = { /* Error shown via StateFlow */ },
                         )
                     }
                 },
-                onDismiss = { showResumeDialog = false }
+                onDismiss = { showResumeDialog = false },
             )
         }
     }
@@ -682,7 +680,7 @@ private fun ActiveCycleCard(
     onStartWorkout: (routineId: String?, cycleId: String, dayNumber: Int) -> Unit,
     onAdvanceDay: () -> Unit,
     onJumpToDay: (Int) -> Unit,
-    onEditCycle: () -> Unit
+    onEditCycle: () -> Unit,
 ) {
     val currentDay = progress?.currentDayNumber ?: 1
     // Use selected day for preview, or default to current day
@@ -700,53 +698,53 @@ private fun ActiveCycleCard(
     // Create a default progress if none exists
     val effectiveProgress = progress ?: CycleProgress.create(
         cycleId = cycle.id,
-        currentDayNumber = 1
+        currentDayNumber = 1,
     )
 
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
         ),
         shape = RoundedCornerShape(20.dp),
         elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
-        border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary)
+        border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary),
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(20.dp)
+                .padding(20.dp),
         ) {
             // Header
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+                verticalAlignment = Alignment.CenterVertically,
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(
                         if (isViewingCurrentDay) Icons.Default.PlayCircle else Icons.Default.CalendarToday,
                         contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary
+                        tint = MaterialTheme.colorScheme.primary,
                     )
                     Spacer(Modifier.width(8.dp))
                     Text(
                         if (isViewingCurrentDay) "UP NEXT" else "PREVIEWING",
                         style = MaterialTheme.typography.labelLarge,
                         fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.primary
+                        color = MaterialTheme.colorScheme.primary,
                     )
                 }
 
                 Surface(
                     color = MaterialTheme.colorScheme.primaryContainer,
-                    shape = RoundedCornerShape(8.dp)
+                    shape = RoundedCornerShape(8.dp),
                 ) {
                     Text(
                         "Day $displayedDayNumber of ${cycle.days.size}",
                         modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
                         style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                        color = MaterialTheme.colorScheme.onPrimaryContainer,
                     )
                 }
             }
@@ -758,7 +756,7 @@ private fun ActiveCycleCard(
                 displayedCycleDay?.name ?: "Day $displayedDayNumber",
                 style = MaterialTheme.typography.headlineMedium,
                 fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurface
+                color = MaterialTheme.colorScheme.onSurface,
             )
 
             if (isRestDay) {
@@ -768,13 +766,13 @@ private fun ActiveCycleCard(
                         Icons.Default.SelfImprovement,
                         contentDescription = null,
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(20.dp)
+                        modifier = Modifier.size(20.dp),
                     )
                     Spacer(Modifier.width(8.dp))
                     Text(
                         "Rest Day - Take it easy!",
                         style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
             } else if (routine != null) {
@@ -782,13 +780,13 @@ private fun ActiveCycleCard(
                 Text(
                     routine.name,
                     style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.9f)
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.9f),
                 )
                 Text(
                     routine.exercises.joinToString(", ") { it.exercise.name }.take(50) +
                         if (routine.exercises.size > 3) "..." else "",
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             } else if (isUnassignedWorkout) {
                 Spacer(Modifier.height(8.dp))
@@ -797,13 +795,13 @@ private fun ActiveCycleCard(
                         Icons.Default.Warning,
                         contentDescription = null,
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(20.dp)
+                        modifier = Modifier.size(20.dp),
                     )
                     Spacer(Modifier.width(8.dp))
                     Text(
                         "No routine assigned",
                         style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
             }
@@ -815,7 +813,7 @@ private fun ActiveCycleCard(
                 days = cycle.days,
                 progress = effectiveProgress,
                 currentSelection = displayedDayNumber,
-                onDaySelected = onDaySelected
+                onDaySelected = onDaySelected,
             )
 
             Spacer(Modifier.height(16.dp))
@@ -823,62 +821,62 @@ private fun ActiveCycleCard(
             // Action buttons
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 if (displayedCycleDay == null) {
                     OutlinedButton(
                         onClick = onEditCycle,
                         modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(12.dp)
+                        shape = RoundedCornerShape(12.dp),
                     ) {
                         Icon(Icons.Default.Edit, contentDescription = null)
                         Spacer(Modifier.width(8.dp))
-                        Text("Edit Cycle")
+                        Text(stringResource(Res.string.edit_cycle))
                     }
                 } else if (isRestDay) {
                     if (isViewingCurrentDay) {
                         OutlinedButton(
                             onClick = onAdvanceDay,
                             modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(12.dp)
+                            shape = RoundedCornerShape(12.dp),
                         ) {
                             Icon(Icons.Default.SkipNext, contentDescription = null)
                             Spacer(Modifier.width(8.dp))
-                            Text("Skip Rest Day")
+                            Text(stringResource(Res.string.skip_rest_day))
                         }
                     } else {
                         // Viewing a different rest day - offer jump or return to today
                         OutlinedButton(
                             onClick = { onJumpToDay(displayedDayNumber) },
                             modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(12.dp)
+                            shape = RoundedCornerShape(12.dp),
                         ) {
                             Icon(Icons.Default.SkipNext, contentDescription = null)
                             Spacer(Modifier.width(8.dp))
-                            Text("Jump to Day $displayedDayNumber")
+                            Text(stringResource(Res.string.jump_to_day, displayedDayNumber))
                         }
                     }
                 } else {
                     if (isViewingCurrentDay) {
                         if (hasRoutine) {
                             Button(
-                                onClick = { onStartWorkout(displayedCycleDay?.routineId, cycle.id, displayedDayNumber) },
+                                onClick = { onStartWorkout(displayedCycleDay.routineId, cycle.id, displayedDayNumber) },
                                 modifier = Modifier.weight(1f),
-                                shape = RoundedCornerShape(12.dp)
+                                shape = RoundedCornerShape(12.dp),
                             ) {
                                 Icon(Icons.Default.PlayArrow, contentDescription = null)
                                 Spacer(Modifier.width(8.dp))
-                                Text("Start Workout")
+                                Text(stringResource(Res.string.start_workout))
                             }
                         } else {
                             OutlinedButton(
                                 onClick = onEditCycle,
                                 modifier = Modifier.weight(1f),
-                                shape = RoundedCornerShape(12.dp)
+                                shape = RoundedCornerShape(12.dp),
                             ) {
                                 Icon(Icons.Default.Edit, contentDescription = null)
                                 Spacer(Modifier.width(8.dp))
-                                Text("Assign Routine")
+                                Text(stringResource(Res.string.assign_routine))
                             }
                         }
                     } else {
@@ -887,30 +885,30 @@ private fun ActiveCycleCard(
                             OutlinedButton(
                                 onClick = { onJumpToDay(displayedDayNumber) },
                                 modifier = Modifier.weight(1f),
-                                shape = RoundedCornerShape(12.dp)
+                                shape = RoundedCornerShape(12.dp),
                             ) {
                                 Icon(Icons.Default.SkipNext, contentDescription = null)
                                 Spacer(Modifier.width(8.dp))
-                                Text("Jump to Day $displayedDayNumber")
+                                Text(stringResource(Res.string.jump_to_day, displayedDayNumber))
                             }
                             Button(
-                                onClick = { onStartWorkout(displayedCycleDay?.routineId, cycle.id, displayedDayNumber) },
+                                onClick = { onStartWorkout(displayedCycleDay.routineId, cycle.id, displayedDayNumber) },
                                 modifier = Modifier.weight(1f),
-                                shape = RoundedCornerShape(12.dp)
+                                shape = RoundedCornerShape(12.dp),
                             ) {
                                 Icon(Icons.Default.PlayArrow, contentDescription = null)
                                 Spacer(Modifier.width(8.dp))
-                                Text("Start Workout")
+                                Text(stringResource(Res.string.start_workout))
                             }
                         } else {
                             OutlinedButton(
                                 onClick = { onJumpToDay(displayedDayNumber) },
                                 modifier = Modifier.weight(1f),
-                                shape = RoundedCornerShape(12.dp)
+                                shape = RoundedCornerShape(12.dp),
                             ) {
                                 Icon(Icons.Default.SkipNext, contentDescription = null)
                                 Spacer(Modifier.width(8.dp))
-                                Text("Jump to Day $displayedDayNumber")
+                                Text(stringResource(Res.string.jump_to_day, displayedDayNumber))
                             }
                         }
                     }
@@ -932,7 +930,7 @@ private fun CycleListItem(
     onActivate: () -> Unit,
     onDeactivate: () -> Unit,
     onEdit: () -> Unit,
-    onDelete: () -> Unit
+    onDelete: () -> Unit,
 ) {
     var expanded by remember { mutableStateOf(false) }
 
@@ -941,37 +939,39 @@ private fun CycleListItem(
             .fillMaxWidth()
             .clickable { expanded = !expanded },
         colors = CardDefaults.cardColors(
-            containerColor = if (isActive)
+            containerColor = if (isActive) {
                 MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
-            else MaterialTheme.colorScheme.surfaceContainerHigh
+            } else {
+                MaterialTheme.colorScheme.surfaceContainerHigh
+            },
         ),
         shape = RoundedCornerShape(16.dp),
-        border = if (isActive) BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else null
+        border = if (isActive) BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else null,
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+                verticalAlignment = Alignment.CenterVertically,
             ) {
                 Column(modifier = Modifier.weight(1f)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
                             cycle.name,
                             style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.SemiBold
+                            fontWeight = FontWeight.SemiBold,
                         )
                         if (isActive) {
                             Spacer(Modifier.width(8.dp))
                             Surface(
                                 color = MaterialTheme.colorScheme.primary,
-                                shape = RoundedCornerShape(4.dp)
+                                shape = RoundedCornerShape(4.dp),
                             ) {
                                 Text(
                                     "ACTIVE",
                                     modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
                                     style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onPrimary
+                                    color = MaterialTheme.colorScheme.onPrimary,
                                 )
                             }
                         }
@@ -983,21 +983,21 @@ private fun CycleListItem(
                         "${cycle.days.size} days" +
                             (progress?.let { " - Day ${it.currentDayNumber}" } ?: ""),
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
 
                 Icon(
                     if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
-                    contentDescription = "Expand",
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    contentDescription = stringResource(Res.string.cd_expand),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
 
             AnimatedVisibility(
                 visible = expanded,
                 enter = fadeIn() + expandVertically(),
-                exit = fadeOut() + shrinkVertically()
+                exit = fadeOut() + shrinkVertically(),
             ) {
                 Column(modifier = Modifier.padding(top = 12.dp)) {
                     HorizontalDivider()
@@ -1013,7 +1013,7 @@ private fun CycleListItem(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .padding(vertical = 4.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween
+                            horizontalArrangement = Arrangement.SpaceBetween,
                         ) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Box(
@@ -1021,16 +1021,18 @@ private fun CycleListItem(
                                         .size(24.dp)
                                         .clip(CircleShape)
                                         .background(
-                                            if (day.isRestDay)
+                                            if (day.isRestDay) {
                                                 MaterialTheme.colorScheme.surfaceVariant
-                                            else MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)
+                                            } else {
+                                                MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)
+                                            },
                                         ),
-                                    contentAlignment = Alignment.Center
+                                    contentAlignment = Alignment.Center,
                                 ) {
                                     Text(
                                         day.dayNumber.toString(),
                                         style = MaterialTheme.typography.labelSmall,
-                                        fontWeight = FontWeight.Bold
+                                        fontWeight = FontWeight.Bold,
                                     )
                                 }
                                 Spacer(Modifier.width(12.dp))
@@ -1038,19 +1040,19 @@ private fun CycleListItem(
                                     Text(
                                         day.name ?: "Day ${day.dayNumber}",
                                         style = MaterialTheme.typography.bodyMedium,
-                                        fontWeight = FontWeight.Medium
+                                        fontWeight = FontWeight.Medium,
                                     )
                                     if (routine != null) {
                                         Text(
                                             routine.name,
                                             style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                                         )
                                     } else if (day.isRestDay) {
                                         Text(
                                             "Rest",
                                             style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                                         )
                                     }
                                 }
@@ -1065,7 +1067,7 @@ private fun CycleListItem(
                     // Action buttons - use filled tonal for visibility
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
                         // Show Activate or Deactivate based on current state
                         FilledTonalButton(
@@ -1074,20 +1076,22 @@ private fun CycleListItem(
                             shape = RoundedCornerShape(8.dp),
                             contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp),
                             colors = ButtonDefaults.filledTonalButtonColors(
-                                containerColor = if (isActive)
+                                containerColor = if (isActive) {
                                     MaterialTheme.colorScheme.surfaceVariant
-                                else
-                                    MaterialTheme.colorScheme.primaryContainer,
-                                contentColor = if (isActive)
+                                } else {
+                                    MaterialTheme.colorScheme.primaryContainer
+                                },
+                                contentColor = if (isActive) {
                                     MaterialTheme.colorScheme.onSurfaceVariant
-                                else
+                                } else {
                                     MaterialTheme.colorScheme.onPrimaryContainer
-                            )
+                                },
+                            ),
                         ) {
                             Icon(
                                 if (isActive) Icons.Default.Cancel else Icons.Default.CheckCircle,
                                 contentDescription = null,
-                                modifier = Modifier.size(16.dp)
+                                modifier = Modifier.size(16.dp),
                             )
                             Spacer(Modifier.width(4.dp))
                             Text(if (isActive) "Deactivate" else "Activate", maxLines = 1)
@@ -1099,16 +1103,16 @@ private fun CycleListItem(
                             contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp),
                             colors = ButtonDefaults.filledTonalButtonColors(
                                 containerColor = MaterialTheme.colorScheme.secondaryContainer,
-                                contentColor = MaterialTheme.colorScheme.onSecondaryContainer
-                            )
+                                contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                            ),
                         ) {
                             Icon(
                                 Icons.Default.Edit,
                                 contentDescription = null,
-                                modifier = Modifier.size(16.dp)
+                                modifier = Modifier.size(16.dp),
                             )
                             Spacer(Modifier.width(4.dp))
-                            Text("Edit", maxLines = 1)
+                            Text(stringResource(Res.string.action_edit), maxLines = 1)
                         }
                         FilledTonalButton(
                             onClick = onDelete,
@@ -1117,16 +1121,16 @@ private fun CycleListItem(
                             contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp),
                             colors = ButtonDefaults.filledTonalButtonColors(
                                 containerColor = MaterialTheme.colorScheme.errorContainer,
-                                contentColor = MaterialTheme.colorScheme.onErrorContainer
-                            )
+                                contentColor = MaterialTheme.colorScheme.onErrorContainer,
+                            ),
                         ) {
                             Icon(
                                 Icons.Default.Delete,
                                 contentDescription = null,
-                                modifier = Modifier.size(16.dp)
+                                modifier = Modifier.size(16.dp),
                             )
                             Spacer(Modifier.width(4.dp))
-                            Text("Delete", maxLines = 1)
+                            Text(stringResource(Res.string.action_delete), maxLines = 1)
                         }
                     }
                 }

@@ -1,0 +1,2 @@
+-- Migration 16: Form Check score persistence (Phase 19, CV-06)
+ALTER TABLE WorkoutSession ADD COLUMN formScore INTEGER;

@@ -25,6 +25,9 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.presentation.util.ResponsiveDimensions
+import org.jetbrains.compose.resources.stringResource
+import vitruvianprojectphoenix.shared.generated.resources.*
+import vitruvianprojectphoenix.shared.generated.resources.Res
 
 /**
  * Material 3 Expressive Combo Chart
@@ -40,13 +43,13 @@ fun ComboChart(
     lineLabel: String = "Weight",
     columnColor: Color = MaterialTheme.colorScheme.primary,
     lineColor: Color = MaterialTheme.colorScheme.tertiary,
-    animationDuration: Int = 1500
+    animationDuration: Int = 1500,
 ) {
     // Data validation
     if (columnData.isEmpty() && lineData.isEmpty()) {
         ComboEmptyChartState(
-            message = "No data available",
-            modifier = modifier
+            message = stringResource(Res.string.chart_no_data),
+            modifier = modifier,
         )
         return
     }
@@ -59,8 +62,8 @@ fun ComboChart(
             targetValue = 1f,
             animationSpec = tween(
                 durationMillis = animationDuration,
-                easing = EaseInOutCubic
-            )
+                easing = EaseInOutCubic,
+            ),
         )
     }
 
@@ -83,25 +86,25 @@ fun ComboChart(
                 .fillMaxWidth()
                 .padding(bottom = 8.dp),
             horizontalArrangement = Arrangement.Center,
-            verticalAlignment = Alignment.CenterVertically
+            verticalAlignment = Alignment.CenterVertically,
         ) {
             // Column legend
             Box(
                 modifier = Modifier
                     .size(12.dp)
-                    .padding(end = 4.dp)
+                    .padding(end = 4.dp),
             )
             Canvas(modifier = Modifier.size(12.dp)) {
                 drawRoundRect(
                     color = columnColor,
-                    cornerRadius = CornerRadius(2.dp.toPx())
+                    cornerRadius = CornerRadius(2.dp.toPx()),
                 )
             }
             Spacer(modifier = Modifier.width(4.dp))
             Text(
                 text = columnLabel,
                 style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
 
             Spacer(modifier = Modifier.width(16.dp))
@@ -113,14 +116,14 @@ fun ComboChart(
                     start = Offset(0f, size.height / 2),
                     end = Offset(size.width, size.height / 2),
                     strokeWidth = 3.dp.toPx(),
-                    cap = StrokeCap.Round
+                    cap = StrokeCap.Round,
                 )
             }
             Spacer(modifier = Modifier.width(4.dp))
             Text(
                 text = lineLabel,
                 style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
 
@@ -129,7 +132,7 @@ fun ComboChart(
         BoxWithConstraints(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(chartHeight)
+                .height(chartHeight),
         ) {
             val chartWidthPx = with(density) { maxWidth.toPx() }
             val chartHeightPx = with(density) { maxHeight.toPx() }
@@ -150,7 +153,7 @@ fun ComboChart(
                         color = gridColor,
                         start = Offset(0f, y),
                         end = Offset(chartWidthPx, y),
-                        strokeWidth = 1.dp.toPx()
+                        strokeWidth = 1.dp.toPx(),
                     )
                 }
 
@@ -166,7 +169,7 @@ fun ComboChart(
                         color = columnColor.copy(alpha = 0.8f),
                         topLeft = Offset(x, y),
                         size = Size(barWidth, normalizedHeight),
-                        cornerRadius = CornerRadius(4.dp.toPx(), 4.dp.toPx())
+                        cornerRadius = CornerRadius(4.dp.toPx(), 4.dp.toPx()),
                     )
                 }
 
@@ -197,8 +200,8 @@ fun ComboChart(
                         style = Stroke(
                             width = 3.dp.toPx(),
                             cap = StrokeCap.Round,
-                            join = StrokeJoin.Round
-                        )
+                            join = StrokeJoin.Round,
+                        ),
                     )
 
                     // Draw line points
@@ -212,12 +215,12 @@ fun ComboChart(
                             drawCircle(
                                 color = lineColor,
                                 radius = 5.dp.toPx(),
-                                center = Offset(x, y)
+                                center = Offset(x, y),
                             )
                             drawCircle(
                                 color = Color.White,
                                 radius = 3.dp.toPx(),
-                                center = Offset(x, y)
+                                center = Offset(x, y),
                             )
                         }
                     }
@@ -229,7 +232,7 @@ fun ComboChart(
                 modifier = Modifier
                     .fillMaxWidth()
                     .align(Alignment.BottomStart),
-                horizontalArrangement = Arrangement.SpaceEvenly
+                horizontalArrangement = Arrangement.SpaceEvenly,
             ) {
                 labels.forEach { label ->
                     Text(
@@ -238,7 +241,7 @@ fun ComboChart(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1,
                         modifier = Modifier.weight(1f),
-                        textAlign = TextAlign.Center
+                        textAlign = TextAlign.Center,
                     )
                 }
             }
@@ -247,32 +250,29 @@ fun ComboChart(
 }
 
 @Composable
-private fun ComboEmptyChartState(
-    message: String,
-    modifier: Modifier = Modifier
-) {
+private fun ComboEmptyChartState(message: String, modifier: Modifier = Modifier) {
     Box(
         modifier = modifier
             .fillMaxWidth()
             .height(280.dp)
             .padding(16.dp),
-        contentAlignment = Alignment.Center
+        contentAlignment = Alignment.Center,
     ) {
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+            verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             Icon(
                 imageVector = Icons.Default.BarChart,
-                contentDescription = "No data available",
+                contentDescription = stringResource(Res.string.chart_no_data),
                 tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
-                modifier = Modifier.size(48.dp)
+                modifier = Modifier.size(48.dp),
             )
             Text(
                 text = message,
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                textAlign = TextAlign.Center
+                textAlign = TextAlign.Center,
             )
         }
     }

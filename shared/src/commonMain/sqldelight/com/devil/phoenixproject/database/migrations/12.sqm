@@ -1,4 +1,46 @@
--- Migration 12: Add routineId column to WorkoutSession
--- Provides a direct link from session to the originating routine,
--- eliminating the need for heuristic exercise-name-based inference.
+-- Migration 12: Per-Rep Metrics for Premium Analytics + routineId column
+-- Stores per-rep force curve and summary data for premium analytics
+-- Also adds direct routine linkage to WorkoutSession
+
+CREATE TABLE IF NOT EXISTS RepMetric (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    sessionId TEXT NOT NULL,
+    repNumber INTEGER NOT NULL,
+    isWarmup INTEGER NOT NULL DEFAULT 0,
+    startTimestamp INTEGER NOT NULL,
+    endTimestamp INTEGER NOT NULL,
+    durationMs INTEGER NOT NULL,
+    concentricDurationMs INTEGER NOT NULL,
+    concentricPositions TEXT NOT NULL,
+    concentricLoadsA TEXT NOT NULL,
+    concentricLoadsB TEXT NOT NULL,
+    concentricVelocities TEXT NOT NULL,
+    concentricTimestamps TEXT NOT NULL,
+    eccentricDurationMs INTEGER NOT NULL,
+    eccentricPositions TEXT NOT NULL,
+    eccentricLoadsA TEXT NOT NULL,
+    eccentricLoadsB TEXT NOT NULL,
+    eccentricVelocities TEXT NOT NULL,
+    eccentricTimestamps TEXT NOT NULL,
+    peakForceA REAL NOT NULL,
+    peakForceB REAL NOT NULL,
+    avgForceConcentricA REAL NOT NULL,
+    avgForceConcentricB REAL NOT NULL,
+    avgForceEccentricA REAL NOT NULL,
+    avgForceEccentricB REAL NOT NULL,
+    peakVelocity REAL NOT NULL,
+    avgVelocityConcentric REAL NOT NULL,
+    avgVelocityEccentric REAL NOT NULL,
+    rangeOfMotionMm REAL NOT NULL,
+    peakPowerWatts REAL NOT NULL,
+    avgPowerWatts REAL NOT NULL,
+    updatedAt INTEGER,
+    serverId TEXT,
+    FOREIGN KEY (sessionId) REFERENCES WorkoutSession(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_rep_metric_session ON RepMetric(sessionId);
+CREATE INDEX IF NOT EXISTS idx_rep_metric_session_rep ON RepMetric(sessionId, repNumber);
+
+-- Add routineId column to WorkoutSession
 ALTER TABLE WorkoutSession ADD COLUMN routineId TEXT;

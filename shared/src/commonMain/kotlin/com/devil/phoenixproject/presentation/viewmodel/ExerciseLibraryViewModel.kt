@@ -16,9 +16,7 @@ import kotlinx.coroutines.launch
  * ViewModel for exercise library.
  * Handles exercise listing, filtering, and video retrieval.
  */
-class ExerciseLibraryViewModel(
-    private val exerciseRepository: ExerciseRepository
-) : ViewModel() {
+class ExerciseLibraryViewModel(private val exerciseRepository: ExerciseRepository) : ViewModel() {
     private val _exercises = MutableStateFlow<List<Exercise>>(emptyList())
     val exercises: StateFlow<List<Exercise>> = _exercises.asStateFlow()
 
@@ -56,7 +54,7 @@ class ExerciseLibraryViewModel(
             combine(
                 _exercises,
                 _searchQuery,
-                _selectedMuscleGroup
+                _selectedMuscleGroup,
             ) { exercises, query, muscleGroup ->
                 exercises.filter { exercise ->
                     val matchesQuery = query.isBlank() ||
@@ -83,9 +81,7 @@ class ExerciseLibraryViewModel(
      * Get videos for an exercise synchronously from cache.
      * Call loadVideosForExercise() first to populate the cache.
      */
-    fun getVideos(exerciseId: String): List<ExerciseVideoEntity> {
-        return _exerciseVideos.value[exerciseId] ?: emptyList()
-    }
+    fun getVideos(exerciseId: String): List<ExerciseVideoEntity> = _exerciseVideos.value[exerciseId] ?: emptyList()
 
     /**
      * Load videos for an exercise asynchronously.
@@ -101,7 +97,5 @@ class ExerciseLibraryViewModel(
     /**
      * Get videos as a suspend function for direct async access.
      */
-    suspend fun getVideosAsync(exerciseId: String): List<ExerciseVideoEntity> {
-        return exerciseRepository.getVideos(exerciseId)
-    }
+    suspend fun getVideosAsync(exerciseId: String): List<ExerciseVideoEntity> = exerciseRepository.getVideos(exerciseId)
 }

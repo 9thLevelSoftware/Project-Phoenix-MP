@@ -35,9 +35,12 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.RoutineExercise
 import com.devil.phoenixproject.domain.model.WeightUnit
-import com.devil.phoenixproject.domain.model.ProgramMode
+import org.jetbrains.compose.resources.stringResource
+import vitruvianprojectphoenix.shared.generated.resources.*
+import vitruvianprojectphoenix.shared.generated.resources.Res
 
 /**
  * Exercise row for standalone exercises (not in supersets).
@@ -78,7 +81,7 @@ fun ExerciseRowWithConnector(
     isSelected: Boolean = false,
     onLongPress: () -> Unit = {},
     onSelectionToggle: () -> Unit = {},
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
 ) {
     Row(
         modifier = modifier
@@ -90,29 +93,35 @@ fun ExerciseRowWithConnector(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null,
                 onClick = {
-                    if (isSelectionMode) onSelectionToggle()
-                    else onClick()
+                    if (isSelectionMode) {
+                        onSelectionToggle()
+                    } else {
+                        onClick()
+                    }
                 },
                 onLongClick = {
-                    if (!isSelectionMode) onLongPress()
-                    else onSelectionToggle()
-                }
+                    if (!isSelectionMode) {
+                        onLongPress()
+                    } else {
+                        onSelectionToggle()
+                    }
+                },
             ),
-        verticalAlignment = Alignment.CenterVertically
+        verticalAlignment = Alignment.CenterVertically,
     ) {
         // Selection checkbox (visible in selection mode)
         AnimatedVisibility(
             visible = isSelectionMode,
             enter = fadeIn(),
-            exit = fadeOut()
+            exit = fadeOut(),
         ) {
             Checkbox(
                 checked = isSelected,
                 onCheckedChange = { onSelectionToggle() },
                 colors = CheckboxDefaults.colors(
-                    checkedColor = MaterialTheme.colorScheme.primary
+                    checkedColor = MaterialTheme.colorScheme.primary,
                 ),
-                modifier = Modifier.padding(start = 8.dp)
+                modifier = Modifier.padding(start = 8.dp),
             )
         }
 
@@ -121,13 +130,13 @@ fun ExerciseRowWithConnector(
             modifier = Modifier
                 .width(40.dp)
                 .padding(vertical = 12.dp),
-            contentAlignment = Alignment.Center
+            contentAlignment = Alignment.Center,
         ) {
             Icon(
                 Icons.Default.DragHandle,
-                contentDescription = "Drag",
+                contentDescription = stringResource(Res.string.cd_drag),
                 tint = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f),
-                modifier = dragModifier
+                modifier = dragModifier,
             )
         }
 
@@ -135,22 +144,23 @@ fun ExerciseRowWithConnector(
         Card(
             modifier = Modifier.weight(1f),
             colors = CardDefaults.cardColors(
-                containerColor = if (isSelected)
+                containerColor = if (isSelected) {
                     MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f)
-                else
+                } else {
                     MaterialTheme.colorScheme.surfaceContainer
+                },
             ),
-            shape = RoundedCornerShape(12.dp)
+            shape = RoundedCornerShape(12.dp),
         ) {
             Row(
                 modifier = Modifier.padding(12.dp),
-                verticalAlignment = Alignment.CenterVertically
+                verticalAlignment = Alignment.CenterVertically,
             ) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
                         exercise.exercise.name,
                         style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold
+                        fontWeight = FontWeight.Bold,
                     )
                     // Display format depends on whether this is a timed exercise
                     // Bodyweight = no cable accessories (handles, bar, rope, etc.) in equipment list
@@ -176,11 +186,13 @@ fun ExerciseRowWithConnector(
                                 val unitLabel = if (weightUnit == WeightUnit.KG) "kg" else "lb"
                                 " (+${progWeight}$unitLabel)"
                             }
+
                             exercise.progressionKg < 0 -> {
                                 val regWeight = kgToDisplay(-exercise.progressionKg, weightUnit)
                                 val unitLabel = if (weightUnit == WeightUnit.KG) "kg" else "lb"
                                 " (-${regWeight}$unitLabel)"
                             }
+
                             else -> ""
                         }
                         "${exercise.sets} sets x ${exercise.duration}s @ $weightText$progressionText"
@@ -203,11 +215,13 @@ fun ExerciseRowWithConnector(
                                 val unitLabel = if (weightUnit == WeightUnit.KG) "kg" else "lb"
                                 " (+${progWeight}$unitLabel/rep)"
                             }
+
                             exercise.progressionKg < 0 -> {
                                 val regWeight = kgToDisplay(-exercise.progressionKg, weightUnit)
                                 val unitLabel = if (weightUnit == WeightUnit.KG) "kg" else "lb"
                                 " (-${regWeight}$unitLabel/rep)"
                             }
+
                             else -> ""
                         }
                         "${exercise.sets} sets x $repsText @ $weightText$progressionText"
@@ -215,12 +229,15 @@ fun ExerciseRowWithConnector(
                     Text(
                         exerciseText,
                         style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
 
                 IconButton(onClick = onMenuClick) {
-                    Icon(Icons.Default.MoreVert, contentDescription = "Menu")
+                    Icon(
+                        Icons.Default.MoreVert,
+                        contentDescription = stringResource(Res.string.cd_menu),
+                    )
                 }
             }
         }

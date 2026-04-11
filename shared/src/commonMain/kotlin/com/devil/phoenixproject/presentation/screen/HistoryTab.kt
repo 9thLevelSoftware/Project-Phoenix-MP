@@ -1,10 +1,10 @@
 package com.devil.phoenixproject.presentation.screen
 
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.expandVertically
-import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -20,21 +20,32 @@ import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.devil.phoenixproject.data.repository.BiomechanicsRepository
 import com.devil.phoenixproject.data.repository.CompletedSetRepository
 import com.devil.phoenixproject.data.repository.ExerciseRepository
+import com.devil.phoenixproject.data.repository.RepMetricRepository
+import com.devil.phoenixproject.domain.model.BiomechanicsRepResult
 import com.devil.phoenixproject.domain.model.CompletedSet
+import com.devil.phoenixproject.domain.model.RepMetricData
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.domain.model.WorkoutSession
+import com.devil.phoenixproject.domain.model.currentTimeMillis
 import com.devil.phoenixproject.domain.model.effectiveHeaviestKgPerCable
 import com.devil.phoenixproject.domain.model.toSetSummary
-import com.devil.phoenixproject.presentation.manager.HistoryItem
+import com.devil.phoenixproject.presentation.components.BiomechanicsHistorySummary
 import com.devil.phoenixproject.presentation.components.EmptyState
+import com.devil.phoenixproject.presentation.components.RepBiomechanicsDetail
+import com.devil.phoenixproject.presentation.components.RepReplayCard
 import com.devil.phoenixproject.presentation.components.charts.HistoryTimePeriod
-import com.devil.phoenixproject.domain.model.currentTimeMillis
+import com.devil.phoenixproject.presentation.manager.HistoryItem
 import com.devil.phoenixproject.ui.theme.*
 import com.devil.phoenixproject.util.KmpUtils
+import kotlin.time.Instant
 import kotlinx.datetime.*
+import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.koinInject
+import vitruvianprojectphoenix.shared.generated.resources.*
+import vitruvianprojectphoenix.shared.generated.resources.Res
 
 @Composable
 fun HistoryTab(
@@ -45,10 +56,14 @@ fun HistoryTab(
     onDeleteWorkout: (String) -> Unit,
     exerciseRepository: ExerciseRepository,
     onRefresh: () -> Unit = {},
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
 ) {
-    @Suppress("UNUSED_VARIABLE")  // Kept for future pull-to-refresh implementation
+    @Suppress("UNUSED_VARIABLE") // Kept for future pull-to-refresh implementation
     var isRefreshing by remember { mutableStateOf(false) }
+
+    // M8: Hoist koinInject calls to parent composable scope (outside LazyColumn items).
+    // Calling koinInject inside lazy item lambdas can cause stale scope issues during recomposition.
+    val repMetricRepository: RepMetricRepository = koinInject()
 
     var selectedPeriod by remember { mutableStateOf(HistoryTimePeriod.ALL) }
 
@@ -76,12 +91,12 @@ fun HistoryTab(
         modifier = modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
-            .padding(Spacing.medium)
+            .padding(Spacing.medium),
     ) {
         // Time period filter chips
         Row(
             modifier = Modifier.fillMaxWidth().padding(bottom = Spacing.small),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             HistoryTimePeriod.entries.forEach { period ->
                 FilterChip(
@@ -90,9 +105,9 @@ fun HistoryTab(
                     label = {
                         Text(
                             period.label,
-                            style = MaterialTheme.typography.labelMedium
+                            style = MaterialTheme.typography.labelMedium,
                         )
-                    }
+                    },
                 )
             }
         }
@@ -100,15 +115,16 @@ fun HistoryTab(
         if (filteredHistory.isEmpty()) {
             EmptyState(
                 icon = Icons.Default.History,
-                title = "No Workout History Yet",
-                message = if (selectedPeriod == HistoryTimePeriod.ALL)
-                    "Complete your first workout to see it here"
-                else
-                    "No workouts in the last ${selectedPeriod.label.lowercase()}"
+                title = stringResource(Res.string.empty_no_history_title),
+                message = if (selectedPeriod == HistoryTimePeriod.ALL) {
+                    stringResource(Res.string.empty_no_history_all)
+                } else {
+                    stringResource(Res.string.empty_no_history_period, selectedPeriod.label.lowercase())
+                },
             )
         } else {
             LazyColumn(
-                verticalArrangement = Arrangement.spacedBy(Spacing.small)
+                verticalArrangement = Arrangement.spacedBy(Spacing.small),
             ) {
                 items(filteredHistory.size, key = { index ->
                     when (val item = filteredHistory[index]) {
@@ -124,9 +140,11 @@ fun HistoryTab(
                                 formatWeight = formatWeight,
                                 kgToDisplay = kgToDisplay,
                                 exerciseRepository = exerciseRepository,
-                                onDelete = { onDeleteWorkout(item.session.id) }
+                                repMetricRepository = repMetricRepository,
+                                onDelete = { onDeleteWorkout(item.session.id) },
                             )
                         }
+
                         is com.devil.phoenixproject.presentation.manager.GroupedRoutineHistoryItem -> {
                             GroupedRoutineCard(
                                 groupedItem = item,
@@ -134,7 +152,8 @@ fun HistoryTab(
                                 formatWeight = formatWeight,
                                 kgToDisplay = kgToDisplay,
                                 exerciseRepository = exerciseRepository,
-                                onDelete = { sessionId -> onDeleteWorkout(sessionId) }
+                                repMetricRepository = repMetricRepository,
+                                onDelete = { sessionId -> onDeleteWorkout(sessionId) },
                             )
                         }
                     }
@@ -152,7 +171,8 @@ fun WorkoutHistoryCard(
     formatWeight: (Float, WeightUnit) -> String,
     kgToDisplay: (Float, WeightUnit) -> Float,
     exerciseRepository: com.devil.phoenixproject.data.repository.ExerciseRepository,
-    onDelete: () -> Unit
+    repMetricRepository: RepMetricRepository,
+    onDelete: () -> Unit,
 ) {
     var showDeleteDialog by remember { mutableStateOf(false) }
     var isExpanded by remember { mutableStateOf(false) }
@@ -161,7 +181,7 @@ fun WorkoutHistoryCard(
     val chevronRotation by animateFloatAsState(
         targetValue = if (isExpanded) 180f else 0f,
         animationSpec = tween(300),
-        label = "chevron"
+        label = "chevron",
     )
 
     // Get exercise name from session (no DB lookup needed!)
@@ -175,30 +195,30 @@ fun WorkoutHistoryCard(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest), // Material 3 Expressive: Higher contrast
         shape = RoundedCornerShape(20.dp), // Material 3 Expressive: More rounded (was 16dp)
         elevation = CardDefaults.cardElevation(defaultElevation = 8.dp), // Material 3 Expressive: Higher elevation (was 4dp)
-        border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)) // Material 3 Expressive: Thicker border (was 1dp)
+        border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)), // Material 3 Expressive: Thicker border (was 1dp)
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(Spacing.medium)
+                .padding(Spacing.medium),
         ) {
             // Header: "Single Exercise" with chevron
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+                verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
                     "Single Exercise",
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.primary
+                    color = MaterialTheme.colorScheme.primary,
                 )
                 Icon(
                     imageVector = Icons.Default.KeyboardArrowDown,
                     contentDescription = if (isExpanded) "Collapse" else "Expand",
                     modifier = Modifier.rotate(chevronRotation),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
 
@@ -206,24 +226,24 @@ fun WorkoutHistoryCard(
 
             HorizontalDivider(
                 thickness = 1.dp,
-                color = MaterialTheme.colorScheme.outlineVariant
+                color = MaterialTheme.colorScheme.outlineVariant,
             )
 
             Spacer(modifier = Modifier.height(Spacing.small))
 
             // Exercise Name (or "Just Lift" if Just Lift mode)
             Text(
-                exerciseName ?: "Just Lift",
+                exerciseName,
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurface
+                color = MaterialTheme.colorScheme.onSurface,
             )
 
             // Date and Time (no label, just the timestamp)
             Text(
                 formatTimestamp(session.timestamp),
                 style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
 
             Spacer(modifier = Modifier.height(Spacing.medium))
@@ -231,37 +251,41 @@ fun WorkoutHistoryCard(
             // Total Reps | Total Sets
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween
+                horizontalArrangement = Arrangement.SpaceBetween,
             ) {
                 Text(
                     "Total Reps",
                     style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 Text(
                     session.totalReps.toString(),
                     style = MaterialTheme.typography.bodyLarge,
                     fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface
+                    color = MaterialTheme.colorScheme.onSurface,
                 )
             }
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween
+                horizontalArrangement = Arrangement.SpaceBetween,
             ) {
                 Text(
                     "Total Sets",
                     style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 Text(
-                    if (session.reps == 0) "1" // AMRAP = single set with variable reps
-                    else if (session.workingReps > 0) (session.workingReps / session.reps.coerceAtLeast(1)).toString()
-                    else "0",
+                    if (session.reps == 0) {
+                        "1" // AMRAP = single set with variable reps
+                    } else if (session.workingReps > 0) {
+                        (session.workingReps / session.reps.coerceAtLeast(1)).toString()
+                    } else {
+                        "0"
+                    },
                     style = MaterialTheme.typography.bodyLarge,
                     fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface
+                    color = MaterialTheme.colorScheme.onSurface,
                 )
             }
 
@@ -270,35 +294,35 @@ fun WorkoutHistoryCard(
             // Measured Peak Per Cable | Workout Mode
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween
+                horizontalArrangement = Arrangement.SpaceBetween,
             ) {
                 Text(
                     "Measured Peak Per Cable",
                     style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 Text(
                     if (session.mode.contains("Echo", ignoreCase = true)) "Adaptive" else formatWeight(session.effectiveHeaviestKgPerCable(), weightUnit),
                     style = MaterialTheme.typography.bodyLarge,
                     fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface
+                    color = MaterialTheme.colorScheme.onSurface,
                 )
             }
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween
+                horizontalArrangement = Arrangement.SpaceBetween,
             ) {
                 Text(
                     "Workout Mode",
                     style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 Text(
                     session.mode,
                     style = MaterialTheme.typography.bodyLarge,
                     fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface
+                    color = MaterialTheme.colorScheme.onSurface,
                 )
             }
 
@@ -306,14 +330,14 @@ fun WorkoutHistoryCard(
             AnimatedVisibility(
                 visible = isExpanded,
                 enter = expandVertically(),
-                exit = shrinkVertically()
+                exit = shrinkVertically(),
             ) {
                 Column(
-                    modifier = Modifier.padding(top = Spacing.medium)
+                    modifier = Modifier.padding(top = Spacing.medium),
                 ) {
                     HorizontalDivider(
                         thickness = 1.dp,
-                        color = MaterialTheme.colorScheme.outlineVariant
+                        color = MaterialTheme.colorScheme.outlineVariant,
                     )
                     Spacer(modifier = Modifier.height(Spacing.medium))
 
@@ -327,35 +351,35 @@ fun WorkoutHistoryCard(
                             formatWeight = formatWeight,
                             onContinue = { },
                             autoplayEnabled = false,
-                            summaryCountdownSeconds = 0,  // History view - no auto-continue
+                            summaryCountdownSeconds = 0, // History view - no auto-continue
                             isHistoryView = true,
-                            savedRpe = session.rpe
+                            savedRpe = session.rpe,
                         )
                     } else {
                         // Pre-v0.2.1 session - show message
                         Card(
                             modifier = Modifier.fillMaxWidth(),
                             colors = CardDefaults.cardColors(
-                                containerColor = MaterialTheme.colorScheme.surfaceVariant
+                                containerColor = MaterialTheme.colorScheme.surfaceVariant,
                             ),
-                            shape = RoundedCornerShape(12.dp)
+                            shape = RoundedCornerShape(12.dp),
                         ) {
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .padding(Spacing.medium),
-                                verticalAlignment = Alignment.CenterVertically
+                                verticalAlignment = Alignment.CenterVertically,
                             ) {
                                 Icon(
                                     imageVector = Icons.Default.Info,
                                     contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
                                 Spacer(modifier = Modifier.width(Spacing.small))
                                 Text(
                                     "Detailed metrics available for workouts after v0.2.1",
                                     style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
                             }
                         }
@@ -365,8 +389,19 @@ fun WorkoutHistoryCard(
                     CompletedSetsSection(
                         sessionId = session.id,
                         weightUnit = weightUnit,
-                        formatWeight = formatWeight
+                        formatWeight = formatWeight,
                     )
+
+                    // Rep Details Section
+                    RepDetailsSection(
+                        sessionId = session.id,
+                        weightUnit = weightUnit,
+                        formatWeight = formatWeight,
+                        repMetricRepository = repMetricRepository,
+                    )
+
+                    // Biomechanics Section (v0.5.0+, tier-gated)
+                    BiomechanicsSection(session = session)
                 }
             }
 
@@ -375,7 +410,7 @@ fun WorkoutHistoryCard(
             // Divider
             HorizontalDivider(
                 thickness = 1.dp,
-                color = MaterialTheme.colorScheme.outlineVariant
+                color = MaterialTheme.colorScheme.outlineVariant,
             )
 
             Spacer(modifier = Modifier.height(Spacing.small))
@@ -384,26 +419,26 @@ fun WorkoutHistoryCard(
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.End,
-                verticalAlignment = Alignment.CenterVertically
+                verticalAlignment = Alignment.CenterVertically,
             ) {
                 TextButton(
                     onClick = { showDeleteDialog = true },
                     modifier = Modifier.height(48.dp), // Material 3 Expressive: Taller button
                     shape = RoundedCornerShape(20.dp), // Material 3 Expressive: More rounded (was 16dp)
                     colors = ButtonDefaults.textButtonColors(
-                        contentColor = MaterialTheme.colorScheme.error
-                    )
+                        contentColor = MaterialTheme.colorScheme.error,
+                    ),
                 ) {
                     Icon(
                         Icons.Default.Delete,
-                        contentDescription = "Delete workout",
-                        modifier = Modifier.size(20.dp) // Material 3 Expressive: Larger icon (was 18dp)
+                        contentDescription = stringResource(Res.string.cd_delete_workout),
+                        modifier = Modifier.size(20.dp), // Material 3 Expressive: Larger icon (was 18dp)
                     )
                     Spacer(modifier = Modifier.width(4.dp))
                     Text(
                         "Delete",
                         style = MaterialTheme.typography.titleMedium, // Material 3 Expressive: Larger text
-                        fontWeight = FontWeight.Bold
+                        fontWeight = FontWeight.Bold,
                     )
                 }
             }
@@ -418,13 +453,13 @@ fun WorkoutHistoryCard(
                 Text(
                     "Delete Workout?",
                     style = MaterialTheme.typography.headlineSmall, // Material 3 Expressive: Larger
-                    fontWeight = FontWeight.Bold
+                    fontWeight = FontWeight.Bold,
                 )
             },
             text = {
                 Text(
                     "This action cannot be undone.",
-                    style = MaterialTheme.typography.bodyLarge // Material 3 Expressive: Larger
+                    style = MaterialTheme.typography.bodyLarge, // Material 3 Expressive: Larger
                 )
             },
             containerColor = MaterialTheme.colorScheme.surfaceContainerHighest, // Material 3 Expressive: Higher contrast
@@ -436,13 +471,13 @@ fun WorkoutHistoryCard(
                         showDeleteDialog = false
                     },
                     modifier = Modifier.height(56.dp), // Material 3 Expressive: Taller button
-                    shape = RoundedCornerShape(20.dp) // Material 3 Expressive: More rounded
+                    shape = RoundedCornerShape(20.dp), // Material 3 Expressive: More rounded
                 ) {
                     Text(
                         "Delete",
                         style = MaterialTheme.typography.titleLarge, // Material 3 Expressive: Larger text
                         fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.error
+                        color = MaterialTheme.colorScheme.error,
                     )
                 }
             },
@@ -450,16 +485,16 @@ fun WorkoutHistoryCard(
                 TextButton(
                     onClick = { showDeleteDialog = false },
                     modifier = Modifier.height(56.dp), // Material 3 Expressive: Taller button
-                    shape = RoundedCornerShape(20.dp) // Material 3 Expressive: More rounded
+                    shape = RoundedCornerShape(20.dp), // Material 3 Expressive: More rounded
                 ) {
                     Text(
                         "Cancel",
                         style = MaterialTheme.typography.titleMedium, // Material 3 Expressive: Larger text
                         fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-            }
+            },
         )
     }
 }
@@ -472,7 +507,7 @@ fun WorkoutHistoryCard(
 private fun CompletedSetsSection(
     sessionId: String,
     weightUnit: WeightUnit,
-    formatWeight: (Float, WeightUnit) -> String
+    formatWeight: (Float, WeightUnit) -> String,
 ) {
     val completedSetRepository: CompletedSetRepository = koinInject()
     var completedSets by remember { mutableStateOf<List<CompletedSet>>(emptyList()) }
@@ -488,7 +523,7 @@ private fun CompletedSetsSection(
             "Set Breakdown",
             style = MaterialTheme.typography.titleSmall,
             fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.primary
+            color = MaterialTheme.colorScheme.primary,
         )
 
         Spacer(modifier = Modifier.height(Spacing.small))
@@ -499,7 +534,7 @@ private fun CompletedSetsSection(
                     .fillMaxWidth()
                     .padding(vertical = 2.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+                verticalAlignment = Alignment.CenterVertically,
             ) {
                 // Set number and type
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -507,14 +542,14 @@ private fun CompletedSetsSection(
                         "Set ${set.setNumber + 1}",
                         style = MaterialTheme.typography.bodyMedium,
                         fontWeight = FontWeight.Medium,
-                        color = MaterialTheme.colorScheme.onSurface
+                        color = MaterialTheme.colorScheme.onSurface,
                     )
                     if (set.setType.name != "STANDARD") {
                         Spacer(modifier = Modifier.width(4.dp))
                         Text(
                             set.setType.name.lowercase().replaceFirstChar { it.uppercase() },
                             style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.tertiary
+                            color = MaterialTheme.colorScheme.tertiary,
                         )
                     }
                     if (set.isPr) {
@@ -523,7 +558,7 @@ private fun CompletedSetsSection(
                             "PR",
                             style = MaterialTheme.typography.labelSmall,
                             fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.error
+                            color = MaterialTheme.colorScheme.error,
                         )
                     }
                 }
@@ -534,17 +569,64 @@ private fun CompletedSetsSection(
                         "${set.actualReps} x ${formatWeight(set.actualWeightKg, weightUnit)}",
                         style = MaterialTheme.typography.bodyMedium,
                         fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurface
+                        color = MaterialTheme.colorScheme.onSurface,
                     )
                     set.loggedRpe?.let { rpe ->
                         Spacer(modifier = Modifier.width(Spacing.small))
                         Text(
                             "RPE $rpe",
                             style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
                 }
+            }
+        }
+    }
+}
+
+/**
+ * Shows per-rep replay cards with force sparklines for a workout session.
+ * Only renders if RepMetricData records exist for the session.
+ */
+@Composable
+private fun RepDetailsSection(
+    sessionId: String,
+    weightUnit: WeightUnit,
+    formatWeight: (Float, WeightUnit) -> String,
+    repMetricRepository: RepMetricRepository,
+) {
+    var repMetrics by remember { mutableStateOf<List<RepMetricData>>(emptyList()) }
+
+    // M8: Wrap DB call in try/catch to prevent crashes from corrupted or missing data
+    LaunchedEffect(sessionId) {
+        try {
+            repMetrics = repMetricRepository.getRepMetrics(sessionId)
+        } catch (e: Exception) {
+            co.touchlab.kermit.Logger.e("HistoryTab") { "Failed to load rep metrics for session $sessionId: ${e.message}" }
+            repMetrics = emptyList()
+        }
+    }
+
+    if (repMetrics.isNotEmpty()) {
+        Spacer(modifier = Modifier.height(Spacing.medium))
+
+        Text(
+            "Rep Details",
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.primary,
+        )
+
+        Spacer(modifier = Modifier.height(Spacing.small))
+
+        Column(verticalArrangement = Arrangement.spacedBy(Spacing.small)) {
+            repMetrics.forEach { rep ->
+                RepReplayCard(
+                    repData = rep,
+                    weightUnit = weightUnit,
+                    formatWeight = formatWeight,
+                )
             }
         }
     }
@@ -559,7 +641,7 @@ private data class ExerciseGroup(
     val totalReps: Int,
     val totalSets: Int,
     val highestWeightPerCableKg: Float,
-    val mode: String
+    val mode: String,
 )
 
 /**
@@ -573,7 +655,8 @@ fun GroupedRoutineCard(
     formatWeight: (Float, WeightUnit) -> String,
     kgToDisplay: (Float, WeightUnit) -> Float,
     exerciseRepository: com.devil.phoenixproject.data.repository.ExerciseRepository,
-    onDelete: (String) -> Unit
+    repMetricRepository: RepMetricRepository,
+    onDelete: (String) -> Unit,
 ) {
     var showDeleteDialog by remember { mutableStateOf(false) }
     var isExpanded by remember { mutableStateOf(false) }
@@ -582,7 +665,7 @@ fun GroupedRoutineCard(
     val chevronRotation by animateFloatAsState(
         targetValue = if (isExpanded) 180f else 0f,
         animationSpec = tween(300),
-        label = "chevron"
+        label = "chevron",
     )
 
     // Group sessions by exerciseId and use exerciseName directly (no DB lookup needed!)
@@ -602,7 +685,7 @@ fun GroupedRoutineCard(
                     totalReps = totalReps,
                     totalSets = totalSets,
                     highestWeightPerCableKg = highestWeightPerCableKg,
-                    mode = mode
+                    mode = mode,
                 )
             }
     }
@@ -615,30 +698,30 @@ fun GroupedRoutineCard(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest), // Material 3 Expressive: Higher contrast
         shape = RoundedCornerShape(20.dp), // Material 3 Expressive: More rounded (was 16dp)
         elevation = CardDefaults.cardElevation(defaultElevation = 8.dp), // Material 3 Expressive: Higher elevation (was 4dp)
-        border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)) // Material 3 Expressive: Thicker border (was 1dp)
+        border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)), // Material 3 Expressive: Thicker border (was 1dp)
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(Spacing.medium)
+                .padding(Spacing.medium),
         ) {
             // Header: "Daily Routine" with chevron
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+                verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
                     "Daily Routine",
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.primary
+                    color = MaterialTheme.colorScheme.primary,
                 )
                 Icon(
                     imageVector = Icons.Default.KeyboardArrowDown,
                     contentDescription = if (isExpanded) "Collapse" else "Expand",
                     modifier = Modifier.rotate(chevronRotation),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
 
@@ -646,7 +729,7 @@ fun GroupedRoutineCard(
 
             HorizontalDivider(
                 thickness = 1.dp,
-                color = MaterialTheme.colorScheme.outlineVariant
+                color = MaterialTheme.colorScheme.outlineVariant,
             )
 
             Spacer(modifier = Modifier.height(Spacing.small))
@@ -656,21 +739,21 @@ fun GroupedRoutineCard(
                 groupedItem.routineName,
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurface
+                color = MaterialTheme.colorScheme.onSurface,
             )
 
             // Date and Time (no label, just the timestamp)
             Text(
                 formatTimestamp(groupedItem.timestamp),
                 style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
 
             Spacer(modifier = Modifier.height(Spacing.small))
 
             HorizontalDivider(
                 thickness = 1.dp,
-                color = MaterialTheme.colorScheme.outlineVariant
+                color = MaterialTheme.colorScheme.outlineVariant,
             )
 
             Spacer(modifier = Modifier.height(Spacing.medium))
@@ -682,7 +765,7 @@ fun GroupedRoutineCard(
                     exerciseGroup.exerciseName,
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.onSurface
+                    color = MaterialTheme.colorScheme.onSurface,
                 )
 
                 Spacer(modifier = Modifier.height(Spacing.small))
@@ -690,35 +773,35 @@ fun GroupedRoutineCard(
                 // Total Reps | Total Sets
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween
+                    horizontalArrangement = Arrangement.SpaceBetween,
                 ) {
                     Text(
                         "Total Reps",
                         style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     Text(
                         exerciseGroup.totalReps.toString(),
                         style = MaterialTheme.typography.bodyLarge,
                         fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurface
+                        color = MaterialTheme.colorScheme.onSurface,
                     )
                 }
 
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween
+                    horizontalArrangement = Arrangement.SpaceBetween,
                 ) {
                     Text(
                         "Total Sets",
                         style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     Text(
                         exerciseGroup.totalSets.toString(),
                         style = MaterialTheme.typography.bodyLarge,
                         fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurface
+                        color = MaterialTheme.colorScheme.onSurface,
                     )
                 }
 
@@ -727,35 +810,35 @@ fun GroupedRoutineCard(
                 // Measured Peak Per Cable | Workout Mode
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween
+                    horizontalArrangement = Arrangement.SpaceBetween,
                 ) {
                     Text(
                         "Measured Peak Per Cable",
                         style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     Text(
                         if (exerciseGroup.mode.contains("Echo", ignoreCase = true)) "Adaptive" else formatWeight(exerciseGroup.highestWeightPerCableKg, weightUnit),
                         style = MaterialTheme.typography.bodyLarge,
                         fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurface
+                        color = MaterialTheme.colorScheme.onSurface,
                     )
                 }
 
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween
+                    horizontalArrangement = Arrangement.SpaceBetween,
                 ) {
                     Text(
                         "Workout Mode",
                         style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     Text(
                         exerciseGroup.mode,
                         style = MaterialTheme.typography.bodyLarge,
                         fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurface
+                        color = MaterialTheme.colorScheme.onSurface,
                     )
                 }
 
@@ -764,7 +847,7 @@ fun GroupedRoutineCard(
                     Spacer(modifier = Modifier.height(Spacing.medium))
                     HorizontalDivider(
                         thickness = 1.dp,
-                        color = MaterialTheme.colorScheme.outlineVariant
+                        color = MaterialTheme.colorScheme.outlineVariant,
                     )
                     Spacer(modifier = Modifier.height(Spacing.medium))
                 }
@@ -774,7 +857,7 @@ fun GroupedRoutineCard(
             AnimatedVisibility(
                 visible = isExpanded,
                 enter = expandVertically(),
-                exit = shrinkVertically()
+                exit = shrinkVertically(),
             ) {
                 Column(modifier = Modifier.padding(top = Spacing.medium)) {
                     HorizontalDivider(thickness = 1.dp, color = MaterialTheme.colorScheme.outlineVariant)
@@ -784,7 +867,7 @@ fun GroupedRoutineCard(
                         "Detailed Set Metrics",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurface
+                        color = MaterialTheme.colorScheme.onSurface,
                     )
                     Spacer(modifier = Modifier.height(Spacing.small))
 
@@ -795,7 +878,7 @@ fun GroupedRoutineCard(
                             session.exerciseName ?: "Unknown Exercise",
                             style = MaterialTheme.typography.titleSmall,
                             fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.primary
+                            color = MaterialTheme.colorScheme.primary,
                         )
                         Spacer(modifier = Modifier.height(Spacing.small))
 
@@ -808,26 +891,26 @@ fun GroupedRoutineCard(
                                 formatWeight = formatWeight,
                                 onContinue = { },
                                 autoplayEnabled = false,
-                                summaryCountdownSeconds = 0,  // History view - no auto-continue
+                                summaryCountdownSeconds = 0, // History view - no auto-continue
                                 isHistoryView = true,
-                                savedRpe = session.rpe
+                                savedRpe = session.rpe,
                             )
                         } else {
                             Card(
                                 modifier = Modifier.fillMaxWidth(),
                                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-                                shape = RoundedCornerShape(12.dp)
+                                shape = RoundedCornerShape(12.dp),
                             ) {
                                 Row(
                                     modifier = Modifier.fillMaxWidth().padding(Spacing.medium),
-                                    verticalAlignment = Alignment.CenterVertically
+                                    verticalAlignment = Alignment.CenterVertically,
                                 ) {
                                     Icon(Icons.Default.Info, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
                                     Spacer(modifier = Modifier.width(Spacing.small))
                                     Text(
                                         "Detailed metrics available for workouts after v0.2.1",
                                         style = MaterialTheme.typography.bodyMedium,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     )
                                 }
                             }
@@ -837,8 +920,19 @@ fun GroupedRoutineCard(
                         CompletedSetsSection(
                             sessionId = session.id,
                             weightUnit = weightUnit,
-                            formatWeight = formatWeight
+                            formatWeight = formatWeight,
                         )
+
+                        // Rep Details Section per session
+                        RepDetailsSection(
+                            sessionId = session.id,
+                            weightUnit = weightUnit,
+                            formatWeight = formatWeight,
+                            repMetricRepository = repMetricRepository,
+                        )
+
+                        // Biomechanics Section per session (v0.5.0+, tier-gated)
+                        BiomechanicsSection(session = session)
 
                         if (index < groupedItem.sessions.size - 1) {
                             Spacer(modifier = Modifier.height(Spacing.medium))
@@ -852,7 +946,7 @@ fun GroupedRoutineCard(
             // Divider
             HorizontalDivider(
                 thickness = 1.dp,
-                color = MaterialTheme.colorScheme.outlineVariant
+                color = MaterialTheme.colorScheme.outlineVariant,
             )
 
             Spacer(modifier = Modifier.height(Spacing.small))
@@ -861,26 +955,26 @@ fun GroupedRoutineCard(
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.End,
-                verticalAlignment = Alignment.CenterVertically
+                verticalAlignment = Alignment.CenterVertically,
             ) {
                 TextButton(
                     onClick = { showDeleteDialog = true },
                     modifier = Modifier.height(48.dp), // Material 3 Expressive: Taller button
                     shape = RoundedCornerShape(20.dp), // Material 3 Expressive: More rounded (was 16dp)
                     colors = ButtonDefaults.textButtonColors(
-                        contentColor = MaterialTheme.colorScheme.error
-                    )
+                        contentColor = MaterialTheme.colorScheme.error,
+                    ),
                 ) {
                     Icon(
                         Icons.Default.Delete,
-                        contentDescription = "Delete routine session",
-                        modifier = Modifier.size(20.dp) // Material 3 Expressive: Larger icon (was 18dp)
+                        contentDescription = stringResource(Res.string.cd_delete_routine),
+                        modifier = Modifier.size(20.dp), // Material 3 Expressive: Larger icon (was 18dp)
                     )
                     Spacer(modifier = Modifier.width(4.dp))
                     Text(
                         "Delete All Sets",
                         style = MaterialTheme.typography.titleMedium, // Material 3 Expressive: Larger text
-                        fontWeight = FontWeight.Bold
+                        fontWeight = FontWeight.Bold,
                     )
                 }
             }
@@ -895,13 +989,13 @@ fun GroupedRoutineCard(
                 Text(
                     "Delete Routine Session?",
                     style = MaterialTheme.typography.headlineSmall, // Material 3 Expressive: Larger
-                    fontWeight = FontWeight.Bold
+                    fontWeight = FontWeight.Bold,
                 )
             },
             text = {
                 Text(
                     "This will delete all ${groupedItem.sessions.size} sets from this routine. This action cannot be undone.",
-                    style = MaterialTheme.typography.bodyLarge // Material 3 Expressive: Larger
+                    style = MaterialTheme.typography.bodyLarge, // Material 3 Expressive: Larger
                 )
             },
             containerColor = MaterialTheme.colorScheme.surfaceContainerHighest, // Material 3 Expressive: Higher contrast
@@ -916,13 +1010,13 @@ fun GroupedRoutineCard(
                         showDeleteDialog = false
                     },
                     modifier = Modifier.height(56.dp), // Material 3 Expressive: Taller button
-                    shape = RoundedCornerShape(20.dp) // Material 3 Expressive: More rounded
+                    shape = RoundedCornerShape(20.dp), // Material 3 Expressive: More rounded
                 ) {
                     Text(
                         "Delete",
                         style = MaterialTheme.typography.titleLarge, // Material 3 Expressive: Larger text
                         fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.error
+                        color = MaterialTheme.colorScheme.error,
                     )
                 }
             },
@@ -930,16 +1024,16 @@ fun GroupedRoutineCard(
                 TextButton(
                     onClick = { showDeleteDialog = false },
                     modifier = Modifier.height(56.dp), // Material 3 Expressive: Taller button
-                    shape = RoundedCornerShape(20.dp) // Material 3 Expressive: More rounded
+                    shape = RoundedCornerShape(20.dp), // Material 3 Expressive: More rounded
                 ) {
                     Text(
                         "Cancel",
                         style = MaterialTheme.typography.titleMedium, // Material 3 Expressive: Larger text
                         fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-            }
+            },
         )
     }
 }
@@ -953,7 +1047,7 @@ fun WorkoutSessionCard(
     weightUnit: WeightUnit,
     formatWeight: (Float, WeightUnit) -> String,
     exerciseRepository: com.devil.phoenixproject.data.repository.ExerciseRepository,
-    onDelete: () -> Unit
+    onDelete: () -> Unit,
 ) {
     var exerciseName by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(session.exerciseId) {
@@ -965,32 +1059,32 @@ fun WorkoutSessionCard(
     Surface(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(8.dp),
-        color = MaterialTheme.colorScheme.surfaceVariant
+        color = MaterialTheme.colorScheme.surfaceVariant,
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(Spacing.small),
             horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
+            verticalAlignment = Alignment.CenterVertically,
         ) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     exerciseName ?: "Just Lift",
                     style = MaterialTheme.typography.bodyMedium,
                     fontWeight = FontWeight.Medium,
-                    color = MaterialTheme.colorScheme.onSurface
+                    color = MaterialTheme.colorScheme.onSurface,
                 )
                 Text(
                     "${formatWeight(session.weightPerCableKg, weightUnit)}/cable • ${session.totalReps} reps • ${session.mode}",
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
             Text(
                 formatDuration(session.duration),
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
     }
@@ -1003,12 +1097,12 @@ fun MetricItem(label: String, value: String) {
             value,
             style = MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.onSurface
+            color = MaterialTheme.colorScheme.onSurface,
         )
         Text(
             label,
             style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
 }
@@ -1018,18 +1112,18 @@ fun EnhancedMetricItem(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     label: String,
     value: String,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
 ) {
     Row(
         modifier = modifier,
         horizontalArrangement = Arrangement.Center,
-        verticalAlignment = Alignment.CenterVertically
+        verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(
             icon,
-            contentDescription = "Workout session icon",
+            contentDescription = stringResource(Res.string.cd_workout_session_icon),
             modifier = Modifier.size(16.dp),
-            tint = MaterialTheme.colorScheme.primary
+            tint = MaterialTheme.colorScheme.primary,
         )
         Spacer(modifier = Modifier.width(Spacing.extraSmall))
         Column(horizontalAlignment = Alignment.Start) {
@@ -1037,14 +1131,64 @@ fun EnhancedMetricItem(
                 value,
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurface
+                color = MaterialTheme.colorScheme.onSurface,
             )
             Text(
                 label,
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
+    }
+}
+
+/**
+ * Biomechanics section for a single workout session.
+ *
+ * Guards against older sessions without biomechanics data (shows nothing).
+ * Per-rep biomechanics data is lazy-loaded only when user expands the per-rep section
+ * to avoid deserializing 101-point force curves for every session in the list.
+ */
+@Composable
+private fun BiomechanicsSection(session: WorkoutSession) {
+    // Only show for sessions that have biomechanics data (v0.5.0+)
+    if (!session.hasBiomechanicsData) return
+
+    Spacer(modifier = Modifier.height(Spacing.medium))
+
+    var isRepBiomechanicsExpanded by remember { mutableStateOf(false) }
+
+    BiomechanicsHistorySummary(
+        avgMcvMmS = session.avgMcvMmS,
+        avgAsymmetryPercent = session.avgAsymmetryPercent,
+        totalVelocityLossPercent = session.totalVelocityLossPercent,
+        dominantSide = session.dominantSide,
+        strengthProfile = session.strengthProfile,
+        onExpandReps = { isRepBiomechanicsExpanded = !isRepBiomechanicsExpanded },
+    )
+
+    // Per-rep detail (lazy-loaded only when expanded)
+    AnimatedVisibility(
+        visible = isRepBiomechanicsExpanded,
+        enter = expandVertically(),
+        exit = shrinkVertically(),
+    ) {
+        val biomechanicsRepository: BiomechanicsRepository = koinInject()
+        var repBiomechanics by remember { mutableStateOf<List<BiomechanicsRepResult>>(emptyList()) }
+        var isLoadingBiomechanics by remember { mutableStateOf(true) }
+
+        LaunchedEffect(session.id) {
+            isLoadingBiomechanics = true
+            repBiomechanics = biomechanicsRepository.getRepBiomechanics(session.id)
+            isLoadingBiomechanics = false
+        }
+
+        RepBiomechanicsDetail(
+            repResults = repBiomechanics,
+            isLoading = isLoadingBiomechanics,
+            showAsymmetry = true,
+            showForceCurves = true,
+        )
     }
 }
 
@@ -1055,10 +1199,8 @@ private fun formatTimestamp(timestamp: Long): String {
     return "$date at $time"
 }
 
-@Suppress("unused")  // Available for future UI enhancements
-private fun formatRelativeTimestamp(timestamp: Long): String {
-    return KmpUtils.formatRelativeTimestamp(timestamp)
-}
+@Suppress("unused") // Available for future UI enhancements
+private fun formatRelativeTimestamp(timestamp: Long): String = KmpUtils.formatRelativeTimestamp(timestamp)
 
 private fun formatDuration(millis: Long): String {
     val totalSeconds = millis / 1000

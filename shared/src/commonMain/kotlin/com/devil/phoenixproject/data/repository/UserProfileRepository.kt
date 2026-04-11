@@ -1,8 +1,10 @@
 package com.devil.phoenixproject.data.repository
 
+import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.database.VitruvianDatabase
 import com.devil.phoenixproject.domain.model.currentTimeMillis
 import com.devil.phoenixproject.domain.model.generateUUID
+import com.devil.phoenixproject.domain.premium.RpgAttributeEngine
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -12,16 +14,15 @@ enum class SubscriptionStatus {
     FREE,
     ACTIVE,
     EXPIRED,
-    GRACE_PERIOD;
+    GRACE_PERIOD,
+    ;
 
     companion object {
-        fun fromString(value: String?): SubscriptionStatus {
-            return when (value?.lowercase()) {
-                "active" -> ACTIVE
-                "expired" -> EXPIRED
-                "grace_period" -> GRACE_PERIOD
-                else -> FREE
-            }
+        fun fromString(value: String?): SubscriptionStatus = when (value?.lowercase()) {
+            "active" -> ACTIVE
+            "expired" -> EXPIRED
+            "grace_period" -> GRACE_PERIOD
+            else -> FREE
         }
     }
 
@@ -38,7 +39,7 @@ data class UserProfile(
     val supabaseUserId: String? = null,
     val subscriptionStatus: SubscriptionStatus = SubscriptionStatus.FREE,
     val subscriptionExpiresAt: Long? = null,
-    val lastAuthAt: Long? = null
+    val lastAuthAt: Long? = null,
 )
 
 interface UserProfileRepository {
@@ -59,9 +60,7 @@ interface UserProfileRepository {
     fun getActiveProfileSubscriptionStatus(): Flow<SubscriptionStatus>
 }
 
-class SqlDelightUserProfileRepository(
-    private val database: VitruvianDatabase
-) : UserProfileRepository {
+class SqlDelightUserProfileRepository(private val database: VitruvianDatabase) : UserProfileRepository {
 
     private val queries = database.vitruvianDatabaseQueries
 
@@ -84,10 +83,19 @@ class SqlDelightUserProfileRepository(
                 name = "Default",
                 colorIndex = 0L,
                 createdAt = currentTimeMillis(),
-                isActive = 1L
+                isActive = 1L,
             )
         }
         refreshProfilesSync()
+        // If no profile is active (e.g., after a migration or data corruption),
+        // activate an existing profile so data filtered by profile_id remains visible.
+        if (_activeProfile.value == null && _allProfiles.value.isNotEmpty()) {
+            // Prefer "default" if it exists; otherwise activate the first available profile.
+            val targetId = _allProfiles.value.firstOrNull { it.id == "default" }?.id
+                ?: _allProfiles.value.first().id
+            queries.setActiveProfile(targetId)
+            refreshProfilesSync()
+        }
     }
 
     private fun refreshProfilesSync() {
@@ -120,10 +128,35 @@ class SqlDelightUserProfileRepository(
     override suspend fun deleteProfile(id: String): Boolean {
         if (id == "default") return false
         val wasActive = _activeProfile.value?.id == id
+        val targetProfileId = if (wasActive) "default" else (_activeProfile.value?.id ?: "default")
+        val gamificationRepository = SqlDelightGamificationRepository(database)
+
+        // Cascade: reassign all data from the deleted profile to the target profile
+        Logger.i { "PROFILE_DELETE: Reassigning data from profile '$id' to '$targetProfileId'" }
+        database.transaction {
+            queries.reassignRoutineProfile(targetProfileId, id)
+            queries.reassignSessionProfile(targetProfileId, id)
+            queries.reassignPRProfile(targetProfileId, id)
+            queries.reassignTrainingCycleProfile(targetProfileId, id)
+            queries.reassignBadgeProfile(targetProfileId, id)
+            queries.reassignStreakProfile(targetProfileId, id)
+            queries.deleteGamificationStatsByProfile(id)
+            queries.deleteGamificationStatsByProfile(targetProfileId)
+            queries.deleteRpgAttributesByProfile(id)
+            queries.deleteRpgAttributesByProfile(targetProfileId)
+            queries.reassignAssessmentResultProfile(targetProfileId, id)
+            queries.reassignProgressionProfile(targetProfileId, id)
+        }
+
         queries.deleteProfile(id)
         if (wasActive) {
             queries.setActiveProfile("default")
         }
+
+        gamificationRepository.updateStats(targetProfileId)
+        val rpgInput = gamificationRepository.getRpgInput(targetProfileId)
+        gamificationRepository.saveRpgProfile(RpgAttributeEngine.computeProfile(rpgInput), targetProfileId)
+
         refreshProfilesSync()
         return true
     }
@@ -133,26 +166,24 @@ class SqlDelightUserProfileRepository(
         refreshProfilesSync()
     }
 
-    private fun com.devil.phoenixproject.database.UserProfile.toUserProfile(): UserProfile {
-        return UserProfile(
-            id = id,
-            name = name,
-            colorIndex = colorIndex.toInt(),
-            createdAt = createdAt,
-            isActive = isActive == 1L,
-            supabaseUserId = supabase_user_id,
-            subscriptionStatus = SubscriptionStatus.fromString(subscription_status),
-            subscriptionExpiresAt = subscription_expires_at,
-            lastAuthAt = last_auth_at
-        )
-    }
+    private fun com.devil.phoenixproject.database.UserProfile.toUserProfile(): UserProfile = UserProfile(
+        id = id,
+        name = name,
+        colorIndex = colorIndex.toInt(),
+        createdAt = createdAt,
+        isActive = isActive == 1L,
+        supabaseUserId = supabase_user_id,
+        subscriptionStatus = SubscriptionStatus.fromString(subscription_status),
+        subscriptionExpiresAt = subscription_expires_at,
+        lastAuthAt = last_auth_at,
+    )
 
     // Subscription methods implementation
     override suspend fun linkToSupabase(profileId: String, supabaseUserId: String) {
         queries.linkProfileToSupabase(
             supabase_user_id = supabaseUserId,
             last_auth_at = currentTimeMillis(),
-            id = profileId
+            id = profileId,
         )
         refreshProfilesSync()
     }
@@ -161,22 +192,18 @@ class SqlDelightUserProfileRepository(
         queries.updateSubscriptionStatus(
             subscription_status = status.toDbString(),
             subscription_expires_at = expiresAt,
-            id = profileId
+            id = profileId,
         )
         refreshProfilesSync()
     }
 
-    override suspend fun getProfileBySupabaseId(supabaseUserId: String): UserProfile? {
-        return queries.getProfileBySupabaseId(supabaseUserId)
-            .executeAsOneOrNull()
-            ?.toUserProfile()
-    }
+    override suspend fun getProfileBySupabaseId(supabaseUserId: String): UserProfile? = queries.getProfileBySupabaseId(supabaseUserId)
+        .executeAsOneOrNull()
+        ?.toUserProfile()
 
-    override fun getActiveProfileSubscriptionStatus(): Flow<SubscriptionStatus> {
-        return kotlinx.coroutines.flow.flow {
-            val result = queries.getActiveProfileSubscriptionStatus()
-                .executeAsOneOrNull()
-            emit(SubscriptionStatus.fromString(result?.subscription_status))
-        }
+    override fun getActiveProfileSubscriptionStatus(): Flow<SubscriptionStatus> = kotlinx.coroutines.flow.flow {
+        val result = queries.getActiveProfileSubscriptionStatus()
+            .executeAsOneOrNull()
+        emit(SubscriptionStatus.fromString(result?.subscription_status))
     }
 }

@@ -2,9 +2,14 @@ package com.devil.phoenixproject.presentation.manager
 
 import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.testutil.FakePersonalRecordRepository
+import com.devil.phoenixproject.testutil.FakeUserProfileRepository
 import com.devil.phoenixproject.testutil.FakeWorkoutRepository
 import com.devil.phoenixproject.testutil.TestCoroutineRule
 import com.devil.phoenixproject.util.KmpLocalDate
+import kotlin.test.assertEquals
+import kotlin.test.assertIs
+import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.SupervisorJob
@@ -19,10 +24,6 @@ import kotlinx.datetime.atStartOfDayIn
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
-import kotlin.test.assertEquals
-import kotlin.test.assertIs
-import kotlin.test.assertNotNull
-import kotlin.test.assertNull
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class HistoryManagerTest {
@@ -32,18 +33,26 @@ class HistoryManagerTest {
 
     private lateinit var fakeWorkoutRepository: FakeWorkoutRepository
     private lateinit var fakePersonalRecordRepository: FakePersonalRecordRepository
+    private lateinit var fakeUserProfileRepository: FakeUserProfileRepository
 
     @Before
     fun setup() {
         fakeWorkoutRepository = FakeWorkoutRepository()
         fakePersonalRecordRepository = FakePersonalRecordRepository()
+        fakeUserProfileRepository = FakeUserProfileRepository()
     }
 
     @Test
     fun `groupedWorkoutHistory groups routine sessions and keeps singles separate`() = runTest {
         val managerScope = CoroutineScope(coroutineContext + SupervisorJob())
         try {
-            val manager = HistoryManager(fakeWorkoutRepository, fakePersonalRecordRepository, managerScope)
+            val manager =
+                HistoryManager(
+                    fakeWorkoutRepository,
+                    fakePersonalRecordRepository,
+                    fakeUserProfileRepository,
+                    managerScope,
+                )
             var latestHistory: List<HistoryItem>? = null
             val collectJob = launch {
                 manager.groupedWorkoutHistory.collect { latestHistory = it }
@@ -58,8 +67,8 @@ class HistoryManagerTest {
                     routineName = "Push Day",
                     exerciseId = "ex-1",
                     totalReps = 8,
-                    duration = 60L
-                )
+                    duration = 60L,
+                ),
             )
             fakeWorkoutRepository.addSession(
                 WorkoutSession(
@@ -69,8 +78,8 @@ class HistoryManagerTest {
                     routineName = "Push Day",
                     exerciseId = "ex-2",
                     totalReps = 10,
-                    duration = 90L
-                )
+                    duration = 90L,
+                ),
             )
             fakeWorkoutRepository.addSession(
                 WorkoutSession(
@@ -78,8 +87,8 @@ class HistoryManagerTest {
                     timestamp = 3_000L,
                     routineSessionId = null,
                     totalReps = 12,
-                    duration = 45L
-                )
+                    duration = 45L,
+                ),
             )
             advanceUntilIdle()
 
@@ -109,7 +118,13 @@ class HistoryManagerTest {
     fun `workoutStreak returns consecutive day count when streak is current`() = runTest {
         val managerScope = CoroutineScope(coroutineContext + SupervisorJob())
         try {
-            val manager = HistoryManager(fakeWorkoutRepository, fakePersonalRecordRepository, managerScope)
+            val manager =
+                HistoryManager(
+                    fakeWorkoutRepository,
+                    fakePersonalRecordRepository,
+                    fakeUserProfileRepository,
+                    managerScope,
+                )
             val today = KmpLocalDate.today()
             var latestStreak: Int? = Int.MIN_VALUE
             val collectJob = launch {
@@ -117,9 +132,15 @@ class HistoryManagerTest {
             }
             advanceUntilIdle()
 
-            fakeWorkoutRepository.addSession(WorkoutSession(id = "d0", timestamp = timestampForDate(today)))
-            fakeWorkoutRepository.addSession(WorkoutSession(id = "d1", timestamp = timestampForDate(today.minusDays(1))))
-            fakeWorkoutRepository.addSession(WorkoutSession(id = "d2", timestamp = timestampForDate(today.minusDays(2))))
+            fakeWorkoutRepository.addSession(
+                WorkoutSession(id = "d0", timestamp = timestampForDate(today)),
+            )
+            fakeWorkoutRepository.addSession(
+                WorkoutSession(id = "d1", timestamp = timestampForDate(today.minusDays(1))),
+            )
+            fakeWorkoutRepository.addSession(
+                WorkoutSession(id = "d2", timestamp = timestampForDate(today.minusDays(2))),
+            )
             advanceUntilIdle()
 
             assertEquals(3, latestStreak)
@@ -133,7 +154,13 @@ class HistoryManagerTest {
     fun `workoutStreak returns null when latest workout is older than yesterday`() = runTest {
         val managerScope = CoroutineScope(coroutineContext + SupervisorJob())
         try {
-            val manager = HistoryManager(fakeWorkoutRepository, fakePersonalRecordRepository, managerScope)
+            val manager =
+                HistoryManager(
+                    fakeWorkoutRepository,
+                    fakePersonalRecordRepository,
+                    fakeUserProfileRepository,
+                    managerScope,
+                )
             val today = KmpLocalDate.today()
             var latestStreak: Int? = Int.MIN_VALUE
             val collectJob = launch {
@@ -141,8 +168,12 @@ class HistoryManagerTest {
             }
             advanceUntilIdle()
 
-            fakeWorkoutRepository.addSession(WorkoutSession(id = "old-1", timestamp = timestampForDate(today.minusDays(3))))
-            fakeWorkoutRepository.addSession(WorkoutSession(id = "old-2", timestamp = timestampForDate(today.minusDays(4))))
+            fakeWorkoutRepository.addSession(
+                WorkoutSession(id = "old-1", timestamp = timestampForDate(today.minusDays(3))),
+            )
+            fakeWorkoutRepository.addSession(
+                WorkoutSession(id = "old-2", timestamp = timestampForDate(today.minusDays(4))),
+            )
             advanceUntilIdle()
 
             assertNull(latestStreak)
@@ -156,7 +187,13 @@ class HistoryManagerTest {
     fun `progressPercentage compares latest two workout volumes`() = runTest {
         val managerScope = CoroutineScope(coroutineContext + SupervisorJob())
         try {
-            val manager = HistoryManager(fakeWorkoutRepository, fakePersonalRecordRepository, managerScope)
+            val manager =
+                HistoryManager(
+                    fakeWorkoutRepository,
+                    fakePersonalRecordRepository,
+                    fakeUserProfileRepository,
+                    managerScope,
+                )
             var latestProgress: Int? = Int.MIN_VALUE
             val collectJob = launch {
                 manager.progressPercentage.collect { latestProgress = it }
@@ -168,16 +205,16 @@ class HistoryManagerTest {
                     id = "previous",
                     timestamp = 1_000L,
                     weightPerCableKg = 10f,
-                    totalReps = 10
-                )
+                    totalReps = 10,
+                ),
             )
             fakeWorkoutRepository.addSession(
                 WorkoutSession(
                     id = "latest",
                     timestamp = 2_000L,
                     weightPerCableKg = 20f,
-                    totalReps = 10
-                )
+                    totalReps = 10,
+                ),
             )
             advanceUntilIdle()
 
@@ -192,7 +229,13 @@ class HistoryManagerTest {
     fun `delete methods remove sessions from history`() = runTest {
         val managerScope = CoroutineScope(coroutineContext + SupervisorJob())
         try {
-            val manager = HistoryManager(fakeWorkoutRepository, fakePersonalRecordRepository, managerScope)
+            val manager =
+                HistoryManager(
+                    fakeWorkoutRepository,
+                    fakePersonalRecordRepository,
+                    fakeUserProfileRepository,
+                    managerScope,
+                )
             var latestHistory: List<WorkoutSession> = emptyList()
             val collectJob = launch {
                 manager.workoutHistory.collect { latestHistory = it }
@@ -218,8 +261,7 @@ class HistoryManagerTest {
         }
     }
 
-    private fun timestampForDate(date: KmpLocalDate): Long =
-        LocalDate(date.year, date.month, date.dayOfMonth)
-            .atStartOfDayIn(TimeZone.currentSystemDefault())
-            .toEpochMilliseconds()
+    private fun timestampForDate(date: KmpLocalDate): Long = LocalDate(date.year, date.month, date.dayOfMonth)
+        .atStartOfDayIn(TimeZone.currentSystemDefault())
+        .toEpochMilliseconds()
 }

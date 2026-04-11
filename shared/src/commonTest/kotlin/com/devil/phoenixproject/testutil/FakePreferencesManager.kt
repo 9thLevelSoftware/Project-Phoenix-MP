@@ -63,9 +63,7 @@ class FakePreferencesManager : PreferencesManager {
         _preferencesFlow.value = _preferencesFlow.value.copy(audioRepCountEnabled = enabled)
     }
 
-    override suspend fun getSingleExerciseDefaults(exerciseId: String): SingleExerciseDefaults? {
-        return exerciseDefaults[exerciseId]
-    }
+    override suspend fun getSingleExerciseDefaults(exerciseId: String): SingleExerciseDefaults? = exerciseDefaults[exerciseId]
 
     override suspend fun saveSingleExerciseDefaults(defaults: SingleExerciseDefaults) {
         exerciseDefaults[defaults.exerciseId] = defaults
@@ -75,9 +73,7 @@ class FakePreferencesManager : PreferencesManager {
         exerciseDefaults.clear()
     }
 
-    override suspend fun getJustLiftDefaults(): JustLiftDefaults {
-        return justLiftDefaults
-    }
+    override suspend fun getJustLiftDefaults(): JustLiftDefaults = justLiftDefaults
 
     override suspend fun saveJustLiftDefaults(defaults: JustLiftDefaults) {
         justLiftDefaults = defaults
@@ -103,19 +99,47 @@ class FakePreferencesManager : PreferencesManager {
         _preferencesFlow.value = _preferencesFlow.value.copy(gamificationEnabled = enabled)
     }
 
-    override suspend fun setSimulatorModeUnlocked(unlocked: Boolean) {
-        _preferencesFlow.value = _preferencesFlow.value.copy(simulatorModeUnlocked = unlocked)
+    override suspend fun setWeightIncrement(increment: Float) {
+        _preferencesFlow.value = _preferencesFlow.value.copy(weightIncrement = increment)
     }
 
-    override fun isSimulatorModeUnlocked(): Boolean {
-        return _preferencesFlow.value.simulatorModeUnlocked
+    override suspend fun setAutoStartRoutine(enabled: Boolean) {
+        _preferencesFlow.value = _preferencesFlow.value.copy(autoStartRoutine = enabled)
     }
 
-    override suspend fun setSimulatorModeEnabled(enabled: Boolean) {
-        _preferencesFlow.value = _preferencesFlow.value.copy(simulatorModeEnabled = enabled)
+    override suspend fun setBodyWeightKg(weightKg: Float) {
+        _preferencesFlow.value = _preferencesFlow.value.copy(bodyWeightKg = weightKg)
     }
 
-    override fun isSimulatorModeEnabled(): Boolean {
-        return _preferencesFlow.value.simulatorModeEnabled
+    override suspend fun setCountdownBeepsEnabled(enabled: Boolean) {
+        _preferencesFlow.value = _preferencesFlow.value.copy(countdownBeepsEnabled = enabled)
+    }
+
+    override suspend fun setRepSoundEnabled(enabled: Boolean) {
+        _preferencesFlow.value = _preferencesFlow.value.copy(repSoundEnabled = enabled)
+    }
+
+    override suspend fun setMotionStartEnabled(enabled: Boolean) {
+        _preferencesFlow.value = _preferencesFlow.value.copy(motionStartEnabled = enabled)
+    }
+
+    override suspend fun setAutoBackupEnabled(enabled: Boolean) {
+        _preferencesFlow.value = _preferencesFlow.value.copy(autoBackupEnabled = enabled)
+    }
+
+    override suspend fun setLanguage(language: String) {
+        _preferencesFlow.value = _preferencesFlow.value.copy(language = language)
+    }
+
+    override suspend fun setVoiceStopEnabled(enabled: Boolean) {
+        _preferencesFlow.value = _preferencesFlow.value.copy(voiceStopEnabled = enabled)
+    }
+
+    override suspend fun setSafeWord(word: String?) {
+        _preferencesFlow.value = _preferencesFlow.value.copy(safeWord = word)
+    }
+
+    override suspend fun setSafeWordCalibrated(calibrated: Boolean) {
+        _preferencesFlow.value = _preferencesFlow.value.copy(safeWordCalibrated = calibrated)
     }
 }

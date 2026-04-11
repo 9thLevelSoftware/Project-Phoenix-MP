@@ -14,6 +14,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.data.repository.UserProfile
+import org.jetbrains.compose.resources.stringResource
+import vitruvianprojectphoenix.shared.generated.resources.*
+import vitruvianprojectphoenix.shared.generated.resources.Res
 
 /**
  * Individual profile row for the side panel.
@@ -22,13 +25,7 @@ import com.devil.phoenixproject.data.repository.UserProfile
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun ProfileListItem(
-    profile: UserProfile,
-    isActive: Boolean,
-    onClick: () -> Unit,
-    onLongClick: () -> Unit,
-    modifier: Modifier = Modifier
-) {
+fun ProfileListItem(profile: UserProfile, isActive: Boolean, onClick: () -> Unit, onLongClick: () -> Unit, modifier: Modifier = Modifier) {
     val profileColor = ProfileColors.getOrElse(profile.colorIndex) { ProfileColors[0] }
 
     Surface(
@@ -36,33 +33,33 @@ fun ProfileListItem(
             .fillMaxWidth()
             .combinedClickable(
                 onClick = onClick,
-                onLongClick = onLongClick
+                onLongClick = onLongClick,
             ),
         color = if (isActive) {
             MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
         } else {
             Color.Transparent
-        }
+        },
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             // Avatar
             Surface(
                 modifier = Modifier.size(40.dp),
                 shape = CircleShape,
-                color = profileColor
+                color = profileColor,
             ) {
                 Box(contentAlignment = Alignment.Center) {
                     Text(
                         text = profile.name.take(1).uppercase(),
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
-                        color = Color.White
+                        color = Color.White,
                     )
                 }
             }
@@ -73,16 +70,16 @@ fun ProfileListItem(
                 style = MaterialTheme.typography.bodyLarge,
                 fontWeight = if (isActive) FontWeight.Bold else FontWeight.Normal,
                 color = MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier.weight(1f)
+                modifier = Modifier.weight(1f),
             )
 
             // Active indicator
             if (isActive) {
                 Icon(
                     imageVector = Icons.Default.Check,
-                    contentDescription = "Active",
+                    contentDescription = stringResource(Res.string.cd_active),
                     tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(20.dp)
+                    modifier = Modifier.size(20.dp),
                 )
             }
         }

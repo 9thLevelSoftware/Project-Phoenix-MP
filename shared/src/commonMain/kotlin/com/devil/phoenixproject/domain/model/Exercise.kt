@@ -13,16 +13,23 @@ package com.devil.phoenixproject.domain.model
  * - Machine tracks each cable independently (loadA, loadB, posA, posB)
  * - Weight is always specified as "per cable" in the BLE protocol
  */
+enum class ExerciseCableIntent {
+    SINGLE,
+    DUAL,
+    EITHER,
+}
+
 data class Exercise(
     val name: String,
     val muscleGroup: String,
     val muscleGroups: String = muscleGroup, // Comma-separated list of primary muscle groups (defaults to muscleGroup for backward compatibility)
     val equipment: String = "",
-    val id: String? = null,  // Optional exercise library ID for loading videos/thumbnails
+    val id: String? = null, // Optional exercise library ID for loading videos/thumbnails
     val isFavorite: Boolean = false, // Whether exercise is marked as favorite
     val isCustom: Boolean = false, // Whether exercise was created by user
     val timesPerformed: Int = 0, // Number of times this exercise has been performed
-    val oneRepMaxKg: Float? = null // User's 1RM for percentage-based programming
+    val oneRepMaxKg: Float? = null, // User's 1RM for percentage-based programming
+    val cableIntent: ExerciseCableIntent? = null, // Explicit single/dual cable metadata when known
 ) {
     /**
      * Display name for UI (same as name for now)
@@ -36,6 +43,17 @@ data class Exercise(
      */
     val hasCableAccessory: Boolean
         get() = equipment.split(",").any { it.trim().uppercase() in CABLE_ACCESSORIES }
+
+    /**
+     * Preferred cable count for summary calculations when the exercise metadata is explicit.
+     * Null means the caller should fall back to telemetry heuristics.
+     */
+    val preferredCableCount: Int?
+        get() = when (cableIntent) {
+            ExerciseCableIntent.SINGLE -> 1
+            ExerciseCableIntent.DUAL -> 2
+            ExerciseCableIntent.EITHER, null -> null
+        }
 
     companion object {
         /** Equipment that physically attaches to the machine's cables */
@@ -56,5 +74,5 @@ enum class ExerciseCategory(val displayName: String) {
     LEGS("Legs"),
     GLUTES("Glutes"),
     CORE("Core"),
-    FULL_BODY("Full Body")
+    FULL_BODY("Full Body"),
 }

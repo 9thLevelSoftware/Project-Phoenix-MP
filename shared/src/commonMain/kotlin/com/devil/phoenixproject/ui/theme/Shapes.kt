@@ -10,11 +10,11 @@ import androidx.compose.ui.unit.dp
  */
 object ExpressiveShapeValues {
     // Expressive: More rounded corners than standard Material 3
-    val ExtraSmall = RoundedCornerShape(8.dp)   // Standard: 4dp
-    val Small = RoundedCornerShape(12.dp)        // Standard: 8dp
-    val Medium = RoundedCornerShape(20.dp)      // Standard: 12dp (much more rounded)
-    val Large = RoundedCornerShape(28.dp)        // Standard: 16dp (very rounded)
-    val ExtraLarge = RoundedCornerShape(32.dp)   // Pill-shaped for buttons
+    val ExtraSmall = RoundedCornerShape(8.dp) // Standard: 4dp
+    val Small = RoundedCornerShape(12.dp) // Standard: 8dp
+    val Medium = RoundedCornerShape(20.dp) // Standard: 12dp (much more rounded)
+    val Large = RoundedCornerShape(28.dp) // Standard: 16dp (very rounded)
+    val ExtraLarge = RoundedCornerShape(32.dp) // Pill-shaped for buttons
 }
 
 /**
@@ -25,5 +25,5 @@ val ExpressiveShapes = Shapes(
     small = ExpressiveShapeValues.Small,
     medium = ExpressiveShapeValues.Medium,
     large = ExpressiveShapeValues.Large,
-    extraLarge = ExpressiveShapeValues.ExtraLarge
+    extraLarge = ExpressiveShapeValues.ExtraLarge,
 )

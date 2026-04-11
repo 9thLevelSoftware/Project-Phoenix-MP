@@ -63,6 +63,7 @@ private class IosSoundManager {
     private val badgeSoundPlayers = mutableListOf<AVAudioPlayer?>()
     private val prSoundPlayers = mutableListOf<AVAudioPlayer?>()
     private val repCountSoundPlayers = mutableListOf<AVAudioPlayer?>()
+    private var countdownTickPlayer: AVAudioPlayer? = null // Issue #100
 
     init {
         setupAudioSession()
@@ -80,7 +81,7 @@ private class IosSoundManager {
             session.setCategory(
                 AVAudioSessionCategoryAmbient,
                 AVAudioSessionCategoryOptionMixWithOthers,
-                null
+                null,
             )
             session.setActive(true, null)
         } catch (e: Exception) {
@@ -98,13 +99,18 @@ private class IosSoundManager {
             HapticEvent.WORKOUT_START to "chirpchirp",
             HapticEvent.WORKOUT_END to "chirpchirp",
             HapticEvent.REST_ENDING to "restover",
-            HapticEvent.DISCO_MODE_UNLOCKED to "discomode"
-            // ERROR, BADGE_EARNED, PERSONAL_RECORD, REP_COUNT_ANNOUNCED handled separately
+            HapticEvent.DISCO_MODE_UNLOCKED to "discomode",
+            // Issue #100: Warmup-to-working transition (ascending tone)
+            HapticEvent.WARMUP_TO_WORKING to "beepboop",
+            // ERROR, BADGE_EARNED, PERSONAL_RECORD, REP_COUNT_ANNOUNCED, COUNTDOWN_TICK handled separately
         )
 
         soundFiles.forEach { (event, fileName) ->
             players[event] = loadSound(fileName)
         }
+
+        // Issue #100: Load countdown tick sound (reuses beep)
+        countdownTickPlayer = loadSound("beep")
     }
 
     private fun loadBadgeSounds() {
@@ -142,7 +148,7 @@ private class IosSoundManager {
             "you_just_broke_your_limits",
             "you_just_destroyed_that_weight",
             "you_just_levelled_up",
-            "you_went_full_throttle"
+            "you_went_full_throttle",
         )
 
         badgeSoundFiles.forEach { fileName ->
@@ -155,7 +161,7 @@ private class IosSoundManager {
         // PR-specific sounds
         val prSoundFiles = listOf(
             "new_personal_record",
-            "new_personal_record_2"
+            "new_personal_record_2",
         )
 
         prSoundFiles.forEach { fileName ->
@@ -210,20 +216,31 @@ private class IosSoundManager {
             is HapticEvent.BADGE_EARNED -> {
                 if (badgeSoundPlayers.isNotEmpty()) {
                     badgeSoundPlayers[kotlin.random.Random.nextInt(badgeSoundPlayers.size)]
-                } else null
+                } else {
+                    null
+                }
             }
+
             is HapticEvent.PERSONAL_RECORD -> {
                 if (prSoundPlayers.isNotEmpty()) {
                     prSoundPlayers[kotlin.random.Random.nextInt(prSoundPlayers.size)]
-                } else null
+                } else {
+                    null
+                }
             }
+
             is HapticEvent.REP_COUNT_ANNOUNCED -> {
                 // Play the numbered rep count sound (index is repNumber - 1)
                 val index = event.repNumber - 1
                 if (index in repCountSoundPlayers.indices) {
                     repCountSoundPlayers[index]
-                } else null
+                } else {
+                    null
+                }
             }
+
+            is HapticEvent.COUNTDOWN_TICK -> countdownTickPlayer
+
             else -> players[event]
         }
 
@@ -276,10 +293,17 @@ private class IosSoundManager {
         repCountSoundPlayers.clear()
 
         try {
+            countdownTickPlayer?.stop()
+        } catch (e: Exception) {
+            // Ignore cleanup errors
+        }
+        countdownTickPlayer = null
+
+        try {
             AVAudioSession.sharedInstance().setActive(
                 false,
                 AVAudioSessionSetActiveOptionNotifyOthersOnDeactivation,
-                null
+                null,
             )
         } catch (e: Exception) {
             // Ignore cleanup errors
@@ -302,30 +326,35 @@ private fun playHapticFeedback(event: HapticEvent) {
                 generator.prepare()
                 generator.impactOccurred()
             }
+
             is HapticEvent.WARMUP_COMPLETE, is HapticEvent.WORKOUT_COMPLETE -> {
                 // Success notification for completions
                 val generator = UINotificationFeedbackGenerator()
                 generator.prepare()
                 generator.notificationOccurred(UINotificationFeedbackType.UINotificationFeedbackTypeSuccess)
             }
+
             is HapticEvent.WORKOUT_START, is HapticEvent.WORKOUT_END -> {
                 // Medium impact for start/end
                 val generator = UIImpactFeedbackGenerator(UIImpactFeedbackStyle.UIImpactFeedbackStyleMedium)
                 generator.prepare()
                 generator.impactOccurred()
             }
+
             is HapticEvent.REST_ENDING -> {
                 // Warning notification when rest is ending
                 val generator = UINotificationFeedbackGenerator()
                 generator.prepare()
                 generator.notificationOccurred(UINotificationFeedbackType.UINotificationFeedbackTypeWarning)
             }
+
             is HapticEvent.ERROR -> {
                 // Error notification
                 val generator = UINotificationFeedbackGenerator()
                 generator.prepare()
                 generator.notificationOccurred(UINotificationFeedbackType.UINotificationFeedbackTypeError)
             }
+
             is HapticEvent.DISCO_MODE_UNLOCKED, is HapticEvent.BADGE_EARNED, is HapticEvent.PERSONAL_RECORD -> {
                 // Celebration - heavy impact followed by success notification
                 val impactGenerator = UIImpactFeedbackGenerator(UIImpactFeedbackStyle.UIImpactFeedbackStyleHeavy)
@@ -336,6 +365,21 @@ private fun playHapticFeedback(event: HapticEvent) {
                 notificationGenerator.prepare()
                 notificationGenerator.notificationOccurred(UINotificationFeedbackType.UINotificationFeedbackTypeSuccess)
             }
+
+            is HapticEvent.COUNTDOWN_TICK -> {
+                // Issue #100: Light tick for rest countdown
+                val generator = UIImpactFeedbackGenerator(UIImpactFeedbackStyle.UIImpactFeedbackStyleLight)
+                generator.prepare()
+                generator.impactOccurred()
+            }
+
+            is HapticEvent.WARMUP_TO_WORKING -> {
+                // Issue #100: Medium impact for warmup-to-working transition
+                val generator = UIImpactFeedbackGenerator(UIImpactFeedbackStyle.UIImpactFeedbackStyleMedium)
+                generator.prepare()
+                generator.impactOccurred()
+            }
+
             is HapticEvent.REP_COUNT_ANNOUNCED -> {
                 // No haptic for rep count announcement - audio only
             }

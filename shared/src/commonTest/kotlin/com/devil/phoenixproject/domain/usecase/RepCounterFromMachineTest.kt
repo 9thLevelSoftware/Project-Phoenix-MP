@@ -28,7 +28,7 @@ class RepCounterFromMachineTest {
             warmupTarget = 3,
             workingTarget = 10,
             isJustLift = false,
-            stopAtTop = false
+            stopAtTop = false,
         )
 
         // Initially no reps counted
@@ -68,7 +68,7 @@ class RepCounterFromMachineTest {
         repCounter.process(repsRomCount = 1, repsSetCount = 0, up = 1, down = 1)
 
         val count = repCounter.getRepCount()
-        assertEquals(1, count.warmupReps)  // From down counter
+        assertEquals(1, count.warmupReps) // From down counter
         assertEquals(0, count.workingReps)
         assertFalse(count.isWarmupComplete)
     }
@@ -111,8 +111,8 @@ class RepCounterFromMachineTest {
 
         val count = repCounter.getRepCount()
         assertEquals(3, count.warmupReps)
-        assertEquals(1, count.workingReps)  // From down counter: 4 - 3 = 1
-        assertEquals(1, count.totalReps)    // totalReps = workingReps only
+        assertEquals(1, count.workingReps) // From down counter: 4 - 3 = 1
+        assertEquals(1, count.totalReps) // totalReps = workingReps only
     }
 
     @Test
@@ -122,7 +122,7 @@ class RepCounterFromMachineTest {
             warmupTarget = 1,
             workingTarget = 5,
             isJustLift = false,
-            stopAtTop = false
+            stopAtTop = false,
         )
 
         // Establish baseline
@@ -135,7 +135,7 @@ class RepCounterFromMachineTest {
         repCounter.process(repsRomCount = 1, repsSetCount = 1, up = 2, down = 2)
 
         val count = repCounter.getRepCount()
-        assertEquals(1, count.workingReps)  // Directly from repsSetCount
+        assertEquals(1, count.workingReps) // Directly from repsSetCount
     }
 
     @Test
@@ -145,7 +145,7 @@ class RepCounterFromMachineTest {
             warmupTarget = 0,
             workingTarget = 2,
             isJustLift = false,
-            stopAtTop = false
+            stopAtTop = false,
         )
 
         // Establish baseline
@@ -217,7 +217,7 @@ class RepCounterFromMachineTest {
 
         val count = repCounter.getRepCount()
         assertEquals(3, count.warmupReps)
-        assertEquals(1, count.workingReps)  // From down counter: 4 - 3 = 1
+        assertEquals(1, count.workingReps) // From down counter: 4 - 3 = 1
     }
 
     @Test
@@ -242,7 +242,7 @@ class RepCounterFromMachineTest {
         repCounter.process(repsRomCount = 0, repsSetCount = 5, up = 5, down = 5)
 
         val count = repCounter.getRepCount()
-        assertEquals(5, count.workingReps)  // From repsSetCount
+        assertEquals(5, count.workingReps) // From repsSetCount
         assertTrue(repCounter.shouldStopWorkout())
         assertTrue(capturedEvents.any { it.type == RepType.WORKOUT_COMPLETE })
     }
@@ -283,13 +283,13 @@ class RepCounterFromMachineTest {
         repCounter.process(repsRomCount = 0, repsSetCount = 0, up = 1, down = 0)
 
         val countAfterTop = repCounter.getRepCount()
-        assertEquals(0, countAfterTop.workingReps)  // Down counter still 0
+        assertEquals(0, countAfterTop.workingReps) // Down counter still 0
 
         // Rep confirmed at BOTTOM (down = 1)
         repCounter.process(repsRomCount = 0, repsSetCount = 1, up = 1, down = 1)
 
         val countAfterBottom = repCounter.getRepCount()
-        assertEquals(1, countAfterBottom.workingReps)  // From down counter
+        assertEquals(1, countAfterBottom.workingReps) // From down counter
     }
 
     @Test
@@ -330,8 +330,10 @@ class RepCounterFromMachineTest {
         assertFalse(count.isWarmupComplete)
 
         // Verify the WARMUP_COMPLETED event was fired
-        assertTrue(capturedEvents.any { it.type == RepType.WARMUP_COMPLETED && it.warmupCount == 1 },
-            "WARMUP_COMPLETED event should fire for first rep")
+        assertTrue(
+            capturedEvents.any { it.type == RepType.WARMUP_COMPLETED && it.warmupCount == 1 },
+            "WARMUP_COMPLETED event should fire for first rep",
+        )
     }
 
     @Test
@@ -439,7 +441,7 @@ class RepCounterFromMachineTest {
 
         val countBeforeConfirm = repCounter.getRepCount()
         assertTrue(countBeforeConfirm.hasPendingRep, "Pending rep should be set on up movement")
-        assertEquals(0, countBeforeConfirm.workingReps)  // Down counter still at 1
+        assertEquals(0, countBeforeConfirm.workingReps) // Down counter still at 1
     }
 
     @Test
@@ -459,7 +461,7 @@ class RepCounterFromMachineTest {
 
         val countAfterConfirm = repCounter.getRepCount()
         assertFalse(countAfterConfirm.hasPendingRep, "Pending rep should be cleared when down counter confirms")
-        assertEquals(1, countAfterConfirm.workingReps)  // From down counter: 2 - 1 = 1
+        assertEquals(1, countAfterConfirm.workingReps) // From down counter: 2 - 1 = 1
     }
 
     // ========== Issue #210: Trust repsSetCount from Machine ==========
@@ -477,8 +479,8 @@ class RepCounterFromMachineTest {
 
         val count = repCounter.getRepCount()
         assertEquals(3, count.warmupReps)
-        assertEquals(4, count.workingReps)  // Directly from repsSetCount
-        assertFalse(repCounter.shouldStopWorkout())  // Not at target yet
+        assertEquals(4, count.workingReps) // Directly from repsSetCount
+        assertFalse(repCounter.shouldStopWorkout()) // Not at target yet
 
         // Machine reports 5th rep (target reached)
         repCounter.process(repsRomCount = 3, repsSetCount = 5, up = 9, down = 9)
@@ -505,7 +507,7 @@ class RepCounterFromMachineTest {
 
         val count = repCounter.getRepCount()
         assertEquals(3, count.warmupReps)
-        assertEquals(5, count.workingReps)  // Safety net syncs to repsSetCount
+        assertEquals(5, count.workingReps) // Safety net syncs to repsSetCount
         assertTrue(repCounter.shouldStopWorkout(), "Safety net should trigger completion when target reached")
         assertTrue(capturedEvents.any { it.type == RepType.WORKOUT_COMPLETE }, "WORKOUT_COMPLETE event should fire")
     }
@@ -524,7 +526,7 @@ class RepCounterFromMachineTest {
 
         val count = repCounter.getRepCount()
         assertEquals(3, count.warmupReps)
-        assertEquals(3, count.workingReps)  // Safety net syncs to repsSetCount
+        assertEquals(3, count.workingReps) // Safety net syncs to repsSetCount
         assertFalse(repCounter.shouldStopWorkout(), "Should NOT stop - target not yet reached")
         assertFalse(capturedEvents.any { it.type == RepType.WORKOUT_COMPLETE }, "WORKOUT_COMPLETE should NOT fire")
     }
@@ -641,7 +643,7 @@ class RepRangesTest {
             minRangeA = null,
             maxRangeA = null,
             minRangeB = null,
-            maxRangeB = null
+            maxRangeB = null,
         )
 
         // 5% of range (900) = 45, threshold = 145
@@ -658,7 +660,7 @@ class RepRangesTest {
             minRangeA = null,
             maxRangeA = null,
             minRangeB = null,
-            maxRangeB = null
+            maxRangeB = null,
         )
 
         assertFalse(ranges.isInDangerZone(posA = 500f, posB = 500f))
@@ -674,7 +676,7 @@ class RepRangesTest {
             minRangeA = null,
             maxRangeA = null,
             minRangeB = null,
-            maxRangeB = null
+            maxRangeB = null,
         )
 
         // Even at min, not in danger zone because range is too small
@@ -686,21 +688,21 @@ class RepRangesTest {
         // This tests the Just Lift autostop scenario where handles are placed down
         // Position goes to ~0 after user has established a meaningful ROM range
         val ranges = RepRanges(
-            minPosA = 30f,    // Typical overhead pulley rest position
-            maxPosA = 230f,   // Extended position after reps
+            minPosA = 30f, // Typical overhead pulley rest position
+            maxPosA = 230f, // Extended position after reps
             minPosB = 30f,
             maxPosB = 230f,
             minRangeA = null,
             maxRangeA = null,
             minRangeB = null,
-            maxRangeB = null
+            maxRangeB = null,
         )
 
         // Range = 200mm, threshold = 30 + (200 * 0.05) = 40mm
         // Position at 0 or very low should trigger danger zone for autostop
         assertTrue(ranges.isInDangerZone(posA = 0f, posB = 0f))
         assertTrue(ranges.isInDangerZone(posA = 5f, posB = 5f))
-        assertTrue(ranges.isInDangerZone(posA = 35f, posB = 35f))  // Just above min but below threshold
+        assertTrue(ranges.isInDangerZone(posA = 35f, posB = 35f)) // Just above min but below threshold
 
         // Position at 50 should NOT trigger (above threshold of 40)
         assertFalse(ranges.isInDangerZone(posA = 50f, posB = 50f))

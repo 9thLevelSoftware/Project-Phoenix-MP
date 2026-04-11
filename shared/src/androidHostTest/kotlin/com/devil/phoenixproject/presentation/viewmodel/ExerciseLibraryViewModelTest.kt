@@ -3,12 +3,12 @@ package com.devil.phoenixproject.presentation.viewmodel
 import com.devil.phoenixproject.domain.model.Exercise
 import com.devil.phoenixproject.testutil.FakeExerciseRepository
 import com.devil.phoenixproject.testutil.TestCoroutineRule
+import kotlin.test.assertEquals
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
-import kotlin.test.assertEquals
 
 class ExerciseLibraryViewModelTest {
 
@@ -31,16 +31,16 @@ class ExerciseLibraryViewModelTest {
                 name = "Bench Press",
                 muscleGroup = "Chest",
                 muscleGroups = "Chest",
-                equipment = "BAR"
-            )
+                equipment = "BAR",
+            ),
         )
         repository.addExercise(
             Exercise(
                 name = "Squat",
                 muscleGroup = "Legs",
                 muscleGroups = "Legs",
-                equipment = "BAR"
-            )
+                equipment = "BAR",
+            ),
         )
 
         advanceUntilIdle()
@@ -59,16 +59,16 @@ class ExerciseLibraryViewModelTest {
                 name = "Bench Press",
                 muscleGroup = "Chest",
                 muscleGroups = "Chest",
-                equipment = "BAR"
-            )
+                equipment = "BAR",
+            ),
         )
         repository.addExercise(
             Exercise(
                 name = "Squat",
                 muscleGroup = "Legs",
                 muscleGroups = "Legs",
-                equipment = "BAR"
-            )
+                equipment = "BAR",
+            ),
         )
 
         advanceUntilIdle()
@@ -86,7 +86,7 @@ class ExerciseLibraryViewModelTest {
             name = "Bench Press",
             muscleGroup = "Chest",
             muscleGroups = "Chest",
-            equipment = "BAR"
+            equipment = "BAR",
         )
         repository.addExercise(exercise)
         repository.addVideos(
@@ -98,9 +98,9 @@ class ExerciseLibraryViewModelTest {
                     angle = "front",
                     videoUrl = "https://example.com/video.mp4",
                     thumbnailUrl = "https://example.com/thumb.jpg",
-                    isTutorial = false
-                )
-            )
+                    isTutorial = false,
+                ),
+            ),
         )
 
         viewModel.loadVideosForExercise("ex-1")

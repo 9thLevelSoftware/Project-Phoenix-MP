@@ -7,160 +7,167 @@ import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.data.local.BadgeDefinitions
 import com.devil.phoenixproject.database.VitruvianDatabase
 import com.devil.phoenixproject.domain.model.*
+import com.devil.phoenixproject.domain.model.RpgInput
+import com.devil.phoenixproject.domain.model.RpgProfile
+import kotlin.time.Clock
+import kotlin.time.Instant
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
-import kotlin.time.Instant
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.atStartOfDayIn
 import kotlinx.datetime.toLocalDateTime
-import kotlin.time.Clock
 
 /**
- * SQLDelight implementation of GamificationRepository
+ * SQLDelight implementation of GamificationRepository.
+ * All methods are profile-scoped to support multi-profile isolation.
  */
-class SqlDelightGamificationRepository(
-    db: VitruvianDatabase
-) : GamificationRepository {
+class SqlDelightGamificationRepository(db: VitruvianDatabase) : GamificationRepository {
     private val queries = db.vitruvianDatabaseQueries
 
-    override fun getEarnedBadges(): Flow<List<EarnedBadge>> {
-        return queries.selectAllEarnedBadges()
-            .asFlow()
-            .mapToList(Dispatchers.IO)
-            .map { badges ->
-                badges.map { db ->
-                    EarnedBadge(
-                        id = db.id,
-                        badgeId = db.badgeId,
-                        earnedAt = db.earnedAt,
-                        celebratedAt = db.celebratedAt
-                    )
-                }
+    override fun getEarnedBadges(profileId: String): Flow<List<EarnedBadge>> = queries.selectAllEarnedBadges(profileId = profileId)
+        .asFlow()
+        .mapToList(Dispatchers.IO)
+        .map { badges ->
+            badges.map { db ->
+                EarnedBadge(
+                    id = db.id,
+                    badgeId = db.badgeId,
+                    earnedAt = db.earnedAt,
+                    celebratedAt = db.celebratedAt,
+                )
             }
-    }
-
-    override fun getStreakInfo(): Flow<StreakInfo> {
-        return queries.selectGamificationStats()
-            .asFlow()
-            .mapToOneOrNull(Dispatchers.IO)
-            .map { stats ->
-                if (stats == null) {
-                    StreakInfo.EMPTY
-                } else {
-                    val lastWorkoutDate = stats.lastWorkoutDate
-                    val today = Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault()).date
-                    val isAtRisk = if (lastWorkoutDate != null) {
-                        val lastDate = Instant.fromEpochMilliseconds(lastWorkoutDate)
-                            .toLocalDateTime(TimeZone.currentSystemDefault()).date
-                        lastDate < today && stats.currentStreak > 0
-                    } else false
-
-                    StreakInfo(
-                        currentStreak = stats.currentStreak.toInt(),
-                        longestStreak = stats.longestStreak.toInt(),
-                        streakStartDate = stats.streakStartDate,
-                        lastWorkoutDate = stats.lastWorkoutDate,
-                        isAtRisk = isAtRisk
-                    )
-                }
-            }
-    }
-
-    override fun getGamificationStats(): Flow<GamificationStats> {
-        return queries.selectGamificationStats()
-            .asFlow()
-            .mapToOneOrNull(Dispatchers.IO)
-            .map { stats ->
-                if (stats == null) {
-                    GamificationStats.EMPTY
-                } else {
-                    GamificationStats(
-                        totalWorkouts = stats.totalWorkouts.toInt(),
-                        totalReps = stats.totalReps.toInt(),
-                        totalVolumeKg = stats.totalVolumeKg,
-                        longestStreak = stats.longestStreak.toInt(),
-                        currentStreak = stats.currentStreak.toInt(),
-                        uniqueExercisesUsed = stats.uniqueExercisesUsed.toInt(),
-                        prsAchieved = stats.prsAchieved.toInt(),
-                        lastUpdated = stats.lastUpdated
-                    )
-                }
-            }
-    }
-
-    override fun getUncelebratedBadges(): Flow<List<EarnedBadge>> {
-        return queries.selectUncelebratedBadges()
-            .asFlow()
-            .mapToList(Dispatchers.IO)
-            .map { badges ->
-                badges.map { db ->
-                    EarnedBadge(
-                        id = db.id,
-                        badgeId = db.badgeId,
-                        earnedAt = db.earnedAt,
-                        celebratedAt = db.celebratedAt
-                    )
-                }
-            }
-    }
-
-    override suspend fun isBadgeEarned(badgeId: String): Boolean {
-        return withContext(Dispatchers.IO) {
-            queries.selectEarnedBadgeById(badgeId).executeAsOneOrNull() != null
         }
-    }
 
-    override suspend fun awardBadge(badgeId: String): Boolean {
-        return withContext(Dispatchers.IO) {
-            val existing = queries.selectEarnedBadgeById(badgeId).executeAsOneOrNull()
-            if (existing != null) {
-                false // Already earned
+    override fun getStreakInfo(profileId: String): Flow<StreakInfo> = queries.selectGamificationStats(profileId = profileId)
+        .asFlow()
+        .mapToOneOrNull(Dispatchers.IO)
+        .map { stats ->
+            if (stats == null) {
+                StreakInfo.EMPTY
             } else {
-                val now = Clock.System.now().toEpochMilliseconds()
-                queries.insertEarnedBadge(badgeId, now)
-                Logger.d { "Badge awarded: $badgeId" }
-                true
+                val lastWorkoutDate = stats.lastWorkoutDate
+                val today = Clock.System.now().toLocalDateTime(
+                    TimeZone.currentSystemDefault(),
+                ).date
+                val isAtRisk = if (lastWorkoutDate != null) {
+                    val lastDate = Instant.fromEpochMilliseconds(lastWorkoutDate)
+                        .toLocalDateTime(TimeZone.currentSystemDefault()).date
+                    lastDate < today && stats.currentStreak > 0
+                } else {
+                    false
+                }
+
+                StreakInfo(
+                    currentStreak = stats.currentStreak.toInt(),
+                    longestStreak = stats.longestStreak.toInt(),
+                    streakStartDate = stats.streakStartDate,
+                    lastWorkoutDate = stats.lastWorkoutDate,
+                    isAtRisk = isAtRisk,
+                )
             }
+        }
+
+    override fun getGamificationStats(profileId: String): Flow<GamificationStats> = queries.selectGamificationStats(profileId = profileId)
+        .asFlow()
+        .mapToOneOrNull(Dispatchers.IO)
+        .map { stats ->
+            if (stats == null) {
+                GamificationStats.EMPTY
+            } else {
+                GamificationStats(
+                    totalWorkouts = stats.totalWorkouts.toInt(),
+                    totalReps = stats.totalReps.toInt(),
+                    totalVolumeKg = stats.totalVolumeKg,
+                    longestStreak = stats.longestStreak.toInt(),
+                    currentStreak = stats.currentStreak.toInt(),
+                    uniqueExercisesUsed = stats.uniqueExercisesUsed.toInt(),
+                    prsAchieved = stats.prsAchieved.toInt(),
+                    lastUpdated = stats.lastUpdated,
+                )
+            }
+        }
+
+    override fun getUncelebratedBadges(profileId: String): Flow<List<EarnedBadge>> = queries.selectUncelebratedBadges(profileId = profileId)
+        .asFlow()
+        .mapToList(Dispatchers.IO)
+        .map { badges ->
+            badges.map { db ->
+                EarnedBadge(
+                    id = db.id,
+                    badgeId = db.badgeId,
+                    earnedAt = db.earnedAt,
+                    celebratedAt = db.celebratedAt,
+                )
+            }
+        }
+
+    override suspend fun isBadgeEarned(badgeId: String, profileId: String): Boolean = withContext(Dispatchers.IO) {
+        queries.selectEarnedBadgeById(badgeId, profileId = profileId).executeAsOneOrNull() !=
+            null
+    }
+
+    override suspend fun awardBadge(badgeId: String, profileId: String): Boolean = withContext(Dispatchers.IO) {
+        val existing = queries.selectEarnedBadgeById(
+            badgeId,
+            profileId = profileId,
+        ).executeAsOneOrNull()
+        if (existing != null) {
+            false // Already earned
+        } else {
+            val now = Clock.System.now().toEpochMilliseconds()
+            queries.insertEarnedBadge(badgeId, now, profileId = profileId)
+            Logger.d { "Badge awarded: $badgeId (profile=$profileId)" }
+            true
         }
     }
 
-    override suspend fun markBadgeCelebrated(badgeId: String) {
+    override suspend fun markBadgeCelebrated(badgeId: String, profileId: String) {
         withContext(Dispatchers.IO) {
             val now = Clock.System.now().toEpochMilliseconds()
-            queries.markBadgeCelebrated(now, badgeId)
+            queries.markBadgeCelebrated(now, badgeId, profileId = profileId)
         }
     }
 
-    override suspend fun markBadgesCelebrated(badgeIds: List<String>) {
+    override suspend fun markBadgesCelebrated(badgeIds: List<String>, profileId: String) {
         if (badgeIds.isEmpty()) return
         withContext(Dispatchers.IO) {
             val now = Clock.System.now().toEpochMilliseconds()
             queries.transaction {
-                queries.markBadgesCelebrated(now, badgeIds)
+                queries.markBadgesCelebrated(now, badgeIds, profileId = profileId)
             }
         }
     }
 
-    override suspend fun updateStats() {
+    override suspend fun updateStats(profileId: String) {
         withContext(Dispatchers.IO) {
             try {
-                val totalWorkouts = queries.countTotalWorkouts().executeAsOne()
-                val totalReps = queries.countTotalReps().executeAsOneOrNull()?.SUM ?: 0L
-                val totalVolume = queries.countTotalVolume().executeAsOneOrNull()?.SUM ?: 0.0
-                val uniqueExercises = queries.countUniqueExercises().executeAsOne()
-                val prsAchieved = queries.countPersonalRecords().executeAsOne()
+                val totalWorkouts = queries.countTotalWorkouts(profileId = profileId).executeAsOne()
+                val totalReps =
+                    queries.countTotalReps(profileId = profileId).executeAsOneOrNull()?.SUM ?: 0L
+                val totalVolume =
+                    queries.countTotalVolume(profileId = profileId).executeAsOneOrNull()?.SUM ?: 0.0
+                val uniqueExercises = queries.countUniqueExercises(
+                    profileId = profileId,
+                ).executeAsOne()
+                val prsAchieved = queries.countPersonalRecords(profileId = profileId).executeAsOne()
 
                 // Calculate streak - selectWorkoutDates returns List<String> directly
-                val workoutDates = queries.selectWorkoutDates().executeAsList()
-                val (currentStreak, longestStreak, streakStart, lastWorkout) = calculateStreaks(workoutDates)
+                val workoutDates = queries.selectWorkoutDates(profileId = profileId).executeAsList()
+                val (currentStreak, longestStreak, streakStart, lastWorkout) = calculateStreaks(
+                    workoutDates,
+                )
 
                 val now = Clock.System.now().toEpochMilliseconds()
 
+                // Use profileId hashCode as stable integer id for INSERT OR REPLACE
+                val stableId = profileId.hashCode().toLong()
+
                 queries.upsertGamificationStats(
+                    id = stableId,
                     totalWorkouts = totalWorkouts,
                     totalReps = totalReps,
                     totalVolumeKg = totalVolume.toLong(),
@@ -170,10 +177,13 @@ class SqlDelightGamificationRepository(
                     prsAchieved = prsAchieved,
                     lastWorkoutDate = lastWorkout,
                     streakStartDate = streakStart,
-                    lastUpdated = now
+                    lastUpdated = now,
+                    profileId = profileId,
                 )
 
-                Logger.d { "Gamification stats updated: workouts=$totalWorkouts, reps=$totalReps, streak=$currentStreak" }
+                Logger.d {
+                    "Gamification stats updated (profile=$profileId): workouts=$totalWorkouts, reps=$totalReps, streak=$currentStreak"
+                }
             } catch (e: Exception) {
                 Logger.e(e) { "Error updating gamification stats" }
             }
@@ -192,7 +202,7 @@ class SqlDelightGamificationRepository(
         val dates = workoutDates.mapNotNull { dateStr ->
             try {
                 LocalDate.parse(dateStr)
-            } catch (e: Exception) {
+            } catch (_: Exception) {
                 null
             }
         }.sortedDescending()
@@ -202,7 +212,9 @@ class SqlDelightGamificationRepository(
         }
 
         val lastWorkoutDate = dates.first()
-        val lastWorkoutMs = lastWorkoutDate.atStartOfDayIn(TimeZone.currentSystemDefault()).toEpochMilliseconds()
+        val lastWorkoutMs = lastWorkoutDate.atStartOfDayIn(
+            TimeZone.currentSystemDefault(),
+        ).toEpochMilliseconds()
 
         // Check if streak is still active (last workout was today or yesterday)
         val daysSinceLastWorkout = today.toEpochDays() - lastWorkoutDate.toEpochDays()
@@ -231,7 +243,9 @@ class SqlDelightGamificationRepository(
         }
 
         val longestStreak = maxOf(currentStreak, calculateLongestStreak(dates))
-        val streakStartMs = streakStartDate.atStartOfDayIn(TimeZone.currentSystemDefault()).toEpochMilliseconds()
+        val streakStartMs = streakStartDate.atStartOfDayIn(
+            TimeZone.currentSystemDefault(),
+        ).toEpochMilliseconds()
 
         return StreakData(currentStreak, longestStreak, streakStartMs, lastWorkoutMs)
     }
@@ -256,27 +270,24 @@ class SqlDelightGamificationRepository(
         return longest
     }
 
-    private data class StreakData(
-        val currentStreak: Int,
-        val longestStreak: Int,
-        val streakStartMs: Long?,
-        val lastWorkoutMs: Long?
-    )
+    private data class StreakData(val currentStreak: Int, val longestStreak: Int, val streakStartMs: Long?, val lastWorkoutMs: Long?)
 
     /**
      * Count workouts completed in the current week (Monday to Sunday)
      */
-    private fun countWorkoutsInCurrentWeek(): Int {
+    private fun countWorkoutsInCurrentWeek(profileId: String): Int {
         val now = Clock.System.now()
         val today = now.toLocalDateTime(TimeZone.currentSystemDefault()).date
 
         // Find start of current week (Monday)
         val dayOfWeek = today.dayOfWeek.ordinal // Monday = 0, Sunday = 6
         val weekStart = LocalDate.fromEpochDays(today.toEpochDays() - dayOfWeek)
-        val weekStartMs = weekStart.atStartOfDayIn(TimeZone.currentSystemDefault()).toEpochMilliseconds()
+        val weekStartMs = weekStart.atStartOfDayIn(
+            TimeZone.currentSystemDefault(),
+        ).toEpochMilliseconds()
 
         // Count sessions with timestamp >= weekStartMs
-        val sessions = queries.selectAllSessions().executeAsList()
+        val sessions = queries.selectAllSessions(profileId = profileId).executeAsList()
         return sessions.count { it.timestamp >= weekStartMs }
     }
 
@@ -285,12 +296,18 @@ class SqlDelightGamificationRepository(
      * Prefer measured totalVolumeKg when available (v0.2.1+), otherwise fallback using stored cableCount.
      * Legacy rows without cable metadata default conservatively to single-cable volume.
      */
-    private fun getMaxSingleSessionVolume(): Int {
-        val sessions = queries.selectAllSessions().executeAsList()
+    private fun getMaxSingleSessionVolume(profileId: String): Int {
+        val sessions = queries.selectAllSessions(profileId = profileId).executeAsList()
         if (sessions.isEmpty()) return 0
 
         return sessions.maxOfOrNull { session ->
-            (session.totalVolumeKg ?: (session.totalReps * session.weightPerCableKg * (session.cableCount ?: 1L).toDouble())).toInt()
+            (
+                session.totalVolumeKg
+                    ?: (
+                        session.totalReps * session.weightPerCableKg *
+                            (session.cableCount ?: 1L).toDouble()
+                        )
+                ).toInt()
         } ?: 0
     }
 
@@ -299,8 +316,8 @@ class SqlDelightGamificationRepository(
      * @param hourStart Start hour (0-23, inclusive)
      * @param hourEnd End hour (0-23, inclusive)
      */
-    private fun hasWorkoutAtTime(hourStart: Int, hourEnd: Int): Boolean {
-        val sessions = queries.selectAllSessions().executeAsList()
+    private fun hasWorkoutAtTime(hourStart: Int, hourEnd: Int, profileId: String): Boolean {
+        val sessions = queries.selectAllSessions(profileId = profileId).executeAsList()
 
         return sessions.any { session ->
             val sessionTime = Instant.fromEpochMilliseconds(session.timestamp)
@@ -320,8 +337,8 @@ class SqlDelightGamificationRepository(
     /**
      * Count workouts completed within a specific time range
      */
-    private fun countWorkoutsAtTime(hourStart: Int, hourEnd: Int): Int {
-        val sessions = queries.selectAllSessions().executeAsList()
+    private fun countWorkoutsAtTime(hourStart: Int, hourEnd: Int, profileId: String): Int {
+        val sessions = queries.selectAllSessions(profileId = profileId).executeAsList()
 
         return sessions.count { session ->
             val sessionTime = Instant.fromEpochMilliseconds(session.timestamp)
@@ -339,20 +356,20 @@ class SqlDelightGamificationRepository(
     /**
      * Get the count of workouts in a specific mode
      */
-    private fun getWorkoutCountByMode(modeName: String): Int {
-        val modeCounts = queries.countWorkoutsByMode().executeAsList()
+    private fun getWorkoutCountByMode(modeName: String, profileId: String): Int {
+        val modeCounts = queries.countWorkoutsByMode(profileId = profileId).executeAsList()
         // Handle Echo mode specially - it's stored as "Echo" in DB
         return modeCounts.find {
             it.mode.equals(modeName, ignoreCase = true) ||
-            (modeName == "Echo" && it.mode.startsWith("Echo", ignoreCase = true))
+                (modeName == "Echo" && it.mode.startsWith("Echo", ignoreCase = true))
         }?.count?.toInt() ?: 0
     }
 
     /**
      * Get the count of unique workout modes used
      */
-    private fun getUniqueWorkoutModesCount(): Int {
-        val modes = queries.selectUniqueWorkoutModes().executeAsList()
+    private fun getUniqueWorkoutModesCount(profileId: String): Int {
+        val modes = queries.selectUniqueWorkoutModes(profileId = profileId).executeAsList()
         // Count distinct base modes (Echo variants count as 1)
         val baseModes = modes.map { mode ->
             when {
@@ -367,8 +384,8 @@ class SqlDelightGamificationRepository(
     /**
      * Check if all 6 workout modes have been used
      */
-    private fun hasUsedAllWorkoutModes(): Boolean {
-        val modes = queries.selectUniqueWorkoutModes().executeAsList()
+    private fun hasUsedAllWorkoutModes(profileId: String): Boolean {
+        val modes = queries.selectUniqueWorkoutModes(profileId = profileId).executeAsList()
         val baseModes = modes.map { mode ->
             when {
                 mode.startsWith("Echo", ignoreCase = true) -> "Echo"
@@ -377,7 +394,8 @@ class SqlDelightGamificationRepository(
             }
         }.distinct()
 
-        val requiredModes = setOf("Old School", "Pump", "TUT", "TUT Beast", "Eccentric Only", "Echo")
+        val requiredModes =
+            setOf("Old School", "Pump", "TUT", "TUT Beast", "Eccentric Only", "Echo")
         return requiredModes.all { required ->
             baseModes.any { it.equals(required, ignoreCase = true) }
         }
@@ -394,38 +412,34 @@ class SqlDelightGamificationRepository(
     /**
      * Get count of unique muscle groups trained
      */
-    private fun getUniqueMuscleGroupsCount(): Int {
-        val muscleGroups = queries.selectUniqueMuscleGroupsFromWorkouts().executeAsList()
+    private fun getUniqueMuscleGroupsCount(profileId: String): Int {
+        val muscleGroups = queries.selectUniqueMuscleGroupsFromWorkouts(
+            profileId = profileId,
+        ).executeAsList()
         return muscleGroups.size
     }
 
     /**
      * Get count of weekend workouts
      */
-    private fun getWeekendWorkoutsCount(): Int {
-        return queries.countWeekendWorkouts().executeAsOne().toInt()
-    }
+    private fun getWeekendWorkoutsCount(profileId: String): Int = queries.countWeekendWorkouts(profileId = profileId).executeAsOne().toInt()
 
     /**
      * Get count of completed routine sessions
      */
-    private fun getCompletedRoutinesCount(): Int {
-        return queries.countCompletedRoutineSessions().executeAsOne().toInt()
-    }
+    private fun getCompletedRoutinesCount(profileId: String): Int = queries.countCompletedRoutineSessions(profileId = profileId).executeAsOne().toInt()
 
     /**
      * Get count of created routines
      */
-    private fun getCreatedRoutinesCount(): Int {
-        return queries.countCreatedRoutines().executeAsOne().toInt()
-    }
+    private fun getCreatedRoutinesCount(profileId: String): Int = queries.countCreatedRoutines(profileId = profileId).executeAsOne().toInt()
 
     /**
      * Check if user came back after a break of specified days
      * This is tracked by checking if there was a gap >= breakDays between any two workouts
      */
-    private fun hasComebackAfterBreak(breakDays: Int): Boolean {
-        val sessions = queries.selectAllSessions().executeAsList()
+    private fun hasComebackAfterBreak(breakDays: Int, profileId: String): Boolean {
+        val sessions = queries.selectAllSessions(profileId = profileId).executeAsList()
         if (sessions.size < 2) return false
 
         val sortedSessions = sessions.sortedBy { it.timestamp }
@@ -448,10 +462,12 @@ class SqlDelightGamificationRepository(
      * Check if user saved their streak (workout when at risk)
      * This happens when user works out on the same day their streak would break
      */
-    private fun hasSavedStreak(): Boolean {
+    private fun hasSavedStreak(profileId: String): Boolean {
         // Check if there's at least one streak entry in history and current streak > 0
-        val streakHistory = queries.selectStreakBreakCount().executeAsOne()
-        val stats = queries.selectGamificationStats().executeAsOneOrNull() ?: return false
+        val streakHistory = queries.selectStreakBreakCount(profileId = profileId).executeAsOne()
+        val stats =
+            queries.selectGamificationStats(profileId = profileId).executeAsOneOrNull()
+                ?: return false
 
         // If we have streak history and a current streak, user has saved streaks before
         return streakHistory > 0 && stats.currentStreak > 0
@@ -460,31 +476,115 @@ class SqlDelightGamificationRepository(
     /**
      * Check if user has rebuilt a streak after losing one
      */
-    private fun hasRebuiltStreak(requiredDays: Int): Boolean {
-        val streakBreaks = queries.selectStreakBreakCount().executeAsOne()
-        val stats = queries.selectGamificationStats().executeAsOneOrNull() ?: return false
+    private fun hasRebuiltStreak(requiredDays: Int, profileId: String): Boolean {
+        val streakBreaks = queries.selectStreakBreakCount(profileId = profileId).executeAsOne()
+        val stats =
+            queries.selectGamificationStats(profileId = profileId).executeAsOneOrNull()
+                ?: return false
 
         // User must have had a previous streak break and rebuilt to required length
         return streakBreaks > 0 && stats.currentStreak >= requiredDays
     }
 
-    override suspend fun checkAndAwardBadges(): List<Badge> {
+    override suspend fun getRpgInput(profileId: String): RpgInput = withContext(Dispatchers.IO) {
+        val totalWorkouts = queries.countTotalWorkouts(
+            profileId = profileId,
+        ).executeAsOne().toInt()
+        val totalReps = (
+            queries.countTotalReps(profileId = profileId).executeAsOneOrNull()?.SUM
+                ?: 0L
+            ).toInt()
+        val totalVolumeKg =
+            queries.countTotalVolume(profileId = profileId).executeAsOneOrNull()?.SUM ?: 0.0
+        val uniqueExercises = queries.countUniqueExercises(
+            profileId = profileId,
+        ).executeAsOne().toInt()
+        val personalRecords = queries.countPersonalRecords(
+            profileId = profileId,
+        ).executeAsOne().toInt()
+        val badgesEarned = queries.countEarnedBadges(
+            profileId = profileId,
+        ).executeAsOne().toInt()
+
+        val maxWeightLiftedKg =
+            queries.selectMaxWeightLifted(profileId = profileId).executeAsOneOrNull()?.MAX
+                ?: 0.0
+        val avgWorkingWeightKg =
+            queries.selectAvgWorkingWeight(profileId = profileId).executeAsOneOrNull()?.AVG
+                ?: 0.0
+
+        // Peak power: try RepMetric first, fall back to MetricSample
+        val peakRepPower = try {
+            queries.selectPeakRepPower().executeAsOneOrNull()?.MAX
+        } catch (_: Exception) {
+            null // RepMetric table may not exist due to migration gap
+        }
+        val peakPowerWatts = peakRepPower
+            ?: queries.selectPeakPower().executeAsOneOrNull()?.peakPower
+            ?: 0.0
+
+        val trainingDays = queries.countTrainingDays(
+            profileId = profileId,
+        ).executeAsOne().toInt()
+
+        // Streak data from GamificationStats
+        val stats = queries.selectGamificationStats(profileId = profileId).executeAsOneOrNull()
+        val currentStreak = stats?.currentStreak?.toInt() ?: 0
+        val longestStreak = stats?.longestStreak?.toInt() ?: 0
+
+        RpgInput(
+            maxWeightLiftedKg = maxWeightLiftedKg,
+            totalVolumeKg = totalVolumeKg,
+            totalWorkouts = totalWorkouts,
+            totalReps = totalReps,
+            uniqueExercises = uniqueExercises,
+            personalRecords = personalRecords,
+            peakPowerWatts = peakPowerWatts,
+            avgWorkingWeightKg = avgWorkingWeightKg,
+            currentStreak = currentStreak,
+            longestStreak = longestStreak,
+            trainingDays = trainingDays,
+            badgesEarned = badgesEarned,
+        )
+    }
+
+    override suspend fun saveRpgProfile(profile: RpgProfile, profileId: String) {
+        withContext(Dispatchers.IO) {
+            // Use profileId hashCode as stable integer id for INSERT OR REPLACE
+            val stableId = profileId.hashCode().toLong()
+            queries.upsertRpgAttributes(
+                id = stableId,
+                strength = profile.strength.toLong(),
+                power = profile.power.toLong(),
+                stamina = profile.stamina.toLong(),
+                consistency = profile.consistency.toLong(),
+                mastery = profile.mastery.toLong(),
+                characterClass = profile.characterClass.name,
+                lastComputed = profile.lastComputed,
+                profileId = profileId,
+            )
+        }
+    }
+
+    override suspend fun checkAndAwardBadges(profileId: String): List<Badge> {
         return withContext(Dispatchers.IO) {
             val newlyAwarded = mutableListOf<Badge>()
 
             // Get current stats
-            val stats = queries.selectGamificationStats().executeAsOneOrNull() ?: return@withContext emptyList()
+            val stats =
+                queries.selectGamificationStats(profileId = profileId).executeAsOneOrNull()
+                    ?: return@withContext emptyList()
 
             // Check each badge
             for (badge in BadgeDefinitions.allBadges) {
-                if (isBadgeEarned(badge.id)) continue
+                if (isBadgeEarned(badge.id, profileId)) continue
 
-                val isEarned = checkBadgeRequirement(badge, stats)
+                val isEarned = checkBadgeRequirement(badge, stats, profileId)
                 if (isEarned) {
-                    val awarded = awardBadge(badge.id)
+                    val awarded = awardBadge(badge.id, profileId)
                     if (awarded) {
                         newlyAwarded.add(badge)
-                        Logger.d { "New badge earned: ${badge.name}" }
+                        Logger.d { "New badge earned: ${badge.name} (profile=$profileId)" }
                     }
                 }
             }
@@ -493,125 +593,208 @@ class SqlDelightGamificationRepository(
         }
     }
 
-    private suspend fun checkBadgeRequirement(
+    private fun checkBadgeRequirement(
         badge: Badge,
-        stats: com.devil.phoenixproject.database.GamificationStats
-    ): Boolean {
-        return when (val req = badge.requirement) {
-            is BadgeRequirement.StreakDays -> stats.currentStreak >= req.days || stats.longestStreak >= req.days
-            is BadgeRequirement.TotalWorkouts -> stats.totalWorkouts >= req.count
-            is BadgeRequirement.TotalReps -> stats.totalReps >= req.count
-            is BadgeRequirement.PRsAchieved -> stats.prsAchieved >= req.count
-            is BadgeRequirement.UniqueExercises -> stats.uniqueExercisesUsed >= req.count
-            is BadgeRequirement.TotalVolume -> stats.totalVolumeKg >= req.kgLifted
-            is BadgeRequirement.ConsecutiveWeeks -> {
-                // Would need more complex calculation
-                stats.longestStreak >= (req.weeks * 7)
-            }
-            is BadgeRequirement.WorkoutsInWeek -> {
-                val workoutsThisWeek = countWorkoutsInCurrentWeek()
-                workoutsThisWeek >= req.count
-            }
-            is BadgeRequirement.SingleWorkoutVolume -> {
-                val maxSessionVolume = getMaxSingleSessionVolume()
-                maxSessionVolume >= req.kgLifted
-            }
-            is BadgeRequirement.WorkoutAtTime -> {
-                hasWorkoutAtTime(req.hourStart, req.hourEnd)
-            }
-            is BadgeRequirement.WorkoutsAtTimeCount -> {
-                countWorkoutsAtTime(req.hourStart, req.hourEnd) >= req.count
-            }
-            is BadgeRequirement.WorkoutModeCount -> {
-                getWorkoutCountByMode(req.modeName) >= req.count
-            }
-            is BadgeRequirement.AllWorkoutModes -> {
-                hasUsedAllWorkoutModes()
-            }
-            is BadgeRequirement.PeakPower -> {
-                getPeakPower() >= req.watts
-            }
-            is BadgeRequirement.UniqueMuscleGroups -> {
-                getUniqueMuscleGroupsCount() >= req.count
-            }
-            is BadgeRequirement.ComebackAfterBreak -> {
-                hasComebackAfterBreak(req.breakDays)
-            }
-            is BadgeRequirement.StreakSaved -> {
-                hasSavedStreak()
-            }
-            is BadgeRequirement.StreakRebuilt -> {
-                hasRebuiltStreak(req.days)
-            }
-            is BadgeRequirement.WeekendWorkouts -> {
-                getWeekendWorkoutsCount() >= req.count
-            }
-            is BadgeRequirement.RoutinesCompleted -> {
-                getCompletedRoutinesCount() >= req.count
-            }
-            is BadgeRequirement.RoutinesCreated -> {
-                getCreatedRoutinesCount() >= req.count
-            }
+        stats: com.devil.phoenixproject.database.GamificationStats,
+        profileId: String,
+    ): Boolean = when (val req = badge.requirement) {
+        is BadgeRequirement.StreakDays ->
+            stats.currentStreak >= req.days ||
+                stats.longestStreak >= req.days
+
+        is BadgeRequirement.TotalWorkouts -> stats.totalWorkouts >= req.count
+
+        is BadgeRequirement.TotalReps -> stats.totalReps >= req.count
+
+        is BadgeRequirement.PRsAchieved -> stats.prsAchieved >= req.count
+
+        is BadgeRequirement.UniqueExercises -> stats.uniqueExercisesUsed >= req.count
+
+        is BadgeRequirement.TotalVolume -> stats.totalVolumeKg >= req.kgLifted
+
+        is BadgeRequirement.ConsecutiveWeeks -> {
+            // Would need more complex calculation
+            stats.longestStreak >= (req.weeks * 7)
+        }
+
+        is BadgeRequirement.WorkoutsInWeek -> {
+            val workoutsThisWeek = countWorkoutsInCurrentWeek(profileId)
+            workoutsThisWeek >= req.count
+        }
+
+        is BadgeRequirement.SingleWorkoutVolume -> {
+            val maxSessionVolume = getMaxSingleSessionVolume(profileId)
+            maxSessionVolume >= req.kgLifted
+        }
+
+        is BadgeRequirement.WorkoutAtTime -> {
+            hasWorkoutAtTime(req.hourStart, req.hourEnd, profileId)
+        }
+
+        is BadgeRequirement.WorkoutsAtTimeCount -> {
+            countWorkoutsAtTime(req.hourStart, req.hourEnd, profileId) >= req.count
+        }
+
+        is BadgeRequirement.WorkoutModeCount -> {
+            getWorkoutCountByMode(req.modeName, profileId) >= req.count
+        }
+
+        is BadgeRequirement.AllWorkoutModes -> {
+            hasUsedAllWorkoutModes(profileId)
+        }
+
+        is BadgeRequirement.PeakPower -> {
+            getPeakPower() >= req.watts
+        }
+
+        is BadgeRequirement.UniqueMuscleGroups -> {
+            getUniqueMuscleGroupsCount(profileId) >= req.count
+        }
+
+        is BadgeRequirement.ComebackAfterBreak -> {
+            hasComebackAfterBreak(req.breakDays, profileId)
+        }
+
+        is BadgeRequirement.StreakSaved -> {
+            hasSavedStreak(profileId)
+        }
+
+        is BadgeRequirement.StreakRebuilt -> {
+            hasRebuiltStreak(req.days, profileId)
+        }
+
+        is BadgeRequirement.WeekendWorkouts -> {
+            getWeekendWorkoutsCount(profileId) >= req.count
+        }
+
+        is BadgeRequirement.RoutinesCompleted -> {
+            getCompletedRoutinesCount(profileId) >= req.count
+        }
+
+        is BadgeRequirement.RoutinesCreated -> {
+            getCreatedRoutinesCount(profileId) >= req.count
+        }
+
+        is BadgeRequirement.QualityStreak -> {
+            // Quality streak badges are awarded directly by GamificationManager.processSetQualityEvent()
+            // which tracks session-scoped consecutive quality sets. Not evaluated via DB stats.
+            false
         }
     }
 
-    override suspend fun getBadgeProgress(badgeId: String): Pair<Int, Int>? {
+    override suspend fun getBadgeProgress(badgeId: String, profileId: String): Pair<Int, Int>? {
         return withContext(Dispatchers.IO) {
             val badge = BadgeDefinitions.getBadgeById(badgeId) ?: return@withContext null
-            val stats = queries.selectGamificationStats().executeAsOneOrNull()
+            val stats = queries.selectGamificationStats(profileId = profileId).executeAsOneOrNull()
                 ?: return@withContext Pair(0, badge.getTargetValue())
 
             val current = when (val req = badge.requirement) {
-                is BadgeRequirement.StreakDays -> maxOf(stats.currentStreak.toInt(), stats.longestStreak.toInt())
+                is BadgeRequirement.StreakDays -> maxOf(
+                    stats.currentStreak.toInt(),
+                    stats.longestStreak.toInt(),
+                )
+
                 is BadgeRequirement.TotalWorkouts -> stats.totalWorkouts.toInt()
+
                 is BadgeRequirement.TotalReps -> stats.totalReps.toInt()
+
                 is BadgeRequirement.PRsAchieved -> stats.prsAchieved.toInt()
+
                 is BadgeRequirement.UniqueExercises -> stats.uniqueExercisesUsed.toInt()
+
                 is BadgeRequirement.TotalVolume -> stats.totalVolumeKg.toInt()
+
                 is BadgeRequirement.ConsecutiveWeeks -> stats.longestStreak.toInt() / 7
-                is BadgeRequirement.WorkoutsInWeek -> countWorkoutsInCurrentWeek()
-                is BadgeRequirement.SingleWorkoutVolume -> getMaxSingleSessionVolume()
-                is BadgeRequirement.WorkoutAtTime -> if (hasWorkoutAtTime(req.hourStart, req.hourEnd)) 1 else 0
-                is BadgeRequirement.WorkoutsAtTimeCount -> countWorkoutsAtTime(req.hourStart, req.hourEnd)
-                is BadgeRequirement.WorkoutModeCount -> getWorkoutCountByMode(req.modeName)
-                is BadgeRequirement.AllWorkoutModes -> getUniqueWorkoutModesCount()
+
+                is BadgeRequirement.WorkoutsInWeek -> countWorkoutsInCurrentWeek(profileId)
+
+                is BadgeRequirement.SingleWorkoutVolume -> getMaxSingleSessionVolume(profileId)
+
+                is BadgeRequirement.WorkoutAtTime -> if (hasWorkoutAtTime(
+                        req.hourStart,
+                        req.hourEnd,
+                        profileId,
+                    )
+                ) {
+                    1
+                } else {
+                    0
+                }
+
+                is BadgeRequirement.WorkoutsAtTimeCount -> countWorkoutsAtTime(
+                    req.hourStart,
+                    req.hourEnd,
+                    profileId,
+                )
+
+                is BadgeRequirement.WorkoutModeCount -> getWorkoutCountByMode(
+                    req.modeName,
+                    profileId,
+                )
+
+                is BadgeRequirement.AllWorkoutModes -> getUniqueWorkoutModesCount(profileId)
+
                 is BadgeRequirement.PeakPower -> getPeakPower()
-                is BadgeRequirement.UniqueMuscleGroups -> getUniqueMuscleGroupsCount()
-                is BadgeRequirement.ComebackAfterBreak -> if (hasComebackAfterBreak(req.breakDays)) 1 else 0
-                is BadgeRequirement.StreakSaved -> if (hasSavedStreak()) 1 else 0
-                is BadgeRequirement.StreakRebuilt -> if (hasRebuiltStreak(req.days)) req.days else stats.currentStreak.toInt()
-                is BadgeRequirement.WeekendWorkouts -> getWeekendWorkoutsCount()
-                is BadgeRequirement.RoutinesCompleted -> getCompletedRoutinesCount()
-                is BadgeRequirement.RoutinesCreated -> getCreatedRoutinesCount()
+
+                is BadgeRequirement.UniqueMuscleGroups -> getUniqueMuscleGroupsCount(profileId)
+
+                is BadgeRequirement.ComebackAfterBreak -> if (hasComebackAfterBreak(
+                        req.breakDays,
+                        profileId,
+                    )
+                ) {
+                    1
+                } else {
+                    0
+                }
+
+                is BadgeRequirement.StreakSaved -> if (hasSavedStreak(profileId)) 1 else 0
+
+                is BadgeRequirement.StreakRebuilt -> if (hasRebuiltStreak(
+                        req.days,
+                        profileId,
+                    )
+                ) {
+                    req.days
+                } else {
+                    stats.currentStreak.toInt()
+                }
+
+                is BadgeRequirement.WeekendWorkouts -> getWeekendWorkoutsCount(profileId)
+
+                is BadgeRequirement.RoutinesCompleted -> getCompletedRoutinesCount(profileId)
+
+                is BadgeRequirement.RoutinesCreated -> getCreatedRoutinesCount(profileId)
+
+                is BadgeRequirement.QualityStreak -> 0 // Session-scoped, not tracked in DB
             }
 
             Pair(current, badge.getTargetValue())
         }
     }
 
-    override suspend fun getAllBadgesWithProgress(): List<BadgeWithProgress> {
-        return withContext(Dispatchers.IO) {
-            val earnedBadges = queries.selectAllEarnedBadges().executeAsList()
-                .associateBy { it.badgeId }
-            val stats = queries.selectGamificationStats().executeAsOneOrNull()
+    override suspend fun getAllBadgesWithProgress(profileId: String): List<BadgeWithProgress> = withContext(Dispatchers.IO) {
+        val earnedBadges = queries.selectAllEarnedBadges(profileId = profileId).executeAsList()
+            .associateBy { it.badgeId }
+        val stats = queries.selectGamificationStats(profileId = profileId).executeAsOneOrNull()
 
-            BadgeDefinitions.allBadges.map { badge ->
-                val earned = earnedBadges[badge.id]
-                val (current, target) = if (stats != null) {
-                    val progress = getBadgeProgress(badge.id) ?: Pair(0, badge.getTargetValue())
-                    progress
-                } else {
-                    Pair(0, badge.getTargetValue())
-                }
-
-                BadgeWithProgress(
-                    badge = badge,
-                    isEarned = earned != null,
-                    earnedAt = earned?.earnedAt,
-                    currentProgress = current,
-                    targetProgress = target
-                )
+        BadgeDefinitions.allBadges.map { badge ->
+            val earned = earnedBadges[badge.id]
+            val (current, target) = if (stats != null) {
+                val progress =
+                    getBadgeProgress(badge.id, profileId) ?: Pair(0, badge.getTargetValue())
+                progress
+            } else {
+                Pair(0, badge.getTargetValue())
             }
+
+            BadgeWithProgress(
+                badge = badge,
+                isEarned = earned != null,
+                earnedAt = earned?.earnedAt,
+                currentProgress = current,
+                targetProgress = target,
+            )
         }
     }
 }

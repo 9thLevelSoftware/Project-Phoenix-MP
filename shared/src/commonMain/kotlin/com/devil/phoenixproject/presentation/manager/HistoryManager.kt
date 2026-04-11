@@ -1,7 +1,9 @@
 package com.devil.phoenixproject.presentation.manager
 
-import com.devil.phoenixproject.data.repository.PersonalRecordRepository
+import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.data.repository.PersonalRecordEntity
+import com.devil.phoenixproject.data.repository.PersonalRecordRepository
+import com.devil.phoenixproject.data.repository.UserProfileRepository
 import com.devil.phoenixproject.data.repository.WorkoutRepository
 import com.devil.phoenixproject.domain.model.PersonalRecord
 import com.devil.phoenixproject.domain.model.WorkoutSession
@@ -12,6 +14,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -35,7 +38,7 @@ data class GroupedRoutineHistoryItem(
     val totalDuration: Long,
     val totalReps: Int,
     val exerciseCount: Int,
-    override val timestamp: Long
+    override val timestamp: Long,
 ) : HistoryItem()
 
 /**
@@ -45,17 +48,22 @@ data class GroupedRoutineHistoryItem(
 class HistoryManager(
     private val workoutRepository: WorkoutRepository,
     private val personalRecordRepository: PersonalRecordRepository,
-    private val scope: CoroutineScope
+    private val userProfileRepository: UserProfileRepository,
+    private val scope: CoroutineScope,
 ) {
     private val _workoutHistory = MutableStateFlow<List<WorkoutSession>>(emptyList())
     val workoutHistory: StateFlow<List<WorkoutSession>> = _workoutHistory.asStateFlow()
 
     val allWorkoutSessions: StateFlow<List<WorkoutSession>> =
-        workoutRepository.getAllSessions()
+        userProfileRepository.activeProfile
+            .flatMapLatest { profile ->
+                val profileId = profile?.id ?: "default"
+                workoutRepository.getAllSessions(profileId)
+            }
             .stateIn(
                 scope = scope,
                 started = SharingStarted.WhileSubscribed(5000),
-                initialValue = emptyList()
+                initialValue = emptyList(),
             )
 
     val groupedWorkoutHistory: StateFlow<List<HistoryItem>> = allWorkoutSessions.map { sessions ->
@@ -64,7 +72,8 @@ class HistoryManager(
             .map { (id, sessionList) ->
                 val sortedSessions = sessionList.sortedBy { it.timestamp }
                 val firstStart = sortedSessions.minOfOrNull { it.timestamp } ?: 0L
-                val lastEnd = sortedSessions.maxOfOrNull { it.timestamp + it.duration } ?: firstStart
+                val lastEnd =
+                    sortedSessions.maxOfOrNull { it.timestamp + it.duration } ?: firstStart
                 GroupedRoutineHistoryItem(
                     routineSessionId = id,
                     routineName = sessionList.first().routineName ?: "Unnamed Routine",
@@ -73,7 +82,7 @@ class HistoryManager(
                     totalDuration = (lastEnd - firstStart).coerceAtLeast(0L),
                     totalReps = sessionList.sumOf { it.totalReps },
                     exerciseCount = sessionList.mapNotNull { it.exerciseId }.distinct().count(),
-                    timestamp = sessionList.minOf { it.timestamp }
+                    timestamp = sessionList.minOf { it.timestamp },
                 )
             }
         val singleSessions = sessions.filter { it.routineSessionId == null }
@@ -83,20 +92,32 @@ class HistoryManager(
     }.stateIn(scope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val allPersonalRecords: StateFlow<List<PersonalRecord>> =
-        personalRecordRepository.getAllPRsGrouped()
+        userProfileRepository.activeProfile
+            .flatMapLatest { profile ->
+                val profileId = profile?.id ?: "default"
+                Logger.d { "PR_DISPLAY: Loading PRs for profile=$profileId (activeProfile=${profile?.id ?: "NULL"})" }
+                personalRecordRepository.getAllPRsGrouped(profileId).map { records ->
+                    Logger.d { "PR_DISPLAY: Got ${records.size} grouped PRs for profile=$profileId" }
+                    records
+                }
+            }
             .stateIn(
                 scope = scope,
                 started = SharingStarted.WhileSubscribed(5000),
-                initialValue = emptyList()
+                initialValue = emptyList(),
             )
 
     @Suppress("unused")
     val personalBests: StateFlow<List<PersonalRecordEntity>> =
-        workoutRepository.getAllPersonalRecords()
+        userProfileRepository.activeProfile
+            .flatMapLatest { profile ->
+                val profileId = profile?.id ?: "default"
+                workoutRepository.getAllPersonalRecords(profileId)
+            }
             .stateIn(
                 scope = scope,
                 started = SharingStarted.WhileSubscribed(5000),
-                initialValue = emptyList()
+                initialValue = emptyList(),
             )
 
     val completedWorkouts: StateFlow<Int?> = allWorkoutSessions.map { sessions ->
@@ -151,9 +172,23 @@ class HistoryManager(
 
     init {
         // Load recent history (moved from MainViewModel init L483-487)
+        // Re-subscribes automatically when active profile changes via flatMapLatest.
+        // CRITICAL: try-catch required — on Kotlin/Native (iOS), unhandled exceptions
+        // in scope.launch call abort(), causing SIGABRT crash on launch.
         scope.launch {
-            workoutRepository.getAllSessions().collect { sessions ->
-                _workoutHistory.value = sessions.take(20)
+            try {
+                userProfileRepository.activeProfile
+                    .flatMapLatest { profile ->
+                        val profileId = profile?.id ?: "default"
+                        workoutRepository.getAllSessions(profileId)
+                    }
+                    .collect { sessions ->
+                        _workoutHistory.value = sessions.take(20)
+                    }
+            } catch (e: Exception) {
+                co.touchlab.kermit.Logger.e(e) {
+                    "Error loading workout history in HistoryManager init"
+                }
             }
         }
     }

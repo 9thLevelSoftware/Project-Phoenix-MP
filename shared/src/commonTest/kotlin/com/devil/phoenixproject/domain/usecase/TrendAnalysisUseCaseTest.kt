@@ -16,7 +16,7 @@ class TrendAnalysisUseCaseTest {
         val points = listOf(
             TrendPoint(timestamp = 1L, value = 2f),
             TrendPoint(timestamp = 2L, value = 4f),
-            TrendPoint(timestamp = 3L, value = 6f)
+            TrendPoint(timestamp = 3L, value = 6f),
         )
 
         val result = useCase.linearRegression(points)
@@ -34,7 +34,7 @@ class TrendAnalysisUseCaseTest {
             TrendPoint(2L, 2f),
             TrendPoint(3L, 3f),
             TrendPoint(4L, 4f),
-            TrendPoint(5L, 5f)
+            TrendPoint(5L, 5f),
         )
 
         val averaged = useCase.movingAverage(points, windowSize = 3)
@@ -48,13 +48,13 @@ class TrendAnalysisUseCaseTest {
         val increasing = listOf(
             TrendPoint(1L, 1f),
             TrendPoint(2L, 2f),
-            TrendPoint(3L, 3f)
+            TrendPoint(3L, 3f),
         )
         val plateau = listOf(
             TrendPoint(1L, 10f),
             TrendPoint(2L, 10f),
             TrendPoint(3L, 10f),
-            TrendPoint(4L, 10f)
+            TrendPoint(4L, 10f),
         )
 
         val (incDirection, incStrength) = useCase.detectTrend(increasing)
@@ -71,7 +71,7 @@ class TrendAnalysisUseCaseTest {
         val points = listOf(
             TrendPoint(1L, 2f),
             TrendPoint(2L, 4f),
-            TrendPoint(3L, 6f)
+            TrendPoint(3L, 6f),
         )
 
         val prediction = useCase.predictValue(points, daysAhead = 2)
@@ -87,7 +87,7 @@ class TrendAnalysisUseCaseTest {
             TrendPoint(2L, 1f),
             TrendPoint(3L, 1f),
             TrendPoint(4L, 10f),
-            TrendPoint(5L, 1f)
+            TrendPoint(5L, 1f),
         )
 
         val anomalies = useCase.detectAnomalies(points, threshold = 1.5f)

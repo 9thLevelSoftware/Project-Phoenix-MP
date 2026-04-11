@@ -2,8 +2,8 @@ package com.devil.phoenixproject.data.repository
 
 import com.devil.phoenixproject.domain.model.CycleDay
 import com.devil.phoenixproject.domain.model.CycleItem
-import com.devil.phoenixproject.domain.model.CycleProgression
 import com.devil.phoenixproject.domain.model.CycleProgress
+import com.devil.phoenixproject.domain.model.CycleProgression
 import com.devil.phoenixproject.domain.model.TrainingCycle
 import kotlinx.coroutines.flow.Flow
 
@@ -18,7 +18,7 @@ interface TrainingCycleRepository {
     /**
      * Get all training cycles ordered by creation date (newest first).
      */
-    fun getAllCycles(): Flow<List<TrainingCycle>>
+    fun getAllCycles(profileId: String): Flow<List<TrainingCycle>>
 
     /**
      * Get a specific training cycle by ID.
@@ -28,7 +28,7 @@ interface TrainingCycleRepository {
     /**
      * Get the currently active training cycle (only one can be active).
      */
-    fun getActiveCycle(): Flow<TrainingCycle?>
+    fun getActiveCycle(profileId: String): Flow<TrainingCycle?>
 
     /**
      * Get a training cycle with its progress information.
@@ -48,12 +48,12 @@ interface TrainingCycleRepository {
     /**
      * Set a cycle as the active one (deactivates all others).
      */
-    suspend fun setActiveCycle(cycleId: String)
+    suspend fun setActiveCycle(cycleId: String, profileId: String)
 
     /**
      * Deactivate all cycles (no active cycle).
      */
-    suspend fun clearActiveCycle()
+    suspend fun clearActiveCycle(profileId: String)
 
     /**
      * Delete a training cycle and all its related data.

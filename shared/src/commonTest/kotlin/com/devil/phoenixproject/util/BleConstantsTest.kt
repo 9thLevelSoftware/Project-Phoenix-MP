@@ -15,7 +15,7 @@ class BleConstantsTest {
     fun `NUS service UUID follows Nordic format`() {
         assertEquals(
             "6e400001-b5a3-f393-e0a9-e50e24dcca9e",
-            BleConstants.NUS_SERVICE_UUID_STRING
+            BleConstants.NUS_SERVICE_UUID_STRING,
         )
     }
 
@@ -23,7 +23,7 @@ class BleConstantsTest {
     fun `NUS RX characteristic UUID is correct`() {
         assertEquals(
             "6e400002-b5a3-f393-e0a9-e50e24dcca9e",
-            BleConstants.NUS_RX_CHAR_UUID_STRING
+            BleConstants.NUS_RX_CHAR_UUID_STRING,
         )
     }
 

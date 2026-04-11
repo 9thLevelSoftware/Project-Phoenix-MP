@@ -32,6 +32,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import org.jetbrains.compose.resources.stringResource
+import vitruvianprojectphoenix.shared.generated.resources.*
+import vitruvianprojectphoenix.shared.generated.resources.Res
 
 /**
  * Bottom action bar shown during selection mode in RoutineEditorScreen.
@@ -49,13 +52,13 @@ fun SelectionActionBar(
     onDelete: () -> Unit,
     onAddToSuperset: () -> Unit,
     onRemoveFromSuperset: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
 ) {
     AnimatedVisibility(
         visible = visible,
         enter = slideInVertically { it },
         exit = slideOutVertically { it },
-        modifier = modifier
+        modifier = modifier,
     ) {
         val showAddToSuperset = selectedCount > 0 && (hasExistingSupersets || canAddToSuperset)
         Surface(
@@ -64,36 +67,42 @@ fun SelectionActionBar(
                 .windowInsetsPadding(WindowInsets.navigationBars),
             color = MaterialTheme.colorScheme.surfaceContainerHigh,
             tonalElevation = 8.dp,
-            shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp)
+            shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp),
         ) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp, vertical = 12.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+                verticalAlignment = Alignment.CenterVertically,
             ) {
                 // Cancel button
                 SmallFloatingActionButton(
                     onClick = onCancel,
                     containerColor = MaterialTheme.colorScheme.surfaceVariant,
-                    contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                    contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
                 ) {
-                    Icon(Icons.Default.Close, contentDescription = "Cancel selection")
+                    Icon(
+                        Icons.Default.Close,
+                        contentDescription = stringResource(Res.string.cd_cancel_selection),
+                    )
                 }
 
                 Row(
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
                     // Remove from Superset (if applicable)
                     if (canRemoveFromSuperset) {
                         FloatingActionButton(
                             onClick = onRemoveFromSuperset,
                             containerColor = MaterialTheme.colorScheme.secondaryContainer,
-                            contentColor = MaterialTheme.colorScheme.onSecondaryContainer
+                            contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
                         ) {
-                            Icon(Icons.Default.LinkOff, contentDescription = "Remove from superset")
+                            Icon(
+                                Icons.Default.LinkOff,
+                                contentDescription = stringResource(Res.string.cd_remove_superset),
+                            )
                         }
                     }
 
@@ -101,9 +110,12 @@ fun SelectionActionBar(
                     FloatingActionButton(
                         onClick = onCopy,
                         containerColor = MaterialTheme.colorScheme.tertiaryContainer,
-                        contentColor = MaterialTheme.colorScheme.onTertiaryContainer
+                        contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
                     ) {
-                        Icon(Icons.Default.ContentCopy, contentDescription = "Copy selected")
+                        Icon(
+                            Icons.Default.ContentCopy,
+                            contentDescription = stringResource(Res.string.cd_copy_selected),
+                        )
                     }
 
                     // Add to Superset (if 2+ selected)
@@ -111,11 +123,11 @@ fun SelectionActionBar(
                         ExtendedFloatingActionButton(
                             onClick = onAddToSuperset,
                             containerColor = MaterialTheme.colorScheme.primaryContainer,
-                            contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                            contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
                         ) {
                             Icon(Icons.Default.Link, contentDescription = null)
                             Spacer(Modifier.width(8.dp))
-                            Text("Add to Superset")
+                            Text(stringResource(Res.string.add_to_superset))
                         }
                     }
 
@@ -123,16 +135,19 @@ fun SelectionActionBar(
                     FloatingActionButton(
                         onClick = onDelete,
                         containerColor = MaterialTheme.colorScheme.errorContainer,
-                        contentColor = MaterialTheme.colorScheme.error
+                        contentColor = MaterialTheme.colorScheme.error,
                     ) {
                         BadgedBox(
                             badge = {
                                 Badge(containerColor = MaterialTheme.colorScheme.error) {
                                     Text("$selectedCount")
                                 }
-                            }
+                            },
                         ) {
-                            Icon(Icons.Default.Delete, contentDescription = "Delete selected")
+                            Icon(
+                                Icons.Default.Delete,
+                                contentDescription = stringResource(Res.string.cd_delete_selected),
+                            )
                         }
                     }
                 }

@@ -9,7 +9,7 @@ class ExerciseTest {
     fun `muscleGroups defaults to muscleGroup for backward compatibility`() {
         val exercise = Exercise(
             name = "Test Exercise",
-            muscleGroup = "Chest"
+            muscleGroup = "Chest",
         )
 
         assertEquals("Chest", exercise.muscleGroups)
@@ -20,7 +20,7 @@ class ExerciseTest {
         val exercise = Exercise(
             name = "Bench Press",
             muscleGroup = "Chest",
-            muscleGroups = "Chest,Triceps,Shoulders"
+            muscleGroups = "Chest,Triceps,Shoulders",
         )
 
         assertEquals("Chest,Triceps,Shoulders", exercise.muscleGroups)
@@ -30,7 +30,7 @@ class ExerciseTest {
     fun `displayName returns exercise name`() {
         val exercise = Exercise(
             name = "Bench Press",
-            muscleGroup = "Chest"
+            muscleGroup = "Chest",
         )
 
         assertEquals("Bench Press", exercise.displayName)
@@ -40,7 +40,7 @@ class ExerciseTest {
     fun `default values are set correctly`() {
         val exercise = Exercise(
             name = "Test",
-            muscleGroup = "Test"
+            muscleGroup = "Test",
         )
 
         assertEquals("", exercise.equipment)

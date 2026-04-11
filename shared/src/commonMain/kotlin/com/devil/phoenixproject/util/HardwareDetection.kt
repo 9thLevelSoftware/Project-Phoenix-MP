@@ -22,20 +22,16 @@ object HardwareDetection {
      * - "Vee_" prefix -> V-Form Trainer
      * - "VIT" prefix -> Trainer+
      */
-    fun detectModel(deviceName: String): VitruvianModel {
-        return when {
-            deviceName.startsWith("Vee_", ignoreCase = true) -> VitruvianModel.VFormTrainer
-            deviceName.startsWith("VIT", ignoreCase = true) -> VitruvianModel.TrainerPlus
-            else -> VitruvianModel.Unknown
-        }
+    fun detectModel(deviceName: String): VitruvianModel = when {
+        deviceName.startsWith("Vee_", ignoreCase = true) -> VitruvianModel.VFormTrainer
+        deviceName.startsWith("VIT", ignoreCase = true) -> VitruvianModel.TrainerPlus
+        else -> VitruvianModel.Unknown
     }
 
     /**
      * Get device display info without making capability assumptions
      */
-    fun getDeviceDisplayInfo(deviceName: String): String {
-        return "Vitruvian Trainer ($deviceName)"
-    }
+    fun getDeviceDisplayInfo(deviceName: String): String = "Vitruvian Trainer ($deviceName)"
 
     /**
      * Get hardware capabilities - currently returns defaults since we can't
@@ -44,9 +40,7 @@ object HardwareDetection {
      * All capabilities are assumed to be available until we can implement
      * proper firmware version detection.
      */
-    fun getCapabilities(deviceName: String): HardwareCapabilities {
-        return HardwareCapabilities.DEFAULT
-    }
+    fun getCapabilities(deviceName: String): HardwareCapabilities = HardwareCapabilities.DEFAULT
 }
 
 /**
@@ -55,11 +49,7 @@ object HardwareDetection {
  * Note: Without firmware version detection, we assume all features are available.
  * This is safer than incorrectly disabling features based on flawed model detection.
  */
-data class HardwareCapabilities(
-    val supportsEccentricMode: Boolean,
-    val supportsEchoMode: Boolean,
-    val maxResistanceKg: Float
-) {
+data class HardwareCapabilities(val supportsEccentricMode: Boolean, val supportsEchoMode: Boolean, val maxResistanceKg: Float) {
     companion object {
         /**
          * Default capabilities - assume all features available
@@ -68,7 +58,7 @@ data class HardwareCapabilities(
         val DEFAULT = HardwareCapabilities(
             supportsEccentricMode = true,
             supportsEchoMode = true,
-            maxResistanceKg = 200f
+            maxResistanceKg = 200f,
         )
     }
 }

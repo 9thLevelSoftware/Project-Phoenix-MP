@@ -6,6 +6,8 @@ import com.devil.phoenixproject.data.repository.GamificationRepository
 import com.devil.phoenixproject.domain.model.Badge
 import com.devil.phoenixproject.domain.model.EarnedBadge
 import com.devil.phoenixproject.domain.model.GamificationStats
+import com.devil.phoenixproject.domain.model.RpgInput
+import com.devil.phoenixproject.domain.model.RpgProfile
 import com.devil.phoenixproject.domain.model.StreakInfo
 import com.devil.phoenixproject.domain.model.currentTimeMillis
 import kotlinx.coroutines.flow.Flow
@@ -14,6 +16,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 /**
  * Fake GamificationRepository for testing.
  * Provides controllable badge and streak state.
+ * Profile-scoped: all methods accept profileId but the fake stores data globally for simplicity.
  */
 class FakeGamificationRepository : GamificationRepository {
 
@@ -28,6 +31,9 @@ class FakeGamificationRepository : GamificationRepository {
 
     // Badges that will be awarded on next checkAndAwardBadges call
     var pendingBadges = mutableListOf<Badge>()
+
+    // Captured RPG profile from saveRpgProfile calls
+    var savedRpgProfile: RpgProfile? = null
 
     // Test control methods
     fun setStreakInfo(info: StreakInfo) {
@@ -55,6 +61,7 @@ class FakeGamificationRepository : GamificationRepository {
         uncelebratedBadgeIds.clear()
         badgeProgress.clear()
         pendingBadges.clear()
+        savedRpgProfile = null
         _earnedBadgesFlow.value = emptyList()
         _streakInfoFlow.value = StreakInfo.EMPTY
         _gamificationStatsFlow.value = GamificationStats()
@@ -69,33 +76,31 @@ class FakeGamificationRepository : GamificationRepository {
 
     // ========== GamificationRepository interface implementation ==========
 
-    override fun getEarnedBadges(): Flow<List<EarnedBadge>> = _earnedBadgesFlow
+    override fun getEarnedBadges(profileId: String): Flow<List<EarnedBadge>> = _earnedBadgesFlow
 
-    override fun getStreakInfo(): Flow<StreakInfo> = _streakInfoFlow
+    override fun getStreakInfo(profileId: String): Flow<StreakInfo> = _streakInfoFlow
 
-    override fun getGamificationStats(): Flow<GamificationStats> = _gamificationStatsFlow
+    override fun getGamificationStats(profileId: String): Flow<GamificationStats> = _gamificationStatsFlow
 
-    override fun getUncelebratedBadges(): Flow<List<EarnedBadge>> = _uncelebratedBadgesFlow
+    override fun getUncelebratedBadges(profileId: String): Flow<List<EarnedBadge>> = _uncelebratedBadgesFlow
 
-    override suspend fun isBadgeEarned(badgeId: String): Boolean {
-        return earnedBadges.containsKey(badgeId)
-    }
+    override suspend fun isBadgeEarned(badgeId: String, profileId: String): Boolean = earnedBadges.containsKey(badgeId)
 
-    override suspend fun awardBadge(badgeId: String): Boolean {
+    override suspend fun awardBadge(badgeId: String, profileId: String): Boolean {
         if (earnedBadges.containsKey(badgeId)) {
             return false
         }
         earnedBadges[badgeId] = EarnedBadge(
             badgeId = badgeId,
             earnedAt = currentTimeMillis(),
-            celebratedAt = null
+            celebratedAt = null,
         )
         uncelebratedBadgeIds.add(badgeId)
         updateFlows()
         return true
     }
 
-    override suspend fun markBadgeCelebrated(badgeId: String) {
+    override suspend fun markBadgeCelebrated(badgeId: String, profileId: String) {
         uncelebratedBadgeIds.remove(badgeId)
         earnedBadges[badgeId]?.let { badge ->
             earnedBadges[badgeId] = badge.copy(celebratedAt = currentTimeMillis())
@@ -103,7 +108,7 @@ class FakeGamificationRepository : GamificationRepository {
         updateFlows()
     }
 
-    override suspend fun markBadgesCelebrated(badgeIds: List<String>) {
+    override suspend fun markBadgesCelebrated(badgeIds: List<String>, profileId: String) {
         if (badgeIds.isEmpty()) return
         val now = currentTimeMillis()
         badgeIds.forEach { badgeId ->
@@ -115,17 +120,28 @@ class FakeGamificationRepository : GamificationRepository {
         updateFlows()
     }
 
-    override suspend fun updateStats() {
+    override suspend fun getRpgInput(profileId: String): RpgInput = RpgInput(
+        maxWeightLiftedKg = 0.0, totalVolumeKg = 0.0, totalWorkouts = 0,
+        totalReps = 0, uniqueExercises = 0, personalRecords = 0,
+        peakPowerWatts = 0.0, avgWorkingWeightKg = 0.0,
+        currentStreak = 0, longestStreak = 0, trainingDays = 0, badgesEarned = 0,
+    )
+
+    override suspend fun saveRpgProfile(profile: RpgProfile, profileId: String) {
+        savedRpgProfile = profile
+    }
+
+    override suspend fun updateStats(profileId: String) {
         // No-op in fake - stats are set directly via setGamificationStats
     }
 
-    override suspend fun checkAndAwardBadges(): List<Badge> {
+    override suspend fun checkAndAwardBadges(profileId: String): List<Badge> {
         val awarded = pendingBadges.toList()
         pendingBadges.forEach { badge ->
             earnedBadges[badge.id] = EarnedBadge(
                 badgeId = badge.id,
                 earnedAt = currentTimeMillis(),
-                celebratedAt = null
+                celebratedAt = null,
             )
             uncelebratedBadgeIds.add(badge.id)
         }
@@ -134,21 +150,17 @@ class FakeGamificationRepository : GamificationRepository {
         return awarded
     }
 
-    override suspend fun getBadgeProgress(badgeId: String): Pair<Int, Int>? {
-        return badgeProgress[badgeId]
-    }
+    override suspend fun getBadgeProgress(badgeId: String, profileId: String): Pair<Int, Int>? = badgeProgress[badgeId]
 
-    override suspend fun getAllBadgesWithProgress(): List<BadgeWithProgress> {
-        return BadgeDefinitions.allBadges.map { badge ->
-            val progress = badgeProgress[badge.id] ?: (0 to badge.getTargetValue())
-            val earned = earnedBadges[badge.id]
-            BadgeWithProgress(
-                badge = badge,
-                isEarned = earned != null,
-                earnedAt = earned?.earnedAt,
-                currentProgress = progress.first,
-                targetProgress = progress.second
-            )
-        }
+    override suspend fun getAllBadgesWithProgress(profileId: String): List<BadgeWithProgress> = BadgeDefinitions.allBadges.map { badge ->
+        val progress = badgeProgress[badge.id] ?: (0 to badge.getTargetValue())
+        val earned = earnedBadges[badge.id]
+        BadgeWithProgress(
+            badge = badge,
+            isEarned = earned != null,
+            earnedAt = earned?.earnedAt,
+            currentProgress = progress.first,
+            targetProgress = progress.second,
+        )
     }
 }

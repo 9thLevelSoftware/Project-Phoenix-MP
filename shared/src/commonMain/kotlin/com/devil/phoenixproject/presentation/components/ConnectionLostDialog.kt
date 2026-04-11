@@ -14,43 +14,44 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import org.jetbrains.compose.resources.stringResource
+import vitruvianprojectphoenix.shared.generated.resources.Res
+import vitruvianprojectphoenix.shared.generated.resources.action_dismiss
+import vitruvianprojectphoenix.shared.generated.resources.cd_bluetooth_lost
 
 /**
  * Critical alert dialog shown when BLE connection is lost during an active workout.
  * Addresses Issue #43: Connection lost during screen lock
  */
 @Composable
-fun ConnectionLostDialog(
-    onReconnect: () -> Unit,
-    onDismiss: () -> Unit
-) {
+fun ConnectionLostDialog(onReconnect: () -> Unit, onDismiss: () -> Unit) {
     AlertDialog(
         onDismissRequest = onDismiss,
         icon = {
             Icon(
                 Icons.Default.BluetoothDisabled,
-                contentDescription = "Bluetooth connection lost",
-                tint = MaterialTheme.colorScheme.error
+                contentDescription = stringResource(Res.string.cd_bluetooth_lost),
+                tint = MaterialTheme.colorScheme.error,
             )
         },
         title = {
             Text(
                 "Connection Lost",
                 style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.Bold
+                fontWeight = FontWeight.Bold,
             )
         },
         text = {
             Column {
                 Text(
                     "Bluetooth connection to the trainer was lost during your workout.",
-                    style = MaterialTheme.typography.bodyLarge
+                    style = MaterialTheme.typography.bodyLarge,
                 )
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    "Rep tracking may have been interrupted. Please reconnect to continue.",
+                    "Phoenix will reconnect, recalibrate, and rebuild the interrupted set from your routine progress when possible.",
                     style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
         },
@@ -58,14 +59,14 @@ fun ConnectionLostDialog(
             TextButton(onClick = onReconnect) {
                 Text(
                     "Reconnect",
-                    fontWeight = FontWeight.Bold
+                    fontWeight = FontWeight.Bold,
                 )
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("Dismiss")
+                Text(stringResource(Res.string.action_dismiss))
             }
-        }
+        },
     )
 }

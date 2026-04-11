@@ -1,0 +1,52 @@
+package com.devil.phoenixproject.presentation.util
+
+object TestTags {
+    const val APP_ROOT = "app-root"
+    const val APP_SPLASH = "app-splash"
+    const val SCREEN_EULA = "screen-eula"
+    const val APP_MAIN_SHELL = "app-main-shell"
+    const val APP_NAV_HOST = "app-nav-host"
+
+    const val NAV_ANALYTICS = "nav-analytics"
+    const val NAV_WORKOUTS = "nav-workouts"
+    const val NAV_INSIGHTS = "nav-insights"
+    const val NAV_SETTINGS = "nav-settings"
+
+    const val ACTION_CYCLES = "action-cycles"
+    const val ACTION_ROUTINES = "action-routines"
+    const val ACTION_SINGLE_EXERCISE = "action-single-exercise"
+    const val ACTION_JUST_LIFT = "action-just-lift"
+    const val ACTION_BADGES = "action-badges"
+    const val ACTION_LINK_ACCOUNT = "action-link-account"
+    const val ACTION_CONNECTION_LOGS = "action-connection-logs"
+    const val ACTION_START_ROUTINE = "action-start-routine"
+    const val ACTION_START_SET = "action-start-set"
+    const val ACTION_STOP_WORKOUT = "action-stop-workout"
+
+    const val SCREEN_HOME = "screen-home"
+    const val SCREEN_ANALYTICS = "screen-analytics"
+    const val SCREEN_SMART_INSIGHTS = "screen-smart-insights"
+    const val SCREEN_SETTINGS = "screen-settings"
+    const val SCREEN_LINK_ACCOUNT = "screen-link-account"
+    const val SCREEN_BADGES = "screen-badges"
+    const val SCREEN_CONNECTION_LOGS = "screen-connection-logs"
+    const val SCREEN_DAILY_ROUTINES = "screen-daily-routines"
+    const val SCREEN_TRAINING_CYCLES = "screen-training-cycles"
+    const val SCREEN_CYCLE_EDITOR = "screen-cycle-editor"
+    const val SCREEN_CYCLE_REVIEW = "screen-cycle-review"
+    const val SCREEN_ROUTINE_OVERVIEW = "screen-routine-overview"
+    const val SCREEN_SET_READY = "screen-set-ready"
+    const val SCREEN_ACTIVE_WORKOUT = "screen-active-workout"
+    const val SCREEN_SINGLE_EXERCISE = "screen-single-exercise"
+    const val SCREEN_JUST_LIFT = "screen-just-lift"
+    const val SCREEN_EXERCISE_DETAIL = "screen-exercise-detail"
+
+    const val CONNECTION_STATUS_DISCONNECTED = "connection-status-disconnected"
+    const val CONNECTION_STATUS_CONNECTING = "connection-status-connecting"
+    const val CONNECTION_STATUS_CONNECTED = "connection-status-connected"
+    const val CONNECTION_STATUS_ERROR = "connection-status-error"
+
+    const val DIALOG_EXIT_ROUTINE = "dialog-exit-routine"
+    const val DIALOG_STOP_CURRENT_SET = "dialog-stop-current-set"
+    const val DIALOG_EXIT_WORKOUT = "dialog-exit-workout"
+}

@@ -5,6 +5,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.graphics.Color
 
 enum class ThemeMode { SYSTEM, LIGHT, DARK }
@@ -51,7 +52,7 @@ private val DarkColorScheme = darkColorScheme(
     onError = Color.White,
 
     outline = Slate400,
-    outlineVariant = Slate700
+    outlineVariant = Slate700,
 )
 
 private val LightColorScheme = lightColorScheme(
@@ -96,14 +97,11 @@ private val LightColorScheme = lightColorScheme(
     onError = Color.White,
 
     outline = Slate400,
-    outlineVariant = Slate200
+    outlineVariant = Slate200,
 )
 
 @Composable
-fun VitruvianTheme(
-    themeMode: ThemeMode = ThemeMode.SYSTEM,
-    content: @Composable () -> Unit
-) {
+fun VitruvianTheme(themeMode: ThemeMode = ThemeMode.SYSTEM, content: @Composable () -> Unit) {
     val useDarkColors = when (themeMode) {
         ThemeMode.SYSTEM -> isSystemInDarkTheme()
         ThemeMode.LIGHT -> false
@@ -114,6 +112,10 @@ fun VitruvianTheme(
         colorScheme = if (useDarkColors) DarkColorScheme else LightColorScheme,
         typography = Typography,
         shapes = ExpressiveShapes, // Material 3 Expressive: More rounded shapes
-        content = content
-    )
+    ) {
+        CompositionLocalProvider(
+            LocalAccessibilityColors provides StandardPalette,
+            content = content,
+        )
+    }
 }

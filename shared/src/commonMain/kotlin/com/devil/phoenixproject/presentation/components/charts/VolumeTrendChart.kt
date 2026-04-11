@@ -17,18 +17,18 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.domain.model.WeightUnit
+import com.devil.phoenixproject.domain.model.WorkoutSession
+import com.devil.phoenixproject.domain.model.currentTimeMillis
+import com.devil.phoenixproject.domain.model.effectiveTotalVolumeKg
 import com.devil.phoenixproject.presentation.util.LocalWindowSizeClass
 import com.devil.phoenixproject.presentation.util.ResponsiveDimensions
 import com.devil.phoenixproject.presentation.util.WindowWidthSizeClass
-import com.devil.phoenixproject.domain.model.WorkoutSession
-import com.devil.phoenixproject.domain.model.effectiveTotalVolumeKg
 import com.devil.phoenixproject.ui.theme.DataColors
-import com.devil.phoenixproject.domain.model.currentTimeMillis
+import kotlin.time.Instant
 import kotlinx.datetime.*
 
 /**
@@ -37,7 +37,7 @@ import kotlinx.datetime.*
 enum class VolumePeriod(val label: String) {
     WEEK("Week"),
     MONTH("Month"),
-    YEAR("Year")
+    YEAR("Year"),
 }
 
 /**
@@ -47,7 +47,7 @@ enum class HistoryTimePeriod(val label: String) {
     DAYS_7("7 days"),
     DAYS_14("14 days"),
     DAYS_30("30 days"),
-    ALL("All time")
+    ALL("All time"),
 }
 
 /**
@@ -60,7 +60,7 @@ fun VolumeTrendChart(
     workoutSessions: List<WorkoutSession>,
     weightUnit: WeightUnit,
     formatWeight: (Float, WeightUnit) -> String,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
 ) {
     if (workoutSessions.isEmpty()) {
         EmptyVolumeTrendState(modifier = modifier)
@@ -96,7 +96,7 @@ fun VolumeTrendChart(
     val animatedProgress by animateFloatAsState(
         targetValue = animationProgress,
         animationSpec = tween(durationMillis = 800),
-        label = "VolumeChartAnimation"
+        label = "VolumeChartAnimation",
     )
 
     LaunchedEffect(volumeData) {
@@ -119,7 +119,7 @@ fun VolumeTrendChart(
         // Period selector chips
         Row(
             modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             VolumePeriod.entries.forEach { period ->
                 FilterChip(
@@ -128,13 +128,13 @@ fun VolumeTrendChart(
                     label = {
                         Text(
                             period.label,
-                            style = MaterialTheme.typography.labelMedium
+                            style = MaterialTheme.typography.labelMedium,
                         )
                     },
                     colors = FilterChipDefaults.filterChipColors(
                         selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
-                        selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer
-                    )
+                        selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                    ),
                 )
             }
         }
@@ -148,7 +148,7 @@ fun VolumeTrendChart(
                     text = "${data.dateLabel}: ${formatVolumeLabel(data.volume, weightUnit)} $unit",
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.padding(bottom = 4.dp)
+                    modifier = Modifier.padding(bottom = 4.dp),
                 )
             }
         }
@@ -158,7 +158,7 @@ fun VolumeTrendChart(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .weight(1f)
+                    .weight(1f),
             ) {
                 // Y-axis labels
                 Column(
@@ -166,22 +166,22 @@ fun VolumeTrendChart(
                         .width(columnWidth)
                         .fillMaxHeight()
                         .padding(end = 4.dp),
-                    verticalArrangement = Arrangement.SpaceBetween
+                    verticalArrangement = Arrangement.SpaceBetween,
                 ) {
                     Text(
                         text = formatVolumeLabel(maxVolume, weightUnit),
                         style = MaterialTheme.typography.labelSmall,
-                        color = labelColor
+                        color = labelColor,
                     )
                     Text(
                         text = formatVolumeLabel(maxVolume / 2, weightUnit),
                         style = MaterialTheme.typography.labelSmall,
-                        color = labelColor
+                        color = labelColor,
                     )
                     Text(
                         text = "0",
                         style = MaterialTheme.typography.labelSmall,
-                        color = labelColor
+                        color = labelColor,
                     )
                 }
 
@@ -190,7 +190,7 @@ fun VolumeTrendChart(
                     modifier = Modifier
                         .weight(1f)
                         .fillMaxHeight()
-                        .horizontalScroll(rememberScrollState())
+                        .horizontalScroll(rememberScrollState()),
                 ) {
                     val barWidth = 40.dp
                     val barSpacing = 8.dp
@@ -207,12 +207,14 @@ fun VolumeTrendChart(
                                     val barSpacingPx = barSpacing.toPx()
                                     // Determine which bar was tapped
                                     val tappedIndex = volumeData.indices.firstOrNull { index ->
-                                        val barX = barSpacingPx + index * (barWidthPx + barSpacingPx)
+                                        val barX =
+                                            barSpacingPx + index * (barWidthPx + barSpacingPx)
                                         offset.x >= barX && offset.x <= barX + barWidthPx
                                     }
-                                    selectedBarIndex = if (tappedIndex == selectedBarIndex) null else tappedIndex
+                                    selectedBarIndex =
+                                        if (tappedIndex == selectedBarIndex) null else tappedIndex
                                 }
-                            }
+                            },
                     ) {
                         val usableHeight = size.height
                         val barWidthPx = barWidth.toPx()
@@ -226,7 +228,7 @@ fun VolumeTrendChart(
                                 color = gridColor,
                                 start = Offset(0f, y),
                                 end = Offset(size.width, y),
-                                strokeWidth = 1f
+                                strokeWidth = 1f,
                             )
                         }
 
@@ -245,7 +247,7 @@ fun VolumeTrendChart(
                                 color = color,
                                 topLeft = Offset(x, y),
                                 size = Size(barWidthPx, barHeight),
-                                cornerRadius = CornerRadius(4.dp.toPx(), 4.dp.toPx())
+                                cornerRadius = CornerRadius(4.dp.toPx(), 4.dp.toPx()),
                             )
                         }
                     }
@@ -257,7 +259,7 @@ fun VolumeTrendChart(
                 modifier = Modifier
                     .fillMaxWidth()
                     .horizontalScroll(rememberScrollState())
-                    .padding(start = columnWidth + 4.dp, top = 4.dp)
+                    .padding(start = columnWidth + 4.dp, top = 4.dp),
             ) {
                 volumeData.forEach { data ->
                     Text(
@@ -265,7 +267,7 @@ fun VolumeTrendChart(
                         style = MaterialTheme.typography.labelSmall,
                         color = labelColor,
                         textAlign = TextAlign.Center,
-                        modifier = Modifier.width(48.dp)
+                        modifier = Modifier.width(48.dp),
                     )
                 }
             }
@@ -276,20 +278,12 @@ fun VolumeTrendChart(
 /**
  * Data class for volume chart entries
  */
-private data class VolumeDataPoint(
-    val dateLabel: String,
-    val volume: Float,
-    val timestamp: Long
-)
+private data class VolumeDataPoint(val dateLabel: String, val volume: Float, val timestamp: Long)
 
 /**
  * Process workout sessions into volume data points based on the selected time period.
  */
-private fun processVolumeData(
-    sessions: List<WorkoutSession>,
-    weightUnit: WeightUnit,
-    period: VolumePeriod
-): List<VolumeDataPoint> {
+private fun processVolumeData(sessions: List<WorkoutSession>, weightUnit: WeightUnit, period: VolumePeriod): List<VolumeDataPoint> {
     val sorted = sessions.sortedBy { it.timestamp }
     if (sorted.isEmpty()) return emptyList()
 
@@ -301,7 +295,10 @@ private fun processVolumeData(
 
     val maxItems = when (period) {
         VolumePeriod.WEEK -> 7
-        VolumePeriod.MONTH -> 5  // ~4-5 weeks in a month
+
+        VolumePeriod.MONTH -> 5
+
+        // ~4-5 weeks in a month
         VolumePeriod.YEAR -> 12
     }
 
@@ -319,7 +316,7 @@ private fun processVolumeData(
         VolumeDataPoint(
             dateLabel = label,
             volume = displayVolume,
-            timestamp = daySessions.first().timestamp
+            timestamp = daySessions.first().timestamp,
         )
     }.takeLast(maxItems)
 }
@@ -344,7 +341,7 @@ private fun groupByDay(sessions: List<WorkoutSession>): List<Pair<String, List<W
     return (0..6).map { offset ->
         val date = startDate.plus(offset, DateTimeUnit.DAY)
         val monthName = date.month.name.take(3).lowercase().replaceFirstChar { it.uppercase() }
-        val label = "$monthName ${date.dayOfMonth}"
+        val label = "$monthName ${date.day}"
         val daySessions = sessionsByDay[date] ?: emptyList()
         label to daySessions
     }.filter { it.second.isNotEmpty() }
@@ -375,8 +372,10 @@ private fun groupByWeek(sessions: List<WorkoutSession>): List<Pair<String, List<
         }
         .entries.sortedBy { it.key }
         .map { (monday, weekSessions) ->
-            val monthName = monday.month.name.take(3).lowercase().replaceFirstChar { it.uppercase() }
-            val label = "$monthName ${monday.dayOfMonth}"
+            val monthName = monday.month.name.take(3).lowercase().replaceFirstChar {
+                it.uppercase()
+            }
+            val label = "$monthName ${monday.day}"
             label to weekSessions
         }
 }
@@ -398,13 +397,15 @@ private fun groupByMonth(sessions: List<WorkoutSession>): List<Pair<String, List
         .groupBy { session ->
             val instant = Instant.fromEpochMilliseconds(session.timestamp)
             val date = instant.toLocalDateTime(TimeZone.currentSystemDefault()).date
-            "${date.year}-${date.monthNumber.toString().padStart(2, '0')}"
+            "${date.year}-${date.month.number.toString().padStart(2, '0')}"
         }
         .entries.sortedBy { it.key }
         .map { (_, monthSessions) ->
             val firstDate = Instant.fromEpochMilliseconds(monthSessions.first().timestamp)
                 .toLocalDateTime(TimeZone.currentSystemDefault()).date
-            val monthName = firstDate.month.name.take(3).lowercase().replaceFirstChar { it.uppercase() }
+            val monthName = firstDate.month.name.take(3).lowercase().replaceFirstChar {
+                it.uppercase()
+            }
             monthName to monthSessions
         }
 }
@@ -412,12 +413,10 @@ private fun groupByMonth(sessions: List<WorkoutSession>): List<Pair<String, List
 /**
  * Format volume label for Y-axis
  */
-private fun formatVolumeLabel(volume: Float, weightUnit: WeightUnit): String {
-    return when {
-        volume >= 1000 -> "${(volume / 1000).toInt()}k"
-        volume >= 100 -> "${volume.toInt()}"
-        else -> "${volume.toInt()}"
-    }
+private fun formatVolumeLabel(volume: Float, weightUnit: WeightUnit): String = when {
+    volume >= 1000 -> "${(volume / 1000).toInt()}k"
+    volume >= 100 -> "${volume.toInt()}"
+    else -> "${volume.toInt()}"
 }
 
 @Composable
@@ -426,13 +425,13 @@ private fun EmptyVolumeTrendState(modifier: Modifier = Modifier) {
         modifier = modifier
             .fillMaxWidth()
             .padding(16.dp),
-        contentAlignment = Alignment.Center
+        contentAlignment = Alignment.Center,
     ) {
         Text(
             text = "Complete workouts to see your volume trend",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
-            textAlign = TextAlign.Center
+            textAlign = TextAlign.Center,
         )
     }
 }

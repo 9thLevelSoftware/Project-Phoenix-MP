@@ -6,9 +6,6 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.*
-import androidx.compose.ui.layout.Layout
-import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.unit.IntOffset
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Radar
 import androidx.compose.material3.Icon
@@ -22,12 +19,17 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Fill
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.presentation.util.ResponsiveDimensions
 import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.sin
+import org.jetbrains.compose.resources.stringResource
+import vitruvianprojectphoenix.shared.generated.resources.*
+import vitruvianprojectphoenix.shared.generated.resources.Res
 
 /**
  * Material 3 Expressive Radar/Spider Chart
@@ -41,13 +43,13 @@ fun RadarChart(
     data: List<Pair<String, Float>>, // Label to normalized value (0.0 to 1.0)
     modifier: Modifier = Modifier,
     maxValue: Float = 1f,
-    showLabels: Boolean = true
+    showLabels: Boolean = true,
 ) {
     // Data validation
     if (data.isEmpty() || maxValue <= 0f) {
         RadarEmptyChartState(
-            message = "No data available",
-            modifier = modifier
+            message = stringResource(Res.string.chart_no_data),
+            modifier = modifier,
         )
         return
     }
@@ -56,7 +58,7 @@ fun RadarChart(
         val animatedValue by animateFloatAsState(
             targetValue = value.coerceIn(0f, maxValue),
             animationSpec = tween(durationMillis = 1500),
-            label = "RadarValue_$label"
+            label = "RadarValue_$label",
         )
         label to animatedValue
     }
@@ -76,7 +78,7 @@ fun RadarChart(
         modifier = modifier
             .fillMaxWidth()
             .height(chartHeight)
-            .padding(24.dp)
+            .padding(24.dp),
     ) {
         val boxWidth = with(density) { maxWidth.toPx() }
         val boxHeight = with(density) { maxHeight.toPx() }
@@ -93,7 +95,7 @@ fun RadarChart(
                     color = outlineColor.copy(alpha = 0.2f),
                     radius = gridRadius,
                     center = Offset(centerX, centerY),
-                    style = Stroke(width = 1.dp.toPx())
+                    style = Stroke(width = 1.dp.toPx()),
                 )
             }
 
@@ -107,7 +109,7 @@ fun RadarChart(
                     color = outlineColor.copy(alpha = 0.3f),
                     start = Offset(centerX, centerY),
                     end = Offset(x, y),
-                    strokeWidth = 1.dp.toPx()
+                    strokeWidth = 1.dp.toPx(),
                 )
             }
 
@@ -132,7 +134,7 @@ fun RadarChart(
             drawPath(
                 path = dataPath,
                 color = primaryContainerColor.copy(alpha = 0.4f),
-                style = Fill
+                style = Fill,
             )
 
             // Draw outline
@@ -142,8 +144,8 @@ fun RadarChart(
                 style = Stroke(
                     width = 4.dp.toPx(),
                     cap = androidx.compose.ui.graphics.StrokeCap.Round,
-                    join = androidx.compose.ui.graphics.StrokeJoin.Round
-                )
+                    join = androidx.compose.ui.graphics.StrokeJoin.Round,
+                ),
             )
 
             // Draw data points
@@ -156,12 +158,12 @@ fun RadarChart(
                 drawCircle(
                     color = primaryColor,
                     radius = 8.dp.toPx(),
-                    center = Offset(x, y)
+                    center = Offset(x, y),
                 )
                 drawCircle(
                     color = primaryContainerColor,
                     radius = 4.dp.toPx(),
-                    center = Offset(x, y)
+                    center = Offset(x, y),
                 )
             }
         }
@@ -189,10 +191,10 @@ fun RadarChart(
                         .offset {
                             IntOffset(
                                 x = (labelX - with(density) { 30.dp.toPx() }).toInt(),
-                                y = (labelY - with(density) { 8.dp.toPx() }).toInt()
+                                y = (labelY - with(density) { 8.dp.toPx() }).toInt(),
                             )
                         }
-                        .width(60.dp)
+                        .width(60.dp),
                 )
             }
         }
@@ -200,33 +202,30 @@ fun RadarChart(
 }
 
 @Composable
-private fun RadarEmptyChartState(
-    message: String,
-    modifier: Modifier = Modifier
-) {
+private fun RadarEmptyChartState(message: String, modifier: Modifier = Modifier) {
     val chartHeight = ResponsiveDimensions.chartHeight(baseHeight = 320.dp)
     Box(
         modifier = modifier
             .fillMaxWidth()
             .height(chartHeight)
             .padding(24.dp),
-        contentAlignment = Alignment.Center
+        contentAlignment = Alignment.Center,
     ) {
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+            verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             Icon(
                 imageVector = Icons.Default.Radar,
-                contentDescription = "No data available",
+                contentDescription = stringResource(Res.string.chart_no_data),
                 tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
-                modifier = Modifier.size(48.dp)
+                modifier = Modifier.size(48.dp),
             )
             Text(
                 text = message,
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                textAlign = TextAlign.Center
+                textAlign = TextAlign.Center,
             )
         }
     }

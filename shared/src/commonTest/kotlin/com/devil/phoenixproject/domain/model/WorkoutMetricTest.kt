@@ -3,6 +3,7 @@ package com.devil.phoenixproject.domain.model
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNotEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -15,7 +16,7 @@ class WorkoutMetricTest {
             loadA = 25f,
             loadB = 30f,
             positionA = 500f,
-            positionB = 500f
+            positionB = 500f,
         )
 
         assertEquals(55f, metric.totalLoad)
@@ -27,7 +28,7 @@ class WorkoutMetricTest {
             loadA = 0f,
             loadB = 0f,
             positionA = 0f,
-            positionB = 0f
+            positionB = 0f,
         )
 
         assertEquals(0f, metric.totalLoad)
@@ -39,7 +40,7 @@ class WorkoutMetricTest {
             loadA = 50f,
             loadB = 0f,
             positionA = 500f,
-            positionB = 0f
+            positionB = 0f,
         )
 
         assertEquals(50f, metric.totalLoad)
@@ -51,7 +52,7 @@ class WorkoutMetricTest {
             loadA = 25f,
             loadB = 25f,
             positionA = 500f,
-            positionB = 500f
+            positionB = 500f,
         )
 
         assertEquals(0, metric.ticks)
@@ -66,7 +67,7 @@ class WorkoutSessionTest {
     @Test
     fun `hasSummaryMetrics returns true when peak force is set`() {
         val session = WorkoutSession(
-            peakForceConcentricA = 100f
+            peakForceConcentricA = 100f,
         )
 
         assertTrue(session.hasSummaryMetrics)
@@ -104,7 +105,7 @@ class WorkoutSessionTest {
             avgForceEccentricB = 85f,
             heaviestLiftKg = 50f,
             totalVolumeKg = 1500f,
-            estimatedCalories = 25f
+            estimatedCalories = 25f,
         )
 
         val summary = assertNotNull(session.toSetSummary())
@@ -138,20 +139,21 @@ class WorkoutSessionTest {
             peakForceConcentricA = 50f, // Enables hasSummaryMetrics
             heaviestLiftKg = null,
             totalVolumeKg = null,
-            cableCount = 2
+            cableCount = null, // No cable metadata → conservative fallback (1 cable)
         )
 
         val summary = session.toSetSummary()
 
         assertEquals(25f, summary?.heaviestLiftKgPerCable)
-        assertEquals(400f, summary?.totalVolumeKg)
+        // effectiveTotalVolumeKg() with cableCount=null defaults to 1 cable: 25 * 8 * 1 = 200
+        assertEquals(200f, summary?.totalVolumeKg)
     }
 
     @Test
     fun `toSetSummary detects Echo mode case insensitively`() {
         val session = WorkoutSession(
             mode = "ECHO",
-            peakForceConcentricA = 100f
+            peakForceConcentricA = 100f,
         )
 
         assertTrue(session.toSetSummary()?.isEchoMode == true)
@@ -163,7 +165,7 @@ class WorkoutSessionTest {
             totalReps = 5,
             warmupReps = 3,
             workingReps = 5, // More than totalReps - warmupReps
-            peakForceConcentricA = 100f
+            peakForceConcentricA = 100f,
         )
 
         val summary = session.toSetSummary()
@@ -201,7 +203,7 @@ class WorkoutSessionTest {
     fun `effectiveHeaviestKgPerCable uses measured summary value when present`() {
         val session = WorkoutSession(
             weightPerCableKg = 30f,
-            heaviestLiftKg = 42f
+            heaviestLiftKg = 42f,
         )
 
         assertEquals(42f, session.effectiveHeaviestKgPerCable())
@@ -219,7 +221,7 @@ class WorkoutSessionTest {
         val session = WorkoutSession(
             weightPerCableKg = 40f,
             totalReps = 10,
-            totalVolumeKg = 777f
+            totalVolumeKg = 777f,
         )
 
         assertEquals(777f, session.effectiveTotalVolumeKg())
@@ -231,7 +233,7 @@ class WorkoutSessionTest {
             weightPerCableKg = 40f,
             totalReps = 10,
             totalVolumeKg = null,
-            cableCount = 1
+            cableCount = 1,
         )
 
         assertEquals(400f, session.effectiveTotalVolumeKg())
@@ -243,7 +245,7 @@ class WorkoutSessionTest {
             weightPerCableKg = 40f,
             totalReps = 10,
             totalVolumeKg = null,
-            cableCount = 2
+            cableCount = 2,
         )
 
         assertEquals(800f, session.effectiveTotalVolumeKg())
@@ -255,7 +257,7 @@ class WorkoutSessionTest {
             weightPerCableKg = 40f,
             totalReps = 10,
             totalVolumeKg = null,
-            cableCount = null
+            cableCount = null,
         )
 
         assertEquals(400f, session.effectiveTotalVolumeKg())
@@ -268,7 +270,7 @@ class RepCountTest {
     fun `totalReps equals workingReps by default`() {
         val repCount = RepCount(
             warmupReps = 3,
-            workingReps = 10
+            workingReps = 10,
         )
 
         assertEquals(10, repCount.totalReps)
@@ -301,7 +303,7 @@ class PersonalRecordTest {
             timestamp = currentTimeMillis(),
             workoutMode = "OldSchool",
             prType = PRType.MAX_WEIGHT,
-            volume = 500f // 50 * 2 * 5 = 500
+            volume = 500f, // 50 * 2 * 5 = 500
         )
 
         assertEquals(500f, pr.volume)
@@ -319,7 +321,7 @@ class PersonalRecordTest {
             timestamp = 0L,
             workoutMode = "OldSchool",
             prType = PRType.MAX_WEIGHT,
-            volume = 200f
+            volume = 200f,
         )
 
         val volumePR = PersonalRecord(
@@ -332,7 +334,7 @@ class PersonalRecordTest {
             timestamp = 0L,
             workoutMode = "OldSchool",
             prType = PRType.MAX_VOLUME,
-            volume = 1000f
+            volume = 1000f,
         )
 
         assertEquals(PRType.MAX_WEIGHT, weightPR.prType)
@@ -367,6 +369,13 @@ class HapticEventTest {
         assertEquals(HapticEvent.DISCO_MODE_UNLOCKED, HapticEvent.DISCO_MODE_UNLOCKED)
         assertEquals(HapticEvent.BADGE_EARNED, HapticEvent.BADGE_EARNED)
         assertEquals(HapticEvent.PERSONAL_RECORD, HapticEvent.PERSONAL_RECORD)
+        assertEquals(HapticEvent.WARMUP_TO_WORKING, HapticEvent.WARMUP_TO_WORKING)
+    }
+
+    @Test
+    fun `COUNTDOWN_TICK equality by seconds remaining`() {
+        assertEquals(HapticEvent.COUNTDOWN_TICK(5), HapticEvent.COUNTDOWN_TICK(5))
+        assertNotEquals(HapticEvent.COUNTDOWN_TICK(5), HapticEvent.COUNTDOWN_TICK(3))
     }
 }
 
@@ -379,7 +388,7 @@ class PRCelebrationEventTest {
             weightPerCableKg = 50f,
             reps = 5,
             workoutMode = "OldSchool",
-            brokenPRTypes = listOf(PRType.MAX_WEIGHT)
+            brokenPRTypes = listOf(PRType.MAX_WEIGHT),
         )
 
         assertTrue(event.isWeightPR)
@@ -394,7 +403,7 @@ class PRCelebrationEventTest {
             weightPerCableKg = 40f,
             reps = 10,
             workoutMode = "OldSchool",
-            brokenPRTypes = listOf(PRType.MAX_VOLUME)
+            brokenPRTypes = listOf(PRType.MAX_VOLUME),
         )
 
         assertFalse(event.isWeightPR)
@@ -409,7 +418,7 @@ class PRCelebrationEventTest {
             weightPerCableKg = 60f,
             reps = 5,
             workoutMode = "OldSchool",
-            brokenPRTypes = listOf(PRType.MAX_WEIGHT, PRType.MAX_VOLUME)
+            brokenPRTypes = listOf(PRType.MAX_WEIGHT, PRType.MAX_VOLUME),
         )
 
         assertTrue(event.isWeightPR)

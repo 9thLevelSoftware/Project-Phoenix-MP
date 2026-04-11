@@ -1,9 +1,7 @@
 package com.devil.phoenixproject.presentation.components
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -12,26 +10,20 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Star
-import androidx.compose.material.icons.outlined.Star
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
-import coil3.compose.SubcomposeAsyncImage
-import coil3.compose.SubcomposeAsyncImageContent
 import coil3.compose.LocalPlatformContext
+import coil3.compose.SubcomposeAsyncImage
 import coil3.request.ImageRequest
 import coil3.request.crossfade
 import com.devil.phoenixproject.data.repository.ExerciseRepository
@@ -44,22 +36,23 @@ import com.devil.phoenixproject.ui.theme.PhoenixOrangeDark
 import com.devil.phoenixproject.ui.theme.PhoenixOrangeLight
 import com.devil.phoenixproject.ui.theme.ThemeMode
 import kotlinx.coroutines.launch
+import org.jetbrains.compose.resources.stringResource
+import vitruvianprojectphoenix.shared.generated.resources.*
+import vitruvianprojectphoenix.shared.generated.resources.Res
 
 /**
  * Map display equipment names back to database values for filtering
  */
-private fun getEquipmentDatabaseValues(displayName: String): List<String> {
-    return when (displayName) {
-        "Long Bar" -> listOf("BAR", "LONG_BAR", "BARBELL")
-        "Short Bar" -> listOf("SHORT_BAR")
-        "Ankle Strap" -> listOf("ANKLE_STRAP", "STRAPS")
-        "Handles" -> listOf("HANDLES", "SINGLE_HANDLE", "BOTH_HANDLES")
-        "Bench" -> listOf("BENCH")
-        "Rope" -> listOf("ROPE")
-        "Belt" -> listOf("BELT")
-        "Bodyweight" -> listOf("BODYWEIGHT")
-        else -> emptyList()
-    }
+private fun getEquipmentDatabaseValues(displayName: String): List<String> = when (displayName) {
+    "Long Bar" -> listOf("BAR", "LONG_BAR", "BARBELL")
+    "Short Bar" -> listOf("SHORT_BAR")
+    "Ankle Strap" -> listOf("ANKLE_STRAP", "STRAPS")
+    "Handles" -> listOf("HANDLES", "SINGLE_HANDLE", "BOTH_HANDLES")
+    "Bench" -> listOf("BENCH")
+    "Rope" -> listOf("ROPE")
+    "Belt" -> listOf("BELT")
+    "Bodyweight" -> listOf("BODYWEIGHT")
+    else -> emptyList()
 }
 
 /**
@@ -79,7 +72,7 @@ private fun formatEquipment(rawEquipment: String): String {
         "ANKLE_STRAP" to "Ankle Strap",
         "BELT" to "Belt",
         "ROPE" to "Rope",
-        "BODYWEIGHT" to "Bodyweight"
+        "BODYWEIGHT" to "Bodyweight",
     )
 
     val filteredValues = rawEquipment
@@ -108,7 +101,7 @@ fun ExercisePickerDialog(
     modifier: Modifier = Modifier,
     fullScreen: Boolean = false,
     themeMode: ThemeMode = ThemeMode.DARK,
-    enableCustomExercises: Boolean = true
+    enableCustomExercises: Boolean = true,
 ) {
     if (!showDialog) return
 
@@ -169,13 +162,14 @@ fun ExercisePickerDialog(
                 exerciseToEdit = null
                 val action = resolveCustomExerciseSaveAction(
                     draftExercise = exercise,
-                    editingExerciseId = editExerciseId
+                    editingExerciseId = editExerciseId,
                 )
                 coroutineScope.launch {
                     when (action) {
                         is CustomExerciseSaveAction.Create -> {
                             exerciseRepository.createCustomExercise(action.exercise)
                         }
+
                         is CustomExerciseSaveAction.Update -> {
                             exerciseRepository.updateCustomExercise(action.exercise)
                         }
@@ -192,12 +186,14 @@ fun ExercisePickerDialog(
                         targetId?.let { exerciseRepository.deleteCustomExercise(it) }
                     }
                 }
-            } else null,
+            } else {
+                null
+            },
             onDismiss = {
                 showCreateDialog = false
                 exerciseToEdit = null
             },
-            themeMode = themeMode
+            themeMode = themeMode,
         )
     }
 
@@ -207,20 +203,20 @@ fun ExercisePickerDialog(
             properties = DialogProperties(
                 dismissOnBackPress = true,
                 dismissOnClickOutside = false,
-                usePlatformDefaultWidth = false
-            )
+                usePlatformDefaultWidth = false,
+            ),
         ) {
             Scaffold(
                 topBar = {
                     TopAppBar(
-                        title = { Text("Select Exercise") },
+                        title = { Text(stringResource(Res.string.select_exercise)) },
                         navigationIcon = {
                             IconButton(onClick = onDismiss) {
-                                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(Res.string.cd_back))
                             }
-                        }
+                        },
                     )
-                }
+                },
             ) { paddingValues ->
                 Box(modifier = Modifier.padding(paddingValues)) {
                     ExercisePickerContent(
@@ -271,7 +267,7 @@ fun ExercisePickerDialog(
                         enableCustomExercises = enableCustomExercises,
                         onCreateExercise = { showCreateDialog = true },
                         onEditExercise = { exercise -> exerciseToEdit = exercise },
-                        fullScreen = true
+                        fullScreen = true,
                     )
                 }
             }
@@ -284,7 +280,7 @@ fun ExercisePickerDialog(
             sheetState = sheetState,
             modifier = modifier,
             containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
-            shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)
+            shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
         ) {
             ExercisePickerContent(
                 exercises = exercises,
@@ -334,7 +330,7 @@ fun ExercisePickerDialog(
                 enableCustomExercises = enableCustomExercises,
                 onCreateExercise = { showCreateDialog = true },
                 onEditExercise = { exercise -> exerciseToEdit = exercise },
-                fullScreen = false
+                fullScreen = false,
             )
         }
     }
@@ -365,7 +361,7 @@ fun ExercisePickerContent(
     enableCustomExercises: Boolean = true,
     onCreateExercise: () -> Unit = {},
     onEditExercise: ((Exercise) -> Unit)? = null,
-    fullScreen: Boolean
+    fullScreen: Boolean,
 ) {
     var showVideoDialog by remember { mutableStateOf(false) }
     var videoDialogExercise by remember { mutableStateOf<Exercise?>(null) }
@@ -388,7 +384,7 @@ fun ExercisePickerContent(
                 showVideoDialog = false
                 videoDialogExercise = null
                 videoDialogVideos = emptyList()
-            }
+            },
         )
     }
 
@@ -396,10 +392,10 @@ fun ExercisePickerContent(
         modifier = Modifier
             .fillMaxWidth()
             .imePadding()
-            .then(if (fullScreen) Modifier.fillMaxHeight() else Modifier.fillMaxHeight(0.9f))
+            .then(if (fullScreen) Modifier.fillMaxHeight() else Modifier.fillMaxHeight(0.9f)),
     ) {
         Column(
-            modifier = Modifier.fillMaxSize()
+            modifier = Modifier.fillMaxSize(),
         ) {
             // Title (only in bottom sheet mode)
             if (!fullScreen) {
@@ -408,12 +404,12 @@ fun ExercisePickerContent(
                         .fillMaxWidth()
                         .padding(horizontal = 16.dp)
                         .padding(bottom = 16.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(
                         text = "Select Exercise",
                         style = MaterialTheme.typography.headlineMedium,
-                        fontWeight = FontWeight.Bold
+                        fontWeight = FontWeight.Bold,
                     )
                 }
             }
@@ -426,17 +422,19 @@ fun ExercisePickerContent(
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp)
                     .padding(bottom = 8.dp),
-                placeholder = { Text("Search exercises...") },
-                leadingIcon = { Icon(Icons.Default.Search, contentDescription = "Search") },
+                placeholder = { Text(stringResource(Res.string.search_exercises)) },
+                leadingIcon = { Icon(Icons.Default.Search, contentDescription = stringResource(Res.string.cd_search)) },
                 trailingIcon = if (searchQuery.isNotEmpty()) {
                     {
                         IconButton(onClick = { onSearchQueryChange("") }) {
-                            Icon(Icons.Default.Close, contentDescription = "Clear search")
+                            Icon(Icons.Default.Close, contentDescription = stringResource(Res.string.cd_clear_search))
                         }
                     }
-                } else null,
+                } else {
+                    null
+                },
                 singleLine = true,
-                shape = RoundedCornerShape(28.dp)
+                shape = RoundedCornerShape(28.dp),
             )
 
             // Unified filter shelf
@@ -450,7 +448,7 @@ fun ExercisePickerContent(
                 selectedEquipment = selectedEquipment,
                 onToggleEquipment = onToggleEquipment,
                 onClearAll = onClearAllFilters,
-                modifier = Modifier.padding(bottom = 8.dp)
+                modifier = Modifier.padding(bottom = 8.dp),
             )
 
             if (enableCustomExercises) {
@@ -474,18 +472,18 @@ fun ExercisePickerContent(
                         .fillMaxWidth()
                         .padding(horizontal = 16.dp)
                         .padding(bottom = 8.dp),
-                    shape = RoundedCornerShape(16.dp)
+                    shape = RoundedCornerShape(16.dp),
                 ) {
                     Icon(
                         imageVector = Icons.Default.Add,
                         contentDescription = null,
-                        tint = phoenixOrange
+                        tint = phoenixOrange,
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
                         text = createButtonLabel,
                         maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
+                        overflow = TextOverflow.Ellipsis,
                     )
                 }
             }
@@ -511,9 +509,9 @@ fun ExercisePickerContent(
                         customExerciseCount = customExerciseCount,
                         enableCustomExercises = enableCustomExercises,
                         onClearFilters = onClearAllFilters,
-                        onCreateExercise = onCreateExercise
+                        onCreateExercise = onCreateExercise,
                     )
-                }
+                },
             )
         }
     }
@@ -529,13 +527,13 @@ fun ExerciseVideoDialog(
     videos: List<ExerciseVideoEntity>,
     enableVideoPlayback: Boolean,
     onDismiss: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
 ) {
     var selectedAngle by remember {
         mutableStateOf(
             videos.firstOrNull { it.angle == "FRONT" }?.angle
                 ?: videos.firstOrNull()?.angle
-                ?: "FRONT"
+                ?: "FRONT",
         )
     }
 
@@ -546,29 +544,29 @@ fun ExerciseVideoDialog(
         onDismissRequest = onDismiss,
         modifier = modifier,
         containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
-        shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)
+        shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .fillMaxHeight(0.9f)
-                .padding(16.dp)
+                .padding(16.dp),
         ) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(bottom = 16.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+                verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
                     text = exerciseName,
                     style = MaterialTheme.typography.headlineMedium,
                     fontWeight = FontWeight.Bold,
-                    modifier = Modifier.weight(1f)
+                    modifier = Modifier.weight(1f),
                 )
                 IconButton(onClick = onDismiss) {
-                    Icon(Icons.Default.Close, contentDescription = "Close")
+                    Icon(Icons.Default.Close, contentDescription = stringResource(Res.string.cd_close))
                 }
             }
 
@@ -576,13 +574,13 @@ fun ExerciseVideoDialog(
             if (videos.size > 1) {
                 LazyRow(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    modifier = Modifier.padding(bottom = 16.dp)
+                    modifier = Modifier.padding(bottom = 16.dp),
                 ) {
                     items(videos) { video ->
                         FilterChip(
                             selected = selectedAngle == video.angle,
                             onClick = { selectedAngle = video.angle },
-                            label = { Text(video.angle.lowercase().replaceFirstChar { it.uppercase() }) }
+                            label = { Text(video.angle.lowercase().replaceFirstChar { it.uppercase() }) },
                         )
                     }
                 }
@@ -593,12 +591,12 @@ fun ExerciseVideoDialog(
                 modifier = Modifier
                     .fillMaxWidth()
                     .aspectRatio(16f / 9f),
-                shape = RoundedCornerShape(12.dp)
+                shape = RoundedCornerShape(12.dp),
             ) {
                 if (enableVideoPlayback) {
                     VideoPlayer(
                         videoUrl = currentVideo?.videoUrl,
-                        modifier = Modifier.fillMaxSize()
+                        modifier = Modifier.fillMaxSize(),
                     )
                 } else {
                     // Show thumbnail when video playback is disabled
@@ -606,7 +604,7 @@ fun ExerciseVideoDialog(
                         modifier = Modifier
                             .fillMaxSize()
                             .background(MaterialTheme.colorScheme.surfaceVariant),
-                        contentAlignment = Alignment.Center
+                        contentAlignment = Alignment.Center,
                     ) {
                         currentVideo?.thumbnailUrl?.let { thumbnailUrl ->
                             val formattedUrl = if (thumbnailUrl.contains("image.mux.com") && !thumbnailUrl.contains("?")) {
@@ -619,14 +617,14 @@ fun ExerciseVideoDialog(
                                     .data(formattedUrl)
                                     .crossfade(true)
                                     .build(),
-                                contentDescription = "Video thumbnail",
+                                contentDescription = stringResource(Res.string.cd_video_thumbnail),
                                 contentScale = ContentScale.Crop,
-                                modifier = Modifier.fillMaxSize()
+                                modifier = Modifier.fillMaxSize(),
                             )
                         } ?: Text(
                             text = "Video playback disabled",
                             style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
                 }

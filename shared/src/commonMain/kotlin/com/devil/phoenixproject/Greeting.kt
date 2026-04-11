@@ -5,8 +5,6 @@ package com.devil.phoenixproject
  */
 class Greeting {
     private val platform = getPlatform()
-    
-    fun greet(): String {
-        return "Vitruvian Project Phoenix running on ${platform.name}!"
-    }
+
+    fun greet(): String = "Vitruvian Project Phoenix running on ${platform.name}!"
 }

@@ -2,8 +2,8 @@ package com.devil.phoenixproject.presentation.screen
 
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.ui.Alignment
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
@@ -12,8 +12,8 @@ import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.data.repository.ExerciseVideoEntity
 import com.devil.phoenixproject.domain.model.*
 import com.devil.phoenixproject.domain.usecase.RepRanges
-import com.devil.phoenixproject.presentation.components.AutoStopOverlay
 import com.devil.phoenixproject.presentation.components.AutoStartOverlay
+import com.devil.phoenixproject.presentation.components.AutoStopOverlay
 import com.devil.phoenixproject.presentation.components.EnhancedCablePositionBar
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
@@ -27,7 +27,7 @@ import kotlinx.coroutines.flow.flowOf
     showBackground = true,
     backgroundColor = 0xFF0F172A,
     widthDp = 400,
-    heightDp = 800
+    heightDp = 800,
 )
 @Composable
 private fun WorkoutTabActivePreview() {
@@ -35,12 +35,12 @@ private fun WorkoutTabActivePreview() {
         timestamp = System.currentTimeMillis(),
         loadA = 25f,
         loadB = 25f,
-        positionA = 450f,  // Left cable mid-pull (mm)
-        positionB = 520f,  // Right cable slightly higher (mm)
+        positionA = 450f, // Left cable mid-pull (mm)
+        positionB = 520f, // Right cable slightly higher (mm)
         velocityA = 120.0,
         velocityB = 115.0,
         ticks = 12345,
-        status = 0
+        status = 0,
     )
 
     val mockRepRanges = RepRanges(
@@ -51,7 +51,7 @@ private fun WorkoutTabActivePreview() {
         minRangeA = Pair(50f, 120f),
         maxRangeA = Pair(700f, 800f),
         minRangeB = Pair(55f, 115f),
-        maxRangeB = Pair(710f, 810f)
+        maxRangeB = Pair(710f, 810f),
     )
 
     val mockParameters = WorkoutParameters(
@@ -60,21 +60,21 @@ private fun WorkoutTabActivePreview() {
         reps = 12,
         warmupReps = 3,
         isJustLift = false,
-        stopAtTop = true
+        stopAtTop = true,
     )
 
     val mockRepCount = RepCount(
         warmupReps = 3,
         workingReps = 7,
         isWarmupComplete = true,
-        hasPendingRep = false
+        hasPendingRep = false,
     )
 
     MaterialTheme {
         WorkoutTab(
             connectionState = ConnectionState.Connected(
                 deviceName = "Vee_Preview",
-                deviceAddress = "00:11:22:33:44:55"
+                deviceAddress = "00:11:22:33:44:55",
             ),
             workoutState = WorkoutState.Active,
             currentMetric = mockMetric,
@@ -83,7 +83,7 @@ private fun WorkoutTabActivePreview() {
             repRanges = mockRepRanges,
             autoStopState = AutoStopUiState(isActive = false, secondsRemaining = 5, progress = 0f),
             weightUnit = WeightUnit.KG,
-            enableVideoPlayback = true,  // Show video placeholder
+            enableVideoPlayback = true, // Show video placeholder
             exerciseRepository = PreviewExerciseRepository(),
             isWorkoutSetupDialogVisible = false,
             hapticEvents = null,
@@ -91,8 +91,18 @@ private fun WorkoutTabActivePreview() {
             currentExerciseIndex = 0,
             autoplayEnabled = false,
             kgToDisplay = { kg, unit -> if (unit == WeightUnit.LB) kg * 2.205f else kg },
-            displayToKg = { display, unit -> if (unit == WeightUnit.LB) display / 2.205f else display },
-            formatWeight = { weight, unit -> "${weight.toInt()} ${if (unit == WeightUnit.LB) "lbs" else "kg"}" },
+            displayToKg = { display, unit ->
+                if (unit ==
+                    WeightUnit.LB
+                ) {
+                    display / 2.205f
+                } else {
+                    display
+                }
+            },
+            formatWeight = { weight, unit ->
+                "${weight.toInt()} ${if (unit == WeightUnit.LB) "lbs" else "kg"}"
+            },
             onScan = {},
             onCancelScan = {},
             onDisconnect = {},
@@ -107,7 +117,7 @@ private fun WorkoutTabActivePreview() {
             onShowWorkoutSetupDialog = {},
             onHideWorkoutSetupDialog = {},
             showConnectionCard = false,
-            showWorkoutSetupCard = false
+            showWorkoutSetupCard = false,
         )
     }
 }
@@ -120,7 +130,7 @@ private fun WorkoutTabActivePreview() {
     showBackground = true,
     backgroundColor = 0xFF1E293B,
     widthDp = 220,
-    heightDp = 400
+    heightDp = 400,
 )
 @Composable
 private fun EnhancedPositionBarsPreview() {
@@ -129,13 +139,13 @@ private fun EnhancedPositionBarsPreview() {
             modifier = Modifier
                 .fillMaxSize()
                 .padding(16.dp),
-            horizontalArrangement = Arrangement.SpaceEvenly
+            horizontalArrangement = Arrangement.SpaceEvenly,
         ) {
             // Concentric phase (lifting) - Green
             EnhancedCablePositionBar(
                 label = "L",
-                currentPosition = 600f,  // mm
-                velocity = 100.0,  // Positive = concentric
+                currentPosition = 600f, // mm
+                velocity = 100.0, // Positive = concentric
                 minPosition = 200f,
                 maxPosition = 800f,
                 ghostMin = 180f,
@@ -143,14 +153,14 @@ private fun EnhancedPositionBarsPreview() {
                 isActive = true,
                 modifier = Modifier
                     .width(40.dp)
-                    .fillMaxHeight()
+                    .fillMaxHeight(),
             )
 
             // Eccentric phase (lowering) - Orange
             EnhancedCablePositionBar(
                 label = "R",
-                currentPosition = 400f,  // mm
-                velocity = -100.0,  // Negative = eccentric
+                currentPosition = 400f, // mm
+                velocity = -100.0, // Negative = eccentric
                 minPosition = 200f,
                 maxPosition = 800f,
                 ghostMin = 180f,
@@ -158,31 +168,31 @@ private fun EnhancedPositionBarsPreview() {
                 isActive = true,
                 modifier = Modifier
                     .width(40.dp)
-                    .fillMaxHeight()
+                    .fillMaxHeight(),
             )
 
             // Static/holding - Blue
             EnhancedCablePositionBar(
                 label = "H",
-                currentPosition = 500f,  // mm
-                velocity = 0.0,  // Near zero = static
+                currentPosition = 500f, // mm
+                velocity = 0.0, // Near zero = static
                 minPosition = 200f,
                 maxPosition = 800f,
                 isActive = true,
                 modifier = Modifier
                     .width(40.dp)
-                    .fillMaxHeight()
+                    .fillMaxHeight(),
             )
 
             // Inactive - Grey
             EnhancedCablePositionBar(
                 label = "X",
-                currentPosition = 300f,  // mm
+                currentPosition = 300f, // mm
                 velocity = 0.0,
                 isActive = false,
                 modifier = Modifier
                     .width(40.dp)
-                    .fillMaxHeight()
+                    .fillMaxHeight(),
             )
         }
     }
@@ -196,7 +206,7 @@ private fun EnhancedPositionBarsPreview() {
     showBackground = true,
     backgroundColor = 0xFFF8FAFC,
     widthDp = 400,
-    heightDp = 600
+    heightDp = 600,
 )
 @Composable
 private fun WorkoutTabDisconnectedPreview() {
@@ -207,7 +217,7 @@ private fun WorkoutTabDisconnectedPreview() {
             currentMetric = null,
             workoutParameters = WorkoutParameters(
                 programMode = ProgramMode.OldSchool,
-                reps = 10
+                reps = 10,
             ),
             repCount = RepCount(),
             repRanges = null,
@@ -216,8 +226,18 @@ private fun WorkoutTabDisconnectedPreview() {
             enableVideoPlayback = false,
             exerciseRepository = PreviewExerciseRepository(),
             kgToDisplay = { kg, unit -> if (unit == WeightUnit.LB) kg * 2.205f else kg },
-            displayToKg = { display, unit -> if (unit == WeightUnit.LB) display / 2.205f else display },
-            formatWeight = { weight, unit -> "${weight.toInt()} ${if (unit == WeightUnit.LB) "lbs" else "kg"}" },
+            displayToKg = { display, unit ->
+                if (unit ==
+                    WeightUnit.LB
+                ) {
+                    display / 2.205f
+                } else {
+                    display
+                }
+            },
+            formatWeight = { weight, unit ->
+                "${weight.toInt()} ${if (unit == WeightUnit.LB) "lbs" else "kg"}"
+            },
             onScan = {},
             onCancelScan = {},
             onDisconnect = {},
@@ -226,7 +246,7 @@ private fun WorkoutTabDisconnectedPreview() {
             onSkipRest = {},
             onSkipCountdown = {},
             onResetForNewWorkout = {},
-            onUpdateParameters = {}
+            onUpdateParameters = {},
         )
     }
 }
@@ -239,7 +259,7 @@ private fun WorkoutTabDisconnectedPreview() {
     showBackground = true,
     backgroundColor = 0xFFF8FAFC,
     widthDp = 400,
-    heightDp = 600
+    heightDp = 600,
 )
 @Composable
 private fun WorkoutTabScanningPreview() {
@@ -250,7 +270,7 @@ private fun WorkoutTabScanningPreview() {
             currentMetric = null,
             workoutParameters = WorkoutParameters(
                 programMode = ProgramMode.OldSchool,
-                reps = 10
+                reps = 10,
             ),
             repCount = RepCount(),
             repRanges = null,
@@ -259,8 +279,18 @@ private fun WorkoutTabScanningPreview() {
             enableVideoPlayback = false,
             exerciseRepository = PreviewExerciseRepository(),
             kgToDisplay = { kg, unit -> if (unit == WeightUnit.LB) kg * 2.205f else kg },
-            displayToKg = { display, unit -> if (unit == WeightUnit.LB) display / 2.205f else display },
-            formatWeight = { weight, unit -> "${weight.toInt()} ${if (unit == WeightUnit.LB) "lbs" else "kg"}" },
+            displayToKg = { display, unit ->
+                if (unit ==
+                    WeightUnit.LB
+                ) {
+                    display / 2.205f
+                } else {
+                    display
+                }
+            },
+            formatWeight = { weight, unit ->
+                "${weight.toInt()} ${if (unit == WeightUnit.LB) "lbs" else "kg"}"
+            },
             onScan = {},
             onCancelScan = {},
             onDisconnect = {},
@@ -269,7 +299,7 @@ private fun WorkoutTabScanningPreview() {
             onSkipRest = {},
             onSkipCountdown = {},
             onResetForNewWorkout = {},
-            onUpdateParameters = {}
+            onUpdateParameters = {},
         )
     }
 }
@@ -282,7 +312,7 @@ private fun WorkoutTabScanningPreview() {
     showBackground = true,
     backgroundColor = 0xFFF8FAFC,
     widthDp = 400,
-    heightDp = 600
+    heightDp = 600,
 )
 @Composable
 private fun WorkoutTabConnectedIdlePreview() {
@@ -290,14 +320,14 @@ private fun WorkoutTabConnectedIdlePreview() {
         WorkoutTab(
             connectionState = ConnectionState.Connected(
                 deviceName = "Vee_Preview",
-                deviceAddress = "00:11:22:33:44:55"
+                deviceAddress = "00:11:22:33:44:55",
             ),
             workoutState = WorkoutState.Idle,
             currentMetric = null,
             workoutParameters = WorkoutParameters(
                 programMode = ProgramMode.OldSchool,
                 weightPerCableKg = 20f,
-                reps = 10
+                reps = 10,
             ),
             repCount = RepCount(),
             repRanges = null,
@@ -306,8 +336,18 @@ private fun WorkoutTabConnectedIdlePreview() {
             enableVideoPlayback = false,
             exerciseRepository = PreviewExerciseRepository(),
             kgToDisplay = { kg, unit -> if (unit == WeightUnit.LB) kg * 2.205f else kg },
-            displayToKg = { display, unit -> if (unit == WeightUnit.LB) display / 2.205f else display },
-            formatWeight = { weight, unit -> "${weight.toInt()} ${if (unit == WeightUnit.LB) "lbs" else "kg"}" },
+            displayToKg = { display, unit ->
+                if (unit ==
+                    WeightUnit.LB
+                ) {
+                    display / 2.205f
+                } else {
+                    display
+                }
+            },
+            formatWeight = { weight, unit ->
+                "${weight.toInt()} ${if (unit == WeightUnit.LB) "lbs" else "kg"}"
+            },
             onScan = {},
             onCancelScan = {},
             onDisconnect = {},
@@ -317,7 +357,7 @@ private fun WorkoutTabConnectedIdlePreview() {
             onSkipCountdown = {},
             onResetForNewWorkout = {},
             onUpdateParameters = {},
-            onShowWorkoutSetupDialog = {}
+            onShowWorkoutSetupDialog = {},
         )
     }
 }
@@ -330,7 +370,7 @@ private fun WorkoutTabConnectedIdlePreview() {
     showBackground = true,
     backgroundColor = 0xFF0F172A,
     widthDp = 400,
-    heightDp = 800
+    heightDp = 800,
 )
 @Composable
 private fun WorkoutTabCountdownPreview() {
@@ -339,14 +379,14 @@ private fun WorkoutTabCountdownPreview() {
         weightPerCableKg = 30f,
         reps = 15,
         warmupReps = 3,
-        isJustLift = false
+        isJustLift = false,
     )
 
     MaterialTheme {
         WorkoutTab(
             connectionState = ConnectionState.Connected(
                 deviceName = "Vee_Preview",
-                deviceAddress = "00:11:22:33:44:55"
+                deviceAddress = "00:11:22:33:44:55",
             ),
             workoutState = WorkoutState.Countdown(secondsRemaining = 5),
             currentMetric = null,
@@ -367,20 +407,30 @@ private fun WorkoutTabCountdownPreview() {
                             name = "Bench Press",
                             muscleGroup = "Chest",
                             equipment = "Vitruvian",
-                            id = "bench-press"
+                            id = "bench-press",
                         ),
                         orderIndex = 0,
                         weightPerCableKg = 30f,
                         setReps = listOf(12, 12, 12),
                         setWeightsPerCableKg = listOf(30f, 30f, 30f),
-                        programMode = ProgramMode.Pump
-                    )
-                )
+                        programMode = ProgramMode.Pump,
+                    ),
+                ),
             ),
             currentExerciseIndex = 0,
             kgToDisplay = { kg, unit -> if (unit == WeightUnit.LB) kg * 2.205f else kg },
-            displayToKg = { display, unit -> if (unit == WeightUnit.LB) display / 2.205f else display },
-            formatWeight = { weight, unit -> "${weight.toInt()} ${if (unit == WeightUnit.LB) "lbs" else "kg"}" },
+            displayToKg = { display, unit ->
+                if (unit ==
+                    WeightUnit.LB
+                ) {
+                    display / 2.205f
+                } else {
+                    display
+                }
+            },
+            formatWeight = { weight, unit ->
+                "${weight.toInt()} ${if (unit == WeightUnit.LB) "lbs" else "kg"}"
+            },
             onScan = {},
             onCancelScan = {},
             onDisconnect = {},
@@ -391,7 +441,7 @@ private fun WorkoutTabCountdownPreview() {
             onResetForNewWorkout = {},
             onUpdateParameters = {},
             showConnectionCard = false,
-            showWorkoutSetupCard = false
+            showWorkoutSetupCard = false,
         )
     }
 }
@@ -404,7 +454,7 @@ private fun WorkoutTabCountdownPreview() {
     showBackground = true,
     backgroundColor = 0xFF0F172A,
     widthDp = 400,
-    heightDp = 800
+    heightDp = 800,
 )
 @Composable
 private fun WorkoutTabRestingPreview() {
@@ -412,28 +462,28 @@ private fun WorkoutTabRestingPreview() {
         programMode = ProgramMode.OldSchool,
         weightPerCableKg = 25f,
         reps = 12,
-        warmupReps = 3
+        warmupReps = 3,
     )
 
     MaterialTheme {
         WorkoutTab(
             connectionState = ConnectionState.Connected(
                 deviceName = "Vee_Preview",
-                deviceAddress = "00:11:22:33:44:55"
+                deviceAddress = "00:11:22:33:44:55",
             ),
             workoutState = WorkoutState.Resting(
                 restSecondsRemaining = 45,
                 nextExerciseName = "Bicep Curls",
                 isLastExercise = false,
                 currentSet = 2,
-                totalSets = 4
+                totalSets = 4,
             ),
             currentMetric = null,
             workoutParameters = mockParameters,
             repCount = RepCount(
                 warmupReps = 3,
                 workingReps = 12,
-                isWarmupComplete = true
+                isWarmupComplete = true,
             ),
             repRanges = null,
             autoStopState = AutoStopUiState(isActive = false, secondsRemaining = 5, progress = 0f),
@@ -441,8 +491,18 @@ private fun WorkoutTabRestingPreview() {
             enableVideoPlayback = false,
             exerciseRepository = PreviewExerciseRepository(),
             kgToDisplay = { kg, unit -> if (unit == WeightUnit.LB) kg * 2.205f else kg },
-            displayToKg = { display, unit -> if (unit == WeightUnit.LB) display / 2.205f else display },
-            formatWeight = { weight, unit -> "${weight.toInt()} ${if (unit == WeightUnit.LB) "lbs" else "kg"}" },
+            displayToKg = { display, unit ->
+                if (unit ==
+                    WeightUnit.LB
+                ) {
+                    display / 2.205f
+                } else {
+                    display
+                }
+            },
+            formatWeight = { weight, unit ->
+                "${weight.toInt()} ${if (unit == WeightUnit.LB) "lbs" else "kg"}"
+            },
             onScan = {},
             onCancelScan = {},
             onDisconnect = {},
@@ -453,7 +513,7 @@ private fun WorkoutTabRestingPreview() {
             onResetForNewWorkout = {},
             onUpdateParameters = {},
             showConnectionCard = false,
-            showWorkoutSetupCard = false
+            showWorkoutSetupCard = false,
         )
     }
 }
@@ -467,14 +527,14 @@ private fun WorkoutTabRestingPreview() {
     showBackground = true,
     backgroundColor = 0xFFF8FAFC,
     widthDp = 400,
-    heightDp = 800
+    heightDp = 800,
 )
 @Composable
 private fun WorkoutTabSetSummaryPreview() {
     val mockParameters = WorkoutParameters(
         programMode = ProgramMode.OldSchool,
         weightPerCableKg = 25f,
-        reps = 12
+        reps = 12,
     )
 
     val mockMetrics = listOf(
@@ -483,23 +543,23 @@ private fun WorkoutTabSetSummaryPreview() {
             loadA = 25f, loadB = 25f,
             positionA = 500f, positionB = 500f,
             velocityA = 100.0, velocityB = 100.0,
-            ticks = 1000, status = 0
-        )
+            ticks = 1000, status = 0,
+        ),
     )
 
     MaterialTheme {
         WorkoutTab(
             connectionState = ConnectionState.Connected(
                 deviceName = "Vee_Preview",
-                deviceAddress = "00:11:22:33:44:55"
+                deviceAddress = "00:11:22:33:44:55",
             ),
             workoutState = WorkoutState.SetSummary(
                 metrics = mockMetrics,
-                peakPower = 450f,
-                averagePower = 320f,
+                peakLoadKgPerCable = 27.5f,
+                avgLoadKgPerCable = 25.0f,
                 repCount = 12,
-                durationMs = 95000L,  // 1:35
-                totalVolumeKg = 600f,  // 12 reps * 25kg * 2 cables
+                durationMs = 95000L, // 1:35
+                totalVolumeKg = 600f, // 12 reps * 25kg * 2 cables
                 heaviestLiftKgPerCable = 27.5f,
                 peakForceConcentricA = 28.5f,
                 peakForceConcentricB = 27.8f,
@@ -509,14 +569,14 @@ private fun WorkoutTabSetSummaryPreview() {
                 avgForceConcentricB = 24.8f,
                 avgForceEccentricA = 24.5f,
                 avgForceEccentricB = 24.2f,
-                estimatedCalories = 18.5f
+                estimatedCalories = 18.5f,
             ),
             currentMetric = null,
             workoutParameters = mockParameters,
             repCount = RepCount(
                 warmupReps = 3,
                 workingReps = 12,
-                isWarmupComplete = true
+                isWarmupComplete = true,
             ),
             repRanges = null,
             autoStopState = AutoStopUiState(isActive = false, secondsRemaining = 5, progress = 0f),
@@ -525,8 +585,18 @@ private fun WorkoutTabSetSummaryPreview() {
             exerciseRepository = PreviewExerciseRepository(),
             autoplayEnabled = false,
             kgToDisplay = { kg, unit -> if (unit == WeightUnit.LB) kg * 2.205f else kg },
-            displayToKg = { display, unit -> if (unit == WeightUnit.LB) display / 2.205f else display },
-            formatWeight = { weight, unit -> "${weight.toInt()} ${if (unit == WeightUnit.LB) "lbs" else "kg"}" },
+            displayToKg = { display, unit ->
+                if (unit ==
+                    WeightUnit.LB
+                ) {
+                    display / 2.205f
+                } else {
+                    display
+                }
+            },
+            formatWeight = { weight, unit ->
+                "${weight.toInt()} ${if (unit == WeightUnit.LB) "lbs" else "kg"}"
+            },
             onScan = {},
             onCancelScan = {},
             onDisconnect = {},
@@ -538,7 +608,7 @@ private fun WorkoutTabSetSummaryPreview() {
             onResetForNewWorkout = {},
             onUpdateParameters = {},
             showConnectionCard = false,
-            showWorkoutSetupCard = false
+            showWorkoutSetupCard = false,
         )
     }
 }
@@ -551,28 +621,28 @@ private fun WorkoutTabSetSummaryPreview() {
     showBackground = true,
     backgroundColor = 0xFFF8FAFC,
     widthDp = 400,
-    heightDp = 800
+    heightDp = 800,
 )
 @Composable
 private fun WorkoutTabSetSummaryAutoplayPreview() {
     val mockParameters = WorkoutParameters(
         programMode = ProgramMode.Pump,
         weightPerCableKg = 20f,
-        reps = 15
+        reps = 15,
     )
 
     MaterialTheme {
         WorkoutTab(
             connectionState = ConnectionState.Connected(
                 deviceName = "Vee_Preview",
-                deviceAddress = "00:11:22:33:44:55"
+                deviceAddress = "00:11:22:33:44:55",
             ),
             workoutState = WorkoutState.SetSummary(
                 metrics = emptyList(),
-                peakPower = 380f,
-                averagePower = 280f,
+                peakLoadKgPerCable = 22.0f,
+                avgLoadKgPerCable = 20.0f,
                 repCount = 15,
-                durationMs = 120000L,  // 2:00
+                durationMs = 120000L, // 2:00
                 totalVolumeKg = 600f,
                 heaviestLiftKgPerCable = 22.0f,
                 peakForceConcentricA = 23.5f,
@@ -583,20 +653,30 @@ private fun WorkoutTabSetSummaryAutoplayPreview() {
                 avgForceConcentricB = 19.8f,
                 avgForceEccentricA = 19.5f,
                 avgForceEccentricB = 19.2f,
-                estimatedCalories = 24.0f
+                estimatedCalories = 24.0f,
             ),
             currentMetric = null,
             workoutParameters = mockParameters,
             repCount = RepCount(workingReps = 15, isWarmupComplete = true),
             repRanges = null,
             autoStopState = AutoStopUiState(isActive = false, secondsRemaining = 5, progress = 0f),
-            weightUnit = WeightUnit.LB,  // Test with pounds
+            weightUnit = WeightUnit.LB, // Test with pounds
             enableVideoPlayback = false,
             exerciseRepository = PreviewExerciseRepository(),
-            autoplayEnabled = true,  // Autoplay enabled - shows countdown
+            autoplayEnabled = true, // Autoplay enabled - shows countdown
             kgToDisplay = { kg, unit -> if (unit == WeightUnit.LB) kg * 2.205f else kg },
-            displayToKg = { display, unit -> if (unit == WeightUnit.LB) display / 2.205f else display },
-            formatWeight = { weight, unit -> "${weight.toInt()} ${if (unit == WeightUnit.LB) "lbs" else "kg"}" },
+            displayToKg = { display, unit ->
+                if (unit ==
+                    WeightUnit.LB
+                ) {
+                    display / 2.205f
+                } else {
+                    display
+                }
+            },
+            formatWeight = { weight, unit ->
+                "${weight.toInt()} ${if (unit == WeightUnit.LB) "lbs" else "kg"}"
+            },
             onScan = {},
             onCancelScan = {},
             onDisconnect = {},
@@ -608,7 +688,7 @@ private fun WorkoutTabSetSummaryAutoplayPreview() {
             onResetForNewWorkout = {},
             onUpdateParameters = {},
             showConnectionCard = false,
-            showWorkoutSetupCard = false
+            showWorkoutSetupCard = false,
         )
     }
 }
@@ -621,7 +701,7 @@ private fun WorkoutTabSetSummaryAutoplayPreview() {
     showBackground = true,
     backgroundColor = 0xFFF8FAFC,
     widthDp = 400,
-    heightDp = 600
+    heightDp = 600,
 )
 @Composable
 private fun WorkoutTabCompletedPreview() {
@@ -629,19 +709,19 @@ private fun WorkoutTabCompletedPreview() {
         WorkoutTab(
             connectionState = ConnectionState.Connected(
                 deviceName = "Vee_Preview",
-                deviceAddress = "00:11:22:33:44:55"
+                deviceAddress = "00:11:22:33:44:55",
             ),
             workoutState = WorkoutState.Completed,
             currentMetric = null,
             workoutParameters = WorkoutParameters(
                 programMode = ProgramMode.OldSchool,
                 weightPerCableKg = 25f,
-                reps = 12
+                reps = 12,
             ),
             repCount = RepCount(
                 warmupReps = 3,
                 workingReps = 12,
-                isWarmupComplete = true
+                isWarmupComplete = true,
             ),
             repRanges = null,
             autoStopState = AutoStopUiState(isActive = false, secondsRemaining = 5, progress = 0f),
@@ -649,8 +729,18 @@ private fun WorkoutTabCompletedPreview() {
             enableVideoPlayback = false,
             exerciseRepository = PreviewExerciseRepository(),
             kgToDisplay = { kg, unit -> if (unit == WeightUnit.LB) kg * 2.205f else kg },
-            displayToKg = { display, unit -> if (unit == WeightUnit.LB) display / 2.205f else display },
-            formatWeight = { weight, unit -> "${weight.toInt()} ${if (unit == WeightUnit.LB) "lbs" else "kg"}" },
+            displayToKg = { display, unit ->
+                if (unit ==
+                    WeightUnit.LB
+                ) {
+                    display / 2.205f
+                } else {
+                    display
+                }
+            },
+            formatWeight = { weight, unit ->
+                "${weight.toInt()} ${if (unit == WeightUnit.LB) "lbs" else "kg"}"
+            },
             onScan = {},
             onCancelScan = {},
             onDisconnect = {},
@@ -659,7 +749,7 @@ private fun WorkoutTabCompletedPreview() {
             onSkipRest = {},
             onSkipCountdown = {},
             onResetForNewWorkout = {},
-            onUpdateParameters = {}
+            onUpdateParameters = {},
         )
     }
 }
@@ -672,7 +762,7 @@ private fun WorkoutTabCompletedPreview() {
     showBackground = true,
     backgroundColor = 0xFFF8FAFC,
     widthDp = 400,
-    heightDp = 700
+    heightDp = 700,
 )
 @Composable
 private fun WorkoutTabCompletedWithNextExercisePreview() {
@@ -686,13 +776,13 @@ private fun WorkoutTabCompletedWithNextExercisePreview() {
                     name = "Bench Press",
                     muscleGroup = "Chest",
                     equipment = "Vitruvian",
-                    id = "bench-press"
+                    id = "bench-press",
                 ),
                 orderIndex = 0,
                 weightPerCableKg = 30f,
                 setReps = listOf(12, 12, 12),
                 setWeightsPerCableKg = listOf(30f, 30f, 30f),
-                programMode = ProgramMode.OldSchool
+                programMode = ProgramMode.OldSchool,
             ),
             RoutineExercise(
                 id = "re-2",
@@ -700,34 +790,34 @@ private fun WorkoutTabCompletedWithNextExercisePreview() {
                     name = "Bent Over Rows",
                     muscleGroup = "Back",
                     equipment = "Vitruvian",
-                    id = "rows"
+                    id = "rows",
                 ),
                 orderIndex = 1,
                 weightPerCableKg = 25f,
                 setReps = listOf(10, 10, 10),
                 setWeightsPerCableKg = listOf(25f, 25f, 25f),
-                programMode = ProgramMode.OldSchool
-            )
-        )
+                programMode = ProgramMode.OldSchool,
+            ),
+        ),
     )
 
     MaterialTheme {
         WorkoutTab(
             connectionState = ConnectionState.Connected(
                 deviceName = "Vee_Preview",
-                deviceAddress = "00:11:22:33:44:55"
+                deviceAddress = "00:11:22:33:44:55",
             ),
             workoutState = WorkoutState.Completed,
             currentMetric = null,
             workoutParameters = WorkoutParameters(
                 programMode = ProgramMode.OldSchool,
                 weightPerCableKg = 30f,
-                reps = 12
+                reps = 12,
             ),
             repCount = RepCount(
                 warmupReps = 3,
                 workingReps = 12,
-                isWarmupComplete = true
+                isWarmupComplete = true,
             ),
             repRanges = null,
             autoStopState = AutoStopUiState(isActive = false, secondsRemaining = 5, progress = 0f),
@@ -735,10 +825,20 @@ private fun WorkoutTabCompletedWithNextExercisePreview() {
             enableVideoPlayback = false,
             exerciseRepository = PreviewExerciseRepository(),
             loadedRoutine = mockRoutine,
-            currentExerciseIndex = 0,  // First exercise done, second waiting
+            currentExerciseIndex = 0, // First exercise done, second waiting
             kgToDisplay = { kg, unit -> if (unit == WeightUnit.LB) kg * 2.205f else kg },
-            displayToKg = { display, unit -> if (unit == WeightUnit.LB) display / 2.205f else display },
-            formatWeight = { weight, unit -> "${weight.toInt()} ${if (unit == WeightUnit.LB) "lbs" else "kg"}" },
+            displayToKg = { display, unit ->
+                if (unit ==
+                    WeightUnit.LB
+                ) {
+                    display / 2.205f
+                } else {
+                    display
+                }
+            },
+            formatWeight = { weight, unit ->
+                "${weight.toInt()} ${if (unit == WeightUnit.LB) "lbs" else "kg"}"
+            },
             onScan = {},
             onCancelScan = {},
             onDisconnect = {},
@@ -748,7 +848,7 @@ private fun WorkoutTabCompletedWithNextExercisePreview() {
             onSkipCountdown = {},
             onResetForNewWorkout = {},
             onStartNextExercise = {},
-            onUpdateParameters = {}
+            onUpdateParameters = {},
         )
     }
 }
@@ -761,7 +861,7 @@ private fun WorkoutTabCompletedWithNextExercisePreview() {
     showBackground = true,
     backgroundColor = 0xFFF8FAFC,
     widthDp = 400,
-    heightDp = 600
+    heightDp = 600,
 )
 @Composable
 private fun WorkoutTabErrorPreview() {
@@ -769,13 +869,13 @@ private fun WorkoutTabErrorPreview() {
         WorkoutTab(
             connectionState = ConnectionState.Connected(
                 deviceName = "Vee_Preview",
-                deviceAddress = "00:11:22:33:44:55"
+                deviceAddress = "00:11:22:33:44:55",
             ),
             workoutState = WorkoutState.Error("Failed to start workout: Device not responding"),
             currentMetric = null,
             workoutParameters = WorkoutParameters(
                 programMode = ProgramMode.OldSchool,
-                reps = 10
+                reps = 10,
             ),
             repCount = RepCount(),
             repRanges = null,
@@ -784,8 +884,18 @@ private fun WorkoutTabErrorPreview() {
             enableVideoPlayback = false,
             exerciseRepository = PreviewExerciseRepository(),
             kgToDisplay = { kg, unit -> if (unit == WeightUnit.LB) kg * 2.205f else kg },
-            displayToKg = { display, unit -> if (unit == WeightUnit.LB) display / 2.205f else display },
-            formatWeight = { weight, unit -> "${weight.toInt()} ${if (unit == WeightUnit.LB) "lbs" else "kg"}" },
+            displayToKg = { display, unit ->
+                if (unit ==
+                    WeightUnit.LB
+                ) {
+                    display / 2.205f
+                } else {
+                    display
+                }
+            },
+            formatWeight = { weight, unit ->
+                "${weight.toInt()} ${if (unit == WeightUnit.LB) "lbs" else "kg"}"
+            },
             onScan = {},
             onCancelScan = {},
             onDisconnect = {},
@@ -794,7 +904,7 @@ private fun WorkoutTabErrorPreview() {
             onSkipRest = {},
             onSkipCountdown = {},
             onResetForNewWorkout = {},
-            onUpdateParameters = {}
+            onUpdateParameters = {},
         )
     }
 }
@@ -807,7 +917,7 @@ private fun WorkoutTabErrorPreview() {
     showBackground = true,
     backgroundColor = 0xFF0F172A,
     widthDp = 400,
-    heightDp = 800
+    heightDp = 800,
 )
 @Composable
 private fun WorkoutTabJustLiftAutoStopPreview() {
@@ -815,26 +925,26 @@ private fun WorkoutTabJustLiftAutoStopPreview() {
         timestamp = System.currentTimeMillis(),
         loadA = 20f,
         loadB = 20f,
-        positionA = 50f,  // Cables near bottom (user let go)
+        positionA = 50f, // Cables near bottom (user let go)
         positionB = 45f,
         velocityA = 0.0,
         velocityB = 0.0,
         ticks = 5000,
-        status = 0
+        status = 0,
     )
 
     val mockParameters = WorkoutParameters(
         programMode = ProgramMode.OldSchool,
         weightPerCableKg = 20f,
         reps = 0,
-        isJustLift = true
+        isJustLift = true,
     )
 
     MaterialTheme {
         WorkoutTab(
             connectionState = ConnectionState.Connected(
                 deviceName = "Vee_Preview",
-                deviceAddress = "00:11:22:33:44:55"
+                deviceAddress = "00:11:22:33:44:55",
             ),
             workoutState = WorkoutState.Active,
             currentMetric = mockMetric,
@@ -842,20 +952,30 @@ private fun WorkoutTabJustLiftAutoStopPreview() {
             repCount = RepCount(
                 warmupReps = 0,
                 workingReps = 8,
-                isWarmupComplete = true
+                isWarmupComplete = true,
             ),
             repRanges = null,
             autoStopState = AutoStopUiState(
                 isActive = true,
                 secondsRemaining = 3,
-                progress = 0.4f
+                progress = 0.4f,
             ),
             weightUnit = WeightUnit.KG,
             enableVideoPlayback = false,
             exerciseRepository = PreviewExerciseRepository(),
             kgToDisplay = { kg, unit -> if (unit == WeightUnit.LB) kg * 2.205f else kg },
-            displayToKg = { display, unit -> if (unit == WeightUnit.LB) display / 2.205f else display },
-            formatWeight = { weight, unit -> "${weight.toInt()} ${if (unit == WeightUnit.LB) "lbs" else "kg"}" },
+            displayToKg = { display, unit ->
+                if (unit ==
+                    WeightUnit.LB
+                ) {
+                    display / 2.205f
+                } else {
+                    display
+                }
+            },
+            formatWeight = { weight, unit ->
+                "${weight.toInt()} ${if (unit == WeightUnit.LB) "lbs" else "kg"}"
+            },
             onScan = {},
             onCancelScan = {},
             onDisconnect = {},
@@ -866,7 +986,7 @@ private fun WorkoutTabJustLiftAutoStopPreview() {
             onResetForNewWorkout = {},
             onUpdateParameters = {},
             showConnectionCard = false,
-            showWorkoutSetupCard = false
+            showWorkoutSetupCard = false,
         )
     }
 }
@@ -879,7 +999,7 @@ private fun WorkoutTabJustLiftAutoStopPreview() {
     showBackground = true,
     backgroundColor = 0xFF0F172A,
     widthDp = 400,
-    heightDp = 800
+    heightDp = 800,
 )
 @Composable
 private fun WorkoutTabWarmupPreview() {
@@ -892,7 +1012,7 @@ private fun WorkoutTabWarmupPreview() {
         velocityA = 80.0,
         velocityB = 85.0,
         ticks = 2000,
-        status = 0
+        status = 0,
     )
 
     val mockParameters = WorkoutParameters(
@@ -900,14 +1020,14 @@ private fun WorkoutTabWarmupPreview() {
         weightPerCableKg = 25f,
         reps = 12,
         warmupReps = 3,
-        isJustLift = false
+        isJustLift = false,
     )
 
     MaterialTheme {
         WorkoutTab(
             connectionState = ConnectionState.Connected(
                 deviceName = "Vee_Preview",
-                deviceAddress = "00:11:22:33:44:55"
+                deviceAddress = "00:11:22:33:44:55",
             ),
             workoutState = WorkoutState.Active,
             currentMetric = mockMetric,
@@ -915,22 +1035,36 @@ private fun WorkoutTabWarmupPreview() {
             repCount = RepCount(
                 warmupReps = 2,
                 workingReps = 0,
-                isWarmupComplete = false,  // Still in warmup
-                hasPendingRep = false
+                isWarmupComplete = false, // Still in warmup
+                hasPendingRep = false,
             ),
             repRanges = RepRanges(
-                minPosA = 80f, maxPosA = 750f,
-                minPosB = 85f, maxPosB = 760f,
-                minRangeA = Pair(50f, 120f), maxRangeA = Pair(700f, 800f),
-                minRangeB = Pair(55f, 115f), maxRangeB = Pair(710f, 810f)
+                minPosA = 80f,
+                maxPosA = 750f,
+                minPosB = 85f,
+                maxPosB = 760f,
+                minRangeA = Pair(50f, 120f),
+                maxRangeA = Pair(700f, 800f),
+                minRangeB = Pair(55f, 115f),
+                maxRangeB = Pair(710f, 810f),
             ),
             autoStopState = AutoStopUiState(isActive = false, secondsRemaining = 5, progress = 0f),
             weightUnit = WeightUnit.KG,
             enableVideoPlayback = false,
             exerciseRepository = PreviewExerciseRepository(),
             kgToDisplay = { kg, unit -> if (unit == WeightUnit.LB) kg * 2.205f else kg },
-            displayToKg = { display, unit -> if (unit == WeightUnit.LB) display / 2.205f else display },
-            formatWeight = { weight, unit -> "${weight.toInt()} ${if (unit == WeightUnit.LB) "lbs" else "kg"}" },
+            displayToKg = { display, unit ->
+                if (unit ==
+                    WeightUnit.LB
+                ) {
+                    display / 2.205f
+                } else {
+                    display
+                }
+            },
+            formatWeight = { weight, unit ->
+                "${weight.toInt()} ${if (unit == WeightUnit.LB) "lbs" else "kg"}"
+            },
             onScan = {},
             onCancelScan = {},
             onDisconnect = {},
@@ -941,7 +1075,7 @@ private fun WorkoutTabWarmupPreview() {
             onResetForNewWorkout = {},
             onUpdateParameters = {},
             showConnectionCard = false,
-            showWorkoutSetupCard = false
+            showWorkoutSetupCard = false,
         )
     }
 }
@@ -961,11 +1095,13 @@ private class PreviewExerciseRepository : ExerciseRepository {
     override suspend fun importExercises(): Result<Unit> = Result.success(Unit)
     override suspend fun isExerciseLibraryEmpty(): Boolean = true
     override suspend fun updateFromGitHub(): Result<Int> = Result.success(0)
+
     // Custom exercise methods
     override fun getCustomExercises(): Flow<List<Exercise>> = flowOf(emptyList())
     override suspend fun createCustomExercise(exercise: Exercise): Result<Exercise> = Result.success(exercise.copy(id = "preview_custom"))
     override suspend fun updateCustomExercise(exercise: Exercise): Result<Exercise> = Result.success(exercise)
     override suspend fun deleteCustomExercise(exerciseId: String): Result<Unit> = Result.success(Unit)
+
     // One Rep Max methods
     override suspend fun updateOneRepMax(exerciseId: String, oneRepMaxKg: Float?) {}
     override fun getExercisesWithOneRepMax(): Flow<List<Exercise>> = flowOf(emptyList())
@@ -986,22 +1122,22 @@ private class PreviewExerciseRepository : ExerciseRepository {
     showBackground = true,
     backgroundColor = 0xFF0F172A,
     widthDp = 320,
-    heightDp = 300
+    heightDp = 300,
 )
 @Composable
 private fun AutoStopOverlayJustLiftPreview() {
     MaterialTheme {
         Box(
             modifier = Modifier.fillMaxSize(),
-            contentAlignment = Alignment.Center
+            contentAlignment = Alignment.Center,
         ) {
             AutoStopOverlay(
                 autoStopState = AutoStopUiState(
                     isActive = true,
                     secondsRemaining = 3,
-                    progress = 0.4f
+                    progress = 0.4f,
                 ),
-                isJustLift = true
+                isJustLift = true,
             )
         }
     }
@@ -1015,22 +1151,22 @@ private fun AutoStopOverlayJustLiftPreview() {
     showBackground = true,
     backgroundColor = 0xFF0F172A,
     widthDp = 320,
-    heightDp = 300
+    heightDp = 300,
 )
 @Composable
 private fun AutoStopOverlayRegularPreview() {
     MaterialTheme {
         Box(
             modifier = Modifier.fillMaxSize(),
-            contentAlignment = Alignment.Center
+            contentAlignment = Alignment.Center,
         ) {
             AutoStopOverlay(
                 autoStopState = AutoStopUiState(
                     isActive = true,
                     secondsRemaining = 2,
-                    progress = 0.6f
+                    progress = 0.6f,
                 ),
-                isJustLift = false
+                isJustLift = false,
             )
         }
     }
@@ -1044,18 +1180,18 @@ private fun AutoStopOverlayRegularPreview() {
     showBackground = true,
     backgroundColor = 0xFF0F172A,
     widthDp = 320,
-    heightDp = 300
+    heightDp = 300,
 )
 @Composable
 private fun AutoStartOverlayPreview() {
     MaterialTheme {
         Box(
             modifier = Modifier.fillMaxSize(),
-            contentAlignment = Alignment.Center
+            contentAlignment = Alignment.Center,
         ) {
             AutoStartOverlay(
                 isActive = true,
-                secondsRemaining = 3
+                secondsRemaining = 3,
             )
         }
     }

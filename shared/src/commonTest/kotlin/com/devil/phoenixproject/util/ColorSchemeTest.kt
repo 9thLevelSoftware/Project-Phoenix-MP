@@ -96,8 +96,8 @@ class ColorSchemeTest {
             colors = listOf(
                 RGBColor(255, 0, 0),
                 RGBColor(0, 255, 0),
-                RGBColor(0, 0, 255)
-            )
+                RGBColor(0, 0, 255),
+            ),
         )
 
         assertEquals("Test", scheme.name)
@@ -170,7 +170,11 @@ class ColorSchemeTest {
     @Test
     fun `all predefined schemes have 0_4 brightness`() {
         for (scheme in ColorSchemes.ALL) {
-            assertEquals(0.4f, scheme.brightness, "Scheme ${scheme.name} should have 0.4 brightness")
+            assertEquals(
+                0.4f,
+                scheme.brightness,
+                "Scheme ${scheme.name} should have 0.4 brightness",
+            )
         }
     }
 

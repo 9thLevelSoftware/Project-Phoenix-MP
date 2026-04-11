@@ -1,31 +1,60 @@
 package com.devil.phoenixproject.presentation.manager
 
 import co.touchlab.kermit.Logger
+import com.devil.phoenixproject.data.integration.ExternalActivityRepository
+import com.devil.phoenixproject.data.integration.HealthIntegration
 import com.devil.phoenixproject.data.preferences.PreferencesManager
 import com.devil.phoenixproject.data.repository.AutoStopUiState
+import com.devil.phoenixproject.data.repository.BiomechanicsRepository
 import com.devil.phoenixproject.data.repository.BleRepository
+import com.devil.phoenixproject.data.repository.CompletedSetRepository
 import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.data.repository.HandleState
 import com.devil.phoenixproject.data.repository.PersonalRecordRepository
+import com.devil.phoenixproject.data.repository.RepMetricRepository
 import com.devil.phoenixproject.data.repository.RepNotification
-import com.devil.phoenixproject.data.repository.CompletedSetRepository
 import com.devil.phoenixproject.data.repository.TrainingCycleRepository
+import com.devil.phoenixproject.data.repository.UserProfileRepository
 import com.devil.phoenixproject.data.repository.WorkoutRepository
 import com.devil.phoenixproject.data.sync.SyncTriggerManager
-import com.devil.phoenixproject.domain.model.*
+import com.devil.phoenixproject.domain.model.CompletedSet
+import com.devil.phoenixproject.domain.model.ConnectionStatus
+import com.devil.phoenixproject.domain.model.HapticEvent
+import com.devil.phoenixproject.domain.model.IntegrationProvider
+import com.devil.phoenixproject.domain.model.ProgramMode
+import com.devil.phoenixproject.domain.model.RepCount
+import com.devil.phoenixproject.domain.model.RepCountTiming
+import com.devil.phoenixproject.domain.model.RepMetricData
+import com.devil.phoenixproject.domain.model.RepType
+import com.devil.phoenixproject.domain.model.Routine
+import com.devil.phoenixproject.domain.model.RoutineExercise
+import com.devil.phoenixproject.domain.model.RoutineFlowState
+import com.devil.phoenixproject.domain.model.SetType
+import com.devil.phoenixproject.domain.model.WorkoutMetric
+import com.devil.phoenixproject.domain.model.WorkoutParameters
+import com.devil.phoenixproject.domain.model.WorkoutSession
+import com.devil.phoenixproject.domain.model.WorkoutState
+import com.devil.phoenixproject.domain.model.currentTimeMillis
+import com.devil.phoenixproject.domain.model.elapsedRealtimeMillis
+import com.devil.phoenixproject.domain.model.generateUUID
+import com.devil.phoenixproject.domain.replay.RepBoundaryDetector
 import com.devil.phoenixproject.domain.usecase.RepCounterFromMachine
+import com.devil.phoenixproject.getPlatform
 import com.devil.phoenixproject.util.BlePacketFactory
 import com.devil.phoenixproject.util.Constants
+import com.devil.phoenixproject.util.DataBackupManager
 import com.devil.phoenixproject.util.KmpUtils
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.isActive
-import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import kotlin.math.ceil
+import kotlin.coroutines.cancellation.CancellationException
+import kotlin.coroutines.coroutineContext
 
 /**
  * Handles all workout lifecycle logic: start/stop, rep processing, auto-stop,
@@ -53,8 +82,16 @@ class ActiveSessionEngine(
     private val trainingCycleRepository: TrainingCycleRepository,
     private val completedSetRepository: CompletedSetRepository,
     private val syncTriggerManager: SyncTriggerManager?,
+    private val repMetricRepository: RepMetricRepository,
+    private val biomechanicsRepository: BiomechanicsRepository,
     private val settingsManager: SettingsManager,
-    private val scope: CoroutineScope
+    private val userProfileRepository: UserProfileRepository,
+    private val scope: CoroutineScope,
+    private val detectionManager: ExerciseDetectionManager? = null,
+    private val dataBackupManager: DataBackupManager? = null,
+    private val healthIntegration: HealthIntegration? = null,
+    private val externalActivityRepository: ExternalActivityRepository? = null,
+    private val elapsedRealtimeProvider: () -> Long = ::elapsedRealtimeMillis,
 ) {
 
     /**
@@ -64,28 +101,45 @@ class ActiveSessionEngine(
     interface WorkoutFlowDelegate {
         /** Load a routine by object (delegates to RoutineFlowManager) */
         fun loadRoutine(routine: Routine)
+
         /** Enter SetReady screen for a specific exercise/set */
         fun enterSetReady(exerciseIndex: Int, setIndex: Int)
+
+        /** Enter SetReady screen with recovery-adjusted weight/reps */
+        fun enterSetReadyWithAdjustments(exerciseIndex: Int, setIndex: Int, adjustedWeight: Float, adjustedReps: Int)
+
         /** Skip the current exercise and move to the next available routine step in SetReady */
         fun skipCurrentExerciseAndEnterNextStep(): Boolean
+
         /** Show routine complete screen */
         fun showRoutineComplete()
+
         /** Get current exercise from loaded routine */
         fun getCurrentExercise(): RoutineExercise?
+
         /** Get next step in routine navigation */
         fun getNextStep(routine: Routine, exerciseIndex: Int, setIndex: Int): Pair<Int, Int>?
+
         /** Check if currently in a superset */
         fun isInSuperset(): Boolean
+
         /** Check if at end of superset cycle */
         fun isAtEndOfSupersetCycle(): Boolean
+
         /** Get superset rest seconds */
         fun getSupersetRestSeconds(): Int
+
         /** Calculate next exercise name for rest timer display */
         fun calculateNextExerciseName(isSingleExercise: Boolean, currentExercise: RoutineExercise?, routine: Routine?): String?
+
         /** Calculate if this is the last exercise */
         fun calculateIsLastExercise(isSingleExercise: Boolean, currentExercise: RoutineExercise?, routine: Routine?): Boolean
+
         /** Clear cycle context */
         fun clearCycleContext()
+
+        /** Proceed from summary with full bookkeeping (RPE clear, exercise completion, routine check) */
+        fun proceedFromSummary()
     }
 
     /**
@@ -93,6 +147,49 @@ class ActiveSessionEngine(
      * Set by DWSM after construction.
      */
     var flowDelegate: WorkoutFlowDelegate? = null
+
+    private data class InterruptedSetRecoverySnapshot(
+        val routineId: String,
+        val exerciseIndex: Int,
+        val setIndex: Int,
+        val warmupSetIndex: Int,
+        val repCount: RepCount,
+    )
+
+    private data class StartWorkoutOverride(
+        val params: WorkoutParameters,
+        val preserveWarmupReps: Boolean,
+        val skipVariableWarmupOverride: Boolean,
+    )
+
+    private sealed interface InterruptedWorkoutRecoveryPlan {
+        data class Resume(
+            val params: WorkoutParameters,
+            val warmupSetIndex: Int,
+            val preserveWarmupReps: Boolean,
+            val skipVariableWarmupOverride: Boolean,
+        ) : InterruptedWorkoutRecoveryPlan
+
+        data class EnterSetReady(
+            val exerciseIndex: Int,
+            val setIndex: Int,
+            val adjustedWeight: Float,
+            val adjustedReps: Int,
+            val feedback: String,
+        ) : InterruptedWorkoutRecoveryPlan
+
+        data class ShowRoutineComplete(val feedback: String) : InterruptedWorkoutRecoveryPlan
+    }
+
+    private var interruptedSetRecovery: InterruptedSetRecoverySnapshot? = null
+    private var pendingStartOverride: StartWorkoutOverride? = null
+
+    /** Detector for identifying rep phase boundaries from position data */
+    private val repBoundaryDetector = RepBoundaryDetector()
+
+    /** Issue #237: Motion-triggered set start detector (reused across sets) */
+    private val motionStartDetector = MotionStartDetector()
+    private var motionStartListenerJob: Job? = null
 
     // ===== Init Block: Workout-Related Collectors (moved from DWSM) =====
 
@@ -102,178 +199,212 @@ class ActiveSessionEngine(
 
         // #3: Hook up RepCounter
         repCounter.onRepEvent = { event ->
-             scope.launch {
-                 val timing = coordinator._workoutParameters.value.repCountTiming
-                 when (event.type) {
-                     RepType.WORKING_PENDING -> {
-                         // TOP timing: announce rep number at concentric peak
-                         if (timing == RepCountTiming.TOP) {
-                             val repNumber = event.workingCount + 1  // PENDING has pre-increment count
-                             val prefs = settingsManager.userPreferences.value
-                             if (prefs.audioRepCountEnabled && repNumber in 1..25) {
-                                 coordinator._hapticEvents.emit(HapticEvent.REP_COUNT_ANNOUNCED(repNumber))
-                             } else {
-                                 coordinator._hapticEvents.emit(HapticEvent.REP_COMPLETED)
-                             }
-                         }
-                         // BOTTOM timing: silent grey preview only, no announcement
-                     }
-                     RepType.WORKING_COMPLETED -> {
-                         // BOTTOM timing: announce at eccentric valley (traditional)
-                         if (timing == RepCountTiming.BOTTOM) {
-                             val prefs = settingsManager.userPreferences.value
-                             if (prefs.audioRepCountEnabled && event.workingCount in 1..25) {
-                                 coordinator._hapticEvents.emit(HapticEvent.REP_COUNT_ANNOUNCED(event.workingCount))
-                             } else {
-                                 coordinator._hapticEvents.emit(HapticEvent.REP_COMPLETED)
-                             }
-                         }
-                         // TOP timing: already announced on PENDING, no double-announce
-                     }
-                     RepType.WARMUP_COMPLETED -> coordinator._hapticEvents.emit(HapticEvent.REP_COMPLETED)
-                     RepType.WARMUP_COMPLETE -> coordinator._hapticEvents.emit(HapticEvent.WARMUP_COMPLETE)
-                     RepType.WORKOUT_COMPLETE -> {
-                         // Note: WORKOUT_COMPLETE sound removed - WORKOUT_END in handleSetCompletion
-                         // provides sufficient feedback, and celebration sounds (PR/badge) may also play.
-                         // Playing both was causing multiple sounds to fire at once (sound stacking bug).
-                         // Issue #182: Trigger set completion immediately on WORKOUT_COMPLETE event.
-                         if (coordinator._workoutState.value is WorkoutState.Active) {
-                             Logger.d("WORKOUT_COMPLETE event received - triggering immediate set completion")
-                             handleSetCompletion()
-                         }
-                     }
-                     else -> {}
-                 }
-             }
+            scope.launch {
+                val timing = coordinator._workoutParameters.value.repCountTiming
+                when (event.type) {
+                    RepType.WORKING_PENDING -> {
+                        // TOP timing: announce rep number at concentric peak
+                        if (timing == RepCountTiming.TOP) {
+                            val repNumber = event.workingCount + 1 // PENDING has pre-increment count
+                            val prefs = settingsManager.userPreferences.value
+                            if (prefs.audioRepCountEnabled && repNumber in 1..25) {
+                                coordinator._hapticEvents.emit(HapticEvent.REP_COUNT_ANNOUNCED(repNumber))
+                            } else {
+                                coordinator._hapticEvents.emit(HapticEvent.REP_COMPLETED)
+                            }
+                        }
+                        // BOTTOM timing: silent grey preview only, no announcement
+                    }
+
+                    RepType.WORKING_COMPLETED -> {
+                        // BOTTOM timing: announce at eccentric valley (traditional)
+                        if (timing == RepCountTiming.BOTTOM) {
+                            val prefs = settingsManager.userPreferences.value
+                            if (prefs.audioRepCountEnabled && event.workingCount in 1..25) {
+                                coordinator._hapticEvents.emit(HapticEvent.REP_COUNT_ANNOUNCED(event.workingCount))
+                            } else {
+                                coordinator._hapticEvents.emit(HapticEvent.REP_COMPLETED)
+                            }
+                        }
+                        // TOP timing: already announced on PENDING, no double-announce
+                    }
+
+                    RepType.WARMUP_COMPLETED -> coordinator._hapticEvents.emit(HapticEvent.REP_COMPLETED)
+
+                    RepType.WARMUP_COMPLETE -> {
+                        coordinator._hapticEvents.emit(HapticEvent.WARMUP_COMPLETE)
+                        // Issue #100: Distinct transition sound from warmup to working sets
+                        coordinator._hapticEvents.emit(HapticEvent.WARMUP_TO_WORKING)
+                    }
+
+                    RepType.WORKOUT_COMPLETE -> {
+                        // Note: WORKOUT_COMPLETE sound removed - WORKOUT_END in handleSetCompletion
+                        // provides sufficient feedback, and celebration sounds (PR/badge) may also play.
+                        // Playing both was causing multiple sounds to fire at once (sound stacking bug).
+                        // Issue #182: Trigger set completion immediately on WORKOUT_COMPLETE event.
+                        if (coordinator._workoutState.value is WorkoutState.Active) {
+                            Logger.d("WORKOUT_COMPLETE event received - triggering immediate set completion")
+                            handleSetCompletion()
+                        }
+                    }
+                }
+            }
         }
 
         // #4: Handle activity state collector for auto-start functionality
         scope.launch {
+            // handleState is a StateFlow — use try-catch in collect body (SharedFlow.catch is no-op)
             bleRepository.handleState.collect { activityState ->
-                val params = coordinator._workoutParameters.value
-                val currentState = coordinator._workoutState.value
-                val isIdle = currentState is WorkoutState.Idle
-                val isSummaryAndJustLift = currentState is WorkoutState.SetSummary && params.isJustLift
+                try {
+                    val params = coordinator._workoutParameters.value
+                    val currentState = coordinator._workoutState.value
+                    val isIdle = currentState is WorkoutState.Idle
+                    val isSummaryAndJustLift = currentState is WorkoutState.SetSummary && params.isJustLift
 
-                // Handle auto-START when Idle and waiting for handles
-                // Also allow auto-start from SetSummary if in Just Lift mode (interrupting the summary)
-                if (params.useAutoStart && (isIdle || isSummaryAndJustLift)) {
-                    when (activityState) {
-                        HandleState.Grabbed -> {
-                            Logger.d("Handles grabbed! Starting auto-start timer (State: ${coordinator._workoutState.value})")
-                            startAutoStartTimer()
-                        }
-                        HandleState.Moving -> {
-                            // Moving = position extended but no velocity yet
-                            // Don't start countdown yet, but also don't cancel if already running
-                        }
-                        HandleState.Released -> {
-                            Logger.d("Handles released! Canceling auto-start timer")
-                            cancelAutoStartTimer()
-                        }
-                        HandleState.WaitingForRest -> {
-                            cancelAutoStartTimer()
+                    // Handle auto-START when Idle and waiting for handles
+                    // Also allow auto-start from SetSummary if in Just Lift mode (interrupting to start next set)
+                    if (params.useAutoStart && (isIdle || isSummaryAndJustLift)) {
+                        when (activityState) {
+                            HandleState.Grabbed -> {
+                                Logger.d("Handles grabbed! Starting auto-start timer (State: ${coordinator._workoutState.value})")
+                                startAutoStartTimer()
+                            }
+
+                            HandleState.Moving -> {
+                                // Moving = position extended but no velocity yet
+                                // Don't start countdown yet, but also don't cancel if already running
+                            }
+
+                            HandleState.Released -> {
+                                Logger.d("Handles released! Canceling auto-start timer")
+                                cancelAutoStartTimer()
+                            }
+
+                            HandleState.WaitingForRest -> {
+                                cancelAutoStartTimer()
+                            }
                         }
                     }
-                }
 
-                // Handle auto-STOP when Active in Just Lift mode and handles released.
-                // Warmup/ROM gate: auto-stop must remain disabled until warmup is complete.
-                if (params.isJustLift && currentState is WorkoutState.Active) {
-                    if (!isWarmupGateOpenForAutoStop()) {
-                        resetAutoStopTimer()
-                    } else if (activityState == HandleState.Released) {
-                        Logger.d("Just Lift: Handles RELEASED - starting auto-stop timer")
-                        if (coordinator.autoStopStartTime == null) {
-                            coordinator.autoStopStartTime = currentTimeMillis()
-                            Logger.d("Auto-stop timer STARTED (Just Lift) - handles released")
+                    // Handle auto-STOP when Active in Just Lift mode and handles released.
+                    // Warmup/ROM gate: auto-stop must remain disabled until warmup is complete.
+                    if (params.isJustLift && currentState is WorkoutState.Active) {
+                        if (!isWarmupGateOpenForAutoStop()) {
+                            resetAutoStopTimer()
+                        } else if (activityState == HandleState.Released) {
+                            Logger.d("Just Lift: Handles RELEASED - starting auto-stop timer")
+                            if (coordinator.autoStopStartTime == null) {
+                                coordinator.autoStopStartTime = currentTimeMillis()
+                                Logger.d("Auto-stop timer STARTED (Just Lift) - handles released")
+                            }
+                        } else if (activityState == HandleState.Grabbed || activityState == HandleState.Moving) {
+                            resetAutoStopTimer()
                         }
-                    } else if (activityState == HandleState.Grabbed || activityState == HandleState.Moving) {
-                        resetAutoStopTimer()
                     }
-                }
 
-                // Track handle activity state for UI
-                coordinator.currentHandleState = activityState
+                    // Track handle activity state for UI
+                    coordinator.currentHandleState = activityState
+                } catch (e: Exception) {
+                    Logger.e(e) { "handleState collector error" }
+                }
             }
         }
 
         // #5: Issue #98: Deload event collector for firmware-based auto-stop detection
         scope.launch {
-            bleRepository.deloadOccurredEvents.collect {
-                val params = coordinator._workoutParameters.value
-                val currentState = coordinator._workoutState.value
+            bleRepository.deloadOccurredEvents
+                .catch { e -> Logger.e(e) { "deloadOccurredEvents collector error" } }
+                .collect {
+                    val params = coordinator._workoutParameters.value
+                    val currentState = coordinator._workoutState.value
 
-                if (params.stallDetectionEnabled && currentState is WorkoutState.Active) {
-                    if (!isWarmupGateOpenForAutoStop()) {
-                        Logger.d("DELOAD_OCCURRED ignored - warmup/ROM not established yet")
-                        return@collect
-                    }
-                    val repCount = coordinator._repCount.value
-                    if (shouldDeferStandardSetStall(params, repCount)) {
-                        Logger.d(
-                            "DELOAD_OCCURRED ignored - standard set stall guard " +
-                                "(workingReps=${repCount.workingReps}, pending=${repCount.hasPendingRep})"
-                        )
-                        resetStallTimer()
-                        return@collect
-                    }
-                    if (!shouldEnableAutoStop(params)) return@collect
-                    Logger.d("DELOAD_OCCURRED: Machine detected cable release - starting auto-stop timer")
+                    if (params.stallDetectionEnabled && currentState is WorkoutState.Active) {
+                        if (!isWarmupGateOpenForAutoStop()) {
+                            Logger.d("DELOAD_OCCURRED ignored - warmup/ROM not established yet")
+                            return@collect
+                        }
+                        val repCount = coordinator._repCount.value
+                        if (shouldDeferStandardSetStall(params, repCount)) {
+                            Logger.d(
+                                "DELOAD_OCCURRED ignored - standard set stall guard " +
+                                    "(workingReps=${repCount.workingReps}, pending=${repCount.hasPendingRep})",
+                            )
+                            resetStallTimer()
+                            return@collect
+                        }
+                        if (!shouldEnableAutoStop(params)) return@collect
+                        Logger.d("DELOAD_OCCURRED: Machine detected cable release - starting auto-stop timer")
 
-                    val hasMeaningfulRange = repCounter.hasMeaningfulRange(WorkoutCoordinator.MIN_RANGE_THRESHOLD)
-                    val inGrace = isInAmrapStartupGrace(hasMeaningfulRange)
+                        val hasMeaningfulRange = repCounter.hasMeaningfulRange(WorkoutCoordinator.MIN_RANGE_THRESHOLD)
+                        val inGrace = isInAmrapStartupGrace(hasMeaningfulRange)
 
-                    if (coordinator.stallStartTime == null && !inGrace) {
-                        coordinator.stallStartTime = currentTimeMillis()
-                        coordinator.isCurrentlyStalled = true
-                        Logger.d("Auto-stop stall timer STARTED via DELOAD_OCCURRED flag")
-                    } else if (inGrace) {
-                        Logger.d("DELOAD_OCCURRED ignored - in AMRAP startup grace period")
+                        if (coordinator.stallStartTime == null && !inGrace) {
+                            coordinator.stallStartTime = currentTimeMillis()
+                            coordinator.isCurrentlyStalled = true
+                            Logger.d("Auto-stop stall timer STARTED via DELOAD_OCCURRED flag")
+                        } else if (inGrace) {
+                            Logger.d("DELOAD_OCCURRED ignored - in AMRAP startup grace period")
+                        }
                     }
                 }
-            }
         }
 
         // #6: Rep events collector for handling machine rep notifications
         coordinator.repEventsCollectionJob = scope.launch {
-            bleRepository.repEvents.collect { notification ->
-                val state = coordinator._workoutState.value
-                if (state is WorkoutState.Active) {
-                    handleRepNotification(notification)
+            bleRepository.repEvents
+                .catch { e -> Logger.e(e) { "repEvents collector error" } }
+                .collect { notification ->
+                    val state = coordinator._workoutState.value
+                    if (state is WorkoutState.Active) {
+                        handleRepNotification(notification)
+                    }
                 }
-            }
         }
 
         // #7: CRITICAL: Global metricsFlow collection (matches parent repo)
         coordinator.monitorDataCollectionJob = scope.launch {
             Logger.d("ActiveSessionEngine") { "Starting global metricsFlow collection..." }
-            bleRepository.metricsFlow.collect { metric ->
-                coordinator._currentMetric.value = metric
-                handleMonitorMetric(metric)
-            }
+            bleRepository.metricsFlow
+                .catch { e -> Logger.e(e) { "metricsFlow collector error" } }
+                .collect { metric ->
+                    coordinator._currentMetric.value = metric
+                    handleMonitorMetric(metric)
+                }
         }
 
         // #8: Heuristic data collection for Echo mode force feedback
         scope.launch {
+            // heuristicData is a StateFlow — use try-catch in collect body (SharedFlow.catch is no-op)
             bleRepository.heuristicData.collect { stats ->
-                if (stats != null && coordinator._workoutState.value is WorkoutState.Active) {
-                    val concentricMax = stats.concentric.kgMax
-                    val eccentricMax = stats.eccentric.kgMax
-                    val currentMax = maxOf(concentricMax, eccentricMax)
+                try {
+                    if (stats != null && coordinator._workoutState.value is WorkoutState.Active) {
+                        val concentricMax = stats.concentric.kgMax
+                        val eccentricMax = stats.eccentric.kgMax
+                        val currentMax = maxOf(concentricMax, eccentricMax)
 
-                    coordinator._currentHeuristicKgMax.value = currentMax
+                        coordinator._currentHeuristicKgMax.value = currentMax
 
-                    if (currentMax > coordinator.maxHeuristicKgMax) {
-                        coordinator.maxHeuristicKgMax = currentMax
-                        Logger.v("ActiveSessionEngine") { "Echo force telemetry: kgMax=$currentMax (concentric=$concentricMax, eccentric=$eccentricMax)" }
+                        if (currentMax > coordinator.maxHeuristicKgMax) {
+                            coordinator.maxHeuristicKgMax = currentMax
+                            Logger.v("ActiveSessionEngine") { "Echo force telemetry: kgMax=$currentMax (concentric=$concentricMax, eccentric=$eccentricMax)" }
+                        }
                     }
+                } catch (e: Exception) {
+                    Logger.e(e) { "heuristicData collector error" }
                 }
             }
         }
     }
 
     // ===== Calculation Helpers =====
+
+    private suspend fun resolveSelectedExercise(params: WorkoutParameters) =
+        params.selectedExerciseId?.let { exerciseId -> exerciseRepository.getExerciseById(exerciseId) }
+
+    private fun roundUpRemainingSeconds(seconds: Float): Int {
+        val wholeSeconds = seconds.toInt()
+        return if (seconds > wholeSeconds.toFloat()) wholeSeconds + 1 else wholeSeconds
+    }
 
     /**
      * Calculate enhanced metrics for the set summary display.
@@ -286,17 +417,18 @@ class ActiveSessionEngine(
         isEchoMode: Boolean = false,
         warmupRepsCount: Int = 0,
         workingRepsCount: Int = 0,
-        warmupCompleteTimeMs: Long = 0L
+        warmupCompleteTimeMs: Long = 0L,
+        cableCountHint: Int? = null,
     ): WorkoutState.SetSummary {
         if (metrics.isEmpty()) {
             return WorkoutState.SetSummary(
                 metrics = metrics,
-                peakPower = 0f,
-                averagePower = 0f,
+                peakLoadKgPerCable = 0f,
+                avgLoadKgPerCable = 0f,
                 repCount = repCount,
-                cableCount = 1,
+                cableCount = cableCountHint ?: 1,
                 heaviestLiftKgPerCable = fallbackWeightKg,
-                configuredWeightKgPerCable = configuredWeightKgPerCable
+                configuredWeightKgPerCable = configuredWeightKgPerCable,
             )
         }
 
@@ -314,10 +446,19 @@ class ActiveSessionEngine(
         // Issue #6 Fix: Detect single-cable (unilateral) exercises and don't halve the weight.
         // Heuristic: if one cable's peak load is > 5x the other's, treat as single-cable.
         // For single-cable, use the max of the active cable. For double-cable, use totalLoad/2.
-        val isSingleCable = (peakCableA > 0f && peakCableB > 0f &&
-            (peakCableA / peakCableB > 5f || peakCableB / peakCableA > 5f)) ||
+        val heuristicIsSingleCable = (
+            peakCableA > 0f && peakCableB > 0f &&
+                (peakCableA / peakCableB > 5f || peakCableB / peakCableA > 5f)
+            ) ||
             (peakCableA > 0f && peakCableB == 0f) ||
             (peakCableB > 0f && peakCableA == 0f)
+
+        val cableCount = when (cableCountHint) {
+            1 -> 1
+            2 -> 2
+            else -> if (heuristicIsSingleCable) 1 else 2
+        }
+        val isSingleCable = cableCount == 1
 
         val heaviestLiftKgPerCable = if (isSingleCable) {
             // Single-cable: use the active cable's load (don't halve)
@@ -333,7 +474,6 @@ class ActiveSessionEngine(
             configuredWeightKgPerCable
         }
         // Fixed-load modes should log the prescribed working load, while Echo uses measured force.
-        val cableCount = if (isSingleCable) 1 else 2
         val totalVolumeKg = volumeWeightKgPerCable * cableCount.toFloat() * repCount
 
         val concentricMetrics = metrics.filter { it.velocityA > 10 || it.velocityB > 10 }
@@ -356,14 +496,26 @@ class ActiveSessionEngine(
             it.loadA > thresholdA || it.loadB > thresholdB
         }
 
-        val avgConcentricA = if (activeConcentricMetrics.isNotEmpty())
-            activeConcentricMetrics.map { it.loadA }.average().toFloat() else 0f
-        val avgConcentricB = if (activeConcentricMetrics.isNotEmpty())
-            activeConcentricMetrics.map { it.loadB }.average().toFloat() else 0f
-        val avgEccentricA = if (activeEccentricMetrics.isNotEmpty())
-            activeEccentricMetrics.map { it.loadA }.average().toFloat() else 0f
-        val avgEccentricB = if (activeEccentricMetrics.isNotEmpty())
-            activeEccentricMetrics.map { it.loadB }.average().toFloat() else 0f
+        val avgConcentricA = if (activeConcentricMetrics.isNotEmpty()) {
+            activeConcentricMetrics.map { it.loadA }.average().toFloat()
+        } else {
+            0f
+        }
+        val avgConcentricB = if (activeConcentricMetrics.isNotEmpty()) {
+            activeConcentricMetrics.map { it.loadB }.average().toFloat()
+        } else {
+            0f
+        }
+        val avgEccentricA = if (activeEccentricMetrics.isNotEmpty()) {
+            activeEccentricMetrics.map { it.loadA }.average().toFloat()
+        } else {
+            0f
+        }
+        val avgEccentricB = if (activeEccentricMetrics.isNotEmpty()) {
+            activeEccentricMetrics.map { it.loadB }.average().toFloat()
+        } else {
+            0f
+        }
 
         // Physics-based calorie estimation using work-energy theorem:
         // W = sum(force_i * delta_distance_i) for each consecutive sample pair
@@ -389,8 +541,8 @@ class ActiveSessionEngine(
             }
         }
 
-        val peakPower = heaviestLiftKgPerCable
-        val averagePower = if (isSingleCable) {
+        val peakLoadKgPerCable = heaviestLiftKgPerCable
+        val avgLoadKgPerCable = if (isSingleCable) {
             metrics.map { maxOf(it.loadA, it.loadB) }.average().toFloat()
         } else {
             metrics.map { it.totalLoad / 2f }.average().toFloat()
@@ -415,17 +567,29 @@ class ActiveSessionEngine(
                 val lastPeakIndex = peakIndices.last()
 
                 val warmupSamples = weightSamples.take(firstPeakIndex)
-                warmupAvgWeightKg = if (warmupSamples.isNotEmpty())
-                    warmupSamples.average().toFloat() else 0f
+                warmupAvgWeightKg = if (warmupSamples.isNotEmpty()) {
+                    warmupSamples.average().toFloat()
+                } else {
+                    0f
+                }
 
                 val workingSamples = weightSamples.subList(firstPeakIndex, (lastPeakIndex + 1).coerceAtMost(weightSamples.size))
-                workingAvgWeightKg = if (workingSamples.isNotEmpty())
-                    workingSamples.average().toFloat() else peakWeightKg
+                workingAvgWeightKg = if (workingSamples.isNotEmpty()) {
+                    workingSamples.average().toFloat()
+                } else {
+                    peakWeightKg
+                }
 
-                val burnoutSamples = if (lastPeakIndex < weightSamples.lastIndex)
-                    weightSamples.drop(lastPeakIndex + 1) else emptyList()
-                burnoutAvgWeightKg = if (burnoutSamples.isNotEmpty())
-                    burnoutSamples.average().toFloat() else 0f
+                val burnoutSamples = if (lastPeakIndex < weightSamples.lastIndex) {
+                    weightSamples.drop(lastPeakIndex + 1)
+                } else {
+                    emptyList()
+                }
+                burnoutAvgWeightKg = if (burnoutSamples.isNotEmpty()) {
+                    burnoutSamples.average().toFloat()
+                } else {
+                    0f
+                }
 
                 val totalReps = warmupRepsCount + workingRepsCount
                 if (burnoutSamples.isNotEmpty() && totalReps > 0) {
@@ -440,8 +604,8 @@ class ActiveSessionEngine(
 
         return WorkoutState.SetSummary(
             metrics = metrics,
-            peakPower = peakPower,
-            averagePower = averagePower,
+            peakLoadKgPerCable = peakLoadKgPerCable,
+            avgLoadKgPerCable = avgLoadKgPerCable,
             repCount = repCount,
             durationMs = durationMs,
             totalVolumeKg = totalVolumeKg,
@@ -464,7 +628,7 @@ class ActiveSessionEngine(
             warmupAvgWeightKg = warmupAvgWeightKg,
             workingAvgWeightKg = workingAvgWeightKg,
             burnoutAvgWeightKg = burnoutAvgWeightKg,
-            peakWeightKg = peakWeightKg
+            peakWeightKg = peakWeightKg,
         )
     }
 
@@ -472,7 +636,7 @@ class ActiveSessionEngine(
      * Collect metric for history recording.
      */
     private fun collectMetricForHistory(metric: WorkoutMetric) {
-        coordinator.collectedMetrics.add(metric)
+        coordinator.collectedMetrics.update { it + metric }
     }
 
     // ===== Auto-Stop Helpers =====
@@ -582,7 +746,7 @@ class ActiveSessionEngine(
             coordinator._autoStopState.value = coordinator._autoStopState.value.copy(
                 progress = 1f,
                 secondsRemaining = 0,
-                isActive = true
+                isActive = true,
             )
         } else {
             coordinator._autoStopState.value = AutoStopUiState()
@@ -605,6 +769,8 @@ class ActiveSessionEngine(
         val rawPosA = currentPositions?.positionA ?: 0f
         val rawPosB = currentPositions?.positionB ?: 0f
 
+        val repCountBefore = repCounter.getRepCount().totalReps
+
         // Seed ROM from machine (only has effect on first notification with valid data)
         if (!notification.isLegacyFormat) {
             repCounter.seedRomBoundaries(notification.rangeTop, notification.rangeBottom)
@@ -619,13 +785,225 @@ class ActiveSessionEngine(
             down = notification.completeCounter,
             posA = rawPosA,
             posB = rawPosB,
-            isLegacyFormat = notification.isLegacyFormat
+            isLegacyFormat = notification.isLegacyFormat,
         )
 
         repCounter.updatePhaseFromPosition(rawPosA, rawPosB)
 
         coordinator._repCount.value = repCounter.getRepCount()
         coordinator._repRanges.value = repCounter.getRepRanges()
+
+        // Score the rep if rep count actually incremented
+        val repCountAfter = repCounter.getRepCount().totalReps
+        if (repCountAfter > repCountBefore) {
+            // Capture rep boundary timestamp BEFORE scoring so scoreCurrentRep()
+            // and processBiomechanicsForRep() both see the correct metric window.
+            val now = KmpUtils.currentTimeMillis()
+            coordinator.repBoundaryTimestamps.update { it + now }
+
+            scoreCurrentRep(repCountAfter)
+
+            // Segment metrics for this rep and process biomechanics (GATE-04: unconditional capture)
+            processBiomechanicsForRep(repCountAfter, now)
+
+            // Exercise auto-detection: trigger after MIN_REPS working reps
+            // Only for working reps (warmup complete) when no exercise is assigned
+            val repCount = repCounter.getRepCount()
+            if (repCount.isWarmupComplete) {
+                val params = coordinator._workoutParameters.value
+                // Check if exercise already assigned (routine mode has selectedExerciseId)
+                val hasExerciseAssigned = !params.selectedExerciseId.isNullOrBlank()
+
+                detectionManager?.onRepCompleted(
+                    repNumber = repCount.workingReps,
+                    metrics = coordinator.collectedMetrics.value,
+                    scope = scope,
+                    hasExerciseAssigned = hasExerciseAssigned,
+                )
+            }
+        }
+    }
+
+    /**
+     * Score the current rep using real metrics from collected WorkoutMetric data.
+     * Uses RepBoundaryDetector to segment position data into concentric/eccentric phases,
+     * then extracts force, velocity, and position arrays for each phase.
+     */
+    private fun scoreCurrentRep(repNumber: Int) {
+        val metrics = coordinator.collectedMetrics.value
+        if (metrics.isEmpty()) return
+
+        // Get all metrics for this rep (use rep boundary timestamps if available)
+        val boundaries = coordinator.repBoundaryTimestamps.value
+        val prevBoundary = if (boundaries.size >= 2) boundaries[boundaries.size - 2] else 0L
+        val currentBoundary = if (boundaries.isNotEmpty()) boundaries.last() else KmpUtils.currentTimeMillis()
+
+        val repMetrics = if (boundaries.size >= 2) {
+            metrics.filter { it.timestamp in (prevBoundary + 1)..currentBoundary }
+        } else {
+            metrics.takeLast(50) // Fallback for first rep
+        }
+
+        if (repMetrics.isEmpty()) return
+
+        // Extract position array for phase detection (use max position of A/B)
+        val positions = repMetrics.map { maxOf(it.positionA, it.positionB) }.toFloatArray()
+
+        // Detect rep phases using valley detection
+        val phaseBoundaries = repBoundaryDetector.detectBoundaries(positions)
+
+        // If boundary detection found a rep, use its phase indices; otherwise use velocity-based split
+        val (concentricIndices, eccentricIndices) = if (phaseBoundaries.isNotEmpty()) {
+            // Use detected boundary (usually only 1 rep worth of data at capture time)
+            val boundary = phaseBoundaries.first()
+            Pair(boundary.concentricIndices, boundary.eccentricIndices)
+        } else {
+            // Fallback: split by velocity direction
+            val velocitySplitIndex = repMetrics.indexOfFirst { it.velocityA < 0 || it.velocityB < 0 }
+                .takeIf { it > 0 } ?: (repMetrics.size / 2)
+            Pair(0 until velocitySplitIndex, velocitySplitIndex until repMetrics.size)
+        }
+
+        // Extract concentric phase data
+        val concentricMetrics = concentricIndices.mapNotNull { repMetrics.getOrNull(it) }
+        val concentricLoadsA = concentricMetrics.map { it.loadA }.toFloatArray()
+        val concentricLoadsB = concentricMetrics.map { it.loadB }.toFloatArray()
+        val concentricPositions = concentricMetrics.map { maxOf(it.positionA, it.positionB) }.toFloatArray()
+        val concentricVelocities = concentricMetrics.map { maxOf(kotlin.math.abs(it.velocityA.toFloat()), kotlin.math.abs(it.velocityB.toFloat())) }.toFloatArray()
+        val concentricTimestamps = concentricMetrics.map { it.timestamp - repMetrics.first().timestamp }.toLongArray()
+        val concentricDurationMs = if (concentricMetrics.size >= 2) {
+            concentricMetrics.last().timestamp - concentricMetrics.first().timestamp
+        } else {
+            0L
+        }
+
+        // Extract eccentric phase data
+        val eccentricMetrics = eccentricIndices.mapNotNull { repMetrics.getOrNull(it) }
+        val eccentricLoadsA = eccentricMetrics.map { it.loadA }.toFloatArray()
+        val eccentricLoadsB = eccentricMetrics.map { it.loadB }.toFloatArray()
+        val eccentricPositions = eccentricMetrics.map { maxOf(it.positionA, it.positionB) }.toFloatArray()
+        val eccentricVelocities = eccentricMetrics.map { maxOf(kotlin.math.abs(it.velocityA.toFloat()), kotlin.math.abs(it.velocityB.toFloat())) }.toFloatArray()
+        val eccentricTimestamps = eccentricMetrics.map { it.timestamp - repMetrics.first().timestamp }.toLongArray()
+        val eccentricDurationMs = if (eccentricMetrics.size >= 2) {
+            eccentricMetrics.last().timestamp - eccentricMetrics.first().timestamp
+        } else {
+            0L
+        }
+
+        // Calculate summary metrics
+        val peakForceA = maxOf(concentricLoadsA.maxOrNull() ?: 0f, eccentricLoadsA.maxOrNull() ?: 0f)
+        val peakForceB = maxOf(concentricLoadsB.maxOrNull() ?: 0f, eccentricLoadsB.maxOrNull() ?: 0f)
+        val avgForceConcentricA = concentricLoadsA.takeIf { it.isNotEmpty() }?.average()?.toFloat() ?: 0f
+        val avgForceConcentricB = concentricLoadsB.takeIf { it.isNotEmpty() }?.average()?.toFloat() ?: 0f
+        val avgForceEccentricA = eccentricLoadsA.takeIf { it.isNotEmpty() }?.average()?.toFloat() ?: 0f
+        val avgForceEccentricB = eccentricLoadsB.takeIf { it.isNotEmpty() }?.average()?.toFloat() ?: 0f
+
+        // ROM and velocity
+        val rom = positions.max() - positions.min()
+        val peakVelocity = concentricVelocities.maxOrNull() ?: 0f
+        val avgVelocityConcentric = concentricVelocities.takeIf { it.isNotEmpty() }?.average()?.toFloat() ?: 0f
+        val avgVelocityEccentric = eccentricVelocities.takeIf { it.isNotEmpty() }?.average()?.toFloat() ?: 0f
+
+        // Power calculations (power = force * velocity, converting units)
+        // Force in kg, velocity in mm/s -> W = kg * m/s^2 * m/s = kg * mm/s / 1000 * 9.81
+        val concentricPowers = concentricMetrics.map { m ->
+            val force = m.loadA + m.loadB // total load in kg
+            val velocity = maxOf(kotlin.math.abs(m.velocityA), kotlin.math.abs(m.velocityB)) / 1000.0 // m/s
+            (force * velocity * 9.81).toFloat() // watts
+        }
+        val peakPowerWatts = concentricPowers.maxOrNull() ?: 0f
+        val avgPowerWatts = concentricPowers.takeIf { it.isNotEmpty() }?.average()?.toFloat() ?: 0f
+
+        val totalDurationMs = if (repMetrics.size >= 2) {
+            repMetrics.last().timestamp - repMetrics.first().timestamp
+        } else {
+            1000L
+        }
+
+        val repData = RepMetricData(
+            repNumber = repNumber,
+            isWarmup = !repCounter.getRepCount().isWarmupComplete,
+            startTimestamp = repMetrics.firstOrNull()?.timestamp ?: 0L,
+            endTimestamp = repMetrics.lastOrNull()?.timestamp ?: 0L,
+            durationMs = totalDurationMs,
+            concentricDurationMs = concentricDurationMs,
+            concentricPositions = concentricPositions,
+            concentricLoadsA = concentricLoadsA,
+            concentricLoadsB = concentricLoadsB,
+            concentricVelocities = concentricVelocities,
+            concentricTimestamps = concentricTimestamps,
+            eccentricDurationMs = eccentricDurationMs,
+            eccentricPositions = eccentricPositions,
+            eccentricLoadsA = eccentricLoadsA,
+            eccentricLoadsB = eccentricLoadsB,
+            eccentricVelocities = eccentricVelocities,
+            eccentricTimestamps = eccentricTimestamps,
+            peakForceA = peakForceA,
+            peakForceB = peakForceB,
+            avgForceConcentricA = avgForceConcentricA,
+            avgForceConcentricB = avgForceConcentricB,
+            avgForceEccentricA = avgForceEccentricA,
+            avgForceEccentricB = avgForceEccentricB,
+            peakVelocity = peakVelocity,
+            avgVelocityConcentric = avgVelocityConcentric,
+            avgVelocityEccentric = avgVelocityEccentric,
+            rangeOfMotionMm = rom,
+            peakPowerWatts = peakPowerWatts,
+            avgPowerWatts = avgPowerWatts,
+        )
+
+        // Accumulate rep metric data for persistence at set completion
+        coordinator.setRepMetrics.update { it + repData }
+
+        val score = coordinator.repQualityScorer.scoreRep(repData)
+        coordinator._latestRepQuality.value = score
+        Logger.d { "Rep quality scored: rep=$repNumber, score=${score.composite}, concentricSamples=${concentricLoadsA.size}, eccentricSamples=${eccentricLoadsA.size}" }
+    }
+
+    /**
+     * Process biomechanics analysis for a completed rep.
+     *
+     * Segments collectedMetrics using rep boundary timestamps, then processes
+     * through BiomechanicsEngine on Dispatchers.Default (DATA-03 compliance).
+     *
+     * @param repNumber 1-indexed rep number
+     * @param timestamp Rep completion timestamp
+     */
+    private fun processBiomechanicsForRep(repNumber: Int, timestamp: Long) {
+        scope.launch(Dispatchers.Default) {
+            val allMetrics = coordinator.collectedMetrics.value
+            val boundaries = coordinator.repBoundaryTimestamps.value
+
+            // Segment: metrics between previous boundary and current boundary
+            val prevBoundary = if (boundaries.size >= 2) boundaries[boundaries.size - 2] else 0L
+            val currentBoundary = boundaries.last()
+
+            val repMetrics = allMetrics.filter { it.timestamp in (prevBoundary + 1)..currentBoundary }
+            if (repMetrics.isEmpty()) {
+                Logger.d { "Biomechanics: no metrics for rep $repNumber (boundary $prevBoundary..$currentBoundary)" }
+                return@launch
+            }
+
+            // Split into concentric/eccentric using velocity direction
+            // Concentric = lifting (positive velocity), Eccentric = lowering (negative velocity)
+            // Approximate: use first half as concentric if we can't determine from velocity
+            val concentricMetrics = repMetrics.filter {
+                it.velocityA > 0 || it.velocityB > 0
+            }.takeIf { it.isNotEmpty() } ?: run {
+                // Fallback: first half is concentric
+                val midpoint = repMetrics.size / 2
+                if (midpoint > 0) repMetrics.take(midpoint) else repMetrics
+            }
+
+            coordinator.biomechanicsEngine.processRep(
+                repNumber = repNumber,
+                concentricMetrics = concentricMetrics,
+                allRepMetrics = repMetrics,
+                timestamp = timestamp,
+            )
+
+            Logger.d { "Biomechanics processed: rep=$repNumber, metrics=${repMetrics.size}, concentric=${concentricMetrics.size}" }
+        }
     }
 
     // ===== Auto-Stop Detection =====
@@ -730,7 +1108,7 @@ class ActiveSessionEngine(
                     coordinator._autoStopState.value = AutoStopUiState(
                         isActive = true,
                         progress = progress,
-                        secondsRemaining = ceil(remaining).toInt()
+                        secondsRemaining = roundUpRemainingSeconds(remaining),
                     )
                 }
             }
@@ -763,7 +1141,7 @@ class ActiveSessionEngine(
                 coordinator._autoStopState.value = AutoStopUiState(
                     isActive = true,
                     progress = progress,
-                    secondsRemaining = ceil(remaining).toInt()
+                    secondsRemaining = roundUpRemainingSeconds(remaining),
                 )
             }
 
@@ -790,7 +1168,7 @@ class ActiveSessionEngine(
                     val thresholdA = minA + (rangeA * 0.05f)
                     val cableAInDanger = metric.positionA <= thresholdA
                     val cableAReleased = metric.positionA < WorkoutCoordinator.HANDLE_REST_THRESHOLD ||
-                            (metric.positionA - minA) < 10
+                        (metric.positionA - minA) < 10
                     if (cableAInDanger && cableAReleased) {
                         cableAppearsReleased = true
                     }
@@ -806,7 +1184,7 @@ class ActiveSessionEngine(
                         val thresholdB = minB + (rangeB * 0.05f)
                         val cableBInDanger = metric.positionB <= thresholdB
                         val cableBReleased = metric.positionB < WorkoutCoordinator.HANDLE_REST_THRESHOLD ||
-                                (metric.positionB - minB) < 10
+                            (metric.positionB - minB) < 10
                         if (cableBInDanger && cableBReleased) {
                             cableAppearsReleased = true
                         }
@@ -830,7 +1208,7 @@ class ActiveSessionEngine(
                 coordinator._autoStopState.value = AutoStopUiState(
                     isActive = true,
                     progress = progress,
-                    secondsRemaining = ceil(remaining).toInt()
+                    secondsRemaining = roundUpRemainingSeconds(remaining),
                 )
             }
 
@@ -855,13 +1233,13 @@ class ActiveSessionEngine(
                 BlePacketFactory.createWorkoutCommand(
                     params.programMode,
                     weightKg,
-                    params.reps
+                    params.reps,
                 )
             } else {
                 return
             }
 
-            bleRepository.sendWorkoutCommand(command)
+            bleRepository.sendWorkoutCommand(command).getOrThrow()
             Logger.d("Weight update sent to machine: $weightKg kg")
         } catch (e: Exception) {
             Logger.e(e) { "Failed to send weight update: ${e.message}" }
@@ -870,8 +1248,17 @@ class ActiveSessionEngine(
 
     /**
      * Adjust the weight during an active workout or rest period.
+     *
+     * If called during an active set, the BLE command is deferred until the next
+     * set boundary. sendWeightUpdateToMachine() sends a full REGULAR_COMMAND packet
+     * which resets the exercise on the machine (BLE exercise packet lifecycle constraint:
+     * machine can't receive new exercise packet until active one fully ends).
      */
     fun adjustWeight(newWeightKg: Float, sendToMachine: Boolean = true) {
+        // Upper bound is 110kg per cable to support both hardware variants:
+        //   V-Form (VIT-200): 100kg max per cable
+        //   Trainer+:         110kg max per cable
+        // Do NOT replace with Constants.MAX_WEIGHT_KG (100f) — that would regress Trainer+ users.
         val clampedWeight = newWeightKg.coerceIn(0f, 110f)
 
         Logger.d("ActiveSessionEngine: Adjusting weight to $clampedWeight kg (sendToMachine=$sendToMachine)")
@@ -879,7 +1266,8 @@ class ActiveSessionEngine(
         val currentState = coordinator._workoutState.value
         if (currentState is WorkoutState.Idle ||
             currentState is WorkoutState.Resting ||
-            currentState is WorkoutState.SetSummary) {
+            currentState is WorkoutState.SetSummary
+        ) {
             coordinator._userAdjustedWeightDuringRest = true
             Logger.d("ActiveSessionEngine: User adjusted weight in ${currentState::class.simpleName} - will preserve on next set")
         }
@@ -889,9 +1277,10 @@ class ActiveSessionEngine(
         }
 
         if (sendToMachine && coordinator._workoutState.value is WorkoutState.Active) {
-            scope.launch {
-                sendWeightUpdateToMachine(clampedWeight)
-            }
+            // Defer BLE weight change to next set boundary. Sending a full workout
+            // command (REGULAR_COMMAND) mid-set would fault the machine.
+            coordinator.pendingWeightChangeKg = clampedWeight
+            Logger.d("ActiveSessionEngine: Deferred weight change to $clampedWeight kg (mid-set, will apply at next set start)")
         }
     }
 
@@ -910,7 +1299,8 @@ class ActiveSessionEngine(
     }
 
     suspend fun getLastWeightForExercise(exerciseId: String): Float? {
-        return workoutRepository.getAllSessions()
+        val profileId = userProfileRepository.activeProfile.value?.id ?: "default"
+        return workoutRepository.getAllSessions(profileId = profileId)
             .first()
             .filter { it.exerciseId == exerciseId }
             .sortedByDescending { it.timestamp }
@@ -919,7 +1309,8 @@ class ActiveSessionEngine(
     }
 
     suspend fun getPrWeightForExercise(exerciseId: String): Float? {
-        return workoutRepository.getAllPersonalRecords()
+        val profileId = userProfileRepository.activeProfile.value?.id ?: "default"
+        return workoutRepository.getAllPersonalRecords(profileId)
             .first()
             .filter { it.exerciseId == exerciseId }
             .maxOfOrNull { it.weightPerCableKg }
@@ -960,7 +1351,7 @@ class ActiveSessionEngine(
             coordinator._workoutParameters.value = coordinator._workoutParameters.value.copy(
                 isJustLift = true,
                 useAutoStart = true,
-                selectedExerciseId = null
+                selectedExerciseId = null,
             )
 
             enableHandleDetection()
@@ -979,7 +1370,8 @@ class ActiveSessionEngine(
             eccentricLoadPercentage = prefsDefaults.eccentricLoadPercentage,
             echoLevelValue = prefsDefaults.echoLevelValue,
             stallDetectionEnabled = prefsDefaults.stallDetectionEnabled,
-            repCountTimingName = prefsDefaults.repCountTimingName
+            repCountTimingName = prefsDefaults.repCountTimingName,
+            restSeconds = prefsDefaults.restSeconds,
         )
     }
 
@@ -992,11 +1384,30 @@ class ActiveSessionEngine(
                 eccentricLoadPercentage = defaults.eccentricLoadPercentage,
                 echoLevelValue = defaults.echoLevelValue,
                 stallDetectionEnabled = defaults.stallDetectionEnabled,
-                repCountTimingName = defaults.repCountTimingName
+                repCountTimingName = defaults.repCountTimingName,
+                restSeconds = defaults.restSeconds,
             )
             preferencesManager.saveJustLiftDefaults(prefsDefaults)
-            Logger.d("saveJustLiftDefaults: weight=${defaults.weightPerCableKg}kg, mode=${defaults.workoutModeId}")
+            Logger.d("saveJustLiftDefaults: weight=${defaults.weightPerCableKg}kg, mode=${defaults.workoutModeId}, restSeconds=${defaults.restSeconds}")
         }
+    }
+
+    /**
+     * Applies an auto-accepted exercise detection (if any) to the workout parameters.
+     * Called before saving a session so the detected exerciseId is persisted.
+     * Returns true if an auto-accepted detection was applied.
+     */
+    private suspend fun applyAutoAcceptedDetection(): Boolean {
+        val detection = detectionManager?.detectionState?.value ?: return false
+        if (!detection.isAutoAccepted || detection.classification == null) return false
+        val cls = detection.classification
+        val confirmedId = cls.exerciseId
+        if (confirmedId.isNullOrBlank()) return false
+        detectionManager.onExerciseConfirmed(confirmedId, cls.exerciseName)
+        coordinator._workoutParameters.update { p -> p.copy(selectedExerciseId = confirmedId) }
+        coordinator._userFeedbackEvents.emit("Exercise detected: ${cls.exerciseName}")
+        Logger.d("Just Lift: Auto-accepted exercise '${cls.exerciseName}' (id=$confirmedId)")
+        return true
     }
 
     private suspend fun saveJustLiftDefaultsFromWorkout() {
@@ -1014,18 +1425,17 @@ class ActiveSessionEngine(
                 eccentricLoadPercentage = eccentricLoadPct,
                 echoLevelValue = echoLevelVal,
                 stallDetectionEnabled = params.stallDetectionEnabled,
-                repCountTimingName = params.repCountTiming.name
+                repCountTimingName = params.repCountTiming.name,
+                restSeconds = params.justLiftRestSeconds,
             )
             preferencesManager.saveJustLiftDefaults(defaults)
-            Logger.d { "Saved Just Lift defaults: mode=${params.programMode.modeValue}, weight=${params.weightPerCableKg}kg" }
+            Logger.d { "Saved Just Lift defaults: mode=${params.programMode.modeValue}, weight=${params.weightPerCableKg}kg, restSeconds=${params.justLiftRestSeconds}" }
         } catch (e: Exception) {
             Logger.e(e) { "Failed to save Just Lift defaults: ${e.message}" }
         }
     }
 
-    suspend fun getSingleExerciseDefaults(exerciseId: String): com.devil.phoenixproject.data.preferences.SingleExerciseDefaults? {
-        return preferencesManager.getSingleExerciseDefaults(exerciseId)
-    }
+    suspend fun getSingleExerciseDefaults(exerciseId: String): com.devil.phoenixproject.data.preferences.SingleExerciseDefaults? = preferencesManager.getSingleExerciseDefaults(exerciseId)
 
     fun saveSingleExerciseDefaults(defaults: com.devil.phoenixproject.data.preferences.SingleExerciseDefaults) {
         scope.launch {
@@ -1074,7 +1484,7 @@ class ActiveSessionEngine(
                 echoLevelValue = echoLevelVal,
                 duration = currentExercise.duration?.takeIf { it > 0 } ?: 0,
                 isAMRAP = currentExercise.isAMRAP,
-                perSetRestTime = currentExercise.perSetRestTime
+                perSetRestTime = currentExercise.perSetRestTime,
             )
             preferencesManager.saveSingleExerciseDefaults(defaults)
             Logger.d { "Saved Single Exercise defaults for ${currentExercise.exercise.name}" }
@@ -1123,24 +1533,42 @@ class ActiveSessionEngine(
                     dayNumber = dayNumber,
                     dayName = completedDay?.name,
                     isRotationComplete = isRotationComplete,
-                    rotationCount = if (isRotationComplete) progress.rotationCount + 1 else progress.rotationCount
+                    rotationCount = if (isRotationComplete) progress.rotationCount + 1 else progress.rotationCount,
                 )
 
-                Logger.d { "Cycle progress updated: day $dayNumber completed, now on day ${updated.currentDayNumber}" +
-                    if (isRotationComplete) " (rotation ${updated.rotationCount} complete!)" else "" }
+                Logger.d {
+                    "Cycle progress updated: day $dayNumber completed, now on day ${updated.currentDayNumber}" +
+                        if (isRotationComplete) " (rotation ${updated.rotationCount} complete!)" else ""
+                }
             }
         } catch (e: Exception) {
             Logger.e(e) { "Error updating cycle progress: ${e.message}" }
         }
     }
 
+    // ===== Form Check =====
+
     // ===== Core Workout Lifecycle =====
 
     fun resetForNewWorkout() {
+        cancelJustLiftEggTimer()
+        interruptedSetRecovery = null
+        pendingStartOverride = null
+        coordinator.restDeadlineElapsedRealtimeMs = null
+        coordinator._restSecondsRemaining.value = 0
+        coordinator._restOriginalDuration.value = 0
+        coordinator._isRestPaused.value = false
         coordinator._workoutState.value = WorkoutState.Idle
         coordinator._repCount.value = RepCount()
         coordinator._repRanges.value = null
+        coordinator.setRepMetrics.value = emptyList()
+        // Reset biomechanics engine and rep boundary timestamps
+        coordinator.biomechanicsEngine.reset()
+        coordinator.repBoundaryTimestamps.value = emptyList()
         coordinator.warmupCompleteTimeMs = 0
+        // Reset variable warm-up state
+        coordinator._currentWarmupSetIndex.value = -1
+        coordinator._totalWarmupSets.value = 0
     }
 
     fun recaptureLoadBaseline() {
@@ -1158,14 +1586,32 @@ class ActiveSessionEngine(
     }
 
     fun updateWorkoutParameters(params: WorkoutParameters) {
+        // Defense: reject near-zero weight writes in Just Lift mode.
+        // The JustLiftScreen param-sync LaunchedEffect can fire before defaults
+        // are loaded, writing the hardcoded initial value (0.453592f). Guard
+        // against this race by preserving the current weight when the incoming
+        // value is suspiciously low and Just Lift mode is active.
+        val safeParams = if (params.isJustLift && params.weightPerCableKg < Constants.JUST_LIFT_MIN_VALID_WEIGHT_KG) {
+            val currentWeight = coordinator._workoutParameters.value.weightPerCableKg
+            if (currentWeight >= Constants.JUST_LIFT_MIN_VALID_WEIGHT_KG) {
+                Logger.w { "updateWorkoutParameters: Rejected near-zero weight ${params.weightPerCableKg}kg in Just Lift — preserving ${currentWeight}kg" }
+                params.copy(weightPerCableKg = currentWeight)
+            } else {
+                params
+            }
+        } else {
+            params
+        }
+
         val currentState = coordinator._workoutState.value
         if (currentState is WorkoutState.Idle ||
             currentState is WorkoutState.Resting ||
-            currentState is WorkoutState.SetSummary) {
+            currentState is WorkoutState.SetSummary
+        ) {
             coordinator._userAdjustedWeightDuringRest = true
             Logger.d("updateWorkoutParameters: User edited params in ${currentState::class.simpleName} - will preserve on transition")
         }
-        coordinator._workoutParameters.value = params
+        coordinator._workoutParameters.value = safeParams
     }
 
     /**
@@ -1178,14 +1624,306 @@ class ActiveSessionEngine(
         coordinator._workoutParameters.value = params
     }
 
+    fun captureInterruptedWorkoutForRecovery() {
+        val routine = coordinator._loadedRoutine.value
+        if (coordinator._workoutState.value !is WorkoutState.Active || routine == null) {
+            interruptedSetRecovery = null
+            return
+        }
+
+        interruptedSetRecovery = InterruptedSetRecoverySnapshot(
+            routineId = routine.id,
+            exerciseIndex = coordinator._currentExerciseIndex.value,
+            setIndex = coordinator._currentSetIndex.value,
+            warmupSetIndex = coordinator._currentWarmupSetIndex.value,
+            repCount = coordinator._repCount.value,
+        )
+        Logger.w {
+            "Captured interrupted set recovery snapshot: routine=${routine.name}, " +
+                "exerciseIndex=${coordinator._currentExerciseIndex.value}, setIndex=${coordinator._currentSetIndex.value}, " +
+                "warmupSetIndex=${coordinator._currentWarmupSetIndex.value}, reps=${coordinator._repCount.value}"
+        }
+    }
+
+    fun reconnectInterruptedWorkout() {
+        val plan = buildInterruptedWorkoutRecoveryPlan()
+        applyInterruptedWorkoutRecoveryPlan(plan)
+    }
+
+    private fun buildInterruptedWorkoutRecoveryPlan(): InterruptedWorkoutRecoveryPlan {
+        val snapshot = interruptedSetRecovery
+        val routine = coordinator._loadedRoutine.value
+        if (snapshot == null || routine == null || routine.id != snapshot.routineId) {
+            return InterruptedWorkoutRecoveryPlan.EnterSetReady(
+                exerciseIndex = coordinator._currentExerciseIndex.value,
+                setIndex = coordinator._currentSetIndex.value,
+                adjustedWeight = coordinator._workoutParameters.value.weightPerCableKg,
+                adjustedReps = coordinator._workoutParameters.value.reps,
+                feedback = "Phoenix reconnected, but couldn't rebuild the interrupted set. Restart it from Set Ready.",
+            )
+        }
+
+        val exercise = routine.exercises.getOrNull(snapshot.exerciseIndex) ?: return InterruptedWorkoutRecoveryPlan.EnterSetReady(
+            exerciseIndex = snapshot.exerciseIndex,
+            setIndex = snapshot.setIndex,
+            adjustedWeight = coordinator._workoutParameters.value.weightPerCableKg,
+            adjustedReps = coordinator._workoutParameters.value.reps,
+            feedback = "Phoenix reconnected, but the interrupted exercise could not be resolved safely.",
+        )
+
+        val baseParams = buildRoutineRecoveryBaseParameters(exercise, snapshot.setIndex)
+        if (isBodyweightExercise(exercise) || exercise.duration != null || baseParams.isAMRAP || baseParams.isJustLift) {
+            return InterruptedWorkoutRecoveryPlan.EnterSetReady(
+                exerciseIndex = snapshot.exerciseIndex,
+                setIndex = snapshot.setIndex,
+                adjustedWeight = baseParams.weightPerCableKg,
+                adjustedReps = baseParams.reps,
+                feedback = "Phoenix reconnected, but this set type needs a manual restart from Set Ready.",
+            )
+        }
+
+        return if (snapshot.warmupSetIndex >= 0) {
+            buildVariableWarmupRecoveryPlan(snapshot, routine, exercise, baseParams)
+        } else {
+            buildStandardRecoveryPlan(snapshot, routine, exercise, baseParams)
+        }
+    }
+
+    private fun buildStandardRecoveryPlan(
+        snapshot: InterruptedSetRecoverySnapshot,
+        routine: Routine,
+        exercise: RoutineExercise,
+        baseParams: WorkoutParameters,
+    ): InterruptedWorkoutRecoveryPlan {
+        val warmupRemaining = (baseParams.warmupReps - snapshot.repCount.warmupReps).coerceAtLeast(0)
+        val workingRemaining = if (warmupRemaining > 0) {
+            baseParams.reps
+        } else {
+            (baseParams.reps - snapshot.repCount.workingReps).coerceAtLeast(0)
+        }
+
+        if (warmupRemaining == 0 && workingRemaining == 0) {
+            return nextRoutineStepPlan(
+                routine = routine,
+                exercise = exercise,
+                exerciseIndex = snapshot.exerciseIndex,
+                setIndex = snapshot.setIndex,
+                feedback = "Phoenix reconnected after the set had already completed. Continue from the next step.",
+            )
+        }
+
+        return InterruptedWorkoutRecoveryPlan.Resume(
+            params = baseParams.copy(
+                warmupReps = warmupRemaining,
+                reps = workingRemaining,
+            ),
+            warmupSetIndex = -1,
+            preserveWarmupReps = true,
+            skipVariableWarmupOverride = false,
+        )
+    }
+
+    private fun buildVariableWarmupRecoveryPlan(
+        snapshot: InterruptedSetRecoverySnapshot,
+        routine: Routine,
+        exercise: RoutineExercise,
+        baseParams: WorkoutParameters,
+    ): InterruptedWorkoutRecoveryPlan {
+        val warmupSet = exercise.warmupSets.getOrNull(snapshot.warmupSetIndex)
+            ?: return InterruptedWorkoutRecoveryPlan.EnterSetReady(
+                exerciseIndex = snapshot.exerciseIndex,
+                setIndex = snapshot.setIndex,
+                adjustedWeight = baseParams.weightPerCableKg,
+                adjustedReps = baseParams.reps,
+                feedback = "Phoenix reconnected, but the interrupted warm-up set could not be rebuilt safely.",
+            )
+
+        val completedReps = snapshot.repCount.workingReps
+        val remainingReps = (warmupSet.reps - completedReps).coerceAtLeast(0)
+        if (remainingReps > 0) {
+            return InterruptedWorkoutRecoveryPlan.Resume(
+                params = buildWarmupOverrideParams(
+                    baseParams = baseParams,
+                    workingWeightKg = baseParams.weightPerCableKg,
+                    warmupSet = warmupSet,
+                    reps = remainingReps,
+                ),
+                warmupSetIndex = snapshot.warmupSetIndex,
+                preserveWarmupReps = true,
+                skipVariableWarmupOverride = true,
+            )
+        }
+
+        val nextWarmupIndex = snapshot.warmupSetIndex + 1
+        if (nextWarmupIndex < exercise.warmupSets.size) {
+            return InterruptedWorkoutRecoveryPlan.Resume(
+                params = buildWarmupOverrideParams(
+                    baseParams = baseParams,
+                    workingWeightKg = baseParams.weightPerCableKg,
+                    warmupSet = exercise.warmupSets[nextWarmupIndex],
+                    reps = exercise.warmupSets[nextWarmupIndex].reps,
+                ),
+                warmupSetIndex = nextWarmupIndex,
+                preserveWarmupReps = true,
+                skipVariableWarmupOverride = true,
+            )
+        }
+
+        return InterruptedWorkoutRecoveryPlan.Resume(
+            params = baseParams,
+            warmupSetIndex = -1,
+            preserveWarmupReps = true,
+            skipVariableWarmupOverride = false,
+        )
+    }
+
+    private fun nextRoutineStepPlan(
+        routine: Routine,
+        exercise: RoutineExercise,
+        exerciseIndex: Int,
+        setIndex: Int,
+        feedback: String,
+    ): InterruptedWorkoutRecoveryPlan {
+        val nextStep = flowDelegate?.getNextStep(routine, exerciseIndex, setIndex)
+        if (nextStep == null) {
+            return InterruptedWorkoutRecoveryPlan.ShowRoutineComplete(feedback)
+        }
+
+        val (nextExerciseIndex, nextSetIndex) = nextStep
+        val nextExercise = routine.exercises.getOrNull(nextExerciseIndex) ?: return InterruptedWorkoutRecoveryPlan.ShowRoutineComplete(feedback)
+        val nextParams = buildRoutineRecoveryBaseParameters(nextExercise, nextSetIndex)
+        return InterruptedWorkoutRecoveryPlan.EnterSetReady(
+            exerciseIndex = nextExerciseIndex,
+            setIndex = nextSetIndex,
+            adjustedWeight = nextParams.weightPerCableKg,
+            adjustedReps = nextParams.reps,
+            feedback = feedback,
+        )
+    }
+
+    private fun buildRoutineRecoveryBaseParameters(exercise: RoutineExercise, setIndex: Int): WorkoutParameters {
+        val rawSetReps = exercise.setReps.getOrNull(setIndex)
+        val resolvedSetReps = rawSetReps ?: exercise.reps
+        return coordinator._workoutParameters.value.copy(
+            programMode = exercise.programMode,
+            weightPerCableKg = exercise.setWeightsPerCableKg.getOrNull(setIndex) ?: exercise.weightPerCableKg,
+            reps = resolvedSetReps,
+            warmupReps = Constants.DEFAULT_WARMUP_REPS,
+            echoLevel = exercise.getEchoLevelForSet(setIndex),
+            eccentricLoad = exercise.eccentricLoad,
+            selectedExerciseId = exercise.exercise.id,
+            stallDetectionEnabled = exercise.stallDetectionEnabled,
+            repCountTiming = exercise.repCountTiming,
+            stopAtTop = exercise.stopAtTop,
+            isAMRAP = rawSetReps == null,
+            progressionRegressionKg = exercise.progressionKg,
+            isJustLift = false,
+            useAutoStart = false,
+        )
+    }
+
+    private fun buildWarmupOverrideParams(
+        baseParams: WorkoutParameters,
+        workingWeightKg: Float,
+        warmupSet: com.devil.phoenixproject.domain.model.WarmupSet,
+        reps: Int,
+    ): WorkoutParameters {
+        val warmupWeight = (workingWeightKg * warmupSet.percentOfWorking / 100f).coerceIn(0f, 110f)
+        return baseParams.copy(
+            weightPerCableKg = warmupWeight,
+            reps = reps,
+            warmupReps = 0,
+            isAMRAP = false,
+        )
+    }
+
+    private fun applyInterruptedWorkoutRecoveryPlan(plan: InterruptedWorkoutRecoveryPlan) {
+        when (plan) {
+            is InterruptedWorkoutRecoveryPlan.Resume -> {
+                Logger.i {
+                    "Rebuilding interrupted set: exerciseIndex=${coordinator._currentExerciseIndex.value}, " +
+                        "setIndex=${coordinator._currentSetIndex.value}, warmupSetIndex=${plan.warmupSetIndex}, params=${plan.params}"
+                }
+                interruptedSetRecovery = null
+                pendingStartOverride = StartWorkoutOverride(
+                    params = plan.params,
+                    preserveWarmupReps = plan.preserveWarmupReps,
+                    skipVariableWarmupOverride = plan.skipVariableWarmupOverride,
+                )
+                coordinator._currentWarmupSetIndex.value = plan.warmupSetIndex
+                coordinator._workoutParameters.value = plan.params
+                resetInterruptedWorkoutTrackingState()
+                startWorkout(skipCountdown = true)
+            }
+
+            is InterruptedWorkoutRecoveryPlan.EnterSetReady -> {
+                Logger.w { "Interrupted workout requires manual restart from Set Ready" }
+                interruptedSetRecovery = null
+                pendingStartOverride = null
+                resetInterruptedWorkoutTrackingState()
+                coordinator._workoutState.value = WorkoutState.Idle
+                flowDelegate?.enterSetReadyWithAdjustments(
+                    exerciseIndex = plan.exerciseIndex,
+                    setIndex = plan.setIndex,
+                    adjustedWeight = plan.adjustedWeight,
+                    adjustedReps = plan.adjustedReps,
+                )
+                coordinator._userFeedbackEvents.tryEmit(plan.feedback)
+            }
+
+            is InterruptedWorkoutRecoveryPlan.ShowRoutineComplete -> {
+                Logger.w { "Interrupted workout already completed before reconnect; showing routine complete" }
+                interruptedSetRecovery = null
+                pendingStartOverride = null
+                resetInterruptedWorkoutTrackingState()
+                coordinator._workoutState.value = WorkoutState.Idle
+                flowDelegate?.showRoutineComplete()
+                coordinator._userFeedbackEvents.tryEmit(plan.feedback)
+            }
+        }
+    }
+
+    private fun resetInterruptedWorkoutTrackingState() {
+        coordinator.workoutJob?.cancel()
+        coordinator.workoutJob = null
+        repCounter.reset()
+        resetAutoStopState()
+        coordinator._repCount.value = RepCount()
+        coordinator._repRanges.value = null
+        coordinator._timedExerciseRemainingSeconds.value = null
+        coordinator._currentHeuristicKgMax.value = 0f
+        coordinator.collectedMetrics.value = emptyList()
+        coordinator.setRepMetrics.value = emptyList()
+        coordinator.repBoundaryTimestamps.value = emptyList()
+        coordinator.biomechanicsEngine.reset()
+        coordinator.repQualityScorer.reset()
+        coordinator._latestRepQuality.value = null
+        coordinator._loadBaselineA.value = 0f
+        coordinator._loadBaselineB.value = 0f
+        coordinator.warmupCompleteTimeMs = 0
+        coordinator.currentSessionId = null
+        coordinator.bodyweightTimerJob?.cancel()
+        coordinator.bodyweightTimerJob = null
+    }
+
     fun startWorkout(skipCountdown: Boolean = false, isJustLiftMode: Boolean = false) {
         Logger.d { "startWorkout called: skipCountdown=$skipCountdown, isJustLiftMode=$isJustLiftMode" }
         Logger.d { "startWorkout: loadedRoutine=${coordinator._loadedRoutine.value?.name}, params=${coordinator._workoutParameters.value}" }
 
-        coordinator.stopWorkoutInProgress = false
-        coordinator.setCompletionInProgress = false
+        cancelJustLiftEggTimer()
+        coordinator.stopWorkoutInProgress.value = false
+        coordinator.setCompletionInProgress.value = false
         resetAutoStopState()
         coordinator.skipCountdownRequested = skipCountdown
+
+        // Reset rep quality scorer for fresh set
+        coordinator.repQualityScorer.reset()
+        coordinator._latestRepQuality.value = null
+        // Reset quality streak only at actual workout start, not between sets.
+        // skipCountdown=true indicates a set-to-set transition within the same workout.
+        if (!skipCountdown) {
+            gamificationManager.resetQualityStreak()
+        }
 
         coordinator.workoutJob?.cancel()
 
@@ -1193,230 +1931,274 @@ class ActiveSessionEngine(
         syncRoutineSessionContext()
 
         coordinator.workoutJob = scope.launch {
-            val params = coordinator._workoutParameters.value
+            try {
+                val startOverride = pendingStartOverride.also { pendingStartOverride = null }
+                if (startOverride != null) {
+                    coordinator._workoutParameters.value = startOverride.params
+                }
+                val params = startOverride?.params ?: coordinator._workoutParameters.value
 
-            val currentExercise = coordinator._loadedRoutine.value?.exercises?.getOrNull(coordinator._currentExerciseIndex.value)
-            val isBodyweight = isBodyweightExercise(currentExercise)
-            val exerciseDuration = currentExercise?.duration?.takeIf { it > 0 }
-            val bodyweightDuration = if (isBodyweight) exerciseDuration else null
+                val currentExercise = coordinator._loadedRoutine.value?.exercises?.getOrNull(coordinator._currentExerciseIndex.value)
+                val isBodyweight = isBodyweightExercise(currentExercise)
+                val exerciseDuration = currentExercise?.duration?.takeIf { it > 0 }
+                val bodyweightDuration = if (isBodyweight) exerciseDuration else null
 
-            val isTimedCableExercise = !isBodyweight && exerciseDuration != null
-            coordinator.isCurrentWorkoutTimed = exerciseDuration != null
-            coordinator.isCurrentTimedCableExercise = isTimedCableExercise
-            coordinator._isCurrentExerciseBodyweight.value = isBodyweight
+                val isTimedCableExercise = !isBodyweight && exerciseDuration != null
+                coordinator.isCurrentWorkoutTimed = exerciseDuration != null
+                coordinator.isCurrentTimedCableExercise = isTimedCableExercise
+                coordinator._isCurrentExerciseBodyweight.value = isBodyweight
 
-            Logger.d { "Issue227: startWorkout exercise type detection:" }
-            Logger.d { "  - Exercise: ${currentExercise?.exercise?.name}" }
-            Logger.d { "  - Equipment: '${currentExercise?.exercise?.equipment}'" }
-            Logger.d { "  - Weight: ${currentExercise?.weightPerCableKg}kg" }
-            Logger.d { "  - Duration: ${exerciseDuration}s" }
-            Logger.d { "  - isBodyweight: $isBodyweight" }
-            Logger.d { "  - isTimedCableExercise: $isTimedCableExercise" }
+                Logger.d { "Issue227: startWorkout exercise type detection:" }
+                Logger.d { "  - Exercise: ${currentExercise?.exercise?.name}" }
+                Logger.d { "  - Equipment: '${currentExercise?.exercise?.equipment}'" }
+                Logger.d { "  - Weight: ${currentExercise?.weightPerCableKg}kg" }
+                Logger.d { "  - Duration: ${exerciseDuration}s" }
+                Logger.d { "  - isBodyweight: $isBodyweight" }
+                Logger.d { "  - isTimedCableExercise: $isTimedCableExercise" }
 
-            // Issue #222: For ALL bodyweight exercises, skip machine commands
-            if (isBodyweight) {
-                val effectiveDuration = bodyweightDuration ?: 30
-                Logger.d("Starting bodyweight exercise: ${currentExercise?.exercise?.name} for ${effectiveDuration}s (bodyweightDuration=${bodyweightDuration})")
+                // Issue #222: For ALL bodyweight exercises, skip machine commands
+                if (isBodyweight) {
+                    val effectiveDuration = bodyweightDuration ?: 30
+                    Logger.d("Starting bodyweight exercise: ${currentExercise?.exercise?.name} for ${effectiveDuration}s (bodyweightDuration=$bodyweightDuration)")
 
-                Logger.d("ActiveSessionEngine") { "Issue #222 v6: Bodyweight start - keeping existing polling state (matching parent repo)" }
+                    Logger.d("ActiveSessionEngine") { "Issue #222 v6: Bodyweight start - keeping existing polling state (matching parent repo)" }
 
-                repCounter.reset()
-                repCounter.configure(
-                    warmupTarget = 0,
-                    workingTarget = 0,
-                    isJustLift = false,
-                    stopAtTop = params.stopAtTop,
-                    isAMRAP = false
-                )
+                    repCounter.reset()
+                    repCounter.configure(
+                        warmupTarget = 0,
+                        workingTarget = 0,
+                        isJustLift = false,
+                        stopAtTop = params.stopAtTop,
+                        isAMRAP = false,
+                    )
+                    coordinator._repCount.value = RepCount()
+                    coordinator.warmupCompleteTimeMs = 0
+
+                    if (!coordinator.skipCountdownRequested) {
+                        startMotionStartDetection()
+                        for (i in 5 downTo 1) {
+                            if (coordinator.skipCountdownRequested) break
+                            coordinator._workoutState.value = WorkoutState.Countdown(i)
+                            delay(1000)
+                        }
+                        stopMotionStartDetection()
+                    }
+
+                    coordinator._workoutState.value = WorkoutState.Active
+                    coordinator.workoutStartTime = currentTimeMillis()
+                    if (coordinator._loadedRoutine.value != null && coordinator.routineStartTime == 0L) {
+                        coordinator.routineStartTime = coordinator.workoutStartTime
+                    }
+                    coordinator.currentSessionId = KmpUtils.randomUUID()
+                    coordinator.collectedMetrics.value = emptyList()
+                    coordinator._hapticEvents.emit(HapticEvent.WORKOUT_START)
+
+                    coordinator.bodyweightTimerJob?.cancel()
+                    coordinator.bodyweightTimerJob = scope.launch {
+                        coordinator._timedExerciseRemainingSeconds.value = effectiveDuration
+                        for (remaining in effectiveDuration downTo 1) {
+                            coordinator._timedExerciseRemainingSeconds.value = remaining
+                            delay(1000L)
+                        }
+                        coordinator._timedExerciseRemainingSeconds.value = 0
+                        handleSetCompletion()
+                    }
+
+                    return@launch
+                }
+
+                // Normal cable-based exercise
+                if (coordinator.previousExerciseWasBodyweight) {
+                    coordinator.previousExerciseWasBodyweight = false
+                }
+
+                val effectiveWarmupReps = Constants.DEFAULT_WARMUP_REPS
+                val preserveWarmupReps = startOverride?.preserveWarmupReps == true
+                val effectiveParams = if (!preserveWarmupReps && params.warmupReps != effectiveWarmupReps) {
+                    Logger.d("ActiveSessionEngine") { "Issue #222: Forcing warmupReps=$effectiveWarmupReps for cable exercise (was ${params.warmupReps})" }
+                    val updated = params.copy(warmupReps = effectiveWarmupReps)
+                    coordinator._workoutParameters.value = updated
+                    updated
+                } else {
+                    params
+                }
+
+                // Clear any deferred mid-set weight change flag (weight already applied to _workoutParameters)
+                if (coordinator.pendingWeightChangeKg != null) {
+                    Logger.d("ActiveSessionEngine: Deferred weight change of ${coordinator.pendingWeightChangeKg} kg applied at set start")
+                    coordinator.pendingWeightChangeKg = null
+                }
+
+                Logger.d("ActiveSessionEngine") { "Cable workout starting - bodyweightSetsInRoutine=${coordinator.bodyweightSetsCompletedInRoutine}, exerciseIdx=${coordinator._currentExerciseIndex.value}, setIdx=${coordinator._currentSetIndex.value}, echo=${effectiveParams.isEchoMode}, mode=${effectiveParams.programMode}" }
+                Logger.d("ActiveSessionEngine") { "BLE params: mode=${effectiveParams.programMode.displayName}, weight=${effectiveParams.weightPerCableKg}kg, reps=${effectiveParams.reps} (AMRAP=${effectiveParams.isAMRAP}), warmup=${effectiveParams.warmupReps}, progression=${effectiveParams.progressionRegressionKg}kg/rep" }
+                Logger.d("ActiveSessionEngine") { "BLE params (cont): justLift=${effectiveParams.isJustLift}, echo=${effectiveParams.isEchoMode}, echoLevel=${effectiveParams.echoLevel.displayName}, eccentricLoad=${effectiveParams.eccentricLoad.percentage}%, stopAtTop=${effectiveParams.stopAtTop}, stallDetection=${effectiveParams.stallDetectionEnabled}" }
+                Logger.d("ActiveSessionEngine") { "Issue203: setReps=${currentExercise?.setReps}, currentSetIndex=${coordinator._currentSetIndex.value}, isAMRAP=${effectiveParams.isAMRAP}" }
+
+                // ===== Variable Warm-up Sets (Phase 35C: Issue #30) =====
+                // When the exercise has warmupSets defined, override weight/reps for warm-up phase.
+                // Each warm-up set is a separate BLE stop/start cycle at a percentage of working weight.
+                val warmupSetIndex = coordinator._currentWarmupSetIndex.value
+                val isInWarmupPhase = warmupSetIndex >= 0
+                val skipVariableWarmupOverride = startOverride?.skipVariableWarmupOverride == true
+                val warmupOverrideParams = if (!skipVariableWarmupOverride && isInWarmupPhase && currentExercise != null) {
+                    val warmupSet = currentExercise.warmupSets.getOrNull(warmupSetIndex)
+                    if (warmupSet != null) {
+                        val warmupWeight = (effectiveParams.weightPerCableKg * warmupSet.percentOfWorking / 100f)
+                            .coerceIn(0f, 110f)
+                        Logger.d {
+                            "WarmupSet ${warmupSetIndex + 1}/${currentExercise.warmupSets.size}: " +
+                                "${warmupSet.reps} reps @ ${warmupSet.percentOfWorking}% = ${warmupWeight}kg (working=${effectiveParams.weightPerCableKg}kg)"
+                        }
+                        effectiveParams.copy(
+                            weightPerCableKg = warmupWeight,
+                            reps = warmupSet.reps,
+                            warmupReps = 0, // No firmware warmup for variable warm-up sets
+                            isAMRAP = false, // Warm-up sets are always fixed reps
+                        )
+                    } else {
+                        Logger.w { "WarmupSet index $warmupSetIndex out of bounds for ${currentExercise.warmupSets.size} warmup sets - falling through to working set" }
+                        coordinator._currentWarmupSetIndex.value = -1
+                        effectiveParams
+                    }
+                } else {
+                    effectiveParams
+                }
+                // Update coordinator params if warm-up override applied
+                if (isInWarmupPhase && warmupOverrideParams !== effectiveParams) {
+                    coordinator._workoutParameters.value = warmupOverrideParams
+                }
+
+                val bleParams = if (isTimedCableExercise) {
+                    Logger.d { "Duration cable: overriding isAMRAP=true for BLE command (prevents machine rep limit)" }
+                    warmupOverrideParams.copy(isAMRAP = true)
+                } else {
+                    warmupOverrideParams
+                }
+
+                val command = if (bleParams.isEchoMode) {
+                    BlePacketFactory.createEchoControl(
+                        level = bleParams.echoLevel,
+                        warmupReps = bleParams.warmupReps,
+                        targetReps = bleParams.reps,
+                        isJustLift = isJustLiftMode || bleParams.isJustLift,
+                        isAMRAP = bleParams.isAMRAP,
+                        eccentricPct = bleParams.eccentricLoad.percentage,
+                    )
+                } else {
+                    BlePacketFactory.createProgramParams(bleParams)
+                }
+                Logger.d { "Built ${command.size}-byte workout command for ${bleParams.programMode}" }
+
+                coordinator.currentSessionId = KmpUtils.randomUUID()
                 coordinator._repCount.value = RepCount()
                 coordinator.warmupCompleteTimeMs = 0
+                coordinator._currentHeuristicKgMax.value = 0f
+                if (isJustLiftMode) {
+                    repCounter.resetCountsOnly()
+                } else {
+                    repCounter.reset()
+                }
+                repCounter.configure(
+                    warmupTarget = effectiveParams.warmupReps,
+                    workingTarget = if (isTimedCableExercise) 0 else effectiveParams.reps,
+                    isJustLift = isJustLiftMode,
+                    stopAtTop = effectiveParams.stopAtTop,
+                    isAMRAP = if (isTimedCableExercise) true else effectiveParams.isAMRAP,
+                )
 
-                if (!coordinator.skipCountdownRequested) {
+                if (isTimedCableExercise) {
+                    Logger.d { "Starting TIMED cable exercise: ${currentExercise.exercise.name} for ${exerciseDuration}s" }
+                }
+
+                if (!coordinator.skipCountdownRequested && !isJustLiftMode) {
+                    startMotionStartDetection()
                     for (i in 5 downTo 1) {
                         if (coordinator.skipCountdownRequested) break
                         coordinator._workoutState.value = WorkoutState.Countdown(i)
                         delay(1000)
                     }
+                    stopMotionStartDetection()
                 }
+
+                try {
+                    bleRepository.sendWorkoutCommand(command).getOrThrow()
+                    Logger.i { "CONFIG command sent: ${command.size} bytes for ${effectiveParams.programMode}" }
+                    val preview = command.take(16).joinToString(" ") { it.toUByte().toString(16).padStart(2, '0').uppercase() }
+                    Logger.d { "Config preview: $preview ..." }
+                    if (!effectiveParams.isEchoMode && command.size >= 0x60) {
+                        val activationTailDump = command
+                            .copyOfRange(0x48, 0x60)
+                            .joinToString(" ") { it.toUByte().toString(16).padStart(2, '0').uppercase() }
+                        Logger.w {
+                            "BLE-ACTIVATION-VERIFY (temporary): offsets 0x48..0x5F => $activationTailDump"
+                        }
+                    }
+                } catch (e: Exception) {
+                    Logger.e(e) { "Failed to send config command" }
+                    coordinator._bleErrorEvents.tryEmit("Failed to send command: ${e.message}")
+                    return@launch
+                }
+
+                if (!effectiveParams.isEchoMode) {
+                    delay(100)
+                    try {
+                        val startCommand = BlePacketFactory.createStartCommand()
+                        bleRepository.sendWorkoutCommand(startCommand).getOrThrow()
+                        Logger.i { "START command sent (0x03)" }
+                    } catch (e: Exception) {
+                        Logger.e(e) { "Failed to send START command" }
+                        coordinator._bleErrorEvents.tryEmit("Failed to start workout: ${e.message}")
+                        return@launch
+                    }
+                }
+
+                bleRepository.startActiveWorkoutPolling()
 
                 coordinator._workoutState.value = WorkoutState.Active
                 coordinator.workoutStartTime = currentTimeMillis()
                 if (coordinator._loadedRoutine.value != null && coordinator.routineStartTime == 0L) {
                     coordinator.routineStartTime = coordinator.workoutStartTime
                 }
-                coordinator.currentSessionId = KmpUtils.randomUUID()
-                coordinator.collectedMetrics.clear()
+                coordinator.collectedMetrics.value = emptyList()
                 coordinator._hapticEvents.emit(HapticEvent.WORKOUT_START)
 
-                coordinator.bodyweightTimerJob?.cancel()
-                coordinator.bodyweightTimerJob = scope.launch {
-                    coordinator._timedExerciseRemainingSeconds.value = effectiveDuration
-                    for (remaining in effectiveDuration downTo 1) {
-                        coordinator._timedExerciseRemainingSeconds.value = remaining
-                        delay(1000L)
-                    }
-                    coordinator._timedExerciseRemainingSeconds.value = 0
-                    handleSetCompletion()
-                }
+                // exerciseDuration != null is logically redundant (implied by isTimedCableExercise)
+                // but required for Kotlin smart-cast so exerciseDuration can be used as non-null below
+                @Suppress("SENSELESS_COMPARISON")
+                if (isTimedCableExercise && exerciseDuration != null) {
+                    coordinator.bodyweightTimerJob?.cancel()
+                    coordinator.bodyweightTimerJob = scope.launch {
+                        if (effectiveParams.warmupReps > 0) {
+                            Logger.d { "Duration cable: waiting for ${effectiveParams.warmupReps} warmup reps before starting ${exerciseDuration}s timer" }
+                            coordinator._repCount.first { it.isWarmupComplete }
+                            Logger.d { "Duration cable: warmup complete, starting ${exerciseDuration}s duration timer" }
+                        }
 
-                return@launch
-            }
-
-            // Normal cable-based exercise
-            if (coordinator.previousExerciseWasBodyweight) {
-                coordinator.previousExerciseWasBodyweight = false
-            }
-
-            val effectiveWarmupReps = Constants.DEFAULT_WARMUP_REPS
-            val effectiveParams = if (params.warmupReps != effectiveWarmupReps) {
-                Logger.d("ActiveSessionEngine") { "Issue #222: Forcing warmupReps=$effectiveWarmupReps for cable exercise (was ${params.warmupReps})" }
-                val updated = params.copy(warmupReps = effectiveWarmupReps)
-                coordinator._workoutParameters.value = updated
-                updated
-            } else {
-                params
-            }
-
-            println("Issue222: CABLE WORKOUT STARTING - DIAGNOSTIC STATE")
-            println("Issue222: Bodyweight sets completed this routine: $coordinator.bodyweightSetsCompletedInRoutine")
-            println("Issue222: Current exercise index: ${coordinator._currentExerciseIndex.value}")
-            println("Issue222: Current set index: ${coordinator._currentSetIndex.value}")
-            println("Issue222: isEchoMode: ${effectiveParams.isEchoMode}")
-            println("Issue222: programMode: ${effectiveParams.programMode}")
-
-            println("Issue188: PRE-BLE WORKOUT PARAMETERS")
-            println("Issue188: Mode: ${effectiveParams.programMode.displayName}")
-            println("Issue188: Weight: ${effectiveParams.weightPerCableKg}kg per cable")
-            println("Issue188: Reps: ${effectiveParams.reps} (isAMRAP=${effectiveParams.isAMRAP})")
-            Logger.d { "Issue203 DEBUG: Starting workout - setReps=${currentExercise?.setReps}, currentSetIndex=${coordinator._currentSetIndex.value}, isAMRAP=${effectiveParams.isAMRAP}" }
-            println("Issue188: Warmup: ${effectiveParams.warmupReps}")
-            println("Issue188: Progression: ${effectiveParams.progressionRegressionKg}kg per rep")
-            println("Issue188: isJustLift: ${effectiveParams.isJustLift}")
-            println("Issue188: isEchoMode: ${effectiveParams.isEchoMode}")
-            println("Issue188: echoLevel: ${effectiveParams.echoLevel.displayName}")
-            println("Issue188: eccentricLoad: ${effectiveParams.eccentricLoad.percentage}%")
-            println("Issue188: stopAtTop: ${effectiveParams.stopAtTop}")
-            println("Issue188: stallDetection: ${effectiveParams.stallDetectionEnabled}")
-
-            val bleParams = if (isTimedCableExercise) {
-                Logger.d { "Duration cable: overriding isAMRAP=true for BLE command (prevents machine rep limit)" }
-                effectiveParams.copy(isAMRAP = true)
-            } else {
-                effectiveParams
-            }
-
-            val command = if (bleParams.isEchoMode) {
-                BlePacketFactory.createEchoControl(
-                    level = bleParams.echoLevel,
-                    warmupReps = bleParams.warmupReps,
-                    targetReps = bleParams.reps,
-                    isJustLift = isJustLiftMode || bleParams.isJustLift,
-                    isAMRAP = bleParams.isAMRAP,
-                    eccentricPct = bleParams.eccentricLoad.percentage
-                )
-            } else {
-                BlePacketFactory.createProgramParams(bleParams)
-            }
-            Logger.d { "Built ${command.size}-byte workout command for ${bleParams.programMode}" }
-
-            coordinator.currentSessionId = KmpUtils.randomUUID()
-            coordinator._repCount.value = RepCount()
-            coordinator.warmupCompleteTimeMs = 0
-            coordinator._currentHeuristicKgMax.value = 0f
-            if (isJustLiftMode) {
-                repCounter.resetCountsOnly()
-            } else {
-                repCounter.reset()
-            }
-            repCounter.configure(
-                warmupTarget = effectiveParams.warmupReps,
-                workingTarget = if (isTimedCableExercise) 0 else effectiveParams.reps,
-                isJustLift = isJustLiftMode,
-                stopAtTop = effectiveParams.stopAtTop,
-                isAMRAP = if (isTimedCableExercise) true else effectiveParams.isAMRAP
-            )
-
-            if (isTimedCableExercise) {
-                Logger.d { "Starting TIMED cable exercise: ${currentExercise?.exercise?.name} for ${exerciseDuration}s (no ROM calibration)" }
-            }
-
-            if (!coordinator.skipCountdownRequested && !isJustLiftMode) {
-                for (i in 5 downTo 1) {
-                    if (coordinator.skipCountdownRequested) break
-                    coordinator._workoutState.value = WorkoutState.Countdown(i)
-                    delay(1000)
-                }
-            }
-
-            try {
-                bleRepository.sendWorkoutCommand(command)
-                Logger.i { "CONFIG command sent: ${command.size} bytes for ${effectiveParams.programMode}" }
-                val preview = command.take(16).joinToString(" ") { it.toUByte().toString(16).padStart(2, '0').uppercase() }
-                Logger.d { "Config preview: $preview ..." }
-                if (!effectiveParams.isEchoMode && command.size >= 0x60) {
-                    val activationTailDump = command
-                        .copyOfRange(0x48, 0x60)
-                        .joinToString(" ") { it.toUByte().toString(16).padStart(2, '0').uppercase() }
-                    Logger.w {
-                        "BLE-ACTIVATION-VERIFY (temporary): offsets 0x48..0x5F => $activationTailDump"
+                        coordinator._timedExerciseRemainingSeconds.value = exerciseDuration
+                        for (remaining in exerciseDuration downTo 1) {
+                            coordinator._timedExerciseRemainingSeconds.value = remaining
+                            delay(1000L)
+                        }
+                        coordinator._timedExerciseRemainingSeconds.value = 0
+                        handleSetCompletion()
                     }
                 }
+
+                coordinator._currentMetric.value?.let { metric ->
+                    repCounter.setInitialBaseline(metric.positionA, metric.positionB)
+                    coordinator._repRanges.value = repCounter.getRepRanges()
+                    Logger.d("ActiveSessionEngine") { "POSITION BASELINE: Set initial baseline posA=${metric.positionA}, posB=${metric.positionB}" }
+
+                    coordinator._loadBaselineA.value = metric.loadA
+                    coordinator._loadBaselineB.value = metric.loadB
+                    Logger.d("ActiveSessionEngine") { "LOAD BASELINE: Set initial baseline loadA=${metric.loadA}kg, loadB=${metric.loadB}kg" }
+                }
+            } catch (e: CancellationException) {
+                throw e // let cancellation propagate
             } catch (e: Exception) {
-                Logger.e(e) { "Failed to send config command" }
-                coordinator._bleErrorEvents.tryEmit("Failed to send command: ${e.message}")
-                return@launch
-            }
-
-            if (!effectiveParams.isEchoMode) {
-                delay(100)
-                try {
-                    val startCommand = BlePacketFactory.createStartCommand()
-                    bleRepository.sendWorkoutCommand(startCommand)
-                    Logger.i { "START command sent (0x03)" }
-                } catch (e: Exception) {
-                    Logger.e(e) { "Failed to send START command" }
-                    coordinator._bleErrorEvents.tryEmit("Failed to start workout: ${e.message}")
-                    return@launch
-                }
-            }
-
-            bleRepository.startActiveWorkoutPolling()
-
-            coordinator._workoutState.value = WorkoutState.Active
-            coordinator.workoutStartTime = currentTimeMillis()
-            if (coordinator._loadedRoutine.value != null && coordinator.routineStartTime == 0L) {
-                coordinator.routineStartTime = coordinator.workoutStartTime
-            }
-            coordinator.collectedMetrics.clear()
-            coordinator._hapticEvents.emit(HapticEvent.WORKOUT_START)
-
-            if (isTimedCableExercise && exerciseDuration != null) {
-                coordinator.bodyweightTimerJob?.cancel()
-                coordinator.bodyweightTimerJob = scope.launch {
-                    if (effectiveParams.warmupReps > 0) {
-                        Logger.d { "Duration cable: waiting for ${effectiveParams.warmupReps} warmup reps before starting ${exerciseDuration}s timer" }
-                        coordinator._repCount.first { it.isWarmupComplete }
-                        Logger.d { "Duration cable: warmup complete, starting ${exerciseDuration}s duration timer" }
-                    }
-
-                    coordinator._timedExerciseRemainingSeconds.value = exerciseDuration
-                    for (remaining in exerciseDuration downTo 1) {
-                        coordinator._timedExerciseRemainingSeconds.value = remaining
-                        delay(1000L)
-                    }
-                    coordinator._timedExerciseRemainingSeconds.value = 0
-                    handleSetCompletion()
-                }
-            }
-
-            coordinator._currentMetric.value?.let { metric ->
-                repCounter.setInitialBaseline(metric.positionA, metric.positionB)
-                coordinator._repRanges.value = repCounter.getRepRanges()
-                Logger.d("ActiveSessionEngine") { "POSITION BASELINE: Set initial baseline posA=${metric.positionA}, posB=${metric.positionB}" }
-
-                coordinator._loadBaselineA.value = metric.loadA
-                coordinator._loadBaselineB.value = metric.loadB
-                Logger.d("ActiveSessionEngine") { "LOAD BASELINE: Set initial baseline loadA=${metric.loadA}kg, loadB=${metric.loadB}kg" }
+                Logger.e(e) { "workoutJob: uncaught exception" }
+                coordinator._bleErrorEvents.tryEmit("Workout error: ${e.message}")
+                coordinator._workoutState.value = WorkoutState.Idle
             }
         }
     }
@@ -1450,9 +2232,68 @@ class ActiveSessionEngine(
         Logger.d { "skipCountdown: Countdown skip requested" }
     }
 
+    /**
+     * Issue #237: Start motion-start detection during countdown.
+     * Collects metricsFlow and feeds load values to the MotionStartDetector.
+     * On [MotionStartEvent.Started], calls [skipCountdown] to begin the set immediately.
+     * On [MotionStartEvent.CountdownTick], updates hold progress for the ring-fill UI.
+     * On [MotionStartEvent.Cancelled], resets progress.
+     */
+    private fun startMotionStartDetection() {
+        val prefs = settingsManager.userPreferences.value
+        if (!prefs.motionStartEnabled) return
+
+        motionStartDetector.reset()
+        coordinator._motionStartHoldProgress.value = 0f
+
+        // Listen for detector events
+        motionStartListenerJob?.cancel()
+        motionStartListenerJob = scope.launch {
+            // Event listener coroutine
+            launch {
+                motionStartDetector.events.collect { event ->
+                    when (event) {
+                        is MotionStartEvent.Started -> {
+                            coordinator._motionStartHoldProgress.value = 1f
+                            Logger.d { "MotionStart: Cable hold complete, skipping countdown" }
+                            skipCountdown()
+                        }
+
+                        is MotionStartEvent.CountdownTick -> {
+                            val progress = 1f - (event.remainingMs.toFloat() / 1500f)
+                            coordinator._motionStartHoldProgress.value = progress.coerceIn(0f, 1f)
+                        }
+
+                        is MotionStartEvent.Cancelled -> {
+                            coordinator._motionStartHoldProgress.value = 0f
+                        }
+                    }
+                }
+            }
+            // Metric feeder coroutine
+            launch {
+                bleRepository.metricsFlow
+                    .catch { e -> Logger.e(e) { "metricsFlow collector error (motionStart)" } }
+                    .collect { metric ->
+                        // Use average of both cables for load detection
+                        val load = (metric.loadA + metric.loadB) / 2f
+                        motionStartDetector.onMetricReceived(load, metric.timestamp)
+                    }
+            }
+        }
+    }
+
+    /** Issue #237: Stop motion-start detection and clear UI state. */
+    private fun stopMotionStartDetection() {
+        motionStartListenerJob?.cancel()
+        motionStartListenerJob = null
+        motionStartDetector.reset()
+        coordinator._motionStartHoldProgress.value = null
+    }
+
     fun stopWorkout(exitingWorkout: Boolean = false) {
-        if (coordinator.stopWorkoutInProgress) return
-        coordinator.stopWorkoutInProgress = true
+        // C1: Atomic compareAndSet prevents TOCTOU race — only the first caller proceeds
+        if (!coordinator.stopWorkoutInProgress.compareAndSet(expect = false, update = true)) return
 
         val shouldExitToIdle = exitingWorkout
 
@@ -1465,174 +2306,219 @@ class ActiveSessionEngine(
 
         coordinator.restTimerJob?.cancel()
         coordinator.restTimerJob = null
+        coordinator.restDeadlineElapsedRealtimeMs = null
+        cancelJustLiftEggTimer()
 
         scope.launch {
             coordinator.isCurrentWorkoutTimed = false
             coordinator.isCurrentTimedCableExercise = false
             coordinator._isCurrentExerciseBodyweight.value = false
 
-             val currentExercise = coordinator._loadedRoutine.value?.exercises?.getOrNull(coordinator._currentExerciseIndex.value)
-             val isBodyweight = isBodyweightExercise(currentExercise)
-             println("Issue222 TRACE: manual stop -> isBodyweight=$isBodyweight, exitingWorkout=$shouldExitToIdle")
-             if (!isBodyweight) {
-                 println("Issue222 TRACE: manual stop -> calling bleRepository.stopWorkout()")
-                 bleRepository.stopWorkout()
-             } else {
-                 println("Issue222 TRACE: manual stop -> skipping BLE stop (bodyweight)")
-                 Logger.d("Manual stop: bodyweight exercise - skipping BLE stop (parent-aligned)")
-             }
-             coordinator._hapticEvents.emit(HapticEvent.WORKOUT_END)
+            val currentExercise = coordinator._loadedRoutine.value?.exercises?.getOrNull(coordinator._currentExerciseIndex.value)
+            val isBodyweight = isBodyweightExercise(currentExercise)
+            Logger.d("ActiveSessionEngine") { "Manual stop: isBodyweight=$isBodyweight, exitingWorkout=$shouldExitToIdle" }
+            if (!isBodyweight) {
+                Logger.d("ActiveSessionEngine") { "Manual stop: calling bleRepository.stopWorkout()" }
+                bleRepository.stopWorkout()
+            } else {
+                Logger.d("ActiveSessionEngine") { "Manual stop: bodyweight exercise - skipping BLE stop" }
+            }
+            coordinator._hapticEvents.emit(HapticEvent.WORKOUT_END)
 
-             val params = coordinator._workoutParameters.value
-             val repCount = coordinator._repCount.value
-             val isJustLift = params.isJustLift
+            val repCount = coordinator._repCount.value
+            val isJustLift = coordinator._workoutParameters.value.isJustLift
 
-             if (isJustLift) {
-                 Logger.d("Just Lift: Restarting monitor polling to clear machine fault state")
-                 bleRepository.restartMonitorPolling()
-             }
+            if (isJustLift) {
+                Logger.d("Just Lift: Restarting monitor polling to clear machine fault state")
+                bleRepository.restartMonitorPolling()
+                applyAutoAcceptedDetection()
+            }
 
-             val exerciseName = params.selectedExerciseId?.let { exerciseId ->
-                 exerciseRepository.getExerciseById(exerciseId)?.name
-             }
+            // Re-read params after potential auto-accept update
+            val params = coordinator._workoutParameters.value
 
-             val metrics = coordinator.collectedMetrics.toList()
-             Logger.i { "WEIGHT_DEBUG[Session]: At set completion - params.weightPerCableKg=${params.weightPerCableKg} kg" }
-             val summary = calculateSetSummaryMetrics(
-                 metrics = metrics,
-                 repCount = repCount.totalReps,
-                 fallbackWeightKg = params.weightPerCableKg,
-                 configuredWeightKgPerCable = params.weightPerCableKg,
-                 isEchoMode = params.isEchoMode,
-                 warmupRepsCount = repCount.warmupReps,
-                 workingRepsCount = repCount.workingReps,
-                 warmupCompleteTimeMs = coordinator.warmupCompleteTimeMs
-             )
+            val selectedExercise = resolveSelectedExercise(params)
+            val exerciseName = selectedExercise?.name
 
-             // Issue #252: Exclude warmup time from session duration
-             val effectiveStart = if (coordinator.warmupCompleteTimeMs > 0L) coordinator.warmupCompleteTimeMs else coordinator.workoutStartTime
-             val session = WorkoutSession(
-                 timestamp = coordinator.workoutStartTime,
-                 mode = params.programMode.displayName,
-                 reps = params.reps,
-                 weightPerCableKg = params.weightPerCableKg,
-                 totalReps = repCount.totalReps,
-                 workingReps = repCount.workingReps,
-                 warmupReps = repCount.warmupReps,
-                 duration = currentTimeMillis() - effectiveStart,
-                 isJustLift = isJustLift,
-                 exerciseId = params.selectedExerciseId,
-                 exerciseName = exerciseName,
-                 routineSessionId = coordinator.currentRoutineSessionId,
-                 routineName = coordinator.currentRoutineName,
-                 routineId = coordinator.currentRoutineId,
-                 peakForceConcentricA = summary.peakForceConcentricA,
-                 peakForceConcentricB = summary.peakForceConcentricB,
-                 peakForceEccentricA = summary.peakForceEccentricA,
-                 peakForceEccentricB = summary.peakForceEccentricB,
-                 avgForceConcentricA = summary.avgForceConcentricA,
-                 avgForceConcentricB = summary.avgForceConcentricB,
-                 avgForceEccentricA = summary.avgForceEccentricA,
-                 avgForceEccentricB = summary.avgForceEccentricB,
-                 heaviestLiftKg = summary.heaviestLiftKgPerCable,
-                 totalVolumeKg = summary.totalVolumeKg,
-                 cableCount = summary.cableCount,
-                 estimatedCalories = summary.estimatedCalories,
-                 warmupAvgWeightKg = if (params.isEchoMode) summary.warmupAvgWeightKg else null,
-                 workingAvgWeightKg = if (params.isEchoMode) summary.workingAvgWeightKg else null,
-                 burnoutAvgWeightKg = if (params.isEchoMode) summary.burnoutAvgWeightKg else null,
-                 peakWeightKg = if (params.isEchoMode) summary.peakWeightKg else null,
-                 rpe = coordinator._currentSetRpe.value
-             )
-             workoutRepository.saveSession(session)
+            val metrics = coordinator.collectedMetrics.value
+            Logger.i { "WEIGHT_DEBUG[Session]: At set completion - params.weightPerCableKg=${params.weightPerCableKg} kg" }
+            val summary = calculateSetSummaryMetrics(
+                metrics = metrics,
+                repCount = repCount.totalReps,
+                fallbackWeightKg = params.weightPerCableKg,
+                configuredWeightKgPerCable = params.weightPerCableKg,
+                isEchoMode = params.isEchoMode,
+                warmupRepsCount = repCount.warmupReps,
+                workingRepsCount = repCount.workingReps,
+                warmupCompleteTimeMs = coordinator.warmupCompleteTimeMs,
+                cableCountHint = selectedExercise?.preferredCableCount,
+            )
 
-             var completedSetId: String? = null
-             if (params.selectedExerciseId != null && repCount.workingReps > 0) {
-                 val setIndex = coordinator._currentSetIndex.value
-                 val setId = generateUUID()
-                 completedSetId = setId
-                 val matchedPlannedSetId = findPlannedSetId(setIndex)
-                 val completedSet = CompletedSet(
-                     id = setId,
-                     sessionId = session.id,
-                     plannedSetId = matchedPlannedSetId,
-                     setNumber = setIndex,
-                     setType = if (params.isAMRAP) SetType.AMRAP else SetType.STANDARD,
-                     actualReps = repCount.workingReps,
-                     actualWeightKg = params.weightPerCableKg,
-                     loggedRpe = coordinator._currentSetRpe.value,
-                     isPr = false,
-                     completedAt = currentTimeMillis()
-                 )
-                 completedSetRepository.saveCompletedSet(completedSet)
-                 Logger.d("Saved CompletedSet (manual stop): set #$setIndex, ${repCount.workingReps} reps${if (matchedPlannedSetId != null) " (linked to PlannedSet)" else ""}")
-             }
+            // Issue #252: Exclude warmup time from session duration
+            val effectiveStart = if (coordinator.warmupCompleteTimeMs > 0L) coordinator.warmupCompleteTimeMs else coordinator.workoutStartTime
+            val session = WorkoutSession(
+                timestamp = coordinator.workoutStartTime,
+                mode = params.programMode.displayName,
+                reps = params.reps,
+                weightPerCableKg = params.weightPerCableKg,
+                totalReps = repCount.totalReps,
+                workingReps = repCount.workingReps,
+                warmupReps = repCount.warmupReps,
+                duration = currentTimeMillis() - effectiveStart,
+                isJustLift = isJustLift,
+                exerciseId = params.selectedExerciseId,
+                exerciseName = exerciseName,
+                routineSessionId = coordinator.currentRoutineSessionId,
+                routineName = coordinator.currentRoutineName,
+                routineId = coordinator.currentRoutineId,
+                peakForceConcentricA = summary.peakForceConcentricA,
+                peakForceConcentricB = summary.peakForceConcentricB,
+                peakForceEccentricA = summary.peakForceEccentricA,
+                peakForceEccentricB = summary.peakForceEccentricB,
+                avgForceConcentricA = summary.avgForceConcentricA,
+                avgForceConcentricB = summary.avgForceConcentricB,
+                avgForceEccentricA = summary.avgForceEccentricA,
+                avgForceEccentricB = summary.avgForceEccentricB,
+                heaviestLiftKg = summary.heaviestLiftKgPerCable,
+                totalVolumeKg = summary.totalVolumeKg,
+                cableCount = summary.cableCount,
+                estimatedCalories = summary.estimatedCalories,
+                warmupAvgWeightKg = if (params.isEchoMode) summary.warmupAvgWeightKg else null,
+                workingAvgWeightKg = if (params.isEchoMode) summary.workingAvgWeightKg else null,
+                burnoutAvgWeightKg = if (params.isEchoMode) summary.burnoutAvgWeightKg else null,
+                peakWeightKg = if (params.isEchoMode) summary.peakWeightKg else null,
+                rpe = coordinator._currentSetRpe.value,
+                // C4: profileId was missing from manual-stop path — matches saveWorkoutSession() pattern
+                profileId = userProfileRepository.activeProfile.value?.id ?: "default",
+            )
+            workoutRepository.saveSession(session)
 
-              val hasPR = gamificationManager.processPostSaveEvents(
-                  exerciseId = params.selectedExerciseId,
-                  workingReps = repCount.workingReps,
-                  achievedWeightKg = summary.heaviestLiftKgPerCable,
-                  volumeWeightKg = params.weightPerCableKg,
-                  programMode = params.programMode,
-                  isJustLift = isJustLift,
-                  isEchoMode = params.isEchoMode
-             )
+            var completedSetId: String? = null
+            if (params.selectedExerciseId != null && repCount.workingReps > 0) {
+                val setIndex = coordinator._currentSetIndex.value
+                val setId = generateUUID()
+                completedSetId = setId
+                val matchedPlannedSetId = findPlannedSetId(setIndex)
+                val completedSet = CompletedSet(
+                    id = setId,
+                    sessionId = session.id,
+                    plannedSetId = matchedPlannedSetId,
+                    setNumber = setIndex,
+                    setType = if (params.isAMRAP) SetType.AMRAP else SetType.STANDARD,
+                    actualReps = repCount.workingReps,
+                    actualWeightKg = params.weightPerCableKg,
+                    loggedRpe = coordinator._currentSetRpe.value,
+                    isPr = false,
+                    completedAt = currentTimeMillis(),
+                )
+                completedSetRepository.saveCompletedSet(completedSet)
+                Logger.d("Saved CompletedSet (manual stop): set #$setIndex, ${repCount.workingReps} reps${if (matchedPlannedSetId != null) " (linked to PlannedSet)" else ""}")
+            }
 
-             if (hasPR && completedSetId != null) {
-                 completedSetRepository.markAsPr(completedSetId)
-                 Logger.d("Marked CompletedSet $completedSetId as PR (manual stop)")
-             }
+            val hasPR = gamificationManager.processPostSaveEvents(
+                exerciseId = params.selectedExerciseId,
+                workingReps = repCount.workingReps,
+                achievedWeightKg = summary.heaviestLiftKgPerCable,
+                volumeWeightKg = params.weightPerCableKg,
+                programMode = params.programMode,
+                isJustLift = isJustLift,
+                isEchoMode = params.isEchoMode,
+                peakConcentricForceKg = maxOf(summary.peakForceConcentricA, summary.peakForceConcentricB),
+                peakEccentricForceKg = maxOf(summary.peakForceEccentricA, summary.peakForceEccentricB),
+                profileId = userProfileRepository.activeProfile.value?.id ?: "default",
+            )
 
-             scope.launch {
-                 syncTriggerManager?.onWorkoutCompleted()
-             }
+            if (hasPR && completedSetId != null) {
+                completedSetRepository.markAsPr(completedSetId)
+                Logger.d("Marked CompletedSet $completedSetId as PR (manual stop)")
+            }
 
-             if (isJustLift) {
-                 saveJustLiftDefaultsFromWorkout()
-             } else if (isSingleExerciseMode(coordinator)) {
-                 saveSingleExerciseDefaultsFromWorkout()
-             }
+            scope.launch {
+                syncTriggerManager?.onWorkoutCompleted()
+            }
 
-             if (shouldExitToIdle) {
-                 coordinator._workoutState.value = WorkoutState.Idle
-                 coordinator._routineFlowState.value = RoutineFlowState.NotInRoutine
-                 coordinator._loadedRoutine.value = null
-                 coordinator.routineStartTime = 0
-             } else {
-                 coordinator._workoutState.value = summary
-             }
+            if (isJustLift) {
+                saveJustLiftDefaultsFromWorkout()
+                // Reset detection for the next Just Lift set
+                detectionManager?.resetForNewSet()
+                coordinator._workoutParameters.update { p ->
+                    p.copy(selectedExerciseId = null)
+                }
+            } else if (isSingleExerciseMode(coordinator)) {
+                saveSingleExerciseDefaultsFromWorkout()
+            }
+
+            if (shouldExitToIdle) {
+                coordinator._workoutState.value = WorkoutState.Idle
+                coordinator._routineFlowState.value = RoutineFlowState.NotInRoutine
+                coordinator._loadedRoutine.value = null
+                coordinator.routineStartTime = 0
+            } else {
+                coordinator._workoutState.value = summary
+            }
         }
     }
 
     fun stopAndReturnToSetReady() {
+        // C1: Atomic compareAndSet prevents TOCTOU race
+        if (!coordinator.stopWorkoutInProgress.compareAndSet(expect = false, update = true)) return
+
+        // Issue #320: When user has completed working reps in a real routine AND the set is still
+        // Active, save partial reps and advance to next set instead of discarding.
+        // The Active check is critical: _repCount isn't cleared until the next set starts,
+        // so pressing Back during SetSummary/Resting would also match workingReps > 0 and
+        // double-save the set. Only intercept when genuinely mid-set.
+        // Excludes temp single-exercise routines (temp_single_*) — those should use the
+        // original discard-and-retry behavior since there's no multi-set routine to advance.
+        val isActiveSet = coordinator._workoutState.value is WorkoutState.Active
+        val hasCompletedReps = coordinator._repCount.value.workingReps > 0
+        val isRealRoutine = !isSingleExerciseMode(coordinator)
+
+        if (isActiveSet && hasCompletedReps && isRealRoutine) {
+            Logger.d { "stopAndReturnToSetReady: Issue #320 - workingReps=${coordinator._repCount.value.workingReps} > 0, routing through handleSetCompletion to save reps and advance" }
+            // Release stop guard before delegating — handleSetCompletion uses its own atomic guard (setCompletionInProgress)
+            coordinator.stopWorkoutInProgress.value = false
+            handleSetCompletion()
+            return
+        }
+
         coordinator.workoutJob?.cancel()
         coordinator.workoutJob = null
         coordinator.restTimerJob?.cancel()
         coordinator.restTimerJob = null
+        coordinator.restDeadlineElapsedRealtimeMs = null
         coordinator.bodyweightTimerJob?.cancel()
         coordinator.bodyweightTimerJob = null
         coordinator._timedExerciseRemainingSeconds.value = null
+        cancelJustLiftEggTimer()
 
         scope.launch {
-            bleRepository.stopWorkout()
+            try {
+                bleRepository.stopWorkout()
 
-            repCounter.reset()
-            coordinator._repCount.value = RepCount()
-            coordinator._repRanges.value = null
-            coordinator.warmupCompleteTimeMs = 0
-            resetAutoStopState()
-            coordinator._workoutState.value = WorkoutState.Idle
+                repCounter.reset()
+                coordinator._repCount.value = RepCount()
+                coordinator._repRanges.value = null
+                coordinator.warmupCompleteTimeMs = 0
+                resetAutoStopState()
+                coordinator._workoutState.value = WorkoutState.Idle
 
-            val routine = coordinator._loadedRoutine.value
-            if (routine != null) {
-                flowDelegate?.enterSetReady(coordinator._currentExerciseIndex.value, coordinator._currentSetIndex.value)
+                val routine = coordinator._loadedRoutine.value
+                if (routine != null) {
+                    flowDelegate?.enterSetReady(coordinator._currentExerciseIndex.value, coordinator._currentSetIndex.value)
+                }
+
+                Logger.d { "stopAndReturnToSetReady: Reset to SetReady for exercise=${coordinator._currentExerciseIndex.value}, set=${coordinator._currentSetIndex.value}" }
+            } finally {
+                coordinator.stopWorkoutInProgress.value = false
             }
-
-            Logger.d { "stopAndReturnToSetReady: Reset to SetReady for exercise=${coordinator._currentExerciseIndex.value}, set=${coordinator._currentSetIndex.value}" }
         }
     }
 
     fun stopAndSkipCurrentExercise() {
+        // C1: Atomic compareAndSet prevents TOCTOU race
+        if (!coordinator.stopWorkoutInProgress.compareAndSet(expect = false, update = true)) return
+
         val skippedExerciseIndex = coordinator._currentExerciseIndex.value
         val skippedSetIndex = coordinator._currentSetIndex.value
 
@@ -1640,36 +2526,54 @@ class ActiveSessionEngine(
         coordinator.workoutJob = null
         coordinator.restTimerJob?.cancel()
         coordinator.restTimerJob = null
+        coordinator.restDeadlineElapsedRealtimeMs = null
         coordinator.bodyweightTimerJob?.cancel()
         coordinator.bodyweightTimerJob = null
         coordinator._timedExerciseRemainingSeconds.value = null
+        cancelJustLiftEggTimer()
 
         scope.launch {
-            bleRepository.stopWorkout()
+            try {
+                bleRepository.stopWorkout()
 
-            repCounter.reset()
-            coordinator._repCount.value = RepCount()
-            coordinator._repRanges.value = null
-            coordinator.warmupCompleteTimeMs = 0
-            resetAutoStopState()
-            coordinator._workoutState.value = WorkoutState.Idle
+                repCounter.reset()
+                coordinator._repCount.value = RepCount()
+                coordinator._repRanges.value = null
+                coordinator.warmupCompleteTimeMs = 0
+                resetAutoStopState()
+                coordinator._workoutState.value = WorkoutState.Idle
 
-            val routine = coordinator._loadedRoutine.value
-            if (routine != null) {
-                val movedToNextStep = flowDelegate?.skipCurrentExerciseAndEnterNextStep() == true
-                if (!movedToNextStep) {
-                    flowDelegate?.showRoutineComplete()
+                val routine = coordinator._loadedRoutine.value
+                if (routine != null) {
+                    val movedToNextStep = flowDelegate?.skipCurrentExerciseAndEnterNextStep() == true
+                    if (!movedToNextStep) {
+                        flowDelegate?.showRoutineComplete()
+                    }
                 }
-            }
 
-            Logger.d {
-                "stopAndSkipCurrentExercise: Skipped exercise=$skippedExerciseIndex, set=$skippedSetIndex"
+                Logger.d {
+                    "stopAndSkipCurrentExercise: Skipped exercise=$skippedExerciseIndex, set=$skippedSetIndex"
+                }
+            } finally {
+                coordinator.stopWorkoutInProgress.value = false
             }
         }
     }
 
     fun pauseWorkout() {
         if (coordinator._workoutState.value is WorkoutState.Active) {
+            // Send BLE stop BEFORE cancelling collection jobs.
+            // The machine must be stopped first; cancelling collection without stopping
+            // leaves the machine running unmonitored (project memory: mid-set BLE faults).
+            scope.launch {
+                try {
+                    bleRepository.stopWorkout()
+                    Logger.d { "ActiveSessionEngine: BLE stop sent before pause" }
+                } catch (e: Exception) {
+                    Logger.e(e) { "ActiveSessionEngine: Failed to send BLE stop during pause: ${e.message}" }
+                }
+            }
+
             coordinator.monitorDataCollectionJob?.cancel()
             coordinator.repEventsCollectionJob?.cancel()
 
@@ -1690,19 +2594,23 @@ class ActiveSessionEngine(
     private fun restartCollectionJobs() {
         coordinator.monitorDataCollectionJob = scope.launch {
             Logger.d("ActiveSessionEngine") { "Restarting global metricsFlow collection after resume..." }
-            bleRepository.metricsFlow.collect { metric ->
-                coordinator._currentMetric.value = metric
-                handleMonitorMetric(metric)
-            }
+            bleRepository.metricsFlow
+                .catch { e -> Logger.e(e) { "metricsFlow collector error (restart)" } }
+                .collect { metric ->
+                    coordinator._currentMetric.value = metric
+                    handleMonitorMetric(metric)
+                }
         }
 
         coordinator.repEventsCollectionJob = scope.launch {
-            bleRepository.repEvents.collect { notification ->
-                val state = coordinator._workoutState.value
-                if (state is WorkoutState.Active) {
-                    handleRepNotification(notification)
+            bleRepository.repEvents
+                .catch { e -> Logger.e(e) { "repEvents collector error (restart)" } }
+                .collect { notification ->
+                    val state = coordinator._workoutState.value
+                    if (state is WorkoutState.Active) {
+                        handleRepNotification(notification)
+                    }
                 }
-            }
         }
     }
 
@@ -1721,19 +2629,37 @@ class ActiveSessionEngine(
      * Save workout session to database and check for personal records.
      */
     private suspend fun saveWorkoutSession() {
-        val sessionId = coordinator.currentSessionId ?: return
+        val sessionId = coordinator.currentSessionId
+        if (sessionId == null) {
+            Logger.e {
+                "PR_TRACK: CRITICAL — saveWorkoutSession() aborted: currentSessionId is null! " +
+                    "No session or PR will be saved. workingReps=${coordinator._repCount.value.workingReps}, " +
+                    "exerciseId=${coordinator._workoutParameters.value.selectedExerciseId}"
+            }
+            return
+        }
         val params = coordinator._workoutParameters.value
         val warmup = coordinator._repCount.value.warmupReps
         val working = coordinator._repCount.value.workingReps
+
+        // Issue #319: Log rep counts and exercise context entering the save pipeline
+        Logger.i {
+            "PR_TRACK: saveWorkoutSession — sessionId=$sessionId, " +
+                "workingReps=$working, warmupReps=$warmup, " +
+                "exerciseId=${params.selectedExerciseId ?: "NULL"}, " +
+                "weight=${params.weightPerCableKg}kg, mode=${params.programMode.displayName}, " +
+                "isJustLift=${params.isJustLift}, isEcho=${params.isEchoMode}, " +
+                "metricsCount=${coordinator.collectedMetrics.value.size}"
+        }
+
         // Issue #252: Exclude warmup time from session duration
         val effectiveStart = if (coordinator.warmupCompleteTimeMs > 0L) coordinator.warmupCompleteTimeMs else coordinator.workoutStartTime
         val duration = currentTimeMillis() - effectiveStart
 
-        val metricsSnapshot = coordinator.collectedMetrics.toList()
+        val metricsSnapshot = coordinator.collectedMetrics.value
 
-        val exerciseName = params.selectedExerciseId?.let { exerciseId ->
-            exerciseRepository.getExerciseById(exerciseId)?.name
-        }
+        val selectedExercise = resolveSelectedExercise(params)
+        val exerciseName = selectedExercise?.name
 
         val summary = calculateSetSummaryMetrics(
             metrics = metricsSnapshot,
@@ -1743,8 +2669,14 @@ class ActiveSessionEngine(
             isEchoMode = params.isEchoMode,
             warmupRepsCount = warmup,
             workingRepsCount = working,
-            warmupCompleteTimeMs = coordinator.warmupCompleteTimeMs
+            warmupCompleteTimeMs = coordinator.warmupCompleteTimeMs,
+            cableCountHint = selectedExercise?.preferredCableCount,
         )
+
+        // Capture biomechanics summary for WorkoutSession fields.
+        // Safe to call here: runs BEFORE biomechanicsEngine.reset() in handleSetCompletion.
+        // getSetSummary() is read-only/idempotent.
+        val bioSummary = coordinator.biomechanicsEngine.getSetSummary()
 
         val session = WorkoutSession(
             id = sessionId,
@@ -1780,13 +2712,38 @@ class ActiveSessionEngine(
             workingAvgWeightKg = if (params.isEchoMode) summary.workingAvgWeightKg else null,
             burnoutAvgWeightKg = if (params.isEchoMode) summary.burnoutAvgWeightKg else null,
             peakWeightKg = if (params.isEchoMode) summary.peakWeightKg else null,
-            rpe = coordinator._currentSetRpe.value
+            rpe = coordinator._currentSetRpe.value,
+            // Biomechanics summary (Phase 13 - captured for all tiers)
+            avgMcvMmS = bioSummary?.avgMcvMmS,
+            avgAsymmetryPercent = bioSummary?.avgAsymmetryPercent,
+            totalVelocityLossPercent = bioSummary?.totalVelocityLossPercent,
+            dominantSide = bioSummary?.dominantSide,
+            strengthProfile = bioSummary?.strengthProfile?.name,
+            profileId = userProfileRepository.activeProfile.value?.id ?: "default",
         )
 
         workoutRepository.saveSession(session)
 
-        scope.launch {
-            syncTriggerManager?.onWorkoutCompleted()
+        // Fire-and-forget health push: auto-push to Health Connect (Android) or HealthKit (iOS)
+        // after the session is persisted. Failure is non-fatal and never blocks workout completion.
+        if (healthIntegration != null && externalActivityRepository != null) {
+            val profileId = session.profileId
+            scope.launch {
+                try {
+                    val provider = if (getPlatform().name.startsWith("iOS")) {
+                        IntegrationProvider.APPLE_HEALTH
+                    } else {
+                        IntegrationProvider.GOOGLE_HEALTH
+                    }
+                    val status = externalActivityRepository.getIntegrationStatus(provider, profileId).first()
+                    if (status?.status == ConnectionStatus.CONNECTED) {
+                        healthIntegration.writeWorkout(session)
+                        Logger.i("ActiveSessionEngine") { "Auto-pushed workout to ${provider.displayName}" }
+                    }
+                } catch (e: Exception) {
+                    Logger.w("ActiveSessionEngine") { "Health auto-push failed (non-fatal): ${e.message}" }
+                }
+            }
         }
 
         if (metricsSnapshot.isNotEmpty()) {
@@ -1811,10 +2768,10 @@ class ActiveSessionEngine(
                 actualWeightKg = params.weightPerCableKg,
                 loggedRpe = coordinator._currentSetRpe.value,
                 isPr = false,
-                completedAt = currentTimeMillis()
+                completedAt = currentTimeMillis(),
             )
             completedSetRepository.saveCompletedSet(completedSet)
-            Logger.d("Saved CompletedSet: set #$setIndex, ${working} reps @ ${params.weightPerCableKg}kg${if (matchedPlannedSetId != null) " (linked to PlannedSet)" else ""}")
+            Logger.d("Saved CompletedSet: set #$setIndex, $working reps @ ${params.weightPerCableKg}kg${if (matchedPlannedSetId != null) " (linked to PlannedSet)" else ""}")
         }
 
         val hasPR = gamificationManager.processPostSaveEvents(
@@ -1824,12 +2781,30 @@ class ActiveSessionEngine(
             volumeWeightKg = params.weightPerCableKg,
             programMode = params.programMode,
             isJustLift = params.isJustLift,
-            isEchoMode = params.isEchoMode
+            isEchoMode = params.isEchoMode,
+            peakConcentricForceKg = maxOf(summary.peakForceConcentricA, summary.peakForceConcentricB),
+            peakEccentricForceKg = maxOf(summary.peakForceEccentricA, summary.peakForceEccentricB),
+            profileId = userProfileRepository.activeProfile.value?.id ?: "default",
         )
 
         if (hasPR && completedSetId != null) {
             completedSetRepository.markAsPr(completedSetId)
             Logger.d("Marked CompletedSet $completedSetId as PR")
+        }
+
+        // Sync trigger AFTER all persistence (session, metrics, CompletedSet, PR marking)
+        // so the push sends complete data. Previously fired before saveCompletedSet/markAsPr.
+        scope.launch {
+            syncTriggerManager?.onWorkoutCompleted()
+        }
+
+        // Per-session auto-backup AFTER all persistence (including CompletedSet and PR).
+        // Fire-and-forget, never blocks the save flow.
+        if (preferencesManager.preferencesFlow.value.autoBackupEnabled && dataBackupManager != null) {
+            scope.launch {
+                dataBackupManager.exportSession(sessionId)
+                    .onFailure { e -> Logger.w(e) { "Auto-backup failed for session $sessionId" } }
+            }
         }
 
         if (params.isJustLift) {
@@ -1849,11 +2824,25 @@ class ActiveSessionEngine(
      * Phase B: Rest timer, navigation advancement (delegated back to DWSM via startRestTimer).
      */
     internal fun handleSetCompletion() {
-        if (coordinator.setCompletionInProgress) {
+        // 1.2: Atomic compareAndSet prevents duplicate set completion across dispatchers
+        if (!coordinator.setCompletionInProgress.compareAndSet(expect = false, update = true)) {
             Logger.d("handleSetCompletion: already in progress - ignoring")
             return
         }
-        coordinator.setCompletionInProgress = true
+
+        // Issue #319: Log full context at entry so we can diagnose what the pipeline receives
+        val repCount = coordinator._repCount.value
+        val entryParams = coordinator._workoutParameters.value
+        Logger.i {
+            "PR_TRACK: handleSetCompletion — workingReps=${repCount.workingReps}, " +
+                "warmupReps=${repCount.warmupReps}, " +
+                "exerciseId=${entryParams.selectedExerciseId ?: "NULL"}, " +
+                "mode=${entryParams.programMode.displayName}, " +
+                "isJustLift=${entryParams.isJustLift}, isEcho=${entryParams.isEchoMode}, " +
+                "sessionId=${coordinator.currentSessionId ?: "NULL"}, " +
+                "weight=${entryParams.weightPerCableKg}kg"
+        }
+
         coordinator.bodyweightTimerJob?.cancel()
         coordinator.bodyweightTimerJob = null
         coordinator._timedExerciseRemainingSeconds.value = null
@@ -1873,7 +2862,7 @@ class ActiveSessionEngine(
 
             if (wasBodyweight) {
                 coordinator.bodyweightSetsCompletedInRoutine++
-                println("Issue222: Bodyweight set #$coordinator.bodyweightSetsCompletedInRoutine completed (exercise=${currentExercise?.exercise?.name})")
+                Logger.d("ActiveSessionEngine") { "Bodyweight set #${coordinator.bodyweightSetsCompletedInRoutine} completed (exercise=${currentExercise?.exercise?.name})" }
             }
 
             coordinator.previousExerciseWasBodyweight = wasBodyweight
@@ -1885,23 +2874,138 @@ class ActiveSessionEngine(
             } else {
                 Logger.d("handleSetCompletion: Skipping BLE stop (bodyweight exercise)")
             }
+
+            // ===== Phase 35C: Variable Warm-up Set Fast Path =====
+            // If we just completed a warm-up set, skip session save/summary/rest
+            // and immediately advance to the next warm-up set or working phase.
+            val warmupSetIdx = coordinator._currentWarmupSetIndex.value
+            if (warmupSetIdx >= 0 && currentExercise != null) {
+                val nextWarmupIdx = warmupSetIdx + 1
+                if (nextWarmupIdx < currentExercise.warmupSets.size) {
+                    // More warm-up sets remaining
+                    Logger.d { "Phase 35C: Warm-up set ${warmupSetIdx + 1}/${currentExercise.warmupSets.size} complete, advancing to warm-up ${nextWarmupIdx + 1}" }
+                    coordinator._currentWarmupSetIndex.value = nextWarmupIdx
+                    coordinator._hapticEvents.emit(HapticEvent.WORKOUT_END)
+                    // Reset for next warm-up set
+                    repCounter.resetCountsOnly()
+                    resetAutoStopState()
+                    coordinator.setCompletionInProgress.value = false
+                    coordinator.stopWorkoutInProgress.value = false
+                    // Restore working weight in params before startWorkout overrides it
+                    val workingWeight = currentExercise.setWeightsPerCableKg.getOrNull(0)
+                        ?: currentExercise.weightPerCableKg
+                    coordinator._workoutParameters.update { p ->
+                        p.copy(weightPerCableKg = workingWeight, reps = currentExercise.setReps.firstOrNull() ?: 10)
+                    }
+                    startWorkout(skipCountdown = true)
+                    return@launch
+                } else {
+                    // All warm-up sets done — transition to working phase
+                    Logger.d { "Phase 35C: All ${currentExercise.warmupSets.size} warm-up sets complete, transitioning to working sets" }
+                    coordinator._currentWarmupSetIndex.value = -1
+                    coordinator._hapticEvents.emit(HapticEvent.WORKOUT_END)
+                    // Reset for first working set
+                    repCounter.reset()
+                    resetAutoStopState()
+                    coordinator.setCompletionInProgress.value = false
+                    coordinator.stopWorkoutInProgress.value = false
+                    // Restore working weight/reps
+                    val workingWeight = currentExercise.setWeightsPerCableKg.getOrNull(0)
+                        ?: currentExercise.weightPerCableKg
+                    coordinator._workoutParameters.update { p ->
+                        p.copy(
+                            weightPerCableKg = workingWeight,
+                            reps = currentExercise.setReps.firstOrNull() ?: 10,
+                            warmupReps = Constants.DEFAULT_WARMUP_REPS,
+                        )
+                    }
+                    startWorkout(skipCountdown = true)
+                    return@launch
+                }
+            }
+
             coordinator._hapticEvents.emit(HapticEvent.WORKOUT_END)
+
+            // Just Lift: apply auto-accepted exercise detection before saving session
+            // so the exerciseId is populated in the persisted WorkoutSession
+            if (isJustLift) {
+                applyAutoAcceptedDetection()
+            }
 
             saveWorkoutSession()
 
+            // Persist per-rep metric data (GATE-04: captured for all tiers)
+            val sessionId = coordinator.currentSessionId
+            val repMetricsToSave = coordinator.setRepMetrics.value
+            if (sessionId != null && repMetricsToSave.isNotEmpty()) {
+                try {
+                    repMetricRepository.saveRepMetrics(sessionId, repMetricsToSave)
+                    Logger.d { "Persisted ${repMetricsToSave.size} rep metrics for session $sessionId" }
+                } catch (e: Exception) {
+                    Logger.e(e) { "Failed to persist rep metrics for session $sessionId" }
+                }
+            }
+            coordinator.setRepMetrics.value = emptyList()
+
+            // Persist per-rep biomechanics data (GATE-04: captured for all tiers)
+            val biomechanicsSummary = coordinator.biomechanicsEngine.getSetSummary()
+            if (sessionId != null && biomechanicsSummary != null) {
+                try {
+                    biomechanicsRepository.saveRepBiomechanics(
+                        sessionId,
+                        biomechanicsSummary.repResults,
+                    )
+                    Logger.d { "Persisted ${biomechanicsSummary.repResults.size} rep biomechanics for session $sessionId" }
+                } catch (e: Exception) {
+                    Logger.e(e) { "Failed to persist rep biomechanics for session $sessionId" }
+                }
+            }
+
+            // Capture rep quality summary BEFORE reset (null if no reps were scored)
+            val qualitySummary = try {
+                coordinator.repQualityScorer.getSetSummary()
+            } catch (_: IllegalStateException) {
+                // No reps scored (e.g., bodyweight exercise, scorer not active)
+                null
+            }
+
+            // Reset rep quality scorer for next set
+            coordinator.repQualityScorer.reset()
+            coordinator._latestRepQuality.value = null
+
+            // Reuse biomechanics summary captured above for SetSummary display (no second engine call needed)
+            // biomechanicsSummary is already captured and engine hasn't been reset yet
+
+            // Reset biomechanics engine and rep boundary timestamps for next set
+            coordinator.biomechanicsEngine.reset()
+            coordinator.repBoundaryTimestamps.value = emptyList()
+
             val completedReps = coordinator._repCount.value.workingReps
             val warmupReps = coordinator._repCount.value.warmupReps
-            val metricsList = coordinator.collectedMetrics.toList()
+            val metricsList = coordinator.collectedMetrics.value
+            val selectedExercise = resolveSelectedExercise(params)
 
-            val summary = calculateSetSummaryMetrics(
+            val baseSummary = calculateSetSummaryMetrics(
                 metrics = metricsList,
                 repCount = completedReps,
                 fallbackWeightKg = params.weightPerCableKg,
                 configuredWeightKgPerCable = params.weightPerCableKg,
                 isEchoMode = params.isEchoMode,
                 warmupRepsCount = warmupReps,
-                workingRepsCount = completedReps
+                workingRepsCount = completedReps,
+                cableCountHint = selectedExercise?.preferredCableCount,
             )
+
+            // Attach quality and biomechanics summaries to the set summary
+            val summary = baseSummary.copy(
+                qualitySummary = qualitySummary,
+                biomechanicsSummary = biomechanicsSummary,
+            )
+
+            // Process quality event for Form Master badge tracking
+            qualitySummary?.let { qs ->
+                gamificationManager.processSetQualityEvent(qs.averageScore, userProfileRepository.activeProfile.value?.id ?: "default")
+            }
 
             Logger.d("Set summary: heaviest=${summary.heaviestLiftKgPerCable}kg, reps=$completedReps, duration=${summary.durationMs}ms")
 
@@ -1927,24 +3031,40 @@ class ActiveSessionEngine(
                 repCounter.reset()
                 resetAutoStopState()
 
+                // Reset detection state for the next Just Lift set so detection
+                // can re-trigger fresh (each set may be a different exercise)
+                detectionManager?.resetForNewSet()
+                // Clear exercise attribution so detection has a clean slate
+                coordinator._workoutParameters.update { p ->
+                    p.copy(selectedExerciseId = null)
+                }
+
                 bleRepository.restartMonitorPolling()
 
                 enableHandleDetection()
                 bleRepository.enableJustLiftWaitingMode()
 
-                Logger.d("Just Lift: Machine armed & ready. summaryCountdownSeconds=$summaryCountdownSeconds, skipSummary=$skipSummary")
+                val justLiftRestSeconds = params.justLiftRestSeconds
+                Logger.d("Just Lift: Machine armed & ready. summaryCountdownSeconds=$summaryCountdownSeconds, skipSummary=$skipSummary, restSeconds=$justLiftRestSeconds")
 
                 if (skipSummary) {
-                    Logger.d("Just Lift: Summary OFF - skipping summary, immediately ready")
+                    Logger.d("Just Lift: Summary OFF - skipping summary")
                     resetForNewWorkout()
                     coordinator._workoutState.value = WorkoutState.Idle
+                    if (justLiftRestSeconds > 0) {
+                        startJustLiftEggTimer(justLiftRestSeconds)
+                    }
                 } else if (summaryDelayMs > 0) {
                     delay(summaryDelayMs)
 
                     if (coordinator._workoutState.value is WorkoutState.SetSummary) {
-                        Logger.d("Just Lift: Summary complete, UI transitioning to Idle")
+                        Logger.d("Just Lift: Summary complete, transitioning to Idle")
                         resetForNewWorkout()
                         coordinator._workoutState.value = WorkoutState.Idle
+                        if (justLiftRestSeconds > 0) {
+                            Logger.d("Just Lift: Starting egg timer ($justLiftRestSeconds s)")
+                            startJustLiftEggTimer(justLiftRestSeconds)
+                        }
                     } else {
                         Logger.d("Just Lift: Summary interrupted by user action (state is ${coordinator._workoutState.value})")
                     }
@@ -1987,14 +3107,66 @@ class ActiveSessionEngine(
                     Logger.d("Routine mode: Parent-aligned - no polling restart/auto-start during rest")
 
                     startRestTimer()
+                } else if (summaryDelayMs > 0 && !isSingleExerciseMode(coordinator)) {
+                    // Issue #320: Auto-advance from summary via proceedFromSummary() which handles
+                    // full bookkeeping: clearing RPE, marking exercises completed, checking routine
+                    // completion, and starting rest timer. Direct startRestTimer() would bypass this.
+                    Logger.d("Routine mode: Auto-advancing from summary after ${summaryDelayMs}ms (Issue #320)")
+                    delay(summaryDelayMs)
+                    if (coordinator._workoutState.value is WorkoutState.SetSummary) {
+                        flowDelegate?.proceedFromSummary()
+                            ?: run {
+                                // Fallback if delegate not wired (shouldn't happen in production)
+                                Logger.w("Issue #320: flowDelegate null, falling back to direct startRestTimer")
+                                repCounter.reset()
+                                resetAutoStopState()
+                                startRestTimer()
+                            }
+                    }
                 } else {
-                    Logger.d("Routine mode: Waiting for UI countdown or user action to proceed from summary")
+                    Logger.d("Routine mode: Summary Unlimited - waiting for user action")
                 }
             }
         }
     }
 
     // ===== Rest Timer and Flow Control =====
+
+    private fun computeRemainingSeconds(
+        deadlineElapsedRealtimeMs: Long,
+        nowElapsedRealtimeMs: Long = elapsedRealtimeProvider(),
+    ): Int {
+        val remainingMs = deadlineElapsedRealtimeMs - nowElapsedRealtimeMs
+        if (remainingMs <= 0L) return 0
+        return ((remainingMs + 999L) / 1000L).toInt()
+    }
+
+    private fun armRestDeadline(
+        remainingSeconds: Int,
+        nowElapsedRealtimeMs: Long = elapsedRealtimeProvider(),
+    ) {
+        coordinator.restDeadlineElapsedRealtimeMs =
+            nowElapsedRealtimeMs + (remainingSeconds.coerceAtLeast(0).toLong() * 1000L)
+    }
+
+    private fun currentRestRemainingSeconds(): Int {
+        val deadline = coordinator.restDeadlineElapsedRealtimeMs ?: return coordinator._restSecondsRemaining.value.coerceAtLeast(0)
+        return computeRemainingSeconds(deadline)
+    }
+
+    private fun armJustLiftRestDeadline(
+        remainingSeconds: Int,
+        nowElapsedRealtimeMs: Long = elapsedRealtimeProvider(),
+    ) {
+        coordinator.justLiftRestDeadlineElapsedRealtimeMs =
+            nowElapsedRealtimeMs + (remainingSeconds.coerceAtLeast(0).toLong() * 1000L)
+    }
+
+    private fun currentJustLiftRestRemainingSeconds(): Int {
+        val deadline = coordinator.justLiftRestDeadlineElapsedRealtimeMs
+            ?: return coordinator._justLiftRestCountdown.value?.coerceAtLeast(0) ?: 0
+        return computeRemainingSeconds(deadline)
+    }
 
     /**
      * Start the rest timer between sets.
@@ -2003,6 +3175,7 @@ class ActiveSessionEngine(
         coordinator.restTimerJob?.cancel()
 
         coordinator.restTimerJob = scope.launch {
+            val timerJob = coroutineContext[kotlinx.coroutines.Job]
             val routine = coordinator._loadedRoutine.value
             val currentExercise = routine?.exercises?.getOrNull(coordinator._currentExerciseIndex.value)
             val exerciseId = currentExercise?.exercise?.id ?: coordinator._workoutParameters.value.selectedExerciseId
@@ -2011,10 +3184,14 @@ class ActiveSessionEngine(
 
             val nextStep = if (routine != null) {
                 flowDelegate?.getNextStep(routine, coordinator._currentExerciseIndex.value, coordinator._currentSetIndex.value)
-            } else null
+            } else {
+                null
+            }
             val nextExerciseFromStep = if (nextStep != null && routine != null) {
                 routine.exercises.getOrNull(nextStep.first)
-            } else null
+            } else {
+                null
+            }
             val nextSetIdxFromStep = nextStep?.second
 
             val isAtEndOfSupersetCycle = flowDelegate?.isAtEndOfSupersetCycle() == true
@@ -2025,8 +3202,14 @@ class ActiveSessionEngine(
             // At the end of a superset cycle (last exercise of the group), use the current exercise's
             // configured rest time so users can recover before starting the next round.
             val useSupersetQuickRest = isInSupersetTransition || (isStillInSupersetWorkout && !isAtEndOfSupersetCycle)
+            // Issue #259: When an exercise has perSetRestTime enabled, use its own rest
+            // times even within a superset transition, instead of the superset default.
             val restDuration = if (useSupersetQuickRest) {
-                (flowDelegate?.getSupersetRestSeconds() ?: 5).coerceAtLeast(5)
+                if (currentExercise?.perSetRestTime == true) {
+                    currentExercise.getRestForSet(completedSetIndex)
+                } else {
+                    (flowDelegate?.getSupersetRestSeconds() ?: 5).coerceAtLeast(5)
+                }
             } else {
                 currentExercise?.getRestForSet(completedSetIndex) ?: 90
             }
@@ -2049,7 +3232,9 @@ class ActiveSessionEngine(
                 val supersetIds = routine?.supersets?.map { it.id } ?: emptyList()
                 val groupIndex = supersetIds.indexOf(currentExercise?.supersetId)
                 if (groupIndex >= 0) "Superset ${('A' + groupIndex)}" else "Superset"
-            } else null
+            } else {
+                null
+            }
 
             val isLastSetOfCurrentExercise = coordinator._currentSetIndex.value >= (currentExercise?.setReps?.size ?: 1) - 1
             val isLastExerciseOverall = flowDelegate?.calculateIsLastExercise(isSingleExercise, currentExercise, routine) ?: false
@@ -2075,13 +3260,13 @@ class ActiveSessionEngine(
                         weightPerCableKg = nextSetWeight,
                         reps = nextSetReps ?: 0,
                         programMode = exerciseForNextSet.programMode,
-                        echoLevel = exerciseForNextSet.echoLevel,
+                        echoLevel = exerciseForNextSet.getEchoLevelForSet(nextSetIdx),
                         eccentricLoad = exerciseForNextSet.eccentricLoad,
                         progressionRegressionKg = exerciseForNextSet.progressionKg,
                         selectedExerciseId = exerciseForNextSet.exercise.id,
                         isAMRAP = nextIsAMRAP,
                         stallDetectionEnabled = exerciseForNextSet.stallDetectionEnabled,
-                        warmupReps = if (nextExerciseIsBodyweight) 0 else Constants.DEFAULT_WARMUP_REPS
+                        warmupReps = if (nextExerciseIsBodyweight) 0 else Constants.DEFAULT_WARMUP_REPS,
                     )
                     Logger.d { "startRestTimer: Issue #203 - Updated params for next set: ${exerciseForNextSet.exercise.name}, setIdx=$nextSetIdx, isAMRAP=$nextIsAMRAP, nextSetReps=$nextSetReps" }
                 }
@@ -2093,6 +3278,12 @@ class ActiveSessionEngine(
             val displayTotalSets = nextExerciseFromStep?.setReps?.size ?: currentExercise?.setReps?.size ?: 0
             val initialNextName = flowDelegate?.calculateNextExerciseName(isSingleExercise, currentExercise, routine) ?: ""
 
+            // Issue #297, #228: Initialize rest timer control state
+            coordinator._restOriginalDuration.value = restDuration
+            coordinator._restSecondsRemaining.value = restDuration
+            coordinator._isRestPaused.value = false
+            armRestDeadline(restDuration)
+
             // Emit Resting immediately so the UI timer starts without waiting on repository lookups.
             coordinator._workoutState.value = WorkoutState.Resting(
                 restSecondsRemaining = restDuration,
@@ -2101,7 +3292,7 @@ class ActiveSessionEngine(
                 currentSet = displaySetIndex,
                 totalSets = displayTotalSets,
                 isSupersetTransition = useSupersetQuickRest,
-                supersetLabel = supersetLabel
+                supersetLabel = supersetLabel,
             )
 
             if (exerciseId != null) {
@@ -2110,31 +3301,58 @@ class ActiveSessionEngine(
                     val prWeight = getPrWeightForExercise(exerciseId)
                     coordinator._workoutParameters.value = coordinator._workoutParameters.value.copy(
                         lastUsedWeightKg = lastWeight,
-                        prWeightKg = prWeight
+                        prWeightKg = prWeight,
                     )
                 }
             }
 
-            val startTime = currentTimeMillis()
-            val endTimeMs = startTime + (restDuration * 1000L)
+            var lastRenderedSecond = restDuration + 1
+            var lastTickedSecond = -1
 
-            while (currentTimeMillis() < endTimeMs && isActive) {
-                val remainingMs = endTimeMs - currentTimeMillis()
-                val remainingSeconds = (remainingMs / 1000L).toInt().coerceAtLeast(0)
+            try {
+                // Issue #339: Deadline-based loop so timers catch up after background suspension.
+                while (isActive) {
+                    val remainingSeconds = currentRestRemainingSeconds()
 
-                val nextName = flowDelegate?.calculateNextExerciseName(isSingleExercise, currentExercise, routine) ?: ""
+                    if (remainingSeconds != coordinator._restSecondsRemaining.value) {
+                        coordinator._restSecondsRemaining.value = remainingSeconds
+                    }
 
-                coordinator._workoutState.value = WorkoutState.Resting(
-                    restSecondsRemaining = remainingSeconds,
-                    nextExerciseName = nextName,
-                    isLastExercise = isLastExerciseOverall,
-                    currentSet = displaySetIndex,
-                    totalSets = displayTotalSets,
-                    isSupersetTransition = useSupersetQuickRest,
-                    supersetLabel = supersetLabel
-                )
+                    if (!coordinator._isRestPaused.value &&
+                        remainingSeconds in 1..10 &&
+                        remainingSeconds != lastTickedSecond
+                    ) {
+                        lastTickedSecond = remainingSeconds
+                        val prefs = settingsManager.userPreferences.value
+                        if (prefs.beepsEnabled && prefs.countdownBeepsEnabled) {
+                            coordinator._hapticEvents.emit(HapticEvent.COUNTDOWN_TICK(remainingSeconds))
+                        }
+                    }
 
-                delay(100)
+                    if (remainingSeconds != lastRenderedSecond) {
+                        lastRenderedSecond = remainingSeconds
+                        val nextName = flowDelegate?.calculateNextExerciseName(isSingleExercise, currentExercise, routine) ?: ""
+
+                        coordinator._workoutState.value = WorkoutState.Resting(
+                            restSecondsRemaining = remainingSeconds,
+                            nextExerciseName = nextName,
+                            isLastExercise = isLastExerciseOverall,
+                            currentSet = displaySetIndex,
+                            totalSets = displayTotalSets,
+                            isSupersetTransition = useSupersetQuickRest,
+                            supersetLabel = supersetLabel,
+                        )
+                    }
+
+                    if (remainingSeconds <= 0 && autoplay && !coordinator._isRestPaused.value) break
+
+                    delay(100)
+                }
+            } finally {
+                if (coordinator.restTimerJob === timerJob) {
+                    coordinator._isRestPaused.value = false
+                    coordinator.restDeadlineElapsedRealtimeMs = null
+                }
             }
 
             if (autoplay) {
@@ -2144,18 +3362,73 @@ class ActiveSessionEngine(
                 } else {
                     startNextSetOrExercise()
                 }
-            } else {
-                coordinator._workoutState.value = WorkoutState.Resting(
-                    restSecondsRemaining = 0,
-                    nextExerciseName = flowDelegate?.calculateNextExerciseName(isSingleExercise, currentExercise, routine) ?: "",
-                    isLastExercise = isLastExerciseOverall,
-                    currentSet = displaySetIndex,
-                    totalSets = displayTotalSets,
-                    isSupersetTransition = useSupersetQuickRest,
-                    supersetLabel = supersetLabel
-                )
             }
         }
+    }
+
+    /**
+     * Start a visual-only "egg timer" for Just Lift rest.
+     *
+     * Unlike the routine rest timer, this does NOT change WorkoutState — the workout
+     * stays in Idle and the auto-start handle-grab detection remains active. The timer
+     * is purely informational: it counts down on screen and is canceled when the user
+     * picks up the handles (triggering auto-start for the next set).
+     *
+     * Issue #113: Configurable rest timer for Just Lift mode.
+     */
+    internal fun startJustLiftEggTimer(restSeconds: Int) {
+        coordinator.justLiftRestTimerJob?.cancel()
+        coordinator._justLiftRestCountdown.value = restSeconds
+        armJustLiftRestDeadline(restSeconds)
+
+        coordinator.justLiftRestTimerJob = scope.launch {
+            val timerJob = coroutineContext[kotlinx.coroutines.Job]
+            Logger.d("startJustLiftEggTimer: starting $restSeconds s visual countdown")
+
+            var lastRenderedSecond = restSeconds + 1
+            var lastTickedSecond = -1
+
+            try {
+                while (isActive) {
+                    val remaining = currentJustLiftRestRemainingSeconds()
+                    if (coordinator._justLiftRestCountdown.value != remaining) {
+                        coordinator._justLiftRestCountdown.value = remaining
+                    }
+
+                    if (remaining in 1..10 && remaining != lastTickedSecond) {
+                        lastTickedSecond = remaining
+                        val prefs = settingsManager.userPreferences.value
+                        if (prefs.beepsEnabled && prefs.countdownBeepsEnabled) {
+                            coordinator._hapticEvents.emit(HapticEvent.COUNTDOWN_TICK(remaining))
+                        }
+                    }
+
+                    if (remaining != lastRenderedSecond) {
+                        lastRenderedSecond = remaining
+                    }
+
+                    if (remaining <= 0) break
+
+                    delay(100)
+                }
+
+                coordinator._justLiftRestCountdown.value = 0
+                Logger.d("startJustLiftEggTimer: countdown complete")
+            } finally {
+                if (coordinator.justLiftRestTimerJob === timerJob) {
+                    coordinator.justLiftRestDeadlineElapsedRealtimeMs = null
+                }
+            }
+        }
+    }
+
+    /** Cancel the Just Lift egg timer (called when auto-start fires). */
+    internal fun cancelJustLiftEggTimer() {
+        val timerJob = coordinator.justLiftRestTimerJob
+        coordinator.justLiftRestTimerJob = null
+        timerJob?.cancel()
+        coordinator.justLiftRestDeadlineElapsedRealtimeMs = null
+        coordinator._justLiftRestCountdown.value = null
     }
 
     /**
@@ -2199,7 +3472,7 @@ class ActiveSessionEngine(
                 weightPerCableKg = setWeight,
                 isAMRAP = nextIsAMRAP,
                 stallDetectionEnabled = currentExercise.stallDetectionEnabled,
-                progressionRegressionKg = currentExercise.progressionKg
+                progressionRegressionKg = currentExercise.progressionKg,
             )
             Logger.d { "advanceToNextSetInSingleExercise: Issue #203 - setIdx=${coordinator._currentSetIndex.value}, isAMRAP=$nextIsAMRAP" }
 
@@ -2237,7 +3510,10 @@ class ActiveSessionEngine(
         if (currentState is WorkoutState.Completed) return
         if (currentState !is WorkoutState.Resting &&
             currentState !is WorkoutState.SetSummary &&
-            currentState !is WorkoutState.Active) return
+            currentState !is WorkoutState.Active
+        ) {
+            return
+        }
 
         coordinator.bodyweightTimerJob?.cancel()
         coordinator.bodyweightTimerJob = null
@@ -2275,7 +3551,7 @@ class ActiveSessionEngine(
             val nextEchoLevel = if (coordinator._userAdjustedWeightDuringRest) {
                 currentParams.echoLevel
             } else {
-                nextExercise.echoLevel
+                nextExercise.getEchoLevelForSet(nextSetIdx)
             }
             val nextEccentricLoad = if (coordinator._userAdjustedWeightDuringRest) {
                 currentParams.eccentricLoad
@@ -2299,12 +3575,21 @@ class ActiveSessionEngine(
                 selectedExerciseId = nextExercise.exercise.id,
                 isAMRAP = nextIsAMRAP,
                 stallDetectionEnabled = nextExercise.stallDetectionEnabled,
-                warmupReps = if (nextIsBodyweight) 0 else Constants.DEFAULT_WARMUP_REPS
+                warmupReps = if (nextIsBodyweight) 0 else Constants.DEFAULT_WARMUP_REPS,
             )
             Logger.d { "startNextSetOrExercise: Issue #203 - progressionKg=${nextExercise.progressionKg}kg for ${nextExercise.exercise.displayName}, isBodyweight=$nextIsBodyweight, isAMRAP=$nextIsAMRAP" }
 
             if (isChangingExercise) {
                 repCounter.reset()
+                // Phase 35C: Initialize warm-up phase for new exercise with warmupSets
+                if (nextSetIdx == 0 && nextExercise.warmupSets.isNotEmpty() && !nextIsBodyweight) {
+                    coordinator._currentWarmupSetIndex.value = 0
+                    coordinator._totalWarmupSets.value = nextExercise.warmupSets.size
+                    Logger.d { "Phase 35C: Entering warm-up phase for ${nextExercise.exercise.displayName}: ${nextExercise.warmupSets.size} warm-up sets" }
+                } else {
+                    coordinator._currentWarmupSetIndex.value = -1
+                    coordinator._totalWarmupSets.value = 0
+                }
             } else {
                 repCounter.resetCountsOnly()
             }
@@ -2326,17 +3611,73 @@ class ActiveSessionEngine(
 
     fun skipRest() {
         if (coordinator._workoutState.value is WorkoutState.Resting) {
+            coordinator._isRestPaused.value = false
             coordinator.restTimerJob?.cancel()
             coordinator.restTimerJob = null
 
-            Logger.d("ActiveSessionEngine") { "skipRest: advancing to next set (no BLE stop - already sent at set end)" }
+            val isJustLift = coordinator._workoutParameters.value.isJustLift
+            Logger.d("ActiveSessionEngine") { "skipRest: isJustLift=$isJustLift, advancing (no BLE stop - already sent at set end)" }
 
-            if (isSingleExerciseMode(coordinator)) {
+            if (isJustLift) {
+                // Just Lift rest returns to Idle (ready for next auto-start set), not Completed
+                coordinator._workoutState.value = WorkoutState.Idle
+            } else if (isSingleExerciseMode(coordinator)) {
                 advanceToNextSetInSingleExercise()
             } else {
                 startNextSetOrExercise()
             }
         }
+    }
+
+    // ===== Rest Timer Controls (Issue #297, #228) =====
+
+    /**
+     * Extend the rest timer by the given number of seconds.
+     * Updates both the original duration (for reset) and the current remaining time.
+     */
+    fun extendRestTime(seconds: Int) {
+        if (coordinator._workoutState.value !is WorkoutState.Resting) return
+        coordinator._restOriginalDuration.value += seconds
+        val now = elapsedRealtimeProvider()
+        val activeDeadline = coordinator.restDeadlineElapsedRealtimeMs
+        if (activeDeadline != null && !coordinator._isRestPaused.value) {
+            coordinator.restDeadlineElapsedRealtimeMs = maxOf(activeDeadline, now) + (seconds * 1000L)
+            coordinator._restSecondsRemaining.value =
+                computeRemainingSeconds(coordinator.restDeadlineElapsedRealtimeMs!!, now)
+        } else {
+            coordinator._restSecondsRemaining.value += seconds
+        }
+        Logger.d("ActiveSessionEngine") { "extendRestTime: +${seconds}s, remaining=${coordinator._restSecondsRemaining.value}, original=${coordinator._restOriginalDuration.value}" }
+    }
+
+    /**
+     * Toggle rest timer pause/resume.
+     * When paused, the countdown loop skips decrementing. Beeps also stop.
+     */
+    fun toggleRestPause() {
+        if (coordinator._workoutState.value !is WorkoutState.Resting) return
+        val newPaused = !coordinator._isRestPaused.value
+        if (!newPaused) {
+            coordinator._isRestPaused.value = false
+            armRestDeadline(coordinator._restSecondsRemaining.value)
+        } else {
+            coordinator._restSecondsRemaining.value = currentRestRemainingSeconds()
+            coordinator.restDeadlineElapsedRealtimeMs = null
+            coordinator._isRestPaused.value = true
+        }
+        Logger.d("ActiveSessionEngine") { "toggleRestPause: paused=$newPaused" }
+    }
+
+    /**
+     * Reset the rest timer to its original duration (including any extensions).
+     * Also unpauses if currently paused.
+     */
+    fun resetRestTimer() {
+        if (coordinator._workoutState.value !is WorkoutState.Resting) return
+        coordinator._isRestPaused.value = false
+        coordinator._restSecondsRemaining.value = coordinator._restOriginalDuration.value
+        armRestDeadline(coordinator._restOriginalDuration.value)
+        Logger.d("ActiveSessionEngine") { "resetRestTimer: reset to ${coordinator._restOriginalDuration.value}s" }
     }
 
     fun startNextSet() {
@@ -2392,6 +3733,11 @@ class ActiveSessionEngine(
                 return@launch
             }
 
+            // Cancel Just Lift egg timer when user grabs handles to start next set
+            if (params.isJustLift) {
+                cancelJustLiftEggTimer()
+            }
+
             Logger.d { "Issue221: Auto-start timer complete - params.isJustLift=${params.isJustLift}, params.useAutoStart=${params.useAutoStart}" }
             Logger.d { "Issue221: Starting workout with isJustLiftMode=true (auto-start implies Just Lift mode)" }
             startWorkout(skipCountdown = true, isJustLiftMode = true)
@@ -2410,6 +3756,8 @@ class ActiveSessionEngine(
         coordinator.monitorDataCollectionJob?.cancel()
         coordinator.autoStartJob?.cancel()
         coordinator.restTimerJob?.cancel()
+        coordinator.restDeadlineElapsedRealtimeMs = null
+        cancelJustLiftEggTimer()
         coordinator.bodyweightTimerJob?.cancel()
         coordinator.repEventsCollectionJob?.cancel()
         coordinator.workoutJob?.cancel()

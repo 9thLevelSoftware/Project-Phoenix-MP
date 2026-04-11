@@ -1,11 +1,11 @@
 package com.devil.phoenixproject.data.migration
 
-import com.devil.phoenixproject.domain.model.CycleTemplate
 import com.devil.phoenixproject.domain.model.CycleDayTemplate
+import com.devil.phoenixproject.domain.model.CycleTemplate
+import com.devil.phoenixproject.domain.model.ProgramMode
+import com.devil.phoenixproject.domain.model.ProgressionRule
 import com.devil.phoenixproject.domain.model.RoutineTemplate
 import com.devil.phoenixproject.domain.model.TemplateExercise
-import com.devil.phoenixproject.domain.model.ProgressionRule
-import com.devil.phoenixproject.domain.model.ProgramMode
 
 /**
  * Stable exercise IDs from the bundled exercise_dump.json library.
@@ -60,8 +60,8 @@ object CycleTemplates {
                 TemplateExercise("Bent Over Row", 3, 8, ProgramMode.OldSchool, exerciseId = ExerciseIds.BENT_OVER_ROW),
                 TemplateExercise("Shoulder Press", 3, 10, ProgramMode.OldSchool, exerciseId = ExerciseIds.SHOULDER_PRESS),
                 TemplateExercise("Bicep Curl", 3, 12, ProgramMode.TUT, exerciseId = ExerciseIds.BICEP_CURL),
-                TemplateExercise("Calf Raise", 3, 15, ProgramMode.TUT, exerciseId = ExerciseIds.CALF_RAISE)
-            )
+                TemplateExercise("Calf Raise", 3, 15, ProgramMode.TUT, exerciseId = ExerciseIds.CALF_RAISE),
+            ),
         )
         val fullBodyB = RoutineTemplate(
             name = "Full Body B",
@@ -71,8 +71,8 @@ object CycleTemplates {
                 TemplateExercise("Bent Over Row - Reverse Grip", 3, 10, ProgramMode.OldSchool, exerciseId = ExerciseIds.BENT_OVER_ROW_REVERSE_GRIP),
                 TemplateExercise("Lateral Raise", 3, 12, ProgramMode.TUT, exerciseId = ExerciseIds.LATERAL_RAISE),
                 TemplateExercise("Overhead Tricep Extension", 3, 12, ProgramMode.TUT, exerciseId = ExerciseIds.OVERHEAD_TRICEP_EXTENSION),
-                TemplateExercise("Plank", 3, null, null, exerciseId = ExerciseIds.PLANK)
-            )
+                TemplateExercise("Plank", 3, null, null, exerciseId = ExerciseIds.PLANK),
+            ),
         )
         val fullBodyC = RoutineTemplate(
             name = "Full Body C",
@@ -82,8 +82,8 @@ object CycleTemplates {
                 TemplateExercise("Upright Row", 3, 10, ProgramMode.OldSchool, exerciseId = ExerciseIds.UPRIGHT_ROW),
                 TemplateExercise("Arnold Press", 3, 10, ProgramMode.OldSchool, exerciseId = ExerciseIds.ARNOLD_PRESS),
                 TemplateExercise("Hammer Curl", 3, 12, ProgramMode.TUT, exerciseId = ExerciseIds.HAMMER_CURL),
-                TemplateExercise("Shrug", 3, 12, ProgramMode.TUT, exerciseId = ExerciseIds.SHRUG)
-            )
+                TemplateExercise("Shrug", 3, 12, ProgramMode.TUT, exerciseId = ExerciseIds.SHRUG),
+            ),
         )
 
         return CycleTemplate(
@@ -97,9 +97,9 @@ object CycleTemplates {
                 CycleDayTemplate.rest(4),
                 CycleDayTemplate.training(5, "Full Body C", fullBodyC),
                 CycleDayTemplate.rest(6),
-                CycleDayTemplate.rest(7)
+                CycleDayTemplate.rest(7),
             ),
-            progressionRule = ProgressionRule.percentage(2.5f)
+            progressionRule = ProgressionRule.percentage(2.5f),
         )
     }
 
@@ -114,8 +114,8 @@ object CycleTemplates {
                 TemplateExercise("Incline Bench Press", 3, 10, ProgramMode.OldSchool, exerciseId = ExerciseIds.INCLINE_BENCH_PRESS),
                 TemplateExercise("Shoulder Press", 3, 10, ProgramMode.OldSchool, exerciseId = ExerciseIds.SHOULDER_PRESS),
                 TemplateExercise("Lateral Raise", 3, 12, ProgramMode.TUT, exerciseId = ExerciseIds.LATERAL_RAISE),
-                TemplateExercise("Overhead Tricep Extension", 3, 12, ProgramMode.TUT, exerciseId = ExerciseIds.OVERHEAD_TRICEP_EXTENSION)
-            )
+                TemplateExercise("Overhead Tricep Extension", 3, 12, ProgramMode.TUT, exerciseId = ExerciseIds.OVERHEAD_TRICEP_EXTENSION),
+            ),
         )
         val pullA = RoutineTemplate(
             name = "Pull A",
@@ -124,8 +124,8 @@ object CycleTemplates {
                 TemplateExercise("Bent Over Row - Reverse Grip", 3, 10, ProgramMode.OldSchool, exerciseId = ExerciseIds.BENT_OVER_ROW_REVERSE_GRIP),
                 TemplateExercise("Face Pull", 3, 15, ProgramMode.TUT, exerciseId = ExerciseIds.FACE_PULL),
                 TemplateExercise("Shrug", 3, 12, ProgramMode.OldSchool, exerciseId = ExerciseIds.SHRUG),
-                TemplateExercise("Bicep Curl", 3, 12, ProgramMode.TUT, exerciseId = ExerciseIds.BICEP_CURL)
-            )
+                TemplateExercise("Bicep Curl", 3, 12, ProgramMode.TUT, exerciseId = ExerciseIds.BICEP_CURL),
+            ),
         )
         val legsA = RoutineTemplate(
             name = "Legs A",
@@ -134,8 +134,8 @@ object CycleTemplates {
                 TemplateExercise("Romanian Deadlift", 3, 10, ProgramMode.OldSchool, exerciseId = ExerciseIds.ROMANIAN_DEADLIFT),
                 TemplateExercise("Lunge", 3, 10, ProgramMode.OldSchool, exerciseId = ExerciseIds.LUNGE),
                 TemplateExercise("Lying Leg Extension", 3, 12, ProgramMode.TUT, exerciseId = ExerciseIds.LYING_LEG_EXTENSION),
-                TemplateExercise("Calf Raise", 3, 15, ProgramMode.TUT, exerciseId = ExerciseIds.CALF_RAISE)
-            )
+                TemplateExercise("Calf Raise", 3, 15, ProgramMode.TUT, exerciseId = ExerciseIds.CALF_RAISE),
+            ),
         )
         val pushB = RoutineTemplate(
             name = "Push B",
@@ -144,8 +144,8 @@ object CycleTemplates {
                 TemplateExercise("Bench Press", 3, 10, ProgramMode.OldSchool, exerciseId = ExerciseIds.BENCH_PRESS),
                 TemplateExercise("Incline Bench Press", 3, 10, ProgramMode.OldSchool, exerciseId = ExerciseIds.INCLINE_BENCH_PRESS),
                 TemplateExercise("Lateral Raise", 3, 12, ProgramMode.TUT, exerciseId = ExerciseIds.LATERAL_RAISE),
-                TemplateExercise("Overhead Tricep Extension", 3, 12, ProgramMode.TUT, exerciseId = ExerciseIds.OVERHEAD_TRICEP_EXTENSION)
-            )
+                TemplateExercise("Overhead Tricep Extension", 3, 12, ProgramMode.TUT, exerciseId = ExerciseIds.OVERHEAD_TRICEP_EXTENSION),
+            ),
         )
         val pullB = RoutineTemplate(
             name = "Pull B",
@@ -154,8 +154,8 @@ object CycleTemplates {
                 TemplateExercise("Upright Row", 3, 10, ProgramMode.OldSchool, exerciseId = ExerciseIds.UPRIGHT_ROW),
                 TemplateExercise("Face Pull", 3, 15, ProgramMode.TUT, exerciseId = ExerciseIds.FACE_PULL),
                 TemplateExercise("Shrug", 3, 12, ProgramMode.OldSchool, exerciseId = ExerciseIds.SHRUG),
-                TemplateExercise("Hammer Curl", 3, 12, ProgramMode.TUT, exerciseId = ExerciseIds.HAMMER_CURL)
-            )
+                TemplateExercise("Hammer Curl", 3, 12, ProgramMode.TUT, exerciseId = ExerciseIds.HAMMER_CURL),
+            ),
         )
         val legsB = RoutineTemplate(
             name = "Legs B",
@@ -164,8 +164,8 @@ object CycleTemplates {
                 TemplateExercise("Front Squat", 3, 10, ProgramMode.OldSchool, exerciseId = ExerciseIds.FRONT_SQUAT),
                 TemplateExercise("Bulgarian Split Squat", 3, 10, ProgramMode.OldSchool, exerciseId = ExerciseIds.BULGARIAN_SPLIT_SQUAT),
                 TemplateExercise("Lying Hamstring Curl", 3, 12, ProgramMode.TUT, exerciseId = ExerciseIds.LYING_HAMSTRING_CURL),
-                TemplateExercise("Calf Raise", 3, 15, ProgramMode.TUT, exerciseId = ExerciseIds.CALF_RAISE)
-            )
+                TemplateExercise("Calf Raise", 3, 15, ProgramMode.TUT, exerciseId = ExerciseIds.CALF_RAISE),
+            ),
         )
 
         return CycleTemplate(
@@ -178,9 +178,9 @@ object CycleTemplates {
                 CycleDayTemplate.training(3, "Legs A", legsA),
                 CycleDayTemplate.training(4, "Push B", pushB),
                 CycleDayTemplate.training(5, "Pull B", pullB),
-                CycleDayTemplate.training(6, "Legs B", legsB)
+                CycleDayTemplate.training(6, "Legs B", legsB),
             ),
-            progressionRule = ProgressionRule.percentage(2.5f)
+            progressionRule = ProgressionRule.percentage(2.5f),
         )
     }
 
@@ -195,8 +195,8 @@ object CycleTemplates {
                 TemplateExercise("Bent Over Row", 4, 6, ProgramMode.OldSchool, exerciseId = ExerciseIds.BENT_OVER_ROW),
                 TemplateExercise("Shoulder Press", 3, 10, ProgramMode.OldSchool, exerciseId = ExerciseIds.SHOULDER_PRESS),
                 TemplateExercise("Bicep Curl", 3, 12, ProgramMode.TUT, exerciseId = ExerciseIds.BICEP_CURL),
-                TemplateExercise("Overhead Tricep Extension", 3, 12, ProgramMode.TUT, exerciseId = ExerciseIds.OVERHEAD_TRICEP_EXTENSION)
-            )
+                TemplateExercise("Overhead Tricep Extension", 3, 12, ProgramMode.TUT, exerciseId = ExerciseIds.OVERHEAD_TRICEP_EXTENSION),
+            ),
         )
         val lowerA = RoutineTemplate(
             name = "Lower A",
@@ -204,8 +204,8 @@ object CycleTemplates {
                 TemplateExercise("Squat", 4, 6, ProgramMode.OldSchool, exerciseId = ExerciseIds.SQUAT),
                 TemplateExercise("Romanian Deadlift", 3, 10, ProgramMode.OldSchool, exerciseId = ExerciseIds.ROMANIAN_DEADLIFT),
                 TemplateExercise("Lunge", 3, 10, ProgramMode.OldSchool, exerciseId = ExerciseIds.LUNGE),
-                TemplateExercise("Calf Raise", 3, 15, ProgramMode.TUT, exerciseId = ExerciseIds.CALF_RAISE)
-            )
+                TemplateExercise("Calf Raise", 3, 15, ProgramMode.TUT, exerciseId = ExerciseIds.CALF_RAISE),
+            ),
         )
         val upperB = RoutineTemplate(
             name = "Upper B",
@@ -214,8 +214,8 @@ object CycleTemplates {
                 TemplateExercise("Bent Over Row - Wide Grip", 4, 8, ProgramMode.OldSchool, exerciseId = ExerciseIds.BENT_OVER_ROW_WIDE_GRIP),
                 TemplateExercise("Arnold Press", 3, 10, ProgramMode.OldSchool, exerciseId = ExerciseIds.ARNOLD_PRESS),
                 TemplateExercise("Hammer Curl", 3, 12, ProgramMode.TUT, exerciseId = ExerciseIds.HAMMER_CURL),
-                TemplateExercise("Skull Crusher", 3, 12, ProgramMode.TUT, exerciseId = ExerciseIds.SKULL_CRUSHER)
-            )
+                TemplateExercise("Skull Crusher", 3, 12, ProgramMode.TUT, exerciseId = ExerciseIds.SKULL_CRUSHER),
+            ),
         )
         val lowerB = RoutineTemplate(
             name = "Lower B",
@@ -223,8 +223,8 @@ object CycleTemplates {
                 TemplateExercise("Conventional Deadlift", 4, 5, ProgramMode.OldSchool, exerciseId = ExerciseIds.CONVENTIONAL_DEADLIFT),
                 TemplateExercise("Front Squat", 3, 10, ProgramMode.OldSchool, exerciseId = ExerciseIds.FRONT_SQUAT),
                 TemplateExercise("Bulgarian Split Squat", 3, 10, ProgramMode.OldSchool, exerciseId = ExerciseIds.BULGARIAN_SPLIT_SQUAT),
-                TemplateExercise("Glute Kickbacks", 3, 12, ProgramMode.TUT, exerciseId = ExerciseIds.GLUTE_KICKBACKS)
-            )
+                TemplateExercise("Glute Kickbacks", 3, 12, ProgramMode.TUT, exerciseId = ExerciseIds.GLUTE_KICKBACKS),
+            ),
         )
 
         return CycleTemplate(
@@ -236,9 +236,9 @@ object CycleTemplates {
                 CycleDayTemplate.training(2, "Lower A", lowerA),
                 CycleDayTemplate.rest(3),
                 CycleDayTemplate.training(4, "Upper B", upperB),
-                CycleDayTemplate.training(5, "Lower B", lowerB)
+                CycleDayTemplate.training(5, "Lower B", lowerB),
             ),
-            progressionRule = ProgressionRule.percentage(2.5f)
+            progressionRule = ProgressionRule.percentage(2.5f),
         )
     }
 
@@ -252,8 +252,8 @@ object CycleTemplates {
                 TemplateExercise("Bench Press", 3, null, ProgramMode.OldSchool, isPercentageBased = true, exerciseId = ExerciseIds.BENCH_PRESS),
                 TemplateExercise("Incline Bench Press", 3, 10, ProgramMode.OldSchool, exerciseId = ExerciseIds.INCLINE_BENCH_PRESS),
                 TemplateExercise("Bent Over Row", 3, 10, ProgramMode.OldSchool, exerciseId = ExerciseIds.BENT_OVER_ROW),
-                TemplateExercise("Plank", 3, null, null, exerciseId = ExerciseIds.PLANK)
-            )
+                TemplateExercise("Plank", 3, null, null, exerciseId = ExerciseIds.PLANK),
+            ),
         )
         val squatDay = RoutineTemplate(
             name = "Squat Day",
@@ -261,8 +261,8 @@ object CycleTemplates {
                 TemplateExercise("Squat", 3, null, ProgramMode.OldSchool, isPercentageBased = true, exerciseId = ExerciseIds.SQUAT),
                 TemplateExercise("Shoulder Press", 3, 10, ProgramMode.OldSchool, exerciseId = ExerciseIds.SHOULDER_PRESS),
                 TemplateExercise("Face Pull", 3, 15, ProgramMode.TUT, exerciseId = ExerciseIds.FACE_PULL),
-                TemplateExercise("Lunge", 3, 10, ProgramMode.OldSchool, exerciseId = ExerciseIds.LUNGE)
-            )
+                TemplateExercise("Lunge", 3, 10, ProgramMode.OldSchool, exerciseId = ExerciseIds.LUNGE),
+            ),
         )
         val pressDay = RoutineTemplate(
             name = "Press Day",
@@ -270,8 +270,8 @@ object CycleTemplates {
                 TemplateExercise("Shoulder Press", 3, null, ProgramMode.OldSchool, isPercentageBased = true, exerciseId = ExerciseIds.SHOULDER_PRESS),
                 TemplateExercise("Overhead Tricep Extension", 3, 12, ProgramMode.TUT, exerciseId = ExerciseIds.OVERHEAD_TRICEP_EXTENSION),
                 TemplateExercise("Bent Over Row", 3, 10, ProgramMode.OldSchool, exerciseId = ExerciseIds.BENT_OVER_ROW),
-                TemplateExercise("Crunch", 3, 15, null, exerciseId = ExerciseIds.CRUNCH)
-            )
+                TemplateExercise("Crunch", 3, 15, null, exerciseId = ExerciseIds.CRUNCH),
+            ),
         )
         val deadliftDay = RoutineTemplate(
             name = "Deadlift Day",
@@ -279,8 +279,8 @@ object CycleTemplates {
                 TemplateExercise("Conventional Deadlift", 3, null, ProgramMode.OldSchool, isPercentageBased = true, exerciseId = ExerciseIds.CONVENTIONAL_DEADLIFT),
                 TemplateExercise("Incline Bench Press", 3, 10, ProgramMode.OldSchool, exerciseId = ExerciseIds.INCLINE_BENCH_PRESS),
                 TemplateExercise("Shrug", 3, 12, ProgramMode.OldSchool, exerciseId = ExerciseIds.SHRUG),
-                TemplateExercise("Good Morning", 3, 12, ProgramMode.OldSchool, exerciseId = ExerciseIds.GOOD_MORNING)
-            )
+                TemplateExercise("Good Morning", 3, 12, ProgramMode.OldSchool, exerciseId = ExerciseIds.GOOD_MORNING),
+            ),
         )
 
         return CycleTemplate(
@@ -291,11 +291,11 @@ object CycleTemplates {
                 CycleDayTemplate.training(1, "Bench", benchDay),
                 CycleDayTemplate.training(2, "Squat", squatDay),
                 CycleDayTemplate.training(3, "Press", pressDay),
-                CycleDayTemplate.training(4, "Deadlift", deadliftDay)
+                CycleDayTemplate.training(4, "Deadlift", deadliftDay),
             ),
             progressionRule = ProgressionRule.fiveThreeOne(),
             requiresOneRepMax = true,
-            mainLifts = listOf("Bench Press", "Squat", "Shoulder Press", "Conventional Deadlift")
+            mainLifts = listOf("Bench Press", "Squat", "Shoulder Press", "Conventional Deadlift"),
         )
     }
 
@@ -306,6 +306,6 @@ object CycleTemplates {
         threeDay(),
         pushPullLegs(),
         upperLower(),
-        fiveThreeOne()
+        fiveThreeOne(),
     )
 }

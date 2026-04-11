@@ -3,16 +3,17 @@ package com.devil.phoenixproject.data.repository
 import app.cash.turbine.test
 import com.devil.phoenixproject.database.VitruvianDatabase
 import com.devil.phoenixproject.testutil.createTestDatabase
+import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 import kotlinx.coroutines.test.runTest
 import org.junit.Before
 import org.junit.Test
-import kotlin.test.assertEquals
-import kotlin.test.assertTrue
 
 class SqlDelightGamificationRepositoryTest {
 
     private lateinit var database: VitruvianDatabase
     private lateinit var repository: SqlDelightGamificationRepository
+    private val profileId = "default"
 
     @Before
     fun setup() {
@@ -22,17 +23,17 @@ class SqlDelightGamificationRepositoryTest {
 
     @Test
     fun `awardBadge stores earned badge and markBadgeCelebrated updates it`() = runTest {
-        val awarded = repository.awardBadge("workouts_1")
+        val awarded = repository.awardBadge("workouts_1", profileId)
         assertTrue(awarded)
 
-        repository.getEarnedBadges().test {
+        repository.getEarnedBadges(profileId).test {
             val earned = awaitItem()
             assertEquals(1, earned.size)
             cancelAndIgnoreRemainingEvents()
         }
 
-        repository.markBadgeCelebrated("workouts_1")
-        repository.getUncelebratedBadges().test {
+        repository.markBadgeCelebrated("workouts_1", profileId)
+        repository.getUncelebratedBadges(profileId).test {
             val uncelebrated = awaitItem()
             assertTrue(uncelebrated.isEmpty())
             cancelAndIgnoreRemainingEvents()
@@ -42,9 +43,9 @@ class SqlDelightGamificationRepositoryTest {
     @Test
     fun `updateStats calculates workout totals`() = runTest {
         insertWorkoutSession(id = "session-1", totalReps = 10, weightPerCableKg = 20.0)
-        repository.updateStats()
+        repository.updateStats(profileId)
 
-        repository.getGamificationStats().test {
+        repository.getGamificationStats(profileId).test {
             val stats = awaitItem()
             assertEquals(1, stats.totalWorkouts)
             assertEquals(10, stats.totalReps)
@@ -55,9 +56,9 @@ class SqlDelightGamificationRepositoryTest {
     @Test
     fun `checkAndAwardBadges awards first workout badge`() = runTest {
         insertWorkoutSession(id = "session-2", totalReps = 10, weightPerCableKg = 20.0)
-        repository.updateStats()
+        repository.updateStats(profileId)
 
-        val badges = repository.checkAndAwardBadges()
+        val badges = repository.checkAndAwardBadges(profileId)
 
         assertTrue(badges.any { it.id == "workouts_1" })
     }
@@ -103,7 +104,14 @@ class SqlDelightGamificationRepositoryTest {
             burnoutAvgWeightKg = null,
             peakWeightKg = null,
             rpe = null,
-            routineId = null
+            routineId = null,
+            avgMcvMmS = null,
+            avgAsymmetryPercent = null,
+            totalVelocityLossPercent = null,
+            dominantSide = null,
+            strengthProfile = null,
+            formScore = null,
+            profile_id = "default",
         )
     }
 }

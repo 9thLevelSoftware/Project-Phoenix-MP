@@ -11,7 +11,4 @@ import androidx.compose.ui.Modifier
  * - iOS: AVPlayer implementation
  */
 @Composable
-expect fun VideoPlayer(
-    videoUrl: String?,
-    modifier: Modifier = Modifier
-)
+expect fun VideoPlayer(videoUrl: String?, modifier: Modifier = Modifier)

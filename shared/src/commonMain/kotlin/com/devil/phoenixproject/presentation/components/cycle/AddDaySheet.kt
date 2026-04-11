@@ -23,27 +23,27 @@ fun AddDaySheet(
     onSelectRoutine: (Routine) -> Unit,
     onAddRestDay: () -> Unit,
     onDismiss: () -> Unit,
-    sheetState: SheetState = rememberModalBottomSheetState()
+    sheetState: SheetState = rememberModalBottomSheetState(),
 ) {
     val recentRoutines = recentRoutineIds.mapNotNull { id -> routines.find { it.id == id } }
     val otherRoutines = routines.filterNot { it.id in recentRoutineIds }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
-        sheetState = sheetState
+        sheetState = sheetState,
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp)
-                .padding(bottom = 32.dp)
+                .padding(bottom = 32.dp),
         ) {
             // Header
             Text(
                 text = "Add to Cycle",
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold,
-                modifier = Modifier.align(Alignment.CenterHorizontally)
+                modifier = Modifier.align(Alignment.CenterHorizontally),
             )
 
             Spacer(modifier = Modifier.height(16.dp))
@@ -54,17 +54,17 @@ fun AddDaySheet(
                     onAddRestDay()
                     onDismiss()
                 },
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier.fillMaxWidth(),
             ) {
                 Icon(
                     imageVector = Icons.Default.NightsStay,
                     contentDescription = null,
-                    modifier = Modifier.size(20.dp)
+                    modifier = Modifier.size(20.dp),
                 )
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
                     text = "Add Rest Day",
-                    fontWeight = FontWeight.Medium
+                    fontWeight = FontWeight.Medium,
                 )
             }
 
@@ -79,7 +79,7 @@ fun AddDaySheet(
                 text = "Select a Workout",
                 style = MaterialTheme.typography.labelLarge,
                 color = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.padding(bottom = 8.dp)
+                modifier = Modifier.padding(bottom = 8.dp),
             )
 
             // Routine list
@@ -88,62 +88,62 @@ fun AddDaySheet(
 
                 LazyColumn(
                     modifier = Modifier.heightIn(max = maxSheetHeight),
-                    verticalArrangement = Arrangement.spacedBy(2.dp)
+                    verticalArrangement = Arrangement.spacedBy(2.dp),
                 ) {
-                // Recent routines section
-                if (recentRoutines.isNotEmpty()) {
-                    item {
-                        Text(
-                            text = "Recent Routines",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(vertical = 8.dp)
-                        )
+                    // Recent routines section
+                    if (recentRoutines.isNotEmpty()) {
+                        item {
+                            Text(
+                                text = "Recent Routines",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(vertical = 8.dp),
+                            )
+                        }
+                        items(recentRoutines) { routine ->
+                            RoutineListItem(
+                                routine = routine,
+                                onClick = {
+                                    onSelectRoutine(routine)
+                                    onDismiss()
+                                },
+                            )
+                        }
+                        item { Spacer(modifier = Modifier.height(16.dp)) }
                     }
-                    items(recentRoutines) { routine ->
-                        RoutineListItem(
-                            routine = routine,
-                            onClick = {
-                                onSelectRoutine(routine)
-                                onDismiss()
-                            }
-                        )
-                    }
-                    item { Spacer(modifier = Modifier.height(16.dp)) }
-                }
 
-                // All routines section
-                if (otherRoutines.isNotEmpty()) {
-                    item {
-                        Text(
-                            text = if (recentRoutines.isNotEmpty()) "All Routines" else "Routines",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(vertical = 8.dp)
-                        )
+                    // All routines section
+                    if (otherRoutines.isNotEmpty()) {
+                        item {
+                            Text(
+                                text = if (recentRoutines.isNotEmpty()) "All Routines" else "Routines",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(vertical = 8.dp),
+                            )
+                        }
+                        items(otherRoutines) { routine ->
+                            RoutineListItem(
+                                routine = routine,
+                                onClick = {
+                                    onSelectRoutine(routine)
+                                    onDismiss()
+                                },
+                            )
+                        }
                     }
-                    items(otherRoutines) { routine ->
-                        RoutineListItem(
-                            routine = routine,
-                            onClick = {
-                                onSelectRoutine(routine)
-                                onDismiss()
-                            }
-                        )
-                    }
-                }
 
-                // Empty state
-                if (routines.isEmpty()) {
-                    item {
-                        Text(
-                            text = "No routines created yet.\nCreate a routine first to add workout days.",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(16.dp)
-                        )
+                    // Empty state
+                    if (routines.isEmpty()) {
+                        item {
+                            Text(
+                                text = "No routines created yet.\nCreate a routine first to add workout days.",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(16.dp),
+                            )
+                        }
                     }
-                }
                 }
             }
         }
@@ -151,35 +151,32 @@ fun AddDaySheet(
 }
 
 @Composable
-private fun RoutineListItem(
-    routine: Routine,
-    onClick: () -> Unit
-) {
+private fun RoutineListItem(routine: Routine, onClick: () -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick)
             .padding(vertical = 12.dp, horizontal = 4.dp),
-        verticalAlignment = Alignment.CenterVertically
+        verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = routine.name,
-                style = MaterialTheme.typography.bodyLarge
+                style = MaterialTheme.typography.bodyLarge,
             )
             if (routine.exercises.isNotEmpty()) {
                 Text(
                     text = "${routine.exercises.size} exercises: ${routine.exercises.joinToString(", ") { it.exercise.name }}",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1
+                    maxLines = 1,
                 )
             }
         }
         Icon(
             imageVector = Icons.Default.ChevronRight,
             contentDescription = null,
-            tint = MaterialTheme.colorScheme.onSurfaceVariant
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
 }

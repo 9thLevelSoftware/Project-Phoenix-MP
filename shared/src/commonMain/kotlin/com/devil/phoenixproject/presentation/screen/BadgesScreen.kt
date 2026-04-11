@@ -1,12 +1,10 @@
 package com.devil.phoenixproject.presentation.screen
 
-import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
@@ -32,21 +30,25 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.devil.phoenixproject.data.local.BadgeDefinitions
 import com.devil.phoenixproject.data.repository.BadgeWithProgress
 import com.devil.phoenixproject.domain.model.*
-import com.devil.phoenixproject.presentation.viewmodel.GamificationViewModel
+import com.devil.phoenixproject.presentation.components.RpgAttributeCard
 import com.devil.phoenixproject.presentation.util.LocalWindowSizeClass
 import com.devil.phoenixproject.presentation.util.WindowWidthSizeClass
+import com.devil.phoenixproject.presentation.viewmodel.GamificationViewModel
+import com.devil.phoenixproject.ui.theme.AccessibilityTheme
 import com.devil.phoenixproject.ui.theme.Spacing
+import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.koinInject
+import vitruvianprojectphoenix.shared.generated.resources.*
+import vitruvianprojectphoenix.shared.generated.resources.Res
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun BadgesScreen(
     onBack: () -> Unit,
     mainViewModel: com.devil.phoenixproject.presentation.viewmodel.MainViewModel,
-    viewModel: GamificationViewModel = koinInject()
+    viewModel: GamificationViewModel = koinInject(),
 ) {
     val badges by viewModel.filteredBadges.collectAsState()
     val selectedCategory by viewModel.selectedCategory.collectAsState()
@@ -66,21 +68,35 @@ fun BadgesScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)
-                .background(MaterialTheme.colorScheme.background)
+                .background(MaterialTheme.colorScheme.background),
         ) {
+            // RPG Attribute Card
+            LaunchedEffect(Unit) {
+                viewModel.loadRpgProfile()
+            }
+            val rpgProfile by viewModel.rpgProfile.collectAsState()
+            rpgProfile?.let { profile ->
+                RpgAttributeCard(
+                    profile = profile,
+                    onPortalLink = { /* Portal deep link - deferred to v0.6.0+ (PORTAL-02) */ },
+                    modifier = Modifier.padding(horizontal = Spacing.medium),
+                )
+                Spacer(modifier = Modifier.height(Spacing.small))
+            }
+
             // Streak Widget at top
             StreakWidget(
                 streakInfo = streakInfo,
                 totalWorkouts = gamificationStats.totalWorkouts,
                 totalBadges = viewModel.earnedBadgeCount,
-                modifier = Modifier.padding(Spacing.medium)
+                modifier = Modifier.padding(Spacing.medium),
             )
 
             // Stats Row
             StatsRow(
                 earnedCount = viewModel.earnedBadgeCount,
                 totalCount = viewModel.totalBadgeCount,
-                modifier = Modifier.padding(horizontal = Spacing.medium)
+                modifier = Modifier.padding(horizontal = Spacing.medium),
             )
 
             Spacer(modifier = Modifier.height(Spacing.small))
@@ -89,7 +105,7 @@ fun BadgesScreen(
             CategoryFilterRow(
                 selectedCategory = selectedCategory,
                 onCategorySelected = viewModel::selectCategory,
-                modifier = Modifier.padding(horizontal = Spacing.medium)
+                modifier = Modifier.padding(horizontal = Spacing.medium),
             )
 
             Spacer(modifier = Modifier.height(Spacing.medium))
@@ -98,7 +114,7 @@ fun BadgesScreen(
             if (isLoading) {
                 Box(
                     modifier = Modifier.fillMaxSize(),
-                    contentAlignment = Alignment.Center
+                    contentAlignment = Alignment.Center,
                 ) {
                     CircularProgressIndicator()
                 }
@@ -114,12 +130,12 @@ fun BadgesScreen(
                     contentPadding = PaddingValues(Spacing.medium),
                     horizontalArrangement = Arrangement.spacedBy(Spacing.small),
                     verticalArrangement = Arrangement.spacedBy(Spacing.small),
-                    modifier = Modifier.fillMaxSize()
+                    modifier = Modifier.fillMaxSize(),
                 ) {
                     items(badges, key = { it.badge.id }) { badgeWithProgress ->
                         BadgeCard(
                             badgeWithProgress = badgeWithProgress,
-                            onClick = { selectedBadge = badgeWithProgress }
+                            onClick = { selectedBadge = badgeWithProgress },
                         )
                     }
                 }
@@ -131,29 +147,30 @@ fun BadgesScreen(
     selectedBadge?.let { badge ->
         BadgeDetailDialog(
             badgeWithProgress = badge,
-            onDismiss = { selectedBadge = null }
+            onDismiss = { selectedBadge = null },
         )
     }
 }
 
 @Composable
-fun StreakWidget(
-    streakInfo: StreakInfo,
-    totalWorkouts: Int,
-    totalBadges: Int,
-    modifier: Modifier = Modifier
-) {
+fun StreakWidget(streakInfo: StreakInfo, totalWorkouts: Int, totalBadges: Int, modifier: Modifier = Modifier) {
     val fireColor = when {
-        streakInfo.currentStreak >= 30 -> Color(0xFFFF4500) // Orange-red for long streaks
-        streakInfo.currentStreak >= 7 -> Color(0xFFFF8C00) // Dark orange
-        streakInfo.currentStreak >= 3 -> Color(0xFFFFA500) // Orange
+        streakInfo.currentStreak >= 30 -> Color(0xFFFF4500)
+
+        // Orange-red for long streaks
+        streakInfo.currentStreak >= 7 -> Color(0xFFFF8C00)
+
+        // Dark orange
+        streakInfo.currentStreak >= 3 -> Color(0xFFFFA500)
+
+        // Orange
         else -> Color(0xFFFFD700) // Gold
     }
 
     val scale by animateFloatAsState(
         targetValue = if (streakInfo.currentStreak > 0) 1f else 0.95f,
         animationSpec = spring(stiffness = Spring.StiffnessLow),
-        label = "streak_scale"
+        label = "streak_scale",
     )
 
     Card(
@@ -162,38 +179,43 @@ fun StreakWidget(
             .scale(scale),
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.primaryContainer
+            containerColor = MaterialTheme.colorScheme.primaryContainer,
         ),
-        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(Spacing.medium),
             horizontalArrangement = Arrangement.SpaceEvenly,
-            verticalAlignment = Alignment.CenterVertically
+            verticalAlignment = Alignment.CenterVertically,
         ) {
             // Current Streak
             Column(
-                horizontalAlignment = Alignment.CenterHorizontally
+                horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 Box(
                     modifier = Modifier
                         .size(56.dp)
                         .clip(CircleShape)
                         .background(
-                            if (streakInfo.currentStreak > 0)
-                                Brush.radialGradient(listOf(fireColor, fireColor.copy(alpha = 0.3f)))
-                            else
-                                Brush.radialGradient(listOf(Color.Gray, Color.Gray.copy(alpha = 0.3f)))
+                            if (streakInfo.currentStreak > 0) {
+                                Brush.radialGradient(
+                                    listOf(fireColor, fireColor.copy(alpha = 0.3f)),
+                                )
+                            } else {
+                                Brush.radialGradient(
+                                    listOf(Color.Gray, Color.Gray.copy(alpha = 0.3f)),
+                                )
+                            },
                         ),
-                    contentAlignment = Alignment.Center
+                    contentAlignment = Alignment.Center,
                 ) {
                     Icon(
                         imageVector = Icons.Default.LocalFireDepartment,
                         contentDescription = null,
                         tint = Color.White,
-                        modifier = Modifier.size(32.dp)
+                        modifier = Modifier.size(32.dp),
                     )
                 }
                 Spacer(modifier = Modifier.height(4.dp))
@@ -201,19 +223,19 @@ fun StreakWidget(
                     text = "${streakInfo.currentStreak}",
                     style = MaterialTheme.typography.headlineMedium,
                     fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onPrimaryContainer
+                    color = MaterialTheme.colorScheme.onPrimaryContainer,
                 )
                 Text(
                     text = "Day Streak",
                     style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
+                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f),
                 )
                 if (streakInfo.isAtRisk) {
                     Text(
                         text = "At Risk!",
                         style = MaterialTheme.typography.labelSmall,
                         color = Color(0xFFFF4500),
-                        fontWeight = FontWeight.Bold
+                        fontWeight = FontWeight.Bold,
                     )
                 }
             }
@@ -223,30 +245,30 @@ fun StreakWidget(
                 modifier = Modifier
                     .width(1.dp)
                     .height(60.dp)
-                    .background(MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.2f))
+                    .background(MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.2f)),
             )
 
             // Total Workouts
             Column(
-                horizontalAlignment = Alignment.CenterHorizontally
+                horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 Icon(
                     imageVector = Icons.Default.FitnessCenter,
                     contentDescription = null,
                     tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                    modifier = Modifier.size(28.dp)
+                    modifier = Modifier.size(28.dp),
                 )
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
                     text = "$totalWorkouts",
                     style = MaterialTheme.typography.headlineSmall,
                     fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onPrimaryContainer
+                    color = MaterialTheme.colorScheme.onPrimaryContainer,
                 )
                 Text(
                     text = "Workouts",
                     style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
+                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f),
                 )
             }
 
@@ -255,30 +277,30 @@ fun StreakWidget(
                 modifier = Modifier
                     .width(1.dp)
                     .height(60.dp)
-                    .background(MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.2f))
+                    .background(MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.2f)),
             )
 
             // Badges Earned
             Column(
-                horizontalAlignment = Alignment.CenterHorizontally
+                horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 Icon(
                     imageVector = Icons.Default.MilitaryTech,
                     contentDescription = null,
                     tint = Color(0xFFFFD700),
-                    modifier = Modifier.size(28.dp)
+                    modifier = Modifier.size(28.dp),
                 )
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
                     text = "$totalBadges",
                     style = MaterialTheme.typography.headlineSmall,
                     fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onPrimaryContainer
+                    color = MaterialTheme.colorScheme.onPrimaryContainer,
                 )
                 Text(
                     text = "Badges",
                     style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
+                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f),
                 )
             }
         }
@@ -286,28 +308,24 @@ fun StreakWidget(
 }
 
 @Composable
-private fun StatsRow(
-    earnedCount: Int,
-    totalCount: Int,
-    modifier: Modifier = Modifier
-) {
+private fun StatsRow(earnedCount: Int, totalCount: Int, modifier: Modifier = Modifier) {
     val progress = if (totalCount > 0) earnedCount.toFloat() / totalCount else 0f
 
     Column(modifier = modifier.fillMaxWidth()) {
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween
+            horizontalArrangement = Arrangement.SpaceBetween,
         ) {
             Text(
                 text = "Badge Progress",
                 style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Text(
                 text = "$earnedCount / $totalCount",
                 style = MaterialTheme.typography.labelMedium,
                 fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.primary
+                color = MaterialTheme.colorScheme.primary,
             )
         }
         Spacer(modifier = Modifier.height(4.dp))
@@ -318,7 +336,7 @@ private fun StatsRow(
                 .height(8.dp)
                 .clip(RoundedCornerShape(4.dp)),
             color = MaterialTheme.colorScheme.primary,
-            trackColor = MaterialTheme.colorScheme.surfaceVariant
+            trackColor = MaterialTheme.colorScheme.surfaceVariant,
         )
     }
 }
@@ -327,26 +345,26 @@ private fun StatsRow(
 private fun CategoryFilterRow(
     selectedCategory: BadgeCategory?,
     onCategorySelected: (BadgeCategory?) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
 ) {
     Row(
         modifier = modifier
             .fillMaxWidth()
             .horizontalScroll(rememberScrollState()),
-        horizontalArrangement = Arrangement.spacedBy(Spacing.small)
+        horizontalArrangement = Arrangement.spacedBy(Spacing.small),
     ) {
         // All category
         FilterChip(
             selected = selectedCategory == null,
             onClick = { onCategorySelected(null) },
-            label = { Text("All") },
+            label = { Text(stringResource(Res.string.label_all)) },
             leadingIcon = {
                 Icon(
                     imageVector = Icons.Default.GridView,
                     contentDescription = null,
-                    modifier = Modifier.size(18.dp)
+                    modifier = Modifier.size(18.dp),
                 )
-            }
+            },
         )
 
         // Individual categories
@@ -359,19 +377,16 @@ private fun CategoryFilterRow(
                     Icon(
                         imageVector = getCategoryIcon(category),
                         contentDescription = null,
-                        modifier = Modifier.size(18.dp)
+                        modifier = Modifier.size(18.dp),
                     )
-                }
+                },
             )
         }
     }
 }
 
 @Composable
-private fun BadgeCard(
-    badgeWithProgress: BadgeWithProgress,
-    onClick: () -> Unit
-) {
+private fun BadgeCard(badgeWithProgress: BadgeWithProgress, onClick: () -> Unit) {
     val badge = badgeWithProgress.badge
     val isEarned = badgeWithProgress.isEarned
     val isSecret = badge.isSecret && !isEarned
@@ -381,7 +396,7 @@ private fun BadgeCard(
     val scale by animateFloatAsState(
         targetValue = if (isEarned) 1f else 0.95f,
         animationSpec = spring(stiffness = Spring.StiffnessLow),
-        label = "badge_scale"
+        label = "badge_scale",
     )
 
     Card(
@@ -392,19 +407,20 @@ private fun BadgeCard(
             .clickable(onClick = onClick),
         shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(
-            containerColor = if (isEarned)
+            containerColor = if (isEarned) {
                 MaterialTheme.colorScheme.surfaceVariant
-            else
+            } else {
                 MaterialTheme.colorScheme.surface
+            },
         ),
-        border = if (isEarned) BorderStroke(2.dp, tierColor) else null
+        border = if (isEarned) BorderStroke(2.dp, tierColor) else null,
     ) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(Spacing.small),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center
+            verticalArrangement = Arrangement.Center,
         ) {
             // Badge Icon
             Box(
@@ -412,26 +428,27 @@ private fun BadgeCard(
                     .size(48.dp)
                     .clip(CircleShape)
                     .background(
-                        if (isEarned)
+                        if (isEarned) {
                             Brush.radialGradient(listOf(tierColor, tierColor.copy(alpha = 0.5f)))
-                        else
+                        } else {
                             Brush.radialGradient(listOf(Color.Gray, Color.Gray.copy(alpha = 0.3f)))
+                        },
                     ),
-                contentAlignment = Alignment.Center
+                contentAlignment = Alignment.Center,
             ) {
                 if (isSecret) {
                     Icon(
                         imageVector = Icons.Default.Lock,
                         contentDescription = null,
                         tint = Color.White,
-                        modifier = Modifier.size(24.dp)
+                        modifier = Modifier.size(24.dp),
                     )
                 } else {
                     Icon(
                         imageVector = getBadgeIcon(badge.iconResource),
                         contentDescription = null,
                         tint = Color.White,
-                        modifier = Modifier.size(24.dp)
+                        modifier = Modifier.size(24.dp),
                     )
                 }
             }
@@ -446,7 +463,7 @@ private fun BadgeCard(
                 textAlign = TextAlign.Center,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
-                color = MaterialTheme.colorScheme.onSurface
+                color = MaterialTheme.colorScheme.onSurface,
             )
 
             // Progress (if not earned and not secret)
@@ -459,12 +476,12 @@ private fun BadgeCard(
                         .height(4.dp)
                         .clip(RoundedCornerShape(2.dp)),
                     color = tierColor,
-                    trackColor = MaterialTheme.colorScheme.surfaceVariant
+                    trackColor = MaterialTheme.colorScheme.surfaceVariant,
                 )
                 Text(
                     text = "${(badgeWithProgress.progressPercent * 100).toInt()}%",
                     style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
 
@@ -473,9 +490,9 @@ private fun BadgeCard(
                 Spacer(modifier = Modifier.height(4.dp))
                 Icon(
                     imageVector = Icons.Default.CheckCircle,
-                    contentDescription = "Earned",
+                    contentDescription = stringResource(Res.string.cd_earned),
                     tint = tierColor,
-                    modifier = Modifier.size(16.dp)
+                    modifier = Modifier.size(16.dp),
                 )
             }
         }
@@ -483,10 +500,7 @@ private fun BadgeCard(
 }
 
 @Composable
-private fun BadgeDetailDialog(
-    badgeWithProgress: BadgeWithProgress,
-    onDismiss: () -> Unit
-) {
+private fun BadgeDetailDialog(badgeWithProgress: BadgeWithProgress, onDismiss: () -> Unit) {
     val badge = badgeWithProgress.badge
     val isEarned = badgeWithProgress.isEarned
     val tierColor = Color(badge.tier.colorHex.toInt())
@@ -499,18 +513,19 @@ private fun BadgeDetailDialog(
                     .size(72.dp)
                     .clip(CircleShape)
                     .background(
-                        if (isEarned)
+                        if (isEarned) {
                             Brush.radialGradient(listOf(tierColor, tierColor.copy(alpha = 0.5f)))
-                        else
+                        } else {
                             Brush.radialGradient(listOf(Color.Gray, Color.Gray.copy(alpha = 0.3f)))
+                        },
                     ),
-                contentAlignment = Alignment.Center
+                contentAlignment = Alignment.Center,
             ) {
                 Icon(
                     imageVector = getBadgeIcon(badge.iconResource),
                     contentDescription = null,
                     tint = Color.White,
-                    modifier = Modifier.size(40.dp)
+                    modifier = Modifier.size(40.dp),
                 )
             }
         },
@@ -520,26 +535,26 @@ private fun BadgeDetailDialog(
                     text = badge.name,
                     style = MaterialTheme.typography.headlineSmall,
                     fontWeight = FontWeight.Bold,
-                    textAlign = TextAlign.Center
+                    textAlign = TextAlign.Center,
                 )
                 Text(
                     text = badge.tier.displayName,
                     style = MaterialTheme.typography.labelMedium,
                     color = tierColor,
-                    fontWeight = FontWeight.Bold
+                    fontWeight = FontWeight.Bold,
                 )
             }
         },
         text = {
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier.fillMaxWidth(),
             ) {
                 Text(
                     text = badge.description,
                     style = MaterialTheme.typography.bodyMedium,
                     textAlign = TextAlign.Center,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
 
                 Spacer(modifier = Modifier.height(Spacing.medium))
@@ -549,7 +564,7 @@ private fun BadgeDetailDialog(
                     Text(
                         text = "Progress",
                         style = MaterialTheme.typography.labelMedium,
-                        fontWeight = FontWeight.Bold
+                        fontWeight = FontWeight.Bold,
                     )
                     Spacer(modifier = Modifier.height(4.dp))
                     LinearProgressIndicator(
@@ -559,30 +574,30 @@ private fun BadgeDetailDialog(
                             .height(8.dp)
                             .clip(RoundedCornerShape(4.dp)),
                         color = tierColor,
-                        trackColor = MaterialTheme.colorScheme.surfaceVariant
+                        trackColor = MaterialTheme.colorScheme.surfaceVariant,
                     )
                     Text(
                         text = badge.getProgressDescription(badgeWithProgress.currentProgress),
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 } else {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.Center
+                        horizontalArrangement = Arrangement.Center,
                     ) {
                         Icon(
                             imageVector = Icons.Default.CheckCircle,
                             contentDescription = null,
-                            tint = Color(0xFF4CAF50),
-                            modifier = Modifier.size(20.dp)
+                            tint = AccessibilityTheme.colors.success,
+                            modifier = Modifier.size(20.dp),
                         )
                         Spacer(modifier = Modifier.width(4.dp))
                         Text(
                             text = "Earned!",
                             style = MaterialTheme.typography.bodyMedium,
-                            color = Color(0xFF4CAF50),
-                            fontWeight = FontWeight.Bold
+                            color = AccessibilityTheme.colors.success,
+                            fontWeight = FontWeight.Bold,
                         )
                     }
                 }
@@ -597,47 +612,58 @@ private fun BadgeDetailDialog(
                         Icon(
                             imageVector = getCategoryIcon(badge.category),
                             contentDescription = null,
-                            modifier = Modifier.size(18.dp)
+                            modifier = Modifier.size(18.dp),
                         )
-                    }
+                    },
                 )
             }
         },
         confirmButton = {
             TextButton(onClick = onDismiss) {
-                Text("Close")
+                Text(stringResource(Res.string.action_close))
             }
-        }
+        },
     )
 }
 
 // Helper functions
-private fun getCategoryIcon(category: BadgeCategory): ImageVector {
-    return when (category) {
-        BadgeCategory.CONSISTENCY -> Icons.Default.LocalFireDepartment
-        BadgeCategory.STRENGTH -> Icons.Default.EmojiEvents
-        BadgeCategory.VOLUME -> Icons.Default.Repeat
-        BadgeCategory.EXPLORER -> Icons.Default.Explore
-        BadgeCategory.DEDICATION -> Icons.Default.FitnessCenter
-    }
+private fun getCategoryIcon(category: BadgeCategory): ImageVector = when (category) {
+    BadgeCategory.CONSISTENCY -> Icons.Default.LocalFireDepartment
+    BadgeCategory.STRENGTH -> Icons.Default.EmojiEvents
+    BadgeCategory.VOLUME -> Icons.Default.Repeat
+    BadgeCategory.EXPLORER -> Icons.Default.Explore
+    BadgeCategory.DEDICATION -> Icons.Default.FitnessCenter
 }
 
-private fun getBadgeIcon(iconResource: String): ImageVector {
-    return when (iconResource) {
-        "fire" -> Icons.Default.LocalFireDepartment
-        "trophy" -> Icons.Default.EmojiEvents
-        "dumbbell" -> Icons.Default.FitnessCenter
-        "repeat" -> Icons.Default.Repeat
-        "compass" -> Icons.Default.Explore
-        "calendar" -> Icons.Default.CalendarMonth
-        "sun" -> Icons.Default.WbSunny
-        "moon" -> Icons.Default.NightsStay
-        "weight" -> Icons.Default.FitnessCenter
-        "lightning" -> Icons.Default.Bolt
-        "body" -> Icons.Default.Accessibility
-        "phoenix" -> Icons.Default.LocalFireDepartment // Phoenix uses fire icon
-        "shield" -> Icons.Default.Shield
-        "list" -> Icons.Default.Checklist
-        else -> Icons.Default.Star
-    }
+private fun getBadgeIcon(iconResource: String): ImageVector = when (iconResource) {
+    "fire" -> Icons.Default.LocalFireDepartment
+
+    "trophy" -> Icons.Default.EmojiEvents
+
+    "dumbbell" -> Icons.Default.FitnessCenter
+
+    "repeat" -> Icons.Default.Repeat
+
+    "compass" -> Icons.Default.Explore
+
+    "calendar" -> Icons.Default.CalendarMonth
+
+    "sun" -> Icons.Default.WbSunny
+
+    "moon" -> Icons.Default.NightsStay
+
+    "weight" -> Icons.Default.FitnessCenter
+
+    "lightning" -> Icons.Default.Bolt
+
+    "body" -> Icons.Default.Accessibility
+
+    "phoenix" -> Icons.Default.LocalFireDepartment
+
+    // Phoenix uses fire icon
+    "shield" -> Icons.Default.Shield
+
+    "list" -> Icons.Default.Checklist
+
+    else -> Icons.Default.Star
 }

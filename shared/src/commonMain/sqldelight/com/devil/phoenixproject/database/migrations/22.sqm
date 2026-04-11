@@ -1,0 +1,18 @@
+-- Migration 22: Add profile_id to gamification tables for multi-profile isolation
+-- These profile_id columns are intentionally healed outside this numbered
+-- migration. The tables were later released through schema/create paths with
+-- profile_id already present, so replaying ALTER TABLE here can crash existing
+-- installs with duplicate-column errors.
+
+-- Drop the old UNIQUE constraint on EarnedBadge.badgeId and re-create with profile_id.
+-- SQLite doesn't support DROP CONSTRAINT, so we need to work around it.
+-- The INSERT OR IGNORE in insertEarnedBadge already handles duplicate prevention.
+-- We create a new unique index on (badgeId, profile_id) to allow the same badge
+-- to be earned by different profiles.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_earned_badge_profile ON EarnedBadge(badgeId, profile_id);
+
+CREATE INDEX IF NOT EXISTS idx_streak_history_profile ON StreakHistory(profile_id);
+
+CREATE INDEX IF NOT EXISTS idx_rpg_attributes_profile ON RpgAttributes(profile_id);
+
+CREATE INDEX IF NOT EXISTS idx_gamification_stats_profile ON GamificationStats(profile_id);

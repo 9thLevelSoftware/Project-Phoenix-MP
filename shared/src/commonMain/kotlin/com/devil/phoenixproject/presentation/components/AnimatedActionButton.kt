@@ -1,13 +1,12 @@
 package com.devil.phoenixproject.presentation.components
 
 import androidx.compose.animation.core.*
-import androidx.compose.foundation.background
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -28,19 +27,19 @@ import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.presentation.util.LocalWindowSizeClass
 import com.devil.phoenixproject.presentation.util.WindowWidthSizeClass
 import com.devil.phoenixproject.ui.theme.HomeButtonColors
-import kotlinx.coroutines.isActive
 import kotlin.math.sin
 import kotlin.random.Random
+import kotlinx.coroutines.isActive
 
 /**
  * Icon animation types for AnimatedActionButton
  */
 enum class IconAnimation {
     NONE,
-    PULSE,      // Scale pulse (for Play icon)
-    ROTATE,     // Continuous rotation (for Loop icon)
-    TILT,       // Oscillating tilt (for Dumbbell icon)
-    FIRE        // Flickering flame effect
+    PULSE, // Scale pulse (for Play icon)
+    ROTATE, // Continuous rotation (for Loop icon)
+    TILT, // Oscillating tilt (for Dumbbell icon)
+    FIRE, // Flickering flame effect
 }
 
 /**
@@ -52,7 +51,7 @@ private data class FlameParticle(
     var radius: Float,
     var speedY: Float,
     var life: Float = 1.0f,
-    var driftOffset: Float = Random.nextFloat() * 100f
+    var driftOffset: Float = Random.nextFloat() * 100f,
 )
 
 /**
@@ -90,8 +89,8 @@ private fun Modifier.onFire(): Modifier = composed {
                                 x = -1f,
                                 y = -1f,
                                 radius = Random.nextFloat() * 8f + 4f,
-                                speedY = Random.nextFloat() * 2f + 1f
-                            )
+                                speedY = Random.nextFloat() * 2f + 1f,
+                            ),
                         )
                     }
                 }
@@ -116,8 +115,12 @@ private fun Modifier.onFire(): Modifier = composed {
 
                 // Color based on life: Yellow → Orange → Red → Fade
                 val color = when {
-                    p.life > 0.7f -> Color(0xFFFFD700) // Gold/Yellow (hot center)
-                    p.life > 0.4f -> Color(0xFFFF6B00) // Orange
+                    p.life > 0.7f -> Color(0xFFFFD700)
+
+                    // Gold/Yellow (hot center)
+                    p.life > 0.4f -> Color(0xFFFF6B00)
+
+                    // Orange
                     else -> Color(0xFFFF4500).copy(alpha = (p.life * 2f).coerceIn(0f, 1f)) // Red, fading
                 }
 
@@ -126,7 +129,7 @@ private fun Modifier.onFire(): Modifier = composed {
                     color = color,
                     radius = p.radius,
                     center = Offset(p.x + drift, p.y),
-                    blendMode = BlendMode.Plus
+                    blendMode = BlendMode.Plus,
                 )
 
                 // Inner brighter core
@@ -135,7 +138,7 @@ private fun Modifier.onFire(): Modifier = composed {
                         color = Color.White.copy(alpha = (p.life - 0.5f) * 0.6f),
                         radius = p.radius * 0.4f,
                         center = Offset(p.x + drift, p.y),
-                        blendMode = BlendMode.Plus
+                        blendMode = BlendMode.Plus,
                     )
                 }
             }
@@ -162,7 +165,7 @@ fun AnimatedActionButton(
     isPrimary: Boolean,
     isFireButton: Boolean = false,
     iconAnimation: IconAnimation = IconAnimation.NONE,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
@@ -180,9 +183,9 @@ fun AnimatedActionButton(
         targetValue = if (isPressed) 0.95f else 1f,
         animationSpec = spring(
             dampingRatio = Spring.DampingRatioMediumBouncy,
-            stiffness = Spring.StiffnessLow
+            stiffness = Spring.StiffnessLow,
         ),
-        label = "pressScale"
+        label = "pressScale",
     )
 
     // Idle animations
@@ -194,9 +197,9 @@ fun AnimatedActionButton(
         targetValue = if (isPrimary || isFireButton) 1.02f else 1f,
         animationSpec = infiniteRepeatable(
             animation = tween(1000, easing = EaseInOutSine),
-            repeatMode = RepeatMode.Reverse
+            repeatMode = RepeatMode.Reverse,
         ),
-        label = "pulseScale"
+        label = "pulseScale",
     )
 
     // Icon animations
@@ -205,9 +208,9 @@ fun AnimatedActionButton(
         targetValue = if (iconAnimation == IconAnimation.ROTATE) 360f else 0f,
         animationSpec = infiniteRepeatable(
             animation = tween(8000, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart
+            repeatMode = RepeatMode.Restart,
         ),
-        label = "iconRotation"
+        label = "iconRotation",
     )
 
     val iconTilt by infiniteTransition.animateFloat(
@@ -215,9 +218,9 @@ fun AnimatedActionButton(
         targetValue = 5f,
         animationSpec = infiniteRepeatable(
             animation = tween(1500, easing = EaseInOutSine),
-            repeatMode = RepeatMode.Reverse
+            repeatMode = RepeatMode.Reverse,
         ),
-        label = "iconTilt"
+        label = "iconTilt",
     )
 
     val iconPulse by infiniteTransition.animateFloat(
@@ -225,9 +228,9 @@ fun AnimatedActionButton(
         targetValue = 1.1f,
         animationSpec = infiniteRepeatable(
             animation = tween(1000, easing = EaseInOutSine),
-            repeatMode = RepeatMode.Reverse
+            repeatMode = RepeatMode.Reverse,
         ),
-        label = "iconPulse"
+        label = "iconPulse",
     )
 
     // Fire icon flicker
@@ -236,9 +239,9 @@ fun AnimatedActionButton(
         targetValue = 1.08f,
         animationSpec = infiniteRepeatable(
             animation = tween(500, easing = EaseInOutSine),
-            repeatMode = RepeatMode.Reverse
+            repeatMode = RepeatMode.Reverse,
         ),
-        label = "fireIconScale"
+        label = "fireIconScale",
     )
 
     // Determine icon transform
@@ -267,7 +270,7 @@ fun AnimatedActionButton(
                 .height(buttonHeight)
                 .scale(scale * pulseScale)
                 .clip(RoundedCornerShape(28.dp))
-                .onFire()
+                .onFire(),
         ) {
             // Button content
             Surface(
@@ -275,31 +278,31 @@ fun AnimatedActionButton(
                 modifier = Modifier.fillMaxSize(),
                 color = Color.Transparent,
                 contentColor = contentColor,
-                interactionSource = interactionSource
+                interactionSource = interactionSource,
             ) {
                 Box(
                     modifier = Modifier.fillMaxSize(),
-                    contentAlignment = Alignment.Center
+                    contentAlignment = Alignment.Center,
                 ) {
                     androidx.compose.foundation.layout.Row(
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = androidx.compose.foundation.layout.Arrangement.Center
+                        horizontalArrangement = androidx.compose.foundation.layout.Arrangement.Center,
                     ) {
                         if (icon != null) {
                             Icon(
                                 imageVector = icon,
                                 contentDescription = null,
                                 modifier = iconModifier.then(Modifier.size(32.dp)),
-                                tint = Color.White
+                                tint = Color.White,
                             )
                             androidx.compose.foundation.layout.Spacer(
-                                modifier = Modifier.padding(horizontal = 8.dp)
+                                modifier = Modifier.padding(horizontal = 8.dp),
                             )
                         }
                         Text(
                             text = label,
                             color = Color.White,
-                            style = MaterialTheme.typography.titleLarge
+                            style = MaterialTheme.typography.titleLarge,
                         )
                     }
                 }
@@ -321,10 +324,10 @@ fun AnimatedActionButton(
                     Icon(
                         imageVector = icon,
                         contentDescription = null,
-                        modifier = iconModifier.then(Modifier.size(28.dp))
+                        modifier = iconModifier.then(Modifier.size(28.dp)),
                     )
                 },
-                text = { Text(label, style = MaterialTheme.typography.titleMedium) }
+                text = { Text(label, style = MaterialTheme.typography.titleMedium) },
             )
         } else {
             ExtendedFloatingActionButton(
@@ -336,7 +339,7 @@ fun AnimatedActionButton(
                     .fillMaxWidth()
                     .height(buttonHeight)
                     .scale(scale * pulseScale),
-                content = { Text(label, style = MaterialTheme.typography.titleMedium) }
+                content = { Text(label, style = MaterialTheme.typography.titleMedium) },
             )
         }
     }

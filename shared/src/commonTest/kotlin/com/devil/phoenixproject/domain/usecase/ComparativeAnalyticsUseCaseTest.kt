@@ -16,11 +16,11 @@ class ComparativeAnalyticsUseCaseTest {
     fun `comparePeriods detects increase and significance`() {
         val current = listOf(
             TrendPoint(1L, 10f),
-            TrendPoint(2L, 12f)
+            TrendPoint(2L, 12f),
         )
         val previous = listOf(
             TrendPoint(1L, 5f),
-            TrendPoint(2L, 5f)
+            TrendPoint(2L, 5f),
         )
 
         val result = useCase.comparePeriods(current, previous, TrendMetricType.WEIGHT_PR)

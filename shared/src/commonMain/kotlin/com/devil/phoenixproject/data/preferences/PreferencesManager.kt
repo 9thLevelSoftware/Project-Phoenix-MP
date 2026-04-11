@@ -4,7 +4,6 @@ import com.devil.phoenixproject.domain.model.RepCountTiming
 import com.devil.phoenixproject.domain.model.UserPreferences
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.russhwolf.settings.Settings
-import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.serialization.Serializable
@@ -27,7 +26,7 @@ data class SingleExerciseDefaults(
     val echoLevelValue: Int,
     val duration: Int,
     val isAMRAP: Boolean,
-    val perSetRestTime: Boolean
+    val perSetRestTime: Boolean,
 ) {
     fun getEccentricLoad(): com.devil.phoenixproject.domain.model.EccentricLoad {
         // Handle legacy 125% -> fall back to 120%
@@ -36,21 +35,19 @@ data class SingleExerciseDefaults(
             ?: com.devil.phoenixproject.domain.model.EccentricLoad.LOAD_100
     }
 
-    fun getEchoLevel(): com.devil.phoenixproject.domain.model.EchoLevel {
-        return com.devil.phoenixproject.domain.model.EchoLevel.entries.find { it.levelValue == echoLevelValue }
-            ?: com.devil.phoenixproject.domain.model.EchoLevel.HARDER
+    fun getEchoLevel(): com.devil.phoenixproject.domain.model.EchoLevel = com.devil.phoenixproject.domain.model.EchoLevel.entries.find {
+        it.levelValue == echoLevelValue
     }
+        ?: com.devil.phoenixproject.domain.model.EchoLevel.HARDER
 
-    fun toProgramMode(): com.devil.phoenixproject.domain.model.ProgramMode {
-        return when (workoutModeId) {
-            0 -> com.devil.phoenixproject.domain.model.ProgramMode.OldSchool
-            2 -> com.devil.phoenixproject.domain.model.ProgramMode.Pump
-            3 -> com.devil.phoenixproject.domain.model.ProgramMode.TUT
-            4 -> com.devil.phoenixproject.domain.model.ProgramMode.TUTBeast
-            6 -> com.devil.phoenixproject.domain.model.ProgramMode.EccentricOnly
-            10 -> com.devil.phoenixproject.domain.model.ProgramMode.Echo
-            else -> com.devil.phoenixproject.domain.model.ProgramMode.OldSchool
-        }
+    fun toProgramMode(): com.devil.phoenixproject.domain.model.ProgramMode = when (workoutModeId) {
+        0 -> com.devil.phoenixproject.domain.model.ProgramMode.OldSchool
+        2 -> com.devil.phoenixproject.domain.model.ProgramMode.Pump
+        3 -> com.devil.phoenixproject.domain.model.ProgramMode.TUT
+        4 -> com.devil.phoenixproject.domain.model.ProgramMode.TUTBeast
+        6 -> com.devil.phoenixproject.domain.model.ProgramMode.EccentricOnly
+        10 -> com.devil.phoenixproject.domain.model.ProgramMode.Echo
+        else -> com.devil.phoenixproject.domain.model.ProgramMode.OldSchool
     }
 }
 
@@ -64,8 +61,9 @@ data class JustLiftDefaults(
     val weightChangePerRep: Float = 0f,
     val eccentricLoadPercentage: Int = 100,
     val echoLevelValue: Int = 2,
-    val stallDetectionEnabled: Boolean = true,  // Stall detection auto-stop toggle
-    val repCountTimingName: String = "TOP"  // RepCountTiming enum name
+    val stallDetectionEnabled: Boolean = true, // Stall detection auto-stop toggle
+    val repCountTimingName: String = "TOP", // RepCountTiming enum name
+    val restSeconds: Int = 60, // Rest timer between sets (0 = off, 5-300 in 5s increments)
 ) {
     fun getEccentricLoad(): com.devil.phoenixproject.domain.model.EccentricLoad {
         // Handle legacy 125% -> fall back to 120%
@@ -74,21 +72,19 @@ data class JustLiftDefaults(
             ?: com.devil.phoenixproject.domain.model.EccentricLoad.LOAD_100
     }
 
-    fun getEchoLevel(): com.devil.phoenixproject.domain.model.EchoLevel {
-        return com.devil.phoenixproject.domain.model.EchoLevel.entries.find { it.levelValue == echoLevelValue }
-            ?: com.devil.phoenixproject.domain.model.EchoLevel.HARDER
+    fun getEchoLevel(): com.devil.phoenixproject.domain.model.EchoLevel = com.devil.phoenixproject.domain.model.EchoLevel.entries.find {
+        it.levelValue == echoLevelValue
     }
+        ?: com.devil.phoenixproject.domain.model.EchoLevel.HARDER
 
-    fun toProgramMode(): com.devil.phoenixproject.domain.model.ProgramMode {
-        return when (workoutModeId) {
-            0 -> com.devil.phoenixproject.domain.model.ProgramMode.OldSchool
-            2 -> com.devil.phoenixproject.domain.model.ProgramMode.Pump
-            3 -> com.devil.phoenixproject.domain.model.ProgramMode.TUT
-            4 -> com.devil.phoenixproject.domain.model.ProgramMode.TUTBeast
-            6 -> com.devil.phoenixproject.domain.model.ProgramMode.EccentricOnly
-            10 -> com.devil.phoenixproject.domain.model.ProgramMode.Echo
-            else -> com.devil.phoenixproject.domain.model.ProgramMode.OldSchool
-        }
+    fun toProgramMode(): com.devil.phoenixproject.domain.model.ProgramMode = when (workoutModeId) {
+        0 -> com.devil.phoenixproject.domain.model.ProgramMode.OldSchool
+        2 -> com.devil.phoenixproject.domain.model.ProgramMode.Pump
+        3 -> com.devil.phoenixproject.domain.model.ProgramMode.TUT
+        4 -> com.devil.phoenixproject.domain.model.ProgramMode.TUTBeast
+        6 -> com.devil.phoenixproject.domain.model.ProgramMode.EccentricOnly
+        10 -> com.devil.phoenixproject.domain.model.ProgramMode.Echo
+        else -> com.devil.phoenixproject.domain.model.ProgramMode.OldSchool
     }
 }
 
@@ -100,6 +96,7 @@ interface PreferencesManager {
     val preferencesFlow: StateFlow<UserPreferences>
 
     suspend fun setWeightUnit(unit: WeightUnit)
+
     // Issue #167: setAutoplayEnabled removed - autoplay now derived from summaryCountdownSeconds
     suspend fun setStopAtTop(enabled: Boolean)
     suspend fun setEnableVideoPlayback(enabled: Boolean)
@@ -112,10 +109,33 @@ interface PreferencesManager {
     suspend fun setSummaryCountdownSeconds(seconds: Int)
     suspend fun setAutoStartCountdownSeconds(seconds: Int)
     suspend fun setGamificationEnabled(enabled: Boolean)
-    suspend fun setSimulatorModeUnlocked(unlocked: Boolean)
-    fun isSimulatorModeUnlocked(): Boolean
-    suspend fun setSimulatorModeEnabled(enabled: Boolean)
-    fun isSimulatorModeEnabled(): Boolean
+
+    // Issue #266: Configurable weight increment
+    suspend fun setWeightIncrement(increment: Float)
+
+    // Issue #190: Auto-start routine
+    suspend fun setAutoStartRoutine(enabled: Boolean)
+
+    // Issue #229: Body weight for bodyweight exercise volume
+    suspend fun setBodyWeightKg(weightKg: Float)
+
+    // Issue #100: Per-sound toggles
+    suspend fun setCountdownBeepsEnabled(enabled: Boolean)
+    suspend fun setRepSoundEnabled(enabled: Boolean)
+
+    // Issue #237: Motion-triggered set start
+    suspend fun setMotionStartEnabled(enabled: Boolean)
+
+    // Issue #293: Per-session auto-backup
+    suspend fun setAutoBackupEnabled(enabled: Boolean)
+
+    // Issue #238: Language/locale preference
+    suspend fun setLanguage(language: String)
+
+    // Issue #141: Voice-activated emergency stop
+    suspend fun setVoiceStopEnabled(enabled: Boolean)
+    suspend fun setSafeWord(word: String?)
+    suspend fun setSafeWordCalibrated(calibrated: Boolean)
 
     suspend fun getSingleExerciseDefaults(exerciseId: String): SingleExerciseDefaults?
     suspend fun saveSingleExerciseDefaults(defaults: SingleExerciseDefaults)
@@ -132,9 +152,7 @@ interface PreferencesManager {
  * - Android: SharedPreferences
  * - iOS: NSUserDefaults
  */
-class SettingsPreferencesManager(
-    private val settings: Settings
-) : PreferencesManager {
+class SettingsPreferencesManager(private val settings: Settings) : PreferencesManager {
 
     private val json = Json {
         ignoreUnknownKeys = true
@@ -144,6 +162,7 @@ class SettingsPreferencesManager(
     companion object {
         // Preference keys
         private const val KEY_WEIGHT_UNIT = "weight_unit"
+
         // Issue #167: KEY_AUTOPLAY_ENABLED removed - autoplay now derived from summaryCountdownSeconds
         private const val KEY_STOP_AT_TOP = "stop_at_top"
         private const val KEY_VIDEO_PLAYBACK = "video_playback"
@@ -152,20 +171,36 @@ class SettingsPreferencesManager(
         private const val KEY_STALL_DETECTION = "stall_detection_enabled"
         private const val KEY_DISCO_MODE_UNLOCKED = "disco_mode_unlocked"
         private const val KEY_AUDIO_REP_COUNT = "audio_rep_count_enabled"
+        private const val LEGACY_KEY_HUD_PRESET = "hud_preset"
         private const val KEY_SUMMARY_COUNTDOWN_SECONDS = "summary_countdown_seconds"
         private const val KEY_AUTOSTART_COUNTDOWN_SECONDS = "autostart_countdown_seconds"
         private const val KEY_REP_COUNT_TIMING = "rep_count_timing"
         private const val KEY_JUST_LIFT_DEFAULTS = "just_lift_defaults"
         private const val KEY_PREFIX_EXERCISE = "exercise_defaults_"
-        private const val KEY_SIMULATOR_MODE_UNLOCKED = "simulator_mode_unlocked"
-        private const val KEY_SIMULATOR_MODE_ENABLED = "simulator_mode_enabled"
         private const val KEY_GAMIFICATION_ENABLED = "gamification_enabled"
+        private const val KEY_WEIGHT_INCREMENT = "weight_increment"
+        private const val KEY_AUTO_START_ROUTINE = "auto_start_routine"
+        private const val KEY_BODY_WEIGHT_KG = "body_weight_kg"
+        private const val KEY_COUNTDOWN_BEEPS_ENABLED = "countdown_beeps_enabled"
+        private const val KEY_REP_SOUND_ENABLED = "rep_sound_enabled"
+        private const val KEY_MOTION_START = "motion_start_enabled"
+        private const val KEY_AUTO_BACKUP_ENABLED = "auto_backup_enabled"
+        private const val KEY_LANGUAGE = "language"
+        private const val KEY_VOICE_STOP_ENABLED = "voice_stop_enabled"
+        private const val KEY_SAFE_WORD = "safe_word"
+        private const val KEY_SAFE_WORD_CALIBRATED = "safe_word_calibrated"
+
+        // Permissions onboarding (health + microphone)
+        private const val KEY_PERMISSIONS_ONBOARDING_SHOWN = "permissions_onboarding_shown"
     }
 
     private val _preferencesFlow = MutableStateFlow(loadPreferences())
     override val preferencesFlow: StateFlow<UserPreferences> = _preferencesFlow
 
     private fun loadPreferences(): UserPreferences {
+        // HUD preset rollback: ignore and remove the retired key on upgraded installs.
+        settings.remove(LEGACY_KEY_HUD_PRESET)
+
         return UserPreferences(
             weightUnit = settings.getStringOrNull(KEY_WEIGHT_UNIT)?.let {
                 WeightUnit.entries.find { unit -> unit.name == it }
@@ -179,13 +214,26 @@ class SettingsPreferencesManager(
             discoModeUnlocked = settings.getBoolean(KEY_DISCO_MODE_UNLOCKED, false),
             audioRepCountEnabled = settings.getBoolean(KEY_AUDIO_REP_COUNT, false),
             repCountTiming = settings.getStringOrNull(KEY_REP_COUNT_TIMING)?.let {
-                try { RepCountTiming.valueOf(it) } catch (_: Exception) { null }
+                try {
+                    RepCountTiming.valueOf(it)
+                } catch (_: Exception) {
+                    null
+                }
             } ?: RepCountTiming.TOP,
             summaryCountdownSeconds = settings.getInt(KEY_SUMMARY_COUNTDOWN_SECONDS, 10),
             autoStartCountdownSeconds = settings.getInt(KEY_AUTOSTART_COUNTDOWN_SECONDS, 5),
             gamificationEnabled = settings.getBoolean(KEY_GAMIFICATION_ENABLED, true),
-            simulatorModeUnlocked = settings.getBoolean(KEY_SIMULATOR_MODE_UNLOCKED, false),
-            simulatorModeEnabled = settings.getBoolean(KEY_SIMULATOR_MODE_ENABLED, false)
+            weightIncrement = settings.getFloat(KEY_WEIGHT_INCREMENT, -1f),
+            autoStartRoutine = settings.getBoolean(KEY_AUTO_START_ROUTINE, false),
+            bodyWeightKg = settings.getFloat(KEY_BODY_WEIGHT_KG, 0f),
+            countdownBeepsEnabled = settings.getBoolean(KEY_COUNTDOWN_BEEPS_ENABLED, true),
+            repSoundEnabled = settings.getBoolean(KEY_REP_SOUND_ENABLED, true),
+            motionStartEnabled = settings.getBoolean(KEY_MOTION_START, false),
+            autoBackupEnabled = settings.getBoolean(KEY_AUTO_BACKUP_ENABLED, false),
+            language = settings.getStringOrNull(KEY_LANGUAGE) ?: "en",
+            voiceStopEnabled = settings.getBoolean(KEY_VOICE_STOP_ENABLED, false),
+            safeWord = settings.getStringOrNull(KEY_SAFE_WORD),
+            safeWordCalibrated = settings.getBoolean(KEY_SAFE_WORD_CALIBRATED, false),
         )
     }
 
@@ -249,6 +297,12 @@ class SettingsPreferencesManager(
         updateAndEmit { copy(autoStartCountdownSeconds = seconds) }
     }
 
+    fun isPermissionsOnboardingShown(): Boolean = settings.getBoolean(KEY_PERMISSIONS_ONBOARDING_SHOWN, false)
+
+    fun setPermissionsOnboardingShown(shown: Boolean) {
+        settings.putBoolean(KEY_PERMISSIONS_ONBOARDING_SHOWN, shown)
+    }
+
     override suspend fun getSingleExerciseDefaults(exerciseId: String): SingleExerciseDefaults? {
         val key = "$KEY_PREFIX_EXERCISE$exerciseId"
 
@@ -274,7 +328,7 @@ class SettingsPreferencesManager(
 
         return try {
             json.decodeFromString<SingleExerciseDefaults>(jsonString)
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             null
         }
     }
@@ -295,7 +349,7 @@ class SettingsPreferencesManager(
         val jsonString = settings.getStringOrNull(KEY_JUST_LIFT_DEFAULTS) ?: return JustLiftDefaults()
         return try {
             json.decodeFromString<JustLiftDefaults>(jsonString)
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             JustLiftDefaults()
         }
     }
@@ -313,21 +367,62 @@ class SettingsPreferencesManager(
         updateAndEmit { copy(gamificationEnabled = enabled) }
     }
 
-    override suspend fun setSimulatorModeUnlocked(unlocked: Boolean) {
-        settings.putBoolean(KEY_SIMULATOR_MODE_UNLOCKED, unlocked)
-        updateAndEmit { copy(simulatorModeUnlocked = unlocked) }
+    override suspend fun setWeightIncrement(increment: Float) {
+        settings.putFloat(KEY_WEIGHT_INCREMENT, increment)
+        updateAndEmit { copy(weightIncrement = increment) }
     }
 
-    override fun isSimulatorModeUnlocked(): Boolean {
-        return settings.getBoolean(KEY_SIMULATOR_MODE_UNLOCKED, false)
+    override suspend fun setAutoStartRoutine(enabled: Boolean) {
+        settings.putBoolean(KEY_AUTO_START_ROUTINE, enabled)
+        updateAndEmit { copy(autoStartRoutine = enabled) }
     }
 
-    override suspend fun setSimulatorModeEnabled(enabled: Boolean) {
-        settings.putBoolean(KEY_SIMULATOR_MODE_ENABLED, enabled)
-        updateAndEmit { copy(simulatorModeEnabled = enabled) }
+    override suspend fun setBodyWeightKg(weightKg: Float) {
+        settings.putFloat(KEY_BODY_WEIGHT_KG, weightKg)
+        updateAndEmit { copy(bodyWeightKg = weightKg) }
     }
 
-    override fun isSimulatorModeEnabled(): Boolean {
-        return settings.getBoolean(KEY_SIMULATOR_MODE_ENABLED, false)
+    override suspend fun setCountdownBeepsEnabled(enabled: Boolean) {
+        settings.putBoolean(KEY_COUNTDOWN_BEEPS_ENABLED, enabled)
+        updateAndEmit { copy(countdownBeepsEnabled = enabled) }
+    }
+
+    override suspend fun setRepSoundEnabled(enabled: Boolean) {
+        settings.putBoolean(KEY_REP_SOUND_ENABLED, enabled)
+        updateAndEmit { copy(repSoundEnabled = enabled) }
+    }
+
+    override suspend fun setMotionStartEnabled(enabled: Boolean) {
+        settings.putBoolean(KEY_MOTION_START, enabled)
+        updateAndEmit { copy(motionStartEnabled = enabled) }
+    }
+
+    override suspend fun setAutoBackupEnabled(enabled: Boolean) {
+        settings.putBoolean(KEY_AUTO_BACKUP_ENABLED, enabled)
+        updateAndEmit { copy(autoBackupEnabled = enabled) }
+    }
+
+    override suspend fun setLanguage(language: String) {
+        settings.putString(KEY_LANGUAGE, language)
+        updateAndEmit { copy(language = language) }
+    }
+
+    override suspend fun setVoiceStopEnabled(enabled: Boolean) {
+        settings.putBoolean(KEY_VOICE_STOP_ENABLED, enabled)
+        updateAndEmit { copy(voiceStopEnabled = enabled) }
+    }
+
+    override suspend fun setSafeWord(word: String?) {
+        if (word != null) {
+            settings.putString(KEY_SAFE_WORD, word)
+        } else {
+            settings.remove(KEY_SAFE_WORD)
+        }
+        updateAndEmit { copy(safeWord = word) }
+    }
+
+    override suspend fun setSafeWordCalibrated(calibrated: Boolean) {
+        settings.putBoolean(KEY_SAFE_WORD_CALIBRATED, calibrated)
+        updateAndEmit { copy(safeWordCalibrated = calibrated) }
     }
 }

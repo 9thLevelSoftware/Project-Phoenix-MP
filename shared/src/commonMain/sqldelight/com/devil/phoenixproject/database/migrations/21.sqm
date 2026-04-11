@@ -1,0 +1,18 @@
+-- Migration 21: Add profile_id to profile-scoped tables for multi-profile data separation.
+-- The profile_id columns are intentionally healed outside this numbered migration.
+-- These tables were later released through schema/create paths and iOS fallback
+-- table definitions with profile_id already present, so replaying ALTER TABLE here
+-- can crash existing installs with duplicate-column errors. The index work below
+-- stays here so users still traversing migration 21 land on the expected shape.
+
+-- === Indexes for profile_id filtering ===
+CREATE INDEX IF NOT EXISTS idx_session_profile ON WorkoutSession(profile_id);
+CREATE INDEX IF NOT EXISTS idx_pr_profile ON PersonalRecord(profile_id);
+CREATE INDEX IF NOT EXISTS idx_routine_profile ON Routine(profile_id);
+CREATE INDEX IF NOT EXISTS idx_cycle_profile ON TrainingCycle(profile_id);
+CREATE INDEX IF NOT EXISTS idx_assessment_profile ON AssessmentResult(profile_id);
+CREATE INDEX IF NOT EXISTS idx_progression_profile ON ProgressionEvent(profile_id);
+
+-- === Update PersonalRecord unique index to include profile_id ===
+DROP INDEX IF EXISTS idx_pr_unique;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_pr_unique ON PersonalRecord(exerciseId, workoutMode, prType, phase, profile_id);

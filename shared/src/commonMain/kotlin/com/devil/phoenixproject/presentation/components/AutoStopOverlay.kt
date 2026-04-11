@@ -2,7 +2,6 @@ package com.devil.phoenixproject.presentation.components
 
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -13,8 +12,6 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.scale
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -22,6 +19,9 @@ import androidx.compose.ui.unit.sp
 import com.devil.phoenixproject.data.repository.AutoStopUiState
 import com.devil.phoenixproject.presentation.util.LocalWindowSizeClass
 import com.devil.phoenixproject.presentation.util.WindowWidthSizeClass
+import org.jetbrains.compose.resources.stringResource
+import vitruvianprojectphoenix.shared.generated.resources.*
+import vitruvianprojectphoenix.shared.generated.resources.Res
 
 /**
  * Pop-over overlay that appears when auto-stop is active (handles are down).
@@ -30,19 +30,15 @@ import com.devil.phoenixproject.presentation.util.WindowWidthSizeClass
  * This overlay floats on top of the workout screen and only appears when relevant.
  */
 @Composable
-fun AutoStopOverlay(
-    autoStopState: AutoStopUiState,
-    isJustLift: Boolean,
-    modifier: Modifier = Modifier
-) {
+fun AutoStopOverlay(autoStopState: AutoStopUiState, isJustLift: Boolean, modifier: Modifier = Modifier) {
     // Only show when auto-stop is active
     AnimatedVisibility(
         visible = autoStopState.isActive,
         enter = fadeIn(animationSpec = tween(200)) +
-                scaleIn(initialScale = 0.8f, animationSpec = tween(200)),
+            scaleIn(initialScale = 0.8f, animationSpec = tween(200)),
         exit = fadeOut(animationSpec = tween(150)) +
-               scaleOut(targetScale = 0.8f, animationSpec = tween(150)),
-        modifier = modifier
+            scaleOut(targetScale = 0.8f, animationSpec = tween(150)),
+        modifier = modifier,
     ) {
         // Responsive dialog width based on screen size
         val windowSizeClass = LocalWindowSizeClass.current
@@ -59,9 +55,9 @@ fun AutoStopOverlay(
             targetValue = 1.05f,
             animationSpec = infiniteRepeatable(
                 animation = tween(500, easing = FastOutSlowInEasing),
-                repeatMode = RepeatMode.Reverse
+                repeatMode = RepeatMode.Reverse,
             ),
-            label = "pulse"
+            label = "pulse",
         )
 
         Card(
@@ -70,23 +66,23 @@ fun AutoStopOverlay(
                 .widthIn(max = dialogMaxWidth),
             shape = RoundedCornerShape(24.dp),
             colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.errorContainer
+                containerColor = MaterialTheme.colorScheme.errorContainer,
             ),
-            elevation = CardDefaults.cardElevation(defaultElevation = 16.dp)
+            elevation = CardDefaults.cardElevation(defaultElevation = 16.dp),
         ) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(20.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(12.dp)
+                verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 // Icon with animation
                 Icon(
                     imageVector = Icons.Default.PanTool,
-                    contentDescription = "Hands off handles",
+                    contentDescription = stringResource(Res.string.cd_hands_off_handles),
                     modifier = Modifier.size(40.dp),
-                    tint = MaterialTheme.colorScheme.error
+                    tint = MaterialTheme.colorScheme.error,
                 )
 
                 // Title
@@ -95,7 +91,7 @@ fun AutoStopOverlay(
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onErrorContainer,
-                    letterSpacing = 1.5.sp
+                    letterSpacing = 1.5.sp,
                 )
 
                 // Countdown number - large and prominent
@@ -103,7 +99,7 @@ fun AutoStopOverlay(
                     text = "${autoStopState.secondsRemaining}",
                     style = MaterialTheme.typography.displayMedium,
                     fontWeight = FontWeight.ExtraBold,
-                    color = MaterialTheme.colorScheme.error
+                    color = MaterialTheme.colorScheme.error,
                 )
 
                 // Progress bar
@@ -125,7 +121,7 @@ fun AutoStopOverlay(
                     },
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.8f),
-                    textAlign = TextAlign.Center
+                    textAlign = TextAlign.Center,
                 )
             }
         }
@@ -137,33 +133,30 @@ fun AutoStopOverlay(
  * Shows a subtle warning bar that doesn't obscure the main content.
  */
 @Composable
-fun AutoStopIndicatorBar(
-    autoStopState: AutoStopUiState,
-    modifier: Modifier = Modifier
-) {
+fun AutoStopIndicatorBar(autoStopState: AutoStopUiState, modifier: Modifier = Modifier) {
     AnimatedVisibility(
         visible = autoStopState.isActive,
         enter = expandVertically() + fadeIn(),
         exit = shrinkVertically() + fadeOut(),
-        modifier = modifier
+        modifier = modifier,
     ) {
         Surface(
             color = MaterialTheme.colorScheme.errorContainer,
             shape = RoundedCornerShape(12.dp),
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier.fillMaxWidth(),
         ) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 Icon(
                     Icons.Default.PanTool,
                     contentDescription = null,
                     modifier = Modifier.size(20.dp),
-                    tint = MaterialTheme.colorScheme.error
+                    tint = MaterialTheme.colorScheme.error,
                 )
 
                 Column(modifier = Modifier.weight(1f)) {
@@ -171,7 +164,7 @@ fun AutoStopIndicatorBar(
                         text = "Stopping in ${autoStopState.secondsRemaining}s",
                         style = MaterialTheme.typography.labelLarge,
                         fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onErrorContainer
+                        color = MaterialTheme.colorScheme.onErrorContainer,
                     )
                     LinearProgressIndicator(
                         progress = { autoStopState.progress },
@@ -192,18 +185,14 @@ fun AutoStopIndicatorBar(
  * to indicate workout will start automatically.
  */
 @Composable
-fun AutoStartOverlay(
-    isActive: Boolean,
-    secondsRemaining: Int,
-    modifier: Modifier = Modifier
-) {
+fun AutoStartOverlay(isActive: Boolean, secondsRemaining: Int, modifier: Modifier = Modifier) {
     AnimatedVisibility(
         visible = isActive,
         enter = fadeIn(animationSpec = tween(200)) +
-                scaleIn(initialScale = 0.8f, animationSpec = tween(200)),
+            scaleIn(initialScale = 0.8f, animationSpec = tween(200)),
         exit = fadeOut(animationSpec = tween(150)) +
-               scaleOut(targetScale = 0.8f, animationSpec = tween(150)),
-        modifier = modifier
+            scaleOut(targetScale = 0.8f, animationSpec = tween(150)),
+        modifier = modifier,
     ) {
         // Responsive dialog width based on screen size
         val windowSizeClass = LocalWindowSizeClass.current
@@ -217,22 +206,22 @@ fun AutoStartOverlay(
             modifier = Modifier.widthIn(max = dialogMaxWidth),
             shape = RoundedCornerShape(24.dp),
             colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.primaryContainer
+                containerColor = MaterialTheme.colorScheme.primaryContainer,
             ),
-            elevation = CardDefaults.cardElevation(defaultElevation = 16.dp)
+            elevation = CardDefaults.cardElevation(defaultElevation = 16.dp),
         ) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(20.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(12.dp)
+                verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 Icon(
                     imageVector = Icons.Default.PlayArrow,
-                    contentDescription = "Starting workout",
+                    contentDescription = stringResource(Res.string.cd_starting_workout),
                     modifier = Modifier.size(40.dp),
-                    tint = MaterialTheme.colorScheme.primary
+                    tint = MaterialTheme.colorScheme.primary,
                 )
 
                 Text(
@@ -240,21 +229,21 @@ fun AutoStartOverlay(
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onPrimaryContainer,
-                    letterSpacing = 1.5.sp
+                    letterSpacing = 1.5.sp,
                 )
 
                 Text(
                     text = "$secondsRemaining",
                     style = MaterialTheme.typography.displayMedium,
                     fontWeight = FontWeight.ExtraBold,
-                    color = MaterialTheme.colorScheme.primary
+                    color = MaterialTheme.colorScheme.primary,
                 )
 
                 Text(
                     text = "Workout starting...",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f),
-                    textAlign = TextAlign.Center
+                    textAlign = TextAlign.Center,
                 )
             }
         }

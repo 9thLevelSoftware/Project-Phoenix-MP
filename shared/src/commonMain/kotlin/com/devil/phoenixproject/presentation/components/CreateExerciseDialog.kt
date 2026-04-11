@@ -22,6 +22,9 @@ import com.devil.phoenixproject.domain.model.ExerciseCategory
 import com.devil.phoenixproject.ui.theme.Spacing
 import com.devil.phoenixproject.ui.theme.ThemeMode
 import com.devil.phoenixproject.ui.theme.screenBackgroundBrush
+import org.jetbrains.compose.resources.stringResource
+import vitruvianprojectphoenix.shared.generated.resources.*
+import vitruvianprojectphoenix.shared.generated.resources.Res
 
 /**
  * Dialog for creating or editing custom exercises.
@@ -38,14 +41,14 @@ fun CreateExerciseDialog(
     onSave: (Exercise) -> Unit,
     onDelete: (() -> Unit)? = null,
     onDismiss: () -> Unit,
-    themeMode: ThemeMode
+    themeMode: ThemeMode,
 ) {
     var name by remember { mutableStateOf(existingExercise?.name ?: "") }
     var selectedMuscleGroup by remember {
         mutableStateOf(
             existingExercise?.muscleGroup?.let { mg ->
                 ExerciseCategory.entries.find { it.displayName.equals(mg, ignoreCase = true) }
-            } ?: ExerciseCategory.CHEST
+            } ?: ExerciseCategory.CHEST,
         )
     }
     var usesCables by remember(existingExercise?.equipment) {
@@ -64,32 +67,32 @@ fun CreateExerciseDialog(
         Surface(
             modifier = Modifier.fillMaxWidth().wrapContentHeight(),
             shape = RoundedCornerShape(20.dp),
-            color = MaterialTheme.colorScheme.surfaceContainerHighest
+            color = MaterialTheme.colorScheme.surfaceContainerHighest,
         ) {
             Box(modifier = Modifier.fillMaxWidth().background(backgroundGradient)) {
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(Spacing.medium)
-                        .verticalScroll(rememberScrollState())
+                        .verticalScroll(rememberScrollState()),
                 ) {
                     // Header
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
+                        verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Text(
                             text = if (isEditMode) "Edit Exercise" else "Create Exercise",
                             style = MaterialTheme.typography.headlineSmall,
                             fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurface
+                            color = MaterialTheme.colorScheme.onSurface,
                         )
                         IconButton(onClick = onDismiss) {
                             Icon(
                                 Icons.Default.Close,
                                 "Close",
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
                     }
@@ -99,15 +102,18 @@ fun CreateExerciseDialog(
                     // Exercise Name
                     OutlinedTextField(
                         value = name,
-                        onValueChange = { name = it; showError = false },
-                        label = { Text("Exercise Name *") },
+                        onValueChange = {
+                            name = it
+                            showError = false
+                        },
+                        label = { Text(stringResource(Res.string.exercise_name_label)) },
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true,
                         isError = showError && name.isBlank(),
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedBorderColor = MaterialTheme.colorScheme.primary,
-                            unfocusedBorderColor = MaterialTheme.colorScheme.outline
-                        )
+                            unfocusedBorderColor = MaterialTheme.colorScheme.outline,
+                        ),
                     )
 
                     if (showError && name.isBlank()) {
@@ -115,7 +121,10 @@ fun CreateExerciseDialog(
                             "Exercise name is required",
                             color = MaterialTheme.colorScheme.error,
                             style = MaterialTheme.typography.bodySmall,
-                            modifier = Modifier.padding(start = Spacing.medium, top = Spacing.extraSmall)
+                            modifier = Modifier.padding(
+                                start = Spacing.medium,
+                                top = Spacing.extraSmall,
+                            ),
                         )
                     }
 
@@ -126,7 +135,7 @@ fun CreateExerciseDialog(
                         "Muscle Group *",
                         style = MaterialTheme.typography.bodyMedium,
                         fontWeight = FontWeight.Medium,
-                        color = MaterialTheme.colorScheme.onSurface
+                        color = MaterialTheme.colorScheme.onSurface,
                     )
                     Spacer(modifier = Modifier.height(Spacing.extraSmall))
 
@@ -139,26 +148,26 @@ fun CreateExerciseDialog(
                                 Icon(
                                     Icons.Default.KeyboardArrowDown,
                                     "Select muscle group",
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
                             },
                             modifier = Modifier.fillMaxWidth(),
                             colors = OutlinedTextFieldDefaults.colors(
                                 focusedBorderColor = MaterialTheme.colorScheme.primary,
-                                unfocusedBorderColor = MaterialTheme.colorScheme.outline
-                            )
+                                unfocusedBorderColor = MaterialTheme.colorScheme.outline,
+                            ),
                         )
 
                         // Transparent clickable overlay
                         Box(
                             modifier = Modifier
                                 .matchParentSize()
-                                .clickable { showMuscleGroupDropdown = true }
+                                .clickable { showMuscleGroupDropdown = true },
                         )
 
                         DropdownMenu(
                             expanded = showMuscleGroupDropdown,
-                            onDismissRequest = { showMuscleGroupDropdown = false }
+                            onDismissRequest = { showMuscleGroupDropdown = false },
                         ) {
                             ExerciseCategory.entries.forEach { category ->
                                 DropdownMenuItem(
@@ -166,7 +175,7 @@ fun CreateExerciseDialog(
                                     onClick = {
                                         selectedMuscleGroup = category
                                         showMuscleGroupDropdown = false
-                                    }
+                                    },
                                 )
                             }
                         }
@@ -179,25 +188,25 @@ fun CreateExerciseDialog(
                         "Resistance Type",
                         style = MaterialTheme.typography.bodyMedium,
                         fontWeight = FontWeight.Medium,
-                        color = MaterialTheme.colorScheme.onSurface
+                        color = MaterialTheme.colorScheme.onSurface,
                     )
                     Spacer(modifier = Modifier.height(Spacing.extraSmall))
 
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(Spacing.small)
+                        horizontalArrangement = Arrangement.spacedBy(Spacing.small),
                     ) {
                         FilterChip(
                             selected = usesCables,
                             onClick = { usesCables = true },
-                            label = { Text("Cables") },
-                            modifier = Modifier.weight(1f)
+                            label = { Text(stringResource(Res.string.label_cables)) },
+                            modifier = Modifier.weight(1f),
                         )
                         FilterChip(
                             selected = !usesCables,
                             onClick = { usesCables = false },
-                            label = { Text("Bodyweight") },
-                            modifier = Modifier.weight(1f)
+                            label = { Text(stringResource(Res.string.label_bodyweight)) },
+                            modifier = Modifier.weight(1f),
                         )
                     }
 
@@ -206,7 +215,7 @@ fun CreateExerciseDialog(
                     // Buttons
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(Spacing.small)
+                        horizontalArrangement = Arrangement.spacedBy(Spacing.small),
                     ) {
                         // Delete button (only for edit mode)
                         if (isEditMode && onDelete != null) {
@@ -214,24 +223,24 @@ fun CreateExerciseDialog(
                                 onClick = { showDeleteConfirmation = true },
                                 modifier = Modifier.weight(1f),
                                 colors = ButtonDefaults.outlinedButtonColors(
-                                    contentColor = MaterialTheme.colorScheme.error
+                                    contentColor = MaterialTheme.colorScheme.error,
                                 ),
                                 border = BorderStroke(
                                     width = 1.dp,
-                                    color = MaterialTheme.colorScheme.error
-                                )
+                                    color = MaterialTheme.colorScheme.error,
+                                ),
                             ) {
-                                Text("Delete")
+                                Text(stringResource(Res.string.action_delete))
                             }
                         } else {
                             OutlinedButton(
                                 onClick = onDismiss,
                                 modifier = Modifier.weight(1f),
                                 colors = ButtonDefaults.outlinedButtonColors(
-                                    contentColor = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
+                                    contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                ),
                             ) {
-                                Text("Cancel")
+                                Text(stringResource(Res.string.action_cancel))
                             }
                         }
 
@@ -248,21 +257,21 @@ fun CreateExerciseDialog(
                                         muscleGroups = selectedMuscleGroup.displayName,
                                         equipment = equipmentValue,
                                         isFavorite = existingExercise?.isFavorite ?: false,
-                                        isCustom = true
+                                        isCustom = true,
                                     )
                                     onSave(exercise)
                                 }
                             },
                             modifier = Modifier.weight(1f).height(56.dp),
                             colors = ButtonDefaults.buttonColors(
-                                containerColor = MaterialTheme.colorScheme.primary
+                                containerColor = MaterialTheme.colorScheme.primary,
                             ),
-                            shape = RoundedCornerShape(20.dp)
+                            shape = RoundedCornerShape(20.dp),
                         ) {
                             Text(
                                 if (isEditMode) "Save" else "Create",
                                 style = MaterialTheme.typography.titleSmall,
-                                fontWeight = FontWeight.Bold
+                                fontWeight = FontWeight.Bold,
                             )
                         }
                     }
@@ -275,9 +284,9 @@ fun CreateExerciseDialog(
     if (showDeleteConfirmation) {
         AlertDialog(
             onDismissRequest = { showDeleteConfirmation = false },
-            title = { Text("Delete Exercise?") },
+            title = { Text(stringResource(Res.string.delete_exercise_title)) },
             text = {
-                Text("Are you sure you want to delete \"$name\"? This action cannot be undone.")
+                Text(stringResource(Res.string.delete_exercise_message, name))
             },
             confirmButton = {
                 Button(
@@ -286,17 +295,17 @@ fun CreateExerciseDialog(
                         onDelete?.invoke()
                     },
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.error
-                    )
+                        containerColor = MaterialTheme.colorScheme.error,
+                    ),
                 ) {
-                    Text("Delete")
+                    Text(stringResource(Res.string.action_delete))
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showDeleteConfirmation = false }) {
-                    Text("Cancel")
+                    Text(stringResource(Res.string.action_cancel))
                 }
-            }
+            },
         )
     }
 }

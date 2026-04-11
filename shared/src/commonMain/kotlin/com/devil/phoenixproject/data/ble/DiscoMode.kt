@@ -20,10 +20,7 @@ import kotlinx.coroutines.launch
  * @param scope Coroutine scope for launching the color cycling job
  * @param sendCommand Callback to send BLE commands (typically KableBleRepository::sendWorkoutCommand)
  */
-class DiscoMode(
-    private val scope: CoroutineScope,
-    private val sendCommand: suspend (ByteArray) -> Unit
-) {
+class DiscoMode(private val scope: CoroutineScope, private val sendCommand: suspend (ByteArray) -> Unit) {
     private val log = Logger.withTag("DiscoMode")
 
     private var discoJob: Job? = null
@@ -47,7 +44,7 @@ class DiscoMode(
 
         discoJob = scope.launch {
             var colorIndex = 0
-            val colorCount = 7  // Schemes 0-6 (excluding "None" at 7)
+            val colorCount = 7 // Schemes 0-6 (excluding "None" at 7)
             val intervalMs = 300L
 
             while (isActive) {

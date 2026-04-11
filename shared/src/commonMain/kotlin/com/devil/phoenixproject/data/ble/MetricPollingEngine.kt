@@ -39,7 +39,7 @@ class MetricPollingEngine(
     private val handleDetector: HandleStateDetector,
     private val onMetricEmit: (WorkoutMetric) -> Boolean,
     private val onHeuristicData: (HeuristicStatistics) -> Unit,
-    private val onConnectionLost: suspend () -> Unit
+    private val onConnectionLost: suspend () -> Unit,
 ) {
     private val log = Logger.withTag("MetricPollingEngine")
 
@@ -82,32 +82,67 @@ class MetricPollingEngine(
 
     internal fun startFakeJobs() {
         monitorPollingJob?.cancel()
-        monitorPollingJob = scope.launch { while (true) { delay(Long.MAX_VALUE) } }
+        monitorPollingJob = scope.launch {
+            while (true) {
+                delay(Long.MAX_VALUE)
+            }
+        }
         diagnosticPollingJob?.cancel()
-        diagnosticPollingJob = scope.launch { while (true) { delay(Long.MAX_VALUE) } }
+        diagnosticPollingJob = scope.launch {
+            while (true) {
+                delay(Long.MAX_VALUE)
+            }
+        }
         heuristicPollingJob?.cancel()
-        heuristicPollingJob = scope.launch { while (true) { delay(Long.MAX_VALUE) } }
+        heuristicPollingJob = scope.launch {
+            while (true) {
+                delay(Long.MAX_VALUE)
+            }
+        }
         heartbeatJob?.cancel()
-        heartbeatJob = scope.launch { while (true) { delay(Long.MAX_VALUE) } }
+        heartbeatJob = scope.launch {
+            while (true) {
+                delay(Long.MAX_VALUE)
+            }
+        }
     }
 
     internal fun startFakeJob(type: PollingType) {
         when (type) {
             PollingType.MONITOR -> {
                 monitorPollingJob?.cancel()
-                monitorPollingJob = scope.launch { while (true) { delay(Long.MAX_VALUE) } }
+                monitorPollingJob = scope.launch {
+                    while (true) {
+                        delay(Long.MAX_VALUE)
+                    }
+                }
             }
+
             PollingType.DIAGNOSTIC -> {
                 diagnosticPollingJob?.cancel()
-                diagnosticPollingJob = scope.launch { while (true) { delay(Long.MAX_VALUE) } }
+                diagnosticPollingJob = scope.launch {
+                    while (true) {
+                        delay(Long.MAX_VALUE)
+                    }
+                }
             }
+
             PollingType.HEURISTIC -> {
                 heuristicPollingJob?.cancel()
-                heuristicPollingJob = scope.launch { while (true) { delay(Long.MAX_VALUE) } }
+                heuristicPollingJob = scope.launch {
+                    while (true) {
+                        delay(Long.MAX_VALUE)
+                    }
+                }
             }
+
             PollingType.HEARTBEAT -> {
                 heartbeatJob?.cancel()
-                heartbeatJob = scope.launch { while (true) { delay(Long.MAX_VALUE) } }
+                heartbeatJob = scope.launch {
+                    while (true) {
+                        delay(Long.MAX_VALUE)
+                    }
+                }
             }
         }
     }
@@ -124,9 +159,15 @@ class MetricPollingEngine(
         if (heartbeatJob?.isActive != true) startFakeJob(PollingType.HEARTBEAT)
     }
 
-    internal fun incrementDiagnosticCount() { diagnosticPollCount++ }
-    internal fun simulateTimeout() { consecutiveTimeouts++ }
-    internal fun simulateSuccessfulRead() { consecutiveTimeouts = 0 }
+    internal fun incrementDiagnosticCount() {
+        diagnosticPollCount++
+    }
+    internal fun simulateTimeout() {
+        consecutiveTimeouts++
+    }
+    internal fun simulateSuccessfulRead() {
+        consecutiveTimeouts = 0
+    }
 
     internal suspend fun checkTimeoutThreshold() {
         if (consecutiveTimeouts >= BleConstants.Timing.MAX_CONSECUTIVE_TIMEOUTS) {
@@ -162,7 +203,9 @@ class MetricPollingEngine(
 
         if (forAutoStart) {
             handleDetector.enable(autoStart = true)
-            log.i { "Monitor polling for AUTO-START - waiting for handles at rest (pos < ${BleConstants.Thresholds.HANDLE_REST_THRESHOLD}mm), vel threshold=${BleConstants.Thresholds.AUTO_START_VELOCITY_THRESHOLD}mm/s" }
+            log.i {
+                "Monitor polling for AUTO-START - waiting for handles at rest (pos < ${BleConstants.Thresholds.HANDLE_REST_THRESHOLD}mm), vel threshold=${BleConstants.Thresholds.AUTO_START_VELOCITY_THRESHOLD}mm/s"
+            }
         }
 
         // Cancel existing job before starting new one
@@ -175,7 +218,9 @@ class MetricPollingEngine(
                 var failCount = 0
                 var successCount = 0L
                 consecutiveTimeouts = 0
-                log.i { "Starting SEQUENTIAL monitor polling (timeout=${BleConstants.Timing.HEARTBEAT_READ_TIMEOUT_MS}ms, forAutoStart=$forAutoStart)" }
+                log.i {
+                    "Starting SEQUENTIAL monitor polling (timeout=${BleConstants.Timing.HEARTBEAT_READ_TIMEOUT_MS}ms, forAutoStart=$forAutoStart)"
+                }
 
                 // Auto-start packet capture in debug builds for hardware validation
                 if (DeviceInfo.isDebugBuild && !BlePacketCapture.isCapturing) {
@@ -202,7 +247,9 @@ class MetricPollingEngine(
                             } else {
                                 consecutiveTimeouts++
                                 if (consecutiveTimeouts <= 3 || consecutiveTimeouts % 10 == 0) {
-                                    log.w { "Monitor read timed out (${BleConstants.Timing.HEARTBEAT_READ_TIMEOUT_MS}ms) - consecutive: $consecutiveTimeouts" }
+                                    log.w {
+                                        "Monitor read timed out (${BleConstants.Timing.HEARTBEAT_READ_TIMEOUT_MS}ms) - consecutive: $consecutiveTimeouts"
+                                    }
                                 }
                                 // POLL-03: Disconnect after too many consecutive timeouts
                                 if (consecutiveTimeouts >= BleConstants.Timing.MAX_CONSECUTIVE_TIMEOUTS) {
@@ -212,7 +259,7 @@ class MetricPollingEngine(
                                 }
                                 delay(50)
                             }
-                        } catch (e: kotlinx.coroutines.TimeoutCancellationException) {
+                        } catch (_: kotlinx.coroutines.TimeoutCancellationException) {
                             consecutiveTimeouts++
                             log.w { "Monitor read timeout exception - consecutive: $consecutiveTimeouts" }
                             delay(50)
@@ -325,7 +372,9 @@ class MetricPollingEngine(
     fun startHeartbeat(peripheral: Peripheral) {
         heartbeatJob?.cancel()
         heartbeatJob = scope.launch {
-            log.d { "Starting BLE heartbeat (interval=${BleConstants.Timing.HEARTBEAT_INTERVAL_MS}ms, read timeout=${BleConstants.Timing.HEARTBEAT_READ_TIMEOUT_MS}ms)" }
+            log.d {
+                "Starting BLE heartbeat (interval=${BleConstants.Timing.HEARTBEAT_INTERVAL_MS}ms, read timeout=${BleConstants.Timing.HEARTBEAT_READ_TIMEOUT_MS}ms)"
+            }
             while (isActive) {
                 delay(BleConstants.Timing.HEARTBEAT_INTERVAL_MS)
 
@@ -360,11 +409,14 @@ class MetricPollingEngine(
 
         // Log workout analysis (position range from HandleStateDetector)
         if (handleDetector.minPositionSeen != Double.MAX_VALUE &&
-            handleDetector.maxPositionSeen != Double.MIN_VALUE) {
+            handleDetector.maxPositionSeen != Double.MIN_VALUE
+        ) {
             log.i { "========== WORKOUT ANALYSIS ==========" }
             log.i { "Position range: min=${handleDetector.minPositionSeen}, max=${handleDetector.maxPositionSeen}" }
             log.i { "Detection thresholds (auto-start mode uses lower velocity):" }
-            log.i { "  Handle grab: pos > ${BleConstants.Thresholds.HANDLE_GRABBED_THRESHOLD} + velocity > ${if (handleDetector.isAutoStartMode) BleConstants.Thresholds.AUTO_START_VELOCITY_THRESHOLD else BleConstants.Thresholds.VELOCITY_THRESHOLD}${if (handleDetector.isAutoStartMode) " (auto-start)" else ""}" }
+            log.i {
+                "  Handle grab: pos > ${BleConstants.Thresholds.HANDLE_GRABBED_THRESHOLD} + velocity > ${if (handleDetector.isAutoStartMode) BleConstants.Thresholds.AUTO_START_VELOCITY_THRESHOLD else BleConstants.Thresholds.VELOCITY_THRESHOLD}${if (handleDetector.isAutoStartMode) " (auto-start)" else ""}"
+            }
             log.i { "  Handle release: pos < ${BleConstants.Thresholds.HANDLE_REST_THRESHOLD}" }
             log.i { "======================================" }
         }
@@ -521,15 +573,13 @@ class MetricPollingEngine(
      * Perform heartbeat read (TX characteristic). Typically fails because TX is write-only,
      * which triggers the no-op write fallback. Returns true if read succeeded.
      */
-    private suspend fun performHeartbeatRead(peripheral: Peripheral): Boolean {
-        return try {
-            bleQueue.read { peripheral.read(txCharacteristic) }
-            log.v { "Heartbeat read succeeded (TX char)" }
-            true
-        } catch (e: Exception) {
-            log.d { "Heartbeat read failed (expected): ${e.message}" }
-            false
-        }
+    private suspend fun performHeartbeatRead(peripheral: Peripheral): Boolean = try {
+        bleQueue.read { peripheral.read(txCharacteristic) }
+        log.v { "Heartbeat read succeeded (TX char)" }
+        true
+    } catch (e: Exception) {
+        log.d { "Heartbeat read failed (expected): ${e.message}" }
+        false
     }
 
     /**

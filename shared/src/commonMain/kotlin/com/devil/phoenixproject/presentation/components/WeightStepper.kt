@@ -17,6 +17,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.devil.phoenixproject.ui.theme.Spacing
 import com.devil.phoenixproject.util.format
+import org.jetbrains.compose.resources.stringResource
+import vitruvianprojectphoenix.shared.generated.resources.*
+import vitruvianprojectphoenix.shared.generated.resources.Res
 
 /**
  * Weight input with +/- stepper buttons.
@@ -40,27 +43,27 @@ fun WeightStepper(
     maxWeight: Float = 100f, // Per cable max (V-Form: 100kg, Trainer+: 110kg)
     step: Float = 2.5f,
     label: String = "Weight",
-    prWeight: Float? = null
+    prWeight: Float? = null,
 ) {
     Column(modifier = modifier) {
         // Header row with label and PR indicator
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
+            verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
                 text = label.uppercase(),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                letterSpacing = 1.sp
+                letterSpacing = 1.sp,
             )
 
             // PR Indicator shown when prWeight is provided
             if (prWeight != null) {
                 PRIndicator(
                     currentWeight = weight,
-                    prWeight = prWeight
+                    prWeight = prWeight,
                 )
             }
         }
@@ -72,15 +75,15 @@ fun WeightStepper(
                 .fillMaxWidth()
                 .background(
                     MaterialTheme.colorScheme.surfaceContainerLow,
-                    RoundedCornerShape(Spacing.medium)
+                    RoundedCornerShape(Spacing.medium),
                 )
                 .border(
                     1.dp,
                     MaterialTheme.colorScheme.outline.copy(alpha = 0.3f),
-                    RoundedCornerShape(Spacing.medium)
+                    RoundedCornerShape(Spacing.medium),
                 )
                 .padding(Spacing.extraSmall),
-            verticalAlignment = Alignment.CenterVertically
+            verticalAlignment = Alignment.CenterVertically,
         ) {
             // Minus button
             FilledTonalIconButton(
@@ -89,15 +92,18 @@ fun WeightStepper(
                     onWeightChange(newWeight)
                 },
                 enabled = weight > minWeight,
-                modifier = Modifier.size(44.dp)
+                modifier = Modifier.size(44.dp),
             ) {
-                Icon(Icons.Default.Remove, contentDescription = "Decrease weight")
+                Icon(
+                    Icons.Default.Remove,
+                    contentDescription = stringResource(Res.string.cd_decrease_weight),
+                )
             }
 
             // Weight display
             Column(
                 modifier = Modifier.weight(1f),
-                horizontalAlignment = Alignment.CenterHorizontally
+                horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 Text(
                     text = if (weight == weight.toLong().toFloat()) {
@@ -107,12 +113,12 @@ fun WeightStepper(
                     },
                     style = MaterialTheme.typography.headlineMedium,
                     fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface
+                    color = MaterialTheme.colorScheme.onSurface,
                 )
                 Text(
                     text = "kg per cable",
                     style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
 
@@ -123,9 +129,12 @@ fun WeightStepper(
                     onWeightChange(newWeight)
                 },
                 enabled = weight < maxWeight,
-                modifier = Modifier.size(44.dp)
+                modifier = Modifier.size(44.dp),
             ) {
-                Icon(Icons.Default.Add, contentDescription = "Increase weight")
+                Icon(
+                    Icons.Default.Add,
+                    contentDescription = stringResource(Res.string.cd_increase_weight),
+                )
             }
         }
 
@@ -134,18 +143,18 @@ fun WeightStepper(
         Surface(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(Spacing.small),
-            color = MaterialTheme.colorScheme.surfaceContainerHigh
+            color = MaterialTheme.colorScheme.surfaceContainerHigh,
         ) {
             Row(
                 modifier = Modifier.padding(horizontal = Spacing.medium, vertical = Spacing.small),
                 horizontalArrangement = Arrangement.Center,
-                verticalAlignment = Alignment.CenterVertically
+                verticalAlignment = Alignment.CenterVertically,
             ) {
                 Icon(
                     imageVector = Icons.Default.Info,
                     contentDescription = null,
                     modifier = Modifier.size(16.dp),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 Spacer(modifier = Modifier.width(Spacing.small))
                 val totalWeight = weight * 2
@@ -158,7 +167,7 @@ fun WeightStepper(
                         }
                     } kg",
                     style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
         }

@@ -4,13 +4,27 @@ import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.data.repository.AutoStopUiState
 import com.devil.phoenixproject.data.repository.CompletedSetRepository
 import com.devil.phoenixproject.data.repository.ExerciseRepository
+import com.devil.phoenixproject.data.repository.UserProfileRepository
 import com.devil.phoenixproject.data.repository.WorkoutRepository
-import com.devil.phoenixproject.domain.model.*
+import com.devil.phoenixproject.domain.model.EccentricLoad
+import com.devil.phoenixproject.domain.model.EchoLevel
+import com.devil.phoenixproject.domain.model.ProgramMode
+import com.devil.phoenixproject.domain.model.RepCount
+import com.devil.phoenixproject.domain.model.Routine
+import com.devil.phoenixproject.domain.model.RoutineExercise
+import com.devil.phoenixproject.domain.model.RoutineFlowState
+import com.devil.phoenixproject.domain.model.RoutineItem
+import com.devil.phoenixproject.domain.model.Superset
+import com.devil.phoenixproject.domain.model.SupersetColors
+import com.devil.phoenixproject.domain.model.WorkoutParameters
+import com.devil.phoenixproject.domain.model.WorkoutState
+import com.devil.phoenixproject.domain.model.currentTimeMillis
+import com.devil.phoenixproject.domain.model.generateSupersetId
 import com.devil.phoenixproject.domain.usecase.ResolveRoutineWeightsUseCase
 import com.devil.phoenixproject.util.Constants
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
@@ -33,7 +47,8 @@ class RoutineFlowManager(
     private val resolveWeightsUseCase: ResolveRoutineWeightsUseCase,
     private val completedSetRepository: CompletedSetRepository,
     private val settingsManager: SettingsManager,
-    private val scope: CoroutineScope
+    private val userProfileRepository: UserProfileRepository,
+    private val scope: CoroutineScope,
 ) {
 
     /**
@@ -44,12 +59,16 @@ class RoutineFlowManager(
     interface WorkoutLifecycleDelegate {
         /** Reset the rep counter state */
         fun resetRepCounter()
+
         /** Start a workout with optional countdown skip */
         fun startWorkout(skipCountdown: Boolean = false)
+
         /** Send BLE stop command to clear fault state */
         suspend fun sendStopCommand()
+
         /** Send BLE stop/reset to put machine in BASELINE mode */
         suspend fun stopMachineWorkout()
+
         /** Update workout parameters for internal manager transitions (no user-adjusted side-effects) */
         fun setWorkoutParametersInternal(params: WorkoutParameters)
     }
@@ -67,9 +86,42 @@ class RoutineFlowManager(
 
     init {
         // Collector #1: Load routines (filter out cycle template routines)
+        // Uses flatMapLatest on activeProfile to reactively update when the profile
+        // changes — matches the pattern used by HistoryManager for sessions/PRs.
+        // CRITICAL: try-catch required — on Kotlin/Native (iOS), unhandled exceptions
+        // in scope.launch call abort(), causing SIGABRT crash on launch.
+        // CRITICAL: retry on failure — if the DB is mid-migration or temporarily
+        // inconsistent, the query may throw once and then succeed. Without retry
+        // the collector dies permanently and routines are invisible forever (#324).
         scope.launch {
-            workoutRepository.getAllRoutines().collect { routinesList ->
-                coordinator._routines.value = routinesList.filter { !it.id.startsWith("cycle_routine_") }
+            var retryCount = 0
+            val maxRetries = 3
+            while (retryCount <= maxRetries) {
+                try {
+                    userProfileRepository.activeProfile
+                        .flatMapLatest { profile ->
+                            val profileId = profile?.id ?: "default"
+                            Logger.d { "ROUTINE_LOAD: Subscribing to routines for profile=$profileId (attempt=${retryCount + 1})" }
+                            workoutRepository.getAllRoutines(profileId = profileId)
+                        }
+                        .collect { routinesList ->
+                            val filtered = routinesList.filter { !it.id.startsWith("cycle_routine_") }
+                            Logger.d { "ROUTINE_LOAD: Got ${filtered.size} routines (${routinesList.size} total, filtered ${routinesList.size - filtered.size} cycle templates)" }
+                            coordinator._routines.value = filtered
+                        }
+                    // collect() only returns when the flow completes (shouldn't happen
+                    // for a SQLDelight reactive query), so break if it does.
+                    break
+                } catch (e: Exception) {
+                    retryCount++
+                    Logger.e(e) { "ROUTINE_LOAD: Error loading routines (attempt $retryCount/$maxRetries)" }
+                    if (retryCount <= maxRetries) {
+                        delay(1000L * retryCount) // Back off: 1s, 2s, 3s
+                    }
+                }
+            }
+            if (retryCount > maxRetries) {
+                Logger.e { "ROUTINE_LOAD: All $maxRetries retries exhausted — routine list will remain empty until app restart" }
             }
         }
 
@@ -103,9 +155,7 @@ class RoutineFlowManager(
     /**
      * Check if the current exercise is part of a superset.
      */
-    internal fun isInSuperset(): Boolean {
-        return getCurrentExercise()?.supersetId != null
-    }
+    internal fun isInSuperset(): Boolean = getCurrentExercise()?.supersetId != null
 
     /**
      * Get the next exercise index in the superset rotation.
@@ -166,13 +216,27 @@ class RoutineFlowManager(
         val currentSupersetId = currentExercise.supersetId
 
         if (currentSupersetId != null) {
-            val supersetExerciseIndices = routine.exercises
-                .mapIndexedNotNull { index, ex ->
-                    if (ex.supersetId == currentSupersetId) index else null
+            // Issue #334: Use display ordering to find next exercise after superset,
+            // handles non-contiguous superset members in the flat list.
+            val items = routine.getItems()
+            val currentSupersetItemIdx = items.indexOfFirst { item ->
+                item is RoutineItem.SupersetItem && item.superset.exercises.any {
+                    it.supersetId == currentSupersetId
                 }
-            val lastSupersetIndex = supersetExerciseIndices.maxOrNull() ?: coordinator._currentExerciseIndex.value
-            val nextIndex = lastSupersetIndex + 1
-            return if (nextIndex < routine.exercises.size) nextIndex else null
+            }
+            if (currentSupersetItemIdx >= 0) {
+                for (i in (currentSupersetItemIdx + 1) until items.size) {
+                    val nextExercises = when (val item = items[i]) {
+                        is RoutineItem.Single -> listOf(item.exercise)
+                        is RoutineItem.SupersetItem ->
+                            item.superset.exercises.sortedBy { it.orderInSuperset }
+                    }
+                    val firstEx = nextExercises.firstOrNull() ?: continue
+                    val idx = routine.exercises.indexOf(firstEx)
+                    if (idx >= 0) return idx
+                }
+            }
+            return null
         }
 
         val nextIndex = coordinator._currentExerciseIndex.value + 1
@@ -215,10 +279,29 @@ class RoutineFlowManager(
             }
 
             // C. Superset Complete -> Move to next exercise after superset
-            val maxIndex = supersetExercises.maxOf { routine.exercises.indexOf(it) }
-            for (nextExIndex in (maxIndex + 1) until routine.exercises.size) {
-                if (nextExIndex !in skippedIndices) {
-                    return nextExIndex to 0
+            // Issue #334: Use display ordering (getItems) to find what comes after
+            // this superset. This handles the case where superset members are
+            // non-contiguous in the flat exercise list (e.g., when an exercise
+            // was added to a superset and appended to the end of the list).
+            val items = routine.getItems()
+            val currentSupersetItemIdx = items.indexOfFirst { item ->
+                item is RoutineItem.SupersetItem && item.superset.exercises.any {
+                    it.supersetId == currentExercise.supersetId
+                }
+            }
+            if (currentSupersetItemIdx >= 0) {
+                for (i in (currentSupersetItemIdx + 1) until items.size) {
+                    val nextExercises = when (val item = items[i]) {
+                        is RoutineItem.Single -> listOf(item.exercise)
+                        is RoutineItem.SupersetItem ->
+                            item.superset.exercises.sortedBy { it.orderInSuperset }
+                    }
+                    for (nextEx in nextExercises) {
+                        val nextExIndex = routine.exercises.indexOf(nextEx)
+                        if (nextExIndex >= 0 && nextExIndex !in skippedIndices) {
+                            return nextExIndex to 0
+                        }
+                    }
                 }
             }
             return null
@@ -275,11 +358,25 @@ class RoutineFlowManager(
             }
 
             // C. Start of Superset -> Go to previous exercise before superset
-            val minIndex = supersetExercises.minOf { routine.exercises.indexOf(it) }
-            for (prevExIndex in (minIndex - 1) downTo 0) {
-                if (prevExIndex !in skippedIndices) {
-                    val prevEx = routine.exercises[prevExIndex]
-                    return prevExIndex to (prevEx.setReps.size - 1)
+            // Issue #334: Use display ordering to handle non-contiguous superset members
+            val items = routine.getItems()
+            val currentSupersetItemIdx = items.indexOfFirst { item ->
+                item is RoutineItem.SupersetItem && item.superset.exercises.any {
+                    it.supersetId == currentExercise.supersetId
+                }
+            }
+            if (currentSupersetItemIdx > 0) {
+                for (i in (currentSupersetItemIdx - 1) downTo 0) {
+                    val prevExercises = when (val item = items[i]) {
+                        is RoutineItem.Single -> listOf(item.exercise)
+                        is RoutineItem.SupersetItem ->
+                            item.superset.exercises.sortedBy { it.orderInSuperset }
+                    }
+                    val lastEx = prevExercises.lastOrNull() ?: continue
+                    val prevExIndex = routine.exercises.indexOf(lastEx)
+                    if (prevExIndex >= 0 && prevExIndex !in skippedIndices) {
+                        return prevExIndex to (lastEx.setReps.size - 1)
+                    }
                 }
             }
             return null
@@ -319,11 +416,7 @@ class RoutineFlowManager(
     /**
      * Calculate the name of the next exercise/set for display during rest.
      */
-    internal fun calculateNextExerciseName(
-        isSingleExercise: Boolean,
-        currentExercise: RoutineExercise?,
-        routine: Routine?
-    ): String {
+    internal fun calculateNextExerciseName(isSingleExercise: Boolean, currentExercise: RoutineExercise?, routine: Routine?): String {
         if (isSingleExercise || currentExercise == null) {
             return currentExercise?.exercise?.name ?: "Next Set"
         }
@@ -349,11 +442,7 @@ class RoutineFlowManager(
     /**
      * Check if current exercise is the last one in the routine.
      */
-    internal fun calculateIsLastExercise(
-        isSingleExercise: Boolean,
-        currentExercise: RoutineExercise?,
-        routine: Routine?
-    ): Boolean {
+    internal fun calculateIsLastExercise(isSingleExercise: Boolean, currentExercise: RoutineExercise?, routine: Routine?): Boolean {
         if (isSingleExercise) {
             return coordinator._currentSetIndex.value >= (currentExercise?.setReps?.size ?: 1) - 1
         }
@@ -361,26 +450,80 @@ class RoutineFlowManager(
         return getNextStep(
             routine = routine,
             currentExIndex = coordinator._currentExerciseIndex.value,
-            currentSetIndex = coordinator._currentSetIndex.value
+            currentSetIndex = coordinator._currentSetIndex.value,
         ) == null
     }
 
     // ===== Routine CRUD =====
 
-    fun getRoutineById(routineId: String): Routine? {
-        return coordinator._routines.value.find { it.id == routineId }
-    }
+    fun getRoutineById(routineId: String): Routine? = coordinator._routines.value.find { it.id == routineId }
 
     fun saveRoutine(routine: Routine) {
-        scope.launch { workoutRepository.saveRoutine(routine) }
+        scope.launch {
+            try {
+                val activeProfileId = userProfileRepository.activeProfile.value?.id ?: "default"
+                val routineWithProfile = routine.copy(profileId = activeProfileId)
+                workoutRepository.saveRoutine(routineWithProfile)
+                Logger.d { "ROUTINE_SAVE: Saved routine '${routineWithProfile.name}' (id=${routineWithProfile.id}, profileId=${routineWithProfile.profileId})" }
+            } catch (e: Exception) {
+                Logger.e(e) { "ROUTINE_SAVE: Failed to save routine '${routine.name}' (id=${routine.id}, profileId=${routine.profileId})" }
+            }
+        }
     }
 
     fun updateRoutine(routine: Routine) {
-        scope.launch { workoutRepository.updateRoutine(routine) }
+        scope.launch {
+            try {
+                val activeProfileId = userProfileRepository.activeProfile.value?.id ?: "default"
+                val routineWithProfile = routine.copy(profileId = activeProfileId)
+                workoutRepository.updateRoutine(routineWithProfile)
+                Logger.d { "ROUTINE_SAVE: Updated routine '${routineWithProfile.name}' (id=${routineWithProfile.id}, profileId=${routineWithProfile.profileId})" }
+            } catch (e: Exception) {
+                Logger.e(e) { "ROUTINE_SAVE: Failed to update routine '${routine.name}' (id=${routine.id})" }
+            }
+        }
     }
 
     fun deleteRoutine(routineId: String) {
-        scope.launch { workoutRepository.deleteRoutine(routineId) }
+        scope.launch {
+            try {
+                workoutRepository.deleteRoutine(routineId)
+            } catch (e: Exception) {
+                Logger.e(e) { "ROUTINE_SAVE: Failed to delete routine (id=$routineId)" }
+            }
+        }
+    }
+
+    /**
+     * Save a routine to a specific profile, bypassing active profile injection.
+     * Used for cross-profile copy operations.
+     */
+    fun saveRoutineToProfile(routine: Routine, targetProfileId: String) {
+        scope.launch {
+            try {
+                val routineWithProfile = routine.copy(profileId = targetProfileId)
+                workoutRepository.saveRoutine(routineWithProfile)
+                Logger.d { "ROUTINE_SAVE: Saved routine '${routine.name}' to profile $targetProfileId" }
+            } catch (e: Exception) {
+                Logger.e(e) { "ROUTINE_SAVE: Failed to save routine '${routine.name}' to profile $targetProfileId" }
+            }
+        }
+    }
+
+    /**
+     * Move routines to a different profile (changes profile_id in-place).
+     */
+    fun moveRoutinesToProfile(routineIds: Set<String>, targetProfileId: String) {
+        scope.launch {
+            try {
+                routineIds.forEach { id ->
+                    workoutRepository.moveRoutineToProfile(id, targetProfileId)
+                }
+                Logger.d { "ROUTINE_MOVE: Moved ${routineIds.size} routines to profile $targetProfileId" }
+            } catch (e: Exception) {
+                Logger.e(e) { "ROUTINE_MOVE: Failed to move routines to profile $targetProfileId" }
+            }
+        }
     }
 
     /**
@@ -406,11 +549,13 @@ class RoutineFlowManager(
                 if (resolved.fallbackReason != null) {
                     Logger.w { "PR weight fallback for ${exercise.exercise.name}: ${resolved.fallbackReason}" }
                 } else if (resolved.isFromPR) {
-                    Logger.d { "Resolved ${exercise.exercise.name} weight from PR: ${resolved.percentOfPR}% of ${resolved.usedPR}kg = ${resolved.baseWeight}kg" }
+                    Logger.d {
+                        "Resolved ${exercise.exercise.name} weight from PR: ${resolved.percentOfPR}% of ${resolved.usedPR}kg = ${resolved.baseWeight}kg"
+                    }
                 }
                 exercise.copy(
                     weightPerCableKg = resolved.baseWeight,
-                    setWeightsPerCableKg = resolved.setWeights
+                    setWeightsPerCableKg = resolved.setWeights,
                 )
             } else {
                 exercise
@@ -420,10 +565,40 @@ class RoutineFlowManager(
     }
 
     /**
+     * Issue #334: Normalize exercise ordering so superset members are contiguous.
+     * Existing routines saved before the editor fix may have scattered superset
+     * exercises in the flat list, which breaks getNextStep() Phase C navigation.
+     * This heals the data at load time using the same getItems().flatMap pattern
+     * the editor now uses.
+     */
+    private fun normalizeExerciseOrder(routine: Routine): Routine {
+        val reordered = routine.getItems().flatMap { item ->
+            when (item) {
+                is RoutineItem.Single -> listOf(item.exercise)
+                is RoutineItem.SupersetItem ->
+                    item.superset.exercises.sortedBy { it.orderInSuperset }
+            }
+        }
+        // Fast path: skip copy if order already matches
+        if (reordered.map { it.id } == routine.exercises.map { it.id }) return routine
+
+        Logger.w { "HEAL: Routine '${routine.name}' had non-contiguous superset exercises — reordering" }
+        val reindexed = reordered.mapIndexed { index, ex -> ex.copy(orderIndex = index) }
+        val normalizedSupersets = routine.supersets.mapNotNull { superset ->
+            val minOrder = reindexed
+                .filter { it.supersetId == superset.id }
+                .minOfOrNull { it.orderIndex }
+            minOrder?.let { superset.copy(orderIndex = it) }
+        }
+        return routine.copy(exercises = reindexed, supersets = normalizedSupersets)
+    }
+
+    /**
      * Internal function to load a routine after weights have been resolved.
      */
     private fun loadRoutineInternal(routine: Routine) {
-        coordinator._loadedRoutine.value = routine
+        val normalized = normalizeExerciseOrder(routine)
+        coordinator._loadedRoutine.value = normalized
         coordinator._currentExerciseIndex.value = 0
         coordinator._currentSetIndex.value = 0
         coordinator._skippedExercises.value = emptySet()
@@ -439,7 +614,7 @@ class RoutineFlowManager(
         coordinator._workoutState.value = WorkoutState.Idle
 
         // Load parameters from first exercise (matching parent repo behavior)
-        val firstExercise = routine.exercises[0]
+        val firstExercise = normalized.exercises[0]
         val firstSetReps = firstExercise.setReps.firstOrNull() // Can be null for AMRAP sets
         // Get per-set weight for first set, falling back to exercise default
         val firstSetWeight = firstExercise.setWeightsPerCableKg.getOrNull(0)
@@ -447,19 +622,6 @@ class RoutineFlowManager(
 
         // Only bodyweight exercises should have warmupReps = 0
         val isFirstBodyweight = isBodyweightExercise(firstExercise)
-
-        // Issue #188: Trace routine loading with println for reliable logcat output
-        println("Issue188-Load: ╔══════════════════════════════════════════════════════════════")
-        println("Issue188-Load: ║ LOADING ROUTINE: ${routine.name}")
-        println("Issue188-Load: ╠══════════════════════════════════════════════════════════════")
-        println("Issue188-Load: ║ First exercise: ${firstExercise.exercise.displayName}")
-        println("Issue188-Load: ║ setReps list: ${firstExercise.setReps}")
-        println("Issue188-Load: ║ firstSetReps (firstOrNull): $firstSetReps")
-        println("Issue188-Load: ║ isAMRAP field on exercise: ${firstExercise.isAMRAP}")
-        println("Issue188-Load: ║ progressionKg: ${firstExercise.progressionKg}kg")
-        println("Issue188-Load: ║ weightPerCableKg: ${firstSetWeight}kg")
-        println("Issue188-Load: ║ programMode: ${firstExercise.programMode.displayName}")
-        println("Issue188-Load: ╚══════════════════════════════════════════════════════════════")
 
         // Issue #203: Fallback to exercise-level isAMRAP flag for legacy ExerciseEditDialog compatibility
         // Legacy "Last set AMRAP" only applies when we're on the last set (set index 0 for single-set exercises)
@@ -473,21 +635,26 @@ class RoutineFlowManager(
             reps = firstSetReps ?: 0, // AMRAP sets have null reps, use 0 as placeholder
             weightPerCableKg = firstSetWeight,
             progressionRegressionKg = firstExercise.progressionKg,
-            isJustLift = false,  // CRITICAL: Routines are NOT just lift mode
+            isJustLift = false, // CRITICAL: Routines are NOT just lift mode
             useAutoStart = false,
             stopAtTop = firstExercise.stopAtTop,
             warmupReps = if (isFirstBodyweight) 0 else Constants.DEFAULT_WARMUP_REPS,
             isAMRAP = firstIsAMRAP, // Issue #203: Check both per-set (null reps) and exercise-level flag
             selectedExerciseId = firstExercise.exercise.id,
             stallDetectionEnabled = firstExercise.stallDetectionEnabled,
-            repCountTiming = firstExercise.repCountTiming
+            repCountTiming = firstExercise.repCountTiming,
         )
 
-        // Issue #188: Log computed params
-        println("Issue188-Load: ║ COMPUTED WorkoutParameters:")
-        println("Issue188-Load: ║   isAMRAP=${params.isAMRAP} (from firstSetReps == null || exercise.isAMRAP)")
-        println("Issue188-Load: ║   reps=${params.reps}")
-        println("Issue188-Load: ║   progressionRegressionKg=${params.progressionRegressionKg}kg")
+        // Phase 35C: Initialize warm-up phase for first exercise if it has warmupSets
+        if (firstExercise.warmupSets.isNotEmpty() && !isFirstBodyweight) {
+            coordinator._currentWarmupSetIndex.value = 0
+            coordinator._totalWarmupSets.value = firstExercise.warmupSets.size
+            Logger.d("RoutineFlowManager") { "Phase 35C: First exercise has ${firstExercise.warmupSets.size} warm-up sets" }
+        } else {
+            coordinator._currentWarmupSetIndex.value = -1
+            coordinator._totalWarmupSets.value = 0
+        }
+
         lifecycleDelegate.setWorkoutParametersInternal(params)
     }
 
@@ -535,15 +702,16 @@ class RoutineFlowManager(
     fun enterRoutineOverview(routine: Routine) {
         scope.launch {
             val resolvedRoutine = resolveRoutineWeights(routine)
-            coordinator._loadedRoutine.value = resolvedRoutine
+            val normalized = normalizeExerciseOrder(resolvedRoutine)
+            coordinator._loadedRoutine.value = normalized
             coordinator._currentExerciseIndex.value = 0
             coordinator._currentSetIndex.value = 0
             coordinator._skippedExercises.value = emptySet()
             coordinator._completedExercises.value = emptySet()
             coordinator._workoutState.value = WorkoutState.Idle
             coordinator._routineFlowState.value = RoutineFlowState.Overview(
-                routine = resolvedRoutine,
-                selectedExerciseIndex = 0
+                routine = normalized,
+                selectedExerciseIndex = 0,
             )
         }
     }
@@ -573,12 +741,14 @@ class RoutineFlowManager(
             adjustedWeight = setWeight,
             adjustedReps = setReps,
             echoLevel = if (exercise.programMode is ProgramMode.Echo) exercise.echoLevel else null,
-            eccentricLoadPercent = if (exercise.programMode is ProgramMode.Echo) exercise.eccentricLoad.percentage else null
+            eccentricLoadPercent = if (exercise.programMode is ProgramMode.Echo) exercise.eccentricLoad.percentage else null,
         )
 
         // Issue #129: Determine if this specific set is AMRAP (null reps = AMRAP)
         val isSetAmrap = rawSetReps == null
-        Logger.d { "enterSetReady: exercise=${exercise.exercise.name}, set=$setIndex, isAMRAP=$isSetAmrap, stallDetection=${exercise.stallDetectionEnabled}" }
+        Logger.d {
+            "enterSetReady: exercise=${exercise.exercise.name}, set=$setIndex, isAMRAP=$isSetAmrap, stallDetection=${exercise.stallDetectionEnabled}"
+        }
 
         // Update workout parameters for this set
         // Issue #209: Explicitly set isJustLift=false and useAutoStart=false
@@ -595,7 +765,7 @@ class RoutineFlowManager(
             isAMRAP = isSetAmrap,
             progressionRegressionKg = exercise.progressionKg,
             isJustLift = false,
-            useAutoStart = false
+            useAutoStart = false,
         )
     }
 
@@ -615,13 +785,15 @@ class RoutineFlowManager(
             adjustedWeight = adjustedWeight,
             adjustedReps = adjustedReps,
             echoLevel = if (exercise.programMode is ProgramMode.Echo) exercise.echoLevel else null,
-            eccentricLoadPercent = if (exercise.programMode is ProgramMode.Echo) exercise.eccentricLoad.percentage else null
+            eccentricLoadPercent = if (exercise.programMode is ProgramMode.Echo) exercise.eccentricLoad.percentage else null,
         )
 
         // Issue #129: Check raw value for AMRAP - null reps in setReps list = AMRAP
         val rawSetReps = exercise.setReps.getOrNull(setIndex)
         val isSetAmrap = rawSetReps == null
-        Logger.d { "enterSetReadyWithAdjustments: exercise=${exercise.exercise.name}, set=$setIndex, isAMRAP=$isSetAmrap, stallDetection=${exercise.stallDetectionEnabled}" }
+        Logger.d {
+            "enterSetReadyWithAdjustments: exercise=${exercise.exercise.name}, set=$setIndex, isAMRAP=$isSetAmrap, stallDetection=${exercise.stallDetectionEnabled}"
+        }
 
         // Update workout parameters with adjusted values
         // Issue #209: Explicitly set isJustLift=false and useAutoStart=false
@@ -638,7 +810,7 @@ class RoutineFlowManager(
             isAMRAP = isSetAmrap,
             progressionRegressionKg = exercise.progressionKg,
             isJustLift = false,
-            useAutoStart = false
+            useAutoStart = false,
         )
     }
 
@@ -709,7 +881,7 @@ class RoutineFlowManager(
         coordinator._workoutParameters.value = coordinator._workoutParameters.value.copy(
             weightPerCableKg = state.adjustedWeight,
             reps = state.adjustedReps,
-            isJustLift = false
+            isJustLift = false,
         )
 
         // Start the workout directly (skip countdown since user already configured on SetReady)
@@ -723,7 +895,7 @@ class RoutineFlowManager(
         val routine = coordinator._loadedRoutine.value ?: return
         coordinator._routineFlowState.value = RoutineFlowState.Overview(
             routine = routine,
-            selectedExerciseIndex = coordinator._currentExerciseIndex.value
+            selectedExerciseIndex = coordinator._currentExerciseIndex.value,
         )
     }
 
@@ -752,7 +924,7 @@ class RoutineFlowManager(
             routineName = routine.name,
             totalSets = routine.exercises.sumOf { it.setReps.size },
             totalExercises = routine.exercises.size,
-            totalDurationMs = duration
+            totalDurationMs = duration,
         )
     }
 
@@ -797,8 +969,23 @@ class RoutineFlowManager(
                 selectedExerciseId = exercise.exercise.id,
                 stallDetectionEnabled = exercise.stallDetectionEnabled,
                 repCountTiming = exercise.repCountTiming,
-                stopAtTop = exercise.stopAtTop
+                stopAtTop = exercise.stopAtTop,
             )
+        }
+
+        // Phase 35C: Initialize warm-up phase when jumping to exercise with warmupSets
+        val isBodyweight = exercise.exercise.equipment.lowercase().let {
+            it == "bodyweight" || it == "body weight" || it == "none"
+        }
+        if (exercise.warmupSets.isNotEmpty() && !isBodyweight) {
+            coordinator._currentWarmupSetIndex.value = 0
+            coordinator._totalWarmupSets.value = exercise.warmupSets.size
+            Logger.d("RoutineFlowManager") {
+                "Phase 35C: Entering warm-up phase for ${exercise.exercise.name}: ${exercise.warmupSets.size} warm-up sets"
+            }
+        } else {
+            coordinator._currentWarmupSetIndex.value = -1
+            coordinator._totalWarmupSets.value = 0
         }
 
         coordinator._workoutState.value = WorkoutState.Idle
@@ -810,9 +997,14 @@ class RoutineFlowManager(
 
     fun advanceToNextExercise() {
         val routine = coordinator._loadedRoutine.value ?: return
-        val nextIndex = coordinator._currentExerciseIndex.value + 1
-        if (nextIndex < routine.exercises.size) {
-            jumpToExercise(nextIndex)
+        val currentExIndex = coordinator._currentExerciseIndex.value
+        val currentExercise = routine.exercises.getOrNull(currentExIndex) ?: return
+        // Pass the last set index so getNextStep treats all sets as complete
+        // and advances to the next exercise (respecting superset grouping and skips).
+        val lastSetIndex = (currentExercise.setReps.size - 1).coerceAtLeast(0)
+        val next = getNextStep(routine, currentExIndex, currentSetIndex = lastSetIndex)
+        if (next != null) {
+            jumpToExercise(next.first)
         }
     }
 
@@ -837,7 +1029,9 @@ class RoutineFlowManager(
         val currentRepCount = coordinator._repCount.value
         if (currentRepCount.workingReps > 0 && coordinator._workoutState.value !is WorkoutState.Completed) {
             coordinator._completedExercises.update { it + coordinator._currentExerciseIndex.value }
-            Logger.d("RoutineFlowManager") { "Saving progress for exercise ${coordinator._currentExerciseIndex.value}: ${currentRepCount.workingReps} reps" }
+            Logger.d("RoutineFlowManager") {
+                "Saving progress for exercise ${coordinator._currentExerciseIndex.value}: ${currentRepCount.workingReps} reps"
+            }
         } else if (coordinator._workoutState.value !is WorkoutState.Completed) {
             coordinator._skippedExercises.update { it + coordinator._currentExerciseIndex.value }
             Logger.d("RoutineFlowManager") { "Skipping exercise ${coordinator._currentExerciseIndex.value}" }
@@ -876,10 +1070,13 @@ class RoutineFlowManager(
      */
     fun skipCurrentExercise() {
         val routine = coordinator._loadedRoutine.value ?: return
-        val nextIndex = coordinator._currentExerciseIndex.value + 1
-        if (nextIndex < routine.exercises.size) {
-            coordinator._skippedExercises.update { it + coordinator._currentExerciseIndex.value }
-            jumpToExercise(nextIndex)
+        val currentExIndex = coordinator._currentExerciseIndex.value
+        // Mark as skipped first so getNextStep skips past the current exercise
+        // when looking for the next navigable exercise.
+        coordinator._skippedExercises.update { it + currentExIndex }
+        val next = getNextStep(routine, currentExIndex, currentSetIndex = 0)
+        if (next != null) {
+            jumpToExercise(next.first)
         }
     }
 
@@ -901,27 +1098,44 @@ class RoutineFlowManager(
     }
 
     /**
-     * Go back to the previous exercise in the routine.
+     * Go back to the previous exercise in the routine (display order).
+     *
+     * Unlike advanceToNextExercise/skipCurrentExercise which follow
+     * superset-interleaved set progression, this is a simple "previous
+     * in display order" navigation. Uses getItems() for ordering so
+     * non-contiguous superset members are handled correctly.
      */
     fun goToPreviousExercise() {
-        val prevIndex = coordinator._currentExerciseIndex.value - 1
-        if (prevIndex >= 0) {
-            jumpToExercise(prevIndex)
+        val routine = coordinator._loadedRoutine.value ?: return
+        val currentExIndex = coordinator._currentExerciseIndex.value
+        val currentExercise = routine.exercises.getOrNull(currentExIndex) ?: return
+
+        // Build display-order list and find the previous exercise
+        val displayOrder = routine.getItems().flatMap { item ->
+            when (item) {
+                is RoutineItem.Single -> listOf(item.exercise)
+                is RoutineItem.SupersetItem ->
+                    item.superset.exercises.sortedBy { it.orderInSuperset }
+            }
+        }
+        val currentDisplayIdx = displayOrder.indexOf(currentExercise)
+        if (currentDisplayIdx > 0) {
+            val prevExercise = displayOrder[currentDisplayIdx - 1]
+            val prevFlatIdx = routine.exercises.indexOf(prevExercise)
+            if (prevFlatIdx >= 0) {
+                jumpToExercise(prevFlatIdx)
+            }
         }
     }
 
-    fun canGoBack(): Boolean {
-        return coordinator._loadedRoutine.value != null && coordinator._currentExerciseIndex.value > 0
-    }
+    fun canGoBack(): Boolean = coordinator._loadedRoutine.value != null && coordinator._currentExerciseIndex.value > 0
 
     fun canSkipForward(): Boolean {
         val routine = coordinator._loadedRoutine.value ?: return false
         return coordinator._currentExerciseIndex.value < routine.exercises.size - 1
     }
 
-    fun getRoutineExerciseNames(): List<String> {
-        return coordinator._loadedRoutine.value?.exercises?.map { it.exercise.name } ?: emptyList()
-    }
+    fun getRoutineExerciseNames(): List<String> = coordinator._loadedRoutine.value?.exercises?.map { it.exercise.name } ?: emptyList()
 
     /**
      * Navigate to previous set/exercise in set-ready.
@@ -954,11 +1168,7 @@ class RoutineFlowManager(
     /**
      * Create a new superset in a routine.
      */
-    suspend fun createSuperset(
-        routineId: String,
-        name: String? = null,
-        exercises: List<RoutineExercise> = emptyList()
-    ): Superset {
+    suspend fun createSuperset(routineId: String, name: String? = null, exercises: List<RoutineExercise> = emptyList()): Superset {
         val routine = getRoutineById(routineId) ?: throw IllegalArgumentException("Routine not found")
         val existingColors = routine.supersets.map { it.colorIndex }.toSet()
         val colorIndex = SupersetColors.next(existingColors)
@@ -972,7 +1182,7 @@ class RoutineFlowManager(
             name = autoName,
             colorIndex = colorIndex,
             restBetweenSeconds = 10,
-            orderIndex = orderIndex
+            orderIndex = orderIndex,
         )
 
         val updatedSupersets = routine.supersets + superset
@@ -1082,7 +1292,7 @@ class RoutineFlowManager(
             currentSet = coordinator._currentSetIndex.value + 1,
             totalSets = exercise.setReps.size,
             currentExercise = coordinator._currentExerciseIndex.value + 1,
-            totalExercises = routine.exercises.size
+            totalExercises = routine.exercises.size,
         )
     }
 
@@ -1128,13 +1338,13 @@ class RoutineFlowManager(
  *
  * Top-level function accessible to both RoutineFlowManager and DWSM/ActiveSessionEngine.
  */
-internal fun isBodyweightExercise(exercise: RoutineExercise?): Boolean {
-    return exercise?.let {
-        val isBodyweight = !it.exercise.hasCableAccessory
-        Logger.d { "isBodyweightExercise: exercise=${it.exercise.name}, equipment='${it.exercise.equipment}', hasCableAccessory=${it.exercise.hasCableAccessory}, result=$isBodyweight" }
-        isBodyweight
-    } ?: false
-}
+internal fun isBodyweightExercise(exercise: RoutineExercise?): Boolean = exercise?.let {
+    val isBodyweight = !it.exercise.hasCableAccessory
+    Logger.d {
+        "isBodyweightExercise: exercise=${it.exercise.name}, equipment='${it.exercise.equipment}', hasCableAccessory=${it.exercise.hasCableAccessory}, result=$isBodyweight"
+    }
+    isBodyweight
+} ?: false
 
 /**
  * Check if current workout is in single exercise mode.

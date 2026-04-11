@@ -21,6 +21,9 @@ import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.domain.model.*
 import com.devil.phoenixproject.ui.theme.Spacing
+import org.jetbrains.compose.resources.stringResource
+import vitruvianprojectphoenix.shared.generated.resources.*
+import vitruvianprojectphoenix.shared.generated.resources.Res
 
 /**
  * Workout Setup Dialog - Full configuration dialog for workout parameters
@@ -35,7 +38,7 @@ fun WorkoutSetupDialog(
     displayToKg: (Float, WeightUnit) -> Float,
     onUpdateParameters: (WorkoutParameters) -> Unit,
     onStartWorkout: () -> Unit,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
 ) {
     // State for exercise selection
     var selectedExercise by remember { mutableStateOf<Exercise?>(null) }
@@ -61,7 +64,7 @@ fun WorkoutSetupDialog(
                 "Workout Setup",
                 style = MaterialTheme.typography.headlineSmall,
                 fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurface
+                color = MaterialTheme.colorScheme.onSurface,
             )
         },
         text = {
@@ -69,7 +72,7 @@ fun WorkoutSetupDialog(
                 modifier = Modifier
                     .fillMaxWidth()
                     .verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(Spacing.small)
+                verticalArrangement = Arrangement.spacedBy(Spacing.small),
             ) {
                 // Exercise Selection Card
                 Card(
@@ -77,22 +80,22 @@ fun WorkoutSetupDialog(
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest),
                     elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
                     shape = RoundedCornerShape(20.dp),
-                    border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f))
+                    border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)),
                 ) {
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 8.dp)
+                            .padding(horizontal = 16.dp, vertical = 8.dp),
                     ) {
                         Text(
                             "Exercise",
                             style = MaterialTheme.typography.titleLarge,
-                            fontWeight = FontWeight.Bold
+                            fontWeight = FontWeight.Bold,
                         )
                         Spacer(modifier = Modifier.height(8.dp))
                         OutlinedButton(
                             onClick = { showExercisePicker = true },
-                            modifier = Modifier.fillMaxWidth()
+                            modifier = Modifier.fillMaxWidth(),
                         ) {
                             Text(selectedExercise?.name ?: "Select Exercise")
                         }
@@ -103,7 +106,7 @@ fun WorkoutSetupDialog(
                 val modeLabel = if (workoutParameters.isJustLift) "Base Mode (resistance profile)" else "Workout Mode"
                 ExposedDropdownMenuBox(
                     expanded = showModeMenu,
-                    onExpandedChange = { showModeMenu = !showModeMenu }
+                    onExpandedChange = { showModeMenu = !showModeMenu },
                 ) {
                     OutlinedTextField(
                         value = workoutParameters.programMode.displayName,
@@ -116,64 +119,70 @@ fun WorkoutSetupDialog(
                         modifier = Modifier
                             .fillMaxWidth()
                             .menuAnchor(type = ExposedDropdownMenuAnchorType.PrimaryNotEditable),
-                        colors = OutlinedTextFieldDefaults.colors()
+                        colors = OutlinedTextFieldDefaults.colors(),
                     )
                     ExposedDropdownMenu(
                         expanded = showModeMenu,
-                        onDismissRequest = { showModeMenu = false }
+                        onDismissRequest = { showModeMenu = false },
                     ) {
                         DropdownMenuItem(
-                            text = { Text("Old School") },
+                            text = { Text(stringResource(Res.string.mode_old_school)) },
                             onClick = {
                                 onUpdateParameters(workoutParameters.copy(programMode = ProgramMode.OldSchool))
                                 showModeMenu = false
-                            }
+                            },
                         )
                         DropdownMenuItem(
-                            text = { Text("Pump") },
+                            text = { Text(stringResource(Res.string.mode_pump)) },
                             onClick = {
                                 onUpdateParameters(workoutParameters.copy(programMode = ProgramMode.Pump))
                                 showModeMenu = false
-                            }
+                            },
                         )
                         DropdownMenuItem(
-                            text = { Text("Eccentric Only") },
+                            text = { Text(stringResource(Res.string.mode_eccentric_only)) },
                             onClick = {
                                 onUpdateParameters(workoutParameters.copy(programMode = ProgramMode.EccentricOnly))
                                 showModeMenu = false
-                            }
+                            },
                         )
                         DropdownMenuItem(
                             text = {
                                 Row(
                                     horizontalArrangement = Arrangement.SpaceBetween,
-                                    modifier = Modifier.fillMaxWidth()
+                                    modifier = Modifier.fillMaxWidth(),
                                 ) {
-                                    Text("Echo Mode")
-                                    Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = "Navigate")
+                                    Text(stringResource(Res.string.echo_mode))
+                                    Icon(
+                                        Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                                        contentDescription = stringResource(Res.string.cd_navigate),
+                                    )
                                 }
                             },
                             onClick = {
                                 showModeMenu = false
                                 modeSubSelectorType = "Echo"
                                 showModeSubSelector = true
-                            }
+                            },
                         )
                         DropdownMenuItem(
                             text = {
                                 Row(
                                     horizontalArrangement = Arrangement.SpaceBetween,
-                                    modifier = Modifier.fillMaxWidth()
+                                    modifier = Modifier.fillMaxWidth(),
                                 ) {
-                                    Text("TUT")
-                                    Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = "Navigate")
+                                    Text(stringResource(Res.string.mode_tut))
+                                    Icon(
+                                        Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                                        contentDescription = stringResource(Res.string.cd_navigate),
+                                    )
                                 }
                             },
                             onClick = {
                                 showModeMenu = false
                                 modeSubSelectorType = "TUT"
                                 showModeSubSelector = true
-                            }
+                            },
                         )
                     }
                 }
@@ -184,37 +193,37 @@ fun WorkoutSetupDialog(
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest),
                     elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
                     shape = RoundedCornerShape(20.dp),
-                    border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f))
+                    border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)),
                 ) {
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(16.dp)
+                            .padding(16.dp),
                     ) {
                         if (workoutParameters.isEchoMode) {
                             Text(
                                 "Weight per cable",
                                 style = MaterialTheme.typography.titleLarge,
-                                fontWeight = FontWeight.Bold
+                                fontWeight = FontWeight.Bold,
                             )
                             Spacer(modifier = Modifier.height(8.dp))
                             Text(
                                 "Adaptive",
                                 style = MaterialTheme.typography.displaySmall,
                                 fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.primary
+                                color = MaterialTheme.colorScheme.primary,
                             )
                             Text(
                                 "Echo mode adapts weight to your output",
                                 style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         } else {
                             val weightRange = if (weightUnit == WeightUnit.LB) 1..220 else 1..100
                             Text(
                                 "Weight per cable (${weightUnit.name.lowercase()})",
                                 style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold
+                                fontWeight = FontWeight.Bold,
                             )
                             Spacer(modifier = Modifier.height(8.dp))
 
@@ -223,7 +232,7 @@ fun WorkoutSetupDialog(
                                 "$currentWeightDisplay ${weightUnit.name.lowercase()}",
                                 style = MaterialTheme.typography.displaySmall,
                                 fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.primary
+                                color = MaterialTheme.colorScheme.primary,
                             )
 
                             Slider(
@@ -234,7 +243,7 @@ fun WorkoutSetupDialog(
                                 },
                                 valueRange = weightRange.first.toFloat()..weightRange.last.toFloat(),
                                 steps = weightRange.last - weightRange.first - 1,
-                                modifier = Modifier.fillMaxWidth()
+                                modifier = Modifier.fillMaxWidth(),
                             )
                         }
                     }
@@ -246,19 +255,19 @@ fun WorkoutSetupDialog(
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest),
                     elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
                     shape = RoundedCornerShape(20.dp),
-                    border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f))
+                    border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)),
                 ) {
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(16.dp)
+                            .padding(16.dp),
                     ) {
                         if (!workoutParameters.isJustLift) {
                             Text(
                                 "Target reps: ${workoutParameters.reps}",
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.Bold,
-                                modifier = Modifier.padding(bottom = 8.dp)
+                                modifier = Modifier.padding(bottom = 8.dp),
                             )
                             Slider(
                                 value = workoutParameters.reps.toFloat(),
@@ -267,24 +276,24 @@ fun WorkoutSetupDialog(
                                 },
                                 valueRange = 1f..50f,
                                 steps = 49,
-                                modifier = Modifier.fillMaxWidth()
+                                modifier = Modifier.fillMaxWidth(),
                             )
                         } else {
                             Text(
                                 "Target reps",
                                 style = MaterialTheme.typography.titleLarge,
-                                fontWeight = FontWeight.Bold
+                                fontWeight = FontWeight.Bold,
                             )
                             Spacer(modifier = Modifier.height(8.dp))
                             Text(
                                 "N/A",
                                 style = MaterialTheme.typography.displaySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                             Text(
                                 "Just Lift mode doesn't use target reps",
                                 style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
                     }
@@ -303,17 +312,17 @@ fun WorkoutSetupDialog(
                         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest),
                         elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
                         shape = RoundedCornerShape(20.dp),
-                        border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f))
+                        border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)),
                     ) {
                         Column(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(16.dp)
+                                .padding(16.dp),
                         ) {
                             Text(
                                 "Progression/Regression",
                                 style = MaterialTheme.typography.titleLarge,
-                                fontWeight = FontWeight.Bold
+                                fontWeight = FontWeight.Bold,
                             )
                             Spacer(modifier = Modifier.height(8.dp))
 
@@ -327,7 +336,7 @@ fun WorkoutSetupDialog(
                                     currentProgression > 0 -> MaterialTheme.colorScheme.primary
                                     currentProgression < 0 -> MaterialTheme.colorScheme.error
                                     else -> MaterialTheme.colorScheme.onSurfaceVariant
-                                }
+                                },
                             )
 
                             Slider(
@@ -337,7 +346,7 @@ fun WorkoutSetupDialog(
                                     onUpdateParameters(workoutParameters.copy(progressionRegressionKg = kg))
                                 },
                                 valueRange = -maxProgression..maxProgression,
-                                modifier = Modifier.fillMaxWidth()
+                                modifier = Modifier.fillMaxWidth(),
                             )
 
                             Spacer(modifier = Modifier.height(4.dp))
@@ -346,7 +355,7 @@ fun WorkoutSetupDialog(
                                 "Negative = Regression, Positive = Progression",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.align(Alignment.CenterHorizontally)
+                                modifier = Modifier.align(Alignment.CenterHorizontally),
                             )
                         }
                     }
@@ -356,14 +365,14 @@ fun WorkoutSetupDialog(
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Text("Just Lift")
+                    Text(stringResource(Res.string.just_lift))
                     Switch(
                         checked = workoutParameters.isJustLift,
                         onCheckedChange = { checked ->
                             onUpdateParameters(workoutParameters.copy(isJustLift = checked))
-                        }
+                        },
                     )
                 }
 
@@ -371,15 +380,15 @@ fun WorkoutSetupDialog(
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Text("Finish At Top")
+                    Text(stringResource(Res.string.finish_at_top))
                     Switch(
                         checked = workoutParameters.stopAtTop,
                         onCheckedChange = { checked ->
                             onUpdateParameters(workoutParameters.copy(stopAtTop = checked))
                         },
-                        enabled = !workoutParameters.isJustLift
+                        enabled = !workoutParameters.isJustLift,
                     )
                 }
 
@@ -387,14 +396,14 @@ fun WorkoutSetupDialog(
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Column {
-                        Text("AMRAP Mode")
+                        Text(stringResource(Res.string.amrap_mode))
                         Text(
                             "As Many Reps As Possible",
                             style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
                     Switch(
@@ -402,7 +411,7 @@ fun WorkoutSetupDialog(
                         onCheckedChange = { checked ->
                             onUpdateParameters(workoutParameters.copy(isAMRAP = checked))
                         },
-                        enabled = !workoutParameters.isJustLift
+                        enabled = !workoutParameters.isJustLift,
                     )
                 }
             }
@@ -410,18 +419,18 @@ fun WorkoutSetupDialog(
         confirmButton = {
             Button(
                 onClick = onStartWorkout,
-                enabled = selectedExercise != null
+                enabled = selectedExercise != null,
             ) {
-                Icon(Icons.Default.PlayArrow, contentDescription = "Start workout")
+                Icon(Icons.Default.PlayArrow, contentDescription = stringResource(Res.string.cd_start_workout))
                 Spacer(modifier = Modifier.width(Spacing.small))
-                Text("Start Workout")
+                Text(stringResource(Res.string.start_workout))
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("Cancel")
+                Text(stringResource(Res.string.action_cancel))
             }
-        }
+        },
     )
 
     // Exercise Picker Dialog
@@ -432,7 +441,7 @@ fun WorkoutSetupDialog(
             onExerciseSelected = { exercise ->
                 onUpdateParameters(workoutParameters.copy(selectedExerciseId = exercise.id))
                 showExercisePicker = false
-            }
+            },
         )
     }
 
@@ -446,13 +455,15 @@ fun WorkoutSetupDialog(
                 val newProgramMode = mode.toProgramMode()
                 val newEchoLevel = if (mode is WorkoutMode.Echo) mode.level else workoutParameters.echoLevel
                 val newEccentricLoad = eccentricLoad ?: workoutParameters.eccentricLoad
-                onUpdateParameters(workoutParameters.copy(
-                    programMode = newProgramMode,
-                    echoLevel = newEchoLevel,
-                    eccentricLoad = newEccentricLoad
-                ))
+                onUpdateParameters(
+                    workoutParameters.copy(
+                        programMode = newProgramMode,
+                        echoLevel = newEchoLevel,
+                        eccentricLoad = newEccentricLoad,
+                    ),
+                )
                 showModeSubSelector = false
-            }
+            },
         )
     }
 }
@@ -462,11 +473,7 @@ fun WorkoutSetupDialog(
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ExercisePickerDialog(
-    exerciseRepository: ExerciseRepository,
-    onDismiss: () -> Unit,
-    onExerciseSelected: (Exercise) -> Unit
-) {
+fun ExercisePickerDialog(exerciseRepository: ExerciseRepository, onDismiss: () -> Unit, onExerciseSelected: (Exercise) -> Unit) {
     val exercises by exerciseRepository.getAllExercises().collectAsState(initial = emptyList())
     var searchQuery by remember { mutableStateOf("") }
     var selectedCategory by remember { mutableStateOf<ExerciseCategory?>(null) }
@@ -488,7 +495,7 @@ fun ExercisePickerDialog(
             Text(
                 "Select Exercise",
                 style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.Bold
+                fontWeight = FontWeight.Bold,
             )
         },
         text = {
@@ -498,112 +505,112 @@ fun ExercisePickerDialog(
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .heightIn(max = maxSheetHeight)
+                        .heightIn(max = maxSheetHeight),
                 ) {
-                // Search field
-                OutlinedTextField(
-                    value = searchQuery,
-                    onValueChange = { searchQuery = it },
-                    label = { Text("Search exercises") },
-                    leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true
-                )
-
-                Spacer(modifier = Modifier.height(Spacing.small))
-
-                // Muscle group filter chips
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(Spacing.extraSmall)
-                ) {
-                    FilterChip(
-                        selected = selectedCategory == null,
-                        onClick = { selectedCategory = null },
-                        label = { Text("All") }
+                    // Search field
+                    OutlinedTextField(
+                        value = searchQuery,
+                        onValueChange = { searchQuery = it },
+                        label = { Text(stringResource(Res.string.search_exercises_short)) },
+                        leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
                     )
-                    ExerciseCategory.entries.forEach { category ->
+
+                    Spacer(modifier = Modifier.height(Spacing.small))
+
+                    // Muscle group filter chips
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(Spacing.extraSmall),
+                    ) {
                         FilterChip(
-                            selected = selectedCategory == category,
-                            onClick = { selectedCategory = category },
-                            label = { Text(category.displayName) }
+                            selected = selectedCategory == null,
+                            onClick = { selectedCategory = null },
+                            label = { Text(stringResource(Res.string.label_all)) },
                         )
+                        ExerciseCategory.entries.forEach { category ->
+                            FilterChip(
+                                selected = selectedCategory == category,
+                                onClick = { selectedCategory = category },
+                                label = { Text(category.displayName) },
+                            )
+                        }
                     }
-                }
 
-                Spacer(modifier = Modifier.height(Spacing.small))
+                    Spacer(modifier = Modifier.height(Spacing.small))
 
-                // Exercise list
-                if (filteredExercises.isEmpty()) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .weight(1f, fill = true),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            "No exercises found",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                } else {
-                    LazyColumn(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .weight(1f, fill = true),
-                        verticalArrangement = Arrangement.spacedBy(Spacing.extraSmall)
-                    ) {
-                        items(
-                            items = filteredExercises,
-                            key = { exercise -> exercise.id ?: exercise.name }
-                        ) { exercise ->
-                            Card(
-                                onClick = { onExerciseSelected(exercise) },
-                                modifier = Modifier.fillMaxWidth(),
-                                colors = CardDefaults.cardColors(
-                                    containerColor = MaterialTheme.colorScheme.surfaceContainerHighest
-                                )
-                            ) {
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(Spacing.medium),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
+                    // Exercise list
+                    if (filteredExercises.isEmpty()) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .weight(1f, fill = true),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Text(
+                                "No exercises found",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    } else {
+                        LazyColumn(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .weight(1f, fill = true),
+                            verticalArrangement = Arrangement.spacedBy(Spacing.extraSmall),
+                        ) {
+                            items(
+                                items = filteredExercises,
+                                key = { exercise -> exercise.id ?: exercise.name },
+                            ) { exercise ->
+                                Card(
+                                    onClick = { onExerciseSelected(exercise) },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    colors = CardDefaults.cardColors(
+                                        containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                                    ),
                                 ) {
-                                    Column(modifier = Modifier.weight(1f)) {
-                                        Text(
-                                            exercise.name,
-                                            style = MaterialTheme.typography.bodyLarge,
-                                            fontWeight = FontWeight.Medium
-                                        )
-                                        Text(
-                                            exercise.muscleGroup,
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(Spacing.medium),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically,
+                                    ) {
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(
+                                                exercise.name,
+                                                style = MaterialTheme.typography.bodyLarge,
+                                                fontWeight = FontWeight.Medium,
+                                            )
+                                            Text(
+                                                exercise.muscleGroup,
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            )
+                                        }
+                                        Icon(
+                                            Icons.Default.ChevronRight,
+                                            contentDescription = stringResource(Res.string.cd_select),
+                                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                         )
                                     }
-                                    Icon(
-                                        Icons.Default.ChevronRight,
-                                        contentDescription = "Select",
-                                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
                                 }
                             }
                         }
                     }
-                }
                 }
             }
         },
         confirmButton = {},
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("Cancel")
+                Text(stringResource(Res.string.action_cancel))
             }
-        }
+        },
     )
 }

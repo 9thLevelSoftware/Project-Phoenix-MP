@@ -25,6 +25,9 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import org.jetbrains.compose.resources.stringResource
+import vitruvianprojectphoenix.shared.generated.resources.*
+import vitruvianprojectphoenix.shared.generated.resources.Res
 
 /**
  * Exercise Navigator component for routine navigation.
@@ -39,22 +42,22 @@ fun ExerciseNavigator(
     onNavigateToExercise: (Int) -> Unit,
     canGoBack: Boolean,
     canSkipForward: Boolean,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
 ) {
     if (exerciseNames.isEmpty()) return
 
     Card(
         modifier = modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
         ),
-        shape = RoundedCornerShape(16.dp)
+        shape = RoundedCornerShape(16.dp),
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(12.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+            verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             // Current exercise name
             Text(
@@ -63,14 +66,14 @@ fun ExerciseNavigator(
                 fontWeight = FontWeight.SemiBold,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.align(Alignment.CenterHorizontally)
+                modifier = Modifier.align(Alignment.CenterHorizontally),
             )
 
             // Progress indicator with dots
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.Center,
-                verticalAlignment = Alignment.CenterVertically
+                verticalAlignment = Alignment.CenterVertically,
             ) {
                 exerciseNames.forEachIndexed { index, _ ->
                     ExerciseDot(
@@ -78,7 +81,7 @@ fun ExerciseNavigator(
                         isCurrent = index == currentIndex,
                         isCompleted = index in completedIndices,
                         isSkipped = index in skippedIndices,
-                        onClick = { onNavigateToExercise(index) }
+                        onClick = { onNavigateToExercise(index) },
                     )
                     if (index < exerciseNames.size - 1) {
                         Spacer(modifier = Modifier.width(6.dp))
@@ -90,18 +93,18 @@ fun ExerciseNavigator(
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+                verticalAlignment = Alignment.CenterVertically,
             ) {
                 // Previous button
                 FilledTonalIconButton(
                     onClick = { onNavigateToExercise(currentIndex - 1) },
                     enabled = canGoBack,
-                    modifier = Modifier.size(40.dp)
+                    modifier = Modifier.size(40.dp),
                 ) {
                     Icon(
                         Icons.AutoMirrored.Filled.ArrowBack,
-                        contentDescription = "Previous exercise",
-                        modifier = Modifier.size(20.dp)
+                        contentDescription = stringResource(Res.string.cd_previous_exercise),
+                        modifier = Modifier.size(20.dp),
                     )
                 }
 
@@ -109,19 +112,19 @@ fun ExerciseNavigator(
                 Text(
                     text = "${currentIndex + 1} / ${exerciseNames.size}",
                     style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
 
                 // Skip/Next button
                 FilledTonalIconButton(
                     onClick = { onNavigateToExercise(currentIndex + 1) },
                     enabled = canSkipForward,
-                    modifier = Modifier.size(40.dp)
+                    modifier = Modifier.size(40.dp),
                 ) {
                     Icon(
                         Icons.AutoMirrored.Filled.ArrowForward,
-                        contentDescription = "Next exercise",
-                        modifier = Modifier.size(20.dp)
+                        contentDescription = stringResource(Res.string.cd_next_exercise),
+                        modifier = Modifier.size(20.dp),
                     )
                 }
             }
@@ -133,13 +136,7 @@ fun ExerciseNavigator(
  * Individual dot representing an exercise in the routine.
  */
 @Composable
-private fun ExerciseDot(
-    index: Int,
-    isCurrent: Boolean,
-    isCompleted: Boolean,
-    isSkipped: Boolean,
-    onClick: () -> Unit
-) {
+private fun ExerciseDot(index: Int, isCurrent: Boolean, isCompleted: Boolean, isSkipped: Boolean, onClick: () -> Unit) {
     val backgroundColor by animateColorAsState(
         targetValue = when {
             isCurrent -> MaterialTheme.colorScheme.primary
@@ -147,12 +144,12 @@ private fun ExerciseDot(
             isSkipped -> MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)
             else -> MaterialTheme.colorScheme.surfaceVariant
         },
-        label = "dotColor"
+        label = "dotColor",
     )
 
     val size by animateDpAsState(
         targetValue = if (isCurrent) 16.dp else 12.dp,
-        label = "dotSize"
+        label = "dotSize",
     )
 
     Box(
@@ -172,14 +169,14 @@ private fun ExerciseDot(
                     }
                 }
             },
-        contentAlignment = Alignment.Center
+        contentAlignment = Alignment.Center,
     ) {
         if (isCompleted && !isCurrent) {
             Icon(
                 Icons.Default.Check,
-                contentDescription = "Completed",
+                contentDescription = stringResource(Res.string.cd_completed),
                 tint = MaterialTheme.colorScheme.onTertiary,
-                modifier = Modifier.size(8.dp)
+                modifier = Modifier.size(8.dp),
             )
         }
     }
@@ -198,48 +195,48 @@ fun CompactExerciseNavigator(
     onNext: () -> Unit,
     canGoBack: Boolean,
     canSkipForward: Boolean,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
 ) {
     Row(
         modifier = modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
+        verticalAlignment = Alignment.CenterVertically,
     ) {
         IconButton(
             onClick = onPrevious,
-            enabled = canGoBack
+            enabled = canGoBack,
         ) {
             Icon(
                 Icons.AutoMirrored.Filled.ArrowBack,
-                contentDescription = "Previous"
+                contentDescription = stringResource(Res.string.cd_previous),
             )
         }
 
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
-            modifier = Modifier.weight(1f)
+            modifier = Modifier.weight(1f),
         ) {
             Text(
                 text = currentExerciseName,
                 style = MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.Medium,
                 maxLines = 1,
-                overflow = TextOverflow.Ellipsis
+                overflow = TextOverflow.Ellipsis,
             )
             Text(
                 text = "${currentIndex + 1} of $totalExercises",
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
 
         IconButton(
             onClick = onNext,
-            enabled = canSkipForward
+            enabled = canSkipForward,
         ) {
             Icon(
                 Icons.AutoMirrored.Filled.ArrowForward,
-                contentDescription = "Next"
+                contentDescription = stringResource(Res.string.cd_next),
             )
         }
     }

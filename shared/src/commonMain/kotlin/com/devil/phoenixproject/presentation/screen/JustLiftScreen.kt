@@ -15,6 +15,7 @@ import androidx.compose.animation.scaleOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -26,10 +27,12 @@ import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.blur
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -45,19 +48,25 @@ import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.data.repository.AutoStopUiState
+import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.data.repository.UserProfileRepository
 import com.devil.phoenixproject.domain.model.*
 import com.devil.phoenixproject.presentation.components.AddProfileDialog
+import com.devil.phoenixproject.presentation.components.AutoDetectionSheet
 import com.devil.phoenixproject.presentation.components.CompactNumberPicker
-import com.devil.phoenixproject.presentation.components.ExpressiveSlider
 import com.devil.phoenixproject.presentation.components.ProfileSidePanel
 import com.devil.phoenixproject.presentation.components.ProgressionSlider
+import com.devil.phoenixproject.presentation.components.RestTimePickerDialog
 import com.devil.phoenixproject.presentation.navigation.NavigationRoutes
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
+import com.devil.phoenixproject.ui.theme.AccessibilityTheme
 import com.devil.phoenixproject.ui.theme.Spacing
-import kotlinx.coroutines.launch
-import org.koin.compose.koinInject
 import com.devil.phoenixproject.ui.theme.ThemeMode
+import kotlinx.coroutines.launch
+import org.jetbrains.compose.resources.stringResource
+import org.koin.compose.koinInject
+import vitruvianprojectphoenix.shared.generated.resources.*
+import vitruvianprojectphoenix.shared.generated.resources.Res
 
 /**
  * Just Lift screen - quick workout configuration.
@@ -65,11 +74,7 @@ import com.devil.phoenixproject.ui.theme.ThemeMode
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun JustLiftScreen(
-    navController: NavController,
-    viewModel: MainViewModel,
-    themeMode: ThemeMode
-) {
+fun JustLiftScreen(navController: NavController, viewModel: MainViewModel, themeMode: ThemeMode) {
     val workoutState by viewModel.workoutState.collectAsState()
     val workoutParameters by viewModel.workoutParameters.collectAsState()
     val currentMetric by viewModel.currentMetric.collectAsState()
@@ -77,19 +82,27 @@ fun JustLiftScreen(
     val autoStopState by viewModel.autoStopState.collectAsState()
     val weightUnit by viewModel.weightUnit.collectAsState()
     val userPreferences by viewModel.userPreferences.collectAsState()
+
     @Suppress("UNUSED_VARIABLE") // Reserved for future connecting overlay
     val isAutoConnecting by viewModel.isAutoConnecting.collectAsState()
     val connectionError by viewModel.connectionError.collectAsState()
+    // M16: Collect detection state so post-set detection sheet isn't lost on nav back
+    val detectionState by viewModel.detectionState.collectAsState()
+    val exerciseRepository: ExerciseRepository = koinInject()
 
     var selectedMode by remember { mutableStateOf(workoutParameters.programMode.toWorkoutMode(workoutParameters.echoLevel)) }
     // Initialize to match the picker's default: 1 lb = 0.453592 kg
-    var weightPerCable by remember { mutableStateOf(0.453592f) }
-    var weightChangePerRep by remember { mutableStateOf(0) } // Progression/Regression value
+    // Float, Int, and Boolean types are natively saveable — use rememberSaveable
+    // so values survive configuration changes and iOS composition recreation (#344).
+    var weightPerCable by rememberSaveable { mutableStateOf(0.453592f) }
+    var weightChangePerRep by rememberSaveable { mutableStateOf(0) } // Progression/Regression value
+    // Keep enum/sealed types as `remember` — they need custom Savers:
     var eccentricLoad by remember { mutableStateOf(EccentricLoad.LOAD_100) }
     var echoLevel by remember { mutableStateOf(EchoLevel.HARDER) }
     var repCountTiming by remember { mutableStateOf(RepCountTiming.TOP) }
-    var stallDetectionEnabled by remember { mutableStateOf(true) }
-    var defaultsLoaded by remember { mutableStateOf(false) }
+    var stallDetectionEnabled by rememberSaveable { mutableStateOf(true) }
+    var restSeconds by rememberSaveable { mutableStateOf(60) } // Rest timer between sets (0 = off)
+    var defaultsLoaded by rememberSaveable { mutableStateOf(false) }
     // Profile management
     val scope = rememberCoroutineScope()
     val profileRepository: UserProfileRepository = koinInject()
@@ -101,34 +114,37 @@ fun JustLiftScreen(
     LaunchedEffect(Unit) {
         if (!defaultsLoaded) {
             val defaults = viewModel.getJustLiftDefaults()
-            if (defaults != null) {
-                // Apply saved defaults
-                weightPerCable = defaults.weightPerCableKg
+            // Apply saved defaults
+            weightPerCable = defaults.weightPerCableKg
 
-                // Convert stored weight change (KG) to display unit if needed
-                // weightChangePerRep is already Int in viewmodel format
-                weightChangePerRep = if (weightUnit == WeightUnit.LB) {
-                    kotlin.math.round(defaults.weightChangePerRep * 2.20462f).toInt()
-                } else {
-                    defaults.weightChangePerRep
-                }
-
-                // Set mode from saved defaults
-                val savedProgramMode = defaults.toProgramMode()
-                selectedMode = savedProgramMode.toWorkoutMode(defaults.getEchoLevel())
-
-                // Restore eccentric load and echo level for Echo mode
-                eccentricLoad = defaults.getEccentricLoad()
-                echoLevel = defaults.getEchoLevel()
-
-                // Restore rep count timing
-                repCountTiming = defaults.getRepCountTiming()
-
-                // Restore stall detection
-                stallDetectionEnabled = defaults.stallDetectionEnabled
-
-                Logger.d("Loaded Just Lift defaults: modeId=${defaults.workoutModeId}, weight=${defaults.weightPerCableKg}kg, progression=${defaults.weightChangePerRep}, repTiming=${defaults.repCountTimingName}")
+            // Convert stored weight change (KG) to display unit if needed
+            // weightChangePerRep is already Int in viewmodel format
+            weightChangePerRep = if (weightUnit == WeightUnit.LB) {
+                kotlin.math.round(defaults.weightChangePerRep * 2.20462f).toInt()
+            } else {
+                defaults.weightChangePerRep
             }
+
+            // Set mode from saved defaults
+            val savedProgramMode = defaults.toProgramMode()
+            selectedMode = savedProgramMode.toWorkoutMode(defaults.getEchoLevel())
+
+            // Restore eccentric load and echo level for Echo mode
+            eccentricLoad = defaults.getEccentricLoad()
+            echoLevel = defaults.getEchoLevel()
+
+            // Restore rep count timing
+            repCountTiming = defaults.getRepCountTiming()
+
+            // Restore stall detection
+            stallDetectionEnabled = defaults.stallDetectionEnabled
+
+            // Restore rest timer duration
+            restSeconds = defaults.restSeconds
+
+            Logger.d(
+                "Loaded Just Lift defaults: modeId=${defaults.workoutModeId}, weight=${defaults.weightPerCableKg}kg, progression=${defaults.weightChangePerRep}, repTiming=${defaults.repCountTimingName}, restSeconds=${defaults.restSeconds}",
+            )
             defaultsLoaded = true
         }
     }
@@ -172,7 +188,23 @@ fun JustLiftScreen(
     // BUG FIX: Added eccentricLoad and echoLevel to dependencies - without these,
     // changing eccentric load percentage (e.g., from 100% to 150%) would NOT update
     // workoutParameters, causing the machine to receive wrong eccentric load value
-    LaunchedEffect(selectedMode, weightPerCable, weightChangePerRep, stallDetectionEnabled, eccentricLoad, echoLevel, repCountTiming) {
+    LaunchedEffect(
+        selectedMode,
+        weightPerCable,
+        weightChangePerRep,
+        stallDetectionEnabled,
+        eccentricLoad,
+        echoLevel,
+        repCountTiming,
+        restSeconds,
+        defaultsLoaded,
+    ) {
+        // Don't write params until saved defaults have been loaded.
+        // Without this guard, the effect fires immediately with the hardcoded
+        // initial weightPerCable (0.453592f) before the defaults-loading
+        // LaunchedEffect(Unit) has returned from disk, causing #344.
+        if (!defaultsLoaded) return@LaunchedEffect
+
         val weightChangeKg = if (weightUnit == WeightUnit.LB) {
             weightChangePerRep / 2.20462f
         } else {
@@ -190,9 +222,12 @@ fun JustLiftScreen(
             useAutoStart = true, // Enable auto-start for Just Lift
             stallDetectionEnabled = stallDetectionEnabled,
             repCountTiming = repCountTiming,
-            selectedExerciseId = null // Issue #97: Clear exercise ID for Just Lift sessions
+            selectedExerciseId = null, // Issue #97: Clear exercise ID for Just Lift sessions
+            justLiftRestSeconds = restSeconds, // Issue #113: Configurable rest timer
         )
-        Logger.i { "WEIGHT_DEBUG[Params]: weightPerCable=$weightPerCable kg → updatedParameters.weightPerCableKg=${updatedParameters.weightPerCableKg} kg" }
+        Logger.i {
+            "WEIGHT_DEBUG[Params]: weightPerCable=$weightPerCable kg → updatedParameters.weightPerCableKg=${updatedParameters.weightPerCableKg} kg"
+        }
         Logger.d { "JustLift: Updating params - eccentricLoad=${eccentricLoad.percentage}%, echoLevel=${newEchoLevel.displayName}" }
         viewModel.updateWorkoutParameters(updatedParameters)
     }
@@ -202,387 +237,487 @@ fun JustLiftScreen(
         viewModel.updateTopBarTitle("Just Lift")
     }
 
-    Scaffold { padding ->
-        Box(
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.surface),
+    ) {
+        Column(
             modifier = Modifier
                 .fillMaxSize()
-                .background(MaterialTheme.colorScheme.surface)
+                .navigationBarsPadding()
+                .padding(horizontal = Spacing.medium, vertical = Spacing.small),
+            verticalArrangement = Arrangement.spacedBy(Spacing.small),
         ) {
-            Column(
+            // Auto-Start/Stop Banner (compact, always visible when idle)
+            if (workoutState is WorkoutState.Idle) {
+                val autoStartCountdown by viewModel.autoStartCountdown.collectAsState()
+                AutoStartStopCard(
+                    workoutState = workoutState,
+                    autoStartCountdown = autoStartCountdown,
+                    autoStopState = autoStopState,
+                )
+
+                // Issue #113: Just Lift rest countdown pill
+                val justLiftRestCountdown by viewModel.justLiftRestCountdown.collectAsState()
+                if (justLiftRestCountdown != null && justLiftRestCountdown!! > 0) {
+                    JustLiftRestCountdownRow(secondsRemaining = justLiftRestCountdown!!)
+                }
+            }
+
+            // Mode Selection Card - expands to fill space
+            Card(
                 modifier = Modifier
-                    .fillMaxSize()
-                    .padding(padding)
-                    .padding(horizontal = Spacing.medium, vertical = Spacing.small),
-                verticalArrangement = Arrangement.spacedBy(Spacing.small)
+                    .fillMaxWidth()
+                    .weight(1f),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                ),
+                shape = RoundedCornerShape(16.dp),
             ) {
-                // Auto-Start/Stop Banner (compact, always visible when idle)
-                if (workoutState is WorkoutState.Idle) {
-                    val autoStartCountdown by viewModel.autoStartCountdown.collectAsState()
-                    AutoStartStopCard(
-                        workoutState = workoutState,
-                        autoStartCountdown = autoStartCountdown,
-                        autoStopState = autoStopState
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(Spacing.medium),
+                    verticalArrangement = Arrangement.SpaceEvenly,
+                ) {
+                    Text(
+                        "Workout Mode",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+
+                    SingleChoiceSegmentedButtonRow(
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        val modes = listOf(
+                            "Old School" to WorkoutMode.OldSchool,
+                            "Pump" to WorkoutMode.Pump,
+                            "Echo" to WorkoutMode.Echo(echoLevel),
+                        )
+                        modes.forEachIndexed { index, (label, mode) ->
+                            SegmentedButton(
+                                shape = SegmentedButtonDefaults.itemShape(index = index, count = modes.size),
+                                onClick = { selectedMode = mode },
+                                selected = selectedMode::class == mode::class,
+                                icon = {},
+                            ) {
+                                Text(label, maxLines = 1)
+                            }
+                        }
+                    }
+
+                    Text(
+                        when (selectedMode) {
+                            is WorkoutMode.OldSchool -> "Constant resistance throughout the movement"
+                            is WorkoutMode.Pump -> "Resistance increases the faster you go"
+                            is WorkoutMode.Echo -> "Adaptive resistance with echo feedback"
+                            else -> selectedMode.displayName
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
+            }
 
-                // Mode Selection Card - expands to fill space
+            // Mode-specific options - OLD SCHOOL & PUMP
+            val isOldSchoolOrPump = selectedMode is WorkoutMode.OldSchool || selectedMode is WorkoutMode.Pump
+            if (isOldSchoolOrPump) {
+                // Weight per Cable Card
                 Card(
                     modifier = Modifier
                         .fillMaxWidth()
                         .weight(1f),
                     colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
+                        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
                     ),
-                    shape = RoundedCornerShape(16.dp)
+                    shape = RoundedCornerShape(16.dp),
                 ) {
                     Column(
                         modifier = Modifier
                             .fillMaxSize()
                             .padding(Spacing.medium),
-                        verticalArrangement = Arrangement.SpaceEvenly
+                        verticalArrangement = Arrangement.Center,
+                    ) {
+                        val weightSuffix = if (weightUnit == WeightUnit.LB) "lbs" else "kg"
+                        val maxWeight = if (weightUnit == WeightUnit.LB) 242f else 110f // 110kg per cable max
+                        val weightStep = if (weightUnit == WeightUnit.LB) 0.5f else 0.25f
+                        val displayWeight = viewModel.kgToDisplay(weightPerCable, weightUnit)
+
+                        CompactNumberPicker(
+                            value = displayWeight,
+                            onValueChange = { newValue ->
+                                val kg = viewModel.displayToKg(newValue, weightUnit)
+                                Logger.i { "WEIGHT_DEBUG[JustLift]: Picker value=$newValue ($weightUnit) → displayToKg → $kg kg" }
+                                weightPerCable = kg
+                            },
+                            range = 1f..maxWeight,
+                            step = weightStep,
+                            label = "Weight per Cable",
+                            suffix = weightSuffix,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+
+                        // Issue #201: Show combined cable weight
+                        val totalDisplay = displayWeight * 2
+                        val totalText = if (totalDisplay % 1f == 0f) {
+                            totalDisplay.toInt().toString()
+                        } else {
+                            // Round to 1 decimal place for KMP compatibility (no String.format)
+                            val rounded = (totalDisplay * 10).toInt() / 10f
+                            rounded.toString()
+                        }
+                        val totalFormatted = "$totalText $weightSuffix"
+                        Text(
+                            text = "Total: $totalFormatted",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.fillMaxWidth(),
+                            textAlign = TextAlign.Center,
+                        )
+                    }
+                }
+
+                // Weight Change Per Rep Card
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    ),
+                    shape = RoundedCornerShape(16.dp),
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(Spacing.medium),
+                        verticalArrangement = Arrangement.SpaceEvenly,
                     ) {
                         Text(
-                            "Workout Mode",
+                            "Weight Change Per Rep",
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurface
+                            color = MaterialTheme.colorScheme.onSurface,
+                        )
+
+                        ProgressionSlider(
+                            value = weightChangePerRep.toFloat(),
+                            onValueChange = { weightChangePerRep = it.toInt() },
+                            valueRange = -10f..10f,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+
+                        Text(
+                            "Negative = Regression, Positive = Progression",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            }
+
+            // Mode-specific options - ECHO MODE
+            val isEchoMode = selectedMode is WorkoutMode.Echo
+            if (isEchoMode) {
+                // Eccentric Load Card
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    ),
+                    shape = RoundedCornerShape(16.dp),
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(Spacing.medium),
+                        verticalArrangement = Arrangement.SpaceEvenly,
+                    ) {
+                        Text(
+                            "Eccentric Load",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface,
+                        )
+
+                        var expanded by remember { mutableStateOf(false) }
+
+                        ExposedDropdownMenuBox(
+                            expanded = expanded,
+                            onExpandedChange = { expanded = it },
+                        ) {
+                            OutlinedTextField(
+                                value = eccentricLoad.displayName,
+                                onValueChange = {},
+                                readOnly = true,
+                                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
+                                modifier = Modifier
+                                    .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable)
+                                    .fillMaxWidth(),
+                                colors = ExposedDropdownMenuDefaults.outlinedTextFieldColors(),
+                            )
+
+                            ExposedDropdownMenu(
+                                expanded = expanded,
+                                onDismissRequest = { expanded = false },
+                            ) {
+                                EccentricLoad.entries.forEach { load ->
+                                    DropdownMenuItem(
+                                        text = { Text(load.displayName) },
+                                        onClick = {
+                                            eccentricLoad = load
+                                            expanded = false
+                                        },
+                                        contentPadding = ExposedDropdownMenuDefaults.ItemContentPadding,
+                                    )
+                                }
+                            }
+                        }
+
+                        Text(
+                            "Load during eccentric (lowering) phase",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+
+                // Echo Level Card
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    ),
+                    shape = RoundedCornerShape(16.dp),
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(Spacing.medium),
+                        verticalArrangement = Arrangement.SpaceEvenly,
+                    ) {
+                        Text(
+                            "Echo Level",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface,
                         )
 
                         SingleChoiceSegmentedButtonRow(
-                            modifier = Modifier.fillMaxWidth()
+                            modifier = Modifier.fillMaxWidth(),
                         ) {
-                            val modes = listOf(
-                                "Old School" to WorkoutMode.OldSchool,
-                                "Pump" to WorkoutMode.Pump,
-                                "Echo" to WorkoutMode.Echo(echoLevel)
-                            )
-                            modes.forEachIndexed { index, (label, mode) ->
+                            EchoLevel.entries.forEachIndexed { index, level ->
                                 SegmentedButton(
-                                    shape = SegmentedButtonDefaults.itemShape(index = index, count = modes.size),
-                                    onClick = { selectedMode = mode },
-                                    selected = selectedMode::class == mode::class,
-                                    icon = {}
+                                    shape = SegmentedButtonDefaults.itemShape(index = index, count = EchoLevel.entries.size),
+                                    onClick = {
+                                        echoLevel = level
+                                        selectedMode = WorkoutMode.Echo(level)
+                                    },
+                                    selected = echoLevel == level,
                                 ) {
-                                    Text(label, maxLines = 1)
+                                    Text(level.displayName, maxLines = 1)
                                 }
                             }
                         }
+                    }
+                }
+            }
 
+            // Rep Count Timing toggle
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp),
+                color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                shadowElevation = 2.dp,
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(Spacing.medium),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            when (selectedMode) {
-                                is WorkoutMode.OldSchool -> "Constant resistance throughout the movement"
-                                is WorkoutMode.Pump -> "Resistance increases the faster you go"
-                                is WorkoutMode.Echo -> "Adaptive resistance with echo feedback"
-                                else -> selectedMode.displayName
+                            text = "Rep Count Timing",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface,
+                        )
+                        Text(
+                            text = if (repCountTiming == RepCountTiming.TOP) {
+                                "Count at top of lift (concentric peak)"
+                            } else {
+                                "Count at bottom (eccentric valley)"
                             },
                             style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
-                }
-
-
-                // Mode-specific options - OLD SCHOOL & PUMP
-                val isOldSchoolOrPump = selectedMode is WorkoutMode.OldSchool || selectedMode is WorkoutMode.Pump
-                if (isOldSchoolOrPump) {
-                    // Weight per Cable Card
-                    Card(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .weight(1f),
-                        colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
-                        ),
-                        shape = RoundedCornerShape(16.dp)
-                    ) {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .padding(Spacing.medium),
-                            verticalArrangement = Arrangement.Center
-                        ) {
-                            val weightSuffix = if (weightUnit == WeightUnit.LB) "lbs" else "kg"
-                            val maxWeight = if (weightUnit == WeightUnit.LB) 242f else 110f  // 110kg per cable max
-                            val weightStep = if (weightUnit == WeightUnit.LB) 0.5f else 0.25f
-                            val displayWeight = viewModel.kgToDisplay(weightPerCable, weightUnit)
-
-                            CompactNumberPicker(
-                                value = displayWeight,
-                                onValueChange = { newValue ->
-                                    val kg = viewModel.displayToKg(newValue, weightUnit)
-                                    Logger.i { "WEIGHT_DEBUG[JustLift]: Picker value=$newValue ($weightUnit) → displayToKg → $kg kg" }
-                                    weightPerCable = kg
-                                },
-                                range = 1f..maxWeight,
-                                step = weightStep,
-                                label = "Weight per Cable",
-                                suffix = weightSuffix,
-                                modifier = Modifier.fillMaxWidth()
-                            )
-                        }
-                    }
-
-                    // Weight Change Per Rep Card
-                    Card(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .weight(1f),
-                        colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
-                        ),
-                        shape = RoundedCornerShape(16.dp)
-                    ) {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .padding(Spacing.medium),
-                            verticalArrangement = Arrangement.SpaceEvenly
-                        ) {
-                            Text(
-                                "Weight Change Per Rep",
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-
-                            ProgressionSlider(
-                                value = weightChangePerRep.toFloat(),
-                                onValueChange = { weightChangePerRep = it.toInt() },
-                                valueRange = -10f..10f,
-                                modifier = Modifier.fillMaxWidth()
-                            )
-
-                            Text(
-                                "Negative = Regression, Positive = Progression",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
-                }
-
-                // Mode-specific options - ECHO MODE
-                val isEchoMode = selectedMode is WorkoutMode.Echo
-                if (isEchoMode) {
-                    // Eccentric Load Card
-                    Card(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .weight(1f),
-                        colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
-                        ),
-                        shape = RoundedCornerShape(16.dp)
-                    ) {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .padding(Spacing.medium),
-                            verticalArrangement = Arrangement.SpaceEvenly
-                        ) {
-                            Text(
-                                "Eccentric Load",
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-
-                            var expanded by remember { mutableStateOf(false) }
-
-                            ExposedDropdownMenuBox(
-                                expanded = expanded,
-                                onExpandedChange = { expanded = it }
-                            ) {
-                                OutlinedTextField(
-                                    value = eccentricLoad.displayName,
-                                    onValueChange = {},
-                                    readOnly = true,
-                                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
-                                    modifier = Modifier
-                                        .menuAnchor()
-                                        .fillMaxWidth(),
-                                    colors = ExposedDropdownMenuDefaults.outlinedTextFieldColors()
-                                )
-
-                                ExposedDropdownMenu(
-                                    expanded = expanded,
-                                    onDismissRequest = { expanded = false }
-                                ) {
-                                    EccentricLoad.entries.forEach { load ->
-                                        DropdownMenuItem(
-                                            text = { Text(load.displayName) },
-                                            onClick = {
-                                                eccentricLoad = load
-                                                expanded = false
-                                            },
-                                            contentPadding = ExposedDropdownMenuDefaults.ItemContentPadding
-                                        )
-                                    }
-                                }
-                            }
-
-                            Text(
-                                "Load during eccentric (lowering) phase",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
-
-                    // Echo Level Card
-                    Card(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .weight(1f),
-                        colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
-                        ),
-                        shape = RoundedCornerShape(16.dp)
-                    ) {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .padding(Spacing.medium),
-                            verticalArrangement = Arrangement.SpaceEvenly
-                        ) {
-                            Text(
-                                "Echo Level",
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-
-                            SingleChoiceSegmentedButtonRow(
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                EchoLevel.entries.forEachIndexed { index, level ->
-                                    SegmentedButton(
-                                        shape = SegmentedButtonDefaults.itemShape(index = index, count = EchoLevel.entries.size),
-                                        onClick = {
-                                            echoLevel = level
-                                            selectedMode = WorkoutMode.Echo(level)
-                                        },
-                                        selected = echoLevel == level
-                                    ) {
-                                        Text(level.displayName, maxLines = 1)
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-
-                // Rep Count Timing toggle
-                Surface(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp),
-                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                    shadowElevation = 2.dp
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(Spacing.medium),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = "Rep Count Timing",
-                                style = MaterialTheme.typography.titleSmall,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-                            Text(
-                                text = if (repCountTiming == RepCountTiming.TOP)
-                                    "Count at top of lift (concentric peak)"
-                                else
-                                    "Count at bottom (eccentric valley)",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                        Switch(
-                            checked = repCountTiming == RepCountTiming.TOP,
-                            onCheckedChange = {
-                                repCountTiming = if (it) RepCountTiming.TOP else RepCountTiming.BOTTOM
-                            }
-                        )
-                    }
-                }
-
-                // Stall Detection toggle
-                Surface(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp),
-                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                    shadowElevation = 2.dp
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(Spacing.medium),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = "Stall Detection",
-                                style = MaterialTheme.typography.titleSmall,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-                            Text(
-                                text = "Auto-stop when movement pauses for 5 seconds",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                        Switch(
-                            checked = stallDetectionEnabled,
-                            onCheckedChange = { stallDetectionEnabled = it }
-                        )
-                    }
-                }
-
-                // Active workout status (replaces mode cards when active)
-                if (workoutState !is WorkoutState.Idle) {
-                    ActiveStatusCard(
-                        workoutState = workoutState,
-                        currentMetric = currentMetric,
-                        repCount = repCount,
-                        weightUnit = weightUnit,
-                        formatWeight = viewModel::formatWeight,
-                        onStopWorkout = { viewModel.stopWorkout() }
+                    Switch(
+                        checked = repCountTiming == RepCountTiming.TOP,
+                        onCheckedChange = {
+                            repCountTiming = if (it) RepCountTiming.TOP else RepCountTiming.BOTTOM
+                        },
                     )
                 }
             }
 
-            // Connection error dialog (ConnectingOverlay removed - status shown in top bar button)
-            connectionError?.let { error ->
-                com.devil.phoenixproject.presentation.components.ConnectionErrorDialog(
-                    message = error,
-                    onDismiss = { viewModel.clearConnectionError() }
+            // Stall Detection toggle
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp),
+                color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                shadowElevation = 2.dp,
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(Spacing.medium),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Stall Detection",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface,
+                        )
+                        Text(
+                            text = "Auto-stop when movement pauses for 5 seconds",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Switch(
+                        checked = stallDetectionEnabled,
+                        onCheckedChange = { stallDetectionEnabled = it },
+                    )
+                }
+            }
+
+            // Rest Timer - compact chip + dialog (matches toggle row style)
+            var showRestTimerDialog by remember { mutableStateOf(false) }
+
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp),
+                color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                shadowElevation = 2.dp,
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(Spacing.medium),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Rest Timer",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface,
+                        )
+                        Text(
+                            text = if (restSeconds == 0) {
+                                "No rest between sets"
+                            } else {
+                                "Rest $restSeconds seconds between sets"
+                            },
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Surface(
+                        modifier = Modifier.clickable { showRestTimerDialog = true },
+                        shape = RoundedCornerShape(16.dp),
+                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
+                    ) {
+                        Text(
+                            text = if (restSeconds == 0) "Off" else "${restSeconds}s",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.primary,
+                            fontWeight = FontWeight.Medium,
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                        )
+                    }
+                }
+            }
+
+            if (showRestTimerDialog) {
+                RestTimePickerDialog(
+                    currentRestSeconds = restSeconds,
+                    onSelect = {
+                        restSeconds = it
+                        showRestTimerDialog = false
+                    },
+                    onDismiss = { showRestTimerDialog = false },
+                    options = listOf(0, 30, 60, 90, 120),
+                    title = "Rest Between Sets",
+                    formatLabel = { if (it == 0) "Off" else "${it}s" },
                 )
             }
 
-            // Profile side panel
-            ProfileSidePanel(
-                profiles = profiles,
-                activeProfile = activeProfile,
-                profileRepository = profileRepository,
-                scope = scope,
-                onAddProfile = { showAddProfileDialog = true }
+            // Active workout status (replaces mode cards when active)
+            if (workoutState !is WorkoutState.Idle) {
+                ActiveStatusCard(
+                    workoutState = workoutState,
+                    currentMetric = currentMetric,
+                    repCount = repCount,
+                    weightUnit = weightUnit,
+                    formatWeight = viewModel::formatWeight,
+                    onStopWorkout = { viewModel.stopWorkout() },
+                )
+            }
+        }
+
+        // Connection error dialog (ConnectingOverlay removed - status shown in top bar button)
+        connectionError?.let { error ->
+            com.devil.phoenixproject.presentation.components.ConnectionErrorDialog(
+                message = error,
+                onDismiss = { viewModel.clearConnectionError() },
             )
+        }
+
+        // Profile side panel
+        ProfileSidePanel(
+            profiles = profiles,
+            activeProfile = activeProfile,
+            profileRepository = profileRepository,
+            scope = scope,
+            onAddProfile = { showAddProfileDialog = true },
+        )
         // Add Profile Dialog
         if (showAddProfileDialog) {
             AddProfileDialog(
                 profiles = profiles,
                 profileRepository = profileRepository,
                 scope = scope,
-                onDismiss = { showAddProfileDialog = false }
+                onDismiss = { showAddProfileDialog = false },
             )
         }
+
+        // M16: Show exercise auto-detection sheet when detection fires during/after set completion.
+        // The detection state persists in ExerciseDetectionManager until explicitly reset,
+        // so if detection triggers while transitioning from ActiveWorkoutScreen back here,
+        // the pending result is still available for the user to confirm or dismiss.
+        if (detectionState.isActive && detectionState.classification != null) {
+            AutoDetectionSheet(
+                classification = detectionState.classification!!,
+                exerciseRepository = exerciseRepository,
+                onConfirm = { exerciseId, exerciseName ->
+                    scope.launch { viewModel.onDetectionConfirmed(exerciseId, exerciseName) }
+                },
+                onDismiss = { viewModel.onDetectionDismissed() },
+            )
         }
     }
 }
@@ -597,30 +732,33 @@ fun ActiveStatusCard(
     repCount: RepCount,
     weightUnit: WeightUnit,
     formatWeight: (Float, WeightUnit) -> String,
-    onStopWorkout: () -> Unit
+    onStopWorkout: () -> Unit,
 ) {
     // Live pulse animation
     val infiniteTransition = rememberInfiniteTransition(label = "pulse")
     val alpha by infiniteTransition.animateFloat(
-        initialValue = 0.5f, targetValue = 1f,
+        initialValue = 0.5f,
+        targetValue = 1f,
         animationSpec = infiniteRepeatable(tween(1000), RepeatMode.Reverse),
-        label = "alpha"
+        label = "alpha",
     )
 
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
-            containerColor = if (workoutState is WorkoutState.Active)
+            containerColor = if (workoutState is WorkoutState.Active) {
                 MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.9f)
-            else MaterialTheme.colorScheme.surfaceVariant
+            } else {
+                MaterialTheme.colorScheme.surfaceVariant
+            },
         ),
         shape = RoundedCornerShape(20.dp),
-        elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
+        elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(Spacing.medium)
+                .padding(Spacing.medium),
         ) {
             // Header with Live Indicator
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -634,7 +772,7 @@ fun ActiveStatusCard(
                     },
                     style = MaterialTheme.typography.headlineSmall,
                     fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onPrimaryContainer
+                    color = MaterialTheme.colorScheme.onPrimaryContainer,
                 )
 
                 Spacer(Modifier.weight(1f))
@@ -643,10 +781,15 @@ fun ActiveStatusCard(
                     Box(
                         modifier = Modifier
                             .size(12.dp)
-                            .background(Color.Green.copy(alpha = alpha), CircleShape)
+                            .background(Color.Green.copy(alpha = alpha), CircleShape),
                     )
                     Spacer(Modifier.width(4.dp))
-                    Text("LIVE", style = MaterialTheme.typography.labelSmall, color = Color.Green, fontWeight = FontWeight.Bold)
+                    Text(
+                        stringResource(Res.string.label_live),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Color.Green,
+                        fontWeight = FontWeight.Bold,
+                    )
                 }
             }
 
@@ -656,19 +799,19 @@ fun ActiveStatusCard(
                 // BIG Rep Counter
                 Column(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalAlignment = Alignment.CenterHorizontally
+                    horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
                     Text(
                         text = "${repCount.totalReps}",
                         style = MaterialTheme.typography.displayLarge,
                         fontWeight = FontWeight.Black,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                        color = MaterialTheme.colorScheme.onPrimaryContainer,
                     )
                     Text(
                         text = "REPS",
                         style = MaterialTheme.typography.labelLarge,
                         fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
+                        color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f),
                     )
                 }
 
@@ -677,20 +820,20 @@ fun ActiveStatusCard(
                 // Metric Grid
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceEvenly
+                    horizontalArrangement = Arrangement.SpaceEvenly,
                 ) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Text(
                             "Load",
                             style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
+                            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f),
                         )
                         val loadText = currentMetric?.let { formatWeight(it.totalLoad, weightUnit) } ?: "--"
                         Text(
                             loadText,
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                            color = MaterialTheme.colorScheme.onPrimaryContainer,
                         )
                     }
                 }
@@ -704,19 +847,19 @@ fun ActiveStatusCard(
                         .height(56.dp),
                     shape = RoundedCornerShape(20.dp),
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.error
+                        containerColor = MaterialTheme.colorScheme.error,
                     ),
                     elevation = ButtonDefaults.buttonElevation(
                         defaultElevation = 4.dp,
-                        pressedElevation = 2.dp
-                    )
+                        pressedElevation = 2.dp,
+                    ),
                 ) {
-                    Icon(Icons.Default.Close, contentDescription = "Close workout")
+                    Icon(Icons.Default.Close, contentDescription = stringResource(Res.string.cd_close_workout))
                     Spacer(modifier = Modifier.width(Spacing.small))
                     Text(
                         "Finish Set",
                         style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Bold
+                        fontWeight = FontWeight.Bold,
                     )
                 }
             }
@@ -724,24 +867,15 @@ fun ActiveStatusCard(
     }
 }
 
-// Auto-start theme colors
-private val AutoStartGreen = Color(0xFF10B981)
-private val AutoStartGreenLight = Color(0xFF34D399)
-private val CountdownOrange = Color(0xFFF59E0B)
-private val CountdownOrangeLight = Color(0xFFFBBF24)
-private val StopRed = Color(0xFFEF4444)
-private val StopRedLight = Color(0xFFF87171)
+// Auto-start theme colors - resolved from AccessibilityTheme at composable call sites
+// Light variants are computed by blending with white for gradient pairs
 
 /**
  * Compact Auto-Start/Auto-Stop Banner for Just Lift Mode
  * Features animated rings, pulsing glow, and countdown display
  */
 @Composable
-fun AutoStartStopCard(
-    workoutState: WorkoutState,
-    autoStartCountdown: Int?,
-    autoStopState: AutoStopUiState
-) {
+fun AutoStartStopCard(workoutState: WorkoutState, autoStartCountdown: Int?, autoStopState: AutoStopUiState) {
     val isIdle = workoutState is WorkoutState.Idle
     val isActive = workoutState is WorkoutState.Active
     val isCountingDown = autoStartCountdown != null
@@ -759,9 +893,9 @@ fun AutoStartStopCard(
         targetValue = 1.05f,
         animationSpec = infiniteRepeatable(
             animation = tween(1200, easing = EaseInOutQuad),
-            repeatMode = RepeatMode.Reverse
+            repeatMode = RepeatMode.Reverse,
         ),
-        label = "pulse"
+        label = "pulse",
     )
 
     // Glow intensity animation
@@ -770,9 +904,9 @@ fun AutoStartStopCard(
         targetValue = 0.8f,
         animationSpec = infiniteRepeatable(
             animation = tween(1500, easing = EaseInOutQuad),
-            repeatMode = RepeatMode.Reverse
+            repeatMode = RepeatMode.Reverse,
         ),
-        label = "glow"
+        label = "glow",
     )
 
     // Rotating ring animation for countdown
@@ -781,32 +915,36 @@ fun AutoStartStopCard(
         targetValue = 360f,
         animationSpec = infiniteRepeatable(
             animation = tween(2500, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart
+            repeatMode = RepeatMode.Restart,
         ),
-        label = "rotation"
+        label = "rotation",
     )
 
-    // Determine colors based on state
+    // Determine colors based on state (from AccessibilityTheme for color-blind support)
+    val autoStartGreen = AccessibilityTheme.colors.success
+    val countdownOrange = AccessibilityTheme.colors.warning
+    val stopRed = AccessibilityTheme.colors.error
     val primaryColor = when {
-        isStopping -> StopRed
-        isCountingDown -> CountdownOrange
-        else -> AutoStartGreen
+        isStopping -> stopRed
+        isCountingDown -> countdownOrange
+        else -> autoStartGreen
     }
-    val secondaryColor = when {
-        isStopping -> StopRedLight
-        isCountingDown -> CountdownOrangeLight
-        else -> AutoStartGreenLight
-    }
+    // Light variants computed by blending with white for gradient pairs
+    val secondaryColor = primaryColor.copy(
+        red = (primaryColor.red + 1f) / 2f,
+        green = (primaryColor.green + 1f) / 2f,
+        blue = (primaryColor.blue + 1f) / 2f,
+    )
 
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface
+            containerColor = MaterialTheme.colorScheme.surface,
         ),
         shape = RoundedCornerShape(16.dp),
         elevation = CardDefaults.cardElevation(
-            defaultElevation = if (isCountingDown || isStopping) 8.dp else 4.dp
-        )
+            defaultElevation = if (isCountingDown || isStopping) 8.dp else 4.dp,
+        ),
     ) {
         Row(
             modifier = Modifier
@@ -815,24 +953,24 @@ fun AutoStartStopCard(
                     Brush.horizontalGradient(
                         colors = listOf(
                             primaryColor.copy(alpha = 0.1f),
-                            Color.Transparent
-                        )
-                    )
+                            Color.Transparent,
+                        ),
+                    ),
                 )
                 .padding(horizontal = Spacing.medium, vertical = Spacing.small),
-            verticalAlignment = Alignment.CenterVertically
+            verticalAlignment = Alignment.CenterVertically,
         ) {
             // Left: Animated indicator
             Box(
                 modifier = Modifier.size(56.dp),
-                contentAlignment = Alignment.Center
+                contentAlignment = Alignment.Center,
             ) {
                 if (isCountingDown || isStopping) {
                     // Rotating ring
                     Canvas(
                         modifier = Modifier
                             .size(56.dp)
-                            .alpha(0.6f)
+                            .alpha(0.6f),
                     ) {
                         rotate(ringRotation) {
                             drawArc(
@@ -841,7 +979,7 @@ fun AutoStartStopCard(
                                 sweepAngle = 120f,
                                 useCenter = false,
                                 style = Stroke(width = 3f, cap = StrokeCap.Round),
-                                size = Size(size.width, size.height)
+                                size = Size(size.width, size.height),
                             )
                         }
                     }
@@ -855,7 +993,7 @@ fun AutoStartStopCard(
                             sweepAngle = 360f,
                             useCenter = false,
                             style = Stroke(width = 4f, cap = StrokeCap.Round),
-                            size = Size(size.width, size.height)
+                            size = Size(size.width, size.height),
                         )
                         drawArc(
                             color = primaryColor,
@@ -863,7 +1001,7 @@ fun AutoStartStopCard(
                             sweepAngle = 360f * progress,
                             useCenter = false,
                             style = Stroke(width = 4f, cap = StrokeCap.Round),
-                            size = Size(size.width, size.height)
+                            size = Size(size.width, size.height),
                         )
                     }
 
@@ -875,13 +1013,13 @@ fun AutoStartStopCard(
                             (scaleIn(initialScale = 1.3f, animationSpec = tween(200)) + fadeIn())
                                 .togetherWith(scaleOut(targetScale = 0.7f) + fadeOut())
                         },
-                        label = "countdown"
+                        label = "countdown",
                     ) { count ->
                         Text(
                             text = "$count",
                             fontSize = 20.sp,
                             fontWeight = FontWeight.Black,
-                            color = primaryColor
+                            color = primaryColor,
                         )
                     }
                 } else {
@@ -892,14 +1030,14 @@ fun AutoStartStopCard(
                             .scale(pulseScale)
                             .alpha(glowAlpha * 0.5f)
                             .blur(12.dp)
-                            .background(primaryColor, CircleShape)
+                            .background(primaryColor, CircleShape),
                     )
 
                     // Handle grip icon - two parallel bars
                     Canvas(
                         modifier = Modifier
                             .size(40.dp)
-                            .scale(pulseScale)
+                            .scale(pulseScale),
                     ) {
                         val barWidth = 6f
                         val barHeight = size.height * 0.7f
@@ -911,10 +1049,10 @@ fun AutoStartStopCard(
                             color = primaryColor,
                             topLeft = Offset(
                                 (size.width - spacing) / 2 - barWidth,
-                                (size.height - barHeight) / 2
+                                (size.height - barHeight) / 2,
                             ),
                             size = Size(barWidth, barHeight),
-                            cornerRadius = androidx.compose.ui.geometry.CornerRadius(cornerRadius)
+                            cornerRadius = androidx.compose.ui.geometry.CornerRadius(cornerRadius),
                         )
 
                         // Right handle bar
@@ -922,10 +1060,10 @@ fun AutoStartStopCard(
                             color = primaryColor,
                             topLeft = Offset(
                                 (size.width + spacing) / 2,
-                                (size.height - barHeight) / 2
+                                (size.height - barHeight) / 2,
                             ),
                             size = Size(barWidth, barHeight),
-                            cornerRadius = androidx.compose.ui.geometry.CornerRadius(cornerRadius)
+                            cornerRadius = androidx.compose.ui.geometry.CornerRadius(cornerRadius),
                         )
 
                         // Grip indicators (small horizontal lines)
@@ -939,20 +1077,20 @@ fun AutoStartStopCard(
                                 color = gripColor,
                                 topLeft = Offset(
                                     (size.width - spacing) / 2 - barWidth - 2f,
-                                    y - gripHeight / 2
+                                    y - gripHeight / 2,
                                 ),
                                 size = Size(gripWidth, gripHeight),
-                                cornerRadius = androidx.compose.ui.geometry.CornerRadius(1f)
+                                cornerRadius = androidx.compose.ui.geometry.CornerRadius(1f),
                             )
                             // Right grip marks
                             drawRoundRect(
                                 color = gripColor,
                                 topLeft = Offset(
                                     (size.width + spacing) / 2 + barWidth - gripWidth + 2f,
-                                    y - gripHeight / 2
+                                    y - gripHeight / 2,
                                 ),
                                 size = Size(gripWidth, gripHeight),
-                                cornerRadius = androidx.compose.ui.geometry.CornerRadius(1f)
+                                cornerRadius = androidx.compose.ui.geometry.CornerRadius(1f),
                             )
                         }
                     }
@@ -973,7 +1111,7 @@ fun AutoStartStopCard(
                     },
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
-                    color = primaryColor
+                    color = primaryColor,
                 )
 
                 // Instruction
@@ -985,7 +1123,7 @@ fun AutoStartStopCard(
                         else -> "Grab handles to start"
                     },
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
 
@@ -996,9 +1134,45 @@ fun AutoStartStopCard(
                     .scale(if (!isCountingDown && !isStopping) pulseScale else 1f)
                     .background(
                         color = primaryColor.copy(alpha = glowAlpha),
-                        shape = CircleShape
-                    )
+                        shape = CircleShape,
+                    ),
             )
         }
+    }
+}
+
+/**
+ * Compact rest countdown row for Just Lift mode (Issue #113).
+ * Displayed inline in the JustLiftScreen column between the auto-start card
+ * and the mode selection card. Purely informational — does not block auto-start.
+ */
+@Composable
+private fun JustLiftRestCountdownRow(secondsRemaining: Int) {
+    val minutes = secondsRemaining / 60
+    val seconds = secondsRemaining % 60
+    val timeText = if (minutes > 0) "$minutes:${seconds.toString().padStart(2, '0')}" else "${seconds}s"
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.6f))
+            .padding(horizontal = Spacing.medium, vertical = Spacing.small),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.Center,
+    ) {
+        Icon(
+            imageVector = Icons.Filled.Timer,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSecondaryContainer,
+            modifier = Modifier.size(18.dp),
+        )
+        Spacer(modifier = Modifier.width(8.dp))
+        Text(
+            text = "Rest: $timeText",
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onSecondaryContainer,
+        )
     }
 }

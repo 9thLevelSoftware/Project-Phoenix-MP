@@ -22,7 +22,7 @@ interface CsvExporter {
         personalRecords: List<PersonalRecord>,
         exerciseNames: Map<String, String>,
         weightUnit: WeightUnit,
-        formatWeight: (Float, WeightUnit) -> String
+        formatWeight: (Float, WeightUnit) -> String,
     ): Result<String>
 
     /**
@@ -38,7 +38,7 @@ interface CsvExporter {
         workoutSessions: List<WorkoutSession>,
         exerciseNames: Map<String, String>,
         weightUnit: WeightUnit,
-        formatWeight: (Float, WeightUnit) -> String
+        formatWeight: (Float, WeightUnit) -> String,
     ): Result<String>
 
     /**
@@ -58,7 +58,7 @@ interface CsvExporter {
         endDate: Long?,
         exerciseNames: Map<String, String>,
         weightUnit: WeightUnit,
-        formatWeight: (Float, WeightUnit) -> String
+        formatWeight: (Float, WeightUnit) -> String,
     ): Result<String> {
         // Default implementation filters and calls existing method
         val filtered = workoutSessions.filter { session ->
@@ -82,7 +82,7 @@ interface CsvExporter {
         personalRecords: List<PersonalRecord>,
         exerciseNames: Map<String, String>,
         weightUnit: WeightUnit,
-        formatWeight: (Float, WeightUnit) -> String
+        formatWeight: (Float, WeightUnit) -> String,
     ): Result<String>
 
     /**

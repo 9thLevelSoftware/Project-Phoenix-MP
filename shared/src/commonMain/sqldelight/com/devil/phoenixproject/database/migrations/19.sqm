@@ -1,0 +1,7 @@
+-- Migration 19: Phase-specific PR tracking (Issue #111)
+-- Add phase column to PersonalRecord for concentric vs eccentric PR distinction
+ALTER TABLE PersonalRecord ADD COLUMN phase TEXT NOT NULL DEFAULT 'COMBINED';
+
+-- Recreate unique index to include phase dimension
+DROP INDEX IF EXISTS idx_pr_unique;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_pr_unique ON PersonalRecord(exerciseId, workoutMode, prType, phase);

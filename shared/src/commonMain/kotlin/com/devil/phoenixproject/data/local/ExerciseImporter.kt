@@ -3,7 +3,6 @@ package com.devil.phoenixproject.data.local
 import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.database.VitruvianDatabase
 import io.ktor.client.*
-import io.ktor.client.call.*
 import io.ktor.client.plugins.contentnegotiation.*
 import io.ktor.client.request.*
 import io.ktor.client.statement.*
@@ -11,7 +10,6 @@ import io.ktor.serialization.kotlinx.json.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
 import kotlinx.coroutines.withContext
-import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import org.jetbrains.compose.resources.ExperimentalResourceApi
@@ -38,36 +36,23 @@ data class ExerciseJson(
     val sidedness: String? = null,
     val archived: String? = null, // Date string when archived, null if active
     val range: RangeJson? = null,
-    val popularity: Double? = null
+    val popularity: Double? = null,
 )
 
 @Serializable
-data class VideoJson(
-    val id: String? = null,
-    val video: String,
-    val thumbnail: String,
-    val angle: String? = null,
-    val name: String? = null
-)
+data class VideoJson(val id: String? = null, val video: String, val thumbnail: String, val angle: String? = null, val name: String? = null)
 
 @Serializable
-data class TutorialJson(
-    val video: String,
-    val thumbnail: String
-)
+data class TutorialJson(val video: String, val thumbnail: String)
 
 @Serializable
-data class RangeJson(
-    val minimum: Double? = null
-)
+data class RangeJson(val minimum: Double? = null)
 
 /**
  * Imports exercises from JSON file into the SQLDelight database.
  * KMP-compatible implementation using Compose Resources.
  */
-class ExerciseImporter(
-    private val database: VitruvianDatabase
-) {
+class ExerciseImporter(private val database: VitruvianDatabase) {
     private val queries = database.vitruvianDatabaseQueries
 
     private val json = Json {
@@ -90,7 +75,6 @@ class ExerciseImporter(
             val jsonString = jsonBytes.decodeToString()
 
             return@withContext importFromJsonString(jsonString, clearExisting = false)
-
         } catch (e: Exception) {
             Logger.e(e) { "Failed to import exercises from bundled JSON" }
             Result.failure(e)
@@ -123,10 +107,12 @@ class ExerciseImporter(
 
             // Insert exercises and videos
             queries.transaction {
-                for (exerciseJson in exercises) {
+                for (rawExerciseJson in exercises) {
                     try {
+                        val exerciseJson = normalizeCableMetadata(rawExerciseJson)
+
                         // Map sidedness to cable config
-                        val cableConfig = mapSidednessToConfig(exerciseJson.sidedness)
+                        val cableConfig = mapSidednessToCableConfig(exerciseJson.sidedness)
 
                         // Get primary muscle group
                         val primaryMuscle = exerciseJson.muscleGroups?.firstOrNull() ?: "OTHER"
@@ -139,7 +125,7 @@ class ExerciseImporter(
                         val isArchived = exerciseJson.archived != null
 
                         // Parse min rep range from JSON range object
-                        val minRepRange = exerciseJson.range?.minimum?.toDouble()
+                        val minRepRange = exerciseJson.range?.minimum
 
                         // Join muscles and aliases
                         val musclesStr = exerciseJson.muscles?.joinToString(",")
@@ -168,7 +154,7 @@ class ExerciseImporter(
                             lastPerformed = null,
                             aliases = aliasesStr,
                             defaultCableConfig = cableConfig,
-                            one_rep_max_kg = null
+                            one_rep_max_kg = null,
                         )
                         importedCount++
 
@@ -180,7 +166,7 @@ class ExerciseImporter(
                                 angle = angle,
                                 videoUrl = videoJson.video,
                                 thumbnailUrl = videoJson.thumbnail,
-                                isTutorial = 0L
+                                isTutorial = 0L,
                             )
                             videoCount++
                         }
@@ -192,13 +178,12 @@ class ExerciseImporter(
                                 angle = "TUTORIAL",
                                 videoUrl = tutorial.video,
                                 thumbnailUrl = tutorial.thumbnail,
-                                isTutorial = 1L
+                                isTutorial = 1L,
                             )
                             videoCount++
                         }
-
                     } catch (e: Exception) {
-                        Logger.w { "Failed to import exercise ${exerciseJson.name}: ${e.message}" }
+                        Logger.w { "Failed to import exercise ${rawExerciseJson.name}: ${e.message}" }
                         // Continue with other exercises
                     }
                 }
@@ -206,7 +191,6 @@ class ExerciseImporter(
 
             Logger.d { "Successfully imported $importedCount exercises with $videoCount videos" }
             Result.success(importedCount)
-
         } catch (e: Exception) {
             Logger.e(e) { "Failed to parse exercise JSON" }
             Result.failure(e)
@@ -219,12 +203,16 @@ class ExerciseImporter(
      * - unilateral (one arm/leg) → SINGLE (one cable)
      * - alternating (one at a time) → EITHER (user choice)
      */
-    private fun mapSidednessToConfig(sidedness: String?): String {
-        return when (sidedness?.lowercase()) {
-            "bilateral" -> "DOUBLE"
-            "unilateral" -> "SINGLE"
-            "alternating" -> "EITHER"
-            else -> "DOUBLE" // Safe default
+    private fun normalizeCableMetadata(exercise: ExerciseJson): ExerciseJson {
+        val normalizedSidedness = when (exercise.name.trim()) {
+            in FORCED_SINGLE_CABLE_EXERCISE_NAMES -> "unilateral"
+            else -> exercise.sidedness
+        }
+
+        return if (normalizedSidedness == exercise.sidedness) {
+            exercise
+        } else {
+            exercise.copy(sidedness = normalizedSidedness)
         }
     }
 
@@ -233,6 +221,23 @@ class ExerciseImporter(
         // Update this to point to your actual exercise data repository
         private const val GITHUB_EXERCISES_URL =
             "https://raw.githubusercontent.com/VitruvianFitness/exercise-library/main/exercise_dump.json"
+
+        private val FORCED_SINGLE_CABLE_EXERCISE_NAMES = setOf(
+            // Explicit single-cable variants (SC/SA suffix)
+            "Bent Over Row - Reverse Grip (SC)",
+            "Bent Over Row (SC)",
+            "Bent Over Row SA",
+            "Bicep Curl (SC)",
+            "Calf Raise (SC)",
+            "Front Raise (SC)",
+            "Hammer Curl (SC)",
+            "Hip Thrust (SC)",
+            "Upright Row (SC)",
+            // Base exercises that are inherently single-cable on Vitruvian
+            // but have null sidedness in some exercise_dump.json entries
+            "Reverse Lunge",
+            "Bulgarian Split Squat",
+        )
     }
 
     /**
@@ -255,7 +260,7 @@ class ExerciseImporter(
             if (response.status.value !in 200..299) {
                 Logger.e { "GitHub returned status ${response.status}" }
                 return@withContext Result.failure(
-                    Exception("Failed to fetch exercises: HTTP ${response.status.value}")
+                    Exception("Failed to fetch exercises: HTTP ${response.status.value}"),
                 )
             }
 
@@ -267,7 +272,9 @@ class ExerciseImporter(
 
             var updatedCount = 0
 
-            exercises.forEach { exercise ->
+            exercises.forEach { rawExercise ->
+                val exercise = normalizeCableMetadata(rawExercise)
+
                 // Skip archived exercises
                 if (exercise.archived != null) {
                     return@forEach
@@ -290,14 +297,14 @@ class ExerciseImporter(
                         gripWidth = exercise.gripWidth,
                         minRepRange = exercise.range?.minimum,
                         popularity = exercise.popularity ?: 0.0,
-                        archived = if (exercise.archived != null) 1L else 0L,
+                        archived = 0L, // Always 0 here since archived exercises are skipped above
                         isFavorite = 0L,
                         isCustom = 0L,
                         timesPerformed = 0L,
                         lastPerformed = null,
                         aliases = exercise.aliases?.joinToString(","),
                         defaultCableConfig = mapSidednessToCableConfig(exercise.sidedness),
-                        one_rep_max_kg = null
+                        one_rep_max_kg = null,
                     )
 
                     // Insert videos
@@ -308,7 +315,7 @@ class ExerciseImporter(
                                 angle = video.angle ?: "front",
                                 videoUrl = video.video,
                                 thumbnailUrl = video.thumbnail,
-                                isTutorial = 0L
+                                isTutorial = 0L,
                             )
                         } catch (e: Exception) {
                             Logger.w(e) { "Failed to insert video: ${e.message}" }
@@ -323,7 +330,7 @@ class ExerciseImporter(
                                 angle = "tutorial",
                                 videoUrl = tutorial.video,
                                 thumbnailUrl = tutorial.thumbnail,
-                                isTutorial = 1L
+                                isTutorial = 1L,
                             )
                         } catch (e: Exception) {
                             Logger.w(e) { "Failed to insert tutorial video: ${e.message}" }
@@ -338,7 +345,6 @@ class ExerciseImporter(
 
             Logger.d { "Successfully updated $updatedCount exercises from GitHub" }
             Result.success(updatedCount)
-
         } catch (e: Exception) {
             Logger.e(e) { "Failed to update from GitHub: ${e.message}" }
             Result.failure(e)
@@ -350,12 +356,10 @@ class ExerciseImporter(
     /**
      * Map sidedness field to cable configuration
      */
-    private fun mapSidednessToCableConfig(sidedness: String?): String {
-        return when (sidedness?.lowercase()) {
-            "single", "unilateral" -> "SINGLE"
-            "double", "bilateral" -> "DOUBLE"
-            "alternating" -> "EITHER"
-            else -> "DOUBLE" // Safe default
-        }
+    private fun mapSidednessToCableConfig(sidedness: String?): String = when (sidedness?.lowercase()) {
+        "single", "unilateral" -> "SINGLE"
+        "double", "bilateral" -> "DOUBLE"
+        "alternating" -> "EITHER"
+        else -> "EITHER" // Unknown sidedness — let heuristic decide at runtime
     }
 }

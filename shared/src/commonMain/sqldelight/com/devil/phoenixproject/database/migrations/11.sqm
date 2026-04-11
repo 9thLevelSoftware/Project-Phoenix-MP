@@ -13,12 +13,12 @@ ALTER TABLE WorkoutSession ADD COLUMN serverId TEXT;
 ALTER TABLE WorkoutSession ADD COLUMN deletedAt INTEGER;
 
 -- ============================================================
--- STEP 2: Add subscription columns to UserProfile
+-- STEP 2: (REMOVED) UserProfile subscription columns
 -- ============================================================
-ALTER TABLE UserProfile ADD COLUMN supabase_user_id TEXT;
-ALTER TABLE UserProfile ADD COLUMN subscription_status TEXT DEFAULT 'free';
-ALTER TABLE UserProfile ADD COLUMN subscription_expires_at INTEGER;
-ALTER TABLE UserProfile ADD COLUMN last_auth_at INTEGER;
+-- These 4 columns (supabase_user_id, subscription_status, subscription_expires_at,
+-- last_auth_at) were already added in migration 5.sqm (Part A). Duplicating them
+-- here would crash users upgrading sequentially through both migrations.
+-- Removed as part of migration audit (MVP audit remediation, Batch B).
 
 -- ============================================================
 -- STEP 3: Add sync columns to PersonalRecord
@@ -42,14 +42,18 @@ ALTER TABLE Exercise ADD COLUMN serverId TEXT;
 ALTER TABLE Exercise ADD COLUMN deletedAt INTEGER;
 
 -- ============================================================
--- STEP 6: Add sync columns to EarnedBadge
+-- STEP 6: (MOVED TO PREFLIGHT) EarnedBadge sync columns
 -- ============================================================
-ALTER TABLE EarnedBadge ADD COLUMN updatedAt INTEGER;
-ALTER TABLE EarnedBadge ADD COLUMN serverId TEXT;
-ALTER TABLE EarnedBadge ADD COLUMN deletedAt INTEGER;
+-- ALTER TABLE EarnedBadge ADD COLUMN updatedAt/serverId/deletedAt moved to
+-- preFlightMigration11() in DriverFactory.ios.kt and preflightMigration(11)
+-- in DriverFactory.android.kt. Gamification tables have no creation migration
+-- and may be bootstrapped by ensureGamificationTablesExist() or
+-- ensureAllTablesExist() (now removed) with varying column sets. Running
+-- ALTER TABLE ADD COLUMN in the .sqm fails with "duplicate column" when the
+-- table was pre-created with those columns. The preflight handles this with
+-- try/catch, which .sqm files cannot do.
 
 -- ============================================================
--- STEP 7: Add sync columns to GamificationStats
+-- STEP 7: (MOVED TO PREFLIGHT) GamificationStats sync columns
 -- ============================================================
-ALTER TABLE GamificationStats ADD COLUMN updatedAt INTEGER;
-ALTER TABLE GamificationStats ADD COLUMN serverId TEXT;
+-- Same as Step 6 — see preFlightMigration11() / preflightMigration(11).

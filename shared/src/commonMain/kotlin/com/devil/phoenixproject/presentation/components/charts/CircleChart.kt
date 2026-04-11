@@ -5,16 +5,10 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
-import androidx.compose.ui.input.pointer.pointerInput
-import kotlin.math.PI
-import com.devil.phoenixproject.presentation.util.ResponsiveDimensions
-import kotlin.math.atan2
-import kotlin.math.min
-import kotlin.math.sqrt
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.PieChart
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -25,8 +19,17 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import com.devil.phoenixproject.presentation.util.ResponsiveDimensions
+import kotlin.math.PI
+import kotlin.math.atan2
+import kotlin.math.min
+import kotlin.math.sqrt
+import org.jetbrains.compose.resources.stringResource
+import vitruvianprojectphoenix.shared.generated.resources.*
+import vitruvianprojectphoenix.shared.generated.resources.Res
 
 /**
  * Material 3 Expressive Circle Chart (Donut Chart)
@@ -37,12 +40,12 @@ import androidx.compose.ui.unit.dp
 fun MuscleGroupCircleChart(
     data: List<Pair<String, Float>>, // Label to value pairs
     modifier: Modifier = Modifier,
-    onSegmentClick: ((String, Float) -> Unit)? = null // Reserved for future click handling
+    onSegmentClick: ((String, Float) -> Unit)? = null, // Reserved for future click handling
 ) {
     // Data validation - Material 3 Expressive: Handle empty/invalid data gracefully
     if (data.isEmpty() || data.all { it.second <= 0f }) {
         EmptyChartState(
-            modifier = modifier
+            modifier = modifier,
         )
         return
     }
@@ -58,7 +61,7 @@ fun MuscleGroupCircleChart(
             colorScheme.secondaryContainer,
             colorScheme.tertiaryContainer,
             colorScheme.error,
-            colorScheme.errorContainer
+            colorScheme.errorContainer,
         )
     }
 
@@ -72,7 +75,7 @@ fun MuscleGroupCircleChart(
     val animationProgress by animateFloatAsState(
         targetValue = 1f,
         animationSpec = tween(durationMillis = 1500),
-        label = "chart_animation"
+        label = "chart_animation",
     )
 
     // Use ResponsiveDimensions for consistent tablet-responsive sizing
@@ -82,11 +85,11 @@ fun MuscleGroupCircleChart(
         modifier = modifier
             .fillMaxWidth()
             .padding(16.dp),
-        contentAlignment = Alignment.Center
+        contentAlignment = Alignment.Center,
     ) {
         Box(
             modifier = Modifier.size(chartSize),
-            contentAlignment = Alignment.Center
+            contentAlignment = Alignment.Center,
         ) {
             Canvas(
                 modifier = Modifier
@@ -131,8 +134,8 @@ fun MuscleGroupCircleChart(
                             }
                         } else {
                             Modifier
-                        }
-                    )
+                        },
+                    ),
             ) {
                 val surfaceColor = colorScheme.surface
                 val center = Offset(size.width / 2f, size.height / 2f)
@@ -156,13 +159,13 @@ fun MuscleGroupCircleChart(
                         useCenter = false,
                         topLeft = Offset(
                             center.x - radius,
-                            center.y - radius
+                            center.y - radius,
                         ),
                         size = Size(radius * 2f, radius * 2f),
                         style = Stroke(
                             width = strokeWidth,
-                            cap = StrokeCap.Round
-                        )
+                            cap = StrokeCap.Round,
+                        ),
                     )
 
                     startAngle += sweepAngle
@@ -172,7 +175,7 @@ fun MuscleGroupCircleChart(
                 drawCircle(
                     color = surfaceColor,
                     radius = innerRadius,
-                    center = center
+                    center = center,
                 )
             }
         }
@@ -183,9 +186,7 @@ fun MuscleGroupCircleChart(
  * Empty state for charts when no data is available
  */
 @Composable
-private fun EmptyChartState(
-    modifier: Modifier = Modifier
-) {
+private fun EmptyChartState(modifier: Modifier = Modifier) {
     // Use ResponsiveDimensions for consistent tablet-responsive sizing
     val chartSize = ResponsiveDimensions.chartHeight(baseHeight = 280.dp)
 
@@ -193,27 +194,27 @@ private fun EmptyChartState(
         modifier = modifier
             .fillMaxWidth()
             .padding(16.dp),
-        contentAlignment = Alignment.Center
+        contentAlignment = Alignment.Center,
     ) {
         Box(
             modifier = Modifier.size(chartSize),
-            contentAlignment = Alignment.Center
+            contentAlignment = Alignment.Center,
         ) {
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(8.dp)
+                verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 Icon(
                     imageVector = Icons.Default.PieChart,
-                    contentDescription = "No data available",
+                    contentDescription = stringResource(Res.string.chart_no_data),
                     tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
-                    modifier = Modifier.size(48.dp)
+                    modifier = Modifier.size(48.dp),
                 )
                 Text(
-                    text = "No data available",
+                    text = stringResource(Res.string.chart_no_data),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    textAlign = TextAlign.Center
+                    textAlign = TextAlign.Center,
                 )
             }
         }

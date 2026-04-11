@@ -6,11 +6,11 @@ import com.devil.phoenixproject.domain.model.WorkoutSession
 import kotlinx.cinterop.BetaInteropApi
 import kotlinx.cinterop.ExperimentalForeignApi
 import platform.Foundation.*
-import platform.darwin.NSObject
 import platform.UIKit.UIActivityViewController
 import platform.UIKit.UIApplication
 import platform.UIKit.UIDevice
 import platform.UIKit.UIUserInterfaceIdiomPad
+import platform.darwin.NSObject
 import platform.darwin.dispatch_async
 import platform.darwin.dispatch_get_main_queue
 
@@ -26,116 +26,110 @@ class IosCsvExporter : CsvExporter {
     /**
      * Calculate estimated 1RM using Brzycki formula
      */
-    private fun calculateOneRM(weight: Float, reps: Int): Float {
-        return if (reps <= 1) weight else weight * (36f / (37f - reps))
-    }
+    private fun calculateOneRM(weight: Float, reps: Int): Float = if (reps <= 1) weight else weight * (36f / (37f - reps))
 
     override fun exportPersonalRecords(
         personalRecords: List<PersonalRecord>,
         exerciseNames: Map<String, String>,
         weightUnit: WeightUnit,
-        formatWeight: (Float, WeightUnit) -> String
-    ): Result<String> {
-        return try {
-            val csv = buildString {
-                appendLine("Exercise,Weight (${weightUnit.name}),Reps,1RM,Date")
-                personalRecords.forEach { pr ->
-                    val exerciseName = exerciseNames[pr.exerciseId] ?: pr.exerciseId
-                    val formattedWeight = formatWeight(pr.weightPerCableKg, weightUnit)
-                    val oneRM = calculateOneRM(pr.weightPerCableKg, pr.reps)
-                    val formattedOneRM = formatWeight(oneRM, weightUnit)
-                    val date = KmpUtils.formatTimestamp(pr.timestamp, "yyyy-MM-dd")
-                    appendLine("\"$exerciseName\",$formattedWeight,${pr.reps},$formattedOneRM,$date")
-                }
+        formatWeight: (Float, WeightUnit) -> String,
+    ): Result<String> = try {
+        val csv = buildString {
+            appendLine("Exercise,Weight (${weightUnit.name}),Reps,1RM,Date")
+            personalRecords.forEach { pr ->
+                val exerciseName = exerciseNames[pr.exerciseId] ?: pr.exerciseId
+                val formattedWeight = formatWeight(pr.weightPerCableKg, weightUnit)
+                val oneRM = calculateOneRM(pr.weightPerCableKg, pr.reps)
+                val formattedOneRM = formatWeight(oneRM, weightUnit)
+                val date = KmpUtils.formatTimestamp(pr.timestamp, "yyyy-MM-dd")
+                appendLine("\"$exerciseName\",$formattedWeight,${pr.reps},$formattedOneRM,$date")
             }
-
-            val filePath = writeToTempFile("personal_records.csv", csv)
-            Result.success(filePath)
-        } catch (e: Exception) {
-            Result.failure(e)
         }
+
+        val filePath = writeToTempFile("personal_records.csv", csv)
+        Result.success(filePath)
+    } catch (e: Exception) {
+        Result.failure(e)
     }
 
     override fun exportWorkoutHistory(
         workoutSessions: List<WorkoutSession>,
         exerciseNames: Map<String, String>,
         weightUnit: WeightUnit,
-        formatWeight: (Float, WeightUnit) -> String
-    ): Result<String> {
-        return try {
-            val csv = buildString {
-                appendLine("Date,Time,Exercise,Mode,Weight (${weightUnit.name}),Progression,Reps,Duration (s)")
-                workoutSessions.forEach { session ->
-                    val exerciseName = exerciseNames[session.exerciseId] ?: session.exerciseId ?: "Unknown"
-                    val date = KmpUtils.formatTimestamp(session.timestamp, "yyyy-MM-dd")
-                    val time = KmpUtils.formatTimestamp(session.timestamp, "HH:mm")
-                    // For Echo mode, use peak weight (matches official app behavior); otherwise use configured weight
-                    val isEchoMode = session.mode.contains("Echo", ignoreCase = true)
-                    val effectiveWeight = if (isEchoMode) {
-                        session.peakWeightKg ?: session.workingAvgWeightKg ?: session.weightPerCableKg
-                    } else {
-                        session.weightPerCableKg
-                    }
-                    val formattedWeight = formatWeight(effectiveWeight, weightUnit)
-                    val durationSeconds = session.duration / 1000
-                    val progression = when {
-                        session.progressionKg > 0f -> "+${formatWeight(session.progressionKg, weightUnit)}"
-                        session.progressionKg < 0f -> formatWeight(session.progressionKg, weightUnit)
-                        else -> "0"
-                    }
-                    appendLine("$date,$time,\"$exerciseName\",${session.mode},$formattedWeight,$progression,${session.reps},$durationSeconds")
+        formatWeight: (Float, WeightUnit) -> String,
+    ): Result<String> = try {
+        val csv = buildString {
+            appendLine("Date,Time,Exercise,Mode,Weight (${weightUnit.name}),Progression,Reps,Duration (s)")
+            workoutSessions.forEach { session ->
+                val exerciseName = exerciseNames[session.exerciseId] ?: session.exerciseId ?: "Unknown"
+                val date = KmpUtils.formatTimestamp(session.timestamp, "yyyy-MM-dd")
+                val time = KmpUtils.formatTimestamp(session.timestamp, "HH:mm")
+                // For Echo mode, use peak weight (matches official app behavior); otherwise use configured weight
+                val isEchoMode = session.mode.contains("Echo", ignoreCase = true)
+                val effectiveWeight = if (isEchoMode) {
+                    session.peakWeightKg ?: session.workingAvgWeightKg ?: session.weightPerCableKg
+                } else {
+                    session.weightPerCableKg
                 }
+                val formattedWeight = formatWeight(effectiveWeight, weightUnit)
+                val durationSeconds = session.duration / 1000
+                val progression = when {
+                    session.progressionKg > 0f -> "+${formatWeight(session.progressionKg, weightUnit)}"
+                    session.progressionKg < 0f -> formatWeight(session.progressionKg, weightUnit)
+                    else -> "0"
+                }
+                appendLine(
+                    "$date,$time,\"$exerciseName\",${session.mode},$formattedWeight,$progression,${session.reps},$durationSeconds",
+                )
             }
-
-            val filePath = writeToTempFile("workout_history.csv", csv)
-            Result.success(filePath)
-        } catch (e: Exception) {
-            Result.failure(e)
         }
+
+        val filePath = writeToTempFile("workout_history.csv", csv)
+        Result.success(filePath)
+    } catch (e: Exception) {
+        Result.failure(e)
     }
 
     override fun exportPRProgression(
         personalRecords: List<PersonalRecord>,
         exerciseNames: Map<String, String>,
         weightUnit: WeightUnit,
-        formatWeight: (Float, WeightUnit) -> String
-    ): Result<String> {
-        return try {
-            // Group PRs by exercise and sort by date
-            val grouped = personalRecords.groupBy { it.exerciseId }
+        formatWeight: (Float, WeightUnit) -> String,
+    ): Result<String> = try {
+        // Group PRs by exercise and sort by date
+        val grouped = personalRecords.groupBy { it.exerciseId }
 
-            val csv = buildString {
-                appendLine("Exercise,Date,Weight (${weightUnit.name}),Reps,1RM,Improvement")
+        val csv = buildString {
+            appendLine("Exercise,Date,Weight (${weightUnit.name}),Reps,1RM,Improvement")
 
-                grouped.forEach { (exerciseId, prs) ->
-                    val exerciseName = exerciseNames[exerciseId] ?: exerciseId
-                    val sortedPrs = prs.sortedBy { it.timestamp }
-                    var previousOneRM = 0f
+            grouped.forEach { (exerciseId, prs) ->
+                val exerciseName = exerciseNames[exerciseId] ?: exerciseId
+                val sortedPrs = prs.sortedBy { it.timestamp }
+                var previousOneRM = 0f
 
-                    sortedPrs.forEach { pr ->
-                        val date = KmpUtils.formatTimestamp(pr.timestamp, "yyyy-MM-dd")
-                        val formattedWeight = formatWeight(pr.weightPerCableKg, weightUnit)
-                        val oneRM = calculateOneRM(pr.weightPerCableKg, pr.reps)
-                        val formattedOneRM = formatWeight(oneRM, weightUnit)
-                        val improvement = if (previousOneRM > 0) {
-                            val diff = oneRM - previousOneRM
-                            val diffFormatted = formatWeight(diff, weightUnit)
-                            if (diff > 0) "+$diffFormatted" else diffFormatted
-                        } else {
-                            "-"
-                        }
-                        previousOneRM = oneRM
-
-                        appendLine("\"$exerciseName\",$date,$formattedWeight,${pr.reps},$formattedOneRM,$improvement")
+                sortedPrs.forEach { pr ->
+                    val date = KmpUtils.formatTimestamp(pr.timestamp, "yyyy-MM-dd")
+                    val formattedWeight = formatWeight(pr.weightPerCableKg, weightUnit)
+                    val oneRM = calculateOneRM(pr.weightPerCableKg, pr.reps)
+                    val formattedOneRM = formatWeight(oneRM, weightUnit)
+                    val improvement = if (previousOneRM > 0) {
+                        val diff = oneRM - previousOneRM
+                        val diffFormatted = formatWeight(diff, weightUnit)
+                        if (diff > 0) "+$diffFormatted" else diffFormatted
+                    } else {
+                        "-"
                     }
+                    previousOneRM = oneRM
+
+                    appendLine("\"$exerciseName\",$date,$formattedWeight,${pr.reps},$formattedOneRM,$improvement")
                 }
             }
-
-            val filePath = writeToTempFile("pr_progression.csv", csv)
-            Result.success(filePath)
-        } catch (e: Exception) {
-            Result.failure(e)
         }
+
+        val filePath = writeToTempFile("pr_progression.csv", csv)
+        Result.success(filePath)
+    } catch (e: Exception) {
+        Result.failure(e)
     }
 
     override fun shareCSV(fileUri: String, fileName: String) {
@@ -154,7 +148,7 @@ class IosCsvExporter : CsvExporter {
 
             val activityVC = UIActivityViewController(
                 activityItems = listOf(url),
-                applicationActivities = null
+                applicationActivities = null,
             )
 
             // Configure popover for iPad - required to prevent crash
@@ -168,7 +162,7 @@ class IosCsvExporter : CsvExporter {
             rootViewController.presentViewController(
                 activityVC,
                 animated = true,
-                completion = null
+                completion = null,
             )
         }
     }
@@ -191,7 +185,7 @@ class IosCsvExporter : CsvExporter {
             filePath,
             atomically = true,
             encoding = NSUTF8StringEncoding,
-            error = null
+            error = null,
         )
 
         return filePath

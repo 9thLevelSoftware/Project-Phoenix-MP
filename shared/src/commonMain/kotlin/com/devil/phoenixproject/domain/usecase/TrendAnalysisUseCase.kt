@@ -15,9 +15,7 @@ class TrendAnalysisUseCase {
      * Perform linear regression on data points to predict future values
      * Returns slope, intercept, and R-squared value
      */
-    fun linearRegression(
-        dataPoints: List<TrendPoint>
-    ): LinearRegressionResult {
+    fun linearRegression(dataPoints: List<TrendPoint>): LinearRegressionResult {
         if (dataPoints.size < 2) {
             return LinearRegressionResult(0f, 0f, 0f, 0f)
         }
@@ -40,7 +38,7 @@ class TrendAnalysisUseCase {
         val ssTotal = yValues.sumOf { (it - yMean).pow(2).toDouble() }.toFloat()
         val ssResidual = xValues.zip(yValues).sumOf { (x, y) ->
             val predicted = slope * x + intercept
-            (y - predicted).pow(2).toDouble()
+            (y - predicted).pow(2)
         }.toFloat()
         val rSquared = if (ssTotal.compareTo(0f) > 0) {
             1f - (ssResidual / ssTotal)
@@ -54,10 +52,7 @@ class TrendAnalysisUseCase {
     /**
      * Calculate moving average for smoothing trend lines
      */
-    fun movingAverage(
-        dataPoints: List<TrendPoint>,
-        windowSize: Int = 3
-    ): List<TrendPoint> {
+    fun movingAverage(dataPoints: List<TrendPoint>, windowSize: Int = 3): List<TrendPoint> {
         if (dataPoints.size < windowSize) return dataPoints
 
         return dataPoints.mapIndexed { index, point ->
@@ -69,7 +64,7 @@ class TrendAnalysisUseCase {
             TrendPoint(
                 timestamp = point.timestamp,
                 value = avgValue,
-                label = point.label
+                label = point.label,
             )
         }
     }
@@ -109,10 +104,7 @@ class TrendAnalysisUseCase {
     /**
      * Predict future value using linear regression
      */
-    fun predictValue(
-        dataPoints: List<TrendPoint>,
-        daysAhead: Int
-    ): Prediction? {
+    fun predictValue(dataPoints: List<TrendPoint>, daysAhead: Int): Prediction? {
         if (dataPoints.size < 2) return null
 
         val regression = linearRegression(dataPoints)
@@ -131,7 +123,7 @@ class TrendAnalysisUseCase {
             predictedValue = predictedValue,
             predictedDate = predictedDate,
             confidence = confidence,
-            method = PredictionMethod.LINEAR_REGRESSION
+            method = PredictionMethod.LINEAR_REGRESSION,
         )
     }
 
@@ -140,7 +132,7 @@ class TrendAnalysisUseCase {
      */
     fun detectAnomalies(
         dataPoints: List<TrendPoint>,
-        threshold: Float = 2.0f // Standard deviations
+        threshold: Float = 2.0f, // Standard deviations
     ): List<Anomaly> {
         if (dataPoints.size < 3) return emptyList()
 
@@ -167,7 +159,7 @@ class TrendAnalysisUseCase {
                     expectedValue = predicted,
                     deviation = deviation,
                     severity = severity,
-                    description = "Value ${if (point.value > predicted) "above" else "below"} expected trend"
+                    description = "Value ${if (point.value > predicted) "above" else "below"} expected trend",
                 )
             } else {
                 null
@@ -178,11 +170,7 @@ class TrendAnalysisUseCase {
     /**
      * Detect plateaus (periods of no progress)
      */
-    fun detectPlateau(
-        dataPoints: List<TrendPoint>,
-        exerciseId: String,
-        minDurationDays: Int = 14
-    ): Plateau? {
+    fun detectPlateau(dataPoints: List<TrendPoint>, exerciseId: String, minDurationDays: Int = 14): Plateau? {
         if (dataPoints.size < minDurationDays) return null
 
         val regression = linearRegression(dataPoints)
@@ -205,7 +193,7 @@ class TrendAnalysisUseCase {
             endDate = endDate,
             averageValue = averageValue,
             durationDays = durationDays,
-            recommendation = "Consider deloading or changing workout variables to break through plateau"
+            recommendation = "Consider deloading or changing workout variables to break through plateau",
         )
     }
 }
@@ -213,9 +201,4 @@ class TrendAnalysisUseCase {
 /**
  * Result of linear regression calculation
  */
-data class LinearRegressionResult(
-    val slope: Float,
-    val intercept: Float,
-    val rSquared: Float,
-    val yMean: Float
-)
+data class LinearRegressionResult(val slope: Float, val intercept: Float, val rSquared: Float, val yMean: Float)

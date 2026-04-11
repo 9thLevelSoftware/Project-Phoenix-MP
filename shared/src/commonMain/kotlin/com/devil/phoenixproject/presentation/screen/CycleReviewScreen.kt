@@ -45,7 +45,7 @@ fun CycleReviewScreen(
     routines: List<Routine>,
     onBack: () -> Unit,
     onSave: () -> Unit,
-    viewModel: com.devil.phoenixproject.presentation.viewmodel.MainViewModel? = null
+    viewModel: com.devil.phoenixproject.presentation.viewmodel.MainViewModel? = null,
 ) {
     // Track expanded state for each day by id (stable key)
     val expandedDays = remember { mutableStateMapOf<String, Boolean>() }
@@ -60,29 +60,29 @@ fun CycleReviewScreen(
         bottomBar = {
             Surface(
                 tonalElevation = 3.dp,
-                shadowElevation = 8.dp
+                shadowElevation = 8.dp,
             ) {
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
                         .navigationBarsPadding()
                         .padding(16.dp),
-                    contentAlignment = Alignment.Center
+                    contentAlignment = Alignment.Center,
                 ) {
                     Button(
                         onClick = onSave,
                         modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(12.dp)
+                        shape = RoundedCornerShape(12.dp),
                     ) {
                         Text(
                             text = "Confirm & Finish",
                             style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold
+                            fontWeight = FontWeight.Bold,
                         )
                     }
                 }
             }
-        }
+        },
     ) { padding ->
         LazyColumn(
             modifier = Modifier
@@ -90,7 +90,7 @@ fun CycleReviewScreen(
                 .padding(padding)
                 .padding(horizontal = 16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
-            contentPadding = PaddingValues(vertical = 16.dp)
+            contentPadding = PaddingValues(vertical = 16.dp),
         ) {
             itemsIndexed(days, key = { _, day -> day.id }) { _, day ->
                 val routine = day.routineId?.let { routineId ->
@@ -107,7 +107,7 @@ fun CycleReviewScreen(
                         if (!day.isRestDay && routine != null) {
                             expandedDays[day.id] = !isExpanded
                         }
-                    }
+                    },
                 )
             }
         }
@@ -118,16 +118,11 @@ fun CycleReviewScreen(
  * Individual day card with expand/collapse functionality.
  */
 @Composable
-private fun CycleReviewDayCard(
-    day: CycleDay,
-    routine: Routine?,
-    isExpanded: Boolean,
-    onToggleExpand: () -> Unit
-) {
+private fun CycleReviewDayCard(day: CycleDay, routine: Routine?, isExpanded: Boolean, onToggleExpand: () -> Unit) {
     val canExpand = !day.isRestDay && routine != null && routine.exercises.isNotEmpty()
     val rotationAngle by animateFloatAsState(
         targetValue = if (isExpanded) 180f else 0f,
-        label = "expandRotation"
+        label = "expandRotation",
     )
 
     Card(
@@ -135,12 +130,13 @@ private fun CycleReviewDayCard(
             .fillMaxWidth()
             .clickable(enabled = canExpand) { onToggleExpand() },
         colors = CardDefaults.cardColors(
-            containerColor = if (day.isRestDay)
+            containerColor = if (day.isRestDay) {
                 MaterialTheme.colorScheme.surfaceContainerHigh
-            else
+            } else {
                 MaterialTheme.colorScheme.surfaceContainer
+            },
         ),
-        shape = RoundedCornerShape(16.dp)
+        shape = RoundedCornerShape(16.dp),
     ) {
         Column {
             // Header row (always visible)
@@ -148,7 +144,7 @@ private fun CycleReviewDayCard(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(16.dp),
-                verticalAlignment = Alignment.CenterVertically
+                verticalAlignment = Alignment.CenterVertically,
             ) {
                 // Day number badge
                 Box(
@@ -156,21 +152,23 @@ private fun CycleReviewDayCard(
                         .size(32.dp)
                         .clip(CircleShape)
                         .background(
-                            if (day.isRestDay)
+                            if (day.isRestDay) {
                                 MaterialTheme.colorScheme.tertiaryContainer
-                            else
+                            } else {
                                 MaterialTheme.colorScheme.primaryContainer
+                            },
                         ),
-                    contentAlignment = Alignment.Center
+                    contentAlignment = Alignment.Center,
                 ) {
                     Text(
                         text = "${day.dayNumber}",
                         style = MaterialTheme.typography.labelLarge,
                         fontWeight = FontWeight.Bold,
-                        color = if (day.isRestDay)
+                        color = if (day.isRestDay) {
                             MaterialTheme.colorScheme.onTertiaryContainer
-                        else
+                        } else {
                             MaterialTheme.colorScheme.onPrimaryContainer
+                        },
                     )
                 }
 
@@ -181,7 +179,7 @@ private fun CycleReviewDayCard(
                     Text(
                         text = "Day ${day.dayNumber}",
                         style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
 
                     if (day.isRestDay) {
@@ -189,7 +187,7 @@ private fun CycleReviewDayCard(
                             text = "💤 Rest",
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     } else {
                         Text(
@@ -198,10 +196,11 @@ private fun CycleReviewDayCard(
                             fontWeight = FontWeight.Bold,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
-                            color = if (routine != null)
+                            color = if (routine != null) {
                                 MaterialTheme.colorScheme.onSurface
-                            else
+                            } else {
                                 MaterialTheme.colorScheme.onSurfaceVariant
+                            },
                         )
 
                         // Modifier badges row
@@ -209,7 +208,7 @@ private fun CycleReviewDayCard(
                         if (badges.isNotEmpty()) {
                             Spacer(Modifier.height(4.dp))
                             Row(
-                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                horizontalArrangement = Arrangement.spacedBy(4.dp),
                             ) {
                                 badges.forEach { badge ->
                                     ReviewModifierBadge(text = badge)
@@ -227,7 +226,7 @@ private fun CycleReviewDayCard(
                         modifier = Modifier
                             .size(24.dp)
                             .rotate(rotationAngle),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
             }
@@ -236,16 +235,16 @@ private fun CycleReviewDayCard(
             AnimatedVisibility(
                 visible = isExpanded && canExpand,
                 enter = expandVertically(),
-                exit = shrinkVertically()
+                exit = shrinkVertically(),
             ) {
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(start = 60.dp, end = 16.dp, bottom = 16.dp)
+                        .padding(start = 60.dp, end = 16.dp, bottom = 16.dp),
                 ) {
                     HorizontalDivider(
                         modifier = Modifier.padding(bottom = 12.dp),
-                        color = MaterialTheme.colorScheme.outlineVariant
+                        color = MaterialTheme.colorScheme.outlineVariant,
                     )
 
                     routine?.exercises?.forEach { routineExercise ->
@@ -266,24 +265,24 @@ private fun ExerciseRow(routineExercise: RoutineExercise) {
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
+        verticalAlignment = Alignment.CenterVertically,
     ) {
         // Exercise name with bullet
         Row(
             verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.weight(1f)
+            modifier = Modifier.weight(1f),
         ) {
             Text(
                 text = "\u2022",
                 style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.primary
+                color = MaterialTheme.colorScheme.primary,
             )
             Spacer(Modifier.width(8.dp))
             Text(
                 text = routineExercise.exercise.name,
                 style = MaterialTheme.typography.bodyMedium,
                 maxLines = 1,
-                overflow = TextOverflow.Ellipsis
+                overflow = TextOverflow.Ellipsis,
             )
         }
 
@@ -295,7 +294,7 @@ private fun ExerciseRow(routineExercise: RoutineExercise) {
             text = setsRepsText,
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
-            fontWeight = FontWeight.Medium
+            fontWeight = FontWeight.Medium,
         )
     }
 }
@@ -342,13 +341,13 @@ private fun buildModifierBadges(day: CycleDay): List<String> {
     }
     day.eccentricLoadPercent?.let { pct ->
         if (pct != 100) {
-            badges.add("Eccentric ${pct}%")
+            badges.add("Eccentric $pct%")
         }
     }
     day.repModifier?.let { mod ->
         if (mod != 0) {
             val sign = if (mod > 0) "+" else ""
-            badges.add("${sign}${mod} reps")
+            badges.add("${sign}$mod reps")
         }
     }
     day.restTimeOverrideSeconds?.let { sec ->
@@ -366,13 +365,13 @@ private fun buildModifierBadges(day: CycleDay): List<String> {
 private fun ReviewModifierBadge(text: String) {
     Surface(
         color = MaterialTheme.colorScheme.secondaryContainer,
-        shape = RoundedCornerShape(6.dp)
+        shape = RoundedCornerShape(6.dp),
     ) {
         Text(
             text = text,
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSecondaryContainer,
-            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
         )
     }
 }

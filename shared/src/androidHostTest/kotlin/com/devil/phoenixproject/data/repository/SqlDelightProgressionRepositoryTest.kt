@@ -5,12 +5,12 @@ import com.devil.phoenixproject.domain.model.ProgressionEvent
 import com.devil.phoenixproject.domain.model.ProgressionReason
 import com.devil.phoenixproject.domain.model.ProgressionResponse
 import com.devil.phoenixproject.testutil.createTestDatabase
-import kotlinx.coroutines.test.runTest
-import org.junit.Before
-import org.junit.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
+import kotlinx.coroutines.test.runTest
+import org.junit.Before
+import org.junit.Test
 
 class SqlDelightProgressionRepositoryTest {
 
@@ -28,13 +28,13 @@ class SqlDelightProgressionRepositoryTest {
         val event = ProgressionEvent.create(
             exerciseId = "bench",
             previousWeightKg = 50f,
-            reason = ProgressionReason.REPS_ACHIEVED
+            reason = ProgressionReason.REPS_ACHIEVED,
         )
 
         repository.createProgressionSuggestion(event)
 
-        assertTrue(repository.hasPendingProgression("bench"))
-        val latest = repository.getLatestProgressionEvent("bench")
+        assertTrue(repository.hasPendingProgression("bench", profileId = "default"))
+        val latest = repository.getLatestProgressionEvent("bench", profileId = "default")
         assertEquals(event.id, latest?.id)
     }
 
@@ -43,14 +43,14 @@ class SqlDelightProgressionRepositoryTest {
         val event = ProgressionEvent.create(
             exerciseId = "bench",
             previousWeightKg = 50f,
-            reason = ProgressionReason.LOW_RPE
+            reason = ProgressionReason.LOW_RPE,
         )
         repository.createProgressionSuggestion(event)
 
         repository.recordResponse(event.id, ProgressionResponse.ACCEPTED, actualWeight = 52.5f)
 
-        assertFalse(repository.hasPendingProgression("bench"))
-        val updated = repository.getLatestProgressionEvent("bench")
+        assertFalse(repository.hasPendingProgression("bench", profileId = "default"))
+        val updated = repository.getLatestProgressionEvent("bench", profileId = "default")
         assertEquals(ProgressionResponse.ACCEPTED, updated?.userResponse)
     }
 }

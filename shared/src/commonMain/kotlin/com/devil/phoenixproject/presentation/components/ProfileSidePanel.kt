@@ -6,8 +6,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
@@ -31,7 +29,9 @@ import com.devil.phoenixproject.presentation.util.LocalWindowSizeClass
 import com.devil.phoenixproject.presentation.util.WindowWidthSizeClass
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
-import kotlin.math.roundToInt
+import org.jetbrains.compose.resources.stringResource
+import vitruvianprojectphoenix.shared.generated.resources.*
+import vitruvianprojectphoenix.shared.generated.resources.Res
 private val HANDLE_WIDTH = 24.dp
 private val HANDLE_HEIGHT = 48.dp
 private val EDGE_SWIPE_THRESHOLD = 20.dp
@@ -47,7 +47,7 @@ fun ProfileSidePanel(
     profileRepository: UserProfileRepository,
     scope: CoroutineScope,
     onAddProfile: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
 ) {
     var isOpen by remember { mutableStateOf(false) }
     var showContextMenu by remember { mutableStateOf<UserProfile?>(null) }
@@ -69,7 +69,7 @@ fun ProfileSidePanel(
     val panelOffset by animateDpAsState(
         targetValue = if (isOpen) 0.dp else panelWidth,
         animationSpec = tween(durationMillis = 300),
-        label = "panelOffset"
+        label = "panelOffset",
     )
 
     Box(modifier = modifier.fillMaxSize()) {
@@ -80,7 +80,7 @@ fun ProfileSidePanel(
                     .fillMaxSize()
                     .background(Color.Black.copy(alpha = 0.5f))
                     .clickable { isOpen = false }
-                    .zIndex(1f)
+                    .zIndex(1f),
             )
         }
 
@@ -96,7 +96,7 @@ fun ProfileSidePanel(
                             isOpen = true
                         }
                     }
-                }
+                },
         )
 
         // Panel + Handle
@@ -104,7 +104,7 @@ fun ProfileSidePanel(
             modifier = Modifier
                 .align(Alignment.CenterEnd)
                 .offset { IntOffset(panelOffset.roundToPx(), 0) }
-                .zIndex(2f)
+                .zIndex(2f),
         ) {
             // Chevron handle (visible when closed)
             Surface(
@@ -115,14 +115,16 @@ fun ProfileSidePanel(
                     .height(HANDLE_HEIGHT)
                     .clickable { isOpen = !isOpen },
                 shape = RoundedCornerShape(topStart = 8.dp, bottomStart = 8.dp),
-                color = ProfileColors.getOrElse(activeProfile?.colorIndex ?: 0) { ProfileColors[0] }.copy(alpha = 0.9f),
-                shadowElevation = 4.dp
+                color = ProfileColors.getOrElse(activeProfile?.colorIndex ?: 0) {
+                    ProfileColors[0]
+                }.copy(alpha = 0.9f),
+                shadowElevation = 4.dp,
             ) {
                 Box(contentAlignment = Alignment.Center) {
                     Icon(
                         imageVector = Icons.AutoMirrored.Filled.KeyboardArrowLeft,
                         contentDescription = if (isOpen) "Close profiles" else "Open profiles",
-                        tint = Color.White
+                        tint = Color.White,
                     )
                 }
             }
@@ -140,7 +142,7 @@ fun ProfileSidePanel(
                     },
                 shape = RoundedCornerShape(16.dp),
                 color = MaterialTheme.colorScheme.surfaceContainer,
-                shadowElevation = 8.dp
+                shadowElevation = 8.dp,
             ) {
                 Column {
                     // Header
@@ -148,7 +150,7 @@ fun ProfileSidePanel(
                         text = "Profiles",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
-                        modifier = Modifier.padding(16.dp)
+                        modifier = Modifier.padding(16.dp),
                     )
 
                     HorizontalDivider()
@@ -163,33 +165,37 @@ fun ProfileSidePanel(
                                     profile = profile,
                                     isActive = isActive,
                                     onClick = {
-                                        scope.launch { profileRepository.setActiveProfile(profile.id) }
+                                        scope.launch {
+                                            profileRepository.setActiveProfile(profile.id)
+                                        }
                                         isOpen = false
                                     },
                                     onLongClick = {
                                         showContextMenu = profile
-                                    }
+                                    },
                                 )
 
                                 // Context menu dropdown
                                 DropdownMenu(
                                     expanded = showContextMenu?.id == profile.id,
-                                    onDismissRequest = { showContextMenu = null }
+                                    onDismissRequest = { showContextMenu = null },
                                 ) {
                                     DropdownMenuItem(
-                                        text = { Text("Edit") },
+                                        text = { Text(stringResource(Res.string.action_edit)) },
                                         onClick = {
                                             showEditDialog = profile
                                             showContextMenu = null
                                         },
                                         leadingIcon = {
                                             Icon(Icons.Default.Edit, contentDescription = null)
-                                        }
+                                        },
                                     )
                                     // Don't show delete for default profile
                                     if (profile.id != "default") {
                                         DropdownMenuItem(
-                                            text = { Text("Delete") },
+                                            text = {
+                                                Text(stringResource(Res.string.action_delete))
+                                            },
                                             onClick = {
                                                 showDeleteDialog = profile
                                                 showContextMenu = null
@@ -198,9 +204,9 @@ fun ProfileSidePanel(
                                                 Icon(
                                                     Icons.Default.Delete,
                                                     contentDescription = null,
-                                                    tint = MaterialTheme.colorScheme.error
+                                                    tint = MaterialTheme.colorScheme.error,
                                                 )
-                                            }
+                                            },
                                         )
                                     }
                                 }
@@ -218,32 +224,32 @@ fun ProfileSidePanel(
                                 isOpen = false
                                 onAddProfile()
                             },
-                        color = Color.Transparent
+                        color = Color.Transparent,
                     ) {
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .padding(16.dp),
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
                         ) {
                             Surface(
                                 modifier = Modifier.size(40.dp),
                                 shape = androidx.compose.foundation.shape.CircleShape,
-                                color = MaterialTheme.colorScheme.secondaryContainer
+                                color = MaterialTheme.colorScheme.secondaryContainer,
                             ) {
                                 Box(contentAlignment = Alignment.Center) {
                                     Icon(
                                         imageVector = Icons.Default.Add,
                                         contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.onSecondaryContainer
+                                        tint = MaterialTheme.colorScheme.onSecondaryContainer,
                                     )
                                 }
                             }
                             Text(
                                 text = "Add Profile",
                                 style = MaterialTheme.typography.bodyLarge,
-                                color = MaterialTheme.colorScheme.onSurface
+                                color = MaterialTheme.colorScheme.onSurface,
                             )
                         }
                     }
@@ -258,7 +264,7 @@ fun ProfileSidePanel(
             profile = profile,
             profileRepository = profileRepository,
             scope = scope,
-            onDismiss = { showEditDialog = null }
+            onDismiss = { showEditDialog = null },
         )
     }
 
@@ -268,7 +274,7 @@ fun ProfileSidePanel(
             profile = profile,
             profileRepository = profileRepository,
             scope = scope,
-            onDismiss = { showDeleteDialog = null }
+            onDismiss = { showDeleteDialog = null },
         )
     }
 }

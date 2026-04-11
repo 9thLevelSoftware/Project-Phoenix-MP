@@ -70,7 +70,7 @@ class FakeWorkoutRepository : WorkoutRepository {
 
     // ========== WorkoutRepository interface implementation ==========
 
-    override fun getAllSessions(): Flow<List<WorkoutSession>> = _sessionsFlow
+    override fun getAllSessions(profileId: String): Flow<List<WorkoutSession>> = _sessionsFlow
 
     override suspend fun saveSession(session: WorkoutSession) {
         sessions[session.id] = session
@@ -89,12 +89,11 @@ class FakeWorkoutRepository : WorkoutRepository {
         updateSessionsFlow()
     }
 
-    override fun getRecentSessions(limit: Int): Flow<List<WorkoutSession>> =
-        _sessionsFlow.map { it.take(limit) }
+    override fun getRecentSessions(profileId: String, limit: Int): Flow<List<WorkoutSession>> = _sessionsFlow.map { it.take(limit) }
 
     override suspend fun getSession(sessionId: String): WorkoutSession? = sessions[sessionId]
 
-    override fun getAllRoutines(): Flow<List<Routine>> = _routinesFlow
+    override fun getAllRoutines(profileId: String): Flow<List<Routine>> = _routinesFlow
 
     override suspend fun saveRoutine(routine: Routine) {
         routines[routine.id] = routine
@@ -111,21 +110,30 @@ class FakeWorkoutRepository : WorkoutRepository {
         updateRoutinesFlow()
     }
 
+    override suspend fun moveRoutineToProfile(routineId: String, targetProfileId: String) {
+        routines[routineId]?.let { routine ->
+            routines[routineId] = routine.copy(profileId = targetProfileId)
+            updateRoutinesFlow()
+        }
+    }
+
     override suspend fun getRoutineById(routineId: String): Routine? = routines[routineId]
 
     override suspend fun markRoutineUsed(routineId: String) {
         routines[routineId]?.let { routine ->
             routines[routineId] = routine.copy(
                 lastUsed = currentTimeMillis(),
-                useCount = routine.useCount + 1
+                useCount = routine.useCount + 1,
             )
             updateRoutinesFlow()
         }
     }
 
-    override fun getAllPersonalRecords(): Flow<List<PersonalRecordEntity>> = _personalRecordsFlow
+    override suspend fun getAverageSetDurationMs(exerciseId: String, profileId: String): Long? = null
 
-    override suspend fun updatePRIfBetter(exerciseId: String, weightKg: Float, reps: Int, mode: String) {
+    override fun getAllPersonalRecords(profileId: String): Flow<List<PersonalRecordEntity>> = _personalRecordsFlow
+
+    override suspend fun updatePRIfBetter(exerciseId: String, weightKg: Float, reps: Int, mode: String, profileId: String) {
         val key = "$exerciseId-$mode"
         val existing = personalRecords[key]
         val newVolume = weightKg * reps
@@ -137,7 +145,7 @@ class FakeWorkoutRepository : WorkoutRepository {
                 weightPerCableKg = weightKg,
                 reps = reps,
                 timestamp = currentTimeMillis(),
-                workoutMode = mode
+                workoutMode = mode,
             )
             updatePersonalRecordsFlow()
         }
@@ -147,17 +155,13 @@ class FakeWorkoutRepository : WorkoutRepository {
         this.metrics[sessionId] = metrics
     }
 
-    override fun getMetricsForSession(sessionId: String): Flow<List<WorkoutMetric>> {
-        return MutableStateFlow(metrics[sessionId] ?: emptyList())
-    }
+    override fun getMetricsForSession(sessionId: String): Flow<List<WorkoutMetric>> = MutableStateFlow(metrics[sessionId] ?: emptyList())
 
-    override suspend fun getMetricsForSessionSync(sessionId: String): List<WorkoutMetric> {
-        return metrics[sessionId] ?: emptyList()
-    }
+    override suspend fun getMetricsForSessionSync(sessionId: String): List<WorkoutMetric> = metrics[sessionId] ?: emptyList()
 
-    override suspend fun getRecentSessionsSync(limit: Int): List<WorkoutSession> {
-        return sessions.values.sortedByDescending { it.timestamp }.take(limit)
-    }
+    override suspend fun getRecentSessionsSync(profileId: String, limit: Int): List<WorkoutSession> = sessions.values.sortedByDescending {
+        it.timestamp
+    }.take(limit)
 
     override suspend fun savePhaseStatistics(sessionId: String, stats: HeuristicStatistics) {
         phaseStatistics[sessionId] = PhaseStatisticsData(
@@ -175,7 +179,7 @@ class FakeWorkoutRepository : WorkoutRepository {
             eccentricVelMax = stats.eccentric.velMax,
             eccentricWattAvg = stats.eccentric.wattAvg,
             eccentricWattMax = stats.eccentric.wattMax,
-            timestamp = currentTimeMillis()
+            timestamp = currentTimeMillis(),
         )
         updatePhaseStatisticsFlow()
     }

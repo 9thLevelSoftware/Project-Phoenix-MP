@@ -2,7 +2,9 @@ package com.devil.phoenixproject.presentation.screen
 
 import com.devil.phoenixproject.data.repository.AutoStopUiState
 import com.devil.phoenixproject.domain.model.*
+import com.devil.phoenixproject.domain.model.BiomechanicsRepResult
 import com.devil.phoenixproject.domain.usecase.RepRanges
+import com.devil.phoenixproject.presentation.manager.DetectionState
 
 /**
  * UI State holder for WorkoutTab.
@@ -42,7 +44,7 @@ data class WorkoutUiState(
     val currentHeuristicKgMax: Float = 0f, // Echo mode: actual measured force per cable (kg)
     val workoutParameters: WorkoutParameters = WorkoutParameters(
         programMode = ProgramMode.OldSchool,
-        reps = 10
+        reps = 10,
     ),
     val repCount: RepCount = RepCount(),
     val repRanges: RepRanges? = null,
@@ -56,7 +58,7 @@ data class WorkoutUiState(
     val skippedExercises: Set<Int> = emptySet(),
     val completedExercises: Set<Int> = emptySet(),
     val autoplayEnabled: Boolean = false,
-    val summaryCountdownSeconds: Int = 10,  // Countdown duration for SetSummary auto-continue (0 = Off)
+    val summaryCountdownSeconds: Int = 10, // Countdown duration for SetSummary auto-continue (0 = Off)
     val canGoBack: Boolean = false,
     val canSkipForward: Boolean = false,
     val isWorkoutSetupDialogVisible: Boolean = false,
@@ -65,8 +67,33 @@ data class WorkoutUiState(
     val loadBaselineA: Float = 0f,
     val loadBaselineB: Float = 0f,
     val timedExerciseRemainingSeconds: Int? = null,
-    val isCurrentExerciseBodyweight: Boolean = false
-)
+    val isCurrentExerciseBodyweight: Boolean = false,
+    val latestRepQualityScore: Int? = null,
+    val latestBiomechanicsResult: BiomechanicsRepResult? = null,
+    val detectionState: DetectionState = DetectionState(),
+    // Issue #237: Motion-triggered set start hold progress (0.0-1.0, null = not active)
+    val motionStartHoldProgress: Float? = null,
+    // Issue #297, #228: Rest timer pause state for UI display
+    val isRestPaused: Boolean = false,
+    // Phase 35C: Variable warm-up set state for HUD display
+    // -1 = not in warm-up phase, 0+ = current warm-up set index
+    val currentWarmupSetIndex: Int = -1,
+    // Total number of variable warm-up sets (0 if none)
+    val totalWarmupSets: Int = 0,
+    // Issue #113: Just Lift visual rest countdown (null = not resting, 0 = done)
+    val justLiftRestCountdown: Int? = null,
+) {
+    /** True when currently executing a variable warm-up set (for HUD label) */
+    val isInVariableWarmup: Boolean get() = currentWarmupSetIndex >= 0
+
+    /** Label for warm-up set display, e.g., "Warm-up 2/3" (null when not in warm-up) */
+    val warmupSetLabel: String? get() =
+        if (isInVariableWarmup) {
+            "Warm-up ${currentWarmupSetIndex + 1}/$totalWarmupSets"
+        } else {
+            null
+        }
+}
 
 /**
  * Action callbacks for WorkoutTab.
@@ -91,6 +118,15 @@ interface WorkoutActions {
 
     /** Skip rest timer and proceed immediately */
     fun onSkipRest()
+
+    /** Extend rest timer by given seconds (Issue #297, #228) */
+    fun onExtendRest(seconds: Int)
+
+    /** Toggle rest timer pause/resume (Issue #297, #228) */
+    fun onToggleRestPause()
+
+    /** Reset rest timer to original duration (Issue #297, #228) */
+    fun onResetRest()
 
     /** Skip countdown and start workout immediately */
     fun onSkipCountdown()
@@ -127,6 +163,12 @@ interface WorkoutActions {
 
     /** Format weight with unit */
     fun formatWeight(weight: Float, unit: WeightUnit): String
+
+    /** Confirm detected exercise selection */
+    suspend fun onDetectionConfirmed(exerciseId: String, exerciseName: String)
+
+    /** Dismiss detection sheet without confirming */
+    fun onDetectionDismissed()
 }
 
 /**
@@ -139,6 +181,9 @@ object PreviewWorkoutActions : WorkoutActions {
     override fun onStartWorkout() {}
     override fun onStopWorkout() {}
     override fun onSkipRest() {}
+    override fun onExtendRest(seconds: Int) {}
+    override fun onToggleRestPause() {}
+    override fun onResetRest() {}
     override fun onSkipCountdown() {}
     override fun onProceedFromSummary() {}
     override fun onRpeLogged(rpe: Int) {}
@@ -151,6 +196,8 @@ object PreviewWorkoutActions : WorkoutActions {
     override fun kgToDisplay(kg: Float, unit: WeightUnit): Float = kg
     override fun displayToKg(display: Float, unit: WeightUnit): Float = display
     override fun formatWeight(weight: Float, unit: WeightUnit): String = "${weight.toInt()} kg"
+    override suspend fun onDetectionConfirmed(exerciseId: String, exerciseName: String) {}
+    override fun onDetectionDismissed() {}
 }
 
 /**
@@ -164,6 +211,9 @@ fun workoutActions(
     onStartWorkout: () -> Unit,
     onStopWorkout: () -> Unit,
     onSkipRest: () -> Unit,
+    onExtendRest: (Int) -> Unit = {},
+    onToggleRestPause: () -> Unit = {},
+    onResetRest: () -> Unit = {},
     onSkipCountdown: () -> Unit,
     onProceedFromSummary: () -> Unit,
     onRpeLogged: (Int) -> Unit,
@@ -175,7 +225,9 @@ fun workoutActions(
     onHideWorkoutSetupDialog: () -> Unit,
     kgToDisplay: (Float, WeightUnit) -> Float,
     displayToKg: (Float, WeightUnit) -> Float,
-    formatWeight: (Float, WeightUnit) -> String
+    formatWeight: (Float, WeightUnit) -> String,
+    onDetectionConfirmed: suspend (String, String) -> Unit = { _, _ -> },
+    onDetectionDismissed: () -> Unit = {},
 ): WorkoutActions = object : WorkoutActions {
     override fun onScan() = onScan()
     override fun onCancelScan() = onCancelScan()
@@ -183,6 +235,9 @@ fun workoutActions(
     override fun onStartWorkout() = onStartWorkout()
     override fun onStopWorkout() = onStopWorkout()
     override fun onSkipRest() = onSkipRest()
+    override fun onExtendRest(seconds: Int) = onExtendRest(seconds)
+    override fun onToggleRestPause() = onToggleRestPause()
+    override fun onResetRest() = onResetRest()
     override fun onSkipCountdown() = onSkipCountdown()
     override fun onProceedFromSummary() = onProceedFromSummary()
     override fun onRpeLogged(rpe: Int) = onRpeLogged(rpe)
@@ -195,4 +250,6 @@ fun workoutActions(
     override fun kgToDisplay(kg: Float, unit: WeightUnit) = kgToDisplay(kg, unit)
     override fun displayToKg(display: Float, unit: WeightUnit) = displayToKg(display, unit)
     override fun formatWeight(weight: Float, unit: WeightUnit) = formatWeight(weight, unit)
+    override suspend fun onDetectionConfirmed(exerciseId: String, exerciseName: String) = onDetectionConfirmed(exerciseId, exerciseName)
+    override fun onDetectionDismissed() = onDetectionDismissed()
 }

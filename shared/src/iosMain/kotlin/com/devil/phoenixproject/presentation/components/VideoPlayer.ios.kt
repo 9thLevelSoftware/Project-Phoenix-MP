@@ -39,8 +39,8 @@ import platform.AVFoundation.pause
 import platform.AVFoundation.play
 import platform.AVFoundation.seekToTime
 import platform.AVFoundation.setVolume
-import platform.CoreMedia.CMTimeMake
 import platform.CoreGraphics.CGRectZero
+import platform.CoreMedia.CMTimeMake
 import platform.Foundation.NSError
 import platform.Foundation.NSNotificationCenter
 import platform.Foundation.NSOperationQueue
@@ -53,10 +53,7 @@ import platform.darwin.NSObjectProtocol
  * Matches the Android behavior: loops the clip, shows a loader, and surfaces errors.
  */
 @Composable
-actual fun VideoPlayer(
-    videoUrl: String?,
-    modifier: Modifier
-) {
+actual fun VideoPlayer(videoUrl: String?, modifier: Modifier) {
     if (videoUrl.isNullOrBlank()) {
         NoVideoAvailable(modifier)
         return
@@ -68,8 +65,9 @@ actual fun VideoPlayer(
 
     Box(
         modifier = modifier.background(MaterialTheme.colorScheme.surfaceVariant),
-        contentAlignment = Alignment.Center
+        contentAlignment = Alignment.Center,
     ) {
+        @Suppress("DEPRECATION")
         UIKitView(
             factory = {
                 LoopingPlayerView().apply {
@@ -83,7 +81,7 @@ actual fun VideoPlayer(
                             isLoading = false
                             hasError = true
                             errorMessage = message
-                        }
+                        },
                     )
                 }
             },
@@ -102,10 +100,10 @@ actual fun VideoPlayer(
                         isLoading = false
                         hasError = true
                         errorMessage = message
-                    }
+                    },
                 )
             },
-            modifier = Modifier.fillMaxSize()
+            modifier = Modifier.fillMaxSize(),
         )
 
         if (isLoading && !hasError) {
@@ -113,10 +111,10 @@ actual fun VideoPlayer(
                 modifier = Modifier
                     .fillMaxSize()
                     .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.8f)),
-                contentAlignment = Alignment.Center
+                contentAlignment = Alignment.Center,
             ) {
                 CircularProgressIndicator(
-                    modifier = Modifier.size(48.dp)
+                    modifier = Modifier.size(48.dp),
                 )
             }
         }
@@ -126,25 +124,25 @@ actual fun VideoPlayer(
                 modifier = Modifier
                     .fillMaxSize()
                     .background(MaterialTheme.colorScheme.surfaceVariant),
-                contentAlignment = Alignment.Center
+                contentAlignment = Alignment.Center,
             ) {
                 Column(
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.spacedBy(8.dp),
-                    modifier = Modifier.padding(16.dp)
+                    modifier = Modifier.padding(16.dp),
                 ) {
                     Text(
                         text = "Failed to load video",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.error,
-                        textAlign = TextAlign.Center
+                        textAlign = TextAlign.Center,
                     )
                     if (errorMessage.isNotBlank()) {
                         Text(
                             text = errorMessage,
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            textAlign = TextAlign.Center
+                            textAlign = TextAlign.Center,
                         )
                     }
                 }
@@ -158,20 +156,20 @@ private fun NoVideoAvailable(modifier: Modifier = Modifier) {
     Surface(
         modifier = modifier.fillMaxWidth(),
         color = MaterialTheme.colorScheme.surfaceVariant,
-        shape = MaterialTheme.shapes.medium
+        shape = MaterialTheme.shapes.medium,
     ) {
         Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(200.dp)
                 .padding(16.dp),
-            contentAlignment = Alignment.Center
+            contentAlignment = Alignment.Center,
         ) {
             Text(
                 text = "No video available",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                textAlign = TextAlign.Center
+                textAlign = TextAlign.Center,
             )
         }
     }
@@ -184,11 +182,7 @@ private class LoopingPlayerView : UIView(frame = CGRectZero.readValue()) {
     private var currentUrl: String? = null
     private var hasFailure: Boolean = false
 
-    fun load(
-        urlString: String?,
-        onReady: () -> Unit,
-        onError: (String) -> Unit
-    ) {
+    fun load(urlString: String?, onReady: () -> Unit, onError: (String) -> Unit) {
         if (urlString.isNullOrBlank()) {
             cleanup()
             hasFailure = true
@@ -247,7 +241,7 @@ private class LoopingPlayerView : UIView(frame = CGRectZero.readValue()) {
                 // Restart playback by seeking to the beginning
                 avPlayer.seekToTime(CMTimeMake(value = 0, timescale = 1))
                 avPlayer.play()
-            }
+            },
         )
         observers += endObserver
 
@@ -259,10 +253,15 @@ private class LoopingPlayerView : UIView(frame = CGRectZero.readValue()) {
             usingBlock = { notification ->
                 hasFailure = true
                 cleanup()
-                val message = (notification?.userInfo?.get(AVPlayerItemFailedToPlayToEndTimeErrorKey) as? NSError)
-                    ?.localizedDescription ?: "Playback failed"
+                val message =
+                    (
+                        notification?.userInfo?.get(
+                            AVPlayerItemFailedToPlayToEndTimeErrorKey,
+                        ) as? NSError
+                        )
+                        ?.localizedDescription ?: "Playback failed"
                 onError(message)
-            }
+            },
         )
         observers += failureObserver
 

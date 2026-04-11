@@ -36,6 +36,20 @@
 }
 -dontwarn kotlinx.coroutines.flow.**
 
+# ==================== Ktor HTTP Client (sync layer) ====================
+-keep class io.ktor.** { *; }
+-keep class io.ktor.client.** { *; }
+-keep class io.ktor.client.engine.** { *; }
+-keep class io.ktor.client.plugins.** { *; }
+-keep class io.ktor.serialization.** { *; }
+-keep class io.ktor.utils.** { *; }
+-dontwarn io.ktor.**
+
+# ==================== OkHttp (Ktor Android engine) ====================
+-dontwarn okhttp3.**
+-keep class okhttp3.** { *; }
+-keep interface okhttp3.** { *; }
+
 # ==================== SQLDelight ====================
 -keep class com.devil.phoenixproject.database.** { *; }
 -keep class app.cash.sqldelight.** { *; }
@@ -98,9 +112,32 @@
     public static final ** CREATOR;
 }
 
-# Remove logging in release (optional - uncomment to strip logs)
-# -assumenosideeffects class android.util.Log {
-#     public static int v(...);
-#     public static int d(...);
-#     public static int i(...);
-# }
+# Remove verbose/debug/info logging in release builds
+# Keep Log.w and Log.e for warnings and errors
+-assumenosideeffects class android.util.Log {
+    public static int v(...);
+    public static int d(...);
+    public static int i(...);
+}
+
+# ==================== MediaPipe ====================
+# Keep all MediaPipe framework classes (JNI + reflection)
+-keep class com.google.mediapipe.** { *; }
+-keep class com.google.mediapipe.framework.** { *; }
+
+# Keep protobuf classes used by MediaPipe via reflection
+-keep class com.google.protobuf.** { *; }
+-keepclassmembers class * extends com.google.protobuf.GeneratedMessageLite {
+    *;
+}
+
+# Keep MediaPipe model task infrastructure
+-keep class com.google.mediapipe.tasks.** { *; }
+
+# Don't warn about optional GPU delegate classes
+-dontwarn com.google.mediapipe.**
+
+# ==================== CameraX ====================
+# Keep CameraX classes (usually handled by CameraX's own rules, but be safe)
+-keep class androidx.camera.** { *; }
+-dontwarn androidx.camera.**

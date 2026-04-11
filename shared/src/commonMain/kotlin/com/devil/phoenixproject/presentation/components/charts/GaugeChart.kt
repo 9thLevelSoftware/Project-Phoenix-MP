@@ -24,6 +24,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.presentation.util.ResponsiveDimensions
+import org.jetbrains.compose.resources.stringResource
+import vitruvianprojectphoenix.shared.generated.resources.*
+import vitruvianprojectphoenix.shared.generated.resources.Res
 
 /**
  * Material 3 Expressive Gauge Chart
@@ -38,13 +41,13 @@ fun GaugeChart(
     targetValue: Float,
     modifier: Modifier = Modifier,
     label: String = "Progress",
-    showPercentage: Boolean = true
+    showPercentage: Boolean = true,
 ) {
     // Data validation
     if (targetValue <= 0f) {
         EmptyGaugeState(
-            message = "Invalid target value",
-            modifier = modifier
+            message = stringResource(Res.string.chart_invalid_target),
+            modifier = modifier,
         )
         return
     }
@@ -53,7 +56,7 @@ fun GaugeChart(
     val animatedProgress by animateFloatAsState(
         targetValue = progress,
         animationSpec = tween(durationMillis = 1500),
-        label = "GaugeProgress"
+        label = "GaugeProgress",
     )
 
     val percentage = (animatedProgress * 100).toInt()
@@ -72,7 +75,7 @@ fun GaugeChart(
                 .fillMaxWidth()
                 .height(chartHeight)
                 .padding(16.dp),
-            contentAlignment = Alignment.Center
+            contentAlignment = Alignment.Center,
         ) {
             Canvas(modifier = Modifier.fillMaxSize()) {
                 val centerX = size.width / 2
@@ -89,8 +92,8 @@ fun GaugeChart(
                     size = Size(radius * 2, radius * 2),
                     style = Stroke(
                         width = 24.dp.toPx(),
-                        cap = StrokeCap.Round
-                    )
+                        cap = StrokeCap.Round,
+                    ),
                 )
 
                 // Progress arc
@@ -103,8 +106,8 @@ fun GaugeChart(
                     size = Size(radius * 2, radius * 2),
                     style = Stroke(
                         width = 24.dp.toPx(),
-                        cap = StrokeCap.Round
-                    )
+                        cap = StrokeCap.Round,
+                    ),
                 )
 
                 // Gradient overlay
@@ -112,10 +115,10 @@ fun GaugeChart(
                     brush = Brush.linearGradient(
                         colors = listOf(
                             gaugeColor.copy(alpha = 0.8f),
-                            gaugeColor.copy(alpha = 0.4f)
+                            gaugeColor.copy(alpha = 0.4f),
                         ),
                         start = Offset(centerX - radius, centerY),
-                        end = Offset(centerX + radius, centerY)
+                        end = Offset(centerX + radius, centerY),
                     ),
                     startAngle = 180f,
                     sweepAngle = 180f * animatedProgress,
@@ -124,22 +127,22 @@ fun GaugeChart(
                     size = Size(radius * 2, radius * 2),
                     style = Stroke(
                         width = 8.dp.toPx(),
-                        cap = StrokeCap.Round
-                    )
+                        cap = StrokeCap.Round,
+                    ),
                 )
             }
 
             // Center text overlaid on canvas (positioned in lower portion where arc center is)
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
-                modifier = Modifier.offset(y = 24.dp)
+                modifier = Modifier.offset(y = 24.dp),
             ) {
                 Text(
                     text = if (showPercentage) "$percentage%" else "${currentValue.toInt()}/${targetValue.toInt()}",
                     style = MaterialTheme.typography.headlineMedium,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurface,
-                    textAlign = TextAlign.Center
+                    textAlign = TextAlign.Center,
                 )
             }
         }
@@ -148,50 +151,47 @@ fun GaugeChart(
         Text(
             text = label,
             style = MaterialTheme.typography.titleLarge.copy(
-                fontWeight = FontWeight.Medium
+                fontWeight = FontWeight.Medium,
             ),
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center,
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(top = 8.dp)
+                .padding(top = 8.dp),
         )
     }
 }
 
 @Composable
-private fun EmptyGaugeState(
-    message: String,
-    modifier: Modifier = Modifier
-) {
+private fun EmptyGaugeState(message: String, modifier: Modifier = Modifier) {
     val chartHeight = ResponsiveDimensions.chartHeight(baseHeight = 200.dp)
 
     Column(
         modifier = modifier,
-        horizontalAlignment = Alignment.CenterHorizontally
+        horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(chartHeight)
                 .padding(16.dp),
-            contentAlignment = Alignment.Center
+            contentAlignment = Alignment.Center,
         ) {
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(8.dp)
+                verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 Icon(
                     imageVector = Icons.AutoMirrored.Filled.TrendingUp,
-                    contentDescription = "Invalid gauge data",
+                    contentDescription = stringResource(Res.string.chart_invalid_gauge),
                     tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
-                    modifier = Modifier.size(48.dp)
+                    modifier = Modifier.size(48.dp),
                 )
                 Text(
                     text = message,
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    textAlign = TextAlign.Center
+                    textAlign = TextAlign.Center,
                 )
             }
         }

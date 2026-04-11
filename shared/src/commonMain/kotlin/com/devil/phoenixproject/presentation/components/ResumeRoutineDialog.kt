@@ -13,6 +13,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.presentation.manager.ResumableProgressInfo
+import org.jetbrains.compose.resources.stringResource
+import vitruvianprojectphoenix.shared.generated.resources.*
+import vitruvianprojectphoenix.shared.generated.resources.Res
 
 /**
  * Dialog shown when user tries to start a routine that has existing progress.
@@ -21,40 +24,35 @@ import com.devil.phoenixproject.presentation.manager.ResumableProgressInfo
  * Issue #101: Provides clear UX for resume vs restart behavior.
  */
 @Composable
-fun ResumeRoutineDialog(
-    progressInfo: ResumableProgressInfo,
-    onResume: () -> Unit,
-    onRestart: () -> Unit,
-    onDismiss: () -> Unit
-) {
+fun ResumeRoutineDialog(progressInfo: ResumableProgressInfo, onResume: () -> Unit, onRestart: () -> Unit, onDismiss: () -> Unit) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Resume Workout?") },
+        title = { Text(stringResource(Res.string.resume_workout_title)) },
         text = {
             Column {
-                Text("You have progress saved:")
+                Text(stringResource(Res.string.resume_workout_saved))
                 Spacer(Modifier.height(8.dp))
                 Text(
                     "Exercise ${progressInfo.currentExercise} of ${progressInfo.totalExercises}",
                     style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.SemiBold
+                    fontWeight = FontWeight.SemiBold,
                 )
                 Text(
                     "${progressInfo.exerciseName} - Set ${progressInfo.currentSet} of ${progressInfo.totalSets}",
                     style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
         },
         confirmButton = {
             Button(onClick = onResume) {
-                Text("Continue")
+                Text(stringResource(Res.string.action_continue))
             }
         },
         dismissButton = {
             OutlinedButton(onClick = onRestart) {
-                Text("Restart from Set 1")
+                Text(stringResource(Res.string.restart_from_set_1))
             }
-        }
+        },
     )
 }

@@ -8,15 +8,15 @@ import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.testutil.FakeExerciseRepository
 import com.devil.phoenixproject.testutil.createTestDatabase
 import java.io.File
+import kotlin.test.assertEquals
+import kotlin.test.assertNotNull
+import kotlin.test.assertNull
+import kotlin.test.assertTrue
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import org.junit.Before
 import org.junit.Test
-import kotlin.test.assertEquals
-import kotlin.test.assertNotNull
-import kotlin.test.assertNull
-import kotlin.test.assertTrue
 
 class DataBackupManagerRoutineNameTest {
 
@@ -39,8 +39,8 @@ class DataBackupManagerRoutineNameTest {
                 routineId = "routine-upper",
                 routineName = "Upper Day",
                 exerciseId = "exercise-bench",
-                exerciseName = "Bench Press"
-            )
+                exerciseName = "Bench Press",
+            ),
         )
         workoutRepository.saveSession(
             WorkoutSession(
@@ -50,8 +50,8 @@ class DataBackupManagerRoutineNameTest {
                 routineSessionId = null,
                 routineName = "Bench Press",
                 totalReps = 10,
-                workingReps = 10
-            )
+                workingReps = 10,
+            ),
         )
 
         val backup = backupManager.exportAllData()
@@ -67,16 +67,16 @@ class DataBackupManagerRoutineNameTest {
                 routineId = "routine-a",
                 routineName = "Push A",
                 exerciseId = "exercise-shared",
-                exerciseName = "Incline Press"
-            )
+                exerciseName = "Incline Press",
+            ),
         )
         workoutRepository.saveRoutine(
             buildRoutine(
                 routineId = "routine-b",
                 routineName = "Push B",
                 exerciseId = "exercise-shared",
-                exerciseName = "Incline Press"
-            )
+                exerciseName = "Incline Press",
+            ),
         )
         workoutRepository.saveSession(
             WorkoutSession(
@@ -85,8 +85,8 @@ class DataBackupManagerRoutineNameTest {
                 exerciseName = "Incline Press",
                 routineName = "Incline Press",
                 totalReps = 8,
-                workingReps = 8
-            )
+                workingReps = 8,
+            ),
         )
 
         val backup = backupManager.exportAllData()
@@ -119,17 +119,17 @@ class DataBackupManagerRoutineNameTest {
                         exerciseName = "Row",
                         routineSessionId = null,
                         routineName = null,
-                        routineId = "routine-import"
-                    )
+                        routineId = "routine-import",
+                    ),
                 ),
                 routines = listOf(
                     RoutineBackup(
                         id = "routine-import",
                         name = "Tuesday Upper",
-                        createdAt = 1_700_000_000_000
-                    )
-                )
-            )
+                        createdAt = 1_700_000_000_000,
+                    ),
+                ),
+            ),
         )
 
         val importResult = backupManager.importFromJson(testJson.encodeToString(backup))
@@ -168,15 +168,15 @@ class DataBackupManagerRoutineNameTest {
                         exerciseName = "Bicep Curl",
                         routineSessionId = null,
                         routineName = "Bicep Curl",
-                        routineId = null
-                    )
+                        routineId = null,
+                    ),
                 ),
                 routines = listOf(
                     RoutineBackup(
                         id = "routine-arms",
                         name = "Arms Day",
-                        createdAt = 1_700_000_000_000
-                    )
+                        createdAt = 1_700_000_000_000,
+                    ),
                 ),
                 routineExercises = listOf(
                     RoutineExerciseBackup(
@@ -189,10 +189,10 @@ class DataBackupManagerRoutineNameTest {
                         cableConfig = "DOUBLE",
                         orderIndex = 0,
                         setReps = "10,10,10",
-                        weightPerCableKg = 8f
-                    )
-                )
-            )
+                        weightPerCableKg = 8f,
+                    ),
+                ),
+            ),
         )
 
         val importResult = backupManager.importFromJson(testJson.encodeToString(backup))
@@ -212,8 +212,8 @@ class DataBackupManagerRoutineNameTest {
                 routineId = "routine-upper",
                 routineName = "Upper Day",
                 exerciseId = "exercise-bench",
-                exerciseName = "Bench Press"
-            )
+                exerciseName = "Bench Press",
+            ),
         )
         workoutRepository.saveSession(
             WorkoutSession(
@@ -223,8 +223,8 @@ class DataBackupManagerRoutineNameTest {
                 routineSessionId = null,
                 routineName = "Imported Strength Training Session",
                 totalReps = 10,
-                workingReps = 10
-            )
+                workingReps = 10,
+            ),
         )
 
         val backup = backupManager.exportAllData()
@@ -244,8 +244,8 @@ class DataBackupManagerRoutineNameTest {
                 routineSessionId = null,
                 routineName = "Imported Strength Training Session",
                 totalReps = 5,
-                workingReps = 5
-            )
+                workingReps = 5,
+            ),
         )
 
         val backup = backupManager.exportAllData()
@@ -297,6 +297,13 @@ class DataBackupManagerRoutineNameTest {
             burnoutAvgWeightKg = null,
             peakWeightKg = null,
             rpe = null,
+            avgMcvMmS = null,
+            avgAsymmetryPercent = null,
+            totalVelocityLossPercent = null,
+            dominantSide = null,
+            strengthProfile = null,
+            formScore = null,
+            profile_id = "default",
         )
 
         val backup = backupManager.exportAllData()
@@ -330,10 +337,10 @@ class DataBackupManagerRoutineNameTest {
                         exerciseName = "Squat",
                         routineSessionId = "legacy_session_session-import-fabricated",
                         routineName = "Leg Day",
-                        routineId = null
-                    )
-                )
-            )
+                        routineId = null,
+                    ),
+                ),
+            ),
         )
 
         val importResult = backupManager.importFromJson(testJson.encodeToString(backup))
@@ -372,10 +379,10 @@ class DataBackupManagerRoutineNameTest {
                         exerciseName = "Unknown Exercise",
                         routineSessionId = null,
                         routineName = "Imported Strength Training Session",
-                        routineId = null
-                    )
-                )
-            )
+                        routineId = null,
+                    ),
+                ),
+            ),
         )
 
         val importResult = backupManager.importFromJson(testJson.encodeToString(backup))
@@ -388,41 +395,309 @@ class DataBackupManagerRoutineNameTest {
         assertNull(imported.routineName, "Garbage routine name should be filtered out on import")
     }
 
-    private fun buildRoutine(
-        routineId: String,
-        routineName: String,
-        exerciseId: String,
-        exerciseName: String
-    ): Routine {
+    // --- Per-session auto-backup (exportSession) tests ---
+
+    @Test
+    fun `exportSession produces import-compatible BackupData with session and completedSets`() = runTest {
+        // Insert a session
+        workoutRepository.saveSession(
+            WorkoutSession(
+                id = "session-export-test",
+                exerciseId = "exercise-squat",
+                exerciseName = "Squat",
+                timestamp = 1700000000000L,
+                mode = "OLD_SCHOOL",
+                reps = 10,
+                weightPerCableKg = 50f,
+                duration = 120_000L,
+                totalReps = 10,
+                workingReps = 10,
+            ),
+        )
+
+        // Insert a completed set for that session
+        database.vitruvianDatabaseQueries.insertCompletedSetIgnore(
+            id = "cs-1",
+            session_id = "session-export-test",
+            planned_set_id = null,
+            set_number = 1,
+            set_type = "STANDARD",
+            actual_reps = 10,
+            actual_weight_kg = 50.0,
+            logged_rpe = null,
+            is_pr = 0,
+            completed_at = 1700000060000L,
+        )
+
+        // Export just this session
+        val result = backupManager.exportSession("session-export-test")
+        assertTrue(result.isSuccess, "exportSession should succeed")
+
+        val filePath = result.getOrThrow()
+        assertTrue(filePath.contains("phoenix-workout-"), "Filename should follow convention")
+        assertTrue(filePath.contains("session-export-test"), "Filename should contain full sessionId")
+
+        // Read the written file and verify it's valid, import-compatible BackupData
+        val fileContent = File(filePath).readText()
+        val backupData = testJson.decodeFromString<BackupData>(fileContent)
+
+        assertEquals(1, backupData.data.workoutSessions.size, "Should contain exactly 1 session")
+        assertEquals("session-export-test", backupData.data.workoutSessions[0].id)
+        assertEquals(1, backupData.data.completedSets.size, "Should include completedSets for the session")
+        assertEquals("cs-1", backupData.data.completedSets[0].id)
+        assertEquals("session-export-test", backupData.data.completedSets[0].sessionId)
+
+        // Verify it can be re-imported (import compatibility)
+        // First delete the session so import has room
+        database.vitruvianDatabaseQueries.deleteSession("session-export-test")
+        database.vitruvianDatabaseQueries.deleteCompletedSetsBySession("session-export-test")
+
+        val importResult = backupManager.importFromJson(fileContent)
+        assertTrue(importResult.isSuccess, "Should be importable")
+        assertEquals(1, importResult.getOrThrow().sessionsImported)
+        assertEquals(1, importResult.getOrThrow().completedSetsImported)
+
+        // Clean up
+        File(filePath).delete()
+    }
+
+    @Test
+    fun `exportSession returns failure for non-existent session`() = runTest {
+        val result = backupManager.exportSession("non-existent-session")
+        assertTrue(result.isFailure, "Should fail for non-existent session")
+        assertTrue(result.exceptionOrNull()?.message?.contains("Session not found") == true)
+    }
+
+    /**
+     * Regression test for #324: restoring a legacy backup (null profileId) while the active
+     * profile is NOT "default" must adopt skipped records into the active profile, not
+     * reassign them to "default" (which would make them invisible).
+     */
+    @Test
+    fun `restore legacy backup adopts skipped records into active profile not default`() = runTest {
+        val queries = database.vitruvianDatabaseQueries
+
+        // 1. Create a non-default profile and make it active
+        queries.insertProfile(
+            id = "userA",
+            name = "User A",
+            colorIndex = 1L,
+            createdAt = 1_700_000_000_000,
+            isActive = 1L,
+        )
+
+        // 2. Insert a session and routine owned by "userA"
+        queries.insertSession(
+            id = "session-existing",
+            timestamp = 1_700_000_000_000,
+            mode = "Old School",
+            targetReps = 10,
+            weightPerCableKg = 20.0,
+            progressionKg = 0.0,
+            duration = 60_000L,
+            totalReps = 10,
+            warmupReps = 0,
+            workingReps = 10,
+            isJustLift = 0,
+            stopAtTop = 0,
+            eccentricLoad = 100,
+            echoLevel = 0,
+            exerciseId = "exercise-bench",
+            exerciseName = "Bench Press",
+            routineSessionId = null,
+            routineName = null,
+            routineId = null,
+            safetyFlags = 0,
+            deloadWarningCount = 0,
+            romViolationCount = 0,
+            spotterActivations = 0,
+            peakForceConcentricA = null,
+            peakForceConcentricB = null,
+            peakForceEccentricA = null,
+            peakForceEccentricB = null,
+            avgForceConcentricA = null,
+            avgForceConcentricB = null,
+            avgForceEccentricA = null,
+            avgForceEccentricB = null,
+            heaviestLiftKg = null,
+            totalVolumeKg = null,
+            cableCount = null,
+            estimatedCalories = null,
+            warmupAvgWeightKg = null,
+            workingAvgWeightKg = null,
+            burnoutAvgWeightKg = null,
+            peakWeightKg = null,
+            rpe = null,
+            avgMcvMmS = null,
+            avgAsymmetryPercent = null,
+            totalVelocityLossPercent = null,
+            dominantSide = null,
+            strengthProfile = null,
+            formScore = null,
+            profile_id = "userA",
+        )
+        queries.insertRoutine(
+            id = "routine-existing",
+            name = "Upper Day",
+            description = "",
+            createdAt = 1_700_000_000_000,
+            lastUsed = null,
+            useCount = 3,
+            profile_id = "userA",
+        )
+
+        // 3. Build a legacy backup with null profileId containing the same IDs
+        val legacyBackup = BackupData(
+            version = 1,
+            exportedAt = "2026-03-29T00:00:00Z",
+            appVersion = "test",
+            data = BackupContent(
+                workoutSessions = listOf(
+                    WorkoutSessionBackup(
+                        id = "session-existing",
+                        timestamp = 1_700_000_000_000,
+                        mode = "Old School",
+                        targetReps = 10,
+                        weightPerCableKg = 20f,
+                        progressionKg = 0f,
+                        duration = 60_000L,
+                        totalReps = 10,
+                        warmupReps = 0,
+                        workingReps = 10,
+                        isJustLift = false,
+                        stopAtTop = false,
+                        exerciseId = "exercise-bench",
+                        exerciseName = "Bench Press",
+                        profileId = null, // legacy backup — no profileId
+                    ),
+                ),
+                routines = listOf(
+                    RoutineBackup(
+                        id = "routine-existing",
+                        name = "Upper Day",
+                        createdAt = 1_700_000_000_000,
+                        profileId = null, // legacy backup — no profileId
+                    ),
+                ),
+            ),
+        )
+
+        // 4. Import the legacy backup
+        val result = backupManager.importFromJson(testJson.encodeToString(legacyBackup))
+        assertTrue(result.isSuccess)
+
+        // 5. Verify: records should still belong to "userA" (the active profile),
+        //    NOT reassigned to "default"
+        val session = queries.selectSessionById("session-existing").executeAsOneOrNull()
+        assertNotNull(session)
+        assertEquals("userA", session.profile_id, "Skipped session must stay in active profile, not be reassigned to default")
+
+        val routine = queries.selectRoutineById("routine-existing").executeAsOneOrNull()
+        assertNotNull(routine)
+        assertEquals("userA", routine.profile_id, "Skipped routine must stay in active profile, not be reassigned to default")
+    }
+
+    /**
+     * Multi-profile restore: a backup with explicit profileId for another profile must NOT
+     * be adopted into the active profile. This prevents cross-contamination when restoring
+     * a full multi-profile backup.
+     */
+    @Test
+    fun `restore with explicit foreign profileId does not adopt into active profile`() = runTest {
+        val queries = database.vitruvianDatabaseQueries
+
+        // 1. Create two profiles; make "userA" active
+        queries.insertProfile(id = "userA", name = "User A", colorIndex = 1L, createdAt = 1_700_000_000_000, isActive = 1L)
+        queries.insertProfile(id = "userB", name = "User B", colorIndex = 2L, createdAt = 1_700_000_000_001, isActive = 0L)
+
+        // 2. Insert a session owned by "userB"
+        queries.insertSession(
+            id = "session-b", timestamp = 1_700_000_000_000, mode = "Old School",
+            targetReps = 10, weightPerCableKg = 20.0, progressionKg = 0.0,
+            duration = 60_000L, totalReps = 10, warmupReps = 0, workingReps = 10,
+            isJustLift = 0, stopAtTop = 0, eccentricLoad = 100, echoLevel = 0,
+            exerciseId = "exercise-bench", exerciseName = "Bench Press",
+            routineSessionId = null, routineName = null, routineId = null,
+            safetyFlags = 0, deloadWarningCount = 0, romViolationCount = 0, spotterActivations = 0,
+            peakForceConcentricA = null, peakForceConcentricB = null,
+            peakForceEccentricA = null, peakForceEccentricB = null,
+            avgForceConcentricA = null, avgForceConcentricB = null,
+            avgForceEccentricA = null, avgForceEccentricB = null,
+            heaviestLiftKg = null, totalVolumeKg = null, cableCount = null,
+            estimatedCalories = null, warmupAvgWeightKg = null, workingAvgWeightKg = null,
+            burnoutAvgWeightKg = null, peakWeightKg = null, rpe = null,
+            avgMcvMmS = null, avgAsymmetryPercent = null, totalVelocityLossPercent = null,
+            dominantSide = null, strengthProfile = null, formScore = null,
+            profile_id = "userB",
+        )
+        queries.insertRoutine(
+            id = "routine-b", name = "Leg Day", description = "",
+            createdAt = 1_700_000_000_000, lastUsed = null, useCount = 1, profile_id = "userB",
+        )
+
+        // 3. Restore a backup that explicitly says these rows belong to "userB"
+        val backup = BackupData(
+            version = 1, exportedAt = "2026-03-29T00:00:00Z", appVersion = "test",
+            data = BackupContent(
+                workoutSessions = listOf(
+                    WorkoutSessionBackup(
+                        id = "session-b", timestamp = 1_700_000_000_000, mode = "Old School",
+                        targetReps = 10, weightPerCableKg = 20f, progressionKg = 0f,
+                        duration = 60_000L, totalReps = 10, warmupReps = 0, workingReps = 10,
+                        isJustLift = false, stopAtTop = false,
+                        exerciseId = "exercise-bench", exerciseName = "Bench Press",
+                        profileId = "userB", // explicit foreign profile
+                    ),
+                ),
+                routines = listOf(
+                    RoutineBackup(
+                        id = "routine-b", name = "Leg Day", createdAt = 1_700_000_000_000,
+                        profileId = "userB", // explicit foreign profile
+                    ),
+                ),
+            ),
+        )
+
+        val result = backupManager.importFromJson(testJson.encodeToString(backup))
+        assertTrue(result.isSuccess)
+
+        // 4. Verify: records must still belong to "userB", not adopted into "userA"
+        val session = queries.selectSessionById("session-b").executeAsOneOrNull()
+        assertNotNull(session)
+        assertEquals("userB", session.profile_id, "Session with explicit foreign profileId must not be adopted")
+
+        val routine = queries.selectRoutineById("routine-b").executeAsOneOrNull()
+        assertNotNull(routine)
+        assertEquals("userB", routine.profile_id, "Routine with explicit foreign profileId must not be adopted")
+    }
+
+    private fun buildRoutine(routineId: String, routineName: String, exerciseId: String, exerciseName: String): Routine {
         val exercise = Exercise(
             id = exerciseId,
             name = exerciseName,
-            muscleGroup = "Chest"
+            muscleGroup = "Chest",
         )
         val routineExercise = RoutineExercise(
             id = "$routineId-$exerciseId",
             exercise = exercise,
             orderIndex = 0,
-            weightPerCableKg = 10f
+            weightPerCableKg = 10f,
         )
         return Routine(
             id = routineId,
             name = routineName,
-            exercises = listOf(routineExercise)
+            exercises = listOf(routineExercise),
         )
     }
 
-    private class TestDataBackupManager(database: com.devil.phoenixproject.database.VitruvianDatabase) :
-        BaseDataBackupManager(database) {
+    private class TestDataBackupManager(database: com.devil.phoenixproject.database.VitruvianDatabase) : BaseDataBackupManager(database) {
 
         override fun createBackupWriter(): BackupJsonWriter {
             val tempFile = File.createTempFile("backup-test-", ".json")
             return BackupJsonWriter(tempFile.absolutePath)
         }
 
-        override suspend fun finalizeExport(tempFilePath: String): Result<String> {
-            return Result.success(tempFilePath)
-        }
+        override suspend fun finalizeExport(tempFilePath: String): Result<String> = Result.success(tempFilePath)
 
         override suspend fun saveToFile(backup: BackupData): Result<String> {
             error("Not needed for tests")
@@ -433,5 +708,22 @@ class DataBackupManagerRoutineNameTest {
         }
 
         override suspend fun shareBackup() = Unit
+
+        override fun getSessionBackupDirectory(): String {
+            val dir = File(System.getProperty("java.io.tmpdir"), "PhoenixBackupsTest")
+            if (!dir.exists()) dir.mkdirs()
+            return dir.absolutePath
+        }
+
+        override fun listBackupFileSizes(): List<Long> {
+            val dir = File(getSessionBackupDirectory())
+            return dir.listFiles()
+                ?.filter { it.isFile && it.name.endsWith(".json") }
+                ?.map { it.length() }
+                ?: emptyList()
+        }
+
+        override fun openBackupFolder() = Unit
+        override fun pruneOldBackups(keepCount: Int) = Unit
     }
 }

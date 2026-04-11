@@ -1,22 +1,22 @@
 package com.devil.phoenixproject.presentation.screen
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.isSystemInDarkTheme
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.layout.*
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.navigation.NavController
 import com.devil.phoenixproject.data.repository.ExerciseRepository
+import com.devil.phoenixproject.data.repository.UserProfileRepository
 import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.presentation.components.ResumeRoutineDialog
 import com.devil.phoenixproject.presentation.navigation.NavigationRoutes
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
 import com.devil.phoenixproject.ui.theme.screenBackgroundBrush
+import org.jetbrains.compose.resources.stringResource
+import org.koin.compose.koinInject
+import vitruvianprojectphoenix.shared.generated.resources.*
+import vitruvianprojectphoenix.shared.generated.resources.Res
 
 /**
  * Daily Routines screen - view and manage pre-built routines.
@@ -28,14 +28,20 @@ fun DailyRoutinesScreen(
     navController: NavController,
     viewModel: MainViewModel,
     exerciseRepository: ExerciseRepository,
-    themeMode: com.devil.phoenixproject.ui.theme.ThemeMode
+    themeMode: com.devil.phoenixproject.ui.theme.ThemeMode,
 ) {
     val routines by viewModel.routines.collectAsState()
     val weightUnit by viewModel.weightUnit.collectAsState()
     val enableVideoPlayback by viewModel.enableVideoPlayback.collectAsState()
+
     @Suppress("UNUSED_VARIABLE") // Reserved for future connecting overlay
     val isAutoConnecting by viewModel.isAutoConnecting.collectAsState()
     val connectionError by viewModel.connectionError.collectAsState()
+
+    // Profile data for move/copy to profile feature (#330)
+    val profileRepository: UserProfileRepository = koinInject()
+    val profiles by profileRepository.allProfiles.collectAsState()
+    val activeProfile by profileRepository.activeProfile.collectAsState()
 
     // Resume/Restart dialog state (Issue #101)
     var showResumeDialog by remember { mutableStateOf(false) }
@@ -54,7 +60,7 @@ fun DailyRoutinesScreen(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(backgroundGradient)
+            .background(backgroundGradient),
     ) {
         // Reuse RoutinesTab content
         RoutinesTab(
@@ -81,6 +87,14 @@ fun DailyRoutinesScreen(
             onDeleteRoutine = { routineId -> viewModel.deleteRoutine(routineId) },
             onDeleteRoutines = { routineIds -> viewModel.deleteRoutines(routineIds) },
             onSaveRoutine = { routine -> viewModel.saveRoutine(routine) },
+            profiles = profiles,
+            activeProfileId = activeProfile?.id ?: "default",
+            onMoveToProfile = { routineIds, targetProfileId ->
+                viewModel.moveRoutinesToProfile(routineIds, targetProfileId)
+            },
+            onSaveRoutineToProfile = { routine, targetProfileId ->
+                viewModel.saveRoutineToProfile(routine, targetProfileId)
+            },
             onEditRoutine = { routineId ->
                 // Issue #130: Block editing during active workout
                 if (viewModel.isWorkoutActive) {
@@ -98,14 +112,14 @@ fun DailyRoutinesScreen(
                 }
             },
             themeMode = themeMode,
-            modifier = Modifier.fillMaxSize()
+            modifier = Modifier.fillMaxSize(),
         )
 
         // Connection error dialog (ConnectingOverlay removed - status shown in top bar button)
         connectionError?.let { error ->
             com.devil.phoenixproject.presentation.components.ConnectionErrorDialog(
                 message = error,
-                onDismiss = { viewModel.clearConnectionError() }
+                onDismiss = { viewModel.clearConnectionError() },
             )
         }
 
@@ -122,7 +136,7 @@ fun DailyRoutinesScreen(
                                 viewModel.startWorkout()
                                 navController.navigate(NavigationRoutes.ActiveWorkout.route)
                             },
-                            onFailed = { /* Error shown via StateFlow */ }
+                            onFailed = { /* Error shown via StateFlow */ },
                         )
                     },
                     onRestart = {
@@ -132,7 +146,7 @@ fun DailyRoutinesScreen(
                             navController.navigate(NavigationRoutes.RoutineOverview.route)
                         }
                     },
-                    onDismiss = { showResumeDialog = false }
+                    onDismiss = { showResumeDialog = false },
                 )
             }
         }
@@ -141,13 +155,13 @@ fun DailyRoutinesScreen(
         if (showWorkoutActiveDialog) {
             AlertDialog(
                 onDismissRequest = { showWorkoutActiveDialog = false },
-                title = { Text("Workout in Progress") },
-                text = { Text("Please stop the current workout before editing routines.") },
+                title = { Text(stringResource(Res.string.workout_in_progress)) },
+                text = { Text(stringResource(Res.string.stop_before_editing)) },
                 confirmButton = {
                     TextButton(onClick = { showWorkoutActiveDialog = false }) {
-                        Text("OK")
+                        Text(stringResource(Res.string.action_ok))
                     }
-                }
+                },
             )
         }
     }

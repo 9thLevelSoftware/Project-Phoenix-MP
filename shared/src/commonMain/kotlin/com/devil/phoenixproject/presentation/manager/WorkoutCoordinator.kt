@@ -2,7 +2,19 @@ package com.devil.phoenixproject.presentation.manager
 
 import com.devil.phoenixproject.data.repository.AutoStopUiState
 import com.devil.phoenixproject.data.repository.HandleState
-import com.devil.phoenixproject.domain.model.*
+import com.devil.phoenixproject.domain.model.BiomechanicsRepResult
+import com.devil.phoenixproject.domain.model.HapticEvent
+import com.devil.phoenixproject.domain.model.ProgramMode
+import com.devil.phoenixproject.domain.model.RepCount
+import com.devil.phoenixproject.domain.model.RepMetricData
+import com.devil.phoenixproject.domain.model.RepQualityScore
+import com.devil.phoenixproject.domain.model.Routine
+import com.devil.phoenixproject.domain.model.RoutineFlowState
+import com.devil.phoenixproject.domain.model.WorkoutMetric
+import com.devil.phoenixproject.domain.model.WorkoutParameters
+import com.devil.phoenixproject.domain.model.WorkoutState
+import com.devil.phoenixproject.domain.premium.BiomechanicsEngine
+import com.devil.phoenixproject.domain.premium.RepQualityScorer
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -11,6 +23,8 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlin.concurrent.Volatile
 
 /**
  * Shared state bus for all workout state. Contains zero business logic methods —
@@ -25,8 +39,8 @@ import kotlinx.coroutines.flow.asStateFlow
 class WorkoutCoordinator(
     internal val _hapticEvents: MutableSharedFlow<HapticEvent> = MutableSharedFlow(
         extraBufferCapacity = 10,
-        onBufferOverflow = BufferOverflow.DROP_OLDEST
-    )
+        onBufferOverflow = BufferOverflow.DROP_OLDEST,
+    ),
 ) {
     companion object {
         /** Position-based auto-stop duration in seconds (handles in danger zone and released) */
@@ -42,8 +56,8 @@ class WorkoutCoordinator(
          * - Above HIGH (>10): reset stall timer (user is clearly moving)
          * - Between LOW and HIGH (>=2.5 and <=10): maintain current state (hysteresis band)
          */
-        const val STALL_VELOCITY_LOW = 2.5    // Below this = definitely stalled (mm/s)
-        const val STALL_VELOCITY_HIGH = 10.0  // Above this = definitely moving (mm/s)
+        const val STALL_VELOCITY_LOW = 2.5 // Below this = definitely stalled (mm/s)
+        const val STALL_VELOCITY_HIGH = 10.0 // Above this = definitely moving (mm/s)
 
         /** Minimum position to consider handles "in use" for stall detection (mm) */
         const val STALL_MIN_POSITION = 10.0
@@ -66,7 +80,7 @@ class WorkoutCoordinator(
     // Replaces the circular lateinit var dependency between DWSM and BleConnectionManager.
     internal val _bleErrorEvents = MutableSharedFlow<String>(
         extraBufferCapacity = 5,
-        onBufferOverflow = BufferOverflow.DROP_OLDEST
+        onBufferOverflow = BufferOverflow.DROP_OLDEST,
     )
     val bleErrorEvents: SharedFlow<String> = _bleErrorEvents.asSharedFlow()
 
@@ -77,7 +91,7 @@ class WorkoutCoordinator(
     // Issue #172: User feedback events for navigation/UI messages
     internal val _userFeedbackEvents = MutableSharedFlow<String>(
         extraBufferCapacity = 5,
-        onBufferOverflow = BufferOverflow.DROP_OLDEST
+        onBufferOverflow = BufferOverflow.DROP_OLDEST,
     )
     val userFeedbackEvents: SharedFlow<String> = _userFeedbackEvents.asSharedFlow()
 
@@ -102,6 +116,20 @@ class WorkoutCoordinator(
     internal val _routineFlowState = MutableStateFlow<RoutineFlowState>(RoutineFlowState.NotInRoutine)
     val routineFlowState: StateFlow<RoutineFlowState> = _routineFlowState.asStateFlow()
 
+    /**
+     * Issue #348: Session-scoped workout detection for wake lock.
+     * Returns true when the user is anywhere in an active workout session,
+     * including between sets on the SetReady screen during routines.
+     * Unlike [isWorkoutActive], this covers the full session lifecycle:
+     * - Active workout states (Initializing, Countdown, Active, Resting, SetSummary)
+     * - Between-set routine states (SetReady screen where workoutState is Idle)
+     */
+    val isInWorkoutSession = combine(_workoutState, _routineFlowState) { ws, rfs ->
+        val workoutInProgress = ws !is WorkoutState.Idle && ws !is WorkoutState.Completed
+        val betweenRoutineSets = rfs is RoutineFlowState.SetReady
+        workoutInProgress || betweenRoutineSets
+    }
+
     // ===== Metrics State =====
 
     internal val _currentMetric = MutableStateFlow<WorkoutMetric?>(null)
@@ -121,6 +149,23 @@ class WorkoutCoordinator(
     val loadBaselineA: StateFlow<Float> = _loadBaselineA.asStateFlow()
     val loadBaselineB: StateFlow<Float> = _loadBaselineB.asStateFlow()
 
+    // ===== Motion Start State (Issue #237) =====
+
+    // Progress of cable-hold for motion-triggered set start (0.0 = no hold, 1.0 = complete)
+    // Null means motion start is not active (feature disabled or not in countdown)
+    internal val _motionStartHoldProgress = MutableStateFlow<Float?>(null)
+    val motionStartHoldProgress: StateFlow<Float?> = _motionStartHoldProgress.asStateFlow()
+
+    // ===== Just Lift Rest Timer (Issue #113) =====
+
+    // Visual-only "egg timer" countdown displayed while user rests between Just Lift sets.
+    // null = no timer active, 0+ = seconds remaining. Picking up handles cancels it.
+    internal val _justLiftRestCountdown = MutableStateFlow<Int?>(null)
+    val justLiftRestCountdown: StateFlow<Int?> = _justLiftRestCountdown.asStateFlow()
+    internal var justLiftRestTimerJob: Job? = null
+    @Volatile
+    internal var justLiftRestDeadlineElapsedRealtimeMs: Long? = null
+
     // ===== Workout Parameters =====
 
     internal val _workoutParameters = MutableStateFlow(
@@ -131,14 +176,19 @@ class WorkoutCoordinator(
             progressionRegressionKg = 0f,
             isJustLift = false,
             stopAtTop = false,
-            warmupReps = 3
-        )
+            warmupReps = 3,
+        ),
     )
     val workoutParameters: StateFlow<WorkoutParameters> = _workoutParameters.asStateFlow()
 
     // Issue #108: Track if user manually adjusted weight during rest period
     // When true, preserve user's weight instead of reloading from exercise preset
     internal var _userAdjustedWeightDuringRest = false
+
+    // Deferred mid-set weight change: applied at next set start since sending a full
+    // REGULAR_COMMAND mid-set faults the machine (BLE exercise packet lifecycle).
+    @Volatile
+    internal var pendingWeightChangeKg: Float? = null
 
     // ===== Rep Counting =====
 
@@ -186,13 +236,28 @@ class WorkoutCoordinator(
     internal val _currentSetRpe = MutableStateFlow<Int?>(null)
     val currentSetRpe: StateFlow<Int?> = _currentSetRpe.asStateFlow()
 
+    // ===== Variable Warm-up Sets (Phase 35C: Issue #30) =====
+    // Tracks which variable warm-up set we're currently executing.
+    // -1 = not in warm-up phase (executing working sets).
+    // 0+ = index into RoutineExercise.warmupSets list.
+    internal val _currentWarmupSetIndex = MutableStateFlow(-1)
+    val currentWarmupSetIndex: StateFlow<Int> = _currentWarmupSetIndex.asStateFlow()
+
+    // Total number of variable warm-up sets for the current exercise (0 if none)
+    internal val _totalWarmupSets = MutableStateFlow(0)
+    val totalWarmupSets: StateFlow<Int> = _totalWarmupSets.asStateFlow()
+
     // ===== Session Tracking =====
 
     internal var currentSessionId: String? = null
     internal var workoutStartTime: Long = 0
-    internal var warmupCompleteTimeMs: Long = 0  // Issue #252: Exclude warmup time from duration
-    internal var routineStartTime: Long = 0  // Issue #195: Track routine start separately from per-set start
-    internal val collectedMetrics = mutableListOf<WorkoutMetric>()
+    internal var warmupCompleteTimeMs: Long = 0 // Issue #252: Exclude warmup time from duration
+    internal var routineStartTime: Long = 0 // Issue #195: Track routine start separately from per-set start
+    internal val collectedMetrics = MutableStateFlow<List<WorkoutMetric>>(emptyList())
+
+    // C3: Thread-safe via MutableStateFlow snapshot — prevents ConcurrentModificationException
+    // across coroutine dispatchers during rep processing and set completion
+    internal val setRepMetrics = MutableStateFlow<List<RepMetricData>>(emptyList())
 
     internal var currentRoutineSessionId: String? = null
     internal var currentRoutineName: String? = null
@@ -207,20 +272,47 @@ class WorkoutCoordinator(
     val cycleDayCompletionEvent: StateFlow<CycleDayCompletionEvent?> = _cycleDayCompletionEvent.asStateFlow()
 
     // ===== Auto-Stop Internal State =====
+    // These fields are accessed from multiple coroutines (metric collection, auto-stop timer,
+    // UI-driven stop/skip). @Volatile ensures cross-coroutine visibility.
 
+    @Volatile
     internal var autoStopStartTime: Long? = null
+
+    @Volatile
     internal var autoStopTriggered = false
+
+    @Volatile
     internal var autoStopStopRequested = false
-    // Guard to prevent race condition where multiple stopWorkout() calls create duplicate sessions
-    // Issue #97: handleMonitorMetric() can call stopWorkout() multiple times before state changes
-    internal var stopWorkoutInProgress = false
+
+    // C1: Guard to prevent duplicate stopWorkout() calls creating duplicate sessions
+    // Uses MutableStateFlow for thread-safe compareAndSet across KMP targets
+    internal val stopWorkoutInProgress = MutableStateFlow(false)
+
     // Guard to prevent duplicate auto-completion when rep target is reached
-    internal var setCompletionInProgress = false
+    internal val setCompletionInProgress = MutableStateFlow(false)
     internal var currentHandleState: HandleState = HandleState.WaitingForRest
 
     // Velocity-based stall detection state (Issue #204, #214)
+    @Volatile
     internal var stallStartTime: Long? = null
+
+    @Volatile
     internal var isCurrentlyStalled = false
+
+    // ===== Rest Timer Control State (Issue #297, #228) =====
+
+    internal val _isRestPaused = MutableStateFlow(false)
+    val isRestPaused: StateFlow<Boolean> = _isRestPaused.asStateFlow()
+
+    // Original rest duration (including extensions) for reset functionality
+    internal val _restOriginalDuration = MutableStateFlow(0)
+    val restOriginalDuration: StateFlow<Int> = _restOriginalDuration.asStateFlow()
+
+    // Derived remaining seconds shown in the UI. The live countdown source of truth is the
+    // monotonic deadline below so background suspension can catch up correctly.
+    internal val _restSecondsRemaining = MutableStateFlow(0)
+    @Volatile
+    internal var restDeadlineElapsedRealtimeMs: Long? = null
 
     // ===== Job Tracking =====
 
@@ -231,14 +323,20 @@ class WorkoutCoordinator(
 
     // Issue #222 diagnostic: Track bodyweight sets completed in this routine
     internal var bodyweightSetsCompletedInRoutine: Int = 0
+
     // Issue #222 v8: Track if previous exercise was bodyweight (for StopPacket on transition)
     internal var previousExerciseWasBodyweight: Boolean = false
     internal var repEventsCollectionJob: Job? = null
     internal var workoutJob: Job? = null
+
     // Flag to skip countdown - checked in countdown loop
+    // H3: @Volatile ensures cross-coroutine visibility for countdown skip checks
+    @Volatile
     internal var skipCountdownRequested: Boolean = false
+
     // Track if current workout is duration-based (timed exercise) to show countdown timer
     internal var isCurrentWorkoutTimed: Boolean = false
+
     // Track if current exercise is a timed CABLE exercise (not bodyweight) for auto-stop via handle release.
     // Kept in StateFlow-backed storage for consistent visibility across collectors/coroutines.
     internal val _isCurrentTimedCableExercise = MutableStateFlow(false)
@@ -247,6 +345,7 @@ class WorkoutCoordinator(
         set(value) {
             _isCurrentTimedCableExercise.value = value
         }
+
     // Track if current exercise is bodyweight to skip rep processing (no cable engagement)
     internal val _isCurrentExerciseBodyweight = MutableStateFlow(false)
     val isCurrentExerciseBodyweight: StateFlow<Boolean> = _isCurrentExerciseBodyweight.asStateFlow()
@@ -255,4 +354,43 @@ class WorkoutCoordinator(
     // Prevents duplicate enableHandleDetection() calls from resetting state machine mid-grab
     internal var handleDetectionEnabledTimestamp: Long = 0L
     internal val HANDLE_DETECTION_DEBOUNCE_MS = 500L
+
+    // ===== Rep Quality Scoring =====
+
+    /**
+     * Per-rep quality scorer. Stateful - accumulates baselines within a set.
+     * Reset between sets via ActiveSessionEngine.
+     */
+    val repQualityScorer = RepQualityScorer()
+
+    /**
+     * Latest rep quality score for HUD display.
+     * Null when no score available (start of set, free tier, etc.).
+     */
+    internal val _latestRepQuality = MutableStateFlow<RepQualityScore?>(null)
+    val latestRepQuality: StateFlow<RepQualityScore?> = _latestRepQuality.asStateFlow()
+
+    // ===== Biomechanics Engine =====
+
+    /**
+     * Biomechanics analysis engine for VBT, force curve, and asymmetry analysis.
+     * Processes each rep's MetricSamples and exposes results via StateFlow.
+     * Reset between sets via ActiveSessionEngine.
+     */
+    val biomechanicsEngine = BiomechanicsEngine()
+
+    /**
+     * Rep boundary timestamps for MetricSample segmentation.
+     * Each entry marks the completion timestamp of a rep, enabling per-rep metric extraction.
+     * Cleared at set completion and workout reset.
+     */
+    // C3: Thread-safe via MutableStateFlow snapshot
+    internal val repBoundaryTimestamps = MutableStateFlow<List<Long>>(emptyList())
+
+    /**
+     * Latest biomechanics result for HUD display.
+     * Delegates to biomechanicsEngine.latestRepResult.
+     */
+    val latestBiomechanicsResult: StateFlow<BiomechanicsRepResult?>
+        get() = biomechanicsEngine.latestRepResult
 }

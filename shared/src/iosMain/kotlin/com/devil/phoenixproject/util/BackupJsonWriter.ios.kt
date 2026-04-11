@@ -17,7 +17,7 @@ actual class BackupJsonWriter actual constructor(actual val filePath: String) {
                 parentPath,
                 withIntermediateDirectories = true,
                 attributes = null,
-                error = null
+                error = null,
             )
         }
         // Create the file

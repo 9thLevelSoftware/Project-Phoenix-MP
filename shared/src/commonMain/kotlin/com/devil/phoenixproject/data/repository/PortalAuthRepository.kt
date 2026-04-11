@@ -1,24 +1,27 @@
 package com.devil.phoenixproject.data.repository
 
+import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.data.sync.PortalApiClient
 import com.devil.phoenixproject.data.sync.PortalTokenStorage
 import com.devil.phoenixproject.data.sync.PortalUser
+import com.devil.phoenixproject.data.sync.toPortalAuthResponse
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 
 /**
- * AuthRepository implementation using the Railway backend Portal API.
+ * AuthRepository implementation using Supabase GoTrue REST API.
  */
 class PortalAuthRepository(
     private val apiClient: PortalApiClient,
-    private val tokenStorage: PortalTokenStorage
+    private val tokenStorage: PortalTokenStorage,
+    private val userProfileRepository: UserProfileRepository,
 ) : AuthRepository {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
@@ -34,70 +37,104 @@ class PortalAuthRepository(
         scope.launch {
             combine(
                 tokenStorage.isAuthenticated,
-                tokenStorage.currentUser
+                tokenStorage.currentUser,
             ) { isAuthenticated, portalUser ->
                 when {
                     portalUser != null && isAuthenticated -> {
                         AuthState.Authenticated(portalUser.toAuthUser())
                     }
+
                     isAuthenticated && portalUser == null -> {
-                        // Has token but no user loaded yet
                         AuthState.Loading
                     }
+
                     else -> AuthState.NotAuthenticated
                 }
             }.collect { state ->
                 _authState.value = state
             }
         }
+
+        // Attempt session restoration on construction (non-blocking)
+        scope.launch {
+            restoreSession()
+        }
     }
 
     override suspend fun signUpWithEmail(email: String, password: String): Result<AuthUser> {
         val displayName = email.substringBefore("@")
-        return apiClient.signup(email, password, displayName)
-            .onSuccess { response ->
-                tokenStorage.saveAuth(response)
+        return apiClient.signUp(email, password, displayName)
+            .onSuccess { goTrueResponse ->
+                tokenStorage.saveGoTrueAuth(goTrueResponse)
+                linkUserProfile(goTrueResponse.user.id)
             }
-            .map { response ->
-                response.user.toAuthUser()
-            }
-    }
-
-    override suspend fun signInWithEmail(email: String, password: String): Result<AuthUser> {
-        return apiClient.login(email, password)
-            .onSuccess { response ->
-                tokenStorage.saveAuth(response)
-            }
-            .map { response ->
-                response.user.toAuthUser()
+            .map { goTrueResponse ->
+                goTrueResponse.toPortalAuthResponse().user.toAuthUser()
             }
     }
 
-    override suspend fun signInWithGoogle(): Result<AuthUser> {
-        // Platform-specific implementation needed - same as SupabaseAuthRepository
-        return Result.failure(NotImplementedError("Google sign-in requires platform implementation"))
-    }
+    override suspend fun signInWithEmail(email: String, password: String): Result<AuthUser> = apiClient.signIn(email, password)
+        .onSuccess { goTrueResponse ->
+            tokenStorage.saveGoTrueAuth(goTrueResponse)
+            linkUserProfile(goTrueResponse.user.id)
+        }
+        .map { goTrueResponse ->
+            goTrueResponse.toPortalAuthResponse().user.toAuthUser()
+        }
 
-    override suspend fun signInWithApple(): Result<AuthUser> {
-        // Platform-specific implementation needed - same as SupabaseAuthRepository
-        return Result.failure(NotImplementedError("Apple sign-in requires platform implementation"))
-    }
+    override suspend fun signInWithGoogle(): Result<AuthUser> = Result.failure(NotImplementedError("Google sign-in requires platform implementation"))
+
+    override suspend fun signInWithApple(): Result<AuthUser> = Result.failure(NotImplementedError("Apple sign-in requires platform implementation"))
 
     override suspend fun signOut(): Result<Unit> {
+        apiClient.signOut()
         tokenStorage.clearAuth()
         return Result.success(Unit)
     }
 
     override suspend fun refreshSession(): Result<Unit> {
-        // Verify token is still valid by calling getMe()
-        return apiClient.getMe()
-            .map { /* Token is valid, nothing to do */ }
+        val refreshToken = tokenStorage.getRefreshToken()
+            ?: return Result.failure(Exception("No refresh token available"))
+
+        return apiClient.refreshToken(refreshToken)
+            .onSuccess { goTrueResponse ->
+                tokenStorage.saveGoTrueAuth(goTrueResponse)
+            }
+            .map { }
             .onFailure {
-                // Token is invalid, clear auth
-                if (it.message?.contains("Unauthorized") == true) {
+                if (it.message?.contains("Unauthorized") == true ||
+                    it.message?.contains("invalid") == true
+                ) {
                     tokenStorage.clearAuth()
                 }
             }
+    }
+
+    /**
+     * Restores a previous session on app startup.
+     * If access_token exists but is expired, attempts a silent refresh.
+     */
+    suspend fun restoreSession(): Result<Unit> {
+        if (!tokenStorage.hasToken()) {
+            return Result.success(Unit)
+        }
+
+        if (tokenStorage.isTokenExpired()) {
+            return refreshSession()
+        }
+
+        return Result.success(Unit)
+    }
+
+    private suspend fun linkUserProfile(supabaseUserId: String) {
+        try {
+            val activeProfile = userProfileRepository.activeProfile.value
+            if (activeProfile != null && activeProfile.supabaseUserId != supabaseUserId) {
+                userProfileRepository.linkToSupabase(activeProfile.id, supabaseUserId)
+            }
+        } catch (e: Exception) {
+            Logger.w("PortalAuthRepository") { "Failed to link user profile: ${e.message}" }
+        }
     }
 
     fun close() {
@@ -107,6 +144,6 @@ class PortalAuthRepository(
     private fun PortalUser.toAuthUser(): AuthUser = AuthUser(
         id = id,
         email = email,
-        displayName = displayName
+        displayName = displayName,
     )
 }

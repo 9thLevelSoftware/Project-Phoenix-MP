@@ -1,15 +1,15 @@
 package com.devil.phoenixproject.data.repository
 
 import com.devil.phoenixproject.data.local.ConnectionLogEntity
+import com.devil.phoenixproject.util.withPlatformLock
+import kotlin.time.Clock
+import kotlin.time.Instant
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
-import com.devil.phoenixproject.util.withPlatformLock
-import kotlin.time.Instant
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
-import kotlin.time.Clock
 
 /**
  * Log level for connection events.
@@ -18,7 +18,7 @@ enum class LogLevel {
     DEBUG,
     INFO,
     WARNING,
-    ERROR
+    ERROR,
 }
 
 /**
@@ -78,7 +78,7 @@ class ConnectionLogRepository {
         message: String,
         deviceName: String? = null,
         deviceAddress: String? = null,
-        details: String? = null
+        details: String? = null,
     ) {
         if (!_isEnabled.value) return
 
@@ -92,7 +92,7 @@ class ConnectionLogRepository {
             deviceName = deviceName,
             message = message,
             details = details,
-            metadata = null
+            metadata = null,
         )
 
         _logs.update { currentLogs ->
@@ -161,7 +161,9 @@ class ConnectionLogRepository {
             sb.appendLine("[${formatTimestamp(log.timestamp)}] [${log.level}] ${log.eventType}")
             sb.appendLine("  ${log.message}")
             if (log.deviceName != null || log.deviceAddress != null) {
-                sb.appendLine("  Device: ${log.deviceName ?: "Unknown"} (${log.deviceAddress ?: "N/A"})")
+                sb.appendLine(
+                    "  Device: ${log.deviceName ?: "Unknown"} (${log.deviceAddress ?: "N/A"})",
+                )
             }
             if (log.details != null) {
                 sb.appendLine("  Details: ${log.details}")
@@ -182,9 +184,9 @@ class ConnectionLogRepository {
         _logs.value.forEach { log ->
             sb.appendLine(
                 "${log.timestamp},${log.level},${log.eventType}," +
-                "\"${log.message.replace("\"", "\"\"")}\","+
-                "${log.deviceName ?: ""},${log.deviceAddress ?: ""}," +
-                "\"${log.details?.replace("\"", "\"\"") ?: ""}\""
+                    "\"${log.message.replace("\"", "\"\"")}\"," +
+                    "${log.deviceName ?: ""},${log.deviceAddress ?: ""}," +
+                    "\"${log.details?.replace("\"", "\"\"") ?: ""}\"",
             )
         }
 
@@ -194,31 +196,28 @@ class ConnectionLogRepository {
     /**
      * Get logs filtered by level.
      */
-    fun getLogsByLevel(level: LogLevel): List<ConnectionLogEntity> {
-        return _logs.value.filter { it.level == level.name }
-    }
+    fun getLogsByLevel(level: LogLevel): List<ConnectionLogEntity> = _logs.value.filter { it.level == level.name }
 
     /**
      * Get logs filtered by event type.
      */
-    fun getLogsByEventType(eventType: String): List<ConnectionLogEntity> {
-        return _logs.value.filter { it.eventType == eventType }
-    }
+    fun getLogsByEventType(eventType: String): List<ConnectionLogEntity> = _logs.value.filter { it.eventType == eventType }
 
     /**
      * Get logs for a specific device.
      */
-    fun getLogsForDevice(deviceAddress: String): List<ConnectionLogEntity> {
-        return _logs.value.filter { it.deviceAddress == deviceAddress }
-    }
+    fun getLogsForDevice(deviceAddress: String): List<ConnectionLogEntity> = _logs.value.filter { it.deviceAddress == deviceAddress }
 
     private fun formatTimestamp(timestamp: Long): String {
         // Use kotlinx-datetime for KMP-compatible formatting
         val instant = Instant.fromEpochMilliseconds(timestamp)
         val localDateTime = instant.toLocalDateTime(TimeZone.currentSystemDefault())
         return "${localDateTime.date} ${localDateTime.hour.toString().padStart(2, '0')}:" +
-               "${localDateTime.minute.toString().padStart(2, '0')}:" +
-               "${localDateTime.second.toString().padStart(2, '0')}.${(timestamp % 1000).toString().padStart(3, '0')}"
+            "${localDateTime.minute.toString().padStart(2, '0')}:" +
+            "${localDateTime.second.toString().padStart(
+                2,
+                '0',
+            )}.${(timestamp % 1000).toString().padStart(3, '0')}"
     }
 
     private fun currentTimeMillis(): Long = Clock.System.now().toEpochMilliseconds()

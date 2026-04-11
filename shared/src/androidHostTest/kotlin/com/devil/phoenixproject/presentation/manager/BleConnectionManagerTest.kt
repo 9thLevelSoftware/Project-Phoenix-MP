@@ -39,8 +39,16 @@ class BleConnectionManagerTest {
         val managerScope = CoroutineScope(coroutineContext + SupervisorJob())
         try {
             val workoutStateProvider = FakeWorkoutStateProvider(active = true)
-            val settingsManager = SettingsManager(fakePreferencesManager, fakeBleRepository, managerScope)
-            val manager = BleConnectionManager(fakeBleRepository, settingsManager, workoutStateProvider, MutableSharedFlow(), managerScope)
+            val settingsManager =
+                SettingsManager(fakePreferencesManager, fakeBleRepository, managerScope)
+            val manager =
+                BleConnectionManager(
+                    fakeBleRepository,
+                    settingsManager,
+                    workoutStateProvider,
+                    MutableSharedFlow(),
+                    managerScope,
+                )
             advanceUntilIdle()
 
             fakeBleRepository.simulateConnect("Vee_Test")
@@ -49,6 +57,7 @@ class BleConnectionManagerTest {
             advanceUntilIdle()
 
             assertTrue(manager.connectionLostDuringWorkout.value)
+            assertEquals(1, workoutStateProvider.connectionLostCallbacks)
 
             manager.dismissConnectionLostAlert()
             assertFalse(manager.connectionLostDuringWorkout.value)
@@ -62,8 +71,16 @@ class BleConnectionManagerTest {
         val managerScope = CoroutineScope(coroutineContext + SupervisorJob())
         try {
             val workoutStateProvider = FakeWorkoutStateProvider(active = false)
-            val settingsManager = SettingsManager(fakePreferencesManager, fakeBleRepository, managerScope)
-            val manager = BleConnectionManager(fakeBleRepository, settingsManager, workoutStateProvider, MutableSharedFlow(), managerScope)
+            val settingsManager =
+                SettingsManager(fakePreferencesManager, fakeBleRepository, managerScope)
+            val manager =
+                BleConnectionManager(
+                    fakeBleRepository,
+                    settingsManager,
+                    workoutStateProvider,
+                    MutableSharedFlow(),
+                    managerScope,
+                )
             advanceUntilIdle()
 
             fakeBleRepository.simulateConnect("Vee_Test")
@@ -82,8 +99,16 @@ class BleConnectionManagerTest {
         val managerScope = CoroutineScope(coroutineContext + SupervisorJob())
         try {
             val workoutStateProvider = FakeWorkoutStateProvider(active = false)
-            val settingsManager = SettingsManager(fakePreferencesManager, fakeBleRepository, managerScope)
-            val manager = BleConnectionManager(fakeBleRepository, settingsManager, workoutStateProvider, MutableSharedFlow(), managerScope)
+            val settingsManager =
+                SettingsManager(fakePreferencesManager, fakeBleRepository, managerScope)
+            val manager =
+                BleConnectionManager(
+                    fakeBleRepository,
+                    settingsManager,
+                    workoutStateProvider,
+                    MutableSharedFlow(),
+                    managerScope,
+                )
             fakeBleRepository.simulateConnect("Vee_Test")
             advanceUntilIdle()
 
@@ -92,7 +117,7 @@ class BleConnectionManagerTest {
 
             manager.ensureConnection(
                 onConnected = { connectedCalls++ },
-                onFailed = { failedCalls++ }
+                onFailed = { failedCalls++ },
             )
             runCurrent()
 
@@ -109,15 +134,23 @@ class BleConnectionManagerTest {
         val managerScope = CoroutineScope(coroutineContext + SupervisorJob())
         try {
             val workoutStateProvider = FakeWorkoutStateProvider(active = false)
-            val settingsManager = SettingsManager(fakePreferencesManager, fakeBleRepository, managerScope)
-            val manager = BleConnectionManager(fakeBleRepository, settingsManager, workoutStateProvider, MutableSharedFlow(), managerScope)
+            val settingsManager =
+                SettingsManager(fakePreferencesManager, fakeBleRepository, managerScope)
+            val manager =
+                BleConnectionManager(
+                    fakeBleRepository,
+                    settingsManager,
+                    workoutStateProvider,
+                    MutableSharedFlow(),
+                    managerScope,
+                )
             fakeBleRepository.shouldFailConnect = true
 
             var failedCalls = 0
 
             manager.ensureConnection(
                 onConnected = {},
-                onFailed = { failedCalls++ }
+                onFailed = { failedCalls++ },
             )
             advanceUntilIdle()
 
@@ -134,8 +167,16 @@ class BleConnectionManagerTest {
         val managerScope = CoroutineScope(coroutineContext + SupervisorJob())
         try {
             val workoutStateProvider = FakeWorkoutStateProvider(active = false)
-            val settingsManager = SettingsManager(fakePreferencesManager, fakeBleRepository, managerScope)
-            val manager = BleConnectionManager(fakeBleRepository, settingsManager, workoutStateProvider, MutableSharedFlow(), managerScope)
+            val settingsManager =
+                SettingsManager(fakePreferencesManager, fakeBleRepository, managerScope)
+            val manager =
+                BleConnectionManager(
+                    fakeBleRepository,
+                    settingsManager,
+                    workoutStateProvider,
+                    MutableSharedFlow(),
+                    managerScope,
+                )
             advanceUntilIdle()
 
             fakeBleRepository.simulateConnecting()
@@ -148,10 +189,16 @@ class BleConnectionManagerTest {
         }
     }
 
-    private class FakeWorkoutStateProvider(
-        var active: Boolean
-    ) : WorkoutStateProvider {
+    private class FakeWorkoutStateProvider(var active: Boolean, var midSet: Boolean = false) : WorkoutStateProvider {
+        var connectionLostCallbacks = 0
+
         override val isWorkoutActiveForConnectionAlert: Boolean
             get() = active
+        override val isWorkoutMidSet: Boolean
+            get() = midSet
+
+        override fun onWorkoutConnectionLost() {
+            connectionLostCallbacks++
+        }
     }
 }

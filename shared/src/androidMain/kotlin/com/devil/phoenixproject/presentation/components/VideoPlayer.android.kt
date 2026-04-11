@@ -38,10 +38,7 @@ import co.touchlab.kermit.Logger
  */
 @AndroidOptIn(markerClass = [UnstableApi::class])
 @Composable
-actual fun VideoPlayer(
-    videoUrl: String?,
-    modifier: Modifier
-) {
+actual fun VideoPlayer(videoUrl: String?, modifier: Modifier) {
     Logger.d("VideoPlayer") { "VideoPlayer called with URL: $videoUrl" }
 
     if (videoUrl.isNullOrBlank()) {
@@ -69,10 +66,10 @@ actual fun VideoPlayer(
         // Smaller buffers appropriate for short preview videos
         val loadControl = DefaultLoadControl.Builder()
             .setBufferDurationsMs(
-                2_000,   // minBufferMs: 2 seconds (default 50s)
-                5_000,   // maxBufferMs: 5 seconds (default 50s)
-                1_000,   // bufferForPlaybackMs: 1 second (default 2.5s)
-                2_000    // bufferForPlaybackAfterRebufferMs: 2 seconds (default 5s)
+                2_000, // minBufferMs: 2 seconds (default 50s)
+                5_000, // maxBufferMs: 5 seconds (default 50s)
+                1_000, // bufferForPlaybackMs: 1 second (default 2.5s)
+                2_000, // bufferForPlaybackAfterRebufferMs: 2 seconds (default 5s)
             )
             .build()
 
@@ -110,13 +107,16 @@ actual fun VideoPlayer(
                         Logger.d("VideoPlayer") { "Video ready, playing" }
                         isLoading = false
                     }
+
                     Player.STATE_BUFFERING -> {
                         Logger.d("VideoPlayer") { "Video buffering" }
                         isLoading = true
                     }
+
                     Player.STATE_ENDED -> {
                         Logger.d("VideoPlayer") { "Video ended (should loop)" }
                     }
+
                     Player.STATE_IDLE -> {
                         Logger.d("VideoPlayer") { "Player idle" }
                     }
@@ -124,7 +124,9 @@ actual fun VideoPlayer(
             }
 
             override fun onPlayerError(error: PlaybackException) {
-                Logger.e("VideoPlayer") { "Player error: ${error.errorCodeName} - ${error.message}" }
+                Logger.e("VideoPlayer") {
+                    "Player error: ${error.errorCodeName} - ${error.message}"
+                }
                 isLoading = false
                 hasError = true
                 errorMessage = error.message ?: "Unknown error"
@@ -142,7 +144,7 @@ actual fun VideoPlayer(
 
     Box(
         modifier = modifier.background(MaterialTheme.colorScheme.surfaceVariant),
-        contentAlignment = Alignment.Center
+        contentAlignment = Alignment.Center,
     ) {
         // Only show PlayerView if no error
         if (!hasError) {
@@ -152,14 +154,14 @@ actual fun VideoPlayer(
                     PlayerView(ctx).apply {
                         layoutParams = ViewGroup.LayoutParams(
                             ViewGroup.LayoutParams.MATCH_PARENT,
-                            ViewGroup.LayoutParams.MATCH_PARENT
+                            ViewGroup.LayoutParams.MATCH_PARENT,
                         )
                         player = exoPlayer
                         useController = false // No playback controls
                         resizeMode = AspectRatioFrameLayout.RESIZE_MODE_ZOOM
                     }
                 },
-                modifier = Modifier.fillMaxSize()
+                modifier = Modifier.fillMaxSize(),
             )
         }
 
@@ -169,10 +171,10 @@ actual fun VideoPlayer(
                 modifier = Modifier
                     .fillMaxSize()
                     .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.8f)),
-                contentAlignment = Alignment.Center
+                contentAlignment = Alignment.Center,
             ) {
                 CircularProgressIndicator(
-                    modifier = Modifier.size(48.dp)
+                    modifier = Modifier.size(48.dp),
                 )
             }
         }
@@ -183,29 +185,29 @@ actual fun VideoPlayer(
                 modifier = Modifier
                     .fillMaxSize()
                     .background(MaterialTheme.colorScheme.surfaceVariant),
-                contentAlignment = Alignment.Center
+                contentAlignment = Alignment.Center,
             ) {
                 Column(
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.spacedBy(8.dp),
-                    modifier = Modifier.padding(16.dp)
+                    modifier = Modifier.padding(16.dp),
                 ) {
                     Text(
                         text = "Failed to load video",
                         style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.error
+                        color = MaterialTheme.colorScheme.error,
                     )
                     if (errorMessage.isNotBlank()) {
                         Text(
                             text = errorMessage,
                             style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.error
+                            color = MaterialTheme.colorScheme.error,
                         )
                     }
                     Text(
                         text = "URL: ${videoUrl.take(50)}...",
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
             }
@@ -218,19 +220,19 @@ private fun NoVideoAvailable(modifier: Modifier = Modifier) {
     Surface(
         modifier = modifier.fillMaxWidth(),
         color = MaterialTheme.colorScheme.surfaceVariant,
-        shape = MaterialTheme.shapes.medium
+        shape = MaterialTheme.shapes.medium,
     ) {
         Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(200.dp)
                 .padding(16.dp),
-            contentAlignment = Alignment.Center
+            contentAlignment = Alignment.Center,
         ) {
             Text(
                 text = "No video available",
                 style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
     }

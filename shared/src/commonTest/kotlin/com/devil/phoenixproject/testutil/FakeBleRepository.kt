@@ -1,6 +1,5 @@
 package com.devil.phoenixproject.testutil
 
-import com.devil.phoenixproject.data.repository.AutoStopUiState
 import com.devil.phoenixproject.data.repository.BleRepository
 import com.devil.phoenixproject.data.repository.HandleDetection
 import com.devil.phoenixproject.data.repository.HandleState
@@ -58,6 +57,7 @@ class FakeBleRepository : BleRepository {
     // Track commands received for verification in tests
     val commandsReceived = mutableListOf<ByteArray>()
     val workoutParameters = mutableListOf<WorkoutParameters>()
+    val colorSchemeCommands = mutableListOf<Int>()
 
     // Configurable behavior
     var scanResult: Result<Unit> = Result.success(Unit)
@@ -71,7 +71,7 @@ class FakeBleRepository : BleRepository {
     fun simulateConnect(deviceName: String, deviceAddress: String = "AA:BB:CC:DD:EE:FF") {
         _connectionState.value = ConnectionState.Connected(
             deviceName = deviceName,
-            deviceAddress = deviceAddress
+            deviceAddress = deviceAddress,
         )
     }
 
@@ -123,6 +123,10 @@ class FakeBleRepository : BleRepository {
         _heuristicData.value = data
     }
 
+    fun setDiscoModeActive(active: Boolean) {
+        _discoModeActive.value = active
+    }
+
     fun reset() {
         _connectionState.value = ConnectionState.Disconnected
         _scannedDevices.value = emptyList()
@@ -132,6 +136,7 @@ class FakeBleRepository : BleRepository {
         _discoModeActive.value = false
         commandsReceived.clear()
         workoutParameters.clear()
+        colorSchemeCommands.clear()
         scanResult = Result.success(Unit)
         connectResult = Result.success(Unit)
         workoutCommandResult = Result.success(Unit)
@@ -169,7 +174,7 @@ class FakeBleRepository : BleRepository {
         return if (connectResult.isSuccess) {
             _connectionState.value = ConnectionState.Connected(
                 deviceName = device.name,
-                deviceAddress = device.address
+                deviceAddress = device.address,
             )
             Result.success(Unit)
         } else {
@@ -203,6 +208,7 @@ class FakeBleRepository : BleRepository {
     }
 
     override suspend fun setColorScheme(schemeIndex: Int): Result<Unit> {
+        colorSchemeCommands.add(schemeIndex)
         return Result.success(Unit)
     }
 
@@ -211,22 +217,16 @@ class FakeBleRepository : BleRepository {
         return workoutCommandResult
     }
 
-    override suspend fun sendInitSequence(): Result<Unit> {
-        return Result.success(Unit)
-    }
+    override suspend fun sendInitSequence(): Result<Unit> = Result.success(Unit)
 
     override suspend fun startWorkout(params: WorkoutParameters): Result<Unit> {
         workoutParameters.add(params)
         return Result.success(Unit)
     }
 
-    override suspend fun stopWorkout(): Result<Unit> {
-        return Result.success(Unit)
-    }
+    override suspend fun stopWorkout(): Result<Unit> = Result.success(Unit)
 
-    override suspend fun sendStopCommand(): Result<Unit> {
-        return Result.success(Unit)
-    }
+    override suspend fun sendStopCommand(): Result<Unit> = Result.success(Unit)
 
     override fun enableHandleDetection(enabled: Boolean) {
         if (enabled) {

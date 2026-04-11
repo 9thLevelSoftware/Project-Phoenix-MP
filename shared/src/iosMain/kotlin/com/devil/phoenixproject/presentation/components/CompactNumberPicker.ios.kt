@@ -21,8 +21,6 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
-import kotlinx.coroutines.flow.collectLatest
-import kotlinx.coroutines.flow.distinctUntilChanged
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
@@ -35,13 +33,14 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.presentation.util.LocalWindowSizeClass
 import com.devil.phoenixproject.presentation.util.WindowHeightSizeClass
 import com.devil.phoenixproject.presentation.util.WindowWidthSizeClass
-import kotlinx.coroutines.launch
-import co.touchlab.kermit.Logger
 import kotlin.math.abs
 import kotlin.math.roundToInt
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.launch
 
 private data class PickerSizing(
     val itemHeight: Dp,
@@ -49,7 +48,7 @@ private data class PickerSizing(
     val selectedTextStyle: TextStyle,
     val unselectedTextStyle: TextStyle,
     val buttonSize: Dp,
-    val compactOverlayTextStyle: TextStyle
+    val compactOverlayTextStyle: TextStyle,
 )
 
 @Composable
@@ -74,6 +73,7 @@ private fun rememberPickerSizing(): PickerSizing {
             buttonSize = 40.dp
             compactOverlayTextStyle = selectedTextStyle
         }
+
         isCompactWidth -> {
             // Compact width + normal height (e.g. iPhone portrait)
             itemHeight = 36.dp
@@ -81,6 +81,7 @@ private fun rememberPickerSizing(): PickerSizing {
             buttonSize = 40.dp
             compactOverlayTextStyle = typography.titleMedium.copy(fontSize = 18.sp, lineHeight = 22.sp)
         }
+
         else -> {
             // Medium+ width (iPad, large phones landscape)
             itemHeight = 40.dp
@@ -96,7 +97,7 @@ private fun rememberPickerSizing(): PickerSizing {
         selectedTextStyle = selectedTextStyle,
         unselectedTextStyle = if (compactHeightMode) typography.bodyMedium else typography.bodyLarge,
         buttonSize = buttonSize,
-        compactOverlayTextStyle = compactOverlayTextStyle
+        compactOverlayTextStyle = compactOverlayTextStyle,
     )
 }
 
@@ -116,7 +117,7 @@ actual fun CompactNumberPicker(
     modifier: Modifier,
     label: String,
     suffix: String,
-    step: Float
+    step: Float,
 ) {
     // Generate values deterministically to avoid floating-point drift on iOS.
     val values = remember(range.start, range.endInclusive, step) {
@@ -140,8 +141,11 @@ actual fun CompactNumberPicker(
     // Find current index - use minByOrNull to find CLOSEST value regardless of precision
     // This handles unit conversions (e.g., 20kg -> 44.0924 lbs) where exact matching fails
     val currentIndex = remember(value, values) {
-        if (values.isEmpty()) 0
-        else values.indices.minByOrNull { abs(values[it] - value) } ?: 0
+        if (values.isEmpty()) {
+            0
+        } else {
+            values.indices.minByOrNull { abs(values[it] - value) } ?: 0
+        }
     }
     val safeCurrentIndex = if (values.isEmpty()) 0 else currentIndex.coerceIn(values.indices)
 
@@ -214,19 +218,15 @@ actual fun CompactNumberPicker(
     }
 
     // Format value for editing (without suffix)
-    fun formatValueForEdit(floatVal: Float): String {
-        return if (step >= 1.0f && floatVal % 1.0f == 0f) {
-            floatVal.toInt().toString()
-        } else {
-            val intPart = floatVal.toInt()
-            val decPart = ((floatVal - intPart) * 10).toInt().let { if (floatVal < 0 && it < 0) -it else abs(it) }
-            "$intPart.$decPart"
-        }
+    fun formatValueForEdit(floatVal: Float): String = if (step >= 1.0f && floatVal % 1.0f == 0f) {
+        floatVal.toInt().toString()
+    } else {
+        val intPart = floatVal.toInt()
+        val decPart = ((floatVal - intPart) * 10).toInt().let { if (floatVal < 0 && it < 0) -it else abs(it) }
+        "$intPart.$decPart"
     }
 
-    fun formatOverlayValue(floatVal: Float, useCompactOverlay: Boolean): String {
-        return if (useCompactOverlay) formatValueForEdit(floatVal) else formatValue(floatVal)
-    }
+    fun formatOverlayValue(floatVal: Float, useCompactOverlay: Boolean): String = if (useCompactOverlay) formatValueForEdit(floatVal) else formatValue(floatVal)
 
     // Commit the edited value
     // Issue #4 Fix: Sanitize input and handle parse failure gracefully
@@ -322,7 +322,9 @@ actual fun CompactNumberPicker(
             val centerIndex = centeredVisibleIndex.coerceIn(values.indices)
             if (centerIndex in values.indices) {
                 val scrollValue = values[centerIndex]
-                Logger.i { "PICKER_DEBUG[iOS]: centerIndex=$centerIndex, scrollValue=$scrollValue, currentValue=$currentValue, values.size=${values.size}" }
+                Logger.i {
+                    "PICKER_DEBUG[iOS]: centerIndex=$centerIndex, scrollValue=$scrollValue, currentValue=$currentValue, values.size=${values.size}"
+                }
                 if (abs(scrollValue - currentValue) > 0.001f) {
                     lastScrollSetValue = scrollValue
                     currentOnValueChange(scrollValue)
@@ -336,7 +338,7 @@ actual fun CompactNumberPicker(
 
     Column(
         modifier = modifier,
-        horizontalAlignment = Alignment.CenterHorizontally
+        horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         if (label.isNotEmpty()) {
             Text(
@@ -344,7 +346,7 @@ actual fun CompactNumberPicker(
                 style = MaterialTheme.typography.labelMedium,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier.padding(bottom = 8.dp)
+                modifier = Modifier.padding(bottom = 8.dp),
             )
         }
 
@@ -352,13 +354,16 @@ actual fun CompactNumberPicker(
         // matches what the user currently sees; fall back to value-prop-derived index
         // when idle so buttons stay consistent with the external state.
         val actionIndex =
-            if (listState.isScrollInProgress || isUserInteracting) centeredVisibleIndex
-            else safeCurrentIndex
+            if (listState.isScrollInProgress || isUserInteracting) {
+                centeredVisibleIndex
+            } else {
+                safeCurrentIndex
+            }
 
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.Center,
-            verticalAlignment = Alignment.CenterVertically
+            verticalAlignment = Alignment.CenterVertically,
         ) {
             // Decrease button
             IconButton(
@@ -376,16 +381,17 @@ actual fun CompactNumberPicker(
                         }
                     }
                 },
-                enabled = values.isNotEmpty() && safeCurrentIndex > 0,
-                modifier = Modifier.size(pickerSizing.buttonSize)
+                enabled = values.isNotEmpty() && actionIndex > 0,
+                modifier = Modifier.size(pickerSizing.buttonSize),
             ) {
                 Icon(
                     imageVector = Icons.Default.Remove,
                     contentDescription = "Decrease $label",
-                    tint = if (values.isNotEmpty() && safeCurrentIndex > 0)
+                    tint = if (values.isNotEmpty() && actionIndex > 0) {
                         MaterialTheme.colorScheme.primary
-                    else
+                    } else {
                         MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+                    },
                 )
             }
 
@@ -398,7 +404,7 @@ actual fun CompactNumberPicker(
                 modifier = Modifier
                     .weight(1f)
                     .height(containerHeight),
-                contentAlignment = Alignment.Center
+                contentAlignment = Alignment.Center,
             ) {
                 val showCenteredOverlay = !isEditing && values.isNotEmpty()
                 // Side-by-side pickers on narrow iPhone layouts do not have enough space
@@ -414,7 +420,7 @@ actual fun CompactNumberPicker(
                     flingBehavior = flingBehavior,
                     horizontalAlignment = Alignment.CenterHorizontally,
                     contentPadding = PaddingValues(vertical = centerPadding),
-                    modifier = Modifier.fillMaxSize()
+                    modifier = Modifier.fillMaxSize(),
                 ) {
                     itemsIndexed(values) { index, floatVal ->
                         val isSelected = index == centeredVisibleIndex
@@ -425,8 +431,14 @@ actual fun CompactNumberPicker(
                                 .height(itemHeight)
                                 // Issue #265 Fix: Selected item invisible when not editing —
                                 // overlay Text renders the value. Show item only when editing (TextField).
-                                .alpha(if (isSelected) { if (isEditing) 1f else 0f } else 0.5f),
-                            contentAlignment = Alignment.Center
+                                .alpha(
+                                    if (isSelected) {
+                                        if (isEditing) 1f else 0f
+                                    } else {
+                                        0.5f
+                                    },
+                                ),
+                            contentAlignment = Alignment.Center,
                         ) {
                             if (isSelected && isEditing) {
                                 // Issue #166 Fix: Row with TextField and visible Done button
@@ -434,7 +446,7 @@ actual fun CompactNumberPicker(
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
                                     horizontalArrangement = Arrangement.Center,
-                                    verticalAlignment = Alignment.CenterVertically
+                                    verticalAlignment = Alignment.CenterVertically,
                                 ) {
                                     BasicTextField(
                                         value = inputText,
@@ -443,15 +455,15 @@ actual fun CompactNumberPicker(
                                             fontSize = pickerSizing.selectedTextStyle.fontSize,
                                             fontWeight = FontWeight.Bold,
                                             color = MaterialTheme.colorScheme.onSurface,
-                                            textAlign = TextAlign.Center
+                                            textAlign = TextAlign.Center,
                                         ),
                                         singleLine = true,
                                         keyboardOptions = KeyboardOptions(
                                             keyboardType = if (step >= 1.0f) KeyboardType.Number else KeyboardType.Decimal,
-                                            imeAction = ImeAction.Done
+                                            imeAction = ImeAction.Done,
                                         ),
                                         keyboardActions = KeyboardActions(
-                                            onDone = { commitEdit() }
+                                            onDone = { commitEdit() },
                                         ),
                                         cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
                                         modifier = Modifier
@@ -467,17 +479,17 @@ actual fun CompactNumberPicker(
                                                     // 3. isEditing = we're still in edit mode
                                                     commitEdit()
                                                 }
-                                            }
+                                            },
                                     )
                                     // Visible Done button for iOS
                                     IconButton(
                                         onClick = { commitEdit() },
-                                        modifier = Modifier.size(36.dp)
+                                        modifier = Modifier.size(36.dp),
                                     ) {
                                         Icon(
                                             imageVector = Icons.Default.Check,
                                             contentDescription = "Done",
-                                            tint = MaterialTheme.colorScheme.primary
+                                            tint = MaterialTheme.colorScheme.primary,
                                         )
                                     }
                                 }
@@ -485,16 +497,17 @@ actual fun CompactNumberPicker(
                                 // Regular Text display (no suffix — overlay shows suffix for selected)
                                 Text(
                                     text = formatValueForEdit(floatVal),
-                                    style = if (isSelected)
+                                    style = if (isSelected) {
                                         pickerSizing.selectedTextStyle
-                                    else
-                                        pickerSizing.unselectedTextStyle,
+                                    } else {
+                                        pickerSizing.unselectedTextStyle
+                                    },
                                     fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
                                     color = MaterialTheme.colorScheme.onSurface,
                                     textAlign = TextAlign.Center,
                                     maxLines = 1,
                                     softWrap = false,
-                                    overflow = TextOverflow.Ellipsis
+                                    overflow = TextOverflow.Ellipsis,
                                 )
                             }
                         }
@@ -507,7 +520,7 @@ actual fun CompactNumberPicker(
                         modifier = Modifier
                             .align(Alignment.Center)
                             .fillMaxWidth(),
-                        contentAlignment = Alignment.Center
+                        contentAlignment = Alignment.Center,
                     ) {
                         Text(
                             text = formatOverlayValue(values[previewIndex], useCompactOverlay),
@@ -517,19 +530,19 @@ actual fun CompactNumberPicker(
                             textAlign = TextAlign.Center,
                             maxLines = 1,
                             softWrap = false,
-                            overflow = TextOverflow.Ellipsis
+                            overflow = TextOverflow.Ellipsis,
                         )
                         IconButton(
                             onClick = { isEditing = true },
                             modifier = Modifier
                                 .align(Alignment.CenterEnd)
-                                .size(editButtonSize)
+                                .size(editButtonSize),
                         ) {
                             Icon(
                                 imageVector = Icons.Default.Edit,
                                 contentDescription = "Edit $label",
                                 tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
-                                modifier = Modifier.size(editIconSize)
+                                modifier = Modifier.size(editIconSize),
                             )
                         }
                     }
@@ -540,13 +553,13 @@ actual fun CompactNumberPicker(
                     modifier = Modifier
                         .align(Alignment.Center)
                         .offset(y = -(itemHeight / 2)),
-                    color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)
+                    color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f),
                 )
                 HorizontalDivider(
                     modifier = Modifier
                         .align(Alignment.Center)
                         .offset(y = itemHeight / 2),
-                    color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)
+                    color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f),
                 )
             }
 
@@ -566,16 +579,17 @@ actual fun CompactNumberPicker(
                         }
                     }
                 },
-                enabled = values.isNotEmpty() && safeCurrentIndex < values.size - 1,
-                modifier = Modifier.size(pickerSizing.buttonSize)
+                enabled = values.isNotEmpty() && actionIndex < values.lastIndex,
+                modifier = Modifier.size(pickerSizing.buttonSize),
             ) {
                 Icon(
                     imageVector = Icons.Default.Add,
                     contentDescription = "Increase $label",
-                    tint = if (values.isNotEmpty() && safeCurrentIndex < values.size - 1)
+                    tint = if (values.isNotEmpty() && actionIndex < values.lastIndex) {
                         MaterialTheme.colorScheme.primary
-                    else
+                    } else {
                         MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+                    },
                 )
             }
         }
@@ -592,7 +606,7 @@ actual fun CompactNumberPicker(
     range: IntRange,
     modifier: Modifier,
     label: String,
-    suffix: String
+    suffix: String,
 ) {
     CompactNumberPicker(
         value = value.toFloat(),
@@ -601,6 +615,6 @@ actual fun CompactNumberPicker(
         modifier = modifier,
         label = label,
         suffix = suffix,
-        step = 1.0f
+        step = 1.0f,
     )
 }

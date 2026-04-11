@@ -18,6 +18,9 @@ import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.TemplateExercise
 import com.devil.phoenixproject.presentation.components.ExerciseConfigModal
 import com.devil.phoenixproject.ui.theme.Spacing
+import org.jetbrains.compose.resources.stringResource
+import vitruvianprojectphoenix.shared.generated.resources.*
+import vitruvianprojectphoenix.shared.generated.resources.Res
 
 /**
  * Mode Confirmation Screen
@@ -42,7 +45,7 @@ fun ModeConfirmationScreen(
     oneRepMaxValues: Map<String, Float> = emptyMap(),
     prWeightValues: Map<String, Float> = emptyMap(),
     onConfirm: (Map<String, ExerciseConfig>) -> Unit,
-    onCancel: () -> Unit
+    onCancel: () -> Unit,
 ) {
     // State: Map of exercise name to ExerciseConfig
     // Note: Bodyweight exercises (null suggestedMode) are excluded - they don't use cables
@@ -52,11 +55,14 @@ fun ModeConfirmationScreen(
             template.days.forEach { day ->
                 day.routine?.exercises?.forEach { exercise ->
                     exercise.suggestedMode?.let { mode ->
-                        put(exercise.exerciseName, ExerciseConfig.fromTemplate(
-                            exerciseName = exercise.exerciseName,
-                            suggestedMode = mode,
-                            oneRepMaxKg = oneRepMaxValues[exercise.exerciseName]
-                        ))
+                        put(
+                            exercise.exerciseName,
+                            ExerciseConfig.fromTemplate(
+                                exerciseName = exercise.exerciseName,
+                                suggestedMode = mode,
+                                oneRepMaxKg = oneRepMaxValues[exercise.exerciseName],
+                            ),
+                        )
                     }
                 }
             }
@@ -67,7 +73,7 @@ fun ModeConfirmationScreen(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
+            .background(MaterialTheme.colorScheme.background),
     ) {
         // Main content - scrollable list
         LazyColumn(
@@ -75,7 +81,7 @@ fun ModeConfirmationScreen(
                 .fillMaxSize()
                 .padding(bottom = 100.dp), // Space for bottom bar
             contentPadding = PaddingValues(Spacing.medium),
-            verticalArrangement = Arrangement.spacedBy(Spacing.medium)
+            verticalArrangement = Arrangement.spacedBy(Spacing.medium),
         ) {
             // Header with title
             item(key = "title") {
@@ -84,7 +90,7 @@ fun ModeConfirmationScreen(
                     style = MaterialTheme.typography.headlineMedium,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onBackground,
-                    modifier = Modifier.padding(bottom = Spacing.small)
+                    modifier = Modifier.padding(bottom = Spacing.small),
                 )
             }
 
@@ -92,24 +98,24 @@ fun ModeConfirmationScreen(
             item(key = "header") {
                 Column(
                     modifier = Modifier.fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(Spacing.extraSmall)
+                    verticalArrangement = Arrangement.spacedBy(Spacing.extraSmall),
                 ) {
                     Text(
                         text = template.name,
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onBackground
+                        color = MaterialTheme.colorScheme.onBackground,
                     )
                     Text(
                         text = template.description,
                         style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     Spacer(modifier = Modifier.height(Spacing.small))
                     Text(
                         text = "Review and adjust workout modes for each exercise:",
                         style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
             }
@@ -122,32 +128,32 @@ fun ModeConfirmationScreen(
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(16.dp),
                         colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.primaryContainer
-                        )
+                            containerColor = MaterialTheme.colorScheme.primaryContainer,
+                        ),
                     ) {
                         Column(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(Spacing.medium)
+                                .padding(Spacing.medium),
                         ) {
                             Text(
                                 text = day.name,
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onPrimaryContainer
+                                color = MaterialTheme.colorScheme.onPrimaryContainer,
                             )
 
                             if (day.isRestDay || day.routine == null) {
                                 Text(
                                     text = "Rest Day",
                                     style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f),
                                 )
                             } else {
                                 Text(
                                     text = day.routine.name,
                                     style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f),
                                 )
                             }
                         }
@@ -160,20 +166,20 @@ fun ModeConfirmationScreen(
                     val cableExercises = day.routine.exercises.filter { it.suggestedMode != null }
                     items(
                         items = cableExercises,
-                        key = { exercise -> "${day.dayNumber}_${exercise.exerciseName}" }
+                        key = { exercise -> "${day.dayNumber}_${exercise.exerciseName}" },
                     ) { exercise ->
                         ConfigurableExerciseCard(
                             exercise = exercise,
                             config = exerciseConfigs[exercise.exerciseName] ?: ExerciseConfig.fromTemplate(
                                 exerciseName = exercise.exerciseName,
                                 suggestedMode = exercise.suggestedMode,
-                                oneRepMaxKg = oneRepMaxValues[exercise.exerciseName]
+                                oneRepMaxKg = oneRepMaxValues[exercise.exerciseName],
                             ),
                             oneRepMaxKg = oneRepMaxValues[exercise.exerciseName],
                             prWeight = prWeightValues[exercise.exerciseName],
                             onConfigUpdated = { newConfig ->
                                 exerciseConfigs[exercise.exerciseName] = newConfig
-                            }
+                            },
                         )
                     }
                 }
@@ -191,37 +197,37 @@ fun ModeConfirmationScreen(
                 .align(Alignment.BottomCenter)
                 .fillMaxWidth(),
             color = MaterialTheme.colorScheme.surface,
-            tonalElevation = 3.dp
+            tonalElevation = 3.dp,
         ) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .navigationBarsPadding()
                     .padding(Spacing.medium),
-                horizontalArrangement = Arrangement.spacedBy(Spacing.small)
+                horizontalArrangement = Arrangement.spacedBy(Spacing.small),
             ) {
                 OutlinedButton(
                     onClick = onCancel,
                     modifier = Modifier.weight(1f).height(56.dp),
                     colors = ButtonDefaults.outlinedButtonColors(
-                        contentColor = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                        contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                    ),
                 ) {
-                    Text("Cancel")
+                    Text(stringResource(Res.string.action_cancel))
                 }
 
                 Button(
                     onClick = { onConfirm(exerciseConfigs.toMap()) },
                     modifier = Modifier.weight(1f).height(56.dp),
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.primary
+                        containerColor = MaterialTheme.colorScheme.primary,
                     ),
-                    shape = RoundedCornerShape(20.dp)
+                    shape = RoundedCornerShape(20.dp),
                 ) {
                     Text(
                         "Create Cycle",
                         style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.Bold
+                        fontWeight = FontWeight.Bold,
                     )
                 }
             }
@@ -239,7 +245,7 @@ private fun ConfigurableExerciseCard(
     config: ExerciseConfig,
     oneRepMaxKg: Float?,
     prWeight: Float? = null,
-    onConfigUpdated: (ExerciseConfig) -> Unit
+    onConfigUpdated: (ExerciseConfig) -> Unit,
 ) {
     var showConfigModal by remember { mutableStateOf(false) }
 
@@ -249,22 +255,22 @@ private fun ConfigurableExerciseCard(
             .clickable { showConfigModal = true },
         shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceContainer
-        )
+            containerColor = MaterialTheme.colorScheme.surfaceContainer,
+        ),
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(Spacing.medium),
             horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
+            verticalAlignment = Alignment.CenterVertically,
         ) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = exercise.exerciseName,
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.onSurface
+                    color = MaterialTheme.colorScheme.onSurface,
                 )
 
                 // Sets x Reps info
@@ -277,7 +283,7 @@ private fun ConfigurableExerciseCard(
                 Text(
                     text = setsRepsText,
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
 
@@ -286,14 +292,14 @@ private fun ConfigurableExerciseCard(
                 // Mode badge
                 Surface(
                     shape = RoundedCornerShape(Spacing.small),
-                    color = MaterialTheme.colorScheme.primaryContainer
+                    color = MaterialTheme.colorScheme.primaryContainer,
                 ) {
                     Text(
                         text = getModeAbbreviation(config.mode),
                         modifier = Modifier.padding(horizontal = Spacing.small, vertical = Spacing.extraSmall),
                         style = MaterialTheme.typography.labelSmall,
                         fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                        color = MaterialTheme.colorScheme.onPrimaryContainer,
                     )
                 }
 
@@ -301,14 +307,14 @@ private fun ConfigurableExerciseCard(
                 if (config.weightPerCableKg > 0f) {
                     Surface(
                         shape = RoundedCornerShape(Spacing.small),
-                        color = MaterialTheme.colorScheme.secondaryContainer
+                        color = MaterialTheme.colorScheme.secondaryContainer,
                     ) {
                         Text(
                             text = "${config.weightPerCableKg.toInt()}kg",
                             modifier = Modifier.padding(horizontal = Spacing.small, vertical = Spacing.extraSmall),
                             style = MaterialTheme.typography.labelSmall,
                             fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSecondaryContainer
+                            color = MaterialTheme.colorScheme.onSecondaryContainer,
                         )
                     }
                 }
@@ -329,7 +335,7 @@ private fun ConfigurableExerciseCard(
                 onConfigUpdated(newConfig)
                 showConfigModal = false
             },
-            onDismiss = { showConfigModal = false }
+            onDismiss = { showConfigModal = false },
         )
     }
 }

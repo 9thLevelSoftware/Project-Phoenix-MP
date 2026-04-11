@@ -6,7 +6,6 @@ import com.devil.phoenixproject.domain.model.PersonalRecord
 import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.RoutineExercise
 import com.devil.phoenixproject.testutil.FakePersonalRecordRepository
-import kotlinx.coroutines.test.runTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -14,6 +13,7 @@ import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import kotlinx.coroutines.test.runTest
 
 /**
  * Tests for ResolveRoutineWeightsUseCase.
@@ -29,7 +29,7 @@ class ResolveRoutineWeightsUseCaseTest {
     private val testExercise = Exercise(
         id = "bench-press",
         name = "Bench Press",
-        muscleGroup = "Chest"
+        muscleGroup = "Chest",
     )
 
     @BeforeTest
@@ -55,8 +55,8 @@ class ResolveRoutineWeightsUseCaseTest {
                 timestamp = 1000L,
                 workoutMode = "Old School",
                 prType = PRType.MAX_WEIGHT,
-                volume = 1000f
-            )
+                volume = 1000f,
+            ),
         )
 
         val routineExercise = RoutineExercise(
@@ -67,7 +67,7 @@ class ResolveRoutineWeightsUseCaseTest {
             usePercentOfPR = true,
             weightPercentOfPR = 80, // 80% of PR
             prTypeForScaling = PRType.MAX_WEIGHT,
-            programMode = ProgramMode.OldSchool
+            programMode = ProgramMode.OldSchool,
         )
 
         // When: invoke(exercise)
@@ -94,7 +94,7 @@ class ResolveRoutineWeightsUseCaseTest {
             usePercentOfPR = true,
             weightPercentOfPR = 80,
             prTypeForScaling = PRType.MAX_WEIGHT,
-            programMode = ProgramMode.OldSchool
+            programMode = ProgramMode.OldSchool,
         )
 
         // When: invoke(exercise)
@@ -127,8 +127,8 @@ class ResolveRoutineWeightsUseCaseTest {
                 timestamp = 1000L,
                 workoutMode = "Old School",
                 prType = PRType.MAX_WEIGHT,
-                volume = 1000f
-            )
+                volume = 1000f,
+            ),
         )
 
         val routineExercise = RoutineExercise(
@@ -139,7 +139,7 @@ class ResolveRoutineWeightsUseCaseTest {
             usePercentOfPR = false, // NOT using PR percentage
             weightPercentOfPR = 80,
             prTypeForScaling = PRType.MAX_WEIGHT,
-            programMode = ProgramMode.OldSchool
+            programMode = ProgramMode.OldSchool,
         )
 
         // When: invoke(exercise)
@@ -170,8 +170,8 @@ class ResolveRoutineWeightsUseCaseTest {
                 timestamp = 1000L,
                 workoutMode = "Old School",
                 prType = PRType.MAX_WEIGHT,
-                volume = 940f
-            )
+                volume = 940f,
+            ),
         )
 
         val routineExercise = RoutineExercise(
@@ -182,7 +182,7 @@ class ResolveRoutineWeightsUseCaseTest {
             usePercentOfPR = true,
             weightPercentOfPR = 80, // 80% of 47 = 37.6
             prTypeForScaling = PRType.MAX_WEIGHT,
-            programMode = ProgramMode.OldSchool
+            programMode = ProgramMode.OldSchool,
         )
 
         // When: resolved
@@ -208,8 +208,8 @@ class ResolveRoutineWeightsUseCaseTest {
                 timestamp = 1000L,
                 workoutMode = "Old School",
                 prType = PRType.MAX_WEIGHT,
-                volume = 1000f
-            )
+                volume = 1000f,
+            ),
         )
 
         // Test 73% of 50kg = 36.5kg
@@ -221,7 +221,7 @@ class ResolveRoutineWeightsUseCaseTest {
             usePercentOfPR = true,
             weightPercentOfPR = 73, // 73% of 50 = 36.5
             prTypeForScaling = PRType.MAX_WEIGHT,
-            programMode = ProgramMode.OldSchool
+            programMode = ProgramMode.OldSchool,
         )
 
         val result = useCase(routineExercise)
@@ -245,8 +245,8 @@ class ResolveRoutineWeightsUseCaseTest {
                 timestamp = 1000L,
                 workoutMode = "Old School",
                 prType = PRType.MAX_WEIGHT,
-                volume = 1000f
-            )
+                volume = 1000f,
+            ),
         )
 
         val routineExercise = RoutineExercise(
@@ -259,7 +259,7 @@ class ResolveRoutineWeightsUseCaseTest {
             weightPercentOfPR = 80, // Base percentage (used for baseWeight)
             setWeightsPercentOfPR = listOf(70, 80, 90), // Per-set percentages
             prTypeForScaling = PRType.MAX_WEIGHT,
-            programMode = ProgramMode.OldSchool
+            programMode = ProgramMode.OldSchool,
         )
 
         // When: resolved
@@ -291,8 +291,8 @@ class ResolveRoutineWeightsUseCaseTest {
                 timestamp = 1000L,
                 workoutMode = "Old School",
                 prType = PRType.MAX_WEIGHT,
-                volume = 470f
-            )
+                volume = 470f,
+            ),
         )
 
         val routineExercise = RoutineExercise(
@@ -305,7 +305,7 @@ class ResolveRoutineWeightsUseCaseTest {
             weightPercentOfPR = 80,
             setWeightsPercentOfPR = listOf(70, 80, 90),
             prTypeForScaling = PRType.MAX_WEIGHT,
-            programMode = ProgramMode.OldSchool
+            programMode = ProgramMode.OldSchool,
         )
 
         val result = useCase(routineExercise)
@@ -332,8 +332,8 @@ class ResolveRoutineWeightsUseCaseTest {
                 timestamp = 1000L,
                 workoutMode = "Old School",
                 prType = PRType.MAX_WEIGHT,
-                volume = 600f
-            )
+                volume = 600f,
+            ),
         )
         prRepository.addRecord(
             PersonalRecord(
@@ -346,8 +346,8 @@ class ResolveRoutineWeightsUseCaseTest {
                 timestamp = 2000L,
                 workoutMode = "Old School",
                 prType = PRType.MAX_VOLUME,
-                volume = 1200f
-            )
+                volume = 1200f,
+            ),
         )
 
         val routineExercise = RoutineExercise(
@@ -358,7 +358,7 @@ class ResolveRoutineWeightsUseCaseTest {
             usePercentOfPR = true,
             weightPercentOfPR = 100, // 100% of PR
             prTypeForScaling = PRType.MAX_VOLUME, // Use volume PR
-            programMode = ProgramMode.OldSchool
+            programMode = ProgramMode.OldSchool,
         )
 
         val result = useCase(routineExercise)
@@ -374,7 +374,7 @@ class ResolveRoutineWeightsUseCaseTest {
         val exerciseWithoutId = Exercise(
             id = null, // No ID
             name = "Custom Exercise",
-            muscleGroup = "Chest"
+            muscleGroup = "Chest",
         )
 
         val routineExercise = RoutineExercise(
@@ -385,7 +385,7 @@ class ResolveRoutineWeightsUseCaseTest {
             usePercentOfPR = true,
             weightPercentOfPR = 80,
             prTypeForScaling = PRType.MAX_WEIGHT,
-            programMode = ProgramMode.OldSchool
+            programMode = ProgramMode.OldSchool,
         )
 
         val result = useCase(routineExercise)
@@ -411,8 +411,8 @@ class ResolveRoutineWeightsUseCaseTest {
                 timestamp = 1000L,
                 workoutMode = "Old School",
                 prType = PRType.MAX_WEIGHT,
-                volume = 1000f
-            )
+                volume = 1000f,
+            ),
         )
         prRepository.addRecord(
             PersonalRecord(
@@ -425,8 +425,8 @@ class ResolveRoutineWeightsUseCaseTest {
                 timestamp = 2000L,
                 workoutMode = "Echo",
                 prType = PRType.MAX_WEIGHT,
-                volume = 1200f
-            )
+                volume = 1200f,
+            ),
         )
 
         val routineExerciseOldSchool = RoutineExercise(
@@ -437,7 +437,7 @@ class ResolveRoutineWeightsUseCaseTest {
             usePercentOfPR = true,
             weightPercentOfPR = 100,
             prTypeForScaling = PRType.MAX_WEIGHT,
-            programMode = ProgramMode.OldSchool // Old School mode
+            programMode = ProgramMode.OldSchool, // Old School mode
         )
 
         val routineExerciseEcho = RoutineExercise(
@@ -448,7 +448,7 @@ class ResolveRoutineWeightsUseCaseTest {
             usePercentOfPR = true,
             weightPercentOfPR = 100,
             prTypeForScaling = PRType.MAX_WEIGHT,
-            programMode = ProgramMode.Echo // Echo mode
+            programMode = ProgramMode.Echo, // Echo mode
         )
 
         val resultOldSchool = useCase(routineExerciseOldSchool)
@@ -477,8 +477,8 @@ class ResolveRoutineWeightsUseCaseTest {
                 timestamp = 1000L,
                 workoutMode = "Old School",
                 prType = PRType.MAX_WEIGHT,
-                volume = 1000f
-            )
+                volume = 1000f,
+            ),
         )
 
         val routineExercise = RoutineExercise(
@@ -492,7 +492,7 @@ class ResolveRoutineWeightsUseCaseTest {
             weightPercentOfPR = 80,
             setWeightsPercentOfPR = emptyList(), // No per-set percentages
             prTypeForScaling = PRType.MAX_WEIGHT,
-            programMode = ProgramMode.OldSchool
+            programMode = ProgramMode.OldSchool,
         )
 
         val result = useCase(routineExercise)

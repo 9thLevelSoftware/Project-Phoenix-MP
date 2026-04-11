@@ -15,33 +15,31 @@ import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.domain.model.PersonalRecord
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.domain.model.WorkoutSession
-import com.devil.phoenixproject.presentation.components.charts.HistoryTimePeriod
 import com.devil.phoenixproject.domain.model.currentTimeMillis
-import com.devil.phoenixproject.ui.theme.Spacing
 import com.devil.phoenixproject.presentation.components.*
+import com.devil.phoenixproject.presentation.components.charts.HistoryTimePeriod
 import com.devil.phoenixproject.presentation.util.ResponsiveDimensions
+import com.devil.phoenixproject.ui.theme.Spacing
+import kotlin.time.Instant
 import kotlinx.datetime.*
 
 /**
  * Wrapper composable that constrains card width on tablets to prevent over-stretching.
  */
 @Composable
-private fun ResponsiveCardWrapper(
-    modifier: Modifier = Modifier,
-    content: @Composable () -> Unit
-) {
+private fun ResponsiveCardWrapper(modifier: Modifier = Modifier, content: @Composable () -> Unit) {
     val maxWidth = ResponsiveDimensions.cardMaxWidth()
 
     Box(
         modifier = modifier.fillMaxWidth(),
-        contentAlignment = Alignment.Center
+        contentAlignment = Alignment.Center,
     ) {
         Box(
             modifier = if (maxWidth != null) {
                 Modifier.widthIn(max = maxWidth).fillMaxWidth()
             } else {
                 Modifier.fillMaxWidth()
-            }
+            },
         ) {
             content()
         }
@@ -58,7 +56,7 @@ fun InsightsTab(
     exerciseRepository: ExerciseRepository,
     modifier: Modifier = Modifier,
     weightUnit: WeightUnit = WeightUnit.KG,
-    formatWeight: (Float, WeightUnit) -> String = { w, u -> "${w.toInt()} ${u.name.lowercase()}" }
+    formatWeight: (Float, WeightUnit) -> String = { w, u -> "${w.toInt()} ${u.name.lowercase()}" },
 ) {
     var selectedPeriod by remember { mutableStateOf(HistoryTimePeriod.ALL) }
 
@@ -77,7 +75,9 @@ fun InsightsTab(
                         HistoryTimePeriod.ALL -> today // unreachable
                     }
                 }
-            val cutoffEpoch = cutoff.atStartOfDayIn(TimeZone.currentSystemDefault()).toEpochMilliseconds()
+            val cutoffEpoch = cutoff.atStartOfDayIn(
+                TimeZone.currentSystemDefault(),
+            ).toEpochMilliseconds()
             workoutSessions.filter { it.timestamp >= cutoffEpoch }
         }
     }
@@ -87,20 +87,20 @@ fun InsightsTab(
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
             .padding(Spacing.medium),
-        verticalArrangement = Arrangement.spacedBy(Spacing.medium)
+        verticalArrangement = Arrangement.spacedBy(Spacing.medium),
     ) {
         item {
             Text(
                 text = "Dashboard",
                 style = MaterialTheme.typography.headlineLarge,
                 fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onBackground
+                color = MaterialTheme.colorScheme.onBackground,
             )
             Spacer(modifier = Modifier.height(4.dp))
             Text(
                 text = "Your training overview",
                 style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
 
@@ -108,7 +108,7 @@ fun InsightsTab(
         item {
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 HistoryTimePeriod.entries.forEach { period ->
                     FilterChip(
@@ -117,9 +117,9 @@ fun InsightsTab(
                         label = {
                             Text(
                                 period.label,
-                                style = MaterialTheme.typography.labelMedium
+                                style = MaterialTheme.typography.labelMedium,
                             )
-                        }
+                        },
                     )
                 }
             }
@@ -132,7 +132,7 @@ fun InsightsTab(
                     workoutSessions = filteredSessions,
                     personalRecords = prs,
                     weightUnit = weightUnit,
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth(),
                 )
             }
         }
@@ -144,7 +144,7 @@ fun InsightsTab(
                     MuscleBalanceRadarCard(
                         personalRecords = prs,
                         exerciseRepository = exerciseRepository,
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier.fillMaxWidth(),
                     )
                 }
             }
@@ -155,7 +155,7 @@ fun InsightsTab(
             ResponsiveCardWrapper {
                 ConsistencyGaugeCard(
                     workoutSessions = filteredSessions,
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth(),
                 )
             }
         }
@@ -167,7 +167,7 @@ fun InsightsTab(
                     VolumeVsIntensityCard(
                         workoutSessions = filteredSessions,
                         weightUnit = weightUnit,
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier.fillMaxWidth(),
                     )
                 }
             }
@@ -181,7 +181,7 @@ fun InsightsTab(
                         workoutSessions = filteredSessions,
                         weightUnit = weightUnit,
                         formatWeight = formatWeight,
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier.fillMaxWidth(),
                     )
                 }
             }
@@ -193,7 +193,7 @@ fun InsightsTab(
                 ResponsiveCardWrapper {
                     WorkoutModeDistributionCard(
                         workoutSessions = filteredSessions,
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier.fillMaxWidth(),
                     )
                 }
             }
@@ -206,32 +206,32 @@ fun InsightsTab(
                     Card(
                         modifier = Modifier.fillMaxWidth(),
                         colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.surfaceContainerHighest
-                        )
+                            containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                        ),
                     ) {
                         Column(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .padding(32.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally
+                            horizontalAlignment = Alignment.CenterHorizontally,
                         ) {
                             Icon(
                                 Icons.Default.Insights,
                                 contentDescription = null,
                                 tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(64.dp)
+                                modifier = Modifier.size(64.dp),
                             )
                             Spacer(modifier = Modifier.height(16.dp))
                             Text(
                                 text = "No Insights Yet",
                                 style = MaterialTheme.typography.titleLarge,
-                                fontWeight = FontWeight.Bold
+                                fontWeight = FontWeight.Bold,
                             )
                             Spacer(modifier = Modifier.height(8.dp))
                             Text(
                                 text = "Complete workouts to unlock insights",
                                 style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
                     }

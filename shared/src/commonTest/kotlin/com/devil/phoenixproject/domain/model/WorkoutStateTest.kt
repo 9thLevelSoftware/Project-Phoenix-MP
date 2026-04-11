@@ -29,7 +29,7 @@ class WorkoutStateTest {
         val state = ConnectionState.Connected(
             deviceName = "Vee_Test123",
             deviceAddress = "AA:BB:CC:DD:EE:FF",
-            hardwareModel = VitruvianModel.VFormTrainer
+            hardwareModel = VitruvianModel.VFormTrainer,
         )
 
         assertIs<ConnectionState.Connected>(state)
@@ -42,7 +42,7 @@ class WorkoutStateTest {
     fun `ConnectionState Connected defaults to Unknown hardware model`() {
         val state = ConnectionState.Connected(
             deviceName = "Vee_Test",
-            deviceAddress = "AA:BB:CC:DD:EE:FF"
+            deviceAddress = "AA:BB:CC:DD:EE:FF",
         )
 
         assertEquals(VitruvianModel.Unknown, state.hardwareModel)
@@ -83,13 +83,13 @@ class WorkoutStateTest {
     fun `WorkoutState SetSummary stores burnoutReps`() {
         val state = WorkoutState.SetSummary(
             metrics = emptyList(),
-            peakPower = 500f,
-            averagePower = 300f,
+            peakLoadKgPerCable = 500f,
+            avgLoadKgPerCable = 300f,
             repCount = 15,
             warmupReps = 3,
             workingReps = 8,
             burnoutReps = 4,
-            isEchoMode = true
+            isEchoMode = true,
         )
 
         assertEquals(4, state.burnoutReps)
@@ -99,12 +99,12 @@ class WorkoutStateTest {
     fun `WorkoutState SetSummary burnoutReps defaults to zero`() {
         val state = WorkoutState.SetSummary(
             metrics = emptyList(),
-            peakPower = 500f,
-            averagePower = 300f,
+            peakLoadKgPerCable = 500f,
+            avgLoadKgPerCable = 300f,
             repCount = 10,
             warmupReps = 2,
             workingReps = 8,
-            isEchoMode = true
+            isEchoMode = true,
         )
 
         assertEquals(0, state.burnoutReps)
@@ -119,7 +119,7 @@ class WorkoutStateTest {
             currentSet = 2,
             totalSets = 4,
             isSupersetTransition = true,
-            supersetLabel = "A1"
+            supersetLabel = "A1",
         )
 
         assertEquals(60, state.restSecondsRemaining)

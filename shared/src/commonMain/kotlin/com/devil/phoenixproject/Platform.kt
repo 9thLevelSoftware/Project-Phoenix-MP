@@ -14,3 +14,10 @@ interface Platform {
 expect fun getDeviceName(): String
 
 expect fun getPlatform(): Platform
+
+/**
+ * Whether the current platform is iOS.
+ *
+ * Used for platform-conditional feature availability.
+ */
+expect val isIosPlatform: Boolean

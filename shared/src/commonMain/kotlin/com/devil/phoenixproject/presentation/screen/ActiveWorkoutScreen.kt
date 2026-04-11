@@ -2,25 +2,55 @@ package com.devil.phoenixproject.presentation.screen
 
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.navigation.NavController
+import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.data.repository.ExerciseRepository
-import com.devil.phoenixproject.domain.model.*
+import com.devil.phoenixproject.data.repository.GamificationRepository
+import com.devil.phoenixproject.data.repository.UserProfileRepository
+import com.devil.phoenixproject.domain.model.Badge
+import com.devil.phoenixproject.domain.model.PRCelebrationEvent
+import com.devil.phoenixproject.domain.model.RoutineFlowState
+import com.devil.phoenixproject.domain.model.WorkoutState
 import com.devil.phoenixproject.presentation.components.BatchedBadgeCelebrationDialog
 import com.devil.phoenixproject.presentation.components.ConnectionErrorDialog
-import com.devil.phoenixproject.presentation.components.HapticFeedbackEffect
 import com.devil.phoenixproject.presentation.components.PRCelebrationDialog
-import org.koin.compose.koinInject
-import com.devil.phoenixproject.data.repository.GamificationRepository
-import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
 import com.devil.phoenixproject.presentation.manager.DefaultWorkoutSessionManager
 import com.devil.phoenixproject.presentation.navigation.NavigationRoutes
-import co.touchlab.kermit.Logger
-import com.devil.phoenixproject.util.setKeepScreenOn
+import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import org.jetbrains.compose.resources.stringResource
+import org.koin.compose.koinInject
+import vitruvianprojectphoenix.shared.generated.resources.Res
+import vitruvianprojectphoenix.shared.generated.resources.action_cancel
+import vitruvianprojectphoenix.shared.generated.resources.action_exit
+import vitruvianprojectphoenix.shared.generated.resources.end_workout
+import vitruvianprojectphoenix.shared.generated.resources.exit_workout_message
+import vitruvianprojectphoenix.shared.generated.resources.exit_workout_title
+import vitruvianprojectphoenix.shared.generated.resources.skip_exercise
+import vitruvianprojectphoenix.shared.generated.resources.stop_current_set_message
+import vitruvianprojectphoenix.shared.generated.resources.stop_current_set_title
+import vitruvianprojectphoenix.shared.generated.resources.stop_set
 
 /**
  * Active Workout screen - displays workout controls and metrics during an active workout.
@@ -28,11 +58,7 @@ import kotlinx.coroutines.launch
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ActiveWorkoutScreen(
-    navController: NavController,
-    viewModel: MainViewModel,
-    exerciseRepository: ExerciseRepository
-) {
+fun ActiveWorkoutScreen(navController: NavController, viewModel: MainViewModel, exerciseRepository: ExerciseRepository) {
     val workoutState by viewModel.workoutState.collectAsState()
     val currentMetric by viewModel.currentMetric.collectAsState()
     val currentHeuristicKgMax by viewModel.currentHeuristicKgMax.collectAsState()
@@ -45,6 +71,9 @@ fun ActiveWorkoutScreen(
     val loadedRoutine by viewModel.loadedRoutine.collectAsState()
     val currentExerciseIndex by viewModel.currentExerciseIndex.collectAsState()
     val currentSetIndex by viewModel.currentSetIndex.collectAsState()
+    // Issue #152: Collect skipped/completed sets for ExerciseNavigator dot state
+    val skippedExercises by viewModel.skippedExercises.collectAsState()
+    val completedExercises by viewModel.completedExercises.collectAsState()
     val hapticEvents = viewModel.hapticEvents
     val connectionState by viewModel.connectionState.collectAsState()
     // Load baseline for base tension subtraction (~4kg per cable)
@@ -53,6 +82,19 @@ fun ActiveWorkoutScreen(
     // Issue #192: Timed exercise countdown for duration-based exercises
     val timedExerciseRemainingSeconds by viewModel.timedExerciseRemainingSeconds.collectAsState()
     val isCurrentExerciseBodyweight by viewModel.isCurrentExerciseBodyweight.collectAsState()
+    val latestRepQuality by viewModel.latestRepQuality.collectAsState()
+    val latestBiomechanicsResult by viewModel.latestBiomechanicsResult.collectAsState()
+    val detectionState by viewModel.detectionState.collectAsState()
+    // Issue #237: Motion-triggered set start
+    val motionStartHoldProgress by viewModel.motionStartHoldProgress.collectAsState()
+    // Issue #297, #228: Rest timer pause state
+    val isRestPaused by viewModel.isRestPaused.collectAsState()
+    // Phase 35C: Variable warm-up set state
+    val currentWarmupSetIndex by viewModel.currentWarmupSetIndex.collectAsState()
+    val totalWarmupSets by viewModel.totalWarmupSets.collectAsState()
+    // Issue #113: Just Lift visual rest countdown
+    val justLiftRestCountdown by viewModel.justLiftRestCountdown.collectAsState()
+
     @Suppress("UNUSED_VARIABLE") // Reserved for future connecting overlay
     val isAutoConnecting by viewModel.isAutoConnecting.collectAsState()
     val connectionError by viewModel.connectionError.collectAsState()
@@ -73,10 +115,27 @@ fun ActiveWorkoutScreen(
 
     // Badge Celebration state
     val gamificationRepository: GamificationRepository = koinInject()
+    val userProfileRepository: UserProfileRepository = koinInject()
     var earnedBadges by remember { mutableStateOf<List<Badge>>(emptyList()) }
     LaunchedEffect(Unit) {
         viewModel.badgeEarnedEvents.collect { badges ->
             earnedBadges = badges
+        }
+    }
+
+    // Issue #141: Voice-activated emergency stop via safe word detection
+    val safeWordManager: com.devil.phoenixproject.domain.voice.SafeWordDetectionManager =
+        koinInject()
+    LaunchedEffect(Unit) {
+        safeWordManager.startForWorkout()
+        safeWordManager.detectedWord.collect {
+            Logger.i { "Safe word detected — stopping current set" }
+            viewModel.stopAndReturnToSetReady()
+        }
+    }
+    DisposableEffect(Unit) {
+        onDispose {
+            safeWordManager.stop()
         }
     }
 
@@ -88,19 +147,14 @@ fun ActiveWorkoutScreen(
             snackbarScope.launch {
                 snackbarHostState.showSnackbar(
                     message = message,
-                    duration = SnackbarDuration.Short
+                    duration = SnackbarDuration.Short,
                 )
             }
         }
     }
 
-    // Keep screen on during workout
-    DisposableEffect(Unit) {
-        setKeepScreenOn(true)
-        onDispose {
-            setKeepScreenOn(false)
-        }
-    }
+    // Issue #348: Wake lock moved to EnhancedMainScreen (session-scoped) so it
+    // stays active across SetReady ↔ ActiveWorkout navigation during routines.
 
     // Dynamic title based on workout type
     val screenTitle = remember(loadedRoutine, workoutParameters.isJustLift) {
@@ -131,11 +185,18 @@ fun ActiveWorkoutScreen(
 
             if (isWorkoutActive) {
                 if (isRoutineFlow) {
-                    // Routine flow: Stop and return to SetReady for current set
-                    // This allows user to redo the set or navigate to a different set
+                    // Issue #320: When reps have been completed, stopAndReturnToSetReady
+                    // routes through handleSetCompletion (saves reps, shows summary,
+                    // auto-advances to rest timer). Only navigate to SetReady when
+                    // no reps were completed (true "retry from scratch" scenario).
+                    // Read fresh from StateFlow — the composed `repCount` is stale inside
+                    // this LaunchedEffect(Unit) callback.
+                    val hasCompletedReps = viewModel.repCount.value.workingReps > 0
                     viewModel.stopAndReturnToSetReady()
-                    navController.navigate(NavigationRoutes.SetReady.route) {
-                        popUpTo(NavigationRoutes.RoutineOverview.route) { inclusive = false }
+                    if (!hasCompletedReps) {
+                        navController.navigate(NavigationRoutes.SetReady.route) {
+                            popUpTo(NavigationRoutes.RoutineOverview.route) { inclusive = false }
+                        }
                     }
                 } else {
                     // Non-routine (Just Lift, Single Exercise): Show exit confirmation dialog
@@ -170,7 +231,9 @@ fun ActiveWorkoutScreen(
         // Guard against double navigation
         if (hasNavigatedAway) return@LaunchedEffect
 
-        Logger.d { "ActiveWorkoutScreen: workoutState=$workoutState, isJustLift=${workoutParameters.isJustLift}" }
+        Logger.d {
+            "ActiveWorkoutScreen: workoutState=$workoutState, isJustLift=${workoutParameters.isJustLift}"
+        }
         when {
             workoutState is WorkoutState.Completed -> {
                 Logger.d { "ActiveWorkoutScreen: Workout completed, navigating back in 2s" }
@@ -178,18 +241,30 @@ fun ActiveWorkoutScreen(
                 hasNavigatedAway = true
                 navController.navigateUp()
             }
+
             workoutState is WorkoutState.Idle && workoutParameters.isJustLift -> {
                 // Just Lift completed and reset to Idle - navigate back to Just Lift screen
-                Logger.d { "ActiveWorkoutScreen: Just Lift idle, navigating back to JustLiftScreen" }
+                Logger.d {
+                    "ActiveWorkoutScreen: Just Lift idle, navigating back to JustLiftScreen"
+                }
                 hasNavigatedAway = true
                 navController.navigateUp()
             }
-            workoutState is WorkoutState.Idle && (loadedRoutine == null || loadedRoutine?.id?.startsWith(DefaultWorkoutSessionManager.TEMP_SINGLE_EXERCISE_PREFIX) == true) -> {
+
+            workoutState is WorkoutState.Idle &&
+                (
+                    loadedRoutine == null ||
+                        loadedRoutine?.id?.startsWith(
+                            DefaultWorkoutSessionManager.TEMP_SINGLE_EXERCISE_PREFIX,
+                        ) ==
+                        true
+                    ) -> {
                 // Single Exercise completed and reset to Idle - navigate back to SingleExerciseScreen
                 Logger.d { "ActiveWorkoutScreen: Single Exercise idle, navigating back" }
                 hasNavigatedAway = true
                 navController.navigateUp()
             }
+
             workoutState is WorkoutState.Error -> {
                 // Show error for 3 seconds then navigate back
                 Logger.e { "ActiveWorkoutScreen: Error state, navigating back in 3s" }
@@ -214,36 +289,47 @@ fun ActiveWorkoutScreen(
         // Issue #142: Added SetSummary and Resting to prevent immediate navigation away
         // before user can see the set summary screen with countdown
         val isWorkoutActive = workoutState is WorkoutState.Active ||
-                              workoutState is WorkoutState.Countdown ||
-                              workoutState is WorkoutState.Initializing ||
-                              workoutState is WorkoutState.SetSummary ||
-                              workoutState is WorkoutState.Resting
+            workoutState is WorkoutState.Countdown ||
+            workoutState is WorkoutState.Initializing ||
+            workoutState is WorkoutState.SetSummary ||
+            workoutState is WorkoutState.Resting
 
         when (routineFlowState) {
             is RoutineFlowState.SetReady -> {
                 if (!isWorkoutActive) {
-                    Logger.d { "ActiveWorkoutScreen: RoutineFlowState.SetReady + Idle - navigating to SetReady" }
+                    Logger.d {
+                        "ActiveWorkoutScreen: RoutineFlowState.SetReady + Idle - navigating to SetReady"
+                    }
                     hasNavigatedAway = true
                     navController.navigate(NavigationRoutes.SetReady.route) {
                         popUpTo(NavigationRoutes.RoutineOverview.route) { inclusive = false }
                     }
                 }
             }
+
             is RoutineFlowState.Complete -> {
-                Logger.d { "ActiveWorkoutScreen: RoutineFlowState.Complete - navigating to RoutineComplete" }
+                Logger.d {
+                    "ActiveWorkoutScreen: RoutineFlowState.Complete - navigating to RoutineComplete"
+                }
                 hasNavigatedAway = true
                 navController.navigate(NavigationRoutes.RoutineComplete.route) {
                     popUpTo(NavigationRoutes.RoutineOverview.route) { inclusive = false }
                 }
             }
+
             else -> {}
         }
     }
 
     // Use the new state holder pattern for cleaner API
     // Issue #53: Compute canGoBack/canSkipForward based on routine and exercise index
-    val canGoBack = loadedRoutine != null && currentExerciseIndex > 0
-    val canSkipForward = loadedRoutine != null && currentExerciseIndex < (loadedRoutine?.exercises?.size ?: 0) - 1
+    // Issue #152: Defensive gating — also disable during Active state (belt-and-suspenders
+    // with the navigator visibility check in WorkoutTab)
+    val isSetActive = workoutState is WorkoutState.Active
+    val canGoBack = !isSetActive && loadedRoutine != null && currentExerciseIndex > 0
+    val canSkipForward =
+        !isSetActive && loadedRoutine != null &&
+            currentExerciseIndex < (loadedRoutine?.exercises?.size ?: 0) - 1
 
     // Issue #167: autoplayEnabled now derived from summaryCountdownSeconds
     // 0 (Unlimited) = autoplay OFF, != 0 (-1 or 5-30) = autoplay ON
@@ -252,9 +338,14 @@ fun ActiveWorkoutScreen(
     val workoutUiState = remember(
         connectionState, workoutState, currentMetric, currentHeuristicKgMax, workoutParameters,
         repCount, repRanges, autoStopState, weightUnit, enableVideoPlayback,
-        loadedRoutine, currentExerciseIndex, currentSetIndex, autoplayEnabled,
-        userPreferences.summaryCountdownSeconds, loadBaselineA, loadBaselineB, canGoBack, canSkipForward,
-        timedExerciseRemainingSeconds, isCurrentExerciseBodyweight
+        loadedRoutine, currentExerciseIndex, currentSetIndex, skippedExercises, completedExercises,
+        autoplayEnabled, userPreferences.summaryCountdownSeconds, loadBaselineA, loadBaselineB,
+        canGoBack, canSkipForward,
+        timedExerciseRemainingSeconds, isCurrentExerciseBodyweight, latestRepQuality,
+        latestBiomechanicsResult, detectionState,
+        motionStartHoldProgress, isRestPaused,
+        currentWarmupSetIndex, totalWarmupSets,
+        justLiftRestCountdown,
     ) {
         WorkoutUiState(
             connectionState = connectionState,
@@ -270,6 +361,8 @@ fun ActiveWorkoutScreen(
             loadedRoutine = loadedRoutine,
             currentExerciseIndex = currentExerciseIndex,
             currentSetIndex = currentSetIndex,
+            skippedExercises = skippedExercises,
+            completedExercises = completedExercises,
             autoplayEnabled = autoplayEnabled,
             summaryCountdownSeconds = userPreferences.summaryCountdownSeconds,
             isWorkoutSetupDialogVisible = false,
@@ -280,7 +373,15 @@ fun ActiveWorkoutScreen(
             canGoBack = canGoBack,
             canSkipForward = canSkipForward,
             timedExerciseRemainingSeconds = timedExerciseRemainingSeconds,
-            isCurrentExerciseBodyweight = isCurrentExerciseBodyweight
+            isCurrentExerciseBodyweight = isCurrentExerciseBodyweight,
+            latestRepQualityScore = latestRepQuality?.composite,
+            latestBiomechanicsResult = latestBiomechanicsResult,
+            detectionState = detectionState,
+            motionStartHoldProgress = motionStartHoldProgress,
+            isRestPaused = isRestPaused,
+            currentWarmupSetIndex = currentWarmupSetIndex,
+            totalWarmupSets = totalWarmupSets,
+            justLiftRestCountdown = justLiftRestCountdown,
         )
     }
 
@@ -292,11 +393,14 @@ fun ActiveWorkoutScreen(
             onStartWorkout = {
                 viewModel.ensureConnection(
                     onConnected = { viewModel.startWorkout() },
-                    onFailed = { /* Error shown via StateFlow */ }
+                    onFailed = { /* Error shown via StateFlow */ },
                 )
             },
             onStopWorkout = { showExitConfirmation = true },
             onSkipRest = { viewModel.skipRest() },
+            onExtendRest = { seconds -> viewModel.extendRestTime(seconds) },
+            onToggleRestPause = { viewModel.toggleRestPause() },
+            onResetRest = { viewModel.resetRestTimer() },
             onSkipCountdown = { viewModel.skipCountdown() },
             onProceedFromSummary = { viewModel.proceedFromSummary() },
             onRpeLogged = { rpe -> viewModel.logRpeForCurrentSet(rpe) },
@@ -308,21 +412,27 @@ fun ActiveWorkoutScreen(
             onHideWorkoutSetupDialog = { /* Not used in ActiveWorkoutScreen */ },
             kgToDisplay = viewModel::kgToDisplay,
             displayToKg = viewModel::displayToKg,
-            formatWeight = viewModel::formatWeight
+            formatWeight = viewModel::formatWeight,
+            onDetectionConfirmed = { exerciseId, exerciseName ->
+                viewModel.onDetectionConfirmed(exerciseId, exerciseName)
+            },
+            onDetectionDismissed = { viewModel.onDetectionDismissed() },
         )
     }
 
     // Issue #172: Scaffold wrapper for Snackbar support (user feedback messages)
     Scaffold(
-        snackbarHost = { SnackbarHost(snackbarHostState) }
+        snackbarHost = { SnackbarHost(snackbarHostState) },
     ) { paddingValues ->
-        WorkoutTab(
-            state = workoutUiState,
-            actions = workoutActions,
-            exerciseRepository = exerciseRepository,
-            hapticEvents = hapticEvents,
-            modifier = Modifier.padding(paddingValues)
-        )
+        Column(modifier = Modifier.padding(paddingValues)) {
+            WorkoutTab(
+                state = workoutUiState,
+                actions = workoutActions,
+                exerciseRepository = exerciseRepository,
+                hapticEvents = hapticEvents,
+                modifier = Modifier,
+            )
+        }
     }
 
     // Exit confirmation dialog
@@ -330,53 +440,65 @@ fun ActiveWorkoutScreen(
         if (isRoutineFlow) {
             AlertDialog(
                 onDismissRequest = { showExitConfirmation = false },
-                title = { Text("Stop Current Set?") },
-                text = { Text("Stop this set, skip this exercise, or end the entire workout.") },
+                title = { Text(stringResource(Res.string.stop_current_set_title)) },
+                text = { Text(stringResource(Res.string.stop_current_set_message)) },
                 containerColor = MaterialTheme.colorScheme.surface,
                 shape = MaterialTheme.shapes.medium,
                 confirmButton = {
                     Button(
                         onClick = {
+                            // Issue #320: When reps completed, save and advance (no nav to SetReady)
+                            val hasCompletedReps = viewModel.repCount.value.workingReps > 0
                             viewModel.stopAndReturnToSetReady()
                             showExitConfirmation = false
-                            navController.navigate(NavigationRoutes.SetReady.route) {
-                                popUpTo(NavigationRoutes.RoutineOverview.route) { inclusive = false }
+                            if (!hasCompletedReps) {
+                                navController.navigate(NavigationRoutes.SetReady.route) {
+                                    popUpTo(NavigationRoutes.RoutineOverview.route) {
+                                        inclusive = false
+                                    }
+                                }
                             }
-                        }
+                        },
                     ) {
-                        Text("Stop Set")
+                        Text(stringResource(Res.string.stop_set))
                     }
                 },
                 dismissButton = {
                     Column {
                         TextButton(onClick = { showExitConfirmation = false }) {
-                            Text("Cancel")
+                            Text(stringResource(Res.string.action_cancel))
                         }
                         TextButton(
                             onClick = {
                                 viewModel.stopAndSkipCurrentExercise()
                                 showExitConfirmation = false
-                            }
+                            },
                         ) {
-                            Text("Skip Exercise")
+                            Text(stringResource(Res.string.skip_exercise))
                         }
                         TextButton(
                             onClick = {
                                 viewModel.stopWorkout(exitingWorkout = true)
                                 showExitConfirmation = false
-                                navController.popBackStack(NavigationRoutes.DailyRoutines.route, inclusive = false)
-                            }
+                                navController.popBackStack(
+                                    NavigationRoutes.DailyRoutines.route,
+                                    inclusive = false,
+                                )
+                            },
                         ) {
-                            Text("End Workout", color = MaterialTheme.colorScheme.error)
+                            Text(
+                                stringResource(Res.string.end_workout),
+                                color = MaterialTheme.colorScheme.error,
+                            )
                         }
                     }
-                }
+                },
             )
         } else {
             AlertDialog(
                 onDismissRequest = { showExitConfirmation = false },
-                title = { Text("Exit Workout?") },
-                text = { Text("The workout is currently active. Are you sure you want to exit?") },
+                title = { Text(stringResource(Res.string.exit_workout_title)) },
+                text = { Text(stringResource(Res.string.exit_workout_message)) },
                 containerColor = MaterialTheme.colorScheme.surface,
                 shape = MaterialTheme.shapes.medium,
                 confirmButton = {
@@ -387,16 +509,16 @@ fun ActiveWorkoutScreen(
                             viewModel.stopWorkout(exitingWorkout = true)
                             showExitConfirmation = false
                             navController.navigateUp()
-                        }
+                        },
                     ) {
-                        Text("Exit")
+                        Text(stringResource(Res.string.action_exit))
                     }
                 },
                 dismissButton = {
                     TextButton(onClick = { showExitConfirmation = false }) {
-                        Text("Cancel")
+                        Text(stringResource(Res.string.action_cancel))
                     }
-                }
+                },
             )
         }
     }
@@ -405,7 +527,7 @@ fun ActiveWorkoutScreen(
     connectionError?.let { error ->
         ConnectionErrorDialog(
             message = error,
-            onDismiss = { viewModel.clearConnectionError() }
+            onDismiss = { viewModel.clearConnectionError() },
         )
     }
 
@@ -414,10 +536,13 @@ fun ActiveWorkoutScreen(
         PRCelebrationDialog(
             show = true,
             exerciseName = event.exerciseName,
-            weight = "${viewModel.formatWeight(event.weightPerCableKg, weightUnit)}/cable × ${event.reps} reps",
+            weight = "${viewModel.formatWeight(
+                event.weightPerCableKg,
+                weightUnit,
+            )}/cable × ${event.reps} reps",
             workoutMode = event.workoutMode,
             onDismiss = { prCelebrationEvent = null },
-            onSoundTrigger = { viewModel.emitPRSound() }
+            onSoundTrigger = { viewModel.emitPRSound() },
         )
     }
 
@@ -430,10 +555,11 @@ fun ActiveWorkoutScreen(
             onDismiss = { earnedBadges = emptyList() },
             onMarkAllCelebrated = { badgeIds ->
                 scope.launch {
-                    gamificationRepository.markBadgesCelebrated(badgeIds)
+                    val profileId = userProfileRepository.activeProfile.value?.id ?: "default"
+                    gamificationRepository.markBadgesCelebrated(badgeIds, profileId)
                 }
             },
-            onSoundTrigger = {}  // Sound handled by ViewModel - skipped if PR already played
+            onSoundTrigger = {}, // Sound handled by ViewModel - skipped if PR already played
         )
     }
 }

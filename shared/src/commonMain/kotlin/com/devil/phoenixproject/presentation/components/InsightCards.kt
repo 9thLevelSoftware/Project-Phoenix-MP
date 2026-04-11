@@ -2,7 +2,6 @@
 
 package com.devil.phoenixproject.presentation.components
 
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -15,12 +14,8 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -36,9 +31,13 @@ import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.domain.model.effectiveHeaviestKgPerCable
 import com.devil.phoenixproject.domain.model.effectiveTotalVolumeKg
 import com.devil.phoenixproject.presentation.components.charts.*
+import com.devil.phoenixproject.ui.theme.AccessibilityTheme
 import com.devil.phoenixproject.util.KmpLocalDate
 import com.devil.phoenixproject.util.KmpUtils
 import kotlin.math.roundToInt
+import org.jetbrains.compose.resources.stringResource
+import vitruvianprojectphoenix.shared.generated.resources.*
+import vitruvianprojectphoenix.shared.generated.resources.Res
 
 /**
  * Insight card components for workout analytics
@@ -48,12 +47,7 @@ import kotlin.math.roundToInt
 /**
  * Week-over-week summary data
  */
-private data class WeekSummary(
-    val workouts: Int,
-    val totalVolume: Float,
-    val totalReps: Int,
-    val prsHit: Int
-)
+private data class WeekSummary(val workouts: Int, val totalVolume: Float, val totalReps: Int, val prsHit: Int)
 
 /**
  * Comparison result for week-over-week metrics
@@ -73,7 +67,7 @@ fun ThisWeekSummaryCard(
     workoutSessions: List<WorkoutSession>,
     personalRecords: List<PersonalRecord>,
     weightUnit: WeightUnit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
 ) {
     val now = remember { KmpUtils.currentTimeMillis() }
     val oneDayMs = 24L * 60 * 60 * 1000
@@ -102,7 +96,7 @@ fun ThisWeekSummaryCard(
                 it.effectiveTotalVolumeKg().toDouble()
             }.toFloat(),
             totalReps = thisWeekSessions.sumOf { it.totalReps },
-            prsHit = thisWeekPRs.size
+            prsHit = thisWeekPRs.size,
         )
 
         val lastWeekSummary = WeekSummary(
@@ -111,40 +105,41 @@ fun ThisWeekSummaryCard(
                 it.effectiveTotalVolumeKg().toDouble()
             }.toFloat(),
             totalReps = lastWeekSessions.sumOf { it.totalReps },
-            prsHit = lastWeekPRs.size
+            prsHit = lastWeekPRs.size,
         )
 
         Pair(thisWeekSummary, lastWeekSummary)
     }
 
     // Helper function to calculate comparison
-    fun calculateComparison(current: Int, previous: Int): Comparison {
-        return when {
-            previous == 0 && current == 0 -> Comparison.NoChange
-            previous == 0 -> Comparison.Increase("+$current")
-            else -> {
-                val diff = current - previous
-                when {
-                    diff > 0 -> Comparison.Increase("+$diff")
-                    diff < 0 -> Comparison.Decrease("$diff")
-                    else -> Comparison.NoChange
-                }
+    fun calculateComparison(current: Int, previous: Int): Comparison = when {
+        previous == 0 && current == 0 -> Comparison.NoChange
+
+        previous == 0 -> Comparison.Increase("+$current")
+
+        else -> {
+            val diff = current - previous
+            when {
+                diff > 0 -> Comparison.Increase("+$diff")
+                diff < 0 -> Comparison.Decrease("$diff")
+                else -> Comparison.NoChange
             }
         }
     }
 
-    fun calculatePercentageComparison(current: Float, previous: Float): Comparison {
-        return when {
-            previous == 0f && current == 0f -> Comparison.NoChange
-            previous == 0f && current > 0f -> Comparison.Increase("+100%")
-            previous == 0f -> Comparison.NoData
-            else -> {
-                val percentChange = ((current - previous) / previous * 100).roundToInt()
-                when {
-                    percentChange > 0 -> Comparison.Increase("+$percentChange%")
-                    percentChange < 0 -> Comparison.Decrease("$percentChange%")
-                    else -> Comparison.NoChange
-                }
+    fun calculatePercentageComparison(current: Float, previous: Float): Comparison = when {
+        previous == 0f && current == 0f -> Comparison.NoChange
+
+        previous == 0f && current > 0f -> Comparison.Increase("+100%")
+
+        previous == 0f -> Comparison.NoData
+
+        else -> {
+            val percentChange = ((current - previous) / previous * 100).roundToInt()
+            when {
+                percentChange > 0 -> Comparison.Increase("+$percentChange%")
+                percentChange < 0 -> Comparison.Decrease("$percentChange%")
+                else -> Comparison.NoChange
             }
         }
     }
@@ -170,21 +165,22 @@ fun ThisWeekSummaryCard(
         modifier = modifier
             .fillMaxWidth()
             .semantics {
-                contentDescription = "This week summary: ${thisWeek.workouts} workouts, $volumeText volume, ${thisWeek.totalReps} reps, ${thisWeek.prsHit} PRs"
+                contentDescription =
+                    "This week summary: ${thisWeek.workouts} workouts, $volumeText volume, ${thisWeek.totalReps} reps, ${thisWeek.prsHit} PRs"
             },
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest),
-        shape = RoundedCornerShape(20.dp)
+        shape = RoundedCornerShape(20.dp),
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Text(
                 "This Week",
                 style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Bold
+                fontWeight = FontWeight.Bold,
             )
             Text(
                 "Compared to last 7 days",
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
 
             Spacer(modifier = Modifier.height(16.dp))
@@ -194,25 +190,25 @@ fun ThisWeekSummaryCard(
                 WeekStatRow(
                     label = "Workouts",
                     value = "${thisWeek.workouts}",
-                    comparison = workoutsComparison
+                    comparison = workoutsComparison,
                 )
 
                 WeekStatRow(
                     label = "Total Volume",
                     value = volumeText,
-                    comparison = volumeComparison
+                    comparison = volumeComparison,
                 )
 
                 WeekStatRow(
                     label = "Total Reps",
                     value = "${thisWeek.totalReps}",
-                    comparison = repsComparison
+                    comparison = repsComparison,
                 )
 
                 WeekStatRow(
                     label = "PRs Hit",
                     value = "${thisWeek.prsHit}",
-                    comparison = prsComparison
+                    comparison = prsComparison,
                 )
             }
         }
@@ -223,73 +219,71 @@ fun ThisWeekSummaryCard(
  * Individual stat row with comparison indicator
  */
 @Composable
-private fun WeekStatRow(
-    label: String,
-    value: String,
-    comparison: Comparison,
-    modifier: Modifier = Modifier
-) {
+private fun WeekStatRow(label: String, value: String, comparison: Comparison, modifier: Modifier = Modifier) {
     val (icon, color, comparisonText) = when (comparison) {
         is Comparison.Increase -> Triple(
             Icons.Default.ArrowUpward,
-            Color(0xFF4CAF50), // Green
-            comparison.value
+            AccessibilityTheme.colors.success,
+            comparison.value,
         )
+
         is Comparison.Decrease -> Triple(
             Icons.Default.ArrowDownward,
-            Color(0xFFF44336), // Red
-            comparison.value
+            AccessibilityTheme.colors.error,
+            comparison.value,
         )
+
         is Comparison.NoChange -> Triple(
             Icons.Default.Remove,
             MaterialTheme.colorScheme.onSurfaceVariant,
-            "same"
+            "same",
         )
+
         is Comparison.NoData -> Triple(
             Icons.Default.Remove,
             MaterialTheme.colorScheme.onSurfaceVariant,
-            "-"
+            "-",
         )
     }
 
     Row(
         modifier = modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
+        verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
             text = label,
             style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
 
         Row(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically
+            verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
                 text = value,
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurface
+                color = MaterialTheme.colorScheme.onSurface,
             )
 
             // Comparison indicator
             Row(
                 horizontalArrangement = Arrangement.spacedBy(2.dp),
-                verticalAlignment = Alignment.CenterVertically
+                verticalAlignment = Alignment.CenterVertically,
             ) {
                 Icon(
                     imageVector = icon,
                     contentDescription = null,
                     tint = color,
-                    modifier = Modifier.size(16.dp)
+                    modifier = Modifier.size(16.dp),
                 )
                 Text(
                     text = comparisonText,
                     style = MaterialTheme.typography.labelSmall,
                     color = color,
-                    fontWeight = FontWeight.Medium
+                    fontWeight = FontWeight.Medium,
                 )
             }
         }
@@ -297,11 +291,7 @@ private fun WeekStatRow(
 }
 
 @Composable
-fun MuscleBalanceRadarCard(
-    personalRecords: List<PersonalRecord>,
-    exerciseRepository: ExerciseRepository,
-    modifier: Modifier = Modifier
-) {
+fun MuscleBalanceRadarCard(personalRecords: List<PersonalRecord>, exerciseRepository: ExerciseRepository, modifier: Modifier = Modifier) {
     // Calculate muscle group frequency
     // Map of Muscle Group -> Frequency (0.0 - 1.0)
     var radarData by remember { mutableStateOf<List<Pair<String, Float>>>(emptyList()) }
@@ -319,16 +309,22 @@ fun MuscleBalanceRadarCard(
                     // Normalize group names
                     val normalizedGroup = when {
                         group.contains("Chest", ignoreCase = true) -> "Chest"
+
                         group.contains("Back", ignoreCase = true) -> "Back"
+
                         group.contains("Leg", ignoreCase = true) ||
-                                group.contains("Quadriceps", ignoreCase = true) ||
-                                group.contains("Hamstrings", ignoreCase = true) -> "Legs"
+                            group.contains("Quadriceps", ignoreCase = true) ||
+                            group.contains("Hamstrings", ignoreCase = true) -> "Legs"
+
                         group.contains("Shoulder", ignoreCase = true) -> "Shoulders"
+
                         group.contains("Arm", ignoreCase = true) ||
-                                group.contains("Bicep", ignoreCase = true) ||
-                                group.contains("Tricep", ignoreCase = true) -> "Arms"
+                            group.contains("Bicep", ignoreCase = true) ||
+                            group.contains("Tricep", ignoreCase = true) -> "Arms"
+
                         group.contains("Core", ignoreCase = true) ||
-                                group.contains("Abs", ignoreCase = true) -> "Core"
+                            group.contains("Abs", ignoreCase = true) -> "Core"
+
                         else -> "Other"
                     }
 
@@ -358,18 +354,18 @@ fun MuscleBalanceRadarCard(
     Card(
         modifier = modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest),
-        shape = RoundedCornerShape(20.dp)
+        shape = RoundedCornerShape(20.dp),
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Text(
                 "Muscle Balance",
                 style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Bold
+                fontWeight = FontWeight.Bold,
             )
             Text(
                 "Relative training focus by body part",
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Spacer(modifier = Modifier.height(16.dp))
 
@@ -377,14 +373,14 @@ fun MuscleBalanceRadarCard(
                 RadarChart(
                     data = radarData,
                     maxValue = 1.0f,
-                    modifier = Modifier.height(300.dp)
+                    modifier = Modifier.height(300.dp),
                 )
             } else {
                 Text(
                     "Complete workouts to see your muscle balance analysis.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(vertical = 32.dp)
+                    modifier = Modifier.padding(vertical = 32.dp),
                 )
             }
         }
@@ -392,10 +388,7 @@ fun MuscleBalanceRadarCard(
 }
 
 @Composable
-fun ConsistencyGaugeCard(
-    workoutSessions: List<WorkoutSession>,
-    modifier: Modifier = Modifier
-) {
+fun ConsistencyGaugeCard(workoutSessions: List<WorkoutSession>, modifier: Modifier = Modifier) {
     val stats = remember(workoutSessions) {
         val thirtyDaysAgo = KmpUtils.currentTimeMillis() - (30L * 24 * 60 * 60 * 1000)
         val count = workoutSessions.count { it.timestamp >= thirtyDaysAgo }
@@ -412,18 +405,18 @@ fun ConsistencyGaugeCard(
                 contentDescription = "Monthly consistency: $stats workouts in the last 30 days, target is ${target.toInt()}"
             },
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest),
-        shape = RoundedCornerShape(20.dp)
+        shape = RoundedCornerShape(20.dp),
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Text(
                 "Monthly Consistency",
                 style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Bold
+                fontWeight = FontWeight.Bold,
             )
             Text(
                 "Workouts in the last 30 days",
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
 
             Spacer(modifier = Modifier.height(16.dp))
@@ -432,18 +425,14 @@ fun ConsistencyGaugeCard(
                 currentValue = stats.toFloat(),
                 targetValue = target,
                 label = "Workouts",
-                modifier = Modifier.height(250.dp)
+                modifier = Modifier.height(250.dp),
             )
         }
     }
 }
 
 @Composable
-fun VolumeVsIntensityCard(
-    workoutSessions: List<WorkoutSession>,
-    weightUnit: WeightUnit,
-    modifier: Modifier = Modifier
-) {
+fun VolumeVsIntensityCard(workoutSessions: List<WorkoutSession>, weightUnit: WeightUnit, modifier: Modifier = Modifier) {
     // Prepare data for the last 7 sessions
     val (columnData, lineData) = remember(workoutSessions, weightUnit) {
         val sortedSessions = workoutSessions.sortedBy { it.timestamp }.takeLast(7)
@@ -461,7 +450,7 @@ fun VolumeVsIntensityCard(
 
             val lines = sortedSessions.mapIndexed { index, session ->
                 val label = "S${index + 1}"
-                val maxWeight = session.effectiveHeaviestKgPerCable() * 2f // Total across both cables
+                val maxWeight = session.effectiveHeaviestKgPerCable() * (session.cableCount ?: 1).toFloat() // Total across cables (default 1 matches effectiveTotalVolumeKg)
                 // Convert to lbs if needed
                 val adjustedWeight = if (weightUnit == WeightUnit.LB) maxWeight * 2.20462f else maxWeight
                 label to adjustedWeight
@@ -474,18 +463,18 @@ fun VolumeVsIntensityCard(
     Card(
         modifier = modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest),
-        shape = RoundedCornerShape(20.dp)
+        shape = RoundedCornerShape(20.dp),
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Text(
                 "Volume vs Intensity",
                 style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Bold
+                fontWeight = FontWeight.Bold,
             )
             Text(
                 "Last 7 sessions",
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
 
             Spacer(modifier = Modifier.height(16.dp))
@@ -496,14 +485,14 @@ fun VolumeVsIntensityCard(
                     lineData = lineData,
                     columnLabel = "Volume (${if (weightUnit == WeightUnit.KG) "kg" else "lbs"})",
                     lineLabel = "Max Weight",
-                    modifier = Modifier.height(300.dp)
+                    modifier = Modifier.height(300.dp),
                 )
             } else {
                 Text(
                     "No workout data available yet.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(vertical = 32.dp)
+                    modifier = Modifier.padding(vertical = 32.dp),
                 )
             }
         }
@@ -511,10 +500,7 @@ fun VolumeVsIntensityCard(
 }
 
 @Composable
-fun WorkoutModeDistributionCard(
-    workoutSessions: List<WorkoutSession>,
-    modifier: Modifier = Modifier
-) {
+fun WorkoutModeDistributionCard(workoutSessions: List<WorkoutSession>, modifier: Modifier = Modifier) {
     val modeData = remember(workoutSessions) {
         workoutSessions
             .groupingBy { it.mode }
@@ -526,18 +512,18 @@ fun WorkoutModeDistributionCard(
     Card(
         modifier = modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest),
-        shape = RoundedCornerShape(20.dp)
+        shape = RoundedCornerShape(20.dp),
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Text(
                 "Mode Distribution",
                 style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Bold
+                fontWeight = FontWeight.Bold,
             )
             Text(
                 "Based on Workout Sessions",
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
 
             Spacer(modifier = Modifier.height(16.dp))
@@ -547,14 +533,14 @@ fun WorkoutModeDistributionCard(
                 // Chart is now responsive and self-sizing for tablet support
                 MuscleGroupCircleChart(
                     data = modeData,
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth(),
                 )
             } else {
                 Text(
                     "No mode data available.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(vertical = 32.dp)
+                    modifier = Modifier.padding(vertical = 32.dp),
                 )
             }
         }
@@ -566,23 +552,23 @@ fun TotalVolumeCard(
     workoutSessions: List<WorkoutSession>,
     weightUnit: WeightUnit,
     formatWeight: (Float, WeightUnit) -> String,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
 ) {
     Card(
         modifier = modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest),
-        shape = RoundedCornerShape(20.dp)
+        shape = RoundedCornerShape(20.dp),
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Text(
                 "Total Volume History",
                 style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Bold
+                fontWeight = FontWeight.Bold,
             )
             Text(
                 "Volume lifted per workout session",
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
 
             Spacer(modifier = Modifier.height(16.dp))
@@ -592,14 +578,14 @@ fun TotalVolumeCard(
                     workoutSessions = workoutSessions,
                     weightUnit = weightUnit,
                     formatWeight = formatWeight,
-                    modifier = Modifier.height(280.dp)
+                    modifier = Modifier.height(280.dp),
                 )
             } else {
                 Text(
                     "No workout data available yet.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(vertical = 32.dp)
+                    modifier = Modifier.padding(vertical = 32.dp),
                 )
             }
         }
@@ -609,11 +595,7 @@ fun TotalVolumeCard(
 /**
  * Volume comparison data class for fun volume representations
  */
-private data class VolumeComparison(
-    val funValue: String,
-    val funLabel: String,
-    val actualKg: Float
-)
+private data class VolumeComparison(val funValue: String, val funLabel: String, val actualKg: Float)
 
 /**
  * Format a float to one decimal place (KMP-compatible)
@@ -630,39 +612,42 @@ private fun formatOneDecimal(value: Float): String {
 /**
  * Get fun volume comparison based on total volume in kg
  */
-private fun getVolumeComparison(totalVolumeKg: Float): VolumeComparison {
-    return when {
-        totalVolumeKg >= 1_000_000 -> VolumeComparison(
-            funValue = formatOneDecimal(totalVolumeKg / 52_000_000f),
-            funLabel = "Titanics",
-            actualKg = totalVolumeKg
-        )
-        totalVolumeKg >= 200_000 -> VolumeComparison(
-            funValue = formatOneDecimal(totalVolumeKg / 150_000f),
-            funLabel = "Blue Whales",
-            actualKg = totalVolumeKg
-        )
-        totalVolumeKg >= 100_000 -> VolumeComparison(
-            funValue = formatOneDecimal(totalVolumeKg / 100_000f),
-            funLabel = "Jumbo Jets",
-            actualKg = totalVolumeKg
-        )
-        totalVolumeKg >= 50_000 -> VolumeComparison(
-            funValue = formatOneDecimal(totalVolumeKg / 5_000f),
-            funLabel = "Elephants Moved",
-            actualKg = totalVolumeKg
-        )
-        totalVolumeKg >= 10_000 -> VolumeComparison(
-            funValue = formatOneDecimal(totalVolumeKg / 1_500f),
-            funLabel = "Cars Crushed",
-            actualKg = totalVolumeKg
-        )
-        else -> VolumeComparison(
-            funValue = "${totalVolumeKg.toInt()}",
-            funLabel = "kg lifted",
-            actualKg = totalVolumeKg
-        )
-    }
+private fun getVolumeComparison(totalVolumeKg: Float): VolumeComparison = when {
+    totalVolumeKg >= 1_000_000 -> VolumeComparison(
+        funValue = formatOneDecimal(totalVolumeKg / 52_000_000f),
+        funLabel = "Titanics",
+        actualKg = totalVolumeKg,
+    )
+
+    totalVolumeKg >= 200_000 -> VolumeComparison(
+        funValue = formatOneDecimal(totalVolumeKg / 150_000f),
+        funLabel = "Blue Whales",
+        actualKg = totalVolumeKg,
+    )
+
+    totalVolumeKg >= 100_000 -> VolumeComparison(
+        funValue = formatOneDecimal(totalVolumeKg / 100_000f),
+        funLabel = "Jumbo Jets",
+        actualKg = totalVolumeKg,
+    )
+
+    totalVolumeKg >= 50_000 -> VolumeComparison(
+        funValue = formatOneDecimal(totalVolumeKg / 5_000f),
+        funLabel = "Elephants Moved",
+        actualKg = totalVolumeKg,
+    )
+
+    totalVolumeKg >= 10_000 -> VolumeComparison(
+        funValue = formatOneDecimal(totalVolumeKg / 1_500f),
+        funLabel = "Cars Crushed",
+        actualKg = totalVolumeKg,
+    )
+
+    else -> VolumeComparison(
+        funValue = "${totalVolumeKg.toInt()}",
+        funLabel = "kg lifted",
+        actualKg = totalVolumeKg,
+    )
 }
 
 /**
@@ -676,16 +661,13 @@ data class LifetimeStats(
     val favoriteExercise: String?,
     val favoriteExerciseCount: Int,
     val favoriteMode: String?,
-    val favoriteModeCount: Int
+    val favoriteModeCount: Int,
 )
 
 /**
  * Calculate lifetime stats from workout sessions
  */
-private fun calculateLifetimeStats(
-    workoutSessions: List<WorkoutSession>,
-    exerciseNames: Map<String, String>
-): LifetimeStats {
+private fun calculateLifetimeStats(workoutSessions: List<WorkoutSession>, exerciseNames: Map<String, String>): LifetimeStats {
     if (workoutSessions.isEmpty()) {
         return LifetimeStats(
             totalWorkouts = 0,
@@ -695,7 +677,7 @@ private fun calculateLifetimeStats(
             favoriteExercise = null,
             favoriteExerciseCount = 0,
             favoriteMode = null,
-            favoriteModeCount = 0
+            favoriteModeCount = 0,
         )
     }
 
@@ -736,7 +718,7 @@ private fun calculateLifetimeStats(
         favoriteExercise = favoriteExercise,
         favoriteExerciseCount = favoriteExerciseCount,
         favoriteMode = favoriteMode,
-        favoriteModeCount = favoriteModeCount
+        favoriteModeCount = favoriteModeCount,
     )
 }
 
@@ -748,7 +730,7 @@ fun LifetimeStatsCard(
     workoutSessions: List<WorkoutSession>,
     exerciseRepository: ExerciseRepository,
     weightUnit: WeightUnit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
 ) {
     // Build exercise names map
     var exerciseNames by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
@@ -789,18 +771,18 @@ fun LifetimeStatsCard(
     Card(
         modifier = modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest),
-        shape = RoundedCornerShape(20.dp)
+        shape = RoundedCornerShape(20.dp),
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Text(
                 "Lifetime Stats",
                 style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Bold
+                fontWeight = FontWeight.Bold,
             )
             Text(
                 "Your all-time achievements",
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
 
             Spacer(modifier = Modifier.height(16.dp))
@@ -810,7 +792,7 @@ fun LifetimeStatsCard(
                     "Complete workouts to see your lifetime stats!",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(vertical = 32.dp)
+                    modifier = Modifier.padding(vertical = 32.dp),
                 )
             } else {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -818,7 +800,7 @@ fun LifetimeStatsCard(
                     LifetimeStatRow(
                         label = "Total Workouts",
                         value = "${stats.totalWorkouts}",
-                        subtext = null
+                        subtext = null,
                     )
 
                     // Total Volume with fun comparison
@@ -828,13 +810,13 @@ fun LifetimeStatsCard(
                             label = "Total Volume",
                             value = "${volumeComparison.funValue} ${volumeComparison.funLabel}",
                             subtext = actualVolumeDisplay,
-                            isFunStat = true
+                            isFunStat = true,
                         )
                     } else {
                         LifetimeStatRow(
                             label = "Total Volume",
                             value = actualVolumeDisplay,
-                            subtext = null
+                            subtext = null,
                         )
                     }
 
@@ -845,7 +827,7 @@ fun LifetimeStatsCard(
                             stats.totalReps >= 1000 -> "${formatOneDecimal(stats.totalReps / 1000f)}k"
                             else -> "${stats.totalReps}"
                         },
-                        subtext = null
+                        subtext = null,
                     )
 
                     // Days Since First Workout
@@ -853,7 +835,7 @@ fun LifetimeStatsCard(
                         LifetimeStatRow(
                             label = "Days Since First",
                             value = "${stats.daysSinceFirst}",
-                            subtext = "days of gains"
+                            subtext = "days of gains",
                         )
                     }
 
@@ -862,7 +844,7 @@ fun LifetimeStatsCard(
                         LifetimeStatRow(
                             label = "Favorite Exercise",
                             value = exercise,
-                            subtext = "${stats.favoriteExerciseCount} workouts"
+                            subtext = "${stats.favoriteExerciseCount} workouts",
                         )
                     }
 
@@ -871,7 +853,7 @@ fun LifetimeStatsCard(
                         LifetimeStatRow(
                             label = "Favorite Mode",
                             value = mode,
-                            subtext = "${stats.favoriteModeCount} workouts"
+                            subtext = "${stats.favoriteModeCount} workouts",
                         )
                     }
                 }
@@ -884,22 +866,16 @@ fun LifetimeStatsCard(
  * Individual stat row for Lifetime Stats Card
  */
 @Composable
-private fun LifetimeStatRow(
-    label: String,
-    value: String,
-    subtext: String?,
-    isFunStat: Boolean = false,
-    modifier: Modifier = Modifier
-) {
+private fun LifetimeStatRow(label: String, value: String, subtext: String?, isFunStat: Boolean = false, modifier: Modifier = Modifier) {
     Row(
         modifier = modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
+        verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
             text = label,
             style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
 
         Column(horizontalAlignment = Alignment.End) {
@@ -907,13 +883,13 @@ private fun LifetimeStatRow(
                 text = value,
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
-                color = if (isFunStat) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                color = if (isFunStat) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
             )
             subtext?.let {
                 Text(
                     text = it,
                     style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
         }
@@ -928,11 +904,7 @@ private fun LifetimeStatRow(
  * @param modifier Optional modifier
  */
 @Composable
-fun NextBadgeProgressCard(
-    badgesWithProgress: List<BadgeWithProgress>,
-    onBadgeClick: () -> Unit,
-    modifier: Modifier = Modifier
-) {
+fun NextBadgeProgressCard(badgesWithProgress: List<BadgeWithProgress>, onBadgeClick: () -> Unit, modifier: Modifier = Modifier) {
     // Filter and sort badges:
     // 1. Exclude earned badges
     // 2. Exclude secret badges (isSecret = true)
@@ -953,30 +925,30 @@ fun NextBadgeProgressCard(
             .fillMaxWidth()
             .clickable(onClick = onBadgeClick),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest),
-        shape = RoundedCornerShape(20.dp)
+        shape = RoundedCornerShape(20.dp),
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+                verticalAlignment = Alignment.CenterVertically,
             ) {
                 Column {
                     Text(
                         "Next Badges",
                         style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Bold
+                        fontWeight = FontWeight.Bold,
                     )
                     Text(
                         "Your closest achievements",
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
                 Icon(
                     imageVector = Icons.Default.ChevronRight,
-                    contentDescription = "View all badges",
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    contentDescription = stringResource(Res.string.cd_view_all_badges),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
 
@@ -995,17 +967,14 @@ fun NextBadgeProgressCard(
  * Individual badge progress item within the NextBadgeProgressCard
  */
 @Composable
-private fun NextBadgeProgressItem(
-    badgeWithProgress: BadgeWithProgress,
-    modifier: Modifier = Modifier
-) {
+private fun NextBadgeProgressItem(badgeWithProgress: BadgeWithProgress, modifier: Modifier = Modifier) {
     val badge = badgeWithProgress.badge
     val tierColor = Color(badge.tier.colorHex)
 
     Row(
         modifier = modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp)
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         // Badge icon
         Box(
@@ -1014,28 +983,28 @@ private fun NextBadgeProgressItem(
                 .clip(CircleShape)
                 .background(
                     Brush.radialGradient(
-                        listOf(tierColor.copy(alpha = 0.8f), tierColor.copy(alpha = 0.3f))
-                    )
+                        listOf(tierColor.copy(alpha = 0.8f), tierColor.copy(alpha = 0.3f)),
+                    ),
                 ),
-            contentAlignment = Alignment.Center
+            contentAlignment = Alignment.Center,
         ) {
             Icon(
                 imageVector = getBadgeIconForProgress(badge.iconResource),
                 contentDescription = null,
                 tint = Color.White,
-                modifier = Modifier.size(20.dp)
+                modifier = Modifier.size(20.dp),
             )
         }
 
         // Badge info and progress
         Column(
             modifier = Modifier.weight(1f),
-            verticalArrangement = Arrangement.spacedBy(4.dp)
+            verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+                verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
                     text = badge.name,
@@ -1043,12 +1012,12 @@ private fun NextBadgeProgressItem(
                     fontWeight = FontWeight.SemiBold,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f, fill = false)
+                    modifier = Modifier.weight(1f, fill = false),
                 )
                 Text(
                     text = badge.getProgressDescription(badgeWithProgress.currentProgress),
                     style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
 
@@ -1060,7 +1029,7 @@ private fun NextBadgeProgressItem(
                     .height(6.dp)
                     .clip(RoundedCornerShape(3.dp)),
                 color = tierColor,
-                trackColor = MaterialTheme.colorScheme.surfaceVariant
+                trackColor = MaterialTheme.colorScheme.surfaceVariant,
             )
         }
     }
@@ -1069,34 +1038,28 @@ private fun NextBadgeProgressItem(
 /**
  * Helper function to map badge icon resource to ImageVector
  */
-private fun getBadgeIconForProgress(iconResource: String): ImageVector {
-    return when (iconResource) {
-        "fire" -> Icons.Default.LocalFireDepartment
-        "trophy" -> Icons.Default.EmojiEvents
-        "dumbbell" -> Icons.Default.FitnessCenter
-        "repeat" -> Icons.Default.Repeat
-        "compass" -> Icons.Default.Explore
-        "calendar" -> Icons.Default.CalendarMonth
-        "sun" -> Icons.Default.WbSunny
-        "moon" -> Icons.Default.NightsStay
-        "weight" -> Icons.Default.FitnessCenter
-        "lightning" -> Icons.Default.Bolt
-        "body" -> Icons.Default.Accessibility
-        "phoenix" -> Icons.Default.LocalFireDepartment
-        "shield" -> Icons.Default.Shield
-        "list" -> Icons.Default.Checklist
-        else -> Icons.Default.Star
-    }
+private fun getBadgeIconForProgress(iconResource: String): ImageVector = when (iconResource) {
+    "fire" -> Icons.Default.LocalFireDepartment
+    "trophy" -> Icons.Default.EmojiEvents
+    "dumbbell" -> Icons.Default.FitnessCenter
+    "repeat" -> Icons.Default.Repeat
+    "compass" -> Icons.Default.Explore
+    "calendar" -> Icons.Default.CalendarMonth
+    "sun" -> Icons.Default.WbSunny
+    "moon" -> Icons.Default.NightsStay
+    "weight" -> Icons.Default.FitnessCenter
+    "lightning" -> Icons.Default.Bolt
+    "body" -> Icons.Default.Accessibility
+    "phoenix" -> Icons.Default.LocalFireDepartment
+    "shield" -> Icons.Default.Shield
+    "list" -> Icons.Default.Checklist
+    else -> Icons.Default.Star
 }
 
 /**
  * Data class representing a single day's workout activity
  */
-private data class DayActivity(
-    val date: KmpLocalDate,
-    val volume: Float,
-    val workoutCount: Int
-)
+private data class DayActivity(val date: KmpLocalDate, val volume: Float, val workoutCount: Int)
 
 /**
  * Calendar Heatmap Card - GitHub-style contribution graph showing workout activity
@@ -1109,11 +1072,7 @@ private data class DayActivity(
  * @param modifier Optional modifier
  */
 @Composable
-fun CalendarHeatmapCard(
-    workoutSessions: List<WorkoutSession>,
-    weightUnit: WeightUnit,
-    modifier: Modifier = Modifier
-) {
+fun CalendarHeatmapCard(workoutSessions: List<WorkoutSession>, weightUnit: WeightUnit, modifier: Modifier = Modifier) {
     // Calculate daily volumes for last 13 weeks (91 days)
     val (dailyActivities, maxVolume, monthLabels) = remember(workoutSessions) {
         val today = KmpLocalDate.today()
@@ -1124,22 +1083,22 @@ fun CalendarHeatmapCard(
         val activityMap = mutableMapOf<String, DayActivity>()
 
         workoutSessions.forEach { session ->
-                val sessionDate = KmpLocalDate.fromTimestamp(session.timestamp)
-                // Only include sessions within our date range
-                if (!sessionDate.isBefore(startDate) && !sessionDate.isAfter(today)) {
-                    val key = sessionDate.toKey()
-                    val volume = session.effectiveTotalVolumeKg()
-                    val existing = activityMap[key]
-                    if (existing != null) {
-                        activityMap[key] = existing.copy(
-                            volume = existing.volume + volume,
-                            workoutCount = existing.workoutCount + 1
+            val sessionDate = KmpLocalDate.fromTimestamp(session.timestamp)
+            // Only include sessions within our date range
+            if (!sessionDate.isBefore(startDate) && !sessionDate.isAfter(today)) {
+                val key = sessionDate.toKey()
+                val volume = session.effectiveTotalVolumeKg()
+                val existing = activityMap[key]
+                if (existing != null) {
+                    activityMap[key] = existing.copy(
+                        volume = existing.volume + volume,
+                        workoutCount = existing.workoutCount + 1,
                     )
                 } else {
                     activityMap[key] = DayActivity(
                         date = sessionDate,
                         volume = volume,
-                        workoutCount = 1
+                        workoutCount = 1,
                     )
                 }
             }
@@ -1154,8 +1113,8 @@ fun CalendarHeatmapCard(
                 activityMap[key] ?: DayActivity(
                     date = currentDate,
                     volume = 0f,
-                    workoutCount = 0
-                )
+                    workoutCount = 0,
+                ),
             )
             currentDate = currentDate.plusDays(1)
         }
@@ -1186,7 +1145,9 @@ fun CalendarHeatmapCard(
         val firstDayOfWeek = if (dailyActivities.isNotEmpty()) {
             val firstDate = dailyActivities.first().date
             getDayOfWeekIso(firstDate)
-        } else 1
+        } else {
+            1
+        }
 
         // Calculate total weeks needed
         val totalDays = dailyActivities.size + (firstDayOfWeek - 1)
@@ -1224,18 +1185,18 @@ fun CalendarHeatmapCard(
                 contentDescription = "Activity heatmap: $workoutDays workout days in the last 13 weeks"
             },
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest),
-        shape = RoundedCornerShape(20.dp)
+        shape = RoundedCornerShape(20.dp),
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Text(
                 "Activity",
                 style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Bold
+                fontWeight = FontWeight.Bold,
             )
             Text(
                 "Last 13 weeks",
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
 
             Spacer(modifier = Modifier.height(16.dp))
@@ -1246,12 +1207,13 @@ fun CalendarHeatmapCard(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(start = 20.dp), // Align with grid (day labels width)
-                    horizontalArrangement = Arrangement.Start
+                    horizontalArrangement = Arrangement.Start,
                 ) {
                     // Filter labels to avoid overlapping (keep labels at least 3 weeks apart)
                     val filteredLabels = monthLabels.filterIndexed { idx, (_, weekIndex) ->
-                        if (idx == 0) true
-                        else {
+                        if (idx == 0) {
+                            true
+                        } else {
                             val prevWeek = monthLabels.getOrNull(idx - 1)?.second ?: -10
                             weekIndex - prevWeek >= 3
                         }
@@ -1267,7 +1229,7 @@ fun CalendarHeatmapCard(
                         Text(
                             text = monthName,
                             style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                         currentWeek = weekIndex + 2 // Account for label width
                     }
@@ -1280,19 +1242,19 @@ fun CalendarHeatmapCard(
                     // Day of week labels column
                     Column(
                         modifier = Modifier.width(20.dp),
-                        verticalArrangement = Arrangement.spacedBy(cellGap)
+                        verticalArrangement = Arrangement.spacedBy(cellGap),
                     ) {
                         dayLabels.forEachIndexed { index, label ->
                             // Only show labels for Mon, Wed, Fri (indices 0, 2, 4)
                             Box(
                                 modifier = Modifier.size(cellSize),
-                                contentAlignment = Alignment.Center
+                                contentAlignment = Alignment.Center,
                             ) {
                                 if (index % 2 == 0) {
                                     Text(
                                         text = label,
                                         style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     )
                                 }
                             }
@@ -1302,12 +1264,12 @@ fun CalendarHeatmapCard(
                     // Grid of cells
                     Row(
                         modifier = Modifier.weight(1f),
-                        horizontalArrangement = Arrangement.spacedBy(cellGap)
+                        horizontalArrangement = Arrangement.spacedBy(cellGap),
                     ) {
                         // Each column is a week
                         for (weekIndex in gridData[0].indices) {
                             Column(
-                                verticalArrangement = Arrangement.spacedBy(cellGap)
+                                verticalArrangement = Arrangement.spacedBy(cellGap),
                             ) {
                                 // Each row is a day of week
                                 for (dayIndex in 0 until 7) {
@@ -1315,7 +1277,7 @@ fun CalendarHeatmapCard(
                                     HeatmapCell(
                                         activity = activity,
                                         maxVolume = maxVolume,
-                                        cellSize = cellSize
+                                        cellSize = cellSize,
                                     )
                                 }
                             }
@@ -1332,7 +1294,7 @@ fun CalendarHeatmapCard(
                     "Complete workouts to see your activity heatmap.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(vertical = 32.dp)
+                    modifier = Modifier.padding(vertical = 32.dp),
                 )
             }
         }
@@ -1343,20 +1305,18 @@ fun CalendarHeatmapCard(
  * Individual heatmap cell with color based on volume intensity
  */
 @Composable
-private fun HeatmapCell(
-    activity: DayActivity?,
-    maxVolume: Float,
-    cellSize: Dp,
-    modifier: Modifier = Modifier
-) {
+private fun HeatmapCell(activity: DayActivity?, maxVolume: Float, cellSize: Dp, modifier: Modifier = Modifier) {
     val primaryColor = MaterialTheme.colorScheme.primary
     val surfaceVariant = MaterialTheme.colorScheme.surfaceVariant
 
     val cellColor = remember(activity, maxVolume, primaryColor, surfaceVariant) {
         when {
             activity == null -> Color.Transparent
+
             activity.volume <= 0f -> surfaceVariant.copy(alpha = 0.5f)
+
             maxVolume <= 0f -> surfaceVariant.copy(alpha = 0.5f)
+
             else -> {
                 // Calculate intensity level (0-4)
                 val ratio = activity.volume / maxVolume
@@ -1383,7 +1343,7 @@ private fun HeatmapCell(
         modifier = modifier
             .size(cellSize)
             .clip(RoundedCornerShape(2.dp))
-            .background(cellColor)
+            .background(cellColor),
     )
 }
 
@@ -1391,21 +1351,19 @@ private fun HeatmapCell(
  * Legend showing intensity levels
  */
 @Composable
-private fun HeatmapLegend(
-    modifier: Modifier = Modifier
-) {
+private fun HeatmapLegend(modifier: Modifier = Modifier) {
     val primaryColor = MaterialTheme.colorScheme.primary
     val surfaceVariant = MaterialTheme.colorScheme.surfaceVariant
 
     Row(
         modifier = modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.End,
-        verticalAlignment = Alignment.CenterVertically
+        verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
             text = "Less",
             style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Spacer(modifier = Modifier.width(4.dp))
 
@@ -1414,7 +1372,7 @@ private fun HeatmapLegend(
             modifier = Modifier
                 .size(10.dp)
                 .clip(RoundedCornerShape(2.dp))
-                .background(surfaceVariant.copy(alpha = 0.5f))
+                .background(surfaceVariant.copy(alpha = 0.5f)),
         )
         Spacer(modifier = Modifier.width(2.dp))
 
@@ -1423,7 +1381,7 @@ private fun HeatmapLegend(
             modifier = Modifier
                 .size(10.dp)
                 .clip(RoundedCornerShape(2.dp))
-                .background(primaryColor.copy(alpha = 0.3f))
+                .background(primaryColor.copy(alpha = 0.3f)),
         )
         Spacer(modifier = Modifier.width(2.dp))
 
@@ -1432,7 +1390,7 @@ private fun HeatmapLegend(
             modifier = Modifier
                 .size(10.dp)
                 .clip(RoundedCornerShape(2.dp))
-                .background(primaryColor.copy(alpha = 0.5f))
+                .background(primaryColor.copy(alpha = 0.5f)),
         )
         Spacer(modifier = Modifier.width(2.dp))
 
@@ -1441,7 +1399,7 @@ private fun HeatmapLegend(
             modifier = Modifier
                 .size(10.dp)
                 .clip(RoundedCornerShape(2.dp))
-                .background(primaryColor.copy(alpha = 0.75f))
+                .background(primaryColor.copy(alpha = 0.75f)),
         )
         Spacer(modifier = Modifier.width(2.dp))
 
@@ -1450,14 +1408,14 @@ private fun HeatmapLegend(
             modifier = Modifier
                 .size(10.dp)
                 .clip(RoundedCornerShape(2.dp))
-                .background(primaryColor)
+                .background(primaryColor),
         )
 
         Spacer(modifier = Modifier.width(4.dp))
         Text(
             text = "More",
             style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
 }
@@ -1465,22 +1423,20 @@ private fun HeatmapLegend(
 /**
  * Get short month name from month number (1-12)
  */
-private fun getMonthShortName(month: Int): String {
-    return when (month) {
-        1 -> "Jan"
-        2 -> "Feb"
-        3 -> "Mar"
-        4 -> "Apr"
-        5 -> "May"
-        6 -> "Jun"
-        7 -> "Jul"
-        8 -> "Aug"
-        9 -> "Sep"
-        10 -> "Oct"
-        11 -> "Nov"
-        12 -> "Dec"
-        else -> ""
-    }
+private fun getMonthShortName(month: Int): String = when (month) {
+    1 -> "Jan"
+    2 -> "Feb"
+    3 -> "Mar"
+    4 -> "Apr"
+    5 -> "May"
+    6 -> "Jun"
+    7 -> "Jul"
+    8 -> "Aug"
+    9 -> "Sep"
+    10 -> "Oct"
+    11 -> "Nov"
+    12 -> "Dec"
+    else -> ""
 }
 
 /**

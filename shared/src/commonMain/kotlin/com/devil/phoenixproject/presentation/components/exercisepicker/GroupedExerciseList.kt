@@ -3,6 +3,7 @@ package com.devil.phoenixproject.presentation.components.exercisepicker
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
@@ -16,7 +17,6 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -32,6 +32,9 @@ import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.data.repository.ExerciseVideoEntity
 import com.devil.phoenixproject.domain.model.Exercise
 import kotlinx.coroutines.launch
+import org.jetbrains.compose.resources.stringResource
+import vitruvianprojectphoenix.shared.generated.resources.*
+import vitruvianprojectphoenix.shared.generated.resources.Res
 
 /**
  * Grouped exercise list with sticky alphabetical headers and alphabet strip navigation.
@@ -46,7 +49,7 @@ fun GroupedExerciseList(
     onEditExercise: ((Exercise) -> Unit)? = null,
     listState: LazyListState = rememberLazyListState(),
     modifier: Modifier = Modifier,
-    emptyContent: @Composable () -> Unit = {}
+    emptyContent: @Composable () -> Unit = {},
 ) {
     val coroutineScope = rememberCoroutineScope()
 
@@ -78,7 +81,7 @@ fun GroupedExerciseList(
     Box(modifier = modifier.fillMaxSize()) {
         LazyColumn(
             state = listState,
-            modifier = Modifier.fillMaxSize()
+            modifier = Modifier.fillMaxSize(),
         ) {
             groupedExercises.forEach { (letter: Char, exerciseList: List<Exercise>) ->
                 stickyHeader(key = "header_$letter") {
@@ -87,7 +90,7 @@ fun GroupedExerciseList(
 
                 items(
                     items = exerciseList,
-                    key = { exercise: Exercise -> exercise.id ?: exercise.name }
+                    key = { exercise: Exercise -> exercise.id ?: exercise.name },
                 ) { exercise: Exercise ->
                     ExerciseItemWithVideo(
                         exercise = exercise,
@@ -97,15 +100,17 @@ fun GroupedExerciseList(
                         onShowVideo = { videos -> onShowVideo(exercise, videos) },
                         onLongPress = if (exercise.isCustom && onEditExercise != null) {
                             { onEditExercise(exercise) }
-                        } else null,
+                        } else {
+                            null
+                        },
                         isRevealed = exercise.id == revealedExerciseId,
                         onRevealChange = { revealed ->
                             revealedExerciseId = if (revealed) exercise.id else null
-                        }
+                        },
                     )
                     HorizontalDivider(
                         thickness = 0.5.dp,
-                        color = MaterialTheme.colorScheme.outlineVariant
+                        color = MaterialTheme.colorScheme.outlineVariant,
                     )
                 }
             }
@@ -124,7 +129,7 @@ fun GroupedExerciseList(
             },
             modifier = Modifier
                 .align(Alignment.CenterEnd)
-                .padding(end = 4.dp)
+                .padding(end = 4.dp),
         )
     }
 }
@@ -138,7 +143,7 @@ private fun ExerciseItemWithVideo(
     onShowVideo: (List<ExerciseVideoEntity>) -> Unit,
     onLongPress: (() -> Unit)? = null,
     isRevealed: Boolean = false,
-    onRevealChange: (Boolean) -> Unit = {}
+    onRevealChange: (Boolean) -> Unit = {},
 ) {
     var videos by remember { mutableStateOf<List<ExerciseVideoEntity>>(emptyList()) }
     var isLoadingVideo by remember { mutableStateOf(true) }
@@ -149,7 +154,7 @@ private fun ExerciseItemWithVideo(
                 videos = exerciseRepository.getVideos(it)
             }
             isLoadingVideo = false
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             isLoadingVideo = false
         }
     }
@@ -175,9 +180,11 @@ private fun ExerciseItemWithVideo(
         onLongPress = onLongPress,
         onThumbnailClick = if (videos.isNotEmpty()) {
             { onShowVideo(videos) }
-        } else null,
+        } else {
+            null
+        },
         isRevealed = isRevealed,
-        onRevealChange = onRevealChange
+        onRevealChange = onRevealChange,
     )
 }
 
@@ -192,62 +199,64 @@ fun ExerciseListEmptyState(
     enableCustomExercises: Boolean,
     onClearFilters: () -> Unit,
     onCreateExercise: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
 ) {
     Box(
         modifier = modifier.fillMaxSize(),
-        contentAlignment = Alignment.Center
+        contentAlignment = Alignment.Center,
     ) {
         when {
             showCustomOnly && customExerciseCount == 0 -> {
                 Column(
                     horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                    verticalArrangement = Arrangement.spacedBy(16.dp),
                 ) {
                     Text(
                         text = "No custom exercises yet",
                         style = MaterialTheme.typography.bodyLarge,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     Text(
                         text = "Create your own exercises to track workouts\nnot in the library",
                         style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
                     )
                     if (enableCustomExercises) {
                         Button(onClick = onCreateExercise) {
                             Icon(Icons.Default.Add, contentDescription = null)
                             Spacer(modifier = androidx.compose.ui.Modifier.padding(4.dp))
-                            Text("Create Exercise")
+                            Text(stringResource(Res.string.create_exercise))
                         }
                     }
                 }
             }
+
             hasActiveFilters -> {
                 Column(
                     horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
                     Text(
                         text = "No exercises found",
                         style = MaterialTheme.typography.bodyLarge,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     Button(onClick = onClearFilters) {
-                        Text("Clear filters")
+                        Text(stringResource(Res.string.clear_filters))
                     }
                 }
             }
+
             else -> {
                 Column(
                     horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     CircularProgressIndicator()
                     Text(
                         text = "Loading exercises...",
                         style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
             }

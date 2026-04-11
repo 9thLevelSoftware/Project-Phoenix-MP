@@ -1,35 +1,33 @@
 package com.devil.phoenixproject.data.repository
 
+import co.touchlab.kermit.Logger
+import com.devil.phoenixproject.data.ble.BleOperationQueue
+import com.devil.phoenixproject.data.ble.DiscoMode
+import com.devil.phoenixproject.data.ble.HandleStateDetector
+import com.devil.phoenixproject.data.ble.KableBleConnectionManager
+import com.devil.phoenixproject.data.ble.MetricPollingEngine
+import com.devil.phoenixproject.data.ble.MonitorDataProcessor
+import com.devil.phoenixproject.data.ble.getUInt16BE
+import com.devil.phoenixproject.data.ble.parseRepPacket
+import com.devil.phoenixproject.data.ble.toVitruvianHex
 import com.devil.phoenixproject.domain.model.ConnectionState
+import com.devil.phoenixproject.domain.model.HeuristicStatistics
 import com.devil.phoenixproject.domain.model.WorkoutMetric
+import com.devil.phoenixproject.domain.model.WorkoutParameters
 import com.devil.phoenixproject.util.BlePacketFactory
+import kotlin.time.Clock
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.channels.BufferOverflow
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.channels.BufferOverflow
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import co.touchlab.kermit.Logger
-import kotlin.time.Clock
-
-import com.devil.phoenixproject.data.ble.DiscoMode
-import com.devil.phoenixproject.data.ble.HandleStateDetector
-import com.devil.phoenixproject.data.ble.MonitorDataProcessor
-import com.devil.phoenixproject.data.ble.BleOperationQueue
-import com.devil.phoenixproject.data.ble.MetricPollingEngine
-import com.devil.phoenixproject.data.ble.KableBleConnectionManager
-import com.devil.phoenixproject.data.ble.parseRepPacket
-import com.devil.phoenixproject.data.ble.getUInt16BE
-import com.devil.phoenixproject.data.ble.toVitruvianHex
-
-import com.devil.phoenixproject.domain.model.HeuristicStatistics
-import com.devil.phoenixproject.domain.model.WorkoutParameters
 
 /**
  * Thin facade delegating to 6 extracted modules (BleOperationQueue, DiscoMode,
@@ -50,24 +48,34 @@ class KableBleRepository : BleRepository {
     override val handleDetection: StateFlow<HandleDetection> = handleDetector.handleDetection
     override val handleState: StateFlow<HandleState> = handleDetector.handleState
     private val _metricsFlow = MutableSharedFlow<WorkoutMetric>(
-        replay = 0, extraBufferCapacity = 64, onBufferOverflow = BufferOverflow.DROP_OLDEST
+        replay = 0,
+        extraBufferCapacity = 64,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST,
     )
     override val metricsFlow: Flow<WorkoutMetric> = _metricsFlow.asSharedFlow()
     private val _repEvents = MutableSharedFlow<RepNotification>(
-        replay = 0, extraBufferCapacity = 64, onBufferOverflow = BufferOverflow.DROP_OLDEST
+        replay = 0,
+        extraBufferCapacity = 64,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST,
     )
     override val repEvents: Flow<RepNotification> = _repEvents.asSharedFlow()
     private val _deloadOccurredEvents = MutableSharedFlow<Unit>(
-        replay = 0, extraBufferCapacity = 8, onBufferOverflow = BufferOverflow.DROP_OLDEST
+        replay = 0,
+        extraBufferCapacity = 8,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST,
     )
     override val deloadOccurredEvents: Flow<Unit> = _deloadOccurredEvents.asSharedFlow()
     enum class RomViolationType { OUTSIDE_HIGH, OUTSIDE_LOW }
     private val _romViolationEvents = MutableSharedFlow<RomViolationType>(
-        replay = 0, extraBufferCapacity = 8, onBufferOverflow = BufferOverflow.DROP_OLDEST
+        replay = 0,
+        extraBufferCapacity = 8,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST,
     )
     val romViolationEvents: Flow<RomViolationType> = _romViolationEvents.asSharedFlow()
     private val _reconnectionRequested = MutableSharedFlow<ReconnectionRequest>(
-        replay = 0, extraBufferCapacity = 4, onBufferOverflow = BufferOverflow.DROP_OLDEST
+        replay = 0,
+        extraBufferCapacity = 4,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST,
     )
     override val reconnectionRequested: Flow<ReconnectionRequest> = _reconnectionRequested.asSharedFlow()
     private val _heuristicData = MutableStateFlow<HeuristicStatistics?>(null)
@@ -84,16 +92,17 @@ class KableBleRepository : BleRepository {
                 when (type) {
                     MonitorDataProcessor.RomViolationType.OUTSIDE_HIGH ->
                         _romViolationEvents.emit(RomViolationType.OUTSIDE_HIGH)
+
                     MonitorDataProcessor.RomViolationType.OUTSIDE_LOW ->
                         _romViolationEvents.emit(RomViolationType.OUTSIDE_LOW)
                 }
             }
-        }
+        },
     )
 
     private val discoMode = DiscoMode(
         scope = scope,
-        sendCommand = { command -> connectionManager.sendWorkoutCommand(command) }
+        sendCommand = { command -> connectionManager.sendWorkoutCommand(command) },
     )
 
     private val pollingEngine = MetricPollingEngine(
@@ -109,28 +118,25 @@ class KableBleRepository : BleRepository {
             emitted
         },
         onHeuristicData = { stats -> _heuristicData.value = stats },
-        onConnectionLost = { connectionManager.disconnect() }
+        onConnectionLost = { connectionManager.disconnect() },
     )
 
     // ConnectionManager declared LAST (depends on all above modules for init-order safety)
-    private lateinit var connectionManager: KableBleConnectionManager
-    init {
-        connectionManager = KableBleConnectionManager(
-            scope = scope,
-            logRepo = logRepo,
-            bleQueue = bleQueue,
-            pollingEngine = pollingEngine,
-            discoMode = discoMode,
-            handleDetector = handleDetector,
-            onConnectionStateChanged = { state -> _connectionState.value = state },
-            onScannedDevicesChanged = { devices -> _scannedDevices.value = devices },
-            onReconnectionRequested = { request -> _reconnectionRequested.emit(request) },
-            onCommandResponse = { _ -> /* no external consumer currently */ },
-            onRepEventFromCharacteristic = { data -> parseRepsCharacteristicData(data) },
-            onRepEventFromRx = { data -> parseRepNotification(data) },
-            onMetricFromRx = { data -> parseMetricsPacket(data) },
-        )
-    }
+    private val connectionManager: KableBleConnectionManager = KableBleConnectionManager(
+        scope = scope,
+        logRepo = logRepo,
+        bleQueue = bleQueue,
+        pollingEngine = pollingEngine,
+        discoMode = discoMode,
+        handleDetector = handleDetector,
+        onConnectionStateChanged = { state -> _connectionState.value = state },
+        onScannedDevicesChanged = { devices -> _scannedDevices.value = devices },
+        onReconnectionRequested = { request -> _reconnectionRequested.emit(request) },
+        onCommandResponse = { _ -> /* no external consumer currently */ },
+        onRepEventFromCharacteristic = { data -> parseRepsCharacteristicData(data) },
+        onRepEventFromRx = { data -> parseRepNotification(data) },
+        onMetricFromRx = { data -> parseMetricsPacket(data) },
+    )
 
     // ===== Connection lifecycle delegations =====
     override suspend fun startScanning(): Result<Unit> = connectionManager.startScanning()
@@ -293,7 +299,7 @@ class KableBleRepository : BleRepository {
                 positionA = positionA,
                 positionB = positionB,
                 velocityA = (velocityA - 32768).toDouble(),
-                velocityB = (velocityB - 32768).toDouble()
+                velocityB = (velocityB - 32768).toDouble(),
             )
 
             _metricsFlow.tryEmit(metric)
@@ -332,7 +338,7 @@ class KableBleRepository : BleRepository {
             logRepo.debug(
                 LogEventType.REP_RECEIVED,
                 if (notification.isLegacyFormat) "Legacy rep (6-byte)" else "Modern rep (24-byte)",
-                details = "up=${notification.topCounter}, setCount=${notification.repsSetCount}, legacy=${notification.isLegacyFormat}"
+                details = "up=${notification.topCounter}, setCount=${notification.repsSetCount}, legacy=${notification.isLegacyFormat}",
             )
         } catch (e: Exception) {
             log.e { "Error parsing rep notification: ${e.message}" }
@@ -370,7 +376,7 @@ class KableBleRepository : BleRepository {
             logRepo.debug(
                 LogEventType.REP_RECEIVED,
                 if (notification.isLegacyFormat) "Legacy rep (6-byte)" else "Modern rep (24-byte)",
-                details = "up=${notification.topCounter}, setCount=${notification.repsSetCount}, legacy=${notification.isLegacyFormat}"
+                details = "up=${notification.topCounter}, setCount=${notification.repsSetCount}, legacy=${notification.isLegacyFormat}",
             )
         } catch (e: Exception) {
             log.e { "Error parsing REPS characteristic data: ${e.message}" }

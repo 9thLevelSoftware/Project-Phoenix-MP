@@ -17,6 +17,9 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.ui.theme.Spacing
+import org.jetbrains.compose.resources.stringResource
+import vitruvianprojectphoenix.shared.generated.resources.*
+import vitruvianprojectphoenix.shared.generated.resources.Res
 
 /**
  * One Rep Max Input Screen
@@ -41,7 +44,7 @@ fun OneRepMaxInputScreen(
     kgToDisplay: (Float, WeightUnit) -> Float = { kg, unit -> if (unit == WeightUnit.LB) kg * 2.205f else kg },
     displayToKg: (Float, WeightUnit) -> Float = { display, unit -> if (unit == WeightUnit.LB) display / 2.205f else display },
     onConfirm: (Map<String, Float>) -> Unit,
-    onCancel: () -> Unit
+    onCancel: () -> Unit,
 ) {
     // Unit label based on user preference
     val unitLabel = if (weightUnit == WeightUnit.LB) "lbs" else "kg"
@@ -76,14 +79,14 @@ fun OneRepMaxInputScreen(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
+            .background(MaterialTheme.colorScheme.background),
     ) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(bottom = 160.dp) // Space for bottom bar
                 .verticalScroll(rememberScrollState()),
-            verticalArrangement = Arrangement.spacedBy(Spacing.medium)
+            verticalArrangement = Arrangement.spacedBy(Spacing.medium),
         ) {
             // Title
             Text(
@@ -93,7 +96,7 @@ fun OneRepMaxInputScreen(
                 color = MaterialTheme.colorScheme.onBackground,
                 modifier = Modifier
                     .padding(horizontal = Spacing.medium)
-                    .padding(top = Spacing.medium)
+                    .padding(top = Spacing.medium),
             )
             // Header with instructions
             Column(
@@ -101,18 +104,18 @@ fun OneRepMaxInputScreen(
                     .fillMaxWidth()
                     .padding(horizontal = Spacing.medium)
                     .padding(top = Spacing.medium),
-                verticalArrangement = Arrangement.spacedBy(Spacing.small)
+                verticalArrangement = Arrangement.spacedBy(Spacing.small),
             ) {
                 Text(
                     text = "Enter your one rep max (or recent heavy single) for each lift. These values are used to calculate your working weights.",
                     style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
 
                 Text(
                     text = "You can skip exercises and add their 1RM values later in the Exercise Library.",
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
 
@@ -123,14 +126,14 @@ fun OneRepMaxInputScreen(
                     .padding(horizontal = Spacing.medium),
                 shape = RoundedCornerShape(16.dp),
                 colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceContainer
-                )
+                    containerColor = MaterialTheme.colorScheme.surfaceContainer,
+                ),
             ) {
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(Spacing.medium),
-                    verticalArrangement = Arrangement.spacedBy(Spacing.medium)
+                    verticalArrangement = Arrangement.spacedBy(Spacing.medium),
                 ) {
                     mainLiftNames.forEach { exerciseName ->
                         OneRepMaxInputField(
@@ -143,7 +146,7 @@ fun OneRepMaxInputScreen(
                                 validationErrors[exerciseName] = !isValid
                             },
                             isError = validationErrors[exerciseName] == true,
-                            unitLabel = unitLabel
+                            unitLabel = unitLabel,
                         )
                     }
                 }
@@ -156,25 +159,25 @@ fun OneRepMaxInputScreen(
                     .padding(horizontal = Spacing.medium),
                 shape = RoundedCornerShape(12.dp),
                 colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.primaryContainer
-                )
+                    containerColor = MaterialTheme.colorScheme.primaryContainer,
+                ),
             ) {
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(Spacing.medium),
-                    verticalArrangement = Arrangement.spacedBy(Spacing.extraSmall)
+                    verticalArrangement = Arrangement.spacedBy(Spacing.extraSmall),
                 ) {
                     Text(
                         text = "What is a 1RM?",
                         style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                        color = MaterialTheme.colorScheme.onPrimaryContainer,
                     )
                     Text(
                         text = "Your one rep max is the maximum weight you can lift for a single repetition with proper form. If you don't know your exact 1RM, use a recent heavy single or estimate based on your typical working weights.",
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                        color = MaterialTheme.colorScheme.onPrimaryContainer,
                     )
                 }
             }
@@ -189,14 +192,14 @@ fun OneRepMaxInputScreen(
                 .align(Alignment.BottomCenter)
                 .fillMaxWidth(),
             color = MaterialTheme.colorScheme.surface,
-            tonalElevation = 3.dp
+            tonalElevation = 3.dp,
         ) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     .navigationBarsPadding()
                     .padding(Spacing.medium),
-                verticalArrangement = Arrangement.spacedBy(Spacing.small)
+                verticalArrangement = Arrangement.spacedBy(Spacing.small),
             ) {
                 // Skip button - styled as a distinct outlined button
                 OutlinedButton(
@@ -207,39 +210,39 @@ fun OneRepMaxInputScreen(
                     },
                     modifier = Modifier.fillMaxWidth(),
                     colors = ButtonDefaults.outlinedButtonColors(
-                        contentColor = MaterialTheme.colorScheme.tertiary
+                        contentColor = MaterialTheme.colorScheme.tertiary,
                     ),
                     border = ButtonDefaults.outlinedButtonBorder(enabled = true).copy(
                         brush = androidx.compose.ui.graphics.SolidColor(
-                            MaterialTheme.colorScheme.tertiary.copy(alpha = 0.5f)
-                        )
-                    )
+                            MaterialTheme.colorScheme.tertiary.copy(alpha = 0.5f),
+                        ),
+                    ),
                 ) {
                     Icon(
                         Icons.Default.SkipNext,
                         contentDescription = null,
-                        modifier = Modifier.size(18.dp)
+                        modifier = Modifier.size(18.dp),
                     )
                     Spacer(Modifier.width(8.dp))
                     Text(
                         "Skip for now",
-                        style = MaterialTheme.typography.labelLarge
+                        style = MaterialTheme.typography.labelLarge,
                     )
                 }
 
                 // Bottom action buttons
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(Spacing.small)
+                    horizontalArrangement = Arrangement.spacedBy(Spacing.small),
                 ) {
                     OutlinedButton(
                         onClick = onCancel,
                         modifier = Modifier.weight(1f).height(56.dp),
                         colors = ButtonDefaults.outlinedButtonColors(
-                            contentColor = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                            contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                        ),
                     ) {
-                        Text("Cancel")
+                        Text(stringResource(Res.string.action_cancel))
                     }
 
                     Button(
@@ -263,14 +266,14 @@ fun OneRepMaxInputScreen(
                         enabled = canContinue,
                         colors = ButtonDefaults.buttonColors(
                             containerColor = MaterialTheme.colorScheme.primary,
-                            disabledContainerColor = MaterialTheme.colorScheme.surfaceVariant
+                            disabledContainerColor = MaterialTheme.colorScheme.surfaceVariant,
                         ),
-                        shape = RoundedCornerShape(20.dp)
+                        shape = RoundedCornerShape(20.dp),
                     ) {
                         Text(
                             "Continue",
                             style = MaterialTheme.typography.titleSmall,
-                            fontWeight = FontWeight.Bold
+                            fontWeight = FontWeight.Bold,
                         )
                     }
                 }
@@ -288,43 +291,45 @@ private fun OneRepMaxInputField(
     value: String,
     onValueChange: (String) -> Unit,
     isError: Boolean,
-    unitLabel: String = "kg"
+    unitLabel: String = "kg",
 ) {
     Column(
         modifier = Modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(Spacing.extraSmall)
+        verticalArrangement = Arrangement.spacedBy(Spacing.extraSmall),
     ) {
         // Exercise name label
         Text(
             text = exerciseName,
             style = MaterialTheme.typography.titleSmall,
             fontWeight = FontWeight.SemiBold,
-            color = MaterialTheme.colorScheme.onSurface
+            color = MaterialTheme.colorScheme.onSurface,
         )
 
         // Weight input field with "kg" suffix
         Row(
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(Spacing.small)
+            horizontalArrangement = Arrangement.spacedBy(Spacing.small),
         ) {
             OutlinedTextField(
                 value = value,
                 onValueChange = onValueChange,
-                placeholder = { Text("e.g., 100") },
+                placeholder = { Text(stringResource(Res.string.orm_placeholder)) },
                 modifier = Modifier.weight(1f),
                 keyboardOptions = KeyboardOptions(
-                    keyboardType = KeyboardType.Decimal
+                    keyboardType = KeyboardType.Decimal,
                 ),
                 singleLine = true,
                 isError = isError,
                 supportingText = if (isError) {
-                    { Text("Please enter a valid number") }
-                } else null,
+                    { Text(stringResource(Res.string.enter_valid_number)) }
+                } else {
+                    null
+                },
                 colors = OutlinedTextFieldDefaults.colors(
                     focusedBorderColor = MaterialTheme.colorScheme.primary,
                     unfocusedBorderColor = MaterialTheme.colorScheme.outline,
-                    errorBorderColor = MaterialTheme.colorScheme.error
-                )
+                    errorBorderColor = MaterialTheme.colorScheme.error,
+                ),
             )
 
             // Units indicator (dynamic based on user preference)
@@ -333,7 +338,7 @@ private fun OneRepMaxInputField(
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Medium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(end = Spacing.small)
+                modifier = Modifier.padding(end = Spacing.small),
             )
         }
     }

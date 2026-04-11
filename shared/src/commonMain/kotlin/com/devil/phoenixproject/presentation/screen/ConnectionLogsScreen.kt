@@ -29,10 +29,14 @@ import com.devil.phoenixproject.data.local.ConnectionLogEntity
 import com.devil.phoenixproject.data.repository.LogLevel
 import com.devil.phoenixproject.presentation.viewmodel.ConnectionLogsViewModel
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
+import com.devil.phoenixproject.ui.theme.AccessibilityTheme
 import kotlin.time.Instant
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
+import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.viewmodel.koinViewModel
+import vitruvianprojectphoenix.shared.generated.resources.*
+import vitruvianprojectphoenix.shared.generated.resources.Res
 
 /**
  * Connection logs screen - shows BLE connection history with filtering.
@@ -42,7 +46,7 @@ import org.koin.compose.viewmodel.koinViewModel
 fun ConnectionLogsScreen(
     onNavigateBack: () -> Unit,
     mainViewModel: MainViewModel,
-    logsViewModel: ConnectionLogsViewModel = koinViewModel()
+    logsViewModel: ConnectionLogsViewModel = koinViewModel(),
 ) {
     val logs by logsViewModel.logs.collectAsState()
     val filter by logsViewModel.filter.collectAsState()
@@ -50,6 +54,8 @@ fun ConnectionLogsScreen(
     val isLoggingEnabled by logsViewModel.isLoggingEnabled.collectAsState()
 
     val listState = rememberLazyListState()
+
+    @Suppress("DEPRECATION")
     val clipboardManager = LocalClipboardManager.current
 
     var showExportDialog by remember { mutableStateOf(false) }
@@ -75,7 +81,7 @@ fun ConnectionLogsScreen(
         if (showCopiedMessage) {
             snackbarHostState.showSnackbar(
                 message = "Logs copied to clipboard",
-                duration = SnackbarDuration.Short
+                duration = SnackbarDuration.Short,
             )
             showCopiedMessage = false
         }
@@ -83,152 +89,166 @@ fun ConnectionLogsScreen(
 
     Box(modifier = Modifier.fillMaxSize()) {
         Column(
-            modifier = Modifier.fillMaxSize()
+            modifier = Modifier.fillMaxSize(),
         ) {
-        // Search bar
-        OutlinedTextField(
-            value = filter.searchQuery,
-            onValueChange = { logsViewModel.setSearchQuery(it) },
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 8.dp),
-            placeholder = { Text("Search logs...") },
-            leadingIcon = { Icon(Icons.Default.Search, contentDescription = "Search") },
-            trailingIcon = {
-                if (filter.searchQuery.isNotEmpty()) {
-                    IconButton(onClick = { logsViewModel.setSearchQuery("") }) {
-                        Icon(Icons.Default.Clear, contentDescription = "Clear search")
+            // Search bar
+            OutlinedTextField(
+                value = filter.searchQuery,
+                onValueChange = { logsViewModel.setSearchQuery(it) },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                placeholder = { Text(stringResource(Res.string.search_logs)) },
+                leadingIcon = {
+                    Icon(
+                        Icons.Default.Search,
+                        contentDescription = stringResource(Res.string.cd_search),
+                    )
+                },
+                trailingIcon = {
+                    if (filter.searchQuery.isNotEmpty()) {
+                        IconButton(onClick = { logsViewModel.setSearchQuery("") }) {
+                            Icon(
+                                Icons.Default.Clear,
+                                contentDescription = stringResource(Res.string.cd_clear_search),
+                            )
+                        }
                     }
-                }
-            },
-            singleLine = true,
-            shape = RoundedCornerShape(8.dp)
-        )
-
-        // Filter chips
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 4.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            LogLevelFilterChip(
-                level = LogLevel.DEBUG,
-                selected = filter.showDebug,
-                count = logs.count { it.level == LogLevel.DEBUG.name },
-                onClick = { logsViewModel.toggleLevel(LogLevel.DEBUG) }
-            )
-            LogLevelFilterChip(
-                level = LogLevel.INFO,
-                selected = filter.showInfo,
-                count = logs.count { it.level == LogLevel.INFO.name },
-                onClick = { logsViewModel.toggleLevel(LogLevel.INFO) }
-            )
-            LogLevelFilterChip(
-                level = LogLevel.WARNING,
-                selected = filter.showWarning,
-                count = logs.count { it.level == LogLevel.WARNING.name },
-                onClick = { logsViewModel.toggleLevel(LogLevel.WARNING) }
-            )
-            LogLevelFilterChip(
-                level = LogLevel.ERROR,
-                selected = filter.showError,
-                count = logs.count { it.level == LogLevel.ERROR.name },
-                onClick = { logsViewModel.toggleLevel(LogLevel.ERROR) }
-            )
-        }
-
-        // Action bar
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 8.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = "${logs.size} logs",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                },
+                singleLine = true,
+                shape = RoundedCornerShape(8.dp),
             )
 
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                // Auto-scroll toggle
-                FilterChip(
-                    selected = isAutoScrollEnabled,
-                    onClick = { logsViewModel.toggleAutoScroll() },
-                    label = { Text("Auto-scroll") },
-                    leadingIcon = {
+            // Filter chips
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 4.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                LogLevelFilterChip(
+                    level = LogLevel.DEBUG,
+                    selected = filter.showDebug,
+                    count = logs.count { it.level == LogLevel.DEBUG.name },
+                    onClick = { logsViewModel.toggleLevel(LogLevel.DEBUG) },
+                )
+                LogLevelFilterChip(
+                    level = LogLevel.INFO,
+                    selected = filter.showInfo,
+                    count = logs.count { it.level == LogLevel.INFO.name },
+                    onClick = { logsViewModel.toggleLevel(LogLevel.INFO) },
+                )
+                LogLevelFilterChip(
+                    level = LogLevel.WARNING,
+                    selected = filter.showWarning,
+                    count = logs.count { it.level == LogLevel.WARNING.name },
+                    onClick = { logsViewModel.toggleLevel(LogLevel.WARNING) },
+                )
+                LogLevelFilterChip(
+                    level = LogLevel.ERROR,
+                    selected = filter.showError,
+                    count = logs.count { it.level == LogLevel.ERROR.name },
+                    onClick = { logsViewModel.toggleLevel(LogLevel.ERROR) },
+                )
+            }
+
+            // Action bar
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = "${logs.size} logs",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    // Auto-scroll toggle
+                    FilterChip(
+                        selected = isAutoScrollEnabled,
+                        onClick = { logsViewModel.toggleAutoScroll() },
+                        label = { Text(stringResource(Res.string.auto_scroll)) },
+                        leadingIcon = {
+                            Icon(
+                                Icons.Default.KeyboardArrowDown,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp),
+                            )
+                        },
+                    )
+
+                    // Logging toggle
+                    FilterChip(
+                        selected = isLoggingEnabled,
+                        onClick = { logsViewModel.setLoggingEnabled(!isLoggingEnabled) },
+                        label = { Text(if (isLoggingEnabled) "Logging ON" else "Logging OFF") },
+                    )
+
+                    // Export button
+                    IconButton(onClick = {
+                        exportContent = logsViewModel.exportLogsAsText()
+                        showExportDialog = true
+                    }) {
                         Icon(
-                            Icons.Default.KeyboardArrowDown,
-                            contentDescription = null,
-                            modifier = Modifier.size(18.dp)
+                            Icons.Default.Share,
+                            contentDescription = stringResource(Res.string.cd_export_logs),
                         )
                     }
-                )
 
-                // Logging toggle
-                FilterChip(
-                    selected = isLoggingEnabled,
-                    onClick = { logsViewModel.setLoggingEnabled(!isLoggingEnabled) },
-                    label = { Text(if (isLoggingEnabled) "Logging ON" else "Logging OFF") }
-                )
-
-                // Export button
-                IconButton(onClick = {
-                    exportContent = logsViewModel.exportLogsAsText()
-                    showExportDialog = true
-                }) {
-                    Icon(Icons.Default.Share, contentDescription = "Export logs")
-                }
-
-                // Clear button
-                IconButton(onClick = { showClearDialog = true }) {
-                    Icon(Icons.Default.Delete, contentDescription = "Clear logs")
+                    // Clear button
+                    IconButton(onClick = { showClearDialog = true }) {
+                        Icon(
+                            Icons.Default.Delete,
+                            contentDescription = stringResource(Res.string.cd_clear_logs),
+                        )
+                    }
                 }
             }
-        }
 
-        HorizontalDivider()
+            HorizontalDivider()
 
-        // Logs list
-        if (logs.isEmpty()) {
-            Box(
-                modifier = Modifier.fillMaxSize(),
-                contentAlignment = Alignment.Center
-            ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(
-                        text = "No logs yet",
-                        style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(
-                        text = "Connection events will appear here",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
-                    )
+            // Logs list
+            if (logs.isEmpty()) {
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(
+                            text = "No logs yet",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = "Connection events will appear here",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                        )
+                    }
+                }
+            } else {
+                LazyColumn(
+                    state = listState,
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    items(logs, key = { it.id }) { log ->
+                        LogEntryCard(log)
+                    }
                 }
             }
-        } else {
-            LazyColumn(
-                state = listState,
-                modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(8.dp),
-                verticalArrangement = Arrangement.spacedBy(4.dp)
-            ) {
-                items(logs, key = { it.id }) { log ->
-                    LogEntryCard(log)
-                }
-            }
-        }
         }
 
         // Snackbar for clipboard confirmation
         SnackbarHost(
             hostState = snackbarHostState,
-            modifier = Modifier.align(Alignment.BottomCenter)
+            modifier = Modifier.align(Alignment.BottomCenter),
         )
     }
 
@@ -236,14 +256,14 @@ fun ConnectionLogsScreen(
     if (showExportDialog) {
         AlertDialog(
             onDismissRequest = { showExportDialog = false },
-            title = { Text("Export Logs") },
+            title = { Text(stringResource(Res.string.export_logs)) },
             text = {
                 Column {
-                    Text("${logs.size} log entries ready to export.")
+                    Text(stringResource(Res.string.logs_ready_to_export, logs.size))
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
                         text = "Log content preview:",
-                        style = MaterialTheme.typography.bodySmall
+                        style = MaterialTheme.typography.bodySmall,
                     )
                     BoxWithConstraints {
                         val previewHeight = (maxHeight * 0.4f).coerceIn(150.dp, 400.dp)
@@ -253,14 +273,16 @@ fun ConnectionLogsScreen(
                                 .height(previewHeight)
                                 .padding(top = 8.dp),
                             color = MaterialTheme.colorScheme.surfaceVariant,
-                            shape = RoundedCornerShape(4.dp)
+                            shape = RoundedCornerShape(4.dp),
                         ) {
                             Text(
-                                text = exportContent.take(2000) + if (exportContent.length > 2000) "\n..." else "",
+                                text =
+                                    exportContent.take(2000) +
+                                        if (exportContent.length > 2000) "\n..." else "",
                                 modifier = Modifier.padding(8.dp),
                                 style = MaterialTheme.typography.bodySmall,
                                 fontFamily = FontFamily.Monospace,
-                                fontSize = 10.sp
+                                fontSize = 10.sp,
                             )
                         }
                     }
@@ -273,14 +295,14 @@ fun ConnectionLogsScreen(
                     showCopiedMessage = true
                     showExportDialog = false
                 }) {
-                    Text("Copy to Clipboard")
+                    Text(stringResource(Res.string.copy_to_clipboard))
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showExportDialog = false }) {
-                    Text("Cancel")
+                    Text(stringResource(Res.string.action_cancel))
                 }
-            }
+            },
         )
     }
 
@@ -288,8 +310,8 @@ fun ConnectionLogsScreen(
     if (showClearDialog) {
         AlertDialog(
             onDismissRequest = { showClearDialog = false },
-            title = { Text("Clear Logs?") },
-            text = { Text("This will permanently delete all ${logs.size} log entries.") },
+            title = { Text(stringResource(Res.string.clear_logs_title)) },
+            text = { Text(stringResource(Res.string.clear_logs_message, logs.size)) },
             confirmButton = {
                 TextButton(
                     onClick = {
@@ -297,28 +319,23 @@ fun ConnectionLogsScreen(
                         showClearDialog = false
                     },
                     colors = ButtonDefaults.textButtonColors(
-                        contentColor = MaterialTheme.colorScheme.error
-                    )
+                        contentColor = MaterialTheme.colorScheme.error,
+                    ),
                 ) {
-                    Text("Clear All")
+                    Text(stringResource(Res.string.clear_all))
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showClearDialog = false }) {
-                    Text("Cancel")
+                    Text(stringResource(Res.string.action_cancel))
                 }
-            }
+            },
         )
     }
 }
 
 @Composable
-private fun LogLevelFilterChip(
-    level: LogLevel,
-    selected: Boolean,
-    count: Int,
-    onClick: () -> Unit
-) {
+private fun LogLevelFilterChip(level: LogLevel, selected: Boolean, count: Int, onClick: () -> Unit) {
     FilterChip(
         selected = selected,
         onClick = onClick,
@@ -329,13 +346,13 @@ private fun LogLevelFilterChip(
                         .size(8.dp)
                         .background(
                             color = getLevelColor(level),
-                            shape = RoundedCornerShape(4.dp)
-                        )
+                            shape = RoundedCornerShape(4.dp),
+                        ),
                 )
                 Spacer(modifier = Modifier.width(4.dp))
-                Text("${level.name} ($count)")
+                Text(stringResource(Res.string.log_level_count, level.name, count))
             }
-        }
+        },
     )
 }
 
@@ -347,26 +364,26 @@ private fun LogEntryCard(log: ConnectionLogEntity) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
-            containerColor = levelColor.copy(alpha = 0.05f)
-        )
+            containerColor = levelColor.copy(alpha = 0.05f),
+        ),
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(12.dp)
+                .padding(12.dp),
         ) {
             // Header row: timestamp + level + event type
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+                verticalAlignment = Alignment.CenterVertically,
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     // Level indicator
                     Box(
                         modifier = Modifier
                             .size(10.dp)
-                            .background(levelColor, RoundedCornerShape(5.dp))
+                            .background(levelColor, RoundedCornerShape(5.dp)),
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     // Event type
@@ -374,7 +391,7 @@ private fun LogEntryCard(log: ConnectionLogEntity) {
                         text = log.eventType,
                         style = MaterialTheme.typography.labelMedium,
                         fontWeight = FontWeight.Bold,
-                        color = levelColor
+                        color = levelColor,
                     )
                 }
 
@@ -383,7 +400,7 @@ private fun LogEntryCard(log: ConnectionLogEntity) {
                     text = formatLogTimestamp(log.timestamp),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontFamily = FontFamily.Monospace
+                    fontFamily = FontFamily.Monospace,
                 )
             }
 
@@ -394,7 +411,7 @@ private fun LogEntryCard(log: ConnectionLogEntity) {
                 text = log.message,
                 style = MaterialTheme.typography.bodyMedium,
                 maxLines = 3,
-                overflow = TextOverflow.Ellipsis
+                overflow = TextOverflow.Ellipsis,
             )
 
             // Device info if present
@@ -403,7 +420,7 @@ private fun LogEntryCard(log: ConnectionLogEntity) {
                 Text(
                     text = "Device: ${log.deviceName ?: "Unknown"} (${log.deviceAddress ?: "N/A"})",
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
 
@@ -412,7 +429,7 @@ private fun LogEntryCard(log: ConnectionLogEntity) {
                 Spacer(modifier = Modifier.height(4.dp))
                 Surface(
                     color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                    shape = RoundedCornerShape(4.dp)
+                    shape = RoundedCornerShape(4.dp),
                 ) {
                     Text(
                         text = log.details,
@@ -421,7 +438,7 @@ private fun LogEntryCard(log: ConnectionLogEntity) {
                         fontFamily = FontFamily.Monospace,
                         fontSize = 11.sp,
                         maxLines = 5,
-                        overflow = TextOverflow.Ellipsis
+                        overflow = TextOverflow.Ellipsis,
                     )
                 }
             }
@@ -431,11 +448,16 @@ private fun LogEntryCard(log: ConnectionLogEntity) {
 
 @Composable
 private fun getLevelColor(level: LogLevel): Color {
+    val colors = AccessibilityTheme.colors
     return when (level) {
-        LogLevel.DEBUG -> Color(0xFF9E9E9E) // Gray
-        LogLevel.INFO -> Color(0xFF2196F3)  // Blue
-        LogLevel.WARNING -> Color(0xFFFF9800) // Orange
-        LogLevel.ERROR -> Color(0xFFF44336) // Red
+        LogLevel.DEBUG -> colors.neutral
+
+        LogLevel.INFO -> Color(0xFF2196F3)
+
+        // Blue (informational, not semantic status)
+        LogLevel.WARNING -> colors.warning
+
+        LogLevel.ERROR -> colors.error
     }
 }
 
@@ -443,6 +465,9 @@ private fun formatLogTimestamp(timestamp: Long): String {
     val instant = Instant.fromEpochMilliseconds(timestamp)
     val localDateTime = instant.toLocalDateTime(TimeZone.currentSystemDefault())
     return "${localDateTime.hour.toString().padStart(2, '0')}:" +
-           "${localDateTime.minute.toString().padStart(2, '0')}:" +
-           "${localDateTime.second.toString().padStart(2, '0')}.${(timestamp % 1000).toString().padStart(3, '0')}"
+        "${localDateTime.minute.toString().padStart(2, '0')}:" +
+        "${localDateTime.second.toString().padStart(
+            2,
+            '0',
+        )}.${(timestamp % 1000).toString().padStart(3, '0')}"
 }

@@ -3,7 +3,6 @@ package com.devil.phoenixproject.data.ble
 import com.devil.phoenixproject.data.repository.HandleDetection
 import com.devil.phoenixproject.data.repository.HandleState
 import com.devil.phoenixproject.domain.model.WorkoutMetric
-import com.devil.phoenixproject.util.BleConstants
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -13,26 +12,20 @@ class HandleStateDetectorTest {
 
     private var fakeTime = 0L
 
-    private fun createDetector(): HandleStateDetector =
-        HandleStateDetector(timeProvider = { fakeTime })
+    private fun createDetector(): HandleStateDetector = HandleStateDetector(timeProvider = { fakeTime })
 
     /**
      * Helper to build a WorkoutMetric with sensible defaults.
      * All zeros except specified params.
      */
-    private fun metric(
-        posA: Float = 0f,
-        posB: Float = 0f,
-        velA: Double = 0.0,
-        velB: Double = 0.0
-    ) = WorkoutMetric(
+    private fun metric(posA: Float = 0f, posB: Float = 0f, velA: Double = 0.0, velB: Double = 0.0) = WorkoutMetric(
         timestamp = fakeTime,
         loadA = 0f,
         loadB = 0f,
         positionA = posA,
         positionB = posB,
         velocityA = velA,
-        velocityB = velB
+        velocityB = velB,
     )
 
     // ================================================================

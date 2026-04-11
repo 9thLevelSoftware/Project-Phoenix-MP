@@ -1,17 +1,17 @@
 #!/usr/bin/env bash
 #
-# iOS Schema Validator
-# ====================
-# Validates that DriverFactory.ios.kt table definitions match VitruvianDatabase.sq
+# Schema Manifest Validator
+# =========================
+# Validates that SchemaManifest.kt table definitions match VitruvianDatabase.sq
 #
-# Background: iOS uses manual table creation (Layer 4 defense against migration crashes).
-# The table schemas in DriverFactory.ios.kt MUST exactly match VitruvianDatabase.sq,
-# otherwise fresh iOS installs will crash with SQLiteException when SQLDelight queries
-# try to access columns that don't exist.
+# Background: SchemaManifest.kt provides cross-platform schema reconciliation
+# (Layer 4 defense against migration gaps). The table schemas in SchemaManifest.kt
+# MUST exactly match VitruvianDatabase.sq, otherwise fresh installs will crash with
+# SQLiteException when SQLDelight queries try to access columns that don't exist.
 #
 # This script validates:
-# 1. All SQLDelight tables exist in iOS DriverFactory
-# 2. iOS doesn't define extra tables
+# 1. All SQLDelight tables exist in SchemaManifest
+# 2. SchemaManifest doesn't define extra tables
 # 3. Every column in every table matches, including order
 #
 # Run in CI to catch schema drift before it causes crashes.
@@ -24,10 +24,10 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$(dirname "$SCRIPT_DIR")")"
 
 SQ_FILE="$PROJECT_ROOT/shared/src/commonMain/sqldelight/com/devil/phoenixproject/database/VitruvianDatabase.sq"
-IOS_FILE="$PROJECT_ROOT/shared/src/iosMain/kotlin/com/devil/phoenixproject/data/local/DriverFactory.ios.kt"
+MANIFEST_FILE="$PROJECT_ROOT/shared/src/commonMain/kotlin/com/devil/phoenixproject/data/local/SchemaManifest.kt"
 
-echo "iOS Schema Validator"
-echo "===================="
+echo "Schema Manifest Validator"
+echo "========================="
 echo ""
 
 # Check files exist
@@ -36,14 +36,14 @@ if [ ! -f "$SQ_FILE" ]; then
     exit 1
 fi
 
-if [ ! -f "$IOS_FILE" ]; then
-    echo "ERROR: iOS DriverFactory not found: $IOS_FILE"
+if [ ! -f "$MANIFEST_FILE" ]; then
+    echo "ERROR: SchemaManifest not found: $MANIFEST_FILE"
     exit 1
 fi
 
 echo "Comparing:"
-echo "  SQLDelight: $(basename $SQ_FILE)"
-echo "  iOS:        $(basename $IOS_FILE)"
+echo "  SQLDelight:      $(basename "$SQ_FILE")"
+echo "  SchemaManifest:  $(basename "$MANIFEST_FILE")"
 echo ""
 
 PYTHON_BIN=""
@@ -56,13 +56,13 @@ else
     exit 1
 fi
 
-"$PYTHON_BIN" - "$SQ_FILE" "$IOS_FILE" <<'PY'
+"$PYTHON_BIN" - "$SQ_FILE" "$MANIFEST_FILE" <<'PY'
 import re
 import sys
 from pathlib import Path
 
 sq_file = Path(sys.argv[1])
-ios_file = Path(sys.argv[2])
+manifest_file = Path(sys.argv[2])
 
 
 def strip_sql_comments(text: str) -> str:
@@ -129,14 +129,14 @@ def extract_columns(body: str) -> list[str]:
 
 def extract_sqldelight_tables(text: str) -> dict[str, list[str]]:
     clean_text = strip_sql_comments(text)
-    pattern = re.compile(r"CREATE TABLE\s+(\w+)\s*\((.*?)\);", re.S)
+    pattern = re.compile(r"CREATE TABLE\s+(?:IF NOT EXISTS\s+)?(\w+)\s*\((.*?)\);", re.S)
     return {
         match.group(1): extract_columns(match.group(2))
         for match in pattern.finditer(clean_text)
     }
 
 
-def extract_ios_tables(text: str) -> dict[str, list[str]]:
+def extract_manifest_tables(text: str) -> dict[str, list[str]]:
     pattern = re.compile(r"CREATE TABLE IF NOT EXISTS\s+(\w+)\s*\((.*?)\)\s*\"\"\"", re.S)
     return {
         match.group(1): extract_columns(strip_sql_comments(match.group(2)))
@@ -145,72 +145,72 @@ def extract_ios_tables(text: str) -> dict[str, list[str]]:
 
 
 sql_tables = extract_sqldelight_tables(sq_file.read_text(encoding="utf-8"))
-ios_tables = extract_ios_tables(ios_file.read_text(encoding="utf-8"))
+manifest_tables = extract_manifest_tables(manifest_file.read_text(encoding="utf-8"))
 
 errors: list[str] = []
 column_count = 0
 
 print("Step 1: Checking table parity...")
-missing_tables = sorted(set(sql_tables) - set(ios_tables))
-extra_tables = sorted(set(ios_tables) - set(sql_tables))
+missing_tables = sorted(set(sql_tables) - set(manifest_tables))
+extra_tables = sorted(set(manifest_tables) - set(sql_tables))
 if missing_tables:
     for table in missing_tables:
-        errors.append(f"Table '{table}' exists in SQLDelight but is missing from iOS DriverFactory")
+        errors.append(f"Table '{table}' exists in SQLDelight but is missing from SchemaManifest")
 if extra_tables:
     for table in extra_tables:
-        errors.append(f"Table '{table}' exists in iOS DriverFactory but not in SQLDelight")
+        errors.append(f"Table '{table}' exists in SchemaManifest but not in SQLDelight")
 if not missing_tables and not extra_tables:
     print(f"  OK: All {len(sql_tables)} tables present in both files")
 
 print("")
 print("Step 2: Checking full column parity...")
 for table in sorted(sql_tables):
-    if table not in ios_tables:
+    if table not in manifest_tables:
         continue
 
     sql_columns = sql_tables[table]
-    ios_columns = ios_tables[table]
+    manifest_columns = manifest_tables[table]
     column_count += len(sql_columns)
 
-    missing_columns = [column for column in sql_columns if column not in ios_columns]
-    extra_columns = [column for column in ios_columns if column not in sql_columns]
+    missing_columns = [column for column in sql_columns if column not in manifest_columns]
+    extra_columns = [column for column in manifest_columns if column not in sql_columns]
 
     if missing_columns:
         errors.append(
-            f"Table '{table}' is missing iOS columns: {', '.join(missing_columns)}"
+            f"Table '{table}' is missing manifest columns: {', '.join(missing_columns)}"
         )
     if extra_columns:
         errors.append(
-            f"Table '{table}' has extra iOS columns: {', '.join(extra_columns)}"
+            f"Table '{table}' has extra manifest columns: {', '.join(extra_columns)}"
         )
-    if not missing_columns and not extra_columns and sql_columns != ios_columns:
+    if not missing_columns and not extra_columns and sql_columns != manifest_columns:
         mismatches = []
-        for index, (sql_column, ios_column) in enumerate(zip(sql_columns, ios_columns), start=1):
-            if sql_column != ios_column:
-                mismatches.append(f"{index}: expected {sql_column}, found {ios_column}")
+        for index, (sql_column, manifest_column) in enumerate(zip(sql_columns, manifest_columns), start=1):
+            if sql_column != manifest_column:
+                mismatches.append(f"{index}: expected {sql_column}, found {manifest_column}")
         errors.append(
-            f"Table '{table}' column order differs between SQLDelight and iOS: "
+            f"Table '{table}' column order differs between SQLDelight and SchemaManifest: "
             + "; ".join(mismatches)
         )
 
 if not errors:
-    print(f"  OK: All {column_count} SQLDelight columns match iOS definitions")
+    print(f"  OK: All {column_count} SQLDelight columns match manifest definitions")
 
 print("")
-print("====================")
+print("=========================")
 if errors:
     print(f"FAILED: Found {len(errors)} schema mismatch error(s)")
     print("")
     for error in errors:
         print(f"  ERROR: {error}")
     print("")
-    print("To fix: Update shared/src/iosMain/kotlin/.../DriverFactory.ios.kt")
+    print("To fix: Update shared/src/commonMain/kotlin/.../SchemaManifest.kt")
     print("        to match shared/src/commonMain/sqldelight/.../VitruvianDatabase.sq")
     print("")
     print("See: .planning/debug/resolved/issue-223-ios-fresh-install-sqlite-crash.md")
     sys.exit(1)
 
-print("SUCCESS: iOS schema validation passed")
+print("SUCCESS: Schema manifest validation passed")
 print("")
 print(f"Tables checked: {len(sql_tables)}")
 print(f"Columns checked: {column_count}")

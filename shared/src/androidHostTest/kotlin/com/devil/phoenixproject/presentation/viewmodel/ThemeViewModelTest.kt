@@ -3,11 +3,11 @@ package com.devil.phoenixproject.presentation.viewmodel
 import com.devil.phoenixproject.testutil.TestCoroutineRule
 import com.devil.phoenixproject.ui.theme.ThemeMode
 import com.russhwolf.settings.MapSettings
+import kotlin.test.assertEquals
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import org.junit.Rule
 import org.junit.Test
-import kotlin.test.assertEquals
 
 class ThemeViewModelTest {
 

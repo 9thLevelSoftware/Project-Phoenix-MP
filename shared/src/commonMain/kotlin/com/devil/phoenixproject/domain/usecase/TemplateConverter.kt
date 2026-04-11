@@ -27,11 +27,7 @@ private fun Int.toEccentricLoad(): EccentricLoad = when {
  * @param routines List of Routine objects with resolved exercises
  * @param warnings List of exercise names that couldn't be found in the library
  */
-data class ConversionResult(
-    val cycle: TrainingCycle,
-    val routines: List<Routine>,
-    val warnings: List<String>
-)
+data class ConversionResult(val cycle: TrainingCycle, val routines: List<Routine>, val warnings: List<String>)
 
 /**
  * Converts CycleTemplate objects into concrete TrainingCycle and Routine instances.
@@ -58,9 +54,7 @@ data class ConversionResult(
  *
  * @param exerciseRepository Repository for looking up exercises by name
  */
-class TemplateConverter(
-    private val exerciseRepository: ExerciseRepository
-) {
+class TemplateConverter(private val exerciseRepository: ExerciseRepository) {
     companion object {
         /** Default percentage of 1RM used for starting weights (70%) */
         const val DEFAULT_STARTING_WEIGHT_PERCENT = 0.70f
@@ -84,10 +78,7 @@ class TemplateConverter(
      * @param exerciseConfigs User-configured settings for exercises (mode, weight, echoLevel, eccentricLoad)
      * @return ConversionResult containing the cycle, routines, and any warnings
      */
-    suspend fun convert(
-        template: CycleTemplate,
-        exerciseConfigs: Map<String, ExerciseConfig> = emptyMap()
-    ): ConversionResult {
+    suspend fun convert(template: CycleTemplate, exerciseConfigs: Map<String, ExerciseConfig> = emptyMap()): ConversionResult {
         val cycleId = generateUUID()
         val warnings = mutableListOf<String>()
         val routines = mutableListOf<Routine>()
@@ -101,8 +92,8 @@ class TemplateConverter(
                     CycleDay.restDay(
                         cycleId = cycleId,
                         dayNumber = dayTemplate.dayNumber,
-                        name = dayTemplate.name
-                    )
+                        name = dayTemplate.name,
+                    ),
                 )
             } else {
                 // Create a training day with a routine
@@ -117,12 +108,14 @@ class TemplateConverter(
                     // Multi-strategy exercise resolution: ID → name → fuzzy search
                     val exercise = exerciseRepository.findByIdOrName(
                         templateExercise.exerciseId,
-                        templateExercise.exerciseName
+                        templateExercise.exerciseName,
                     )
 
                     if (exercise == null) {
                         // All resolution strategies failed
-                        Logger.w { "Template exercise not found: '${templateExercise.exerciseName}' (id=${templateExercise.exerciseId})" }
+                        Logger.w {
+                            "Template exercise not found: '${templateExercise.exerciseName}' (id=${templateExercise.exerciseId})"
+                        }
                         warnings.add(templateExercise.exerciseName)
                         continue
                     }
@@ -165,7 +158,8 @@ class TemplateConverter(
                         orderIndex = index,
                         setReps = if (templateExercise.isPercentageBased) {
                             // For percentage-based sets (5/3/1), use target reps from percentage sets
-                            templateExercise.percentageSets?.map { it.targetReps } ?: listOf(templateExercise.reps)
+                            templateExercise.percentageSets?.map { it.targetReps }
+                                ?: listOf(templateExercise.reps)
                         } else {
                             // For regular sets, create list of same reps
                             List(templateExercise.sets) { templateExercise.reps }
@@ -173,8 +167,10 @@ class TemplateConverter(
                         weightPerCableKg = startingWeight,
                         programMode = selectedMode,
                         echoLevel = config?.echoLevel ?: EchoLevel.HARDER,
-                        eccentricLoad = config?.eccentricLoadPercent?.toEccentricLoad() ?: EccentricLoad.LOAD_100,
-                        isAMRAP = templateExercise.percentageSets?.any { it.isAmrap } ?: false
+                        eccentricLoad =
+                            config?.eccentricLoadPercent?.toEccentricLoad()
+                                ?: EccentricLoad.LOAD_100,
+                        isAMRAP = templateExercise.percentageSets?.any { it.isAmrap } ?: false,
                     )
 
                     routineExercises.add(routineExercise)
@@ -185,7 +181,7 @@ class TemplateConverter(
                     val routine = Routine(
                         id = routineId,
                         name = routineTemplate.name,
-                        exercises = routineExercises
+                        exercises = routineExercises,
                     )
                     routines.add(routine)
 
@@ -195,8 +191,8 @@ class TemplateConverter(
                             cycleId = cycleId,
                             dayNumber = dayTemplate.dayNumber,
                             name = dayTemplate.name,
-                            routineId = routineId
-                        )
+                            routineId = routineId,
+                        ),
                     )
                 }
             }
@@ -209,13 +205,13 @@ class TemplateConverter(
             description = template.description,
             days = cycleDays,
             progressionRule = template.progressionRule,
-            weekNumber = 1 // Start at week 1
+            weekNumber = 1, // Start at week 1
         )
 
         return ConversionResult(
             cycle = cycle,
             routines = routines,
-            warnings = warnings.distinct() // Remove duplicate warnings
+            warnings = warnings.distinct(), // Remove duplicate warnings
         )
     }
 }

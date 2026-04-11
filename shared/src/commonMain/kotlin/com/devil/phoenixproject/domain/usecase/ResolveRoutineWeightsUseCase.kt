@@ -12,9 +12,7 @@ import com.devil.phoenixproject.domain.model.RoutineExercise
  * this use case looks up the user's current PR for that exercise and calculates the
  * actual weight based on the configured percentage.
  */
-class ResolveRoutineWeightsUseCase(
-    private val prRepository: PersonalRecordRepository
-) {
+class ResolveRoutineWeightsUseCase(private val prRepository: PersonalRecordRepository) {
     /**
      * Resolves RoutineExercise weights from PR percentages to absolute values.
      * Call this at workout start time to get current weights based on latest PRs.
@@ -25,14 +23,15 @@ class ResolveRoutineWeightsUseCase(
      */
     suspend operator fun invoke(
         exercise: RoutineExercise,
-        mode: ProgramMode = exercise.programMode
+        mode: ProgramMode = exercise.programMode,
+        profileId: String = "default",
     ): ResolvedExerciseWeights {
         if (!exercise.usePercentOfPR) {
             return ResolvedExerciseWeights(
                 baseWeight = exercise.weightPerCableKg,
                 setWeights = exercise.setWeightsPerCableKg,
                 usedPR = null,
-                percentOfPR = null
+                percentOfPR = null,
             )
         }
 
@@ -42,13 +41,22 @@ class ResolveRoutineWeightsUseCase(
             setWeights = exercise.setWeightsPerCableKg,
             usedPR = null,
             percentOfPR = null,
-            fallbackReason = "Exercise has no ID for PR lookup"
+            fallbackReason = "Exercise has no ID for PR lookup",
         )
 
-        // Lookup PR for this exercise and mode
+        // Lookup PR for this exercise filtered by mode and profile
         val pr = when (exercise.prTypeForScaling) {
-            PRType.MAX_WEIGHT -> prRepository.getBestWeightPR(exerciseId, mode.displayName)
-            PRType.MAX_VOLUME -> prRepository.getBestVolumePR(exerciseId, mode.displayName)
+            PRType.MAX_WEIGHT -> prRepository.getBestWeightPR(
+                exerciseId,
+                mode.displayName,
+                profileId,
+            )
+
+            PRType.MAX_VOLUME -> prRepository.getBestVolumePR(
+                exerciseId,
+                mode.displayName,
+                profileId,
+            )
         }
 
         val prWeight = pr?.weightPerCableKg
@@ -58,7 +66,7 @@ class ResolveRoutineWeightsUseCase(
                 baseWeight = exercise.resolveWeight(prWeight),
                 setWeights = exercise.resolveSetWeights(prWeight),
                 usedPR = prWeight,
-                percentOfPR = exercise.weightPercentOfPR
+                percentOfPR = exercise.weightPercentOfPR,
             )
         } else {
             // No PR found - fall back to absolute weight
@@ -67,7 +75,7 @@ class ResolveRoutineWeightsUseCase(
                 setWeights = exercise.setWeightsPerCableKg,
                 usedPR = null,
                 percentOfPR = null,
-                fallbackReason = "No PR found for exercise"
+                fallbackReason = "No PR found for exercise",
             )
         }
     }
@@ -87,7 +95,7 @@ data class ResolvedExerciseWeights(
     val setWeights: List<Float>,
     val usedPR: Float?,
     val percentOfPR: Int?,
-    val fallbackReason: String? = null
+    val fallbackReason: String? = null,
 ) {
     /**
      * True if weights were resolved from a PR percentage.

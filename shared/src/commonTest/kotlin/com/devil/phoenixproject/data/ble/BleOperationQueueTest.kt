@@ -1,12 +1,13 @@
 package com.devil.phoenixproject.data.ble
 
-import kotlinx.coroutines.async
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.test.runTest
 
 class BleOperationQueueTest {
 
@@ -49,7 +50,7 @@ class BleOperationQueueTest {
             }
         }
 
-        val sizes = jobs.map { it.await() }
+        val sizes = jobs.awaitAll()
 
         // Each operation should see monotonically increasing size
         // (proves no interleaving - each completed before next started)
@@ -72,7 +73,7 @@ class BleOperationQueueTest {
             }
         }
 
-        val results = jobs.map { it.await() }
+        val results = jobs.awaitAll()
 
         // Each withLock should see the result of the previous one
         assertEquals(listOf(1, 2, 3), results)

@@ -1,40 +1,64 @@
 package com.devil.phoenixproject.presentation.viewmodel
 
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import co.touchlab.kermit.Logger
+import com.devil.phoenixproject.data.integration.ExternalActivityRepository
+import com.devil.phoenixproject.data.integration.HealthIntegration
 import com.devil.phoenixproject.data.preferences.PreferencesManager
 import com.devil.phoenixproject.data.repository.AutoStopUiState
+import com.devil.phoenixproject.data.repository.BiomechanicsRepository
 import com.devil.phoenixproject.data.repository.BleRepository
+import com.devil.phoenixproject.data.repository.CompletedSetRepository
 import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.data.repository.GamificationRepository
 import com.devil.phoenixproject.data.repository.PersonalRecordRepository
+import com.devil.phoenixproject.data.repository.RepMetricRepository
 import com.devil.phoenixproject.data.repository.ScannedDevice
-import com.devil.phoenixproject.data.repository.CompletedSetRepository
 import com.devil.phoenixproject.data.repository.TrainingCycleRepository
+import com.devil.phoenixproject.data.repository.UserProfileRepository
 import com.devil.phoenixproject.data.repository.WorkoutRepository
-import co.touchlab.kermit.Logger
-import com.devil.phoenixproject.domain.model.*
-import com.devil.phoenixproject.domain.usecase.RepCounterFromMachine
 import com.devil.phoenixproject.data.sync.SyncTriggerManager
+import com.devil.phoenixproject.domain.model.Badge
+import com.devil.phoenixproject.domain.model.ConnectionState
+import com.devil.phoenixproject.domain.model.EchoLevel
+import com.devil.phoenixproject.domain.model.HapticEvent
+import com.devil.phoenixproject.domain.model.PRCelebrationEvent
+import com.devil.phoenixproject.domain.model.PersonalRecord
+import com.devil.phoenixproject.domain.model.RepCount
+import com.devil.phoenixproject.domain.model.RepCountTiming
+import com.devil.phoenixproject.domain.model.Routine
+import com.devil.phoenixproject.domain.model.RoutineExercise
+import com.devil.phoenixproject.domain.model.RoutineFlowState
+import com.devil.phoenixproject.domain.model.Superset
+import com.devil.phoenixproject.domain.model.UserPreferences
+import com.devil.phoenixproject.domain.model.WeightUnit
+import com.devil.phoenixproject.domain.model.WorkoutMetric
+import com.devil.phoenixproject.domain.model.WorkoutParameters
+import com.devil.phoenixproject.domain.model.WorkoutSession
+import com.devil.phoenixproject.domain.model.WorkoutState
+import com.devil.phoenixproject.domain.usecase.RepCounterFromMachine
 import com.devil.phoenixproject.domain.usecase.ResolveRoutineWeightsUseCase
+import com.devil.phoenixproject.presentation.manager.BleConnectionManager
+import com.devil.phoenixproject.presentation.manager.DefaultWorkoutSessionManager
+import com.devil.phoenixproject.presentation.manager.ExerciseDetectionManager
+import com.devil.phoenixproject.presentation.manager.GamificationManager
+import com.devil.phoenixproject.presentation.manager.HistoryItem
+import com.devil.phoenixproject.presentation.manager.HistoryManager
+import com.devil.phoenixproject.presentation.manager.JustLiftDefaults
+import com.devil.phoenixproject.presentation.manager.ResumableProgressInfo
+import com.devil.phoenixproject.presentation.manager.SettingsManager
+import com.devil.phoenixproject.presentation.manager.WorkoutServiceController
+import com.devil.phoenixproject.util.BackupStats
+import com.devil.phoenixproject.util.DataBackupManager
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import androidx.compose.ui.graphics.vector.ImageVector
-import com.devil.phoenixproject.presentation.manager.HistoryManager
-import com.devil.phoenixproject.presentation.manager.HistoryItem
-import com.devil.phoenixproject.presentation.manager.GroupedRoutineHistoryItem
-import com.devil.phoenixproject.presentation.manager.SingleSessionHistoryItem
-import com.devil.phoenixproject.presentation.manager.SettingsManager
-import com.devil.phoenixproject.presentation.manager.BleConnectionManager
-import com.devil.phoenixproject.presentation.manager.GamificationManager
-import com.devil.phoenixproject.presentation.manager.DefaultWorkoutSessionManager
-import com.devil.phoenixproject.presentation.manager.JustLiftDefaults
-import com.devil.phoenixproject.presentation.manager.ResumableProgressInfo
 
 // HistoryItem, SingleSessionHistoryItem, GroupedRoutineHistoryItem moved to
 // com.devil.phoenixproject.presentation.manager.HistoryManager
@@ -42,11 +66,7 @@ import com.devil.phoenixproject.presentation.manager.ResumableProgressInfo
 /**
  * Represents a dynamic action for the top app bar.
  */
-data class TopBarAction(
-    val icon: ImageVector,
-    val description: String,
-    val onClick: () -> Unit
-)
+data class TopBarAction(val icon: ImageVector, val description: String, val onClick: () -> Unit)
 
 class MainViewModel constructor(
     private val bleRepository: BleRepository,
@@ -59,25 +79,37 @@ class MainViewModel constructor(
     private val trainingCycleRepository: TrainingCycleRepository,
     private val completedSetRepository: CompletedSetRepository,
     private val syncTriggerManager: SyncTriggerManager? = null,
-    private val resolveWeightsUseCase: ResolveRoutineWeightsUseCase
+    private val repMetricRepository: RepMetricRepository,
+    private val biomechanicsRepository: BiomechanicsRepository,
+    private val resolveWeightsUseCase: ResolveRoutineWeightsUseCase,
+    private val detectionManager: ExerciseDetectionManager,
+    private val dataBackupManager: DataBackupManager,
+    private val userProfileRepository: UserProfileRepository,
+    private val healthIntegration: HealthIntegration? = null,
+    private val externalActivityRepository: ExternalActivityRepository? = null,
+    private val workoutServiceController: WorkoutServiceController,
 ) : ViewModel() {
 
     // Shared haptic events flow - created here, passed to both GamificationManager and WorkoutSessionManager
     private val _hapticEvents = MutableSharedFlow<HapticEvent>(
         extraBufferCapacity = 10,
-        onBufferOverflow = kotlinx.coroutines.channels.BufferOverflow.DROP_OLDEST
+        onBufferOverflow = kotlinx.coroutines.channels.BufferOverflow.DROP_OLDEST,
     )
 
     // === Phase 1b: SettingsManager (extracted from this class) ===
     val settingsManager = SettingsManager(preferencesManager, bleRepository, viewModelScope)
 
     // === Phase 1a: HistoryManager (extracted from this class) ===
-    val historyManager = HistoryManager(workoutRepository, personalRecordRepository, viewModelScope)
+    val historyManager = HistoryManager(workoutRepository, personalRecordRepository, userProfileRepository, viewModelScope)
 
     // === Phase 2b: GamificationManager (extracted from this class) ===
     val gamificationManager = GamificationManager(
-        gamificationRepository, personalRecordRepository, exerciseRepository,
-        _hapticEvents, viewModelScope, settingsManager.gamificationEnabled
+        gamificationRepository,
+        personalRecordRepository,
+        exerciseRepository,
+        _hapticEvents,
+        viewModelScope,
+        settingsManager.gamificationEnabled,
     )
 
     // === Phase 3: WorkoutSessionManager (extracted from this class) ===
@@ -92,18 +124,29 @@ class MainViewModel constructor(
         trainingCycleRepository = trainingCycleRepository,
         completedSetRepository = completedSetRepository,
         syncTriggerManager = syncTriggerManager,
+        repMetricRepository = repMetricRepository,
+        biomechanicsRepository = biomechanicsRepository,
         resolveWeightsUseCase = resolveWeightsUseCase,
         settingsManager = settingsManager,
+        detectionManager = detectionManager,
+        dataBackupManager = dataBackupManager,
+        userProfileRepository = userProfileRepository,
+        healthIntegration = healthIntegration,
+        externalActivityRepository = externalActivityRepository,
+        workoutServiceController = workoutServiceController,
         scope = viewModelScope,
-        _hapticEvents = _hapticEvents
+        _hapticEvents = _hapticEvents,
     )
 
     // === Phase 2a: BleConnectionManager (extracted from this class) ===
     // Must be after workoutSessionManager since it implements WorkoutStateProvider
     // BLE errors flow one-way via coordinator.bleErrorEvents (no circular dependency)
     val bleConnectionManager = BleConnectionManager(
-        bleRepository, settingsManager, workoutSessionManager,
-        workoutSessionManager.coordinator.bleErrorEvents, viewModelScope
+        bleRepository,
+        settingsManager,
+        workoutSessionManager,
+        workoutSessionManager.coordinator.bleErrorEvents,
+        viewModelScope,
     )
 
     // ===== Workout State Delegation =====
@@ -111,6 +154,9 @@ class MainViewModel constructor(
     val workoutState: StateFlow<WorkoutState> get() = workoutSessionManager.coordinator.workoutState
     val isWorkoutActive: Boolean get() = workoutSessionManager.coordinator.isWorkoutActive
     val routineFlowState: StateFlow<RoutineFlowState> get() = workoutSessionManager.coordinator.routineFlowState
+
+    /** Issue #348: Session-scoped flag covering active sets AND between-set routine screens */
+    val isInWorkoutSession get() = workoutSessionManager.coordinator.isInWorkoutSession
     val currentMetric: StateFlow<WorkoutMetric?> get() = workoutSessionManager.coordinator.currentMetric
     val currentHeuristicKgMax: StateFlow<Float> get() = workoutSessionManager.coordinator.currentHeuristicKgMax
     val loadBaselineA: StateFlow<Float> get() = workoutSessionManager.coordinator.loadBaselineA
@@ -131,8 +177,31 @@ class MainViewModel constructor(
     val completedExercises: StateFlow<Set<Int>> get() = workoutSessionManager.coordinator.completedExercises
     val currentSetRpe: StateFlow<Int?> get() = workoutSessionManager.coordinator.currentSetRpe
     val isCurrentExerciseBodyweight: StateFlow<Boolean> get() = workoutSessionManager.coordinator.isCurrentExerciseBodyweight
+    val latestRepQuality get() = workoutSessionManager.coordinator.latestRepQuality
+    val latestBiomechanicsResult get() = workoutSessionManager.coordinator.latestBiomechanicsResult
+    val motionStartHoldProgress: StateFlow<Float?> get() = workoutSessionManager.coordinator.motionStartHoldProgress
+    val justLiftRestCountdown: StateFlow<Int?> get() = workoutSessionManager.coordinator.justLiftRestCountdown
     val cycleDayCompletionEvent get() = workoutSessionManager.coordinator.cycleDayCompletionEvent
     fun clearCycleDayCompletionEvent() = workoutSessionManager.clearCycleDayCompletionEvent()
+
+    // ===== Exercise Detection Delegation =====
+    val detectionState get() = workoutSessionManager.detectionManager.detectionState
+
+    suspend fun onDetectionConfirmed(exerciseId: String, exerciseName: String) {
+        workoutSessionManager.detectionManager.onExerciseConfirmed(exerciseId, exerciseName)
+        // Populate exercise attribution on workout parameters so subsequent
+        // session saves (e.g. Just Lift) include the confirmed exercise
+        val coordinator = workoutSessionManager.coordinator
+        coordinator._workoutParameters.update { params ->
+            if (params.isJustLift && params.selectedExerciseId == null) {
+                params.copy(selectedExerciseId = exerciseId)
+            } else {
+                params
+            }
+        }
+    }
+
+    fun onDetectionDismissed() = workoutSessionManager.detectionManager.onDetectionDismissed()
 
     // ===== BLE Connection Delegation =====
 
@@ -150,8 +219,14 @@ class MainViewModel constructor(
     fun clearConnectionError() = bleConnectionManager.clearConnectionError()
     fun dismissConnectionLostAlert() = bleConnectionManager.dismissConnectionLostAlert()
     fun cancelAutoConnecting() = bleConnectionManager.cancelAutoConnecting()
-    fun ensureConnection(onConnected: () -> Unit, onFailed: () -> Unit = {}) =
-        bleConnectionManager.ensureConnection(onConnected, onFailed)
+    fun ensureConnection(onConnected: () -> Unit, onFailed: () -> Unit = {}) = bleConnectionManager.ensureConnection(onConnected, onFailed)
+    fun reconnectInterruptedWorkout() {
+        bleConnectionManager.dismissConnectionLostAlert()
+        bleConnectionManager.ensureConnection(
+            onConnected = { workoutSessionManager.reconnectInterruptedWorkout() },
+            onFailed = {},
+        )
+    }
     fun cancelConnection() = bleConnectionManager.cancelConnection()
 
     // ===== History Delegation =====
@@ -160,6 +235,7 @@ class MainViewModel constructor(
     val allWorkoutSessions: StateFlow<List<WorkoutSession>> get() = historyManager.allWorkoutSessions
     val groupedWorkoutHistory: StateFlow<List<HistoryItem>> get() = historyManager.groupedWorkoutHistory
     val allPersonalRecords: StateFlow<List<PersonalRecord>> get() = historyManager.allPersonalRecords
+
     @Suppress("unused")
     val personalBests: StateFlow<List<com.devil.phoenixproject.data.repository.PersonalRecordEntity>>
         get() = historyManager.personalBests
@@ -185,7 +261,41 @@ class MainViewModel constructor(
     fun setSummaryCountdownSeconds(seconds: Int) = settingsManager.setSummaryCountdownSeconds(seconds)
     fun setAutoStartCountdownSeconds(seconds: Int) = settingsManager.setAutoStartCountdownSeconds(seconds)
     fun setColorScheme(schemeIndex: Int) = settingsManager.setColorScheme(schemeIndex)
+    fun setWeightIncrement(increment: Float) = settingsManager.setWeightIncrement(increment)
+    fun setAutoStartRoutine(enabled: Boolean) = settingsManager.setAutoStartRoutine(enabled)
+    fun setBodyWeightKg(weightKg: Float) = settingsManager.setBodyWeightKg(weightKg)
     fun setGamificationEnabled(enabled: Boolean) = settingsManager.setGamificationEnabled(enabled)
+    fun setCountdownBeepsEnabled(enabled: Boolean) = settingsManager.setCountdownBeepsEnabled(enabled)
+    fun setRepSoundEnabled(enabled: Boolean) = settingsManager.setRepSoundEnabled(enabled)
+    fun setMotionStartEnabled(enabled: Boolean) = settingsManager.setMotionStartEnabled(enabled)
+    fun setAutoBackupEnabled(enabled: Boolean) {
+        settingsManager.setAutoBackupEnabled(enabled)
+        refreshBackupStats()
+    }
+
+    fun setLanguage(language: String) {
+        settingsManager.setLanguage(language)
+    }
+
+    // Issue #141: Voice-activated emergency stop
+    fun setVoiceStopEnabled(enabled: Boolean) = settingsManager.setVoiceStopEnabled(enabled)
+    fun setSafeWord(word: String?) = settingsManager.setSafeWord(word)
+    fun setSafeWordCalibrated(calibrated: Boolean) = settingsManager.setSafeWordCalibrated(calibrated)
+
+    // Backup stats for Settings UI
+    private val _backupStats = kotlinx.coroutines.flow.MutableStateFlow<BackupStats?>(null)
+    val backupStats: kotlinx.coroutines.flow.StateFlow<BackupStats?> = _backupStats
+
+    fun refreshBackupStats() {
+        viewModelScope.launch {
+            _backupStats.value = dataBackupManager.getBackupStats()
+        }
+    }
+
+    fun openBackupFolder() {
+        dataBackupManager.openBackupFolder()
+    }
+
     fun kgToDisplay(kg: Float, unit: WeightUnit) = settingsManager.kgToDisplay(kg, unit)
     fun displayToKg(display: Float, unit: WeightUnit) = settingsManager.displayToKg(display, unit)
     fun formatWeight(kg: Float, unit: WeightUnit) = settingsManager.formatWeight(kg, unit)
@@ -200,8 +310,7 @@ class MainViewModel constructor(
     // ===== Workout Lifecycle Delegation =====
 
     fun updateWorkoutParameters(params: WorkoutParameters) = workoutSessionManager.updateWorkoutParameters(params)
-    fun startWorkout(skipCountdown: Boolean = false, isJustLiftMode: Boolean = false) =
-        workoutSessionManager.startWorkout(skipCountdown, isJustLiftMode)
+    fun startWorkout(skipCountdown: Boolean = false, isJustLiftMode: Boolean = false) = workoutSessionManager.startWorkout(skipCountdown, isJustLiftMode)
     fun stopWorkout(exitingWorkout: Boolean = false) = workoutSessionManager.stopWorkout(exitingWorkout)
     fun stopAndReturnToSetReady() = workoutSessionManager.stopAndReturnToSetReady()
     fun stopAndSkipCurrentExercise() = workoutSessionManager.stopAndSkipCurrentExercise()
@@ -213,6 +322,14 @@ class MainViewModel constructor(
     fun resetLoadBaseline() = workoutSessionManager.resetLoadBaseline()
     fun proceedFromSummary() = workoutSessionManager.proceedFromSummary()
     fun skipRest() = workoutSessionManager.skipRest()
+    fun extendRestTime(seconds: Int) = workoutSessionManager.extendRestTime(seconds)
+    fun toggleRestPause() = workoutSessionManager.toggleRestPause()
+    fun resetRestTimer() = workoutSessionManager.resetRestTimer()
+    val isRestPaused get() = workoutSessionManager.coordinator.isRestPaused
+
+    // Phase 35C: Variable warm-up set state
+    val currentWarmupSetIndex: StateFlow<Int> get() = workoutSessionManager.coordinator.currentWarmupSetIndex
+    val totalWarmupSets: StateFlow<Int> get() = workoutSessionManager.coordinator.totalWarmupSets
     fun startNextSet() = workoutSessionManager.startNextSet()
     fun logRpeForCurrentSet(rpe: Int) = workoutSessionManager.logRpeForCurrentSet(rpe)
 
@@ -223,15 +340,17 @@ class MainViewModel constructor(
     fun updateRoutine(routine: Routine) = workoutSessionManager.updateRoutine(routine)
     fun deleteRoutine(routineId: String) = workoutSessionManager.deleteRoutine(routineId)
     fun deleteRoutines(routineIds: Set<String>) = workoutSessionManager.deleteRoutines(routineIds)
+    fun moveRoutinesToProfile(routineIds: Set<String>, targetProfileId: String) = workoutSessionManager.moveRoutinesToProfile(routineIds, targetProfileId)
+    fun saveRoutineToProfile(routine: Routine, targetProfileId: String) = workoutSessionManager.saveRoutineToProfile(routine, targetProfileId)
     fun loadRoutine(routine: Routine) = workoutSessionManager.loadRoutine(routine)
+
     /** Issue #2 Fix: Suspend version that completes after routine is fully loaded (including PR weight resolution) */
     suspend fun loadRoutineAsync(routine: Routine) = workoutSessionManager.loadRoutineAsync(routine)
     fun loadRoutineById(routineId: String) = workoutSessionManager.loadRoutineById(routineId)
     fun enterRoutineOverview(routine: Routine) = workoutSessionManager.enterRoutineOverview(routine)
     fun selectExerciseInOverview(index: Int) = workoutSessionManager.selectExerciseInOverview(index)
     fun enterSetReady(exerciseIndex: Int, setIndex: Int) = workoutSessionManager.enterSetReady(exerciseIndex, setIndex)
-    fun enterSetReadyWithAdjustments(exerciseIndex: Int, setIndex: Int, adjustedWeight: Float, adjustedReps: Int) =
-        workoutSessionManager.enterSetReadyWithAdjustments(exerciseIndex, setIndex, adjustedWeight, adjustedReps)
+    fun enterSetReadyWithAdjustments(exerciseIndex: Int, setIndex: Int, adjustedWeight: Float, adjustedReps: Int) = workoutSessionManager.enterSetReadyWithAdjustments(exerciseIndex, setIndex, adjustedWeight, adjustedReps)
     fun updateSetReadyWeight(weight: Float) = workoutSessionManager.updateSetReadyWeight(weight)
     fun updateSetReadyReps(reps: Int) = workoutSessionManager.updateSetReadyReps(reps)
     fun updateSetReadyEchoLevel(level: EchoLevel) = workoutSessionManager.updateSetReadyEchoLevel(level)
@@ -261,15 +380,12 @@ class MainViewModel constructor(
 
     // ===== Weight Adjustment Delegation =====
 
-    fun adjustWeight(newWeightKg: Float, sendToMachine: Boolean = true) =
-        workoutSessionManager.adjustWeight(newWeightKg, sendToMachine)
+    fun adjustWeight(newWeightKg: Float, sendToMachine: Boolean = true) = workoutSessionManager.adjustWeight(newWeightKg, sendToMachine)
     fun incrementWeight(amount: Float = 0.5f) = workoutSessionManager.incrementWeight(amount)
     fun decrementWeight(amount: Float = 0.5f) = workoutSessionManager.decrementWeight(amount)
     fun setWeightPreset(presetWeightKg: Float) = workoutSessionManager.setWeightPreset(presetWeightKg)
-    suspend fun getLastWeightForExercise(exerciseId: String): Float? =
-        workoutSessionManager.getLastWeightForExercise(exerciseId)
-    suspend fun getPrWeightForExercise(exerciseId: String): Float? =
-        workoutSessionManager.getPrWeightForExercise(exerciseId)
+    suspend fun getLastWeightForExercise(exerciseId: String): Float? = workoutSessionManager.getLastWeightForExercise(exerciseId)
+    suspend fun getPrWeightForExercise(exerciseId: String): Float? = workoutSessionManager.getPrWeightForExercise(exerciseId)
 
     // ===== Just Lift / Handle Detection Delegation =====
 
@@ -278,31 +394,20 @@ class MainViewModel constructor(
     fun prepareForJustLift() = workoutSessionManager.prepareForJustLift()
     suspend fun getJustLiftDefaults(): JustLiftDefaults = workoutSessionManager.getJustLiftDefaults()
     fun saveJustLiftDefaults(defaults: JustLiftDefaults) = workoutSessionManager.saveJustLiftDefaults(defaults)
-    suspend fun getSingleExerciseDefaults(exerciseId: String): com.devil.phoenixproject.data.preferences.SingleExerciseDefaults? =
-        workoutSessionManager.getSingleExerciseDefaults(exerciseId)
-    fun saveSingleExerciseDefaults(defaults: com.devil.phoenixproject.data.preferences.SingleExerciseDefaults) =
-        workoutSessionManager.saveSingleExerciseDefaults(defaults)
+    suspend fun getSingleExerciseDefaults(exerciseId: String): com.devil.phoenixproject.data.preferences.SingleExerciseDefaults? = workoutSessionManager.getSingleExerciseDefaults(exerciseId)
+    fun saveSingleExerciseDefaults(defaults: com.devil.phoenixproject.data.preferences.SingleExerciseDefaults) = workoutSessionManager.saveSingleExerciseDefaults(defaults)
 
     // ===== Superset CRUD Delegation =====
 
-    suspend fun createSuperset(
-        routineId: String,
-        name: String? = null,
-        exercises: List<RoutineExercise> = emptyList()
-    ) = workoutSessionManager.createSuperset(routineId, name, exercises)
-    suspend fun updateSuperset(routineId: String, superset: Superset) =
-        workoutSessionManager.updateSuperset(routineId, superset)
-    suspend fun deleteSuperset(routineId: String, supersetId: String) =
-        workoutSessionManager.deleteSuperset(routineId, supersetId)
-    suspend fun addExerciseToSuperset(routineId: String, exerciseId: String, supersetId: String) =
-        workoutSessionManager.addExerciseToSuperset(routineId, exerciseId, supersetId)
-    suspend fun removeExerciseFromSuperset(routineId: String, exerciseId: String) =
-        workoutSessionManager.removeExerciseFromSuperset(routineId, exerciseId)
+    suspend fun createSuperset(routineId: String, name: String? = null, exercises: List<RoutineExercise> = emptyList()) = workoutSessionManager.createSuperset(routineId, name, exercises)
+    suspend fun updateSuperset(routineId: String, superset: Superset) = workoutSessionManager.updateSuperset(routineId, superset)
+    suspend fun deleteSuperset(routineId: String, supersetId: String) = workoutSessionManager.deleteSuperset(routineId, supersetId)
+    suspend fun addExerciseToSuperset(routineId: String, exerciseId: String, supersetId: String) = workoutSessionManager.addExerciseToSuperset(routineId, exerciseId, supersetId)
+    suspend fun removeExerciseFromSuperset(routineId: String, exerciseId: String) = workoutSessionManager.removeExerciseFromSuperset(routineId, exerciseId)
 
     // ===== Training Cycle Delegation =====
 
-    fun loadRoutineFromCycle(routineId: String, cycleId: String, dayNumber: Int) =
-        workoutSessionManager.loadRoutineFromCycle(routineId, cycleId, dayNumber)
+    fun loadRoutineFromCycle(routineId: String, cycleId: String, dayNumber: Int) = workoutSessionManager.loadRoutineFromCycle(routineId, cycleId, dayNumber)
     fun clearCycleContext() = workoutSessionManager.clearCycleContext()
 
     // ===== Top Bar State (stays here - pure UI scaffolding) =====
@@ -378,20 +483,6 @@ class MainViewModel constructor(
             kotlinx.coroutines.delay(1000)
             _hapticEvents.emit(HapticEvent.WORKOUT_COMPLETE)
         }
-    }
-
-    // ===== Simulator Mode (Easter Egg - stays here) =====
-
-    val simulatorModeUnlocked: StateFlow<Boolean> get() = settingsManager.simulatorModeUnlocked
-    val simulatorModeEnabled: StateFlow<Boolean> get() = settingsManager.simulatorModeEnabled
-
-    fun unlockSimulatorMode() {
-        settingsManager.setSimulatorModeUnlocked(true)
-        Logger.i { "SIMULATOR MODE UNLOCKED!" }
-    }
-
-    fun toggleSimulatorMode(enabled: Boolean) {
-        settingsManager.setSimulatorModeEnabled(enabled)
     }
 
     // ===== Cleanup =====

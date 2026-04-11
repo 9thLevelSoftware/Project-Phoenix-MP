@@ -3,8 +3,8 @@
 package com.devil.phoenixproject.util
 
 import kotlin.native.Platform
-import platform.UIKit.UIDevice
 import platform.Foundation.NSBundle
+import platform.UIKit.UIDevice
 
 /**
  * iOS implementation of DeviceInfo.
@@ -15,7 +15,9 @@ actual object DeviceInfo {
     // ==================== App Build Info ====================
 
     actual val appVersionName: String
-        get() = NSBundle.mainBundle.objectForInfoDictionaryKey("CFBundleShortVersionString") as? String
+        get() = NSBundle.mainBundle.objectForInfoDictionaryKey(
+            "CFBundleShortVersionString",
+        ) as? String
             ?: Constants.APP_VERSION
 
     actual val appVersionCode: Int
@@ -54,37 +56,29 @@ actual object DeviceInfo {
 
     // ==================== Formatted Output ====================
 
-    actual fun getFormattedInfo(): String {
-        return buildString {
-            appendLine("App: VitruvianPhoenix v$appVersionName (build $appVersionCode)")
-            appendLine("Build Type: $buildType")
-            appendLine()
-            appendLine("Device: $manufacturer $model")
-            appendLine("Device Name: $deviceName")
-            appendLine("OS: $platformVersionFull")
-        }
+    actual fun getFormattedInfo(): String = buildString {
+        appendLine("App: VitruvianPhoenix v$appVersionName (build $appVersionCode)")
+        appendLine("Build Type: $buildType")
+        appendLine()
+        appendLine("Device: $manufacturer $model")
+        appendLine("Device Name: $deviceName")
+        appendLine("OS: $platformVersionFull")
     }
 
-    actual fun getCompactInfo(): String {
-        return "$manufacturer $model (iOS $osVersion)"
-    }
+    actual fun getCompactInfo(): String = "$manufacturer $model (iOS $osVersion)"
 
-    actual fun getAppVersionInfo(): String {
-        return "v$appVersionName ($buildType)"
-    }
+    actual fun getAppVersionInfo(): String = "v$appVersionName ($buildType)"
 
-    actual fun toJson(): String {
-        return buildString {
-            append("{")
-            append("\"appVersion\":\"$appVersionName\",")
-            append("\"appVersionCode\":$appVersionCode,")
-            append("\"buildType\":\"$buildType\",")
-            append("\"manufacturer\":\"$manufacturer\",")
-            append("\"model\":\"$model\",")
-            append("\"deviceName\":\"$deviceName\",")
-            append("\"osVersion\":\"$osVersion\",")
-            append("\"identifierForVendor\":\"$identifierForVendor\"")
-            append("}")
-        }
+    actual fun toJson(): String = buildString {
+        append("{")
+        append("\"appVersion\":\"$appVersionName\",")
+        append("\"appVersionCode\":$appVersionCode,")
+        append("\"buildType\":\"$buildType\",")
+        append("\"manufacturer\":\"$manufacturer\",")
+        append("\"model\":\"$model\",")
+        append("\"deviceName\":\"$deviceName\",")
+        append("\"osVersion\":\"$osVersion\",")
+        append("\"identifierForVendor\":\"$identifierForVendor\"")
+        append("}")
     }
 }

@@ -23,6 +23,7 @@ import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.data.repository.ExerciseVideoEntity
 import com.devil.phoenixproject.data.repository.PersonalRecordRepository
+import com.devil.phoenixproject.data.repository.UserProfileRepository
 import com.devil.phoenixproject.domain.model.*
 import com.devil.phoenixproject.presentation.components.CompactNumberPicker
 import com.devil.phoenixproject.presentation.components.ProgressionSlider
@@ -32,8 +33,12 @@ import com.devil.phoenixproject.presentation.viewmodel.ExerciseType
 import com.devil.phoenixproject.presentation.viewmodel.SetConfiguration
 import com.devil.phoenixproject.presentation.viewmodel.SetMode
 import com.devil.phoenixproject.ui.theme.Spacing
-import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
+import kotlinx.coroutines.launch
+import org.jetbrains.compose.resources.stringResource
+import org.koin.compose.koinInject
+import vitruvianprojectphoenix.shared.generated.resources.*
+import vitruvianprojectphoenix.shared.generated.resources.Res
 
 /**
  * Exercise configuration bottom sheet for SingleExerciseScreen
@@ -51,10 +56,13 @@ fun ExerciseEditBottomSheet(
     formatWeight: (Float, WeightUnit) -> String,
     onSave: (RoutineExercise) -> Unit,
     onDismiss: () -> Unit,
-    buttonText: String = "Save"
+    buttonText: String = "Save",
 ) {
     // Create local ViewModel instance with PersonalRecordRepository for PR lookups
     val viewModel = remember { ExerciseConfigViewModel(personalRecordRepository) }
+    val userProfileRepository: UserProfileRepository = koinInject()
+    val activeProfile by userProfileRepository.activeProfile.collectAsState()
+    val activeProfileId = activeProfile?.id ?: "default"
 
     // Fetch videos for exercise
     var videos by remember { mutableStateOf<List<ExerciseVideoEntity>>(emptyList()) }
@@ -70,8 +78,8 @@ fun ExerciseEditBottomSheet(
     val preferredVideo = videos.firstOrNull { it.angle == "FRONT" } ?: videos.firstOrNull()
 
     // Initialize the ViewModel - PR loading is now handled internally by the ViewModel
-    LaunchedEffect(exercise, weightUnit) {
-        viewModel.initialize(exercise, weightUnit, kgToDisplay, displayToKg)
+    LaunchedEffect(exercise, weightUnit, activeProfileId) {
+        viewModel.initialize(exercise, weightUnit, kgToDisplay, displayToKg, profileId = activeProfileId)
     }
 
     // Collect state from the ViewModel
@@ -96,7 +104,7 @@ fun ExerciseEditBottomSheet(
     val weightPercentOfPR by viewModel.weightPercentOfPR.collectAsState()
 
     val weightSuffix = if (weightUnit == WeightUnit.LB) "lbs" else "kg"
-    val maxWeight = if (weightUnit == WeightUnit.LB) 242f else 110f  // 110kg per cable max
+    val maxWeight = if (weightUnit == WeightUnit.LB) 242f else 110f // 110kg per cable max
     val weightStep = if (weightUnit == WeightUnit.LB) 0.5f else 0.25f
     val maxWeightChange = 10
 
@@ -118,37 +126,37 @@ fun ExerciseEditBottomSheet(
         },
         sheetState = sheetState,
         containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
-        shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)
+        shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(Spacing.small)
+                .padding(Spacing.small),
         ) {
             // Header
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+                verticalAlignment = Alignment.CenterVertically,
             ) {
                 Column {
                     Text(
                         "Configure Exercise",
                         style = MaterialTheme.typography.headlineMedium,
-                        fontWeight = FontWeight.Bold
+                        fontWeight = FontWeight.Bold,
                     )
                     Text(
                         exercise.exercise.displayName,
                         style = MaterialTheme.typography.bodyLarge,
                         fontWeight = FontWeight.Medium,
-                        color = MaterialTheme.colorScheme.primary
+                        color = MaterialTheme.colorScheme.primary,
                     )
                 }
                 IconButton(onClick = dismissSheet) {
                     Icon(
                         Icons.Default.Close,
-                        contentDescription = "Close",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        contentDescription = stringResource(Res.string.cd_close),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
             }
@@ -161,7 +169,7 @@ fun ExerciseEditBottomSheet(
                     .fillMaxWidth()
                     .weight(1f)
                     .verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(Spacing.small)
+                verticalArrangement = Arrangement.spacedBy(Spacing.small),
             ) {
                 // Video Player
                 if (enableVideoPlayback) {
@@ -172,13 +180,13 @@ fun ExerciseEditBottomSheet(
                                 .aspectRatio(16f / 9f),
                             shape = RoundedCornerShape(20.dp),
                             colors = CardDefaults.cardColors(
-                                containerColor = MaterialTheme.colorScheme.surfaceContainerHighest
+                                containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
                             ),
-                            elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
+                            elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
                         ) {
                             VideoPlayer(
                                 videoUrl = video.videoUrl,
-                                modifier = Modifier.fillMaxSize()
+                                modifier = Modifier.fillMaxSize(),
                             )
                         }
                     }
@@ -190,40 +198,40 @@ fun ExerciseEditBottomSheet(
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(20.dp),
                         colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.primaryContainer
+                            containerColor = MaterialTheme.colorScheme.primaryContainer,
                         ),
                         elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
-                        border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.3f))
+                        border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.3f)),
                     ) {
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .padding(Spacing.medium),
                             horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
+                            verticalAlignment = Alignment.CenterVertically,
                         ) {
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(Spacing.small)
+                                horizontalArrangement = Arrangement.spacedBy(Spacing.small),
                             ) {
                                 Icon(
                                     Icons.Default.Star,
-                                    contentDescription = "Personal Record",
+                                    contentDescription = stringResource(Res.string.cd_personal_record),
                                     tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                                    modifier = Modifier.size(24.dp)
+                                    modifier = Modifier.size(24.dp),
                                 )
                                 Column {
                                     Text(
                                         "Personal Record",
                                         style = MaterialTheme.typography.labelMedium,
                                         fontWeight = FontWeight.Bold,
-                                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                                        color = MaterialTheme.colorScheme.onPrimaryContainer,
                                     )
                                     Text(
                                         "${formatWeight(pr.weightPerCableKg, weightUnit)}/cable x ${pr.reps} reps",
                                         style = MaterialTheme.typography.titleMedium,
                                         fontWeight = FontWeight.Bold,
-                                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                                        color = MaterialTheme.colorScheme.onPrimaryContainer,
                                     )
                                 }
                             }
@@ -241,7 +249,7 @@ fun ExerciseEditBottomSheet(
                         weightUnit = weightUnit,
                         formatWeight = formatWeight,
                         onUsePercentOfPRChange = viewModel::onUsePercentOfPRChange,
-                        onWeightPercentOfPRChange = viewModel::onWeightPercentOfPRChange
+                        onWeightPercentOfPRChange = viewModel::onWeightPercentOfPRChange,
                     )
                 }
 
@@ -249,7 +257,7 @@ fun ExerciseEditBottomSheet(
                 if (exerciseType == ExerciseType.STANDARD) {
                     ModeSelector(
                         selectedMode = selectedMode,
-                        onModeChange = viewModel::onSelectedModeChange
+                        onModeChange = viewModel::onSelectedModeChange,
                     )
                 }
 
@@ -261,25 +269,25 @@ fun ExerciseEditBottomSheet(
                         shape = RoundedCornerShape(12.dp),
                         color = MaterialTheme.colorScheme.surface,
                         border = BorderStroke(1.dp, MaterialTheme.colorScheme.surfaceVariant),
-                        shadowElevation = 2.dp
+                        shadowElevation = 2.dp,
                     ) {
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .padding(Spacing.small),
                             horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
+                            verticalAlignment = Alignment.CenterVertically,
                         ) {
                             Text(
                                 "Beast Mode",
                                 style = MaterialTheme.typography.titleSmall,
-                                fontWeight = FontWeight.Bold
+                                fontWeight = FontWeight.Bold,
                             )
                             Switch(
                                 checked = selectedMode is WorkoutMode.TUTBeast,
                                 onCheckedChange = { isBeast ->
                                     viewModel.onSelectedModeChange(if (isBeast) WorkoutMode.TUTBeast else WorkoutMode.TUT)
-                                }
+                                },
                             )
                         }
                     }
@@ -290,11 +298,11 @@ fun ExerciseEditBottomSheet(
                 if (isEchoMode) {
                     EccentricLoadSelector(
                         eccentricLoad = eccentricLoad,
-                        onLoadChange = viewModel::onEccentricLoadChange
+                        onLoadChange = viewModel::onEccentricLoadChange,
                     )
                     EchoLevelSelector(
                         level = echoLevel,
-                        onLevelChange = viewModel::onEchoLevelChange
+                        onLevelChange = viewModel::onEchoLevelChange,
                     )
                 }
 
@@ -303,18 +311,18 @@ fun ExerciseEditBottomSheet(
                     Card(
                         modifier = Modifier.fillMaxWidth(),
                         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest),
-                        border = BorderStroke(2.dp, MaterialTheme.colorScheme.outlineVariant)
+                        border = BorderStroke(2.dp, MaterialTheme.colorScheme.outlineVariant),
                     ) {
                         Column(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(Spacing.medium)
+                                .padding(Spacing.medium),
                         ) {
                             Text(
                                 "Weight Change Per Rep",
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onSurface
+                                color = MaterialTheme.colorScheme.onSurface,
                             )
                             Spacer(modifier = Modifier.height(Spacing.medium))
 
@@ -322,13 +330,13 @@ fun ExerciseEditBottomSheet(
                                 value = weightChange.toFloat(),
                                 onValueChange = { viewModel.onWeightChange(it.toInt()) },
                                 valueRange = -maxWeightChange.toFloat()..maxWeightChange.toFloat(),
-                                modifier = Modifier.fillMaxWidth()
+                                modifier = Modifier.fillMaxWidth(),
                             )
                             Text(
                                 "Negative = Regression, Positive = Progression",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.padding(top = Spacing.small)
+                                modifier = Modifier.padding(top = Spacing.small),
                             )
                         }
                     }
@@ -337,7 +345,7 @@ fun ExerciseEditBottomSheet(
                 // Set Mode Toggle
                 SetModeToggle(
                     setMode = setMode,
-                    onModeChange = viewModel::onSetModeChange
+                    onModeChange = viewModel::onSetModeChange,
                 )
 
                 // Per Set Rest Time toggle
@@ -346,24 +354,24 @@ fun ExerciseEditBottomSheet(
                     shape = RoundedCornerShape(12.dp),
                     color = MaterialTheme.colorScheme.surface,
                     border = BorderStroke(1.dp, MaterialTheme.colorScheme.surfaceVariant),
-                    shadowElevation = 2.dp
+                    shadowElevation = 2.dp,
                 ) {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(Spacing.small),
                         horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
+                        verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Text(
                             text = "Per Set Rest Time",
                             style = MaterialTheme.typography.bodyMedium,
                             fontWeight = if (perSetRestTime) FontWeight.Bold else FontWeight.Normal,
-                            color = if (perSetRestTime) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                            color = if (perSetRestTime) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
                         )
                         Switch(
                             checked = perSetRestTime,
-                            onCheckedChange = viewModel::onPerSetRestTimeChange
+                            onCheckedChange = viewModel::onPerSetRestTimeChange,
                         )
                     }
                 }
@@ -374,31 +382,31 @@ fun ExerciseEditBottomSheet(
                     shape = RoundedCornerShape(12.dp),
                     color = MaterialTheme.colorScheme.surface,
                     border = BorderStroke(1.dp, MaterialTheme.colorScheme.surfaceVariant),
-                    shadowElevation = 2.dp
+                    shadowElevation = 2.dp,
                 ) {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(Spacing.small),
                         horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
+                        verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
                                 text = "Stall Detection",
                                 style = MaterialTheme.typography.bodyMedium,
                                 fontWeight = if (stallDetectionEnabled) FontWeight.Bold else FontWeight.Normal,
-                                color = if (stallDetectionEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                                color = if (stallDetectionEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
                             )
                             Text(
                                 text = "Auto-stop set when movement pauses for 5 seconds",
                                 style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
                         Switch(
                             checked = stallDetectionEnabled,
-                            onCheckedChange = viewModel::onStallDetectionEnabledChange
+                            onCheckedChange = viewModel::onStallDetectionEnabledChange,
                         )
                     }
                 }
@@ -409,38 +417,39 @@ fun ExerciseEditBottomSheet(
                     shape = RoundedCornerShape(12.dp),
                     color = MaterialTheme.colorScheme.surface,
                     border = BorderStroke(1.dp, MaterialTheme.colorScheme.surfaceVariant),
-                    shadowElevation = 2.dp
+                    shadowElevation = 2.dp,
                 ) {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(Spacing.small),
                         horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
+                        verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
                                 text = "Rep Count Timing",
                                 style = MaterialTheme.typography.bodyMedium,
                                 fontWeight = if (repCountTiming == RepCountTiming.TOP) FontWeight.Bold else FontWeight.Normal,
-                                color = if (repCountTiming == RepCountTiming.TOP) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                                color = if (repCountTiming == RepCountTiming.TOP) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
                             )
                             Text(
-                                text = if (repCountTiming == RepCountTiming.TOP)
+                                text = if (repCountTiming == RepCountTiming.TOP) {
                                     "Count at top of lift (concentric peak)"
-                                else
-                                    "Count at bottom (eccentric valley)",
+                                } else {
+                                    "Count at bottom (eccentric valley)"
+                                },
                                 style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
                         Switch(
                             checked = repCountTiming == RepCountTiming.TOP,
                             onCheckedChange = { isTop ->
                                 viewModel.onRepCountTimingChange(
-                                    if (isTop) RepCountTiming.TOP else RepCountTiming.BOTTOM
+                                    if (isTop) RepCountTiming.TOP else RepCountTiming.BOTTOM,
                                 )
-                            }
+                            },
                         )
                     }
                 }
@@ -452,34 +461,35 @@ fun ExerciseEditBottomSheet(
                         shape = RoundedCornerShape(12.dp),
                         color = MaterialTheme.colorScheme.surface,
                         border = BorderStroke(1.dp, MaterialTheme.colorScheme.surfaceVariant),
-                        shadowElevation = 2.dp
+                        shadowElevation = 2.dp,
                     ) {
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .padding(Spacing.small),
                             horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
+                            verticalAlignment = Alignment.CenterVertically,
                         ) {
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(
                                     text = "Stop at Top",
                                     style = MaterialTheme.typography.bodyMedium,
                                     fontWeight = if (stopAtTop) FontWeight.Bold else FontWeight.Normal,
-                                    color = if (stopAtTop) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                                    color = if (stopAtTop) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
                                 )
                                 Text(
-                                    text = if (stopAtTop)
+                                    text = if (stopAtTop) {
                                         "Final rep stops at contracted position (top of lift)"
-                                    else
-                                        "Final rep stops at extended position (bottom)",
+                                    } else {
+                                        "Final rep stops at extended position (bottom)"
+                                    },
                                     style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
                             }
                             Switch(
                                 checked = stopAtTop,
-                                onCheckedChange = viewModel::onStopAtTopChange
+                                onCheckedChange = viewModel::onStopAtTopChange,
                             )
                         }
                     }
@@ -500,7 +510,7 @@ fun ExerciseEditBottomSheet(
                     onDurationChange = viewModel::updateDuration,
                     onRestChange = viewModel::updateRestTime,
                     onAddSet = viewModel::addSet,
-                    onDeleteSet = viewModel::deleteSet
+                    onDeleteSet = viewModel::deleteSet,
                 )
 
                 // Single rest time picker
@@ -510,21 +520,21 @@ fun ExerciseEditBottomSheet(
                         shape = RoundedCornerShape(12.dp),
                         color = MaterialTheme.colorScheme.surface,
                         border = BorderStroke(1.dp, MaterialTheme.colorScheme.surfaceVariant),
-                        shadowElevation = 2.dp
+                        shadowElevation = 2.dp,
                     ) {
                         Column(modifier = Modifier.padding(Spacing.small)) {
                             Text(
                                 "Rest Time: ${rest}s",
                                 style = MaterialTheme.typography.titleSmall,
                                 fontWeight = FontWeight.Bold,
-                                modifier = Modifier.padding(bottom = Spacing.extraSmall)
+                                modifier = Modifier.padding(bottom = Spacing.extraSmall),
                             )
                             Slider(
                                 value = rest.toFloat(),
                                 onValueChange = { viewModel.onRestChange(it.toInt()) },
                                 valueRange = 0f..300f,
                                 steps = 59,
-                                modifier = Modifier.fillMaxWidth()
+                                modifier = Modifier.fillMaxWidth(),
                             )
                         }
                     }
@@ -536,19 +546,19 @@ fun ExerciseEditBottomSheet(
             // Bottom actions
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(Spacing.small)
+                horizontalArrangement = Arrangement.spacedBy(Spacing.small),
             ) {
                 TextButton(
                     onClick = dismissSheet,
                     modifier = Modifier
                         .weight(1f)
                         .height(56.dp),
-                    shape = RoundedCornerShape(20.dp)
+                    shape = RoundedCornerShape(20.dp),
                 ) {
                     Text(
                         "Cancel",
                         style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold
+                        fontWeight = FontWeight.Bold,
                     )
                 }
                 Button(
@@ -559,18 +569,18 @@ fun ExerciseEditBottomSheet(
                     enabled = sets.isNotEmpty(),
                     colors = ButtonDefaults.buttonColors(
                         containerColor = MaterialTheme.colorScheme.primary,
-                        contentColor = MaterialTheme.colorScheme.onPrimary
+                        contentColor = MaterialTheme.colorScheme.onPrimary,
                     ),
                     shape = RoundedCornerShape(20.dp),
                     elevation = ButtonDefaults.buttonElevation(
                         defaultElevation = 4.dp,
-                        pressedElevation = 2.dp
-                    )
+                        pressedElevation = 2.dp,
+                    ),
                 ) {
                     Text(
                         buttonText,
                         style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold
+                        fontWeight = FontWeight.Bold,
                     )
                 }
             }
@@ -581,34 +591,34 @@ fun ExerciseEditBottomSheet(
 @Composable
 fun SetModeToggle(
     setMode: SetMode,
-    onModeChange: (SetMode) -> Unit
+    onModeChange: (SetMode) -> Unit,
 ) {
     Column(
         modifier = Modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(Spacing.small)
+        verticalArrangement = Arrangement.spacedBy(Spacing.small),
     ) {
         Text(
             "Set Mode",
             style = MaterialTheme.typography.titleSmall,
             fontWeight = FontWeight.Bold,
-            modifier = Modifier.padding(bottom = Spacing.extraSmall)
+            modifier = Modifier.padding(bottom = Spacing.extraSmall),
         )
 
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             FilterChip(
                 selected = setMode == SetMode.REPS,
                 onClick = { onModeChange(SetMode.REPS) },
-                label = { Text("Reps") },
-                modifier = Modifier.weight(1f)
+                label = { Text(stringResource(Res.string.label_reps)) },
+                modifier = Modifier.weight(1f),
             )
             FilterChip(
                 selected = setMode == SetMode.DURATION,
                 onClick = { onModeChange(SetMode.DURATION) },
-                label = { Text("Duration") },
-                modifier = Modifier.weight(1f)
+                label = { Text(stringResource(Res.string.label_duration)) },
+                modifier = Modifier.weight(1f),
             )
         }
     }
@@ -629,17 +639,17 @@ fun SetsConfiguration(
     onDurationChange: (String, Int) -> Unit,
     onRestChange: (String, Int) -> Unit,
     onAddSet: () -> Unit,
-    onDeleteSet: (Int) -> Unit
+    onDeleteSet: (Int) -> Unit,
 ) {
     Column(
         modifier = Modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(Spacing.small)
+        verticalArrangement = Arrangement.spacedBy(Spacing.small),
     ) {
         Text(
             "Sets & ${if (setMode == SetMode.REPS) "Reps" else "Duration"}",
             style = MaterialTheme.typography.titleSmall,
             fontWeight = FontWeight.Bold,
-            modifier = Modifier.padding(bottom = Spacing.extraSmall)
+            modifier = Modifier.padding(bottom = Spacing.extraSmall),
         )
 
         sets.forEachIndexed { index, setConfig ->
@@ -658,7 +668,7 @@ fun SetsConfiguration(
                     onDurationChange = { newDuration -> onDurationChange(setConfig.id, newDuration) },
                     onRestChange = { newRest -> onRestChange(setConfig.id, newRest) },
                     onDelete = { onDeleteSet(index) },
-                    perSetRestTime = perSetRestTime
+                    perSetRestTime = perSetRestTime,
                 )
             }
         }
@@ -669,18 +679,18 @@ fun SetsConfiguration(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(56.dp),
-            shape = RoundedCornerShape(20.dp)
+            shape = RoundedCornerShape(20.dp),
         ) {
             Icon(
                 Icons.Default.Add,
-                contentDescription = "Add set",
-                modifier = Modifier.size(24.dp)
+                contentDescription = stringResource(Res.string.cd_add_set),
+                modifier = Modifier.size(24.dp),
             )
             Spacer(modifier = Modifier.width(Spacing.small))
             Text(
                 "Add Set",
                 style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Bold
+                fontWeight = FontWeight.Bold,
             )
         }
     }
@@ -701,39 +711,39 @@ fun SetRow(
     onDurationChange: (Int) -> Unit,
     onRestChange: (Int) -> Unit,
     onDelete: () -> Unit,
-    perSetRestTime: Boolean = false
+    perSetRestTime: Boolean = false,
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest),
         shape = RoundedCornerShape(20.dp),
         elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
-        border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f))
+        border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)),
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(Spacing.medium)
+                .padding(Spacing.medium),
         ) {
             // Set label and Delete button row
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+                verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
                     "Set ${setConfig.setNumber}",
                     style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.Bold
+                    fontWeight = FontWeight.Bold,
                 )
                 IconButton(
                     onClick = onDelete,
-                    enabled = canDelete
+                    enabled = canDelete,
                 ) {
                     Icon(
                         Icons.Default.Delete,
-                        contentDescription = "Delete set",
-                        tint = if (canDelete) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.outlineVariant
+                        contentDescription = stringResource(Res.string.cd_delete_set),
+                        tint = if (canDelete) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.outlineVariant,
                     )
                 }
             }
@@ -745,19 +755,19 @@ fun SetRow(
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     Switch(
                         checked = setConfig.reps == null,
                         onCheckedChange = { isAMRAP ->
                             onRepsChange(if (isAMRAP) null else 10)
-                        }
+                        },
                     )
                     Text(
                         text = "AMRAP (As Many Reps As Possible)",
                         style = MaterialTheme.typography.bodyMedium,
                         fontWeight = if (setConfig.reps == null) FontWeight.Bold else FontWeight.Normal,
-                        color = if (setConfig.reps == null) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                        color = if (setConfig.reps == null) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
                     )
                 }
                 Spacer(modifier = Modifier.height(Spacing.small))
@@ -766,7 +776,7 @@ fun SetRow(
             // Reps/Duration and Weight side-by-side
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(Spacing.small)
+                horizontalArrangement = Arrangement.spacedBy(Spacing.small),
             ) {
                 // Reps or Duration picker
                 Box(modifier = Modifier.weight(1f)) {
@@ -778,21 +788,21 @@ fun SetRow(
                                 range = 1..50,
                                 label = if (setConfig.setNumber == 1) "Reps" else "",
                                 suffix = "reps",
-                                modifier = Modifier.fillMaxWidth()
+                                modifier = Modifier.fillMaxWidth(),
                             )
                         } else {
                             // AMRAP label
                             Column(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalAlignment = Alignment.CenterHorizontally,
-                                verticalArrangement = Arrangement.Center
+                                verticalArrangement = Arrangement.Center,
                             ) {
                                 if (setConfig.setNumber == 1) {
                                     Text(
                                         "Target",
                                         style = MaterialTheme.typography.labelMedium,
                                         fontWeight = FontWeight.Bold,
-                                        modifier = Modifier.padding(bottom = 8.dp)
+                                        modifier = Modifier.padding(bottom = 8.dp),
                                     )
                                 }
                                 Spacer(modifier = Modifier.height(if (setConfig.setNumber == 1) 60.dp else 80.dp))
@@ -800,7 +810,7 @@ fun SetRow(
                                     "AMRAP",
                                     style = MaterialTheme.typography.titleMedium,
                                     color = MaterialTheme.colorScheme.primary,
-                                    fontWeight = FontWeight.Bold
+                                    fontWeight = FontWeight.Bold,
                                 )
                             }
                         }
@@ -811,7 +821,7 @@ fun SetRow(
                             range = 10..300,
                             label = if (setConfig.setNumber == 1) "Duration" else "",
                             suffix = "sec",
-                            modifier = Modifier.fillMaxWidth()
+                            modifier = Modifier.fillMaxWidth(),
                         )
                     }
                 }
@@ -823,14 +833,14 @@ fun SetRow(
                             Column(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalAlignment = Alignment.CenterHorizontally,
-                                verticalArrangement = Arrangement.Center
+                                verticalArrangement = Arrangement.Center,
                             ) {
                                 if (setConfig.setNumber == 1) {
                                     Text(
                                         "Force per Cable",
                                         style = MaterialTheme.typography.labelMedium,
                                         fontWeight = FontWeight.Bold,
-                                        modifier = Modifier.padding(bottom = 8.dp)
+                                        modifier = Modifier.padding(bottom = 8.dp),
                                     )
                                 }
                                 Spacer(modifier = Modifier.height(if (setConfig.setNumber == 1) 60.dp else 80.dp))
@@ -838,10 +848,11 @@ fun SetRow(
                                     "Adaptive",
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = MaterialTheme.colorScheme.primary,
-                                    fontWeight = FontWeight.Bold
+                                    fontWeight = FontWeight.Bold,
                                 )
                             }
                         }
+
                         exerciseType == ExerciseType.STANDARD -> {
                             CompactNumberPicker(
                                 value = setConfig.weightPerCable,
@@ -850,28 +861,29 @@ fun SetRow(
                                 step = weightStep,
                                 label = if (setConfig.setNumber == 1) "Weight per Cable" else "",
                                 suffix = weightSuffix,
-                                modifier = Modifier.fillMaxWidth()
+                                modifier = Modifier.fillMaxWidth(),
                             )
                         }
+
                         else -> {
                             Column(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalAlignment = Alignment.CenterHorizontally,
-                                verticalArrangement = Arrangement.Center
+                                verticalArrangement = Arrangement.Center,
                             ) {
                                 if (setConfig.setNumber == 1) {
                                     Text(
                                         "Weight",
                                         style = MaterialTheme.typography.labelMedium,
                                         fontWeight = FontWeight.Bold,
-                                        modifier = Modifier.padding(bottom = 8.dp)
+                                        modifier = Modifier.padding(bottom = 8.dp),
                                     )
                                 }
                                 Spacer(modifier = Modifier.height(if (setConfig.setNumber == 1) 60.dp else 80.dp))
                                 Text(
                                     "Bodyweight",
                                     style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
                             }
                         }
@@ -887,14 +899,14 @@ fun SetRow(
                     "Rest Time: ${setConfig.restSeconds}s",
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.Bold,
-                    modifier = Modifier.padding(bottom = Spacing.extraSmall)
+                    modifier = Modifier.padding(bottom = Spacing.extraSmall),
                 )
                 Slider(
                     value = setConfig.restSeconds.toFloat(),
                     onValueChange = { onRestChange(it.toInt()) },
                     valueRange = 0f..300f,
                     steps = 59,
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth(),
                 )
             }
         }
@@ -904,7 +916,7 @@ fun SetRow(
 @Composable
 fun ModeSelector(
     selectedMode: WorkoutMode,
-    onModeChange: (WorkoutMode) -> Unit
+    onModeChange: (WorkoutMode) -> Unit,
 ) {
     var expanded by remember { mutableStateOf(false) }
 
@@ -913,7 +925,7 @@ fun ModeSelector(
         WorkoutMode.Pump,
         WorkoutMode.TUT,
         WorkoutMode.EccentricOnly,
-        WorkoutMode.Echo(EchoLevel.HARDER)
+        WorkoutMode.Echo(EchoLevel.HARDER),
     )
 
     Surface(
@@ -921,14 +933,14 @@ fun ModeSelector(
         shape = RoundedCornerShape(20.dp),
         color = MaterialTheme.colorScheme.surfaceContainerHighest,
         border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)),
-        shadowElevation = 8.dp
+        shadowElevation = 8.dp,
     ) {
         Column(modifier = Modifier.padding(Spacing.medium)) {
             Text(
                 "Workout Mode",
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
-                modifier = Modifier.padding(bottom = Spacing.small)
+                modifier = Modifier.padding(bottom = Spacing.small),
             )
 
             // Use Box with DropdownMenu for multiplatform compatibility
@@ -942,7 +954,7 @@ fun ModeSelector(
                         IconButton(onClick = { expanded = !expanded }) {
                             Icon(
                                 imageVector = if (expanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
-                                contentDescription = if (expanded) "Collapse" else "Expand"
+                                contentDescription = if (expanded) "Collapse" else "Expand",
                             )
                         }
                     },
@@ -955,13 +967,13 @@ fun ModeSelector(
                                     }
                                 }
                             }
-                        }
+                        },
                 )
 
                 DropdownMenu(
                     expanded = expanded,
                     onDismissRequest = { expanded = false },
-                    modifier = Modifier.fillMaxWidth(0.9f)
+                    modifier = Modifier.fillMaxWidth(0.9f),
                 ) {
                     allModes.forEach { mode ->
                         DropdownMenuItem(
@@ -969,7 +981,7 @@ fun ModeSelector(
                             onClick = {
                                 onModeChange(mode)
                                 expanded = false
-                            }
+                            },
                         )
                     }
                 }
@@ -982,31 +994,31 @@ fun ModeSelector(
 @Composable
 fun EccentricLoadSelector(
     eccentricLoad: EccentricLoad,
-    onLoadChange: (EccentricLoad) -> Unit
+    onLoadChange: (EccentricLoad) -> Unit,
 ) {
     var expanded by remember { mutableStateOf(false) }
 
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest),
-        border = BorderStroke(2.dp, MaterialTheme.colorScheme.outlineVariant)
+        border = BorderStroke(2.dp, MaterialTheme.colorScheme.outlineVariant),
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(Spacing.medium)
+                .padding(Spacing.medium),
         ) {
             Text(
                 "Eccentric Load",
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurface
+                color = MaterialTheme.colorScheme.onSurface,
             )
             Spacer(modifier = Modifier.height(Spacing.small))
 
             ExposedDropdownMenuBox(
                 expanded = expanded,
-                onExpandedChange = { expanded = it }
+                onExpandedChange = { expanded = it },
             ) {
                 OutlinedTextField(
                     value = eccentricLoad.displayName,
@@ -1014,13 +1026,13 @@ fun EccentricLoadSelector(
                     readOnly = true,
                     trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
                     modifier = Modifier
-                        .menuAnchor()
+                        .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable)
                         .fillMaxWidth(),
-                    colors = ExposedDropdownMenuDefaults.outlinedTextFieldColors()
+                    colors = ExposedDropdownMenuDefaults.outlinedTextFieldColors(),
                 )
                 ExposedDropdownMenu(
                     expanded = expanded,
-                    onDismissRequest = { expanded = false }
+                    onDismissRequest = { expanded = false },
                 ) {
                     EccentricLoad.entries.forEach { load ->
                         DropdownMenuItem(
@@ -1029,7 +1041,7 @@ fun EccentricLoadSelector(
                                 onLoadChange(load)
                                 expanded = false
                             },
-                            contentPadding = ExposedDropdownMenuDefaults.ItemContentPadding
+                            contentPadding = ExposedDropdownMenuDefaults.ItemContentPadding,
                         )
                     }
                 }
@@ -1040,7 +1052,7 @@ fun EccentricLoadSelector(
             Text(
                 "Load percentage applied during eccentric (lowering) phase",
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
     }
@@ -1050,35 +1062,35 @@ fun EccentricLoadSelector(
 @Composable
 fun EchoLevelSelector(
     level: EchoLevel,
-    onLevelChange: (EchoLevel) -> Unit
+    onLevelChange: (EchoLevel) -> Unit,
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest),
-        border = BorderStroke(2.dp, MaterialTheme.colorScheme.outlineVariant)
+        border = BorderStroke(2.dp, MaterialTheme.colorScheme.outlineVariant),
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(Spacing.medium)
+                .padding(Spacing.medium),
         ) {
             Text(
                 "Echo Level",
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurface
+                color = MaterialTheme.colorScheme.onSurface,
             )
             Spacer(modifier = Modifier.height(Spacing.small))
 
             SingleChoiceSegmentedButtonRow(
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier.fillMaxWidth(),
             ) {
                 val levels = EchoLevel.entries
                 levels.forEachIndexed { index, echoLevel ->
                     SegmentedButton(
                         shape = SegmentedButtonDefaults.itemShape(index = index, count = levels.size),
                         onClick = { onLevelChange(echoLevel) },
-                        selected = level == echoLevel
+                        selected = level == echoLevel,
                     ) {
                         Text(echoLevel.displayName, maxLines = 1)
                     }
@@ -1100,25 +1112,25 @@ fun WeightConfigurationCard(
     weightUnit: WeightUnit,
     formatWeight: (Float, WeightUnit) -> String,
     onUsePercentOfPRChange: (Boolean) -> Unit,
-    onWeightPercentOfPRChange: (Int) -> Unit
+    onWeightPercentOfPRChange: (Int) -> Unit,
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest),
         shape = RoundedCornerShape(20.dp),
         elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
-        border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f))
+        border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)),
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(Spacing.medium)
+                .padding(Spacing.medium),
         ) {
             Text(
                 "Weight Configuration",
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurface
+                color = MaterialTheme.colorScheme.onSurface,
             )
 
             Spacer(modifier = Modifier.height(Spacing.small))
@@ -1127,14 +1139,14 @@ fun WeightConfigurationCard(
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+                verticalAlignment = Alignment.CenterVertically,
             ) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = "Use % of PR",
                         style = MaterialTheme.typography.bodyMedium,
                         fontWeight = if (usePercentOfPR) FontWeight.Bold else FontWeight.Normal,
-                        color = if (usePercentOfPR) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                        color = if (usePercentOfPR) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
                     )
                     Text(
                         text = if (currentExercisePR != null) {
@@ -1143,13 +1155,13 @@ fun WeightConfigurationCard(
                             "No PR set for this exercise"
                         },
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
                 Switch(
                     checked = usePercentOfPR,
                     onCheckedChange = onUsePercentOfPRChange,
-                    enabled = currentExercisePR != null
+                    enabled = currentExercisePR != null,
                 )
             }
 
@@ -1165,19 +1177,19 @@ fun WeightConfigurationCard(
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(
                         text = "$weightPercentOfPR% of PR",
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.primary
+                        color = MaterialTheme.colorScheme.primary,
                     )
                     Text(
                         text = "= ${formatWeight(resolvedWeight, weightUnit)}/cable",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Medium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
 
@@ -1189,7 +1201,7 @@ fun WeightConfigurationCard(
                     onValueChange = { onWeightPercentOfPRChange(it.toInt()) },
                     valueRange = 50f..120f,
                     steps = 13, // (120-50)/5 - 1 = 13 steps for 5% increments
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth(),
                 )
 
                 Spacer(modifier = Modifier.height(Spacing.small))
@@ -1197,14 +1209,14 @@ fun WeightConfigurationCard(
                 // Common preset buttons
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(Spacing.small)
+                    horizontalArrangement = Arrangement.spacedBy(Spacing.small),
                 ) {
                     listOf(70, 80, 90, 100).forEach { percent ->
                         FilterChip(
                             selected = weightPercentOfPR == percent,
                             onClick = { onWeightPercentOfPRChange(percent) },
-                            label = { Text("$percent%") },
-                            modifier = Modifier.weight(1f)
+                            label = { Text(stringResource(Res.string.percent_label, percent)) },
+                            modifier = Modifier.weight(1f),
                         )
                     }
                 }
@@ -1216,23 +1228,23 @@ fun WeightConfigurationCard(
                 Surface(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(8.dp),
-                    color = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.5f)
+                    color = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.5f),
                 ) {
                     Row(
                         modifier = Modifier.padding(Spacing.small),
                         horizontalArrangement = Arrangement.spacedBy(Spacing.small),
-                        verticalAlignment = Alignment.CenterVertically
+                        verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Icon(
                             Icons.Default.Star,
                             contentDescription = null,
                             tint = MaterialTheme.colorScheme.tertiary,
-                            modifier = Modifier.size(16.dp)
+                            modifier = Modifier.size(16.dp),
                         )
                         Text(
                             text = "Complete a workout to set your PR and enable percentage scaling",
                             style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onTertiaryContainer
+                            color = MaterialTheme.colorScheme.onTertiaryContainer,
                         )
                     }
                 }

@@ -18,7 +18,7 @@ class MonitorDataProcessorTest {
     private fun createProcessor(): MonitorDataProcessor = MonitorDataProcessor(
         onDeloadOccurred = { deloadCallCount++ },
         onRomViolation = { romViolations.add(it) },
-        timeProvider = { fakeTime }
+        timeProvider = { fakeTime },
     )
 
     /**
@@ -33,7 +33,7 @@ class MonitorDataProcessorTest {
         ticks: Int = 0,
         status: Int = 0,
         firmwareVelA: Int = 0,
-        firmwareVelB: Int = 0
+        firmwareVelB: Int = 0,
     ) = MonitorPacket(ticks, posA, posB, loadA, loadB, status, firmwareVelA, firmwareVelB)
 
     /**
@@ -118,7 +118,7 @@ class MonitorDataProcessorTest {
         fakeTime = 1000L
 
         val result = processor.process(
-            packet(posA = BleConstants.Thresholds.MIN_POSITION.toFloat(), posB = 10.0f)
+            packet(posA = BleConstants.Thresholds.MIN_POSITION.toFloat(), posB = 10.0f),
         )
         assertNotNull(result)
         assertEquals(BleConstants.Thresholds.MIN_POSITION.toFloat(), result.positionA)
@@ -130,7 +130,7 @@ class MonitorDataProcessorTest {
         fakeTime = 1000L
 
         val result = processor.process(
-            packet(posA = BleConstants.Thresholds.MAX_POSITION.toFloat(), posB = 10.0f)
+            packet(posA = BleConstants.Thresholds.MAX_POSITION.toFloat(), posB = 10.0f),
         )
         assertNotNull(result)
         assertEquals(BleConstants.Thresholds.MAX_POSITION.toFloat(), result.positionA)
@@ -291,14 +291,18 @@ class MonitorDataProcessorTest {
         // and seeds EMA directly with firmware velocity. With firmware velocity the very
         // first call is the seed point (unlike client-side delta which required 2 samples).
         val result = processor.process(
-            packet(posA = 100.0f, posB = 100.0f, firmwareVelA = 100)
+            packet(posA = 100.0f, posB = 100.0f, firmwareVelA = 100),
         )
         assertNotNull(result)
 
         // Velocity should be exactly the raw firmware value (seeded, not smoothed toward 0)
-        val expectedVelocity = 10.0  // firmwareVelA=100 / 10.0 = 10 mm/s
-        assertEquals(expectedVelocity, result.velocityA, 0.01,
-            "First velocity should seed EMA directly (no cold start lag)")
+        val expectedVelocity = 10.0 // firmwareVelA=100 / 10.0 = 10 mm/s
+        assertEquals(
+            expectedVelocity,
+            result.velocityA,
+            0.01,
+            "First velocity should seed EMA directly (no cold start lag)",
+        )
     }
 
     @Test
@@ -323,8 +327,10 @@ class MonitorDataProcessorTest {
 
         // After 20 samples at constant firmware velocity, EMA should be very close to 100 mm/s
         val expectedVelocity = 100.0
-        assertTrue(abs(lastVelocity - expectedVelocity) < 5.0,
-            "After 20 samples at constant velocity, EMA should converge. Got $lastVelocity, expected ~$expectedVelocity")
+        assertTrue(
+            abs(lastVelocity - expectedVelocity) < 5.0,
+            "After 20 samples at constant velocity, EMA should converge. Got $lastVelocity, expected ~$expectedVelocity",
+        )
     }
 
     @Test
@@ -352,8 +358,12 @@ class MonitorDataProcessorTest {
         val m4 = processor.process(packet(posA = 200.0f, posB = 100.0f))
         assertNotNull(m4)
         // Velocity should equal the value before filter (skip happened)
-        assertEquals(velocityBeforeFilter, m4.velocityA, 0.01,
-            "Velocity should be preserved (skipped) after filtered sample")
+        assertEquals(
+            velocityBeforeFilter,
+            m4.velocityA,
+            0.01,
+            "Velocity should be preserved (skipped) after filtered sample",
+        )
     }
 
     @Test
@@ -363,24 +373,32 @@ class MonitorDataProcessorTest {
 
         // First sample seeds EMA with firmware velocity 200 raw = 20.0 mm/s
         val result = processor.process(
-            packet(posA = 100.0f, posB = 100.0f, firmwareVelA = 200)
+            packet(posA = 100.0f, posB = 100.0f, firmwareVelA = 200),
         )
         assertNotNull(result)
 
         // Firmware velocity is converted: raw / 10.0 = mm/s
-        assertEquals(20.0, result.velocityA, 0.01,
-            "Velocity should come from firmware: 200 raw / 10.0 = 20 mm/s")
+        assertEquals(
+            20.0,
+            result.velocityA,
+            0.01,
+            "Velocity should come from firmware: 200 raw / 10.0 = 20 mm/s",
+        )
 
         fakeTime = 1500L
         // Second sample with different firmware velocity: EMA smooths toward it
         val result2 = processor.process(
-            packet(posA = 110.0f, posB = 100.0f, firmwareVelA = 400)
+            packet(posA = 110.0f, posB = 100.0f, firmwareVelA = 400),
         )
         assertNotNull(result2)
 
         // EMA: 0.3 * 40.0 + 0.7 * 20.0 = 12.0 + 14.0 = 26.0
-        assertEquals(26.0, result2.velocityA, 0.01,
-            "Second sample should EMA-smooth toward new firmware velocity")
+        assertEquals(
+            26.0,
+            result2.velocityA,
+            0.01,
+            "Second sample should EMA-smooth toward new firmware velocity",
+        )
     }
 
     @Test
@@ -395,8 +413,12 @@ class MonitorDataProcessorTest {
         val result = processor.process(packet(posA = 110.0f, posB = 100.0f))
         assertNotNull(result)
 
-        assertEquals(0.0, result.velocityA, 0.01,
-            "Zero time delta should produce zero velocity")
+        assertEquals(
+            0.0,
+            result.velocityA,
+            0.01,
+            "Zero time delta should produce zero velocity",
+        )
     }
 
     // ================================================================
@@ -433,7 +455,7 @@ class MonitorDataProcessorTest {
         assertEquals(1, deloadCallCount)
 
         // Second deload within 2 seconds
-        fakeTime = 6500L  // 1500ms later (< 2000ms debounce)
+        fakeTime = 6500L // 1500ms later (< 2000ms debounce)
         processor.process(packet(status = SampleStatus.DELOAD_OCCURRED))
         assertEquals(1, deloadCallCount, "Second deload within 2s should be debounced")
     }
@@ -448,7 +470,7 @@ class MonitorDataProcessorTest {
         assertEquals(1, deloadCallCount)
 
         // After 2-second cooldown
-        fakeTime = 7001L  // 2001ms later (> 2000ms debounce)
+        fakeTime = 7001L // 2001ms later (> 2000ms debounce)
         processor.process(packet(status = SampleStatus.DELOAD_OCCURRED))
         assertEquals(2, deloadCallCount, "Deload should fire again after 2s cooldown")
     }
@@ -503,7 +525,7 @@ class MonitorDataProcessorTest {
 
         // Build up velocity EMA with high firmware velocity (500 mm/s)
         val preReset = processor.process(
-            packet(posA = 0.0f, posB = 0.0f, firmwareVelA = 5000)
+            packet(posA = 0.0f, posB = 0.0f, firmwareVelA = 5000),
         )
         assertNotNull(preReset)
         assertEquals(500.0, preReset.velocityA, 0.01, "Pre-reset EMA should be seeded at 500")
@@ -514,12 +536,16 @@ class MonitorDataProcessorTest {
         // After reset, first sample re-seeds EMA fresh with firmware velocity
         fakeTime = 3000L
         val result = processor.process(
-            packet(posA = 200.0f, posB = 0.0f, firmwareVelA = 100)
+            packet(posA = 200.0f, posB = 0.0f, firmwareVelA = 100),
         )
         assertNotNull(result)
         // Velocity = firmwareVelA=100 / 10.0 = 10 mm/s (seeded fresh, not contaminated by pre-reset 500)
-        assertEquals(10.0, result.velocityA, 0.01,
-            "After reset, EMA should be re-seeded with first raw firmware velocity")
+        assertEquals(
+            10.0,
+            result.velocityA,
+            0.01,
+            "After reset, EMA should be re-seeded with first raw firmware velocity",
+        )
     }
 
     @Test

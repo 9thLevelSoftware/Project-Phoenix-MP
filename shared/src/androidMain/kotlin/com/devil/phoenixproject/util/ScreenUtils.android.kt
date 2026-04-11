@@ -6,7 +6,7 @@ import java.lang.ref.WeakReference
 
 /**
  * Holder for the current Activity reference.
- * Call [registerActivity] from MainActivity.onCreate().
+ * Managed automatically via ActivityLifecycleCallbacks registered in VitruvianApp.
  */
 object ActivityHolder {
     private var activityRef: WeakReference<Activity>? = null
@@ -16,6 +16,15 @@ object ActivityHolder {
     }
 
     fun getActivity(): Activity? = activityRef?.get()
+
+    /**
+     * Clear the held activity reference.
+     * Called from ActivityLifecycleCallbacks.onActivityDestroyed to prevent
+     * stale references across configuration changes.
+     */
+    fun clear() {
+        activityRef = null
+    }
 }
 
 actual fun setKeepScreenOn(enabled: Boolean) {

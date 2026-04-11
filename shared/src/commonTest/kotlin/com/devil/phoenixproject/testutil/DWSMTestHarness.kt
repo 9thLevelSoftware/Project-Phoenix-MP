@@ -1,15 +1,21 @@
 package com.devil.phoenixproject.testutil
 
+import com.devil.phoenixproject.data.repository.ExerciseSignatureRepository
+import com.devil.phoenixproject.domain.detection.ExerciseClassifier
+import com.devil.phoenixproject.domain.detection.ExerciseSignature
+import com.devil.phoenixproject.domain.detection.SignatureExtractor
 import com.devil.phoenixproject.domain.model.HapticEvent
 import com.devil.phoenixproject.domain.usecase.RepCounterFromMachine
 import com.devil.phoenixproject.domain.usecase.ResolveRoutineWeightsUseCase
 import com.devil.phoenixproject.presentation.manager.BleConnectionManager
 import com.devil.phoenixproject.presentation.manager.DefaultWorkoutSessionManager
+import com.devil.phoenixproject.presentation.manager.ExerciseDetectionManager
 import com.devil.phoenixproject.presentation.manager.GamificationManager
 import com.devil.phoenixproject.presentation.manager.SettingsManager
+import com.devil.phoenixproject.presentation.manager.WorkoutServiceController
+import com.devil.phoenixproject.presentation.manager.WorkoutServiceSnapshot
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.test.TestScope
 
@@ -26,6 +32,24 @@ import kotlinx.coroutines.test.TestScope
  * advanceTimeBy() properly control virtual time for DWSM's coroutines, while [cleanup] can cancel
  * all DWSM coroutines without affecting the parent TestScope.
  */
+class FakeWorkoutServiceController : WorkoutServiceController {
+    val snapshots = mutableListOf<WorkoutServiceSnapshot>()
+    var stopCount = 0
+
+    override fun showOrUpdate(snapshot: WorkoutServiceSnapshot) {
+        snapshots += snapshot
+    }
+
+    override fun stop() {
+        stopCount++
+    }
+
+    fun reset() {
+        snapshots.clear()
+        stopCount = 0
+    }
+}
+
 class DWSMTestHarness(val testScope: TestScope) {
     val fakeBleRepo = FakeBleRepository()
     val fakeWorkoutRepo = FakeWorkoutRepository()
@@ -35,6 +59,9 @@ class DWSMTestHarness(val testScope: TestScope) {
     val fakeGamificationRepo = FakeGamificationRepository()
     val fakeCompletedSetRepo = FakeCompletedSetRepository()
     val fakeTrainingCycleRepo = FakeTrainingCycleRepository()
+    val fakeRepMetricRepo = FakeRepMetricRepository()
+    val fakeBiomechanicsRepo = FakeBiomechanicsRepository()
+    val fakeWorkoutServiceController = FakeWorkoutServiceController()
 
     val repCounter = RepCounterFromMachine()
     val resolveWeightsUseCase = ResolveRoutineWeightsUseCase(fakePRRepo)
@@ -46,9 +73,27 @@ class DWSMTestHarness(val testScope: TestScope) {
 
     val settingsManager = SettingsManager(fakePrefsManager, fakeBleRepo, dwsmScope)
     val gamificationManager = GamificationManager(
-        fakeGamificationRepo, fakePRRepo, fakeExerciseRepo,
-        MutableSharedFlow<HapticEvent>(extraBufferCapacity = 10), dwsmScope,
-        settingsManager.gamificationEnabled
+        fakeGamificationRepo,
+        fakePRRepo,
+        fakeExerciseRepo,
+        MutableSharedFlow<HapticEvent>(extraBufferCapacity = 10),
+        dwsmScope,
+        settingsManager.gamificationEnabled,
+    )
+
+    private val fakeSignatureRepo = object : ExerciseSignatureRepository {
+        override suspend fun getSignaturesByExercise(exerciseId: String): List<ExerciseSignature> = emptyList()
+        override suspend fun getAllSignaturesAsMap(): Map<String, ExerciseSignature> = emptyMap()
+        override suspend fun saveSignature(exerciseId: String, signature: ExerciseSignature) {}
+        override suspend fun updateSignature(id: Long, signature: ExerciseSignature) {}
+        override suspend fun deleteSignaturesByExercise(exerciseId: String) {}
+    }
+
+    val detectionManager = ExerciseDetectionManager(
+        signatureExtractor = SignatureExtractor(),
+        exerciseClassifier = ExerciseClassifier(),
+        signatureRepository = fakeSignatureRepo,
+        exerciseRepository = fakeExerciseRepo,
     )
 
     val dwsm = DefaultWorkoutSessionManager(
@@ -62,14 +107,24 @@ class DWSMTestHarness(val testScope: TestScope) {
         trainingCycleRepository = fakeTrainingCycleRepo,
         completedSetRepository = fakeCompletedSetRepo,
         syncTriggerManager = null,
+        repMetricRepository = fakeRepMetricRepo,
+        biomechanicsRepository = fakeBiomechanicsRepo,
         resolveWeightsUseCase = resolveWeightsUseCase,
         settingsManager = settingsManager,
-        scope = dwsmScope
+        detectionManager = detectionManager,
+        userProfileRepository = FakeUserProfileRepository(),
+        workoutServiceController = fakeWorkoutServiceController,
+        scope = dwsmScope,
+        elapsedRealtimeProvider = { testScope.testScheduler.currentTime },
     )
 
     // BleConnectionManager receives errors via coordinator.bleErrorEvents (no circular dependency)
     val bleConnectionManager = BleConnectionManager(
-        fakeBleRepo, settingsManager, dwsm, dwsm.coordinator.bleErrorEvents, dwsmScope
+        fakeBleRepo,
+        settingsManager,
+        dwsm,
+        dwsm.coordinator.bleErrorEvents,
+        dwsmScope,
     )
 
     /** Convenience accessor for the coordinator (shared state bus) */
@@ -86,6 +141,7 @@ class DWSMTestHarness(val testScope: TestScope) {
      * Call this at the end of each test after assertions are complete.
      */
     fun cleanup() {
+        dwsm.cleanup()
         dwsmJob.cancel()
     }
 }

@@ -1,7 +1,7 @@
 package com.devil.phoenixproject.testutil
 
-import com.devil.phoenixproject.data.repository.UserProfile
 import com.devil.phoenixproject.data.repository.SubscriptionStatus
+import com.devil.phoenixproject.data.repository.UserProfile
 import com.devil.phoenixproject.data.repository.UserProfileRepository
 import com.devil.phoenixproject.domain.model.currentTimeMillis
 import com.devil.phoenixproject.domain.model.generateUUID
@@ -43,7 +43,7 @@ class FakeUserProfileRepository : UserProfileRepository {
             name = name,
             colorIndex = colorIndex,
             createdAt = createdAt,
-            isActive = false
+            isActive = false,
         )
         profiles[id] = profile
         updateFlows()
@@ -90,7 +90,7 @@ class FakeUserProfileRepository : UserProfileRepository {
                 name = "Default",
                 colorIndex = 0,
                 createdAt = currentTimeMillis(),
-                isActive = true
+                isActive = true,
             )
             profiles["default"] = defaultProfile
         }
@@ -101,7 +101,7 @@ class FakeUserProfileRepository : UserProfileRepository {
         profiles[profileId]?.let { profile ->
             profiles[profileId] = profile.copy(
                 supabaseUserId = supabaseUserId,
-                lastAuthAt = currentTimeMillis()
+                lastAuthAt = currentTimeMillis(),
             )
             updateFlows()
         }
@@ -111,14 +111,14 @@ class FakeUserProfileRepository : UserProfileRepository {
         profiles[profileId]?.let { profile ->
             profiles[profileId] = profile.copy(
                 subscriptionStatus = status,
-                subscriptionExpiresAt = expiresAt
+                subscriptionExpiresAt = expiresAt,
             )
             updateFlows()
         }
     }
 
-    override suspend fun getProfileBySupabaseId(supabaseUserId: String): UserProfile? {
-        return profiles.values.firstOrNull { it.supabaseUserId == supabaseUserId }
+    override suspend fun getProfileBySupabaseId(supabaseUserId: String): UserProfile? = profiles.values.firstOrNull {
+        it.supabaseUserId == supabaseUserId
     }
 
     override fun getActiveProfileSubscriptionStatus(): Flow<SubscriptionStatus> {

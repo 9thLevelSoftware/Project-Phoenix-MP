@@ -3,6 +3,7 @@ package com.devil.phoenixproject.presentation.screen
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -16,27 +17,30 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.devil.phoenixproject.data.repository.ExerciseRepository
+import com.devil.phoenixproject.data.repository.UserProfileRepository
+import com.devil.phoenixproject.domain.model.PersonalRecord
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.domain.model.WorkoutSession
-import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
-import com.devil.phoenixproject.ui.theme.Spacing
 import com.devil.phoenixproject.presentation.components.*
-import com.devil.phoenixproject.util.CsvExporter
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
-import org.koin.compose.koinInject
-
-import com.devil.phoenixproject.util.KmpUtils
-import com.devil.phoenixproject.data.repository.ExerciseRepository
-import com.devil.phoenixproject.domain.model.PersonalRecord
-import androidx.compose.foundation.lazy.items
 import com.devil.phoenixproject.presentation.util.LocalWindowSizeClass
 import com.devil.phoenixproject.presentation.util.WindowWidthSizeClass
+import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
+import com.devil.phoenixproject.ui.theme.Spacing
+import com.devil.phoenixproject.util.CsvExporter
+import com.devil.phoenixproject.util.CsvImportResult
+import com.devil.phoenixproject.util.CsvImporter
+import com.devil.phoenixproject.util.KmpUtils
+import com.devil.phoenixproject.util.rememberFilePicker
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import org.jetbrains.compose.resources.stringResource
+import org.koin.compose.koinInject
+import vitruvianprojectphoenix.shared.generated.resources.*
+import vitruvianprojectphoenix.shared.generated.resources.Res
 
 // Helper function for timestamp formatting
-private fun formatTimestamp(timestamp: Long): String {
-    return KmpUtils.formatTimestamp(timestamp, "MMM dd, yyyy")
-}
+private fun formatTimestamp(timestamp: Long): String = KmpUtils.formatTimestamp(timestamp, "MMM dd, yyyy")
 
 // ProgressTab composable - Deep-dive analytics with Personal Records list
 @Composable
@@ -46,27 +50,27 @@ fun ProgressTab(
     exerciseRepository: ExerciseRepository,
     weightUnit: WeightUnit,
     formatWeight: (Float, WeightUnit) -> String,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
 ) {
     LazyColumn(
         modifier = modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
             .padding(Spacing.medium),
-        verticalArrangement = Arrangement.spacedBy(Spacing.medium)
+        verticalArrangement = Arrangement.spacedBy(Spacing.medium),
     ) {
         item {
             Text(
-                "Progress",
+                stringResource(Res.string.analytics_progress),
                 style = MaterialTheme.typography.headlineLarge,
                 color = MaterialTheme.colorScheme.onSurface,
-                fontWeight = FontWeight.Bold
+                fontWeight = FontWeight.Bold,
             )
             Spacer(modifier = Modifier.height(4.dp))
             Text(
-                text = "Track your strength gains over time",
+                text = stringResource(Res.string.analytics_progress_subtitle),
                 style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
 
@@ -75,23 +79,23 @@ fun ProgressTab(
             LifetimeStatsCard(
                 workoutSessions = workoutSessions,
                 exerciseRepository = exerciseRepository,
-                weightUnit = weightUnit
+                weightUnit = weightUnit,
             )
         }
 
         // Workout Mode Distribution Card
         item {
             WorkoutModeDistributionCard(
-                workoutSessions = workoutSessions
+                workoutSessions = workoutSessions,
             )
         }
 
         item {
             Text(
-                "Personal Records",
+                stringResource(Res.string.analytics_personal_records),
                 style = MaterialTheme.typography.titleLarge,
                 color = MaterialTheme.colorScheme.onSurface,
-                fontWeight = FontWeight.Bold
+                fontWeight = FontWeight.Bold,
             )
         }
 
@@ -99,8 +103,8 @@ fun ProgressTab(
             item {
                 EmptyState(
                     icon = Icons.AutoMirrored.Filled.TrendingUp,
-                    title = "No PRs Yet",
-                    message = "Complete workouts to set personal records!"
+                    title = stringResource(Res.string.analytics_no_prs_title),
+                    message = stringResource(Res.string.analytics_no_prs_message),
                 )
             }
         } else {
@@ -120,14 +124,14 @@ fun ProgressTab(
                             .fillMaxWidth()
                             .padding(top = 8.dp),
                         color = MaterialTheme.colorScheme.primaryContainer,
-                        shape = RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp)
+                        shape = RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp),
                     ) {
                         Text(
                             text = mode.uppercase(),
                             style = MaterialTheme.typography.labelLarge,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onPrimaryContainer,
-                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
                         )
                     }
                 }
@@ -144,28 +148,28 @@ fun ProgressTab(
                     Card(
                         modifier = Modifier.fillMaxWidth(),
                         colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.surfaceContainer
+                            containerColor = MaterialTheme.colorScheme.surfaceContainer,
                         ),
-                        shape = RoundedCornerShape(0.dp) // Flat edges for grouped look
+                        shape = RoundedCornerShape(0.dp), // Flat edges for grouped look
                     ) {
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .padding(16.dp),
                             horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
+                            verticalAlignment = Alignment.CenterVertically,
                         ) {
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(
                                     text = exerciseName,
                                     style = MaterialTheme.typography.titleMedium,
                                     fontWeight = FontWeight.SemiBold,
-                                    color = MaterialTheme.colorScheme.onSurface
+                                    color = MaterialTheme.colorScheme.onSurface,
                                 )
                                 Text(
                                     text = formatTimestamp(pr.timestamp),
                                     style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
                             }
 
@@ -174,12 +178,12 @@ fun ProgressTab(
                                     text = formatWeight(pr.weightPerCableKg, weightUnit),
                                     style = MaterialTheme.typography.headlineSmall,
                                     fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.primary
+                                    color = MaterialTheme.colorScheme.primary,
                                 )
                                 Text(
                                     text = "${pr.reps} Reps",
                                     style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
                             }
                         }
@@ -200,8 +204,6 @@ fun ProgressTab(
     }
 }
 
-
-
 /**
  * Analytics screen with three tabs: Dashboard, Progress, and History.
  * - Dashboard: Key insights and analytics overview
@@ -210,15 +212,13 @@ fun ProgressTab(
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun AnalyticsScreen(
-    viewModel: MainViewModel,
-    themeMode: com.devil.phoenixproject.ui.theme.ThemeMode
-) {
+fun AnalyticsScreen(viewModel: MainViewModel, themeMode: com.devil.phoenixproject.ui.theme.ThemeMode) {
     val workoutHistory by viewModel.workoutHistory.collectAsState()
     val groupedWorkoutHistory by viewModel.groupedWorkoutHistory.collectAsState()
     val allWorkoutSessions by viewModel.allWorkoutSessions.collectAsState()
     val personalRecords by viewModel.allPersonalRecords.collectAsState()
     val weightUnit by viewModel.weightUnit.collectAsState()
+
     @Suppress("UNUSED_VARIABLE") // Reserved for future connecting overlay
     val isAutoConnecting by viewModel.isAutoConnecting.collectAsState()
     val connectionError by viewModel.connectionError.collectAsState()
@@ -248,9 +248,19 @@ fun AnalyticsScreen(
     var exportMessage by remember { mutableStateOf<String?>(null) }
     var isExporting by remember { mutableStateOf(false) }
 
-    // CsvExporter from DI
+    // CsvExporter and CsvImporter from DI
     val csvExporter: CsvExporter = koinInject()
+    val csvImporter: CsvImporter = koinInject()
+    val userProfileRepository: UserProfileRepository = koinInject()
+    val activeProfile by userProfileRepository.activeProfile.collectAsState()
+    val activeProfileId = activeProfile?.id ?: "default"
     val scope = rememberCoroutineScope()
+
+    // Import state
+    var launchCsvFilePicker by remember { mutableStateOf(false) }
+    var isImporting by remember { mutableStateOf(false) }
+    var importResult by remember { mutableStateOf<CsvImportResult?>(null) }
+    var showImportResultDialog by remember { mutableStateOf(false) }
 
     // Build exercise names map for export
     val exerciseNames = remember { mutableStateMapOf<String, String>() }
@@ -273,11 +283,11 @@ fun AnalyticsScreen(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
+            .background(MaterialTheme.colorScheme.background),
     ) {
         Column(
             modifier = Modifier
-                .fillMaxSize()
+                .fillMaxSize(),
         ) {
             // Tab Row - Redesigned: Dashboard, Progress, History
             PrimaryTabRow(
@@ -289,91 +299,97 @@ fun AnalyticsScreen(
                         modifier = Modifier
                             .tabIndicatorOffset(pagerState.currentPage)
                             .height(tabIndicatorHeight),
-                        color = MaterialTheme.colorScheme.primary
+                        color = MaterialTheme.colorScheme.primary,
                     )
-                }
+                },
             ) {
                 Tab(
                     selected = pagerState.currentPage == 0,
                     onClick = { scope.launch { pagerState.animateScrollToPage(0) } },
                     text = {
                         Text(
-                            "Dashboard",
+                            stringResource(Res.string.analytics_dashboard),
                             style = MaterialTheme.typography.labelSmall,
                             maxLines = 1,
-                            color = if (pagerState.currentPage == 0)
+                            color = if (pagerState.currentPage == 0) {
                                 MaterialTheme.colorScheme.primary
-                            else
+                            } else {
                                 MaterialTheme.colorScheme.onSurfaceVariant
+                            },
                         )
                     },
                     icon = {
                         Icon(
                             Icons.Default.Dashboard,
-                            contentDescription = "Dashboard overview",
-                            tint = if (pagerState.currentPage == 0)
+                            contentDescription = stringResource(Res.string.cd_dashboard),
+                            tint = if (pagerState.currentPage == 0) {
                                 MaterialTheme.colorScheme.primary
-                            else
+                            } else {
                                 MaterialTheme.colorScheme.onSurfaceVariant
+                            },
                         )
-                    }
+                    },
                 )
                 Tab(
                     selected = pagerState.currentPage == 1,
                     onClick = { scope.launch { pagerState.animateScrollToPage(1) } },
                     text = {
                         Text(
-                            "Progress",
+                            stringResource(Res.string.analytics_progress),
                             style = MaterialTheme.typography.labelSmall,
                             maxLines = 1,
-                            color = if (pagerState.currentPage == 1)
+                            color = if (pagerState.currentPage == 1) {
                                 MaterialTheme.colorScheme.primary
-                            else
+                            } else {
                                 MaterialTheme.colorScheme.onSurfaceVariant
+                            },
                         )
                     },
                     icon = {
                         Icon(
                             Icons.AutoMirrored.Filled.TrendingUp,
-                            contentDescription = "Progress tracking",
-                            tint = if (pagerState.currentPage == 1)
+                            contentDescription = stringResource(Res.string.cd_progress_tracking),
+                            tint = if (pagerState.currentPage == 1) {
                                 MaterialTheme.colorScheme.primary
-                            else
+                            } else {
                                 MaterialTheme.colorScheme.onSurfaceVariant
+                            },
                         )
-                    }
+                    },
                 )
                 Tab(
                     selected = pagerState.currentPage == 2,
                     onClick = { scope.launch { pagerState.animateScrollToPage(2) } },
                     text = {
                         Text(
-                            "History",
+                            stringResource(Res.string.analytics_history),
                             style = MaterialTheme.typography.labelSmall,
                             maxLines = 1,
-                            color = if (pagerState.currentPage == 2)
+                            color = if (pagerState.currentPage == 2) {
                                 MaterialTheme.colorScheme.primary
-                            else
+                            } else {
                                 MaterialTheme.colorScheme.onSurfaceVariant
+                            },
                         )
                     },
                     icon = {
                         Icon(
                             Icons.AutoMirrored.Filled.List,
-                            contentDescription = "Workout history",
-                            tint = if (pagerState.currentPage == 2)
+                            contentDescription = stringResource(Res.string.cd_workout_history),
+                            tint = if (pagerState.currentPage == 2) {
                                 MaterialTheme.colorScheme.primary
-                            else
+                            } else {
                                 MaterialTheme.colorScheme.onSurfaceVariant
+                            },
                         )
-                    }
+                    },
                 )
             }
 
             // Tab Content with Swipe Support
             HorizontalPager(
                 state = pagerState,
-                modifier = Modifier.fillMaxSize()
+                modifier = Modifier.fillMaxSize(),
             ) { page ->
                 when (page) {
                     0 -> InsightsTab(
@@ -382,16 +398,18 @@ fun AnalyticsScreen(
                         exerciseRepository = viewModel.exerciseRepository,
                         weightUnit = weightUnit,
                         formatWeight = viewModel::formatWeight,
-                        modifier = Modifier.fillMaxSize()
+                        modifier = Modifier.fillMaxSize(),
                     )
+
                     1 -> ProgressTab(
                         personalRecords = personalRecords,
                         workoutSessions = allWorkoutSessions,
                         exerciseRepository = viewModel.exerciseRepository,
                         weightUnit = weightUnit,
                         formatWeight = viewModel::formatWeight,
-                        modifier = Modifier.fillMaxSize()
+                        modifier = Modifier.fillMaxSize(),
                     )
+
                     2 -> HistoryTab(
                         groupedWorkoutHistory = groupedWorkoutHistory,
                         weightUnit = weightUnit,
@@ -400,7 +418,7 @@ fun AnalyticsScreen(
                         onDeleteWorkout = { viewModel.deleteWorkout(it) },
                         exerciseRepository = viewModel.exerciseRepository,
                         onRefresh = { /* Workout history refreshes automatically via StateFlow */ },
-                        modifier = Modifier.fillMaxSize()
+                        modifier = Modifier.fillMaxSize(),
                     )
                 }
             }
@@ -410,7 +428,7 @@ fun AnalyticsScreen(
         connectionError?.let { error ->
             com.devil.phoenixproject.presentation.components.ConnectionErrorDialog(
                 message = error,
-                onDismiss = { viewModel.clearConnectionError() }
+                onDismiss = { viewModel.clearConnectionError() },
             )
         }
 
@@ -425,28 +443,33 @@ fun AnalyticsScreen(
             shape = RoundedCornerShape(28.dp), // Material 3 Expressive: Very rounded FAB
             elevation = FloatingActionButtonDefaults.elevation(
                 defaultElevation = 8.dp, // Material 3 Expressive: Higher elevation
-                pressedElevation = 4.dp
-            )
+                pressedElevation = 4.dp,
+            ),
         ) {
             Icon(
                 Icons.Default.Share,
-                contentDescription = "Export data",
-                modifier = Modifier.size(fabIconSize) // Material 3 Expressive: Responsive icon size
+                contentDescription = stringResource(Res.string.cd_export_data),
+                modifier = Modifier.size(fabIconSize), // Material 3 Expressive: Responsive icon size
             )
         }
     }
 
-    // Export options dialog
+    // Hoist format templates for use in coroutine callbacks (not composable scope)
+    // Use __PLACEHOLDER__ as a marker to replace at runtime since stringResource is composable-only
+    val exportSuccessTemplate = stringResource(Res.string.export_success, "__PLACEHOLDER__")
+    val exportFailedTemplate = stringResource(Res.string.export_failed, "__PLACEHOLDER__")
+
+    // Export / Import options dialog
     if (showExportMenu) {
         AlertDialog(
-            onDismissRequest = { if (!isExporting) showExportMenu = false },
-            title = { Text("Export Data") },
+            onDismissRequest = { if (!isExporting && !isImporting) showExportMenu = false },
+            title = { Text(stringResource(Res.string.export_import_data)) },
             text = {
                 Column(
                     verticalArrangement = Arrangement.spacedBy(Spacing.medium),
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth(),
                 ) {
-                    Text("Choose what to export:", style = MaterialTheme.typography.bodyMedium)
+                    Text(stringResource(Res.string.choose_export), style = MaterialTheme.typography.bodyMedium)
 
                     // Export Personal Records
                     OutlinedButton(
@@ -457,27 +480,27 @@ fun AnalyticsScreen(
                                     personalRecords = personalRecords,
                                     exerciseNames = exerciseNames.toMap(),
                                     weightUnit = weightUnit,
-                                    formatWeight = viewModel::formatWeight
+                                    formatWeight = viewModel::formatWeight,
                                 )
                                 isExporting = false
                                 result.fold(
                                     onSuccess = { path ->
-                                        exportMessage = "Exported to: $path"
+                                        exportMessage = exportSuccessTemplate.replace("__PLACEHOLDER__", path)
                                         csvExporter.shareCSV(path, "personal_records.csv")
                                     },
                                     onFailure = { error ->
-                                        exportMessage = "Export failed: ${error.message}"
-                                    }
+                                        exportMessage = exportFailedTemplate.replace("__PLACEHOLDER__", error.message ?: "")
+                                    },
                                 )
                                 showExportMenu = false
                             }
                         },
                         enabled = !isExporting && personalRecords.isNotEmpty(),
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier.fillMaxWidth(),
                     ) {
                         Icon(Icons.Default.EmojiEvents, contentDescription = null)
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text("Personal Records (${personalRecords.size})")
+                        Text(stringResource(Res.string.personal_records_count, personalRecords.size))
                     }
 
                     // Export Workout History - Opens date range picker
@@ -487,11 +510,11 @@ fun AnalyticsScreen(
                             showDateRangePicker = true
                         },
                         enabled = !isExporting && allWorkoutSessions.isNotEmpty(),
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier.fillMaxWidth(),
                     ) {
                         Icon(Icons.AutoMirrored.Filled.List, contentDescription = null)
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text("Workout History (${allWorkoutSessions.size})")
+                        Text(stringResource(Res.string.workout_history_count, allWorkoutSessions.size))
                     }
 
                     // Export PR Progression
@@ -503,30 +526,48 @@ fun AnalyticsScreen(
                                     personalRecords = personalRecords,
                                     exerciseNames = exerciseNames.toMap(),
                                     weightUnit = weightUnit,
-                                    formatWeight = viewModel::formatWeight
+                                    formatWeight = viewModel::formatWeight,
                                 )
                                 isExporting = false
                                 result.fold(
                                     onSuccess = { path ->
-                                        exportMessage = "Exported to: $path"
+                                        exportMessage = exportSuccessTemplate.replace("__PLACEHOLDER__", path)
                                         csvExporter.shareCSV(path, "pr_progression.csv")
                                     },
                                     onFailure = { error ->
-                                        exportMessage = "Export failed: ${error.message}"
-                                    }
+                                        exportMessage = exportFailedTemplate.replace("__PLACEHOLDER__", error.message ?: "")
+                                    },
                                 )
                                 showExportMenu = false
                             }
                         },
                         enabled = !isExporting && personalRecords.isNotEmpty(),
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier.fillMaxWidth(),
                     ) {
                         Icon(Icons.AutoMirrored.Filled.TrendingUp, contentDescription = null)
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text("PR Progression")
+                        Text(stringResource(Res.string.pr_progression))
                     }
 
-                    if (isExporting) {
+                    HorizontalDivider(modifier = Modifier.padding(vertical = Spacing.small))
+
+                    Text(stringResource(Res.string.import_label), style = MaterialTheme.typography.bodyMedium)
+
+                    // Import Workout History from CSV
+                    OutlinedButton(
+                        onClick = {
+                            showExportMenu = false
+                            launchCsvFilePicker = true
+                        },
+                        enabled = !isExporting && !isImporting,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Icon(Icons.Default.FileUpload, contentDescription = null)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(stringResource(Res.string.import_workout_csv))
+                    }
+
+                    if (isExporting || isImporting) {
                         LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
                     }
                 }
@@ -534,19 +575,19 @@ fun AnalyticsScreen(
             confirmButton = {
                 TextButton(
                     onClick = { showExportMenu = false },
-                    enabled = !isExporting,
+                    enabled = !isExporting && !isImporting,
                     modifier = Modifier.height(56.dp),
-                    shape = RoundedCornerShape(20.dp)
+                    shape = RoundedCornerShape(20.dp),
                 ) {
                     Text(
-                        "Cancel",
+                        stringResource(Res.string.action_cancel),
                         style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold
+                        fontWeight = FontWeight.Bold,
                     )
                 }
             },
             containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
-            shape = RoundedCornerShape(28.dp)
+            shape = RoundedCornerShape(28.dp),
         )
     }
 
@@ -564,17 +605,17 @@ fun AnalyticsScreen(
                         endDate = endDate,
                         exerciseNames = exerciseNames.toMap(),
                         weightUnit = weightUnit,
-                        formatWeight = viewModel::formatWeight
+                        formatWeight = viewModel::formatWeight,
                     )
                     isExporting = false
                     result.fold(
                         onSuccess = { path ->
-                            exportMessage = "Exported to: $path"
+                            exportMessage = exportSuccessTemplate.replace("__PLACEHOLDER__", path)
                             csvExporter.shareCSV(path, "workout_history.csv")
                         },
                         onFailure = { error ->
-                            exportMessage = "Export failed: ${error.message}"
-                        }
+                            exportMessage = exportFailedTemplate.replace("__PLACEHOLDER__", error.message ?: "")
+                        },
                     )
                 }
             },
@@ -585,7 +626,7 @@ fun AnalyticsScreen(
                     val beforeEnd = endDate == null || session.timestamp <= endDate
                     afterStart && beforeEnd
                 }
-            }
+            },
         )
     }
 
@@ -596,11 +637,95 @@ fun AnalyticsScreen(
                 .padding(16.dp),
             action = {
                 TextButton(onClick = { exportMessage = null }) {
-                    Text("Dismiss")
+                    Text(stringResource(Res.string.action_dismiss))
                 }
-            }
+            },
         ) {
             Text(message)
         }
+    }
+
+    // CSV file picker for import
+    if (launchCsvFilePicker) {
+        val filePicker = rememberFilePicker()
+        filePicker.LaunchCsvFilePicker { selectedFile ->
+            launchCsvFilePicker = false
+            if (selectedFile != null) {
+                isImporting = true
+                scope.launch(Dispatchers.Default) {
+                    try {
+                        val result = csvImporter.importFromCsv(selectedFile, activeProfileId)
+                        importResult = result
+                        showImportResultDialog = true
+                    } catch (e: Exception) {
+                        importResult = CsvImportResult(
+                            imported = 0,
+                            skipped = 0,
+                            failed = 0,
+                            errors = listOf("Import failed: ${e.message}"),
+                        )
+                        showImportResultDialog = true
+                    } finally {
+                        isImporting = false
+                    }
+                }
+            }
+        }
+    }
+
+    // Import result dialog
+    if (showImportResultDialog) {
+        val result = importResult
+        AlertDialog(
+            onDismissRequest = { showImportResultDialog = false },
+            title = {
+                Text(
+                    if (result != null && result.hasImports) {
+                        stringResource(Res.string.import_complete_title)
+                    } else {
+                        stringResource(Res.string.import_result_title)
+                    },
+                )
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(Spacing.small)) {
+                    if (result != null) {
+                        Text(result.summary(), style = MaterialTheme.typography.bodyLarge)
+
+                        if (result.errors.isNotEmpty()) {
+                            Spacer(modifier = Modifier.height(Spacing.small))
+                            Text(
+                                stringResource(Res.string.import_issues),
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.Bold,
+                            )
+                            result.errors.take(5).forEach { error ->
+                                Text(
+                                    error,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.error,
+                                )
+                            }
+                            if (result.errors.size > 5) {
+                                Text(
+                                    stringResource(Res.string.import_and_more, result.errors.size - 5),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
+                    } else {
+                        Text(stringResource(Res.string.no_result_available))
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showImportResultDialog = false }) {
+                    Text(stringResource(Res.string.action_ok))
+                }
+            },
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+            shape = RoundedCornerShape(28.dp),
+        )
     }
 }

@@ -10,6 +10,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import org.jetbrains.compose.resources.stringResource
+import vitruvianprojectphoenix.shared.generated.resources.*
+import vitruvianprojectphoenix.shared.generated.resources.Res
 
 /**
  * Custom Number Picker - Compose-native implementation
@@ -30,11 +33,11 @@ fun CustomNumberPicker(
     range: IntRange = 1..100,
     label: String = "",
     suffix: String = "",
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
 ) {
     Column(
         modifier = modifier,
-        horizontalAlignment = Alignment.CenterHorizontally
+        horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         // Label
         if (label.isNotEmpty()) {
@@ -43,7 +46,7 @@ fun CustomNumberPicker(
                 style = MaterialTheme.typography.labelMedium,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier.padding(bottom = 8.dp)
+                modifier = Modifier.padding(bottom = 8.dp),
             )
         }
 
@@ -51,7 +54,7 @@ fun CustomNumberPicker(
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.Center,
-            verticalAlignment = Alignment.CenterVertically
+            verticalAlignment = Alignment.CenterVertically,
         ) {
             // Decrement button
             IconButton(
@@ -60,16 +63,16 @@ fun CustomNumberPicker(
                         onValueChange(value - 1)
                     }
                 },
-                enabled = value > range.first
+                enabled = value > range.first,
             ) {
                 Icon(
                     imageVector = Icons.Default.KeyboardArrowDown,
-                    contentDescription = "Decrease",
+                    contentDescription = stringResource(Res.string.cd_decrease),
                     tint = if (value > range.first) {
                         MaterialTheme.colorScheme.onSurface
                     } else {
                         MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
-                    }
+                    },
                 )
             }
 
@@ -81,7 +84,7 @@ fun CustomNumberPicker(
                 fontWeight = FontWeight.Bold,
                 modifier = Modifier
                     .widthIn(min = 100.dp)
-                    .padding(horizontal = 16.dp)
+                    .padding(horizontal = 16.dp),
             )
 
             // Increment button
@@ -91,16 +94,16 @@ fun CustomNumberPicker(
                         onValueChange(value + 1)
                     }
                 },
-                enabled = value < range.last
+                enabled = value < range.last,
             ) {
                 Icon(
                     imageVector = Icons.Default.KeyboardArrowUp,
-                    contentDescription = "Increase",
+                    contentDescription = stringResource(Res.string.cd_increase),
                     tint = if (value < range.last) {
                         MaterialTheme.colorScheme.onSurface
                     } else {
                         MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
-                    }
+                    },
                 )
             }
         }

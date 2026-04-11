@@ -11,6 +11,9 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.ui.theme.Spacing
+import org.jetbrains.compose.resources.stringResource
+import vitruvianprojectphoenix.shared.generated.resources.*
+import vitruvianprojectphoenix.shared.generated.resources.Res
 
 /**
  * Reusable empty state component for displaying when lists/screens have no data.
@@ -31,23 +34,23 @@ fun EmptyState(
     message: String,
     actionText: String? = null,
     onAction: (() -> Unit)? = null,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
 ) {
     Box(
         modifier = modifier.fillMaxSize(),
-        contentAlignment = Alignment.Center
+        contentAlignment = Alignment.Center,
     ) {
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(Spacing.medium),
-            modifier = Modifier.padding(Spacing.large)
+            modifier = Modifier.padding(Spacing.large),
         ) {
             // Icon
             Icon(
                 imageVector = icon,
-                contentDescription = "Empty state",
+                contentDescription = stringResource(Res.string.cd_empty_state),
                 modifier = Modifier.size(64.dp),
-                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
             )
 
             // Title
@@ -55,7 +58,7 @@ fun EmptyState(
                 text = title,
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurface
+                color = MaterialTheme.colorScheme.onSurface,
             )
 
             // Message
@@ -63,7 +66,7 @@ fun EmptyState(
                 text = message,
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(horizontal = Spacing.large)
+                modifier = Modifier.padding(horizontal = Spacing.large),
             )
 
             // Optional Action Button
@@ -73,8 +76,8 @@ fun EmptyState(
                     onClick = onAction,
                     modifier = Modifier.padding(top = Spacing.medium),
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.primary
-                    )
+                        containerColor = MaterialTheme.colorScheme.primary,
+                    ),
                 ) {
                     Text(actionText)
                 }

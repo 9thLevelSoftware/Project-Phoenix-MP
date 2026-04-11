@@ -20,6 +20,9 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.presentation.util.ResponsiveDimensions
+import org.jetbrains.compose.resources.stringResource
+import vitruvianprojectphoenix.shared.generated.resources.*
+import vitruvianprojectphoenix.shared.generated.resources.Res
 
 /**
  * Material 3 Expressive Area Chart
@@ -36,13 +39,13 @@ fun AreaChart(
     showPopup: Boolean = true,
     animationDuration: Int = 2000,
     lineColor: Color = MaterialTheme.colorScheme.primary,
-    areaColor: Color = MaterialTheme.colorScheme.primaryContainer
+    areaColor: Color = MaterialTheme.colorScheme.primaryContainer,
 ) {
     // Data validation
     if (data.isEmpty()) {
         EmptyChartState(
-            message = "No data available",
-            modifier = modifier
+            message = stringResource(Res.string.chart_no_data),
+            modifier = modifier,
         )
         return
     }
@@ -55,8 +58,8 @@ fun AreaChart(
             targetValue = 1f,
             animationSpec = tween(
                 durationMillis = animationDuration,
-                easing = EaseInOutCubic
-            )
+                easing = EaseInOutCubic,
+            ),
         )
     }
 
@@ -77,14 +80,14 @@ fun AreaChart(
                 text = it,
                 style = MaterialTheme.typography.titleMedium,
                 color = MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier.padding(bottom = 8.dp)
+                modifier = Modifier.padding(bottom = 8.dp),
             )
         }
 
         BoxWithConstraints(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(chartHeight)
+                .height(chartHeight),
         ) {
             val canvasWidth = with(density) { maxWidth.toPx() }
             val canvasHeight = with(density) { maxHeight.toPx() }
@@ -108,7 +111,7 @@ fun AreaChart(
                             color = gridColor,
                             start = Offset(paddingLeftPx, canvasHeight - y),
                             end = Offset(canvasWidth, canvasHeight - y),
-                            strokeWidth = 1.dp.toPx()
+                            strokeWidth = 1.dp.toPx(),
                         )
                     }
 
@@ -120,7 +123,7 @@ fun AreaChart(
                             color = gridColor,
                             start = Offset(x, 0f),
                             end = Offset(x, canvasHeight - paddingBottomPx),
-                            strokeWidth = 1.dp.toPx()
+                            strokeWidth = 1.dp.toPx(),
                         )
                     }
                 }
@@ -129,11 +132,13 @@ fun AreaChart(
                     // Just draw a single point
                     val x = paddingLeftPx + effectiveWidth / 2
                     val normalizedValue = (values[0] - minValue) / valueRange
-                    val y = canvasHeight - paddingBottomPx - (normalizedValue * effectiveHeight * progress)
+                    val y =
+                        canvasHeight - paddingBottomPx -
+                            (normalizedValue * effectiveHeight * progress)
                     drawCircle(
                         color = lineColor,
                         radius = 6.dp.toPx(),
-                        center = Offset(x, y)
+                        center = Offset(x, y),
                     )
                     return@Canvas
                 }
@@ -143,7 +148,9 @@ fun AreaChart(
                 val points = values.mapIndexed { index, value ->
                     val x = paddingLeftPx + stepX * index
                     val normalizedValue = (value - minValue) / valueRange
-                    val y = canvasHeight - paddingBottomPx - (normalizedValue * effectiveHeight * progress)
+                    val y =
+                        canvasHeight - paddingBottomPx -
+                            (normalizedValue * effectiveHeight * progress)
                     Offset(x, y)
                 }
 
@@ -162,11 +169,11 @@ fun AreaChart(
                     brush = Brush.verticalGradient(
                         colors = listOf(
                             areaColor.copy(alpha = 0.6f * progress),
-                            areaColor.copy(alpha = 0.1f * progress)
+                            areaColor.copy(alpha = 0.1f * progress),
                         ),
                         startY = 0f,
-                        endY = canvasHeight - paddingBottomPx
-                    )
+                        endY = canvasHeight - paddingBottomPx,
+                    ),
                 )
 
                 // Draw line
@@ -186,8 +193,8 @@ fun AreaChart(
                     style = Stroke(
                         width = 3.dp.toPx(),
                         cap = StrokeCap.Round,
-                        join = StrokeJoin.Round
-                    )
+                        join = StrokeJoin.Round,
+                    ),
                 )
 
                 // Draw data points
@@ -195,12 +202,12 @@ fun AreaChart(
                     drawCircle(
                         color = lineColor,
                         radius = 5.dp.toPx(),
-                        center = point
+                        center = point,
                     )
                     drawCircle(
                         color = Color.White,
                         radius = 3.dp.toPx(),
-                        center = point
+                        center = point,
                     )
                 }
             }
@@ -211,7 +218,7 @@ fun AreaChart(
                     .fillMaxWidth()
                     .align(Alignment.BottomStart)
                     .padding(start = paddingLeft),
-                horizontalArrangement = Arrangement.SpaceBetween
+                horizontalArrangement = Arrangement.SpaceBetween,
             ) {
                 data.forEach { (labelText, _) ->
                     Text(
@@ -220,7 +227,7 @@ fun AreaChart(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1,
                         modifier = Modifier.weight(1f),
-                        textAlign = TextAlign.Center
+                        textAlign = TextAlign.Center,
                     )
                 }
             }
@@ -232,10 +239,7 @@ fun AreaChart(
  * Empty state for charts when no data is available
  */
 @Composable
-internal fun EmptyChartState(
-    message: String,
-    modifier: Modifier = Modifier
-) {
+internal fun EmptyChartState(message: String, modifier: Modifier = Modifier) {
     val emptyStateHeight = ResponsiveDimensions.chartHeight(baseHeight = 280.dp)
 
     Box(
@@ -243,23 +247,23 @@ internal fun EmptyChartState(
             .fillMaxWidth()
             .height(emptyStateHeight)
             .padding(16.dp),
-        contentAlignment = Alignment.Center
+        contentAlignment = Alignment.Center,
     ) {
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+            verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             Icon(
                 imageVector = Icons.Default.BarChart,
-                contentDescription = "No data available",
+                contentDescription = stringResource(Res.string.chart_no_data),
                 tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
-                modifier = Modifier.size(48.dp)
+                modifier = Modifier.size(48.dp),
             )
             Text(
                 text = message,
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                textAlign = TextAlign.Center
+                textAlign = TextAlign.Center,
             )
         }
     }

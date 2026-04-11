@@ -60,7 +60,7 @@ actual class FilePicker {
                         onFilePicked(null)
                     }
                 },
-                log = log
+                log = log,
             )
         }
 
@@ -79,11 +79,52 @@ actual class FilePicker {
     }
 
     @Composable
-    actual fun LaunchFileSaver(
-        fileName: String,
-        content: String,
-        onSaved: (String?) -> Unit
-    ) {
+    actual fun LaunchCsvFilePicker(onFilePicked: (String?) -> Unit) {
+        val scope = rememberCoroutineScope()
+
+        val delegate = remember {
+            DocumentPickerDelegate(
+                onDocumentPicked = { url ->
+                    scope.launch(Dispatchers.Main) {
+                        if (url != null) {
+                            val accessing = url.startAccessingSecurityScopedResource()
+                            try {
+                                val tempPath = copyToTempDirectory(url)
+                                onFilePicked(tempPath)
+                            } finally {
+                                if (accessing) {
+                                    url.stopAccessingSecurityScopedResource()
+                                }
+                            }
+                        } else {
+                            onFilePicked(null)
+                        }
+                    }
+                },
+                onCancelled = {
+                    scope.launch(Dispatchers.Main) {
+                        onFilePicked(null)
+                    }
+                },
+                log = log,
+            )
+        }
+
+        LaunchedEffect(Unit) {
+            dispatch_async(dispatch_get_main_queue()) {
+                presentCsvImportPicker(delegate)
+            }
+        }
+
+        DisposableEffect(Unit) {
+            onDispose {
+                delegate.cleanup()
+            }
+        }
+    }
+
+    @Composable
+    actual fun LaunchFileSaver(fileName: String, content: String, onSaved: (String?) -> Unit) {
         val scope = rememberCoroutineScope()
 
         // Create delegate that handles picker callbacks
@@ -103,7 +144,7 @@ actual class FilePicker {
                         onSaved(null)
                     }
                 },
-                log = log
+                log = log,
             )
         }
 
@@ -140,7 +181,7 @@ actual class FilePicker {
         // Create picker for opening JSON files
         val picker = UIDocumentPickerViewController(
             forOpeningContentTypes = listOf(UTTypeJSON),
-            asCopy = true  // Copy to app sandbox for security
+            asCopy = true, // Copy to app sandbox for security
         )
 
         picker.delegate = delegate
@@ -149,7 +190,34 @@ actual class FilePicker {
         rootViewController.presentViewController(
             picker,
             animated = true,
-            completion = null
+            completion = null,
+        )
+    }
+
+    /**
+     * Present document picker for importing a CSV file.
+     */
+    private fun presentCsvImportPicker(delegate: DocumentPickerDelegate) {
+        val rootViewController = getRootViewController() ?: run {
+            log.e { "Could not get root view controller" }
+            delegate.onCancelled()
+            return
+        }
+
+        val picker = UIDocumentPickerViewController(
+            forOpeningContentTypes = listOf(
+                platform.UniformTypeIdentifiers.UTTypeCommaSeparatedText,
+            ),
+            asCopy = true,
+        )
+
+        picker.delegate = delegate
+        picker.allowsMultipleSelection = false
+
+        rootViewController.presentViewController(
+            picker,
+            animated = true,
+            completion = null,
         )
     }
 
@@ -168,7 +236,7 @@ actual class FilePicker {
         // Create picker for exporting the file
         val picker = UIDocumentPickerViewController(
             forExportingURLs = listOf(fileURL),
-            asCopy = true  // Export as copy, preserving original
+            asCopy = true, // Export as copy, preserving original
         )
 
         picker.delegate = delegate
@@ -176,7 +244,7 @@ actual class FilePicker {
         rootViewController.presentViewController(
             picker,
             animated = true,
-            completion = null
+            completion = null,
         )
     }
 
@@ -196,61 +264,57 @@ actual class FilePicker {
     /**
      * Copy a security-scoped URL to the temp directory for safe access.
      */
-    private fun copyToTempDirectory(url: NSURL): String? {
-        return try {
-            val fileManager = NSFileManager.defaultManager
-            val tempDir = NSTemporaryDirectory()
-            val fileName = url.lastPathComponent ?: "import_${NSDate().timeIntervalSince1970}.json"
-            val destPath = "$tempDir$fileName"
+    private fun copyToTempDirectory(url: NSURL): String? = try {
+        val fileManager = NSFileManager.defaultManager
+        val tempDir = NSTemporaryDirectory()
+        val fileName = url.lastPathComponent ?: "import_${NSDate().timeIntervalSince1970}.json"
+        val destPath = "$tempDir$fileName"
 
-            // Remove existing temp file if present
-            if (fileManager.fileExistsAtPath(destPath)) {
-                fileManager.removeItemAtPath(destPath, null)
-            }
-
-            // Copy to temp
-            val success = fileManager.copyItemAtURL(
-                url,
-                NSURL.fileURLWithPath(destPath),
-                null
-            )
-
-            if (success) destPath else null
-        } catch (e: Exception) {
-            log.e { "Failed to copy file to temp: ${e.message}" }
-            null
+        // Remove existing temp file if present
+        if (fileManager.fileExistsAtPath(destPath)) {
+            fileManager.removeItemAtPath(destPath, null)
         }
+
+        // Copy to temp
+        val success = fileManager.copyItemAtURL(
+            url,
+            NSURL.fileURLWithPath(destPath),
+            null,
+        )
+
+        if (success) destPath else null
+    } catch (e: Exception) {
+        log.e { "Failed to copy file to temp: ${e.message}" }
+        null
     }
 
     /**
      * Save content to a temporary file for export.
      */
-    private fun saveToTempFile(fileName: String, content: String): String? {
-        return try {
-            val tempDir = NSTemporaryDirectory()
-            val filePath = "$tempDir$fileName"
+    private fun saveToTempFile(fileName: String, content: String): String? = try {
+        val tempDir = NSTemporaryDirectory()
+        val filePath = "$tempDir$fileName"
 
-            val fileManager = NSFileManager.defaultManager
+        val fileManager = NSFileManager.defaultManager
 
-            // Remove existing file if present
-            if (fileManager.fileExistsAtPath(filePath)) {
-                fileManager.removeItemAtPath(filePath, null)
-            }
-
-            // Write content
-            val nsContent = NSString.create(string = content)
-            val success = nsContent.writeToFile(
-                filePath,
-                atomically = true,
-                encoding = NSUTF8StringEncoding,
-                error = null
-            )
-
-            if (success) filePath else null
-        } catch (e: Exception) {
-            log.e { "Failed to save temp file: ${e.message}" }
-            null
+        // Remove existing file if present
+        if (fileManager.fileExistsAtPath(filePath)) {
+            fileManager.removeItemAtPath(filePath, null)
         }
+
+        // Write content
+        val nsContent = NSString.create(string = content)
+        val success = nsContent.writeToFile(
+            filePath,
+            atomically = true,
+            encoding = NSUTF8StringEncoding,
+            error = null,
+        )
+
+        if (success) filePath else null
+    } catch (e: Exception) {
+        log.e { "Failed to save temp file: ${e.message}" }
+        null
     }
 }
 
@@ -263,18 +327,18 @@ actual class FilePicker {
 private class DocumentPickerDelegate(
     private val onDocumentPicked: (NSURL?) -> Unit,
     val onCancelled: () -> Unit,
-    private val log: Logger
-) : NSObject(), UIDocumentPickerDelegateProtocol {
+    private val log: Logger,
+) : NSObject(),
+    UIDocumentPickerDelegateProtocol {
 
     /**
      * Called when user selects one or more documents.
      * For single selection, urls list contains one element.
      */
-    override fun documentPicker(
-        controller: UIDocumentPickerViewController,
-        didPickDocumentsAtURLs: List<*>
-    ) {
-        log.d { "Document picker: didPickDocumentsAtURLs called with ${didPickDocumentsAtURLs.size} URLs" }
+    override fun documentPicker(controller: UIDocumentPickerViewController, didPickDocumentsAtURLs: List<*>) {
+        log.d {
+            "Document picker: didPickDocumentsAtURLs called with ${didPickDocumentsAtURLs.size} URLs"
+        }
 
         val url = didPickDocumentsAtURLs.firstOrNull() as? NSURL
         if (url != null) {
@@ -303,6 +367,4 @@ private class DocumentPickerDelegate(
  * Remember a FilePicker instance for use in Compose.
  */
 @Composable
-actual fun rememberFilePicker(): FilePicker {
-    return remember { FilePicker() }
-}
+actual fun rememberFilePicker(): FilePicker = remember { FilePicker() }

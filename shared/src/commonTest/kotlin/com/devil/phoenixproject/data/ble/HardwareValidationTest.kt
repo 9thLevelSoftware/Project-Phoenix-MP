@@ -41,7 +41,7 @@ class HardwareValidationTest {
     data class CapturedSample(
         val hex: String,
         val knownWeightKg: Float,
-        val description: String
+        val description: String,
     )
 
     private val CAPTURED_PACKETS: List<CapturedSample> = listOf(
@@ -56,27 +56,27 @@ class HardwareValidationTest {
     // 6 shorts (12 bytes) + 1 int (4 bytes) + 1 short (2 bytes) = 18 bytes minimum
 
     data class OfficialInterpretation(
-        val posA: Float,        // mm (short / 10.0)
-        val velA: Float,        // mm/s (short / 10.0)
-        val forceA: Float,      // percentage 0-100 (short / 100.0)
-        val posB: Float,        // mm (short / 10.0)
-        val velB: Float,        // mm/s (short / 10.0)
-        val forceB: Float,      // percentage 0-100 (short / 100.0)
-        val timeMs: Int,        // firmware timestamp (4 bytes)
-        val status: Int?        // status flags (2 bytes, optional)
+        val posA: Float, // mm (short / 10.0)
+        val velA: Float, // mm/s (short / 10.0)
+        val forceA: Float, // percentage 0-100 (short / 100.0)
+        val posB: Float, // mm (short / 10.0)
+        val velB: Float, // mm/s (short / 10.0)
+        val forceB: Float, // percentage 0-100 (short / 100.0)
+        val timeMs: Int, // firmware timestamp (4 bytes)
+        val status: Int?, // status flags (2 bytes, optional)
     )
 
     private fun parseAsOfficial(data: ByteArray): OfficialInterpretation? {
         if (data.size < 12) return null // Minimum: 6 shorts
         return OfficialInterpretation(
-            posA   = getInt16LE(data, 0) / 10.0f,
-            velA   = getInt16LE(data, 2) / 10.0f,
+            posA = getInt16LE(data, 0) / 10.0f,
+            velA = getInt16LE(data, 2) / 10.0f,
             forceA = getInt16LE(data, 4) / 100.0f,
-            posB   = getInt16LE(data, 6) / 10.0f,
-            velB   = getInt16LE(data, 8) / 10.0f,
+            posB = getInt16LE(data, 6) / 10.0f,
+            velB = getInt16LE(data, 8) / 10.0f,
             forceB = getInt16LE(data, 10) / 100.0f,
             timeMs = if (data.size >= 16) getInt32LE(data, 12) else 0,
-            status = if (data.size >= 18) getUInt16LE(data, 16) else null
+            status = if (data.size >= 18) getUInt16LE(data, 16) else null,
         )
     }
 
@@ -87,16 +87,16 @@ class HardwareValidationTest {
     // This is what parseMonitorPacket() currently does.
 
     data class PhoenixInterpretation(
-        val ticksLow: Int,      // unsigned 16-bit
-        val ticksHigh: Int,     // unsigned 16-bit
-        val ticks: Int,         // combined 32-bit tick counter
-        val posA: Float,        // mm (signed short / 10.0)
-        val skippedA: Int,      // bytes 6-7 (velocity in official interpretation)
-        val loadA: Float,       // kg (unsigned short / 100.0)
-        val posB: Float,        // mm (signed short / 10.0)
-        val skippedB: Int,      // bytes 12-13 (velocity in official interpretation)
-        val loadB: Float,       // kg (unsigned short / 100.0)
-        val status: Int?        // status flags (optional)
+        val ticksLow: Int, // unsigned 16-bit
+        val ticksHigh: Int, // unsigned 16-bit
+        val ticks: Int, // combined 32-bit tick counter
+        val posA: Float, // mm (signed short / 10.0)
+        val skippedA: Int, // bytes 6-7 (velocity in official interpretation)
+        val loadA: Float, // kg (unsigned short / 100.0)
+        val posB: Float, // mm (signed short / 10.0)
+        val skippedB: Int, // bytes 12-13 (velocity in official interpretation)
+        val loadB: Float, // kg (unsigned short / 100.0)
+        val status: Int?, // status flags (optional)
     )
 
     private fun parseAsPhoenix(data: ByteArray): PhoenixInterpretation? {
@@ -104,16 +104,16 @@ class HardwareValidationTest {
         val ticksLow = getUInt16LE(data, 0)
         val ticksHigh = getUInt16LE(data, 2)
         return PhoenixInterpretation(
-            ticksLow  = ticksLow,
+            ticksLow = ticksLow,
             ticksHigh = ticksHigh,
-            ticks     = ticksLow + (ticksHigh shl 16),
-            posA      = getInt16LE(data, 4) / 10.0f,
-            skippedA  = getInt16LE(data, 6),      // What Phoenix skips (potential velA)
-            loadA     = getUInt16LE(data, 8) / 100.0f,
-            posB      = getInt16LE(data, 10) / 10.0f,
-            skippedB  = getInt16LE(data, 12),     // What Phoenix skips (potential velB)
-            loadB     = getUInt16LE(data, 14) / 100.0f,
-            status    = if (data.size >= 18) getUInt16LE(data, 16) else null
+            ticks = ticksLow + (ticksHigh shl 16),
+            posA = getInt16LE(data, 4) / 10.0f,
+            skippedA = getInt16LE(data, 6), // What Phoenix skips (potential velA)
+            loadA = getUInt16LE(data, 8) / 100.0f,
+            posB = getInt16LE(data, 10) / 10.0f,
+            skippedB = getInt16LE(data, 12), // What Phoenix skips (potential velB)
+            loadB = getUInt16LE(data, 14) / 100.0f,
+            status = if (data.size >= 18) getUInt16LE(data, 16) else null,
         )
     }
 
@@ -140,7 +140,8 @@ class HardwareValidationTest {
     @Test
     fun `dual interpretation comparison - populate CAPTURED_PACKETS to run`() {
         if (CAPTURED_PACKETS.isEmpty()) {
-            println("""
+            println(
+                """
                 |========================================================
                 | HARDWARE VALIDATION: No captured packets yet
                 |========================================================
@@ -150,13 +151,14 @@ class HardwareValidationTest {
                 | 3. Copy hex strings into CAPTURED_PACKETS list above
                 | 4. Re-run this test
                 |========================================================
-            """.trimMargin())
+                """.trimMargin(),
+            )
             return
         }
 
-        println("=" .repeat(80))
+        println("=".repeat(80))
         println("HARDWARE VALIDATION: Dual Packet Interpretation")
-        println("=" .repeat(80))
+        println("=".repeat(80))
 
         for ((index, sample) in CAPTURED_PACKETS.withIndex()) {
             val data = hexToBytes(sample.hex)
@@ -204,11 +206,11 @@ class HardwareValidationTest {
             println("    [ ] Do phoenix.ticks (${phoenix?.ticks}) look like a counter?")
         }
 
-        println("\n" + "=" .repeat(80))
+        println("\n" + "=".repeat(80))
         println("Review output above. The interpretation where force/load matches")
         println("the known weight is correct. Non-zero skipped bytes during movement")
         println("confirm firmware velocity is present.")
-        println("=" .repeat(80))
+        println("=".repeat(80))
     }
 
     // =========================================================================
@@ -231,8 +233,8 @@ class HardwareValidationTest {
             assertTrue(
                 officialPosValid || phoenixPosValid,
                 "Packet '${sample.description}': Neither interpretation has plausible positions. " +
-                "Official: posA=${official.posA}, posB=${official.posB}; " +
-                "Phoenix: posA=${phoenix.posA}, posB=${phoenix.posB}"
+                    "Official: posA=${official.posA}, posB=${official.posB}; " +
+                    "Phoenix: posA=${phoenix.posA}, posB=${phoenix.posB}",
             )
 
             // Note: In OFFICIAL layout, bytes 0-1 are posA. In PHOENIX, bytes 0-1 are ticksLow.
@@ -329,7 +331,7 @@ class HardwareValidationTest {
                 // Sanity: velocity should be reasonable (-500 to +500 mm/s for cable exercises)
                 assertTrue(
                     abs(velA) < 500f && abs(velB) < 500f,
-                    "Implausible velocity from skipped bytes: velA=$velA, velB=$velB"
+                    "Implausible velocity from skipped bytes: velA=$velA, velB=$velB",
                 )
             }
         }
@@ -408,15 +410,15 @@ class HardwareValidationTest {
         // LoadB: 50.00kg -> raw 5000 = 0x8813
         // Status: 0x0000
         val data = byteArrayOf(
-            0xE8.toByte(), 0x03,  // ticksLo = 1000
-            0x00, 0x00,            // ticksHi = 0
-            0xDC.toByte(), 0x05,  // posA raw = 1500 -> 150.0mm
-            0x00, 0x00,            // gap (or velA in official)
-            0x88.toByte(), 0x13,  // loadA raw = 5000 -> 50.0kg
-            0xC8.toByte(), 0x05,  // posB raw = 1480 -> 148.0mm
-            0x00, 0x00,            // gap (or velB in official)
-            0x88.toByte(), 0x13,  // loadB raw = 5000 -> 50.0kg
-            0x00, 0x00             // status = 0
+            0xE8.toByte(), 0x03, // ticksLo = 1000
+            0x00, 0x00, // ticksHi = 0
+            0xDC.toByte(), 0x05, // posA raw = 1500 -> 150.0mm
+            0x00, 0x00, // gap (or velA in official)
+            0x88.toByte(), 0x13, // loadA raw = 5000 -> 50.0kg
+            0xC8.toByte(), 0x05, // posB raw = 1480 -> 148.0mm
+            0x00, 0x00, // gap (or velB in official)
+            0x88.toByte(), 0x13, // loadB raw = 5000 -> 50.0kg
+            0x00, 0x00, // status = 0
         )
 
         val packet = parseMonitorPacket(data)

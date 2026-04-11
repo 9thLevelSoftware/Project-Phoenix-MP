@@ -15,29 +15,33 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.ui.draw.shadow
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.DriveFileMove
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.data.repository.PersonalRecordRepository
+import com.devil.phoenixproject.data.repository.UserProfile
 import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.domain.model.generateSupersetId
 import com.devil.phoenixproject.domain.model.generateUUID
 import com.devil.phoenixproject.presentation.components.EmptyState
+import com.devil.phoenixproject.presentation.components.ProfileColors
 import com.devil.phoenixproject.ui.theme.*
-import com.devil.phoenixproject.util.KmpUtils
 import com.devil.phoenixproject.ui.theme.screenBackgroundBrush
+import com.devil.phoenixproject.util.KmpUtils
+import org.jetbrains.compose.resources.stringResource
+import vitruvianprojectphoenix.shared.generated.resources.*
+import vitruvianprojectphoenix.shared.generated.resources.Res
 
 /**
  * Routines tab showing list of saved routines with create/edit/delete functionality.
@@ -55,13 +59,17 @@ fun RoutinesTab(
     displayToKg: (Float, WeightUnit) -> Float,
     onStartWorkout: (Routine) -> Unit,
     onDeleteRoutine: (String) -> Unit,
-    onDeleteRoutines: (Set<String>) -> Unit,  // Batch delete for multi-select
+    onDeleteRoutines: (Set<String>) -> Unit, // Batch delete for multi-select
     onSaveRoutine: (Routine) -> Unit,
     // onUpdateRoutine removed as it is replaced by Editor Screen
     onEditRoutine: (String) -> Unit,
     onCreateRoutine: () -> Unit,
+    profiles: List<UserProfile> = emptyList(),
+    activeProfileId: String = "default",
+    onMoveToProfile: (routineIds: Set<String>, targetProfileId: String) -> Unit = { _, _ -> },
+    onSaveRoutineToProfile: (routine: Routine, targetProfileId: String) -> Unit = { _, _ -> },
     themeMode: ThemeMode,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
 ) {
     // showRoutineBuilder and routineToEdit states removed
 
@@ -72,6 +80,17 @@ fun RoutinesTab(
     val selectedIds = remember { mutableStateSetOf<String>() }
     var showBatchDeleteDialog by remember { mutableStateOf(false) }
     var showBatchCopyDialog by remember { mutableStateOf(false) }
+
+    // Profile picker state for move/copy to profile
+    var profilePickerRoutineId by remember { mutableStateOf<String?>(null) }
+    var profilePickerIsMoveAction by remember { mutableStateOf(true) }
+    var showBatchMoveProfilePicker by remember { mutableStateOf(false) }
+    var showBatchCopyProfilePicker by remember { mutableStateOf(false) }
+
+    // Profiles available as targets (exclude current active profile)
+    val targetProfiles = remember(profiles, activeProfileId) {
+        profiles.filter { it.id != activeProfileId }
+    }
 
     // Helper to clear selection
     fun clearSelection() {
@@ -91,27 +110,27 @@ fun RoutinesTab(
                         clearSelection()
                     }
                 }
-            }
+            },
     ) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(20.dp)
+                .padding(20.dp),
         ) {
             if (routines.isEmpty()) {
                 EmptyState(
                     icon = Icons.Default.FitnessCenter,
-                    title = "No Routines Yet",
-                    message = "Create your first workout routine to get started",
-                    actionText = "Create Your First Routine",
+                    title = stringResource(Res.string.empty_no_routines_title),
+                    message = stringResource(Res.string.empty_no_routines_message),
+                    actionText = stringResource(Res.string.create_new_routine),
                     onAction = {
                         onCreateRoutine()
-                    }
+                    },
                 )
             } else {
                 LazyColumn(
                     verticalArrangement = Arrangement.spacedBy(Spacing.small),
-                    contentPadding = PaddingValues(bottom = 80.dp) // Space for FAB
+                    contentPadding = PaddingValues(bottom = 80.dp), // Space for FAB
                 ) {
                     items(routines, key = { it.id }) { routine ->
                         RoutineCard(
@@ -136,6 +155,15 @@ fun RoutinesTab(
                             onStartWorkout = { onStartWorkout(routine) },
                             onEdit = { onEditRoutine(routine.id) },
                             onDelete = { onDeleteRoutine(routine.id) },
+                            onMoveToProfile = {
+                                profilePickerRoutineId = routine.id
+                                profilePickerIsMoveAction = true
+                            },
+                            onCopyToProfile = {
+                                profilePickerRoutineId = routine.id
+                                profilePickerIsMoveAction = false
+                            },
+                            hasOtherProfiles = targetProfiles.isNotEmpty(),
                             onDuplicate = {
                                 // Generate new IDs explicitly and create deep copies
                                 val newRoutineId = generateUUID()
@@ -145,7 +173,7 @@ fun RoutinesTab(
                                 val newSupersets = routine.supersets.map { superset ->
                                     superset.copy(
                                         id = supersetIdMap[superset.id] ?: generateSupersetId(),
-                                        routineId = newRoutineId
+                                        routineId = newRoutineId,
                                     )
                                 }
 
@@ -155,7 +183,7 @@ fun RoutinesTab(
                                     exercise.copy(
                                         id = generateUUID(),
                                         exercise = exercise.exercise.copy(),
-                                        supersetId = exercise.supersetId?.let { supersetIdMap[it] }
+                                        supersetId = exercise.supersetId?.let { supersetIdMap[it] },
                                     )
                                 }
 
@@ -165,8 +193,12 @@ fun RoutinesTab(
                                 val existingCopyNumbers = routines
                                     .mapNotNull { r ->
                                         when {
-                                            r.name == baseName -> 0 // Original has number 0
-                                            r.name == "$baseName (Copy)" -> 1 // First copy is 1
+                                            r.name == baseName -> 0
+
+                                            // Original has number 0
+                                            r.name == "$baseName (Copy)" -> 1
+
+                                            // First copy is 1
                                             else -> copyPattern.find(r.name)?.groups?.get(2)?.value?.toIntOrNull()
                                         }
                                     }
@@ -184,10 +216,10 @@ fun RoutinesTab(
                                     useCount = 0,
                                     lastUsed = null,
                                     exercises = newExercises,
-                                    supersets = newSupersets
+                                    supersets = newSupersets,
                                 )
                                 onSaveRoutine(duplicated)
-                            }
+                            },
                         )
                     }
                 }
@@ -198,24 +230,24 @@ fun RoutinesTab(
         Box(
             modifier = Modifier
                 .align(Alignment.BottomEnd)
-                .padding(Spacing.medium)
+                .padding(Spacing.medium),
         ) {
             // Normal mode: Single + FAB
             AnimatedVisibility(
                 visible = !selectionMode,
                 enter = fadeIn() + scaleIn(),
-                exit = fadeOut() + scaleOut()
+                exit = fadeOut() + scaleOut(),
             ) {
                 FloatingActionButton(
                     onClick = onCreateRoutine,
                     containerColor = MaterialTheme.colorScheme.primary,
                     contentColor = MaterialTheme.colorScheme.onPrimary,
-                    shape = RoundedCornerShape(16.dp)
+                    shape = RoundedCornerShape(16.dp),
                 ) {
                     Icon(
                         Icons.Default.Add,
-                        contentDescription = "Add new routine",
-                        modifier = Modifier.size(28.dp)
+                        contentDescription = stringResource(Res.string.cd_add_routine),
+                        modifier = Modifier.size(28.dp),
                     )
                 }
             }
@@ -224,35 +256,55 @@ fun RoutinesTab(
             AnimatedVisibility(
                 visible = selectionMode,
                 enter = fadeIn() + scaleIn(),
-                exit = fadeOut() + scaleOut()
+                exit = fadeOut() + scaleOut(),
             ) {
                 Column(
                     verticalArrangement = Arrangement.spacedBy(12.dp),
-                    horizontalAlignment = Alignment.End
+                    horizontalAlignment = Alignment.End,
                 ) {
                     // Cancel button (small)
                     SmallFloatingActionButton(
                         onClick = { clearSelection() },
                         containerColor = MaterialTheme.colorScheme.surfaceVariant,
-                        contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                        contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
                     ) {
-                        Icon(Icons.Default.Close, contentDescription = "Cancel selection")
+                        Icon(Icons.Default.Close, contentDescription = stringResource(Res.string.cd_cancel_selection))
                     }
 
-                    // Copy button
+                    // Move to Profile button (only if other profiles exist)
+                    if (targetProfiles.isNotEmpty()) {
+                        SmallFloatingActionButton(
+                            onClick = { showBatchMoveProfilePicker = true },
+                            containerColor = MaterialTheme.colorScheme.tertiaryContainer,
+                            contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
+                        ) {
+                            Icon(Icons.AutoMirrored.Default.DriveFileMove, contentDescription = stringResource(Res.string.move_to_profile))
+                        }
+
+                        // Copy to Profile button
+                        SmallFloatingActionButton(
+                            onClick = { showBatchCopyProfilePicker = true },
+                            containerColor = MaterialTheme.colorScheme.tertiaryContainer,
+                            contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
+                        ) {
+                            Icon(Icons.Default.FileCopy, contentDescription = stringResource(Res.string.copy_to_profile))
+                        }
+                    }
+
+                    // Copy (duplicate) button
                     FloatingActionButton(
                         onClick = { showBatchCopyDialog = true },
                         containerColor = MaterialTheme.colorScheme.secondaryContainer,
-                        contentColor = MaterialTheme.colorScheme.onSecondaryContainer
+                        contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
                     ) {
                         BadgedBox(
                             badge = {
                                 Badge(containerColor = MaterialTheme.colorScheme.primary) {
                                     Text("${selectedIds.size}")
                                 }
-                            }
+                            },
                         ) {
-                            Icon(Icons.Default.ContentCopy, contentDescription = "Copy selected")
+                            Icon(Icons.Default.ContentCopy, contentDescription = stringResource(Res.string.cd_copy_selected))
                         }
                     }
 
@@ -260,16 +312,16 @@ fun RoutinesTab(
                     FloatingActionButton(
                         onClick = { showBatchDeleteDialog = true },
                         containerColor = MaterialTheme.colorScheme.errorContainer,
-                        contentColor = MaterialTheme.colorScheme.error
+                        contentColor = MaterialTheme.colorScheme.error,
                     ) {
                         BadgedBox(
                             badge = {
                                 Badge(containerColor = MaterialTheme.colorScheme.error) {
                                     Text("${selectedIds.size}")
                                 }
-                            }
+                            },
                         ) {
-                            Icon(Icons.Default.Delete, contentDescription = "Delete selected")
+                            Icon(Icons.Default.Delete, contentDescription = stringResource(Res.string.cd_delete_selected))
                         }
                     }
                 }
@@ -281,24 +333,24 @@ fun RoutinesTab(
     if (showBatchDeleteDialog) {
         AlertDialog(
             onDismissRequest = { showBatchDeleteDialog = false },
-            title = { Text("Delete ${selectedIds.size} routines?") },
-            text = { Text("This cannot be undone.") },
+            title = { Text(stringResource(Res.string.delete_selected_routines, selectedIds.size)) },
+            text = { Text(stringResource(Res.string.cannot_be_undone)) },
             confirmButton = {
                 TextButton(
                     onClick = {
                         onDeleteRoutines(selectedIds.toSet())
                         showBatchDeleteDialog = false
                         clearSelection()
-                    }
+                    },
                 ) {
-                    Text("Delete", color = MaterialTheme.colorScheme.error)
+                    Text(stringResource(Res.string.action_delete), color = MaterialTheme.colorScheme.error)
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showBatchDeleteDialog = false }) {
-                    Text("Cancel")
+                    Text(stringResource(Res.string.action_cancel))
                 }
-            }
+            },
         )
     }
 
@@ -306,8 +358,8 @@ fun RoutinesTab(
     if (showBatchCopyDialog) {
         AlertDialog(
             onDismissRequest = { showBatchCopyDialog = false },
-            title = { Text("Duplicate ${selectedIds.size} routines?") },
-            text = { Text("New copies will be created with '(Copy)' suffix.") },
+            title = { Text(stringResource(Res.string.duplicate_selected_routines, selectedIds.size)) },
+            text = { Text(stringResource(Res.string.duplicate_routines_message)) },
             confirmButton = {
                 TextButton(
                     onClick = {
@@ -321,7 +373,7 @@ fun RoutinesTab(
                                 val newSupersets = routine.supersets.map { superset ->
                                     superset.copy(
                                         id = supersetIdMap[superset.id] ?: generateSupersetId(),
-                                        routineId = newRoutineId
+                                        routineId = newRoutineId,
                                     )
                                 }
 
@@ -330,7 +382,7 @@ fun RoutinesTab(
                                     exercise.copy(
                                         id = generateUUID(),
                                         exercise = exercise.exercise.copy(),
-                                        supersetId = exercise.supersetId?.let { supersetIdMap[it] }
+                                        supersetId = exercise.supersetId?.let { supersetIdMap[it] },
                                     )
                                 }
 
@@ -359,25 +411,213 @@ fun RoutinesTab(
                                     useCount = 0,
                                     lastUsed = null,
                                     exercises = newExercises,
-                                    supersets = newSupersets
+                                    supersets = newSupersets,
                                 )
                                 onSaveRoutine(duplicated)
                             }
                         }
                         showBatchCopyDialog = false
                         clearSelection()
-                    }
+                    },
                 ) {
-                    Text("Copy")
+                    Text(stringResource(Res.string.action_copy))
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showBatchCopyDialog = false }) {
-                    Text("Cancel")
+                    Text(stringResource(Res.string.action_cancel))
                 }
-            }
+            },
         )
     }
+
+    // Individual routine profile picker (Move or Copy)
+    profilePickerRoutineId?.let { routineId ->
+        val routine = routines.find { it.id == routineId }
+        if (routine != null) {
+            ProfilePickerDialog(
+                title = if (profilePickerIsMoveAction) {
+                    stringResource(Res.string.move_to_profile)
+                } else {
+                    stringResource(Res.string.copy_to_profile)
+                },
+                subtitle = routine.name,
+                profiles = targetProfiles,
+                onProfileSelected = { targetProfile ->
+                    if (profilePickerIsMoveAction) {
+                        onMoveToProfile(setOf(routineId), targetProfile.id)
+                    } else {
+                        val copied = deepCopyRoutine(routine, routines)
+                        onSaveRoutineToProfile(copied, targetProfile.id)
+                    }
+                    profilePickerRoutineId = null
+                },
+                onDismiss = { profilePickerRoutineId = null },
+            )
+        }
+    }
+
+    // Batch Move to Profile picker
+    if (showBatchMoveProfilePicker) {
+        ProfilePickerDialog(
+            title = stringResource(Res.string.move_to_profile),
+            subtitle = stringResource(Res.string.move_routines_confirm, selectedIds.size, "…"),
+            profiles = targetProfiles,
+            onProfileSelected = { targetProfile ->
+                onMoveToProfile(selectedIds.toSet(), targetProfile.id)
+                showBatchMoveProfilePicker = false
+                clearSelection()
+            },
+            onDismiss = { showBatchMoveProfilePicker = false },
+        )
+    }
+
+    // Batch Copy to Profile picker
+    if (showBatchCopyProfilePicker) {
+        ProfilePickerDialog(
+            title = stringResource(Res.string.copy_to_profile),
+            subtitle = stringResource(Res.string.copy_routines_confirm, selectedIds.size, "…"),
+            profiles = targetProfiles,
+            onProfileSelected = { targetProfile ->
+                selectedIds.forEach { routineId ->
+                    routines.find { it.id == routineId }?.let { routine ->
+                        val copied = deepCopyRoutine(routine, routines)
+                        onSaveRoutineToProfile(copied, targetProfile.id)
+                    }
+                }
+                showBatchCopyProfilePicker = false
+                clearSelection()
+            },
+            onDismiss = { showBatchCopyProfilePicker = false },
+        )
+    }
+}
+
+/**
+ * Deep-copy a routine with new IDs for duplication/cross-profile copy.
+ */
+private fun deepCopyRoutine(routine: Routine, allRoutines: List<Routine>): Routine {
+    val newRoutineId = generateUUID()
+
+    // Deep-copy supersets with new IDs and remap to new routine
+    val supersetIdMap = routine.supersets.associate { it.id to generateSupersetId() }
+    val newSupersets = routine.supersets.map { superset ->
+        superset.copy(
+            id = supersetIdMap[superset.id] ?: generateSupersetId(),
+            routineId = newRoutineId,
+        )
+    }
+
+    // Deep-copy exercises, remapping supersetId references
+    val newExercises = routine.exercises.map { exercise ->
+        exercise.copy(
+            id = generateUUID(),
+            exercise = exercise.exercise.copy(),
+            supersetId = exercise.supersetId?.let { supersetIdMap[it] },
+        )
+    }
+
+    // Smart duplicate naming: extract base name and find next copy number
+    val baseName = routine.name.replace(Regex(""" \(Copy( \d+)?\)$"""), "")
+    val copyPattern = Regex("""^${Regex.escape(baseName)} \(Copy( (\d+))?\)$""")
+    val existingCopyNumbers = allRoutines
+        .mapNotNull { r ->
+            when {
+                r.name == baseName -> 0
+                r.name == "$baseName (Copy)" -> 1
+                else -> copyPattern.find(r.name)?.groups?.get(2)?.value?.toIntOrNull()
+            }
+        }
+    val nextCopyNumber = (existingCopyNumbers.maxOrNull() ?: 0) + 1
+    val newName = if (nextCopyNumber == 1) {
+        "$baseName (Copy)"
+    } else {
+        "$baseName (Copy $nextCopyNumber)"
+    }
+
+    return routine.copy(
+        id = newRoutineId,
+        name = newName,
+        createdAt = KmpUtils.currentTimeMillis(),
+        useCount = 0,
+        lastUsed = null,
+        exercises = newExercises,
+        supersets = newSupersets,
+    )
+}
+
+/**
+ * Dialog for selecting a target profile for move/copy operations.
+ * Shows a list of available profiles with colored avatars.
+ */
+@Composable
+private fun ProfilePickerDialog(
+    title: String,
+    subtitle: String,
+    profiles: List<UserProfile>,
+    onProfileSelected: (UserProfile) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title) },
+        text = {
+            if (profiles.isEmpty()) {
+                Text(stringResource(Res.string.no_other_profiles))
+            } else {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(
+                        text = subtitle,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    profiles.forEach { profile ->
+                        val profileColor = ProfileColors.getOrElse(profile.colorIndex) { ProfileColors[0] }
+                        Surface(
+                            onClick = { onProfileSelected(profile) },
+                            shape = RoundedCornerShape(12.dp),
+                            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                // Profile color dot
+                                Surface(
+                                    shape = androidx.compose.foundation.shape.CircleShape,
+                                    color = profileColor,
+                                    modifier = Modifier.size(32.dp),
+                                ) {
+                                    Box(contentAlignment = Alignment.Center) {
+                                        Text(
+                                            text = profile.name.take(1).uppercase(),
+                                            style = MaterialTheme.typography.labelMedium,
+                                            fontWeight = FontWeight.Bold,
+                                            color = Color.White,
+                                        )
+                                    }
+                                }
+                                Text(
+                                    text = profile.name,
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    fontWeight = FontWeight.Medium,
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(Res.string.action_cancel))
+            }
+        },
+    )
 }
 
 /**
@@ -394,7 +634,10 @@ fun RoutineCard(
     onStartWorkout: () -> Unit,
     onEdit: () -> Unit,
     onDelete: () -> Unit,
-    onDuplicate: () -> Unit
+    onDuplicate: () -> Unit,
+    onMoveToProfile: () -> Unit = {},
+    onCopyToProfile: () -> Unit = {},
+    hasOtherProfiles: Boolean = false,
 ) {
     var expanded by remember { mutableStateOf(false) }
     var showDeleteDialog by remember { mutableStateOf(false) }
@@ -408,41 +651,49 @@ fun RoutineCard(
                 interactionSource = interactionSource,
                 indication = null,
                 onClick = {
-                    if (isSelectionMode) onSelectionToggle()
-                    else expanded = !expanded
+                    if (isSelectionMode) {
+                        onSelectionToggle()
+                    } else {
+                        expanded = !expanded
+                    }
                 },
                 onLongClick = {
-                    if (!isSelectionMode) onLongPress()
-                    else onSelectionToggle()
-                }
+                    if (!isSelectionMode) {
+                        onLongPress()
+                    } else {
+                        onSelectionToggle()
+                    }
+                },
             ),
         shape = RoundedCornerShape(20.dp),
         colors = CardDefaults.cardColors(
-            containerColor = if (isSelected)
+            containerColor = if (isSelected) {
                 MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f)
-            else
+            } else {
                 MaterialTheme.colorScheme.surfaceContainerHighest
+            },
         ),
         elevation = CardDefaults.cardElevation(
-            defaultElevation = if (expanded) 8.dp else 2.dp
+            defaultElevation = if (expanded) 8.dp else 2.dp,
         ),
         border = BorderStroke(
             2.dp,
-            if (isSelected)
+            if (isSelected) {
                 MaterialTheme.colorScheme.primary
-            else
+            } else {
                 MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)
-        )
+            },
+        ),
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(20.dp)
+                .padding(20.dp),
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
-                verticalAlignment = Alignment.CenterVertically
+                verticalAlignment = Alignment.CenterVertically,
             ) {
                 // Checkbox - only visible in selection mode
                 AnimatedVisibility(visible = isSelectionMode) {
@@ -450,26 +701,26 @@ fun RoutineCard(
                         checked = isSelected,
                         onCheckedChange = { onSelectionToggle() },
                         colors = CheckboxDefaults.colors(
-                            checkedColor = MaterialTheme.colorScheme.primary
-                        )
+                            checkedColor = MaterialTheme.colorScheme.primary,
+                        ),
                     )
                 }
 
                 // Header Content
                 Column(
                     modifier = Modifier.weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
                     Text(
                         text = routine.name,
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurface
+                        color = MaterialTheme.colorScheme.onSurface,
                     )
                     Text(
                         text = "${routine.exercises.size} exercises • ${formatEstimatedDuration(routine)}",
                         style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
 
@@ -477,8 +728,8 @@ fun RoutineCard(
                 if (!isSelectionMode) {
                     Icon(
                         imageVector = if (expanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
-                        contentDescription = if (expanded) "Collapse" else "Expand",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        contentDescription = if (expanded) stringResource(Res.string.cd_collapse) else stringResource(Res.string.cd_expand),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
             }
@@ -488,7 +739,7 @@ fun RoutineCard(
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(top = 16.dp)
+                        .padding(top = 16.dp),
                 ) {
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                     Spacer(modifier = Modifier.height(16.dp))
@@ -499,17 +750,17 @@ fun RoutineCard(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .padding(vertical = 4.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween
+                            horizontalArrangement = Arrangement.SpaceBetween,
                         ) {
                             Text(
                                 text = "${index + 1}. ${exercise.exercise.name}",
                                 style = MaterialTheme.typography.bodyMedium,
-                                fontWeight = FontWeight.Medium
+                                fontWeight = FontWeight.Medium,
                             )
                             Text(
                                 text = formatSetRepsForCard(exercise.setReps),
                                 style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
                     }
@@ -522,14 +773,14 @@ fun RoutineCard(
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(56.dp),
-                        shape = RoundedCornerShape(16.dp)
+                        shape = RoundedCornerShape(16.dp),
                     ) {
                         Icon(Icons.Default.PlayArrow, contentDescription = null)
                         Spacer(Modifier.width(8.dp))
                         Text(
-                            "Start Workout",
+                            stringResource(Res.string.start_workout),
                             style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold
+                            fontWeight = FontWeight.Bold,
                         )
                     }
 
@@ -537,36 +788,37 @@ fun RoutineCard(
 
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceEvenly
+                        horizontalArrangement = Arrangement.SpaceEvenly,
+                        verticalAlignment = Alignment.CenterVertically,
                     ) {
                         OutlinedButton(
                             onClick = onEdit,
                             modifier = Modifier.weight(1f),
                             shape = RoundedCornerShape(12.dp),
-                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
                         ) {
                             Icon(
                                 Icons.Default.Edit,
                                 contentDescription = null,
-                                modifier = Modifier.size(16.dp)
+                                modifier = Modifier.size(16.dp),
                             )
                             Spacer(Modifier.width(4.dp))
-                            Text("Edit", maxLines = 1)
+                            Text(stringResource(Res.string.action_edit), maxLines = 1)
                         }
                         Spacer(Modifier.width(6.dp))
                         OutlinedButton(
                             onClick = onDuplicate,
                             modifier = Modifier.weight(1f),
                             shape = RoundedCornerShape(12.dp),
-                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
                         ) {
                             Icon(
                                 Icons.Default.ContentCopy,
                                 contentDescription = null,
-                                modifier = Modifier.size(16.dp)
+                                modifier = Modifier.size(16.dp),
                             )
                             Spacer(Modifier.width(4.dp))
-                            Text("Copy", maxLines = 1)
+                            Text(stringResource(Res.string.action_copy), maxLines = 1)
                         }
                         Spacer(Modifier.width(6.dp))
                         OutlinedButton(
@@ -574,15 +826,67 @@ fun RoutineCard(
                             modifier = Modifier.weight(1f),
                             shape = RoundedCornerShape(12.dp),
                             contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
-                            colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error)
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
                         ) {
                             Icon(
                                 Icons.Default.Delete,
                                 contentDescription = null,
-                                modifier = Modifier.size(16.dp)
+                                modifier = Modifier.size(16.dp),
                             )
                             Spacer(Modifier.width(4.dp))
-                            Text("Delete", maxLines = 1)
+                            Text(stringResource(Res.string.action_delete), maxLines = 1)
+                        }
+
+                        // Overflow menu for Move/Copy to Profile
+                        if (hasOtherProfiles) {
+                            var showOverflow by remember { mutableStateOf(false) }
+                            Spacer(Modifier.width(2.dp))
+                            Box {
+                                IconButton(
+                                    onClick = { showOverflow = true },
+                                    modifier = Modifier.size(36.dp),
+                                ) {
+                                    Icon(
+                                        Icons.Default.MoreVert,
+                                        contentDescription = stringResource(Res.string.select_target_profile),
+                                        modifier = Modifier.size(20.dp),
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                                DropdownMenu(
+                                    expanded = showOverflow,
+                                    onDismissRequest = { showOverflow = false },
+                                ) {
+                                    DropdownMenuItem(
+                                        text = { Text(stringResource(Res.string.move_to_profile)) },
+                                        onClick = {
+                                            showOverflow = false
+                                            onMoveToProfile()
+                                        },
+                                        leadingIcon = {
+                                            Icon(
+                                                Icons.AutoMirrored.Default.DriveFileMove,
+                                                contentDescription = null,
+                                                modifier = Modifier.size(20.dp),
+                                            )
+                                        },
+                                    )
+                                    DropdownMenuItem(
+                                        text = { Text(stringResource(Res.string.copy_to_profile)) },
+                                        onClick = {
+                                            showOverflow = false
+                                            onCopyToProfile()
+                                        },
+                                        leadingIcon = {
+                                            Icon(
+                                                Icons.Default.FileCopy,
+                                                contentDescription = null,
+                                                modifier = Modifier.size(20.dp),
+                                            )
+                                        },
+                                    )
+                                }
+                            }
                         }
                     }
                 }
@@ -593,18 +897,21 @@ fun RoutineCard(
     if (showDeleteDialog) {
         AlertDialog(
             onDismissRequest = { showDeleteDialog = false },
-            title = { Text("Delete Routine") },
-            text = { Text("Are you sure you want to delete '${routine.name}'?") },
+            title = { Text(stringResource(Res.string.delete_routine)) },
+            text = { Text(stringResource(Res.string.delete_routine_message, routine.name)) },
             confirmButton = {
-                TextButton(onClick = { onDelete(); showDeleteDialog = false }) {
-                    Text("Delete", color = MaterialTheme.colorScheme.error)
+                TextButton(onClick = {
+                    onDelete()
+                    showDeleteDialog = false
+                }) {
+                    Text(stringResource(Res.string.action_delete), color = MaterialTheme.colorScheme.error)
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showDeleteDialog = false }) {
-                    Text("Cancel")
+                    Text(stringResource(Res.string.action_cancel))
                 }
-            }
+            },
         )
     }
 }
@@ -632,7 +939,7 @@ private fun formatSetRepsForCard(setReps: List<Int?>): String {
     groups.add(Pair(currentCount, currentReps?.toString() ?: "AMRAP"))
 
     // Format as "3x10, 2x8" or "3xAMRAP"
-    return groups.joinToString(", ") { (count, reps) -> "${count}x${reps}" }
+    return groups.joinToString(", ") { (count, reps) -> "${count}x$reps" }
 }
 
 /**
@@ -683,7 +990,7 @@ private fun formatEstimatedDuration(routine: Routine): String {
     val minutes = estimatedSeconds / 60
 
     return if (minutes < 60) {
-        "${minutes} min"
+        "$minutes min"
     } else {
         val hours = minutes / 60
         val remainingMinutes = minutes % 60
@@ -695,16 +1002,15 @@ private fun estimateSetWorkSeconds(exercise: com.devil.phoenixproject.domain.mod
     val reps = exercise.setReps.getOrNull(setIndex)
     return when {
         !exercise.exercise.hasCableAccessory -> (exercise.duration ?: 30).coerceAtLeast(0)
-        reps == null -> 30 // AMRAP estimate
+
+        reps == null -> 30
+
+        // AMRAP estimate
         else -> (reps * 3).coerceAtLeast(0) // ~3s per rep estimate
     }
 }
 
-private fun getNextStepForEstimate(
-    routine: Routine,
-    currentExIndex: Int,
-    currentSetIndex: Int
-): Pair<Int, Int>? {
+private fun getNextStepForEstimate(routine: Routine, currentExIndex: Int, currentSetIndex: Int): Pair<Int, Int>? {
     val currentExercise = routine.exercises.getOrNull(currentExIndex) ?: return null
 
     // Superset interleaving: A1 -> B1 -> A2 -> B2 ...

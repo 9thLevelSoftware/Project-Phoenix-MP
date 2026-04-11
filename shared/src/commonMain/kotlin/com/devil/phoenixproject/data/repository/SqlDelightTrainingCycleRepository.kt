@@ -18,9 +18,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
 
-class SqlDelightTrainingCycleRepository(
-    private val db: VitruvianDatabase
-) : TrainingCycleRepository {
+class SqlDelightTrainingCycleRepository(private val db: VitruvianDatabase) : TrainingCycleRepository {
 
     private val queries = db.vitruvianDatabaseQueries
 
@@ -31,7 +29,9 @@ class SqlDelightTrainingCycleRepository(
         name: String,
         description: String?,
         created_at: Long,
-        is_active: Long
+        is_active: Long,
+        // Multi-profile support (migration 21)
+        profileId: String,
     ): TrainingCycle {
         val days = getCycleDays(id)
         return TrainingCycle(
@@ -40,7 +40,8 @@ class SqlDelightTrainingCycleRepository(
             description = description,
             days = days,
             createdAt = created_at,
-            isActive = is_active == 1L
+            isActive = is_active == 1L,
+            profileId = profileId,
         )
     }
 
@@ -55,22 +56,20 @@ class SqlDelightTrainingCycleRepository(
         eccentric_load_percent: Long?,
         weight_progression_percent: Double?,
         rep_modifier: Long?,
-        rest_time_override_seconds: Long?
-    ): CycleDay {
-        return CycleDay(
-            id = id,
-            cycleId = cycle_id,
-            dayNumber = day_number.toInt(),
-            name = name,
-            routineId = routine_id,
-            isRestDay = is_rest_day == 1L,
-            echoLevel = echo_level?.let { parseEchoLevel(it) },
-            eccentricLoadPercent = eccentric_load_percent?.toInt(),
-            weightProgressionPercent = weight_progression_percent?.toFloat(),
-            repModifier = rep_modifier?.toInt(),
-            restTimeOverrideSeconds = rest_time_override_seconds?.toInt()
-        )
-    }
+        rest_time_override_seconds: Long?,
+    ): CycleDay = CycleDay(
+        id = id,
+        cycleId = cycle_id,
+        dayNumber = day_number.toInt(),
+        name = name,
+        routineId = routine_id,
+        isRestDay = is_rest_day == 1L,
+        echoLevel = echo_level?.let { parseEchoLevel(it) },
+        eccentricLoadPercent = eccentric_load_percent?.toInt(),
+        weightProgressionPercent = weight_progression_percent?.toFloat(),
+        repModifier = rep_modifier?.toInt(),
+        restTimeOverrideSeconds = rest_time_override_seconds?.toInt(),
+    )
 
     private fun mapToCycleProgress(
         id: String,
@@ -81,29 +80,25 @@ class SqlDelightTrainingCycleRepository(
         last_advanced_at: Long?,
         completed_days: String?,
         missed_days: String?,
-        rotation_count: Long
-    ): CycleProgress {
-        return CycleProgress(
-            id = id,
-            cycleId = cycle_id,
-            currentDayNumber = current_day_number.toInt(),
-            lastCompletedDate = last_completed_date,
-            cycleStartDate = cycle_start_date,
-            lastAdvancedAt = last_advanced_at,
-            completedDays = parseIntSet(completed_days),
-            missedDays = parseIntSet(missed_days),
-            rotationCount = rotation_count.toInt()
-        )
-    }
+        rotation_count: Long,
+    ): CycleProgress = CycleProgress(
+        id = id,
+        cycleId = cycle_id,
+        currentDayNumber = current_day_number.toInt(),
+        lastCompletedDate = last_completed_date,
+        cycleStartDate = cycle_start_date,
+        lastAdvancedAt = last_advanced_at,
+        completedDays = parseIntSet(completed_days),
+        missedDays = parseIntSet(missed_days),
+        rotationCount = rotation_count.toInt(),
+    )
 
     // ==================== Helper Functions ====================
 
-    private fun parseEchoLevel(value: String): EchoLevel? {
-        return try {
-            EchoLevel.valueOf(value)
-        } catch (e: IllegalArgumentException) {
-            null
-        }
+    private fun parseEchoLevel(value: String): EchoLevel? = try {
+        EchoLevel.valueOf(value)
+    } catch (_: IllegalArgumentException) {
+        null
     }
 
     private fun parseIntSet(json: String?): Set<Int> {
@@ -114,33 +109,37 @@ class SqlDelightTrainingCycleRepository(
             .toSet()
     }
 
-    private fun intSetToJson(set: Set<Int>): String {
-        return set.sorted().joinToString(",", "[", "]")
-    }
+    private fun intSetToJson(set: Set<Int>): String = set.sorted().joinToString(",", "[", "]")
 
     // ==================== Training Cycles ====================
 
-    override fun getAllCycles(): Flow<List<TrainingCycle>> {
-        return queries.selectAllTrainingCycles { id, name, description, created_at, is_active ->
-            TrainingCycle(
-                id = id,
-                name = name,
-                description = description,
-                days = emptyList(), // Will be loaded separately when needed
-                createdAt = created_at,
-                isActive = is_active == 1L
-            )
-        }
-            .asFlow()
-            .mapToList(Dispatchers.IO)
-            .map { basicCycles ->
-                // Load days for each cycle
-                basicCycles.map { cycle ->
-                    val days = getCycleDays(cycle.id)
-                    cycle.copy(days = days)
-                }
-            }
+    override fun getAllCycles(profileId: String): Flow<List<TrainingCycle>> = queries.selectAllTrainingCycles(profileId = profileId) {
+            id,
+            name,
+            description,
+            created_at,
+            is_active,
+            profile_id,
+        ->
+        TrainingCycle(
+            id = id,
+            name = name,
+            description = description,
+            days = emptyList(), // Will be loaded separately when needed
+            createdAt = created_at,
+            isActive = is_active == 1L,
+            profileId = profile_id,
+        )
     }
+        .asFlow()
+        .mapToList(Dispatchers.IO)
+        .map { basicCycles ->
+            // Load days for each cycle
+            basicCycles.map { cycle ->
+                val days = getCycleDays(cycle.id)
+                cycle.copy(days = days)
+            }
+        }
 
     override suspend fun getCycleById(cycleId: String): TrainingCycle? {
         return withContext(Dispatchers.IO) {
@@ -155,31 +154,38 @@ class SqlDelightTrainingCycleRepository(
                 description = row.description,
                 days = days,
                 createdAt = row.created_at,
-                isActive = row.is_active == 1L
+                isActive = row.is_active == 1L,
+                profileId = row.profile_id,
             )
         }
     }
 
-    override fun getActiveCycle(): Flow<TrainingCycle?> {
-        return queries.selectActiveTrainingCycle { id, name, description, created_at, is_active ->
-            TrainingCycle(
-                id = id,
-                name = name,
-                description = description,
-                days = emptyList(), // Will be loaded separately
-                createdAt = created_at,
-                isActive = is_active == 1L
-            )
-        }
-            .asFlow()
-            .mapToOneOrNull(Dispatchers.IO)
-            .map { cycle ->
-                cycle?.let {
-                    val days = getCycleDays(it.id)
-                    it.copy(days = days)
-                }
-            }
+    override fun getActiveCycle(profileId: String): Flow<TrainingCycle?> = queries.selectActiveTrainingCycle(profileId = profileId) {
+            id,
+            name,
+            description,
+            created_at,
+            is_active,
+            profile_id,
+        ->
+        TrainingCycle(
+            id = id,
+            name = name,
+            description = description,
+            days = emptyList(), // Will be loaded separately
+            createdAt = created_at,
+            isActive = is_active == 1L,
+            profileId = profile_id,
+        )
     }
+        .asFlow()
+        .mapToOneOrNull(Dispatchers.IO)
+        .map { cycle ->
+            cycle?.let {
+                val days = getCycleDays(it.id)
+                it.copy(days = days)
+            }
+        }
 
     override suspend fun getCycleWithProgress(cycleId: String): Pair<TrainingCycle, CycleProgress?>? {
         return withContext(Dispatchers.IO) {
@@ -198,7 +204,8 @@ class SqlDelightTrainingCycleRepository(
                     name = cycle.name,
                     description = cycle.description,
                     created_at = cycle.createdAt,
-                    is_active = if (cycle.isActive) 1L else 0L
+                    is_active = if (cycle.isActive) 1L else 0L,
+                    profile_id = cycle.profileId,
                 )
 
                 // Insert all days
@@ -214,13 +221,13 @@ class SqlDelightTrainingCycleRepository(
                         eccentric_load_percent = day.eccentricLoadPercent?.toLong(),
                         weight_progression_percent = day.weightProgressionPercent?.toDouble(),
                         rep_modifier = day.repModifier?.toLong(),
-                        rest_time_override_seconds = day.restTimeOverrideSeconds?.toLong()
+                        rest_time_override_seconds = day.restTimeOverrideSeconds?.toLong(),
                     )
                 }
 
                 // If cycle is active, deactivate all others and initialize progress
                 if (cycle.isActive) {
-                    queries.setActiveTrainingCycle(cycle.id)
+                    queries.setActiveTrainingCycle(cycle.id, profileId = cycle.profileId)
                     // Initialize progress if it doesn't exist (uses INSERT OR IGNORE to prevent UNIQUE constraint violations)
                     val now = currentTimeMillis()
                     val progressId = generateUUID()
@@ -233,7 +240,7 @@ class SqlDelightTrainingCycleRepository(
                         last_advanced_at = null,
                         completed_days = null,
                         missed_days = null,
-                        rotation_count = 0L
+                        rotation_count = 0L,
                     )
                 }
             }
@@ -248,7 +255,7 @@ class SqlDelightTrainingCycleRepository(
                     name = cycle.name,
                     description = cycle.description,
                     is_active = if (cycle.isActive) 1L else 0L,
-                    id = cycle.id
+                    id = cycle.id,
                 )
 
                 // Delete existing days and re-insert
@@ -267,23 +274,23 @@ class SqlDelightTrainingCycleRepository(
                         eccentric_load_percent = day.eccentricLoadPercent?.toLong(),
                         weight_progression_percent = day.weightProgressionPercent?.toDouble(),
                         rep_modifier = day.repModifier?.toLong(),
-                        rest_time_override_seconds = day.restTimeOverrideSeconds?.toLong()
+                        rest_time_override_seconds = day.restTimeOverrideSeconds?.toLong(),
                     )
                 }
 
                 // If cycle is active, deactivate all others
                 if (cycle.isActive) {
-                    queries.setActiveTrainingCycle(cycle.id)
+                    queries.setActiveTrainingCycle(cycle.id, profileId = cycle.profileId)
                 }
             }
         }
     }
 
-    override suspend fun setActiveCycle(cycleId: String) {
+    override suspend fun setActiveCycle(cycleId: String, profileId: String) {
         withContext(Dispatchers.IO) {
             db.transaction {
                 // Set this cycle as active and all others as inactive
-                queries.setActiveTrainingCycle(cycleId)
+                queries.setActiveTrainingCycle(cycleId, profileId = profileId)
 
                 // Initialize progress if it doesn't exist (uses INSERT OR IGNORE to prevent race conditions)
                 val now = currentTimeMillis()
@@ -297,21 +304,21 @@ class SqlDelightTrainingCycleRepository(
                     last_advanced_at = null,
                     completed_days = null,
                     missed_days = null,
-                    rotation_count = 0L
+                    rotation_count = 0L,
                 )
 
                 // Always reset progress on activation so deactivate/reactivate starts fresh
                 queries.resetCycleProgress(
                     cycle_start_date = now,
-                    cycle_id = cycleId
+                    cycle_id = cycleId,
                 )
             }
         }
     }
 
-    override suspend fun clearActiveCycle() {
+    override suspend fun clearActiveCycle(profileId: String) {
         withContext(Dispatchers.IO) {
-            queries.deactivateAllCycles()
+            queries.deactivateAllCycles(profileId = profileId)
         }
     }
 
@@ -332,11 +339,9 @@ class SqlDelightTrainingCycleRepository(
 
     // ==================== Cycle Days ====================
 
-    override suspend fun getCycleDays(cycleId: String): List<CycleDay> {
-        return withContext(Dispatchers.IO) {
-            queries.selectCycleDaysByCycle(cycleId, ::mapToCycleDay)
-                .executeAsList()
-        }
+    override suspend fun getCycleDays(cycleId: String): List<CycleDay> = withContext(Dispatchers.IO) {
+        queries.selectCycleDaysByCycle(cycleId, ::mapToCycleDay)
+            .executeAsList()
     }
 
     override suspend fun addCycleDay(day: CycleDay) {
@@ -352,7 +357,7 @@ class SqlDelightTrainingCycleRepository(
                 eccentric_load_percent = day.eccentricLoadPercent?.toLong(),
                 weight_progression_percent = day.weightProgressionPercent?.toDouble(),
                 rep_modifier = day.repModifier?.toLong(),
-                rest_time_override_seconds = day.restTimeOverrideSeconds?.toLong()
+                rest_time_override_seconds = day.restTimeOverrideSeconds?.toLong(),
             )
         }
     }
@@ -369,7 +374,7 @@ class SqlDelightTrainingCycleRepository(
                 weight_progression_percent = day.weightProgressionPercent?.toDouble(),
                 rep_modifier = day.repModifier?.toLong(),
                 rest_time_override_seconds = day.restTimeOverrideSeconds?.toLong(),
-                id = day.id
+                id = day.id,
             )
         }
     }
@@ -401,44 +406,40 @@ class SqlDelightTrainingCycleRepository(
 
     // ==================== Cycle Progress ====================
 
-    override suspend fun getCycleProgress(cycleId: String): CycleProgress? {
-        return withContext(Dispatchers.IO) {
-            queries.selectCycleProgressByCycle(cycleId, ::mapToCycleProgress)
-                .executeAsOneOrNull()
-        }
+    override suspend fun getCycleProgress(cycleId: String): CycleProgress? = withContext(Dispatchers.IO) {
+        queries.selectCycleProgressByCycle(cycleId, ::mapToCycleProgress)
+            .executeAsOneOrNull()
     }
 
-    override suspend fun initializeProgress(cycleId: String): CycleProgress {
-        return withContext(Dispatchers.IO) {
-            val now = currentTimeMillis()
-            val progressId = generateUUID()
+    override suspend fun initializeProgress(cycleId: String): CycleProgress = withContext(Dispatchers.IO) {
+        val now = currentTimeMillis()
+        val progressId = generateUUID()
 
-            val progress = CycleProgress(
-                id = progressId,
-                cycleId = cycleId,
-                currentDayNumber = 1,
-                lastCompletedDate = null,
-                cycleStartDate = now,
-                lastAdvancedAt = null,
-                completedDays = emptySet(),
-                missedDays = emptySet(),
-                rotationCount = 0
-            )
+        val progress = CycleProgress(
+            id = progressId,
+            cycleId = cycleId,
+            currentDayNumber = 1,
+            lastCompletedDate = null,
+            cycleStartDate = now,
+            lastAdvancedAt = null,
+            completedDays = emptySet(),
+            missedDays = emptySet(),
+            rotationCount = 0,
+        )
 
-            queries.insertCycleProgress(
-                id = progress.id,
-                cycle_id = progress.cycleId,
-                current_day_number = progress.currentDayNumber.toLong(),
-                last_completed_date = progress.lastCompletedDate,
-                cycle_start_date = progress.cycleStartDate,
-                last_advanced_at = progress.lastAdvancedAt,
-                completed_days = intSetToJson(progress.completedDays),
-                missed_days = intSetToJson(progress.missedDays),
-                rotation_count = progress.rotationCount.toLong()
-            )
+        queries.insertCycleProgress(
+            id = progress.id,
+            cycle_id = progress.cycleId,
+            current_day_number = progress.currentDayNumber.toLong(),
+            last_completed_date = progress.lastCompletedDate,
+            cycle_start_date = progress.cycleStartDate,
+            last_advanced_at = progress.lastAdvancedAt,
+            completed_days = intSetToJson(progress.completedDays),
+            missed_days = intSetToJson(progress.missedDays),
+            rotation_count = progress.rotationCount.toLong(),
+        )
 
-            progress
-        }
+        progress
     }
 
     override suspend fun advanceToNextDay(cycleId: String): Int {
@@ -455,7 +456,7 @@ class SqlDelightTrainingCycleRepository(
 
             val updated = progress.advanceToNextDay(
                 totalDays = cycle.days.size,
-                markMissed = false
+                markMissed = false,
             )
 
             queries.updateCycleProgress(
@@ -466,7 +467,7 @@ class SqlDelightTrainingCycleRepository(
                 completed_days = intSetToJson(updated.completedDays),
                 missed_days = intSetToJson(updated.missedDays),
                 rotation_count = updated.rotationCount.toLong(),
-                cycle_id = cycleId
+                cycle_id = cycleId,
             )
 
             updated.currentDayNumber
@@ -479,7 +480,7 @@ class SqlDelightTrainingCycleRepository(
 
             queries.resetCycleProgress(
                 cycle_start_date = now,
-                cycle_id = cycleId
+                cycle_id = cycleId,
             )
         }
     }
@@ -497,7 +498,7 @@ class SqlDelightTrainingCycleRepository(
                 completed_days = intSetToJson(progress.completedDays),
                 missed_days = intSetToJson(progress.missedDays),
                 rotation_count = progress.rotationCount.toLong(),
-                cycle_id = cycleId
+                cycle_id = cycleId,
             )
         }
     }
@@ -518,7 +519,7 @@ class SqlDelightTrainingCycleRepository(
                 completed_days = intSetToJson(updatedCompletedDays),
                 missed_days = intSetToJson(progress.missedDays),
                 rotation_count = progress.rotationCount.toLong(),
-                cycle_id = cycleId
+                cycle_id = cycleId,
             )
         }
     }
@@ -533,7 +534,7 @@ class SqlDelightTrainingCycleRepository(
                 completed_days = intSetToJson(progress.completedDays),
                 missed_days = intSetToJson(progress.missedDays),
                 rotation_count = progress.rotationCount.toLong(),
-                cycle_id = progress.cycleId
+                cycle_id = progress.cycleId,
             )
         }
     }
@@ -565,7 +566,7 @@ class SqlDelightTrainingCycleRepository(
                     completed_days = intSetToJson(updated.completedDays),
                     missed_days = intSetToJson(updated.missedDays),
                     rotation_count = updated.rotationCount.toLong(),
-                    cycle_id = cycleId
+                    cycle_id = cycleId,
                 )
 
                 updated
@@ -577,17 +578,15 @@ class SqlDelightTrainingCycleRepository(
 
     // ==================== Cycle Progression ====================
 
-    override suspend fun getCycleProgression(cycleId: String): CycleProgression? {
-        return withContext(Dispatchers.IO) {
-            queries.selectCycleProgression(cycleId).executeAsOneOrNull()?.let { row ->
-                CycleProgression(
-                    cycleId = row.cycle_id,
-                    frequencyCycles = row.frequency_cycles.toInt(),
-                    weightIncreasePercent = row.weight_increase_percent?.toFloat(),
-                    echoLevelIncrease = row.echo_level_increase != 0L,
-                    eccentricLoadIncreasePercent = row.eccentric_load_increase_percent?.toInt()
-                )
-            }
+    override suspend fun getCycleProgression(cycleId: String): CycleProgression? = withContext(Dispatchers.IO) {
+        queries.selectCycleProgression(cycleId).executeAsOneOrNull()?.let { row ->
+            CycleProgression(
+                cycleId = row.cycle_id,
+                frequencyCycles = row.frequency_cycles.toInt(),
+                weightIncreasePercent = row.weight_increase_percent?.toFloat(),
+                echoLevelIncrease = row.echo_level_increase != 0L,
+                eccentricLoadIncreasePercent = row.eccentric_load_increase_percent?.toInt(),
+            )
         }
     }
 
@@ -598,7 +597,7 @@ class SqlDelightTrainingCycleRepository(
                 frequency_cycles = progression.frequencyCycles.toLong(),
                 weight_increase_percent = progression.weightIncreasePercent?.toDouble(),
                 echo_level_increase = if (progression.echoLevelIncrease) 1L else 0L,
-                eccentric_load_increase_percent = progression.eccentricLoadIncreasePercent?.toLong()
+                eccentric_load_increase_percent = progression.eccentricLoadIncreasePercent?.toLong(),
             )
         }
     }
@@ -609,34 +608,32 @@ class SqlDelightTrainingCycleRepository(
         }
     }
 
-    override suspend fun getCycleItems(cycleId: String): List<CycleItem> {
-        return withContext(Dispatchers.IO) {
-            val days = getCycleDays(cycleId)
-            val routineIds = days.mapNotNull { it.routineId }.distinct()
+    override suspend fun getCycleItems(cycleId: String): List<CycleItem> = withContext(Dispatchers.IO) {
+        val days = getCycleDays(cycleId)
+        val routineIds = days.mapNotNull { it.routineId }.distinct()
 
-            // Fetch routine info for all referenced routines
-            // Triple: name, exerciseCount, exerciseNames
-            val routineInfo = mutableMapOf<String, Triple<String, Int, List<String>>>()
-            routineIds.forEach { routineId ->
-                queries.selectRoutineById(routineId).executeAsOneOrNull()?.let { routine ->
-                    val exercises = queries.selectExercisesByRoutine(routineId).executeAsList()
-                    routineInfo[routineId] = Triple(
-                        routine.name,
-                        exercises.size,
-                        exercises.map { it.exerciseName }
-                    )
-                }
-            }
-
-            days.map { day ->
-                val info = day.routineId?.let { routineInfo[it] }
-                CycleItem.fromCycleDay(
-                    day = day,
-                    routineName = info?.first,
-                    exerciseCount = info?.second ?: 0,
-                    exerciseNames = info?.third ?: emptyList()
+        // Fetch routine info for all referenced routines
+        // Triple: name, exerciseCount, exerciseNames
+        val routineInfo = mutableMapOf<String, Triple<String, Int, List<String>>>()
+        routineIds.forEach { routineId ->
+            queries.selectRoutineById(routineId).executeAsOneOrNull()?.let { routine ->
+                val exercises = queries.selectExercisesByRoutine(routineId).executeAsList()
+                routineInfo[routineId] = Triple(
+                    routine.name,
+                    exercises.size,
+                    exercises.map { it.exerciseName },
                 )
             }
+        }
+
+        days.map { day ->
+            val info = day.routineId?.let { routineInfo[it] }
+            CycleItem.fromCycleDay(
+                day = day,
+                routineName = info?.first,
+                exerciseCount = info?.second ?: 0,
+                exerciseNames = info?.third ?: emptyList(),
+            )
         }
     }
 }

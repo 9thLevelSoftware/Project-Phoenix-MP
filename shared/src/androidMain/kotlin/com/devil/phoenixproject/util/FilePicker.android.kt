@@ -16,7 +16,7 @@ actual class FilePicker {
     @Composable
     actual fun LaunchFilePicker(onFilePicked: (String?) -> Unit) {
         val launcher = rememberLauncherForActivityResult(
-            contract = ActivityResultContracts.OpenDocument()
+            contract = ActivityResultContracts.OpenDocument(),
         ) { uri: Uri? ->
             onFilePicked(uri?.toString())
         }
@@ -27,14 +27,23 @@ actual class FilePicker {
     }
 
     @Composable
-    actual fun LaunchFileSaver(
-        fileName: String,
-        content: String,
-        onSaved: (String?) -> Unit
-    ) {
+    actual fun LaunchCsvFilePicker(onFilePicked: (String?) -> Unit) {
+        val launcher = rememberLauncherForActivityResult(
+            contract = ActivityResultContracts.OpenDocument(),
+        ) { uri: Uri? ->
+            onFilePicked(uri?.toString())
+        }
+
+        LaunchedEffect(Unit) {
+            launcher.launch(arrayOf("text/csv", "text/comma-separated-values", "*/*"))
+        }
+    }
+
+    @Composable
+    actual fun LaunchFileSaver(fileName: String, content: String, onSaved: (String?) -> Unit) {
         val context = LocalContext.current
         val launcher = rememberLauncherForActivityResult(
-            contract = ActivityResultContracts.CreateDocument("application/json")
+            contract = ActivityResultContracts.CreateDocument("application/json"),
         ) { uri: Uri? ->
             if (uri != null) {
                 try {
@@ -42,7 +51,7 @@ actual class FilePicker {
                         stream.write(content.toByteArray())
                     }
                     onSaved(uri.toString())
-                } catch (e: Exception) {
+                } catch (_: Exception) {
                     onSaved(null)
                 }
             } else {
@@ -60,6 +69,4 @@ actual class FilePicker {
  * Remember a FilePicker instance for use in Compose.
  */
 @Composable
-actual fun rememberFilePicker(): FilePicker {
-    return remember { FilePicker() }
-}
+actual fun rememberFilePicker(): FilePicker = remember { FilePicker() }

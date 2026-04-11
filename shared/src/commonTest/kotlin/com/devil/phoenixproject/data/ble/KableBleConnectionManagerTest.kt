@@ -4,15 +4,14 @@ import com.devil.phoenixproject.data.repository.ConnectionLogRepository
 import com.devil.phoenixproject.data.repository.ReconnectionRequest
 import com.devil.phoenixproject.data.repository.ScannedDevice
 import com.devil.phoenixproject.domain.model.ConnectionState
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertNull
+import kotlin.test.assertTrue
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.test.runTest
-import kotlin.test.Test
-import kotlin.test.assertEquals
-import kotlin.test.assertFalse
-import kotlin.test.assertNull
-import kotlin.test.assertTrue
 
 /**
  * Tests for KableBleConnectionManager callback routing and state management.
@@ -47,7 +46,7 @@ class KableBleConnectionManagerTest {
                 handleDetector = HandleStateDetector(),
                 onMetricEmit = { true },
                 onHeuristicData = {},
-                onConnectionLost = {}
+                onConnectionLost = {},
             ),
             discoMode = DiscoMode(scope = scope, sendCommand = {}),
             handleDetector = HandleStateDetector(),
@@ -125,7 +124,11 @@ class KableBleConnectionManagerTest {
 
         manager.processIncomingData(data)
 
-        assertEquals(0, tracker.metricsFromRx.size, "onMetricFromRx should NOT be called for short packet")
+        assertEquals(
+            0,
+            tracker.metricsFromRx.size,
+            "onMetricFromRx should NOT be called for short packet",
+        )
         // But command response should still fire
         assertEquals(1, tracker.commandResponses.size, "onCommandResponse should still fire")
         assertEquals(0x01.toUByte(), tracker.commandResponses[0])
@@ -141,7 +144,11 @@ class KableBleConnectionManagerTest {
 
         manager.processIncomingData(data)
 
-        assertEquals(0, tracker.repEventsFromRx.size, "onRepEventFromRx should NOT be called for short packet")
+        assertEquals(
+            0,
+            tracker.repEventsFromRx.size,
+            "onRepEventFromRx should NOT be called for short packet",
+        )
         // But command response should still fire
         assertEquals(1, tracker.commandResponses.size, "onCommandResponse should still fire")
         assertEquals(0x02.toUByte(), tracker.commandResponses[0])
@@ -158,7 +165,11 @@ class KableBleConnectionManagerTest {
         manager.processIncomingData(data1)
         manager.processIncomingData(data2)
 
-        assertEquals(2, tracker.commandResponses.size, "onCommandResponse should fire for each packet")
+        assertEquals(
+            2,
+            tracker.commandResponses.size,
+            "onCommandResponse should fire for each packet",
+        )
         assertEquals(0x42.toUByte(), tracker.commandResponses[0])
         assertEquals(0xFF.toUByte(), tracker.commandResponses[1])
 
@@ -198,11 +209,14 @@ class KableBleConnectionManagerTest {
 
         manager.disconnect()
 
-        assertTrue(tracker.connectionStates.isNotEmpty(), "onConnectionStateChanged should be called")
+        assertTrue(
+            tracker.connectionStates.isNotEmpty(),
+            "onConnectionStateChanged should be called",
+        )
         assertEquals(
             ConnectionState.Disconnected,
             tracker.connectionStates.last(),
-            "Last state should be Disconnected"
+            "Last state should be Disconnected",
         )
     }
 
@@ -238,7 +252,10 @@ class KableBleConnectionManagerTest {
 
         manager.cancelConnection()
 
-        assertNull(manager.currentPeripheral, "currentPeripheral should be null after cancelConnection")
+        assertNull(
+            manager.currentPeripheral,
+            "currentPeripheral should be null after cancelConnection",
+        )
     }
 
     @Test
@@ -247,11 +264,14 @@ class KableBleConnectionManagerTest {
 
         manager.cancelConnection()
 
-        assertTrue(tracker.connectionStates.isNotEmpty(), "onConnectionStateChanged should be called")
+        assertTrue(
+            tracker.connectionStates.isNotEmpty(),
+            "onConnectionStateChanged should be called",
+        )
         assertEquals(
             ConnectionState.Disconnected,
             tracker.connectionStates.last(),
-            "Last state should be Disconnected"
+            "Last state should be Disconnected",
         )
     }
 }

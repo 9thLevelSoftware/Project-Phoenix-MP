@@ -22,15 +22,25 @@ import androidx.compose.ui.unit.sp
 import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.data.repository.ExerciseVideoEntity
 import com.devil.phoenixproject.domain.model.*
-import com.devil.phoenixproject.presentation.components.VideoPlayer
+import com.devil.phoenixproject.domain.model.BiomechanicsRepResult
 import com.devil.phoenixproject.presentation.components.AnimatedRepCounter
+import com.devil.phoenixproject.presentation.components.AutoDetectionSheet
 import com.devil.phoenixproject.presentation.components.CircularForceGauge
 import com.devil.phoenixproject.presentation.components.EnhancedCablePositionBar
+import com.devil.phoenixproject.presentation.components.ExpandedForceCurve
+import com.devil.phoenixproject.presentation.components.ForceCurveMiniGraph
 import com.devil.phoenixproject.presentation.components.StableRepProgress
-import com.devil.phoenixproject.presentation.util.ResponsiveDimensions
+import com.devil.phoenixproject.presentation.components.VideoPlayer
+import com.devil.phoenixproject.presentation.manager.DetectionState
 import com.devil.phoenixproject.presentation.util.LocalWindowSizeClass
+import com.devil.phoenixproject.presentation.util.ResponsiveDimensions
 import com.devil.phoenixproject.presentation.util.WindowWidthSizeClass
+import com.devil.phoenixproject.ui.theme.velocityZoneColor
+import com.devil.phoenixproject.ui.theme.velocityZoneLabel
 import kotlin.math.abs
+import kotlinx.coroutines.launch
+import org.jetbrains.compose.resources.stringResource
+import vitruvianprojectphoenix.shared.generated.resources.*
 
 /**
  * Workout Heads-Up Display (HUD)
@@ -65,12 +75,36 @@ fun WorkoutHud(
     loadBaselineB: Float = 0f, // Load baseline for cable B (base tension to subtract)
     timedExerciseRemainingSeconds: Int? = null, // Issue #192: Countdown for timed exercises
     isCurrentExerciseBodyweight: Boolean = false,
-    modifier: Modifier = Modifier
+    latestBiomechanicsResult: BiomechanicsRepResult? = null,
+    detectionState: DetectionState = DetectionState(),
+    onDetectionConfirmed: suspend (exerciseId: String, exerciseName: String) -> Unit = { _, _ -> },
+    onDetectionDismissed: () -> Unit = {},
+    modifier: Modifier = Modifier,
 ) {
+    val scope = rememberCoroutineScope()
     // Determine if we're in Echo mode
     val isEchoMode = workoutParameters.isEchoMode
     val pagerState = rememberPagerState(pageCount = { 3 })
     val topBarModeLabel = if (isCurrentExerciseBodyweight) "Bodyweight" else workoutParameters.programMode.displayName
+
+    // Track consecutive high-asymmetry reps for alert (ASYM-05)
+    var consecutiveHighAsymmetryCount by remember { mutableStateOf(0) }
+    var lastProcessedRepNumber by remember { mutableStateOf(0) }
+
+    // Update consecutive count when new rep data arrives
+    LaunchedEffect(latestBiomechanicsResult?.repNumber) {
+        val result = latestBiomechanicsResult ?: return@LaunchedEffect
+        if (result.repNumber > lastProcessedRepNumber) {
+            lastProcessedRepNumber = result.repNumber
+            if (result.asymmetry.asymmetryPercent > 15f) {
+                consecutiveHighAsymmetryCount++
+            } else {
+                consecutiveHighAsymmetryCount = 0
+            }
+        }
+    }
+
+    val showAsymmetryAlert = consecutiveHighAsymmetryCount >= 3
 
     // Determine gradient for background based on phase?
     // For now, keep it simple dark/light surface
@@ -80,7 +114,8 @@ fun WorkoutHud(
             HudTopBar(
                 connectionState = connectionState,
                 workoutMode = topBarModeLabel,
-                onStopWorkout = onStopWorkout
+                onStopWorkout = onStopWorkout,
+
             )
         },
         bottomBar = {
@@ -93,20 +128,20 @@ fun WorkoutHud(
                 // Issue #125: Never show Next button during Active state - exercise navigation
                 // should only be allowed when the machine is not engaged. Official app behavior.
                 showNextButton = false,
-                isCurrentExerciseBodyweight = isCurrentExerciseBodyweight
+                isCurrentExerciseBodyweight = isCurrentExerciseBodyweight,
             )
         },
-        containerColor = MaterialTheme.colorScheme.surface
+        containerColor = MaterialTheme.colorScheme.surface,
     ) { paddingValues ->
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(paddingValues)
+                .padding(paddingValues),
         ) {
             // Background Pager
             HorizontalPager(
                 state = pagerState,
-                modifier = Modifier.fillMaxSize()
+                modifier = Modifier.fillMaxSize(),
             ) { page ->
                 when (page) {
                     0 -> {
@@ -129,24 +164,27 @@ fun WorkoutHud(
                             currentSetIndex = currentSetIndex,
                             totalSets = totalSets,
                             timedExerciseRemainingSeconds = timedExerciseRemainingSeconds,
-                            isCurrentExerciseBodyweight = isCurrentExerciseBodyweight
+                            isCurrentExerciseBodyweight = isCurrentExerciseBodyweight,
                         )
                     }
+
                     1 -> InstructionPage(
                         loadedRoutine = loadedRoutine,
                         currentExerciseIndex = currentExerciseIndex,
                         exerciseRepository = exerciseRepository,
-                        enableVideoPlayback = enableVideoPlayback
+                        enableVideoPlayback = enableVideoPlayback,
                     )
+
                     2 -> StatsPage(
                         metric = metric,
                         weightUnit = weightUnit,
                         formatWeight = formatWeight,
-                        isCurrentExerciseBodyweight = isCurrentExerciseBodyweight
+                        isCurrentExerciseBodyweight = isCurrentExerciseBodyweight,
+                        latestBiomechanicsResult = latestBiomechanicsResult,
                     )
                 }
             }
-            
+
             // Pager Indicator
             Row(
                 Modifier
@@ -154,29 +192,30 @@ fun WorkoutHud(
                     .fillMaxWidth()
                     .align(Alignment.BottomCenter)
                     .padding(bottom = 8.dp),
-                horizontalArrangement = Arrangement.Center
+                horizontalArrangement = Arrangement.Center,
             ) {
                 repeat(pagerState.pageCount) { iteration ->
-                    val color = if (pagerState.currentPage == iteration)
+                    val color = if (pagerState.currentPage == iteration) {
                         MaterialTheme.colorScheme.primary
-                    else
+                    } else {
                         MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f)
+                    }
                     Box(
                         modifier = Modifier
                             .padding(2.dp)
                             .clip(CircleShape)
                             .background(color)
-                            .size(8.dp)
+                            .size(8.dp),
                     )
                 }
             }
 
             // PERIPHERAL VISION BARS (Pinned to edges, overlaying the pager)
             // Detect activity quickly (movement/load), then latch per-cable for the set to avoid flicker.
-            val activePositionThresholdMm = 50f   // Match handle detection threshold
+            val activePositionThresholdMm = 50f // Match handle detection threshold
             val activeVelocityThresholdMms = 20.0 // Match auto-start velocity threshold
-            val activeRangeThresholdMm = 20f      // Lower than ROM threshold for early visibility
-            val activeLoadDeltaKg = 1.0f          // Above baseline to treat as engaged
+            val activeRangeThresholdMm = 20f // Lower than ROM threshold for early visibility
+            val activeLoadDeltaKg = 1.0f // Above baseline to treat as engaged
 
             val cableAHasRange = repRanges?.isCableAActive(activeRangeThresholdMm) == true
             val cableBHasRange = repRanges?.isCableBActive(activeRangeThresholdMm) == true
@@ -227,7 +266,7 @@ fun WorkoutHud(
                         .align(Alignment.CenterStart)
                         .width(24.dp) // Thinner for HUD
                         .fillMaxHeight(0.6f)
-                        .padding(start = 4.dp)
+                        .padding(start = 4.dp),
                 )
             }
 
@@ -250,7 +289,22 @@ fun WorkoutHud(
                         .align(Alignment.CenterEnd)
                         .width(24.dp) // Thinner for HUD
                         .fillMaxHeight(0.6f)
-                        .padding(end = 4.dp)
+                        .padding(end = 4.dp),
+                )
+            }
+
+            // Exercise Auto-Detection Sheet (non-blocking overlay)
+            // Shows when detection state is active, has a classification, and not dismissed
+            if (detectionState.isActive && detectionState.classification != null && !detectionState.isDismissed) {
+                AutoDetectionSheet(
+                    classification = detectionState.classification,
+                    exerciseRepository = exerciseRepository,
+                    onConfirm = { exerciseId, name ->
+                        scope.launch {
+                            onDetectionConfirmed(exerciseId, name)
+                        }
+                    },
+                    onDismiss = onDetectionDismissed,
                 )
             }
         }
@@ -258,11 +312,7 @@ fun WorkoutHud(
 }
 
 @Composable
-private fun HudTopBar(
-    connectionState: ConnectionState,
-    workoutMode: String,
-    onStopWorkout: () -> Unit
-) {
+private fun HudTopBar(connectionState: ConnectionState, workoutMode: String, onStopWorkout: () -> Unit) {
     val windowSizeClass = LocalWindowSizeClass.current
     val buttonHeight = when (windowSizeClass.widthSizeClass) {
         WindowWidthSizeClass.Expanded -> 80.dp
@@ -276,7 +326,7 @@ private fun HudTopBar(
             .height(buttonHeight)
             .padding(horizontal = 16.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
+        verticalAlignment = Alignment.CenterVertically,
     ) {
         // Left: Connection Status (Small Dot)
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -285,27 +335,30 @@ private fun HudTopBar(
                     .size(12.dp)
                     .clip(CircleShape)
                     .background(
-                        if (connectionState is ConnectionState.Connected) Color.Green else Color.Red
-                    )
+                        if (connectionState is ConnectionState.Connected) Color.Green else Color.Red,
+                    ),
             )
             Spacer(modifier = Modifier.width(8.dp))
             Text(
                 workoutMode,
                 style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
 
-        // Right: STOP Button (Prominent)
-        Button(
-            onClick = onStopWorkout,
-            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
-            shape = RoundedCornerShape(20.dp),
-            contentPadding = PaddingValues(horizontal = 24.dp, vertical = 0.dp)
-        ) {
-            Icon(Icons.Default.Stop, contentDescription = null)
-            Spacer(modifier = Modifier.width(8.dp))
-            Text("STOP", fontWeight = FontWeight.Bold)
+        // Right: STOP Button
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            // STOP Button (Prominent)
+            Button(
+                onClick = onStopWorkout,
+                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                shape = RoundedCornerShape(20.dp),
+                contentPadding = PaddingValues(horizontal = 24.dp, vertical = 0.dp),
+            ) {
+                Icon(Icons.Default.Stop, contentDescription = null)
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(stringResource(Res.string.stop_label), fontWeight = FontWeight.Bold)
+            }
         }
     }
 }
@@ -318,12 +371,12 @@ private fun HudBottomBar(
     onUpdateParameters: (WorkoutParameters) -> Unit,
     onNextExercise: () -> Unit,
     showNextButton: Boolean,
-    isCurrentExerciseBodyweight: Boolean
+    isCurrentExerciseBodyweight: Boolean,
 ) {
     Surface(
         color = MaterialTheme.colorScheme.surfaceContainer,
         shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
-        shadowElevation = 8.dp
+        shadowElevation = 8.dp,
     ) {
         Row(
             modifier = Modifier
@@ -331,7 +384,7 @@ private fun HudBottomBar(
                 .navigationBarsPadding()
                 .padding(16.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
+            verticalAlignment = Alignment.CenterVertically,
         ) {
             // Weight Controls - Echo mode shows "Adaptive" since weight is dynamic
             Column {
@@ -339,23 +392,23 @@ private fun HudBottomBar(
                     Text(
                         "Bodyweight",
                         style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     Text(
                         "No machine load",
                         style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Bold
+                        fontWeight = FontWeight.Bold,
                     )
                 } else {
                     Text(
                         "Weight / Cable",
                         style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     Text(
                         if (workoutParameters.isEchoMode) "Adaptive" else formatWeight(workoutParameters.weightPerCableKg, weightUnit),
                         style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Bold
+                        fontWeight = FontWeight.Bold,
                     )
                 }
             }
@@ -364,15 +417,16 @@ private fun HudBottomBar(
             if (showNextButton) {
                 FloatingActionButton(
                     onClick = onNextExercise,
-                    containerColor = MaterialTheme.colorScheme.primaryContainer
+                    containerColor = MaterialTheme.colorScheme.primaryContainer,
                 ) {
-                    Icon(Icons.Default.SkipNext, contentDescription = "Next Exercise")
+                    Icon(Icons.Default.SkipNext, contentDescription = stringResource(Res.string.cd_next_exercise))
                 }
             }
         }
     }
 }
 
+@Suppress("SENSELESS_COMPARISON") // Smart-cast helper: null check needed for non-null usage below
 @Composable
 private fun ExecutionPage(
     metric: WorkoutMetric?,
@@ -388,7 +442,7 @@ private fun ExecutionPage(
     currentSetIndex: Int = 0, // Current set (0-based)
     totalSets: Int = 0, // Total number of sets for current exercise
     timedExerciseRemainingSeconds: Int? = null, // Issue #192: Countdown for timed exercises
-    isCurrentExerciseBodyweight: Boolean = false
+    isCurrentExerciseBodyweight: Boolean = false,
 ) {
     // Issue #192: Check if this is a timed exercise
     val isTimedExercise = timedExerciseRemainingSeconds != null
@@ -396,7 +450,7 @@ private fun ExecutionPage(
     Column(
         modifier = Modifier.fillMaxSize(),
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
+        verticalArrangement = Arrangement.Center,
     ) {
         // Exercise Name and Set Counter (only shown for routines/single exercise, NOT Just Lift)
         // Display above the rep counter when exerciseName is available
@@ -409,7 +463,7 @@ private fun ExecutionPage(
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onSurface,
                 textAlign = TextAlign.Center,
-                modifier = Modifier.padding(horizontal = 16.dp)
+                modifier = Modifier.padding(horizontal = 16.dp),
             )
 
             Spacer(modifier = Modifier.height(8.dp))
@@ -420,7 +474,7 @@ private fun ExecutionPage(
                     text = "Set ${currentSetIndex + 1} / $totalSets",
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Medium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
 
@@ -433,7 +487,7 @@ private fun ExecutionPage(
                 "TIME",
                 style = MaterialTheme.typography.labelLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                letterSpacing = 2.sp
+                letterSpacing = 2.sp,
             )
 
             val remainingSeconds = timedExerciseRemainingSeconds
@@ -441,19 +495,21 @@ private fun ExecutionPage(
                 text = remainingSeconds?.let { "${it}s" } ?: "—",
                 style = MaterialTheme.typography.displayLarge.copy(fontSize = 120.sp),
                 fontWeight = FontWeight.Black,
-                color = if ((remainingSeconds ?: Int.MAX_VALUE) <= 5)
+                color = if ((remainingSeconds ?: Int.MAX_VALUE) <= 5) {
                     MaterialTheme.colorScheme.error
-                else
+                } else {
                     MaterialTheme.colorScheme.primary
+                },
             )
         } else if (isTimedExercise && timedExerciseRemainingSeconds != null) {
-            // Timed exercise - show countdown timer
-            val remainingSeconds = timedExerciseRemainingSeconds // Smart cast to non-null
+            // timedExerciseRemainingSeconds != null is logically redundant (implied by isTimedExercise)
+            // but required for Kotlin smart-cast so timedExerciseRemainingSeconds can be used as non-null below
+            val remainingSeconds = timedExerciseRemainingSeconds
             Text(
                 "TIME",
                 style = MaterialTheme.typography.labelLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                letterSpacing = 2.sp
+                letterSpacing = 2.sp,
             )
 
             // Large countdown display
@@ -461,10 +517,11 @@ private fun ExecutionPage(
                 text = "${remainingSeconds}s",
                 style = MaterialTheme.typography.displayLarge.copy(fontSize = 120.sp),
                 fontWeight = FontWeight.Black,
-                color = if (remainingSeconds <= 5)
+                color = if (remainingSeconds <= 5) {
                     MaterialTheme.colorScheme.error // Highlight last 5 seconds
-                else
+                } else {
                     MaterialTheme.colorScheme.primary
+                },
             )
 
             // Timed cable exercises still count reps; show a secondary rep counter.
@@ -475,7 +532,7 @@ private fun ExecutionPage(
                 repLabel,
                 style = MaterialTheme.typography.labelLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                letterSpacing = 2.sp
+                letterSpacing = 2.sp,
             )
 
             val repText = if (repCount.isWarmupComplete) {
@@ -496,7 +553,7 @@ private fun ExecutionPage(
                 text = repText,
                 style = MaterialTheme.typography.headlineLarge,
                 fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurface
+                color = MaterialTheme.colorScheme.onSurface,
             )
         } else {
             // Normal exercise - show rep counter
@@ -507,7 +564,7 @@ private fun ExecutionPage(
                 if (repCount.isWarmupComplete) "REP" else "WARMUP",
                 style = MaterialTheme.typography.labelLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                letterSpacing = 2.sp
+                letterSpacing = 2.sp,
             )
 
             if (repCount.isWarmupComplete) {
@@ -522,8 +579,8 @@ private fun ExecutionPage(
                     phaseProgress = repCount.phaseProgress,
                     confirmedReps = repCount.workingReps,
                     targetReps = workoutParameters.reps,
-                    showStableCounter = false,  // We show it separately below
-                    size = 120.dp
+                    showStableCounter = false, // We show it separately below
+                    size = 120.dp,
                 )
 
                 Spacer(modifier = Modifier.height(8.dp))
@@ -532,7 +589,7 @@ private fun ExecutionPage(
                 if (!workoutParameters.isJustLift && !workoutParameters.isAMRAP && workoutParameters.reps > 0) {
                     StableRepProgress(
                         confirmedReps = repCount.workingReps,
-                        targetReps = workoutParameters.reps
+                        targetReps = workoutParameters.reps,
                     )
                 }
             } else {
@@ -541,7 +598,7 @@ private fun ExecutionPage(
                     text = "${repCount.warmupReps} / ${workoutParameters.warmupReps}",
                     style = MaterialTheme.typography.displayLarge.copy(fontSize = 120.sp),
                     fontWeight = FontWeight.Black,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
         }
@@ -581,15 +638,15 @@ private fun ExecutionPage(
                 velocity = (metric.velocityA + metric.velocityB) / 2.0,
                 label = forceLabel,
                 subLabel = "PER CABLE",
-                modifier = Modifier.size(hudSize)
+                modifier = Modifier.size(hudSize),
             )
         } else if (isCurrentExerciseBodyweight) {
             Text(
                 "Bodyweight exercise",
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         } else {
-            Text("Waiting for data...", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(stringResource(Res.string.waiting_for_data), color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }
@@ -599,7 +656,7 @@ private fun InstructionPage(
     loadedRoutine: Routine?,
     currentExerciseIndex: Int,
     exerciseRepository: ExerciseRepository,
-    enableVideoPlayback: Boolean
+    enableVideoPlayback: Boolean,
 ) {
     val currentExercise = loadedRoutine?.exercises?.getOrNull(currentExerciseIndex)
     val exerciseId = currentExercise?.exercise?.id
@@ -624,39 +681,41 @@ private fun InstructionPage(
 
     Box(
         modifier = Modifier.fillMaxSize().padding(16.dp),
-        contentAlignment = Alignment.Center
+        contentAlignment = Alignment.Center,
     ) {
         when {
             !enableVideoPlayback -> {
                 Column(
                     horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     Icon(
                         Icons.Default.VideocamOff,
                         contentDescription = null,
                         modifier = Modifier.size(48.dp),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
                     )
                     Text(
                         "Video Playback Disabled",
                         style = MaterialTheme.typography.bodyLarge,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     Text(
                         "Enable in Settings",
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
                     )
                 }
             }
+
             isLoading -> {
                 CircularProgressIndicator()
             }
+
             videoEntity != null -> {
                 Column(
                     modifier = Modifier.fillMaxSize(),
-                    horizontalAlignment = Alignment.CenterHorizontally
+                    horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
                     // Exercise name header
                     currentExercise?.exercise?.name?.let { name ->
@@ -665,7 +724,7 @@ private fun InstructionPage(
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onSurface,
-                            modifier = Modifier.padding(bottom = 12.dp)
+                            modifier = Modifier.padding(bottom = 12.dp),
                         )
                     }
 
@@ -675,31 +734,32 @@ private fun InstructionPage(
                         modifier = Modifier
                             .fillMaxWidth()
                             .weight(1f)
-                            .clip(RoundedCornerShape(12.dp))
+                            .clip(RoundedCornerShape(12.dp)),
                     )
                 }
             }
+
             else -> {
                 Column(
                     horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     Icon(
                         Icons.Default.VideoLibrary,
                         contentDescription = null,
                         modifier = Modifier.size(48.dp),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
                     )
                     Text(
                         "No Video Available",
                         style = MaterialTheme.typography.bodyLarge,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     currentExercise?.exercise?.name?.let { name ->
                         Text(
                             name,
                             style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
                         )
                     }
                 }
@@ -713,24 +773,25 @@ private fun StatsPage(
     metric: WorkoutMetric?,
     weightUnit: WeightUnit,
     formatWeight: (Float, WeightUnit) -> String,
-    isCurrentExerciseBodyweight: Boolean = false
+    isCurrentExerciseBodyweight: Boolean = false,
+    latestBiomechanicsResult: BiomechanicsRepResult? = null,
 ) {
     if (isCurrentExerciseBodyweight) {
         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(8.dp)
+                verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 Icon(
                     Icons.Default.Info,
                     contentDescription = null,
                     modifier = Modifier.size(48.dp),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
                 )
                 Text(
                     "No machine metrics for bodyweight",
                     style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
         }
@@ -741,18 +802,18 @@ private fun StatsPage(
         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(8.dp)
+                verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 Icon(
                     Icons.Default.Analytics,
                     contentDescription = null,
                     modifier = Modifier.size(48.dp),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
                 )
                 Text(
                     "Waiting for Metrics...",
                     style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
         }
@@ -763,52 +824,122 @@ private fun StatsPage(
         modifier = Modifier
             .fillMaxSize()
             .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
+        verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         // Title
         Text(
             "Live Stats",
             style = MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.onSurface
+            color = MaterialTheme.colorScheme.onSurface,
         )
+
+        // Biomechanics Velocity Card (after rep completion)
+        if (latestBiomechanicsResult != null) {
+            val mcv = latestBiomechanicsResult.velocity.meanConcentricVelocityMmS
+            val zone = latestBiomechanicsResult.velocity.zone
+            val zColor = velocityZoneColor(zone)
+
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                ),
+                shape = RoundedCornerShape(16.dp),
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    Text(
+                        "MEAN CONCENTRIC VELOCITY",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = zColor,
+                        letterSpacing = 1.sp,
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceEvenly,
+                    ) {
+                        StatColumn(
+                            label = "MCV",
+                            value = "${formatMcv(mcv)} m/s",
+                            color = zColor,
+                        )
+                        StatColumn(
+                            label = "Zone",
+                            value = velocityZoneLabel(zone),
+                            color = zColor,
+                        )
+                        StatColumn(
+                            label = "Peak",
+                            value = "${formatMcv(latestBiomechanicsResult.velocity.peakVelocityMmS)} m/s",
+                            color = zColor,
+                        )
+                    }
+
+                    // Velocity loss (only shown after rep 2)
+                    val vloss = latestBiomechanicsResult.velocity.velocityLossPercent
+                    if (vloss != null) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceEvenly,
+                        ) {
+                            StatColumn(
+                                label = "Vel. Loss",
+                                value = "${vloss.toInt()}%",
+                                color = if (vloss > 20f) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            val repsRemaining = latestBiomechanicsResult.velocity.estimatedRepsRemaining
+                            if (repsRemaining != null) {
+                                StatColumn(
+                                    label = "Est. Reps Left",
+                                    value = "$repsRemaining",
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
 
         // Load Section
         Card(
             modifier = Modifier.fillMaxWidth(),
             colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
+                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
             ),
-            shape = RoundedCornerShape(16.dp)
+            shape = RoundedCornerShape(16.dp),
         ) {
             Column(
                 modifier = Modifier.padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
+                verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 Text(
                     "LOAD",
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.primary,
-                    letterSpacing = 1.sp
+                    letterSpacing = 1.sp,
                 )
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceEvenly
+                    horizontalArrangement = Arrangement.SpaceEvenly,
                 ) {
                     StatColumn(
                         label = "Left",
                         value = formatWeight(metric.loadA, weightUnit),
-                        color = MaterialTheme.colorScheme.primary
+                        color = MaterialTheme.colorScheme.primary,
                     )
                     StatColumn(
                         label = "Right",
                         value = formatWeight(metric.loadB, weightUnit),
-                        color = MaterialTheme.colorScheme.primary
+                        color = MaterialTheme.colorScheme.primary,
                     )
                     StatColumn(
                         label = "Total",
                         value = formatWeight(metric.totalLoad, weightUnit),
-                        color = MaterialTheme.colorScheme.tertiary
+                        color = MaterialTheme.colorScheme.tertiary,
                     )
                 }
             }
@@ -818,33 +949,33 @@ private fun StatsPage(
         Card(
             modifier = Modifier.fillMaxWidth(),
             colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
+                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
             ),
-            shape = RoundedCornerShape(16.dp)
+            shape = RoundedCornerShape(16.dp),
         ) {
             Column(
                 modifier = Modifier.padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
+                verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 Text(
                     "VELOCITY",
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.secondary,
-                    letterSpacing = 1.sp
+                    letterSpacing = 1.sp,
                 )
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceEvenly
+                    horizontalArrangement = Arrangement.SpaceEvenly,
                 ) {
                     StatColumn(
                         label = "Left",
                         value = "${metric.velocityA.toInt()} mm/s",
-                        color = MaterialTheme.colorScheme.secondary
+                        color = MaterialTheme.colorScheme.secondary,
                     )
                     StatColumn(
                         label = "Right",
                         value = "${metric.velocityB.toInt()} mm/s",
-                        color = MaterialTheme.colorScheme.secondary
+                        color = MaterialTheme.colorScheme.secondary,
                     )
                 }
             }
@@ -854,60 +985,87 @@ private fun StatsPage(
         Card(
             modifier = Modifier.fillMaxWidth(),
             colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
+                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
             ),
-            shape = RoundedCornerShape(16.dp)
+            shape = RoundedCornerShape(16.dp),
         ) {
             Column(
                 modifier = Modifier.padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
+                verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 Text(
                     "POSITION",
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.tertiary,
-                    letterSpacing = 1.sp
+                    letterSpacing = 1.sp,
                 )
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceEvenly
+                    horizontalArrangement = Arrangement.SpaceEvenly,
                 ) {
                     StatColumn(
                         label = "Left",
                         value = "${metric.positionA.toInt()} mm",
-                        color = MaterialTheme.colorScheme.tertiary
+                        color = MaterialTheme.colorScheme.tertiary,
                     )
                     StatColumn(
                         label = "Right",
                         value = "${metric.positionB.toInt()} mm",
-                        color = MaterialTheme.colorScheme.tertiary
+                        color = MaterialTheme.colorScheme.tertiary,
                     )
                 }
             }
         }
 
+        // Force Curve Mini-Graph (tap to expand)
+        if (latestBiomechanicsResult != null &&
+            latestBiomechanicsResult.forceCurve.normalizedForceN.isNotEmpty()
+        ) {
+            var showExpandedCurve by remember { mutableStateOf(false) }
+
+            ForceCurveMiniGraph(
+                forceCurveResult = latestBiomechanicsResult.forceCurve,
+                onTapToExpand = { showExpandedCurve = true },
+                modifier = Modifier.fillMaxWidth(),
+            )
+
+            if (showExpandedCurve) {
+                ExpandedForceCurve(
+                    forceCurveResult = latestBiomechanicsResult.forceCurve,
+                    onDismiss = { showExpandedCurve = false },
+                )
+            }
+        }
     }
 }
 
+/**
+ * Formats velocity from mm/s to m/s with 2 decimal places.
+ * Uses integer arithmetic for KMP cross-platform safety (no String.format in commonMain).
+ */
+private fun formatMcv(mmPerSec: Float): String {
+    val mPerSec = mmPerSec / 1000f
+    val rounded = kotlin.math.round(mPerSec * 100f).toInt()
+    val whole = rounded / 100
+    val frac = rounded % 100
+    return "$whole.${frac.toString().padStart(2, '0')}"
+}
+
 @Composable
-private fun StatColumn(
-    label: String,
-    value: String,
-    color: Color
-) {
+private fun StatColumn(label: String, value: String, color: Color) {
     Column(
-        horizontalAlignment = Alignment.CenterHorizontally
+        horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Text(
             label,
             style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Text(
             value,
             style = MaterialTheme.typography.titleLarge,
             fontWeight = FontWeight.Bold,
-            color = color
+            color = color,
         )
     }
 }

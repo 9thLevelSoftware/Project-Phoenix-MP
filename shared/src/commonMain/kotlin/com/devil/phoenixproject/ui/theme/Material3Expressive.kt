@@ -1,19 +1,13 @@
 package com.devil.phoenixproject.ui.theme
 
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.unit.dp
-
-/**
- * Material 3 Expressive Helper Functions
- * Provides consistent expressive styling for components
- */
-
-import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.spring
 
 /**
  * Material 3 Expressive Motion Specs
@@ -26,7 +20,7 @@ object ExpressiveMotion {
      */
     val SpringDefault = spring<Float>(
         dampingRatio = Spring.DampingRatioLowBouncy,
-        stiffness = Spring.StiffnessLow
+        stiffness = Spring.StiffnessLow,
     )
 
     /**
@@ -34,7 +28,7 @@ object ExpressiveMotion {
      */
     val SpringSnappy = spring<Float>(
         dampingRatio = Spring.DampingRatioNoBouncy,
-        stiffness = Spring.StiffnessMedium
+        stiffness = Spring.StiffnessMedium,
     )
 
     /**
@@ -42,7 +36,7 @@ object ExpressiveMotion {
      */
     val SpringBouncy = spring<Float>(
         dampingRatio = Spring.DampingRatioHighBouncy,
-        stiffness = Spring.StiffnessLow
+        stiffness = Spring.StiffnessLow,
     )
 }
 
@@ -52,7 +46,7 @@ object ExpressiveMotion {
  */
 @Composable
 fun expressiveCardColors() = CardDefaults.cardColors(
-    containerColor = MaterialTheme.colorScheme.surfaceContainerHighest
+    containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
 )
 
 /**
@@ -67,7 +61,7 @@ val expressiveCardShape = RoundedCornerShape(20.dp)
  */
 @Composable
 fun expressiveCardElevation(pressed: Boolean = false) = CardDefaults.cardElevation(
-    defaultElevation = if (pressed) 4.dp else 8.dp
+    defaultElevation = if (pressed) 4.dp else 8.dp,
 )
 
 /**
@@ -77,7 +71,7 @@ fun expressiveCardElevation(pressed: Boolean = false) = CardDefaults.cardElevati
 @Composable
 fun expressiveCardBorder() = BorderStroke(
     2.dp,
-    MaterialTheme.colorScheme.outlineVariant
+    MaterialTheme.colorScheme.outlineVariant,
 )
 
 /**
@@ -93,5 +87,5 @@ val expressiveButtonShape = RoundedCornerShape(16.dp)
 @Composable
 fun expressiveButtonElevation() = androidx.compose.material3.ButtonDefaults.buttonElevation(
     defaultElevation = 4.dp,
-    pressedElevation = 2.dp
+    pressedElevation = 2.dp,
 )

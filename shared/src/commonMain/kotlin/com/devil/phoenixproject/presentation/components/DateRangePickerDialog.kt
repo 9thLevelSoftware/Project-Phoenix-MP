@@ -13,6 +13,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.util.KmpUtils
+import org.jetbrains.compose.resources.stringResource
+import vitruvianprojectphoenix.shared.generated.resources.*
+import vitruvianprojectphoenix.shared.generated.resources.Res
 
 /**
  * Date range options for export filtering
@@ -23,7 +26,7 @@ enum class DateRangeOption(val label: String, val daysBack: Int?) {
     LAST_30_DAYS("Last 30 Days", 30),
     LAST_90_DAYS("Last 90 Days", 90),
     THIS_YEAR("This Year", 365),
-    CUSTOM("Custom Range", null)
+    CUSTOM("Custom Range", null),
 }
 
 /**
@@ -36,7 +39,7 @@ fun DateRangePickerDialog(
     totalRecords: Int,
     onDateRangeSelected: (startDate: Long?, endDate: Long?) -> Unit,
     onDismiss: () -> Unit,
-    filterRecordCount: (startDate: Long?, endDate: Long?) -> Int = { _, _ -> totalRecords }
+    filterRecordCount: (startDate: Long?, endDate: Long?) -> Int = { _, _ -> totalRecords },
 ) {
     var selectedOption by remember { mutableStateOf(DateRangeOption.ALL_TIME) }
 
@@ -45,7 +48,10 @@ fun DateRangePickerDialog(
     val (startDate, endDate) = remember(selectedOption) {
         when (selectedOption) {
             DateRangeOption.ALL_TIME -> null to null
-            DateRangeOption.CUSTOM -> null to null  // Custom handled separately
+
+            DateRangeOption.CUSTOM -> null to null
+
+            // Custom handled separately
             else -> {
                 val daysBack = selectedOption.daysBack ?: 0
                 val start = currentTime - (daysBack.toLong() * 24 * 60 * 60 * 1000)
@@ -64,28 +70,28 @@ fun DateRangePickerDialog(
         title = {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 Icon(
                     Icons.Default.CalendarMonth,
                     contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary
+                    tint = MaterialTheme.colorScheme.primary,
                 )
                 Text(
                     "Select Date Range",
                     style = MaterialTheme.typography.headlineSmall,
-                    fontWeight = FontWeight.Bold
+                    fontWeight = FontWeight.Bold,
                 )
             }
         },
         text = {
             Column(
-                verticalArrangement = Arrangement.spacedBy(8.dp)
+                verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 Text(
                     "Choose a time period to export:",
                     style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
 
                 Spacer(modifier = Modifier.height(8.dp))
@@ -97,7 +103,7 @@ fun DateRangePickerDialog(
                         DateRangeOptionRow(
                             option = option,
                             isSelected = selectedOption == option,
-                            onClick = { selectedOption = option }
+                            onClick = { selectedOption = option },
                         )
                     }
 
@@ -107,27 +113,27 @@ fun DateRangePickerDialog(
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.primaryContainer
+                        containerColor = MaterialTheme.colorScheme.primaryContainer,
                     ),
-                    shape = RoundedCornerShape(12.dp)
+                    shape = RoundedCornerShape(12.dp),
                 ) {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(16.dp),
                         horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
+                        verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Text(
                             "Workouts to export:",
                             style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                            color = MaterialTheme.colorScheme.onPrimaryContainer,
                         )
                         Text(
                             "$previewCount",
                             style = MaterialTheme.typography.titleLarge,
                             fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                            color = MaterialTheme.colorScheme.onPrimaryContainer,
                         )
                     }
                 }
@@ -137,34 +143,30 @@ fun DateRangePickerDialog(
             Button(
                 onClick = { onDateRangeSelected(startDate, endDate) },
                 enabled = previewCount > 0,
-                shape = RoundedCornerShape(20.dp)
+                shape = RoundedCornerShape(20.dp),
             ) {
                 Text(
                     "Export",
                     style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold
+                    fontWeight = FontWeight.Bold,
                 )
             }
         },
         dismissButton = {
             TextButton(
                 onClick = onDismiss,
-                shape = RoundedCornerShape(20.dp)
+                shape = RoundedCornerShape(20.dp),
             ) {
-                Text("Cancel")
+                Text(stringResource(Res.string.action_cancel))
             }
         },
         containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
-        shape = RoundedCornerShape(28.dp)
+        shape = RoundedCornerShape(28.dp),
     )
 }
 
 @Composable
-private fun DateRangeOptionRow(
-    option: DateRangeOption,
-    isSelected: Boolean,
-    onClick: () -> Unit
-) {
+private fun DateRangeOptionRow(option: DateRangeOption, isSelected: Boolean, onClick: () -> Unit) {
     Surface(
         modifier = Modifier
             .fillMaxWidth()
@@ -174,14 +176,14 @@ private fun DateRangeOptionRow(
         } else {
             MaterialTheme.colorScheme.surface
         },
-        shape = RoundedCornerShape(12.dp)
+        shape = RoundedCornerShape(12.dp),
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
+            horizontalArrangement = Arrangement.SpaceBetween,
         ) {
             Text(
                 text = option.label,
@@ -191,15 +193,15 @@ private fun DateRangeOptionRow(
                     MaterialTheme.colorScheme.primary
                 } else {
                     MaterialTheme.colorScheme.onSurface
-                }
+                },
             )
 
             if (isSelected) {
                 Icon(
                     Icons.Default.Check,
-                    contentDescription = "Selected",
+                    contentDescription = stringResource(Res.string.cd_selected),
                     tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(20.dp)
+                    modifier = Modifier.size(20.dp),
                 )
             }
         }

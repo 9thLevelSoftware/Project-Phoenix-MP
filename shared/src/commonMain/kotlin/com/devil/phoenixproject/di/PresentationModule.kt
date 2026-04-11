@@ -1,20 +1,26 @@
 package com.devil.phoenixproject.di
 
+import com.devil.phoenixproject.presentation.manager.ExerciseDetectionManager
+import com.devil.phoenixproject.presentation.viewmodel.AssessmentViewModel
 import com.devil.phoenixproject.presentation.viewmodel.ConnectionLogsViewModel
 import com.devil.phoenixproject.presentation.viewmodel.CycleEditorViewModel
 import com.devil.phoenixproject.presentation.viewmodel.EulaViewModel
 import com.devil.phoenixproject.presentation.viewmodel.GamificationViewModel
-import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
+import com.devil.phoenixproject.presentation.viewmodel.IntegrationsViewModel
 import com.devil.phoenixproject.presentation.viewmodel.ThemeViewModel
 import com.devil.phoenixproject.ui.sync.LinkAccountViewModel
 import org.koin.dsl.module
 
 val presentationModule = module {
+    // Exercise Detection Manager (per-session, not singleton)
+    factory { ExerciseDetectionManager(get(), get(), get(), get()) }
+
     // ViewModels
-    factory { MainViewModel(get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get()) }
     factory { ConnectionLogsViewModel() }
     factory { CycleEditorViewModel(get()) }
-    factory { GamificationViewModel(get()) }
+    factory { GamificationViewModel(get(), get()) }
+    factory { IntegrationsViewModel(get(), get(), get(), get(), get(), get()) }
+    factory { AssessmentViewModel(get(), get(), get()) }
     // ThemeViewModel as singleton - app-wide theme state that must persist
     single { ThemeViewModel(get()) }
     // EulaViewModel as singleton - tracks EULA acceptance across app lifecycle

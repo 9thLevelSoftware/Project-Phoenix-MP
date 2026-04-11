@@ -7,12 +7,12 @@ import androidx.core.content.FileProvider
 import com.devil.phoenixproject.domain.model.PersonalRecord
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.domain.model.WorkoutSession
-import kotlin.time.Instant
-import kotlinx.datetime.TimeZone
-import kotlinx.datetime.toLocalDateTime
 import java.io.File
 import java.io.FileWriter
 import java.util.Locale
+import kotlin.time.Instant
+import kotlinx.datetime.TimeZone
+import kotlinx.datetime.toLocalDateTime
 
 /**
  * Android implementation of CsvExporter.
@@ -31,132 +31,130 @@ class AndroidCsvExporter(private val context: Context) : CsvExporter {
         personalRecords: List<PersonalRecord>,
         exerciseNames: Map<String, String>,
         weightUnit: WeightUnit,
-        formatWeight: (Float, WeightUnit) -> String
-    ): Result<String> {
-        return try {
-            val timestamp = System.currentTimeMillis()
-            val fileName = "personal_records_$timestamp.csv"
-            val file = File(exportDir, fileName)
+        formatWeight: (Float, WeightUnit) -> String,
+    ): Result<String> = try {
+        val timestamp = System.currentTimeMillis()
+        val fileName = "personal_records_$timestamp.csv"
+        val file = File(exportDir, fileName)
 
-            FileWriter(file).use { writer ->
-                // Header
-                writer.appendLine("Exercise,Weight,Reps,Date,Mode,1RM")
+        FileWriter(file).use { writer ->
+            // Header
+            writer.appendLine("Exercise,Weight,Reps,Date,Mode,1RM")
 
-                // Data rows
-                personalRecords.sortedByDescending { it.timestamp }.forEach { pr ->
-                    val exerciseName = exerciseNames[pr.exerciseId] ?: "Unknown"
-                    val weight = formatWeight(pr.weightPerCableKg, weightUnit)
-                    val date = formatDate(pr.timestamp)
-                    val oneRM = calculateOneRM(pr.weightPerCableKg, pr.reps)
+            // Data rows
+            personalRecords.sortedByDescending { it.timestamp }.forEach { pr ->
+                val exerciseName = exerciseNames[pr.exerciseId] ?: "Unknown"
+                val weight = formatWeight(pr.weightPerCableKg, weightUnit)
+                val date = formatDate(pr.timestamp)
+                val oneRM = calculateOneRM(pr.weightPerCableKg, pr.reps)
 
-                    writer.appendLine(
-                        "${escapeCsv(exerciseName)},$weight,${pr.reps},$date,${pr.workoutMode},${String.format(Locale.US, "%.1f", oneRM)}"
-                    )
-                }
+                writer.appendLine(
+                    "${escapeCsv(exerciseName)},$weight,${pr.reps},$date,${pr.workoutMode},${String.format(Locale.US, "%.1f", oneRM)}",
+                )
             }
-
-            Result.success(file.absolutePath)
-        } catch (e: Exception) {
-            Result.failure(e)
         }
+
+        Result.success(file.absolutePath)
+    } catch (e: Exception) {
+        Result.failure(e)
     }
 
     override fun exportWorkoutHistory(
         workoutSessions: List<WorkoutSession>,
         exerciseNames: Map<String, String>,
         weightUnit: WeightUnit,
-        formatWeight: (Float, WeightUnit) -> String
-    ): Result<String> {
-        return try {
-            val timestamp = System.currentTimeMillis()
-            val fileName = "workout_history_$timestamp.csv"
-            val file = File(exportDir, fileName)
+        formatWeight: (Float, WeightUnit) -> String,
+    ): Result<String> = try {
+        val timestamp = System.currentTimeMillis()
+        val fileName = "workout_history_$timestamp.csv"
+        val file = File(exportDir, fileName)
 
-            FileWriter(file).use { writer ->
-                // Header
-                writer.appendLine("Date,Exercise,Mode,Target Reps,Warmup Reps,Working Reps,Total Reps,Weight,Progression,Duration (s),Just Lift,Eccentric Load")
+        FileWriter(file).use { writer ->
+            // Header
+            writer.appendLine(
+                "Date,Exercise,Mode,Target Reps,Warmup Reps,Working Reps,Total Reps,Weight,Progression,Duration (s),Just Lift,Eccentric Load",
+            )
 
-                // Data rows
-                workoutSessions.sortedByDescending { it.timestamp }.forEach { session ->
-                    val exerciseName = session.exerciseName
-                        ?: exerciseNames[session.exerciseId]
-                        ?: "Unknown"
-                    val date = formatDate(session.timestamp)
-                    // For Echo mode, use peak weight (matches official app behavior); otherwise use configured weight
-                    val isEchoMode = session.mode.contains("Echo", ignoreCase = true)
-                    val effectiveWeight = if (isEchoMode) {
-                        session.peakWeightKg ?: session.workingAvgWeightKg ?: session.weightPerCableKg
-                    } else {
-                        session.weightPerCableKg
-                    }
-                    val weight = formatWeight(effectiveWeight, weightUnit)
-                    val justLift = if (session.isJustLift) "Yes" else "No"
-
-                    val progression = when {
-                        session.progressionKg > 0f -> "+${formatWeight(session.progressionKg, weightUnit)}"
-                        session.progressionKg < 0f -> formatWeight(session.progressionKg, weightUnit)
-                        else -> "0"
-                    }
-
-                    writer.appendLine(
-                        "$date,${escapeCsv(exerciseName)},${session.mode},${session.reps}," +
-                        "${session.warmupReps},${session.workingReps},${session.totalReps}," +
-                        "$weight,$progression,${session.duration},$justLift,${session.eccentricLoad}"
-                    )
+            // Data rows
+            workoutSessions.sortedByDescending { it.timestamp }.forEach { session ->
+                val exerciseName = session.exerciseName
+                    ?: exerciseNames[session.exerciseId]
+                    ?: "Unknown"
+                val date = formatDate(session.timestamp)
+                // For Echo mode, use peak weight (matches official app behavior); otherwise use configured weight
+                val isEchoMode = session.mode.contains("Echo", ignoreCase = true)
+                val effectiveWeight = if (isEchoMode) {
+                    session.peakWeightKg ?: session.workingAvgWeightKg ?: session.weightPerCableKg
+                } else {
+                    session.weightPerCableKg
                 }
-            }
+                val weight = formatWeight(effectiveWeight, weightUnit)
+                val justLift = if (session.isJustLift) "Yes" else "No"
 
-            Result.success(file.absolutePath)
-        } catch (e: Exception) {
-            Result.failure(e)
+                val progression = when {
+                    session.progressionKg > 0f -> "+${formatWeight(session.progressionKg, weightUnit)}"
+                    session.progressionKg < 0f -> formatWeight(session.progressionKg, weightUnit)
+                    else -> "0"
+                }
+
+                writer.appendLine(
+                    "$date,${escapeCsv(exerciseName)},${session.mode},${session.reps}," +
+                        "${session.warmupReps},${session.workingReps},${session.totalReps}," +
+                        "$weight,$progression,${session.duration},$justLift,${session.eccentricLoad}",
+                )
+            }
         }
+
+        Result.success(file.absolutePath)
+    } catch (e: Exception) {
+        Result.failure(e)
     }
 
     override fun exportPRProgression(
         personalRecords: List<PersonalRecord>,
         exerciseNames: Map<String, String>,
         weightUnit: WeightUnit,
-        formatWeight: (Float, WeightUnit) -> String
-    ): Result<String> {
-        return try {
-            val timestamp = System.currentTimeMillis()
-            val fileName = "pr_progression_$timestamp.csv"
-            val file = File(exportDir, fileName)
+        formatWeight: (Float, WeightUnit) -> String,
+    ): Result<String> = try {
+        val timestamp = System.currentTimeMillis()
+        val fileName = "pr_progression_$timestamp.csv"
+        val file = File(exportDir, fileName)
 
-            // Group by exercise, then sort by date
-            val grouped = personalRecords.groupBy { it.exerciseId }
-                .mapValues { entry -> entry.value.sortedBy { it.timestamp } }
+        // Group by exercise, then sort by date
+        val grouped = personalRecords.groupBy { it.exerciseId }
+            .mapValues { entry -> entry.value.sortedBy { it.timestamp } }
 
-            FileWriter(file).use { writer ->
-                // Header
-                writer.appendLine("Exercise,Date,Weight,Reps,Mode,1RM,Progress From Previous")
+        FileWriter(file).use { writer ->
+            // Header
+            writer.appendLine("Exercise,Date,Weight,Reps,Mode,1RM,Progress From Previous")
 
-                grouped.forEach { (exerciseId, records) ->
-                    val exerciseName = exerciseNames[exerciseId] ?: "Unknown"
-                    var previousWeight: Float? = null
+            grouped.forEach { (exerciseId, records) ->
+                val exerciseName = exerciseNames[exerciseId] ?: "Unknown"
+                var previousWeight: Float? = null
 
-                    records.forEach { pr ->
-                        val weight = formatWeight(pr.weightPerCableKg, weightUnit)
-                        val date = formatDate(pr.timestamp)
-                        val oneRM = calculateOneRM(pr.weightPerCableKg, pr.reps)
-                        val progress = previousWeight?.let { prevWeight ->
-                            val diff = pr.weightPerCableKg - prevWeight
-                            if (diff > 0) "+${formatWeight(diff, weightUnit)}" else formatWeight(diff, weightUnit)
-                        } ?: "-"
+                records.forEach { pr ->
+                    val weight = formatWeight(pr.weightPerCableKg, weightUnit)
+                    val date = formatDate(pr.timestamp)
+                    val oneRM = calculateOneRM(pr.weightPerCableKg, pr.reps)
+                    val progress = previousWeight?.let { prevWeight ->
+                        val diff = pr.weightPerCableKg - prevWeight
+                        if (diff > 0) "+${formatWeight(diff, weightUnit)}" else formatWeight(diff, weightUnit)
+                    } ?: "-"
 
-                        writer.appendLine(
-                            "${escapeCsv(exerciseName)},$date,$weight,${pr.reps},${pr.workoutMode},${String.format(Locale.US, "%.1f", oneRM)},$progress"
-                        )
+                    writer.appendLine(
+                        "${escapeCsv(
+                            exerciseName,
+                        )},$date,$weight,${pr.reps},${pr.workoutMode},${String.format(Locale.US, "%.1f", oneRM)},$progress",
+                    )
 
-                        previousWeight = pr.weightPerCableKg
-                    }
+                    previousWeight = pr.weightPerCableKg
                 }
             }
-
-            Result.success(file.absolutePath)
-        } catch (e: Exception) {
-            Result.failure(e)
         }
+
+        Result.success(file.absolutePath)
+    } catch (e: Exception) {
+        Result.failure(e)
     }
 
     override fun shareCSV(fileUri: String, fileName: String) {
@@ -170,7 +168,7 @@ class AndroidCsvExporter(private val context: Context) : CsvExporter {
             val uri: Uri = FileProvider.getUriForFile(
                 context,
                 "${context.packageName}.fileprovider",
-                file
+                file,
             )
 
             val shareIntent = Intent(Intent.ACTION_SEND).apply {
@@ -197,12 +195,10 @@ class AndroidCsvExporter(private val context: Context) : CsvExporter {
         return "${localDateTime.year}-${monthNum.toString().padStart(2, '0')}-${localDateTime.day.toString().padStart(2, '0')}"
     }
 
-    private fun escapeCsv(value: String): String {
-        return if (value.contains(",") || value.contains("\"") || value.contains("\n")) {
-            "\"${value.replace("\"", "\"\"")}\""
-        } else {
-            value
-        }
+    private fun escapeCsv(value: String): String = if (value.contains(",") || value.contains("\"") || value.contains("\n")) {
+        "\"${value.replace("\"", "\"\"")}\""
+    } else {
+        value
     }
 
     private fun calculateOneRM(weight: Float, reps: Int): Float {

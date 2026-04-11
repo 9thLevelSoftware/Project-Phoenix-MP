@@ -3,15 +3,39 @@ plugins {
     alias(libs.plugins.kotlin.compose)
 }
 
+// Read Supabase config from local.properties
+val localPropsFile = rootProject.file("local.properties")
+val localPropsMap: Map<String, String> = if (localPropsFile.exists()) {
+    localPropsFile.readLines()
+        .filter { it.contains("=") && !it.trimStart().startsWith("#") }
+        .associate { line ->
+            val (key, value) = line.split("=", limit = 2)
+            key.trim() to value.trim()
+        }
+} else {
+    emptyMap()
+}
+val supabaseUrl: String = localPropsMap["supabase.url"] ?: ""
+val supabaseAnonKey: String = localPropsMap["supabase.anon.key"] ?: ""
+
+// Validate Supabase credentials unless explicitly skipped (e.g., CI builds that only run tests)
+val skipSupabaseCheck = providers.gradleProperty("skip.supabase.check").orNull?.toBoolean() ?: false
+if (!skipSupabaseCheck && (supabaseUrl.isBlank() || supabaseAnonKey.isBlank())) {
+    throw GradleException(
+        "Missing Supabase credentials in local.properties. " +
+            "Set supabase.url and supabase.anon.key, or pass -Pskip.supabase.check=true for test-only builds.",
+    )
+}
+
 val injectedVersionCode = providers.gradleProperty("version.code").orNull?.let { raw ->
     val parsed = raw.toIntOrNull()
         ?: throw GradleException(
-            "Invalid -Pversion.code='$raw'. Expected an integer between 1 and 2100000000."
+            "Invalid -Pversion.code='$raw'. Expected an integer between 1 and 2100000000.",
         )
 
     if (parsed !in 1..2_100_000_000) {
         throw GradleException(
-            "Invalid -Pversion.code='$raw'. Expected an integer between 1 and 2100000000."
+            "Invalid -Pversion.code='$raw'. Expected an integer between 1 and 2100000000.",
         )
     }
 
@@ -26,11 +50,15 @@ android {
         applicationId = "com.devil.phoenixproject"
         minSdk = 26
         targetSdk = 36
-        // Fail fast if CI injects an invalid version code instead of silently shipping versionCode=3.
-        versionCode = injectedVersionCode ?: 3
-        versionName = "0.5.0"
+        // Fail fast if CI injects an invalid version code instead of silently shipping a default.
+        versionCode = injectedVersionCode ?: 5
+        versionName = "0.6.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        // Supabase config injected from local.properties
+        buildConfigField("String", "SUPABASE_URL", "\"$supabaseUrl\"")
+        buildConfigField("String", "SUPABASE_ANON_KEY", "\"$supabaseAnonKey\"")
         vectorDrawables {
             useSupportLibrary = true
         }
@@ -50,10 +78,13 @@ android {
 
     buildTypes {
         release {
+            // Release signing is handled by CI (GitHub Actions) via keystore secrets.
+            // Local release builds use debug signing for testing only.
+            // See .github/workflows/ for the production signing pipeline.
             isMinifyEnabled = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
-                "proguard-rules.pro"
+                "proguard-rules.pro",
             )
             ndk {
                 debugSymbolLevel = "FULL"
@@ -81,13 +112,12 @@ android {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }
     }
-
 }
 
 dependencies {
     // Shared module
     implementation(project(":shared"))
-    
+
     // Core Android
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime)
@@ -117,9 +147,6 @@ dependencies {
 
     // Logging
     implementation(libs.kermit)
-
-    // RevenueCat (needed for SubscriptionManager interface visibility)
-    implementation(libs.revenuecat.purchases.core)
 
     // Image Loading - Coil 3
     implementation(libs.coil.compose)

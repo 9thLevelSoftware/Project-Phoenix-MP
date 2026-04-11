@@ -1,15 +1,19 @@
 package com.devil.phoenixproject.data.repository
 
 import app.cash.turbine.test
+import com.devil.phoenixproject.domain.model.Exercise
+import com.devil.phoenixproject.domain.model.Routine
+import com.devil.phoenixproject.domain.model.RoutineExercise
 import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.testutil.FakeExerciseRepository
 import com.devil.phoenixproject.testutil.createTestDatabase
+import kotlin.test.assertEquals
+import kotlin.test.assertNotNull
+import kotlin.test.assertNull
+import kotlin.test.assertTrue
 import kotlinx.coroutines.test.runTest
 import org.junit.Before
 import org.junit.Test
-import kotlin.test.assertEquals
-import kotlin.test.assertNull
-import kotlin.test.assertTrue
 
 class SqlDelightWorkoutRepositoryTest {
 
@@ -61,7 +65,7 @@ class SqlDelightWorkoutRepositoryTest {
         repository.saveSession(createTestSession(id = "session-2", timestamp = 2000))
         repository.saveSession(createTestSession(id = "session-3", timestamp = 3000))
 
-        repository.getAllSessions().test {
+        repository.getAllSessions("default").test {
             val sessions = awaitItem()
             assertEquals(3, sessions.size)
             cancelAndIgnoreRemainingEvents()
@@ -71,10 +75,16 @@ class SqlDelightWorkoutRepositoryTest {
     @Test
     fun `getRecentSessions respects limit`() = runTest {
         repeat(5) { i ->
-            repository.saveSession(createTestSession(id = "session-$i", timestamp = i.toLong() * 1000))
+            repository.saveSession(
+                createTestSession(
+                    id = "session-$i",
+                    timestamp =
+                        i.toLong() * 1000,
+                ),
+            )
         }
 
-        repository.getRecentSessions(3).test {
+        repository.getRecentSessions("default", 3).test {
             val sessions = awaitItem()
             assertEquals(3, sessions.size)
             cancelAndIgnoreRemainingEvents()
@@ -88,7 +98,7 @@ class SqlDelightWorkoutRepositoryTest {
 
         repository.deleteAllSessions()
 
-        repository.getAllSessions().test {
+        repository.getAllSessions("default").test {
             val sessions = awaitItem()
             assertTrue(sessions.isEmpty())
             cancelAndIgnoreRemainingEvents()
@@ -138,7 +148,7 @@ class SqlDelightWorkoutRepositoryTest {
             workingAvgWeightKg = 35f,
             burnoutAvgWeightKg = 30f,
             peakWeightKg = 40f,
-            rpe = 8
+            rpe = 8,
         )
 
         repository.saveSession(session)
@@ -173,12 +183,183 @@ class SqlDelightWorkoutRepositoryTest {
         assertEquals(session.rpe, retrieved.rpe)
     }
 
+    @Test
+    fun `getRoutineById heals missing exerciseId by resolving exercise name`() = runTest {
+        val customExercise = Exercise(
+            id = "custom_bayesian_curl",
+            name = "Bayesian Cable Curl",
+            muscleGroup = "Biceps",
+            equipment = "Cable",
+            isCustom = true,
+        )
+        exerciseRepository.addExercise(customExercise)
+
+        val legacyRoutine = Routine(
+            id = "routine-legacy",
+            name = "Legacy Routine",
+            exercises = listOf(
+                RoutineExercise(
+                    id = "re-1",
+                    exercise = Exercise(
+                        id = null,
+                        name = "Bayesian Cable Curl",
+                        muscleGroup = "Biceps",
+                        equipment = "Cable",
+                    ),
+                    orderIndex = 0,
+                    setReps = listOf(10),
+                    weightPerCableKg = 12.5f,
+                ),
+            ),
+        )
+        repository.saveRoutine(legacyRoutine)
+
+        val loaded = repository.getRoutineById("routine-legacy")
+        assertNotNull(loaded)
+        assertEquals("custom_bayesian_curl", loaded.exercises.first().exercise.id)
+
+        // Verify DB self-heal so subsequent loads don't regress to null ID.
+        val healedRow = database.vitruvianDatabaseQueries.selectExercisesByRoutine("routine-legacy").executeAsOne()
+        assertEquals("custom_bayesian_curl", healedRow.exerciseId)
+    }
+
+    @Test
+    fun `getRoutineById auto-creates custom exercise when exerciseId is null and findByName fails`() = runTest {
+        // No exercise added to exerciseRepository — findByName will return null
+
+        val routineWithNullId = Routine(
+            id = "routine-null-ex",
+            name = "Null Exercise Routine",
+            exercises = listOf(
+                RoutineExercise(
+                    id = "re-null",
+                    exercise = Exercise(
+                        id = null,
+                        name = "Bayesian Cable Curl",
+                        muscleGroup = "Biceps",
+                        equipment = "Cable",
+                    ),
+                    orderIndex = 0,
+                    setReps = listOf(10),
+                    weightPerCableKg = 12.5f,
+                ),
+            ),
+        )
+        repository.saveRoutine(routineWithNullId)
+
+        val loaded = repository.getRoutineById("routine-null-ex")
+        assertNotNull(loaded)
+        val exercise = loaded.exercises.first().exercise
+
+        // Exercise ID must NOT be null — it should have been auto-created
+        assertNotNull(exercise.id, "Exercise ID should not be null after self-healing")
+        assertEquals("Bayesian Cable Curl", exercise.name)
+
+        // Verify DB was healed — subsequent loads should also have the ID
+        val reloaded = repository.getRoutineById("routine-null-ex")
+        assertNotNull(reloaded)
+        assertEquals(exercise.id, reloaded!!.exercises.first().exercise.id)
+    }
+
+    // ========== Profile ID Preservation Tests ==========
+
+    @Test
+    fun `getAllRoutines preserves profileId from database`() = runTest {
+        val routine = Routine(
+            id = "routine-profile-b",
+            name = "Profile B Routine",
+            exercises = listOf(
+                RoutineExercise(
+                    id = "re-1",
+                    exercise = Exercise(
+                        id = "bench",
+                        name = "Bench Press",
+                        muscleGroup = "Chest",
+                    ),
+                    orderIndex = 0,
+                    setReps = listOf(10),
+                    weightPerCableKg = 50f,
+                ),
+            ),
+            profileId = "profile-b",
+        )
+        exerciseRepository.addExercise(Exercise(id = "bench", name = "Bench Press", muscleGroup = "Chest"))
+        repository.saveRoutine(routine)
+
+        repository.getAllRoutines("profile-b").test {
+            val routines = awaitItem()
+            assertEquals(1, routines.size)
+            assertEquals("profile-b", routines.first().profileId)
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `getRoutineById preserves profileId from database`() = runTest {
+        val routine = Routine(
+            id = "routine-profile-c",
+            name = "Profile C Routine",
+            exercises = listOf(
+                RoutineExercise(
+                    id = "re-1",
+                    exercise = Exercise(
+                        id = "bench",
+                        name = "Bench Press",
+                        muscleGroup = "Chest",
+                    ),
+                    orderIndex = 0,
+                    setReps = listOf(10),
+                    weightPerCableKg = 50f,
+                ),
+            ),
+            profileId = "profile-c",
+        )
+        exerciseRepository.addExercise(Exercise(id = "bench", name = "Bench Press", muscleGroup = "Chest"))
+        repository.saveRoutine(routine)
+
+        val loaded = repository.getRoutineById("routine-profile-c")
+        assertNotNull(loaded)
+        assertEquals("profile-c", loaded.profileId)
+    }
+
+    // ========== Profile Cascade Reassignment Tests ==========
+
+    @Test
+    fun `routines survive profile deletion via reassignment`() = runTest {
+        val routine = Routine(
+            id = "routine-orphan",
+            name = "Orphan Routine",
+            exercises = emptyList(),
+            profileId = "profile-to-delete",
+        )
+        repository.saveRoutine(routine)
+
+        // Verify it's saved under profile-to-delete
+        val rawBefore = database.vitruvianDatabaseQueries
+            .selectRoutineById("routine-orphan")
+            .executeAsOneOrNull()
+        assertEquals("profile-to-delete", rawBefore?.profile_id)
+
+        // Simulate cascade reassignment (what deleteProfile does)
+        database.vitruvianDatabaseQueries.reassignRoutineProfile("default", "profile-to-delete")
+
+        // Verify routine now belongs to default profile
+        val rawAfter = database.vitruvianDatabaseQueries
+            .selectRoutineById("routine-orphan")
+            .executeAsOneOrNull()
+        assertEquals("default", rawAfter?.profile_id)
+
+        // Verify it shows up in getAllRoutines for default profile
+        repository.getAllRoutines("default").test {
+            val routines = awaitItem()
+            assertTrue(routines.any { it.id == "routine-orphan" })
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
     // ========== Helper Methods ==========
 
-    private fun createTestSession(
-        id: String = "test-session",
-        timestamp: Long = System.currentTimeMillis()
-    ) = WorkoutSession(
+    private fun createTestSession(id: String = "test-session", timestamp: Long = System.currentTimeMillis()) = WorkoutSession(
         id = id,
         timestamp = timestamp,
         mode = "OldSchool",
@@ -187,6 +368,6 @@ class SqlDelightWorkoutRepositoryTest {
         totalReps = 10,
         workingReps = 10,
         exerciseId = "test-exercise",
-        exerciseName = "Test Exercise"
+        exerciseName = "Test Exercise",
     )
 }

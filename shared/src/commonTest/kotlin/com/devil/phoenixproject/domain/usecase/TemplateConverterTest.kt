@@ -6,15 +6,15 @@ import com.devil.phoenixproject.domain.model.EccentricLoad
 import com.devil.phoenixproject.domain.model.EchoLevel
 import com.devil.phoenixproject.domain.model.Exercise
 import com.devil.phoenixproject.domain.model.ExerciseConfig
+import com.devil.phoenixproject.domain.model.FiveThreeOneWeeks
 import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.RoutineTemplate
 import com.devil.phoenixproject.domain.model.TemplateExercise
-import com.devil.phoenixproject.domain.model.FiveThreeOneWeeks
 import com.devil.phoenixproject.testutil.FakeExerciseRepository
-import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
+import kotlinx.coroutines.test.runTest
 
 class TemplateConverterTest {
 
@@ -28,8 +28,8 @@ class TemplateConverterTest {
                     muscleGroup = "Chest",
                     muscleGroups = "Chest",
                     equipment = "BAR",
-                    oneRepMaxKg = 120f
-                )
+                    oneRepMaxKg = 120f,
+                ),
             )
         }
         val converter = TemplateConverter(repository)
@@ -46,13 +46,13 @@ class TemplateConverterTest {
                         name = "Strength A",
                         exercises = listOf(
                             TemplateExercise(exerciseName = "Bench Press", sets = 3, reps = 5),
-                            TemplateExercise(exerciseName = "Missing Exercise", sets = 3, reps = 8)
-                        )
-                    )
+                            TemplateExercise(exerciseName = "Missing Exercise", sets = 3, reps = 8),
+                        ),
+                    ),
                 ),
-                CycleDayTemplate.rest(dayNumber = 2)
+                CycleDayTemplate.rest(dayNumber = 2),
             ),
-            progressionRule = null
+            progressionRule = null,
         )
 
         val result = converter.convert(template)
@@ -72,8 +72,8 @@ class TemplateConverterTest {
                     muscleGroup = "Legs",
                     muscleGroups = "Legs",
                     equipment = "BAR",
-                    oneRepMaxKg = 140f
-                )
+                    oneRepMaxKg = 140f,
+                ),
             )
         }
         val converter = TemplateConverter(repository)
@@ -95,13 +95,13 @@ class TemplateConverterTest {
                                 reps = 5,
                                 suggestedMode = ProgramMode.Echo,
                                 isPercentageBased = true,
-                                percentageSets = FiveThreeOneWeeks.WEEK_1
-                            )
-                        )
-                    )
-                )
+                                percentageSets = FiveThreeOneWeeks.WEEK_1,
+                            ),
+                        ),
+                    ),
+                ),
             ),
-            progressionRule = null
+            progressionRule = null,
         )
 
         val configs = mapOf(
@@ -110,8 +110,8 @@ class TemplateConverterTest {
                 mode = ProgramMode.Pump,
                 weightPerCableKg = 42.5f,
                 eccentricLoadPercent = 120,
-                echoLevel = EchoLevel.EPIC
-            )
+                echoLevel = EchoLevel.EPIC,
+            ),
         )
 
         val result = converter.convert(template, configs)

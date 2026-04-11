@@ -1,29 +1,44 @@
 package com.devil.phoenixproject.presentation.viewmodel
 
 import app.cash.turbine.test
-import com.devil.phoenixproject.domain.model.UserPreferences
+import com.devil.phoenixproject.data.repository.ExerciseSignatureRepository
 import com.devil.phoenixproject.data.repository.RepNotification
 import com.devil.phoenixproject.data.repository.ScannedDevice
+import com.devil.phoenixproject.domain.detection.ExerciseClassifier
+import com.devil.phoenixproject.domain.detection.ExerciseSignature
+import com.devil.phoenixproject.domain.detection.SignatureExtractor
 import com.devil.phoenixproject.domain.model.ConnectionState
 import com.devil.phoenixproject.domain.model.Exercise
 import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.domain.model.RoutineExercise
+import com.devil.phoenixproject.domain.model.UserPreferences
 import com.devil.phoenixproject.domain.model.WeightUnit
+import com.devil.phoenixproject.domain.model.WorkoutMetric
 import com.devil.phoenixproject.domain.model.WorkoutParameters
 import com.devil.phoenixproject.domain.model.WorkoutState
-import com.devil.phoenixproject.domain.model.WorkoutMetric
 import com.devil.phoenixproject.domain.usecase.RepCounterFromMachine
 import com.devil.phoenixproject.domain.usecase.ResolveRoutineWeightsUseCase
-import com.devil.phoenixproject.testutil.FakeCompletedSetRepository
+import com.devil.phoenixproject.presentation.manager.ExerciseDetectionManager
+import com.devil.phoenixproject.presentation.manager.NoOpWorkoutServiceController
+import com.devil.phoenixproject.testutil.FakeBiomechanicsRepository
 import com.devil.phoenixproject.testutil.FakeBleRepository
+import com.devil.phoenixproject.testutil.FakeCompletedSetRepository
+import com.devil.phoenixproject.testutil.FakeDataBackupManager
 import com.devil.phoenixproject.testutil.FakeExerciseRepository
 import com.devil.phoenixproject.testutil.FakeGamificationRepository
 import com.devil.phoenixproject.testutil.FakePersonalRecordRepository
 import com.devil.phoenixproject.testutil.FakePreferencesManager
+import com.devil.phoenixproject.testutil.FakeRepMetricRepository
 import com.devil.phoenixproject.testutil.FakeTrainingCycleRepository
 import com.devil.phoenixproject.testutil.FakeWorkoutRepository
 import com.devil.phoenixproject.testutil.TestCoroutineRule
+import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertIs
+import kotlin.test.assertNotNull
+import kotlin.test.assertNull
+import kotlin.test.assertTrue
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runCurrent
@@ -31,12 +46,6 @@ import kotlinx.coroutines.test.runTest
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
-import kotlin.test.assertEquals
-import kotlin.test.assertFalse
-import kotlin.test.assertIs
-import kotlin.test.assertNotNull
-import kotlin.test.assertNull
-import kotlin.test.assertTrue
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class MainViewModelTest {
@@ -53,6 +62,7 @@ class MainViewModelTest {
     private lateinit var fakeGamificationRepository: FakeGamificationRepository
     private lateinit var fakeTrainingCycleRepository: FakeTrainingCycleRepository
     private lateinit var fakeCompletedSetRepository: FakeCompletedSetRepository
+    private lateinit var fakeRepMetricRepository: FakeRepMetricRepository
     private lateinit var repCounter: RepCounterFromMachine
     private lateinit var resolveWeightsUseCase: ResolveRoutineWeightsUseCase
 
@@ -66,8 +76,23 @@ class MainViewModelTest {
         fakeGamificationRepository = FakeGamificationRepository()
         fakeTrainingCycleRepository = FakeTrainingCycleRepository()
         fakeCompletedSetRepository = FakeCompletedSetRepository()
+        fakeRepMetricRepository = FakeRepMetricRepository()
         repCounter = RepCounterFromMachine()
         resolveWeightsUseCase = ResolveRoutineWeightsUseCase(fakePersonalRecordRepository)
+
+        val fakeSignatureRepo = object : ExerciseSignatureRepository {
+            override suspend fun getSignaturesByExercise(exerciseId: String): List<ExerciseSignature> = emptyList()
+            override suspend fun getAllSignaturesAsMap(): Map<String, ExerciseSignature> = emptyMap()
+            override suspend fun saveSignature(exerciseId: String, signature: ExerciseSignature) {}
+            override suspend fun updateSignature(id: Long, signature: ExerciseSignature) {}
+            override suspend fun deleteSignaturesByExercise(exerciseId: String) {}
+        }
+        val detectionManager = ExerciseDetectionManager(
+            signatureExtractor = SignatureExtractor(),
+            exerciseClassifier = ExerciseClassifier(),
+            signatureRepository = fakeSignatureRepo,
+            exerciseRepository = fakeExerciseRepository,
+        )
 
         viewModel = MainViewModel(
             bleRepository = fakeBleRepository,
@@ -79,14 +104,20 @@ class MainViewModelTest {
             gamificationRepository = fakeGamificationRepository,
             trainingCycleRepository = fakeTrainingCycleRepository,
             completedSetRepository = fakeCompletedSetRepository,
-            resolveWeightsUseCase = resolveWeightsUseCase
+            repMetricRepository = fakeRepMetricRepository,
+            biomechanicsRepository = FakeBiomechanicsRepository(),
+            resolveWeightsUseCase = resolveWeightsUseCase,
+            detectionManager = detectionManager,
+            dataBackupManager = FakeDataBackupManager(),
+            userProfileRepository = com.devil.phoenixproject.testutil.FakeUserProfileRepository(),
+            workoutServiceController = NoOpWorkoutServiceController,
         )
     }
 
     // ========== Initial State Tests ==========
 
     @Test
-    fun `initial state is disconnected and idle`() = runTest {
+    fun `initial state is disconnected and idle`() = runTest(testCoroutineRule.dispatcher) {
         assertEquals(ConnectionState.Disconnected, viewModel.connectionState.value)
         assertEquals(WorkoutState.Idle, viewModel.workoutState.value)
         assertNull(viewModel.currentMetric.value)
@@ -95,7 +126,7 @@ class MainViewModelTest {
     }
 
     @Test
-    fun `initial workout parameters are default values`() = runTest {
+    fun `initial workout parameters are default values`() = runTest(testCoroutineRule.dispatcher) {
         val params = viewModel.workoutParameters.value
         assertEquals(ProgramMode.OldSchool, params.programMode)
         assertEquals(10, params.reps)
@@ -107,7 +138,7 @@ class MainViewModelTest {
     // ========== Connection State Tests ==========
 
     @Test
-    fun `connectionState reflects BLE repository state`() = runTest {
+    fun `connectionState reflects BLE repository state`() = runTest(testCoroutineRule.dispatcher) {
         viewModel.connectionState.test {
             assertEquals(ConnectionState.Disconnected, awaitItem())
 
@@ -130,7 +161,7 @@ class MainViewModelTest {
     }
 
     @Test
-    fun `connectionState reflects error state`() = runTest {
+    fun `connectionState reflects error state`() = runTest(testCoroutineRule.dispatcher) {
         viewModel.connectionState.test {
             assertEquals(ConnectionState.Disconnected, awaitItem())
 
@@ -146,7 +177,7 @@ class MainViewModelTest {
     // ========== Workout Parameters Tests ==========
 
     @Test
-    fun `updateWorkoutParameters updates state`() = runTest {
+    fun `updateWorkoutParameters updates state`() = runTest(testCoroutineRule.dispatcher) {
         val newParams = WorkoutParameters(
             programMode = ProgramMode.Pump,
             reps = 15,
@@ -154,7 +185,7 @@ class MainViewModelTest {
             progressionRegressionKg = 2.5f,
             isJustLift = false,
             stopAtTop = true,
-            warmupReps = 5
+            warmupReps = 5,
         )
 
         viewModel.updateWorkoutParameters(newParams)
@@ -166,10 +197,65 @@ class MainViewModelTest {
         assertEquals(5, viewModel.workoutParameters.value.warmupReps)
     }
 
+    @Test
+    fun `updateWorkoutParameters rejects near-zero weight in Just Lift mode`() = runTest(testCoroutineRule.dispatcher) {
+        // Set up Just Lift state with known weight
+        val initialParams = WorkoutParameters(
+            programMode = ProgramMode.OldSchool,
+            reps = 10,
+            weightPerCableKg = 30f,
+            isJustLift = true,
+        )
+        viewModel.updateWorkoutParameters(initialParams)
+        assertEquals(30f, viewModel.workoutParameters.value.weightPerCableKg,
+            "Precondition: weight should be 30f after initial set")
+
+        // Attempt to write near-zero weight (simulates the Compose race condition
+        // where param-sync LaunchedEffect fires with the hardcoded initial 0.453592f)
+        viewModel.updateWorkoutParameters(initialParams.copy(weightPerCableKg = 0.453592f))
+
+        // The coordinator should still have 30f, not 0.453592f
+        assertEquals(30f, viewModel.workoutParameters.value.weightPerCableKg,
+            "Near-zero weight should be rejected when isJustLift is true")
+    }
+
+    @Test
+    fun `updateWorkoutParameters accepts valid weight in Just Lift mode`() = runTest(testCoroutineRule.dispatcher) {
+        val initialParams = WorkoutParameters(
+            programMode = ProgramMode.OldSchool,
+            reps = 10,
+            weightPerCableKg = 30f,
+            isJustLift = true,
+        )
+        viewModel.updateWorkoutParameters(initialParams)
+
+        viewModel.updateWorkoutParameters(initialParams.copy(weightPerCableKg = 35f))
+
+        assertEquals(35f, viewModel.workoutParameters.value.weightPerCableKg,
+            "Valid weight should be accepted in Just Lift mode")
+    }
+
+    @Test
+    fun `updateWorkoutParameters allows near-zero weight in non-Just-Lift mode`() = runTest(testCoroutineRule.dispatcher) {
+        // Non-Just-Lift mode should still allow low weights (e.g. for warm-up configs)
+        val initialParams = WorkoutParameters(
+            programMode = ProgramMode.OldSchool,
+            reps = 10,
+            weightPerCableKg = 30f,
+            isJustLift = false,
+        )
+        viewModel.updateWorkoutParameters(initialParams)
+
+        viewModel.updateWorkoutParameters(initialParams.copy(weightPerCableKg = 0.453592f))
+
+        assertEquals(0.453592f, viewModel.workoutParameters.value.weightPerCableKg,
+            "Near-zero weight should be allowed in non-Just-Lift mode")
+    }
+
     // ========== Disconnect Tests ==========
 
     @Test
-    fun `disconnect calls BLE repository disconnect`() = runTest {
+    fun `disconnect calls BLE repository disconnect`() = runTest(testCoroutineRule.dispatcher) {
         fakeBleRepository.simulateConnect("Vee_Test", "AA:BB:CC:DD:EE:FF")
         advanceUntilIdle()
 
@@ -182,7 +268,7 @@ class MainViewModelTest {
     // ========== User Preferences Tests ==========
 
     @Test
-    fun `userPreferences reflects preferences manager state`() = runTest {
+    fun `userPreferences reflects preferences manager state`() = runTest(testCoroutineRule.dispatcher) {
         advanceUntilIdle()
 
         val preferences = viewModel.userPreferences.value
@@ -193,15 +279,15 @@ class MainViewModelTest {
     }
 
     @Test
-    fun `userPreferences updates when preferences change`() = runTest {
+    fun `userPreferences updates when preferences change`() = runTest(testCoroutineRule.dispatcher) {
         viewModel.userPreferences.test {
             awaitItem() // Initial value
 
             fakePreferencesManager.setPreferences(
                 UserPreferences(
                     weightUnit = WeightUnit.LB,
-                    stopAtTop = true
-                )
+                    stopAtTop = true,
+                ),
             )
 
             val updated = awaitItem()
@@ -215,7 +301,7 @@ class MainViewModelTest {
     // ========== Top Bar State Tests ==========
 
     @Test
-    fun `updateTopBarTitle updates title`() = runTest {
+    fun `updateTopBarTitle updates title`() = runTest(testCoroutineRule.dispatcher) {
         assertEquals("Project Phoenix", viewModel.topBarTitle.value)
 
         viewModel.updateTopBarTitle("Active Workout")
@@ -224,7 +310,7 @@ class MainViewModelTest {
     }
 
     @Test
-    fun `clearTopBarActions clears actions`() = runTest {
+    fun `clearTopBarActions clears actions`() = runTest(testCoroutineRule.dispatcher) {
         // Set some actions first using reflection or public method if available
         viewModel.clearTopBarActions()
 
@@ -232,7 +318,7 @@ class MainViewModelTest {
     }
 
     @Test
-    fun `setTopBarBackAction sets back action`() = runTest {
+    fun `setTopBarBackAction sets back action`() = runTest(testCoroutineRule.dispatcher) {
         assertNull(viewModel.topBarBackAction.value)
 
         var backPressed = false
@@ -244,7 +330,7 @@ class MainViewModelTest {
     }
 
     @Test
-    fun `clearTopBarBackAction clears back action`() = runTest {
+    fun `clearTopBarBackAction clears back action`() = runTest(testCoroutineRule.dispatcher) {
         viewModel.setTopBarBackAction { }
 
         viewModel.clearTopBarBackAction()
@@ -255,7 +341,7 @@ class MainViewModelTest {
     // ========== Routines Tests ==========
 
     @Test
-    fun `routines reflects workout repository state`() = runTest {
+    fun `routines reflects workout repository state`() = runTest(testCoroutineRule.dispatcher) {
         viewModel.routines.test {
             // Initial empty list
             assertEquals(emptyList(), awaitItem())
@@ -265,11 +351,11 @@ class MainViewModelTest {
     }
 
     @Test
-    fun `getRoutineById returns routine when exists`() = runTest {
+    fun `getRoutineById returns routine when exists`() = runTest(testCoroutineRule.dispatcher) {
         val routine = Routine(
             id = "routine-1",
             name = "Push Day",
-            exercises = emptyList()
+            exercises = emptyList(),
         )
         fakeWorkoutRepository.addRoutine(routine)
         advanceUntilIdle()
@@ -281,7 +367,7 @@ class MainViewModelTest {
     }
 
     @Test
-    fun `getRoutineById returns null when not found`() = runTest {
+    fun `getRoutineById returns null when not found`() = runTest(testCoroutineRule.dispatcher) {
         val found = viewModel.getRoutineById("non-existent")
 
         assertNull(found)
@@ -290,7 +376,7 @@ class MainViewModelTest {
     // ========== Workout History Tests ==========
 
     @Test
-    fun `workoutHistory reflects repository sessions`() = runTest {
+    fun `workoutHistory reflects repository sessions`() = runTest(testCoroutineRule.dispatcher) {
         viewModel.workoutHistory.test {
             assertEquals(emptyList(), awaitItem())
 
@@ -301,21 +387,21 @@ class MainViewModelTest {
     // ========== Connection Error Tests ==========
 
     @Test
-    fun `connectionError is initially null`() = runTest {
+    fun `connectionError is initially null`() = runTest(testCoroutineRule.dispatcher) {
         assertNull(viewModel.connectionError.value)
     }
 
     // ========== Auto-Start Tests ==========
 
     @Test
-    fun `autoStartCountdown is initially null`() = runTest {
+    fun `autoStartCountdown is initially null`() = runTest(testCoroutineRule.dispatcher) {
         assertNull(viewModel.autoStartCountdown.value)
     }
 
     // ========== Auto-Stop State Tests ==========
 
     @Test
-    fun `autoStopState has default values`() = runTest {
+    fun `autoStopState has default values`() = runTest(testCoroutineRule.dispatcher) {
         val state = viewModel.autoStopState.value
         assertFalse(state.isActive)
         assertEquals(0f, state.progress)
@@ -324,20 +410,20 @@ class MainViewModelTest {
     // ========== Scanned Devices Tests ==========
 
     @Test
-    fun `scannedDevices is initially empty`() = runTest {
+    fun `scannedDevices is initially empty`() = runTest(testCoroutineRule.dispatcher) {
         // ViewModel maintains its own scannedDevices state (initialized empty)
         assertEquals(emptyList<ScannedDevice>(), viewModel.scannedDevices.value)
     }
 
     @Test
-    fun `startWorkout sends commands and moves to active`() = runTest {
+    fun `startWorkout sends commands and moves to active`() = runTest(testCoroutineRule.dispatcher) {
         viewModel.updateWorkoutParameters(
             WorkoutParameters(
                 programMode = ProgramMode.OldSchool,
                 reps = 2,
                 warmupReps = 0,
-                weightPerCableKg = 20f
-            )
+                weightPerCableKg = 20f,
+            ),
         )
 
         fakeBleRepository.emitMetric(
@@ -345,8 +431,8 @@ class MainViewModelTest {
                 positionA = 100f,
                 positionB = 100f,
                 loadA = 10f,
-                loadB = 10f
-            )
+                loadB = 10f,
+            ),
         )
 
         viewModel.startWorkout(skipCountdown = true)
@@ -358,14 +444,14 @@ class MainViewModelTest {
     }
 
     @Test
-    fun `rep events update counts and stop workout at target`() = runTest {
+    fun `rep events update counts and stop workout at target`() = runTest(testCoroutineRule.dispatcher) {
         viewModel.updateWorkoutParameters(
             WorkoutParameters(
                 programMode = ProgramMode.OldSchool,
                 reps = 2,
                 warmupReps = 0,
-                weightPerCableKg = 20f
-            )
+                weightPerCableKg = 20f,
+            ),
         )
 
         val metric = WorkoutMetric(positionA = 100f, positionB = 100f, loadA = 10f, loadB = 10f)
@@ -378,12 +464,12 @@ class MainViewModelTest {
         advanceUntilIdle()
 
         assertIs<WorkoutState.SetSummary>(viewModel.workoutState.value)
-        assertEquals(1, fakeWorkoutRepository.getRecentSessionsSync(10).size)
+        assertEquals(1, fakeWorkoutRepository.getRecentSessionsSync("default", 10).size)
         assertEquals(2, viewModel.repCount.value.workingReps)
     }
 
     @Test
-    fun `disconnect during workout sets connection lost flag`() = runTest {
+    fun `disconnect during workout sets connection lost flag`() = runTest(testCoroutineRule.dispatcher) {
         fakeBleRepository.simulateConnect("Vee_Test", "AA:BB:CC:DD:EE:FF")
         advanceUntilIdle()
 
@@ -392,8 +478,8 @@ class MainViewModelTest {
                 programMode = ProgramMode.OldSchool,
                 reps = 1,
                 warmupReps = 0,
-                weightPerCableKg = 20f
-            )
+                weightPerCableKg = 20f,
+            ),
         )
         viewModel.startWorkout(skipCountdown = true)
         advanceUntilIdle()
@@ -405,25 +491,100 @@ class MainViewModelTest {
     }
 
     @Test
-    fun `timed cable exercise blocks auto stop before warmup and allows it after warmup`() = runTest {
+    fun `reconnect interrupted workout resumes same routine set with remaining reps`() = runTest(testCoroutineRule.dispatcher) {
+        fakeBleRepository.simulateConnect("Vee_Test", "AA:BB:CC:DD:EE:FF")
+        advanceUntilIdle()
+
+        val routine = Routine(
+            id = "routine-recovery-1",
+            name = "Recovery Routine",
+            exercises = listOf(
+                RoutineExercise(
+                    id = "routine-ex-1",
+                    exercise = Exercise(
+                        id = "bench",
+                        name = "Bench Press",
+                        muscleGroup = "Chest",
+                        equipment = "HANDLES",
+                    ),
+                    orderIndex = 0,
+                    setReps = listOf(5),
+                    weightPerCableKg = 20f,
+                    warmupSets = emptyList(),
+                ),
+            ),
+        )
+        viewModel.loadRoutine(routine)
+        advanceUntilIdle()
+        viewModel.enterSetReady(0, 0)
+        advanceUntilIdle()
+
+        val metric = WorkoutMetric(positionA = 100f, positionB = 100f, loadA = 10f, loadB = 10f)
+        fakeBleRepository.emitMetric(metric)
+        viewModel.startWorkout(skipCountdown = true)
+        advanceUntilIdle()
+
+        assertEquals(2, fakeBleRepository.commandsReceived.size)
+
+        emitRepNotification(
+            repIndex = 2,
+            metric = metric,
+            warmupCount = 3,
+            warmupTarget = 3,
+            workingTarget = 5,
+        )
+        advanceUntilIdle()
+        assertEquals(2, viewModel.repCount.value.workingReps)
+
+        fakeBleRepository.simulateDisconnect()
+        advanceUntilIdle()
+        assertTrue(viewModel.connectionLostDuringWorkout.value)
+
+        viewModel.reconnectInterruptedWorkout()
+        advanceUntilIdle()
+
+        assertFalse(viewModel.connectionLostDuringWorkout.value)
+        assertEquals(4, fakeBleRepository.commandsReceived.size)
+        assertEquals(0, viewModel.repCount.value.workingReps)
+        assertEquals(3, viewModel.workoutParameters.value.reps)
+        assertEquals(0, viewModel.workoutParameters.value.warmupReps)
+        assertEquals(WorkoutState.Active, viewModel.workoutState.value)
+
+        for (repIndex in 1..3) {
+            emitRepNotification(
+                repIndex = repIndex,
+                metric = metric,
+                warmupCount = 0,
+                warmupTarget = 0,
+                workingTarget = 3,
+            )
+        }
+        advanceUntilIdle()
+
+        assertIs<WorkoutState.SetSummary>(viewModel.workoutState.value)
+        assertEquals(1, fakeWorkoutRepository.getRecentSessionsSync("default", 10).size)
+    }
+
+    @Test
+    fun `timed cable exercise blocks auto stop before warmup and allows it after warmup`() = runTest(testCoroutineRule.dispatcher) {
         val timedCableExercise = RoutineExercise(
             id = "timed-cable-1",
             exercise = Exercise(
                 name = "Bench Press",
                 muscleGroup = "Chest",
-                equipment = "HANDLES"
+                equipment = "HANDLES",
             ),
             orderIndex = 0,
             setReps = listOf(10),
             weightPerCableKg = 20f,
-            duration = 60
+            duration = 60,
         )
         viewModel.loadRoutine(
             Routine(
                 id = "routine-timed-1",
                 name = "Timed Cable Warmup Regression",
-                exercises = listOf(timedCableExercise)
-            )
+                exercises = listOf(timedCableExercise),
+            ),
         )
         advanceUntilIdle()
 
@@ -433,7 +594,7 @@ class MainViewModelTest {
             velocityA = 0.0,
             velocityB = 0.0,
             loadA = 0f,
-            loadB = 0f
+            loadB = 0f,
         )
         fakeBleRepository.emitMetric(restingMetric)
         viewModel.startWorkout(skipCountdown = true)
@@ -449,7 +610,7 @@ class MainViewModelTest {
         runCurrent()
 
         assertEquals(WorkoutState.Active, viewModel.workoutState.value)
-        assertEquals(0, fakeWorkoutRepository.getRecentSessionsSync(10).size)
+        assertEquals(0, fakeWorkoutRepository.getRecentSessionsSync("default", 10).size)
 
         // Complete warmup and verify auto-stop can now trigger for timed cable.
         val activeMetric = WorkoutMetric(
@@ -458,7 +619,7 @@ class MainViewModelTest {
             velocityA = 80.0,
             velocityB = 80.0,
             loadA = 10f,
-            loadB = 10f
+            loadB = 10f,
         )
         for (warmupRep in 1..3) {
             fakeBleRepository.emitMetric(activeMetric)
@@ -473,8 +634,8 @@ class MainViewModelTest {
                     rangeTop = 800f,
                     rangeBottom = 0f,
                     rawData = ByteArray(24),
-                    timestamp = warmupRep.toLong()
-                )
+                    timestamp = warmupRep.toLong(),
+                ),
             )
             runCurrent()
         }
@@ -488,9 +649,9 @@ class MainViewModelTest {
         runCurrent()
         runCurrent()
 
-        assertEquals(1, fakeWorkoutRepository.getRecentSessionsSync(10).size)
+        assertEquals(1, fakeWorkoutRepository.getRecentSessionsSync("default", 10).size)
         assertIs<WorkoutState.SetSummary>(viewModel.workoutState.value)
-        assertEquals(1, fakeWorkoutRepository.getRecentSessionsSync(10).size)
+        assertEquals(1, fakeWorkoutRepository.getRecentSessionsSync("default", 10).size)
     }
 
     private fun forceAutoStopTimerElapsed() {
@@ -500,23 +661,29 @@ class MainViewModelTest {
         field.set(coordinator, System.currentTimeMillis() - 10_000L)
     }
 
-    private suspend fun emitRepNotification(repIndex: Int, metric: WorkoutMetric, warmupCount: Int = 0, warmupTarget: Int = 3, workingTarget: Int = 10) {
+    private suspend fun emitRepNotification(
+        repIndex: Int,
+        metric: WorkoutMetric,
+        warmupCount: Int = 0,
+        warmupTarget: Int = 3,
+        workingTarget: Int = 10,
+    ) {
         // Issue #210: Include machine's warmup/working targets for sync verification
         // For working reps: repsRomCount stays at warmupCount, completeCounter (down) increments
         fakeBleRepository.emitMetric(metric)
         fakeBleRepository.emitRepNotification(
             com.devil.phoenixproject.data.repository.RepNotification(
                 topCounter = repIndex + warmupCount,
-                completeCounter = repIndex + warmupCount,  // down counter
-                repsRomCount = warmupCount,  // warmup count from machine
+                completeCounter = repIndex + warmupCount, // down counter
+                repsRomCount = warmupCount, // warmup count from machine
                 repsRomTotal = warmupTarget, // Issue #210: Machine's warmup target
-                repsSetCount = repIndex,     // working reps from machine
+                repsSetCount = repIndex, // working reps from machine
                 repsSetTotal = workingTarget, // Issue #210: Machine's working target
                 rangeTop = 800f,
                 rangeBottom = 0f,
                 rawData = ByteArray(24),
-                timestamp = repIndex.toLong()
-            )
+                timestamp = repIndex.toLong(),
+            ),
         )
         fakeBleRepository.emitMetric(metric)
     }

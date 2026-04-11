@@ -15,6 +15,7 @@ import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlin.coroutines.cancellation.CancellationException
 
 /**
  * Narrow interface for checking workout state from BleConnectionManager.
@@ -23,6 +24,16 @@ import kotlinx.coroutines.withTimeoutOrNull
  */
 interface WorkoutStateProvider {
     val isWorkoutActiveForConnectionAlert: Boolean
+
+    /**
+     * True when the machine is actively executing a set (WorkoutState.Active).
+     * CRITICAL: Reconnecting mid-set will fault the machine because it cannot
+     * receive a new exercise packet until the active one fully ends.
+     * Use this to guard auto-reconnect attempts.
+     */
+    val isWorkoutMidSet: Boolean
+
+    fun onWorkoutConnectionLost()
 }
 
 /**
@@ -34,15 +45,12 @@ class BleConnectionManager(
     private val settingsManager: SettingsManager,
     private val workoutStateProvider: WorkoutStateProvider,
     private val bleErrorEvents: SharedFlow<String>,
-    private val scope: CoroutineScope
+    private val scope: CoroutineScope,
 ) {
     val connectionState: StateFlow<ConnectionState> = bleRepository.connectionState
 
-    // Note: _scannedDevices in MainViewModel was never populated (dead code).
-    // Preserving the same pattern during extraction. The real scanned devices
-    // are in bleRepository.scannedDevices.
-    private val _scannedDevices = MutableStateFlow<List<ScannedDevice>>(emptyList())
-    val scannedDevices: StateFlow<List<ScannedDevice>> = _scannedDevices.asStateFlow()
+    // Delegate directly to the repository's scanned devices (populated by KableBleConnectionManager)
+    val scannedDevices: StateFlow<List<ScannedDevice>> = bleRepository.scannedDevices
 
     private val _isAutoConnecting = MutableStateFlow(false)
     val isAutoConnecting: StateFlow<Boolean> = _isAutoConnecting.asStateFlow()
@@ -58,10 +66,18 @@ class BleConnectionManager(
     private var connectionJob: Job? = null
 
     init {
+        // CRITICAL: All scope.launch coroutines in init must have try-catch.
+        // On Kotlin/Native (iOS), unhandled exceptions in scope.launch call abort(),
+        // causing SIGABRT crash on launch.
+
         // Collect BLE error events from WorkoutCoordinator (replaces circular lateinit dependency)
         scope.launch {
-            bleErrorEvents.collect { message ->
-                _connectionError.value = message
+            try {
+                bleErrorEvents.collect { message ->
+                    _connectionError.value = message
+                }
+            } catch (e: Exception) {
+                Logger.e(e) { "Error collecting BLE error events" }
             }
         }
 
@@ -69,33 +85,74 @@ class BleConnectionManager(
         // When connection is lost during an active workout, show the ConnectionLostDialog
         // Moved from MainViewModel init block
         scope.launch {
-            var wasConnected = false
-            bleRepository.connectionState.collect { state ->
-                when (state) {
-                    is ConnectionState.Connected -> {
-                        wasConnected = true
-                        // Clear any previous connection lost alert when reconnected
-                        _connectionLostDuringWorkout.value = false
-                        // Issue #179: Initialize LED color scheme on connection
-                        val savedColorScheme = settingsManager.userPreferences.value.colorScheme
-                        bleRepository.setColorScheme(savedColorScheme)
-                        Logger.d { "Initialized LED color scheme to saved preference: $savedColorScheme" }
-                    }
-                    is ConnectionState.Disconnected, is ConnectionState.Error -> {
-                        // Only trigger alert if we were previously connected
-                        // and a workout is actively in progress (not in summary)
-                        // SetSummary is excluded since the summary screen doesn't need connection
-                        // and users need to interact with it to save workout history
-                        if (wasConnected && workoutStateProvider.isWorkoutActiveForConnectionAlert) {
-                            Logger.w { "Connection lost during active workout! Showing reconnection dialog." }
-                            _connectionLostDuringWorkout.value = true
+            try {
+                var wasConnected = false
+                bleRepository.connectionState.collect { state ->
+                    when (state) {
+                        is ConnectionState.Connected -> {
+                            wasConnected = true
+                            // Clear any previous connection lost alert when reconnected
+                            _connectionLostDuringWorkout.value = false
+                            // Issue #179: Initialize LED color scheme on connection
+                            try {
+                                val savedColorScheme = settingsManager.userPreferences.value.colorScheme
+                                bleRepository.setColorScheme(savedColorScheme)
+                                Logger.d { "Initialized LED color scheme to saved preference: $savedColorScheme" }
+                            } catch (e: Exception) {
+                                Logger.e(e) { "Failed to initialize LED color scheme on connection" }
+                            }
                         }
-                        wasConnected = false
-                    }
-                    else -> {
-                        // Scanning, Connecting - don't change wasConnected or alert state
+
+                        is ConnectionState.Disconnected, is ConnectionState.Error -> {
+                            // Only trigger alert if we were previously connected
+                            // and a workout is actively in progress (not in summary)
+                            // SetSummary is excluded since the summary screen doesn't need connection
+                            // and users need to interact with it to save workout history
+                            if (wasConnected && workoutStateProvider.isWorkoutActiveForConnectionAlert) {
+                                Logger.w { "Connection lost during active workout! Showing reconnection dialog." }
+                                workoutStateProvider.onWorkoutConnectionLost()
+                                _connectionLostDuringWorkout.value = true
+                            }
+                            wasConnected = false
+                        }
+
+                        else -> {
+                            // Scanning, Connecting - don't change wasConnected or alert state
+                        }
                     }
                 }
+            } catch (e: Exception) {
+                Logger.e(e) { "Error in connection state observer" }
+            }
+        }
+
+        // B2 fix: Collect reconnection requests from the BLE layer.
+        // KableBleConnectionManager emits these when a peripheral disconnects unexpectedly.
+        // We only attempt auto-reconnect during active workouts to avoid spurious reconnects
+        // on intentional disconnections or idle screens.
+        scope.launch {
+            try {
+                bleRepository.reconnectionRequested.collect { request ->
+                    Logger.w { "Auto-reconnect requested: ${request.deviceName} (reason: ${request.reason})" }
+                    // H1: CRITICAL — never reconnect mid-set. The machine cannot receive a new
+                    // exercise packet until the active one fully ends; doing so causes a fault
+                    // (blinking red light). Only reconnect between sets (Resting, Countdown, etc).
+                    if (workoutStateProvider.isWorkoutMidSet) {
+                        Logger.w { "Skipping reconnect — workout is mid-set (machine would fault)" }
+                        return@collect
+                    }
+                    if (workoutStateProvider.isWorkoutActiveForConnectionAlert) {
+                        delay(1500L) // BLE stack cooldown — Android needs time to release GATT resources
+                        ensureConnection(
+                            onConnected = { Logger.i { "Auto-reconnect succeeded for ${request.deviceName}" } },
+                            onFailed = { Logger.w { "Auto-reconnect failed for ${request.deviceName}" } },
+                        )
+                    } else {
+                        Logger.d { "Ignoring reconnection request — no active workout" }
+                    }
+                }
+            } catch (e: Exception) {
+                Logger.e(e) { "Error collecting reconnection requests" }
             }
         }
     }
@@ -174,7 +231,8 @@ class BleConnectionManager(
 
         // If already connecting/scanning, cancel and return to disconnected
         if (connectionState.value is ConnectionState.Connecting ||
-            connectionState.value is ConnectionState.Scanning) {
+            connectionState.value is ConnectionState.Scanning
+        ) {
             Logger.d { "ensureConnection: Cancelling in-progress connection" }
             cancelConnection()
             return
@@ -227,6 +285,9 @@ class BleConnectionManager(
                     _pendingConnectionCallback = null
                     onFailed()
                 }
+            } catch (e: CancellationException) {
+                // H2: Don't swallow coroutine cancellation — propagate to caller
+                throw e
             } catch (e: Exception) {
                 Logger.e { "ensureConnection error: ${e.message}" }
                 bleRepository.cancelConnection()

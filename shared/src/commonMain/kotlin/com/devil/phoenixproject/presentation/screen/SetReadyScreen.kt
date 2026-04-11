@@ -1,11 +1,8 @@
 package com.devil.phoenixproject.presentation.screen
 
-import com.devil.phoenixproject.presentation.components.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
@@ -24,11 +21,15 @@ import androidx.navigation.NavController
 import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.data.repository.ExerciseVideoEntity
 import com.devil.phoenixproject.domain.model.*
+import com.devil.phoenixproject.presentation.components.BackHandler
 import com.devil.phoenixproject.presentation.components.SliderWithButtons
 import com.devil.phoenixproject.presentation.components.VideoPlayer
 import com.devil.phoenixproject.presentation.navigation.NavigationRoutes
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
 import com.devil.phoenixproject.ui.theme.Spacing
+import org.jetbrains.compose.resources.stringResource
+import vitruvianprojectphoenix.shared.generated.resources.*
+import vitruvianprojectphoenix.shared.generated.resources.Res
 
 /**
  * Set Ready Screen - Focused view for a single exercise/set.
@@ -36,11 +37,7 @@ import com.devil.phoenixproject.ui.theme.Spacing
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SetReadyScreen(
-    navController: NavController,
-    viewModel: MainViewModel,
-    exerciseRepository: ExerciseRepository
-) {
+fun SetReadyScreen(navController: NavController, viewModel: MainViewModel, exerciseRepository: ExerciseRepository) {
     val routineFlowState by viewModel.routineFlowState.collectAsState()
     val workoutState by viewModel.workoutState.collectAsState()
     val loadedRoutine by viewModel.loadedRoutine.collectAsState()
@@ -71,8 +68,8 @@ fun SetReadyScreen(
     val isBodyweight = !currentExercise.exercise.hasCableAccessory
 
     // Weight parameters matching RestTimerCard exactly
-    val maxWeight = if (weightUnit == WeightUnit.LB) 242f else 110f  // 110kg per cable max
-    val weightStep = if (weightUnit == WeightUnit.LB) 0.5f else 0.25f  // Fine-grained like RestTimerCard
+    val maxWeight = if (weightUnit == WeightUnit.LB) 242f else 110f // 110kg per cable max
+    val weightStep = if (weightUnit == WeightUnit.LB) 0.5f else 0.25f // Fine-grained like RestTimerCard
 
     // Navigation state - uses superset-aware helpers from ViewModel
     val canGoPrev = viewModel.hasPreviousStep(setReadyState.exerciseIndex, setReadyState.setIndex)
@@ -120,6 +117,7 @@ fun SetReadyScreen(
                     popUpTo(NavigationRoutes.RoutineOverview.route) { inclusive = false }
                 }
             }
+
             else -> {}
         }
     }
@@ -131,7 +129,7 @@ fun SetReadyScreen(
             Surface(
                 modifier = Modifier.fillMaxWidth(),
                 color = MaterialTheme.colorScheme.surfaceContainer,
-                tonalElevation = 3.dp
+                tonalElevation = 3.dp,
             ) {
                 Row(
                     modifier = Modifier
@@ -139,17 +137,17 @@ fun SetReadyScreen(
                         .navigationBarsPadding()
                         .padding(horizontal = 16.dp, vertical = 12.dp),
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
                     // PREV button - compact icon button
                     FilledTonalIconButton(
                         onClick = { viewModel.setReadyPrev() },
                         enabled = canGoPrev,
-                        modifier = Modifier.size(48.dp)
+                        modifier = Modifier.size(48.dp),
                     ) {
                         Icon(
                             Icons.AutoMirrored.Filled.KeyboardArrowLeft,
-                            contentDescription = "Previous"
+                            contentDescription = stringResource(Res.string.cd_previous),
                         )
                     }
 
@@ -158,25 +156,25 @@ fun SetReadyScreen(
                         onClick = {
                             viewModel.ensureConnection(
                                 onConnected = { viewModel.startSetFromReady() },
-                                onFailed = {}
+                                onFailed = {},
                             )
                         },
                         modifier = Modifier
                             .weight(1f)
                             .height(48.dp),
                         enabled = connectionState is ConnectionState.Connected,
-                        shape = RoundedCornerShape(12.dp)
+                        shape = RoundedCornerShape(12.dp),
                     ) {
                         Icon(
                             Icons.Default.PlayArrow,
                             contentDescription = null,
-                            modifier = Modifier.size(20.dp)
+                            modifier = Modifier.size(20.dp),
                         )
                         Spacer(Modifier.width(8.dp))
                         Text(
                             "START",
                             fontWeight = FontWeight.Bold,
-                            maxLines = 1
+                            maxLines = 1,
                         )
                     }
 
@@ -184,11 +182,11 @@ fun SetReadyScreen(
                     FilledTonalIconButton(
                         onClick = { viewModel.setReadySkip() },
                         enabled = canSkip,
-                        modifier = Modifier.size(48.dp)
+                        modifier = Modifier.size(48.dp),
                     ) {
                         Icon(
                             Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                            contentDescription = "Next"
+                            contentDescription = stringResource(Res.string.cd_next),
                         )
                     }
 
@@ -198,17 +196,17 @@ fun SetReadyScreen(
                         modifier = Modifier.size(48.dp),
                         colors = IconButtonDefaults.filledTonalIconButtonColors(
                             containerColor = MaterialTheme.colorScheme.errorContainer,
-                            contentColor = MaterialTheme.colorScheme.onErrorContainer
-                        )
+                            contentColor = MaterialTheme.colorScheme.onErrorContainer,
+                        ),
                     ) {
                         Icon(
                             Icons.Default.Close,
-                            contentDescription = "Stop"
+                            contentDescription = stringResource(Res.string.cd_stop),
                         )
                     }
                 }
             }
-        }
+        },
     ) { padding ->
         Column(
             modifier = Modifier
@@ -218,41 +216,41 @@ fun SetReadyScreen(
                     Brush.verticalGradient(
                         colors = listOf(
                             MaterialTheme.colorScheme.background,
-                            MaterialTheme.colorScheme.surfaceVariant
-                        )
-                    )
+                            MaterialTheme.colorScheme.surfaceVariant,
+                        ),
+                    ),
                 )
                 .padding(horizontal = 16.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.SpaceBetween
+            verticalArrangement = Arrangement.SpaceBetween,
         ) {
             // Header - Set X of Y
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(16.dp),
                 colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.primaryContainer
-                )
+                    containerColor = MaterialTheme.colorScheme.primaryContainer,
+                ),
             ) {
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(16.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
+                    horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
                     // Issue #142: Display exercise name prominently
                     Text(
                         currentExercise.exercise.name,
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                        color = MaterialTheme.colorScheme.onPrimaryContainer,
                     )
                     Spacer(Modifier.height(4.dp))
                     Text(
                         "Set ${setReadyState.setIndex + 1} of ${currentExercise.setReps.size}",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Medium,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.9f)
+                        color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.9f),
                     )
                     // Issue #222: Show "Bodyweight • XXs" for bodyweight, mode name for cable
                     if (isBodyweight) {
@@ -260,13 +258,13 @@ fun SetReadyScreen(
                         Text(
                             "Bodyweight • $durationText",
                             style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
+                            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f),
                         )
                     } else {
                         Text(
                             currentExercise.programMode.displayName,
                             style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
+                            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f),
                         )
                     }
                 }
@@ -281,111 +279,112 @@ fun SetReadyScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(140.dp)
-                        .clip(RoundedCornerShape(12.dp))
+                        .clip(RoundedCornerShape(12.dp)),
                 )
                 Spacer(Modifier.height(12.dp))
             }
 
-
             // Configuration card - matching RestTimerCard style
             // Issue #222: Hide for bodyweight exercises (no cable settings to configure)
-            if (!isBodyweight) Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(20.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest),
-                elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
-            ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(Spacing.medium),
-                    verticalArrangement = Arrangement.spacedBy(Spacing.medium)
+            if (!isBodyweight) {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(20.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
                 ) {
-                    Text(
-                        if (isEchoMode) "ECHO SETTINGS" else "SET CONFIGURATION",
-                        style = MaterialTheme.typography.labelLarge,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        letterSpacing = 1.sp
-                    )
-
-                    if (isEchoMode) {
-                        // Echo Level selector - matching RestTimerCard style
-                        SetReadyEchoLevelSelector(
-                            selectedLevel = setReadyState.echoLevel ?: EchoLevel.HARD,
-                            onLevelChange = { viewModel.updateSetReadyEchoLevel(it) }
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(Spacing.medium),
+                        verticalArrangement = Arrangement.spacedBy(Spacing.medium),
+                    ) {
+                        Text(
+                            if (isEchoMode) "ECHO SETTINGS" else "SET CONFIGURATION",
+                            style = MaterialTheme.typography.labelLarge,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            letterSpacing = 1.sp,
                         )
 
-                        // Eccentric Load slider - matching RestTimerCard style
-                        SetReadyEccentricLoadSlider(
-                            percent = setReadyState.eccentricLoadPercent ?: 100,
-                            onPercentChange = { viewModel.updateSetReadyEccentricLoad(it) }
-                        )
-
-                        // Reps adjuster for Echo mode too
-                        if (!isAMRAP) {
-                            SliderWithButtons(
-                                value = setReadyState.adjustedReps.toFloat(),
-                                onValueChange = { newValue ->
-                                    viewModel.updateSetReadyReps(newValue.toInt().coerceIn(1, 50))
-                                },
-                                valueRange = 1f..50f,
-                                step = 1f,
-                                label = "Target Reps",
-                                formatValue = { it.toInt().toString() }
+                        if (isEchoMode) {
+                            // Echo Level selector - matching RestTimerCard style
+                            SetReadyEchoLevelSelector(
+                                selectedLevel = setReadyState.echoLevel ?: EchoLevel.HARD,
+                                onLevelChange = { viewModel.updateSetReadyEchoLevel(it) },
                             )
-                        } else {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text("Target Reps", style = MaterialTheme.typography.bodyLarge)
-                                Text(
-                                    "AMRAP",
-                                    style = MaterialTheme.typography.titleMedium,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.primary
+
+                            // Eccentric Load slider - matching RestTimerCard style
+                            SetReadyEccentricLoadSlider(
+                                percent = setReadyState.eccentricLoadPercent ?: 100,
+                                onPercentChange = { viewModel.updateSetReadyEccentricLoad(it) },
+                            )
+
+                            // Reps adjuster for Echo mode too
+                            if (!isAMRAP) {
+                                SliderWithButtons(
+                                    value = setReadyState.adjustedReps.toFloat(),
+                                    onValueChange = { newValue ->
+                                        viewModel.updateSetReadyReps(newValue.toInt().coerceIn(1, 50))
+                                    },
+                                    valueRange = 1f..50f,
+                                    step = 1f,
+                                    label = "Target Reps",
+                                    formatValue = { it.toInt().toString() },
                                 )
+                            } else {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Text(stringResource(Res.string.target_reps), style = MaterialTheme.typography.bodyLarge)
+                                    Text(
+                                        "AMRAP",
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.primary,
+                                    )
+                                }
                             }
-                        }
-                    } else {
-                        // Standard mode: Weight + Reps using SliderWithButtons
-                        SliderWithButtons(
-                            value = setReadyState.adjustedWeight,
-                            onValueChange = { newWeight ->
-                                viewModel.updateSetReadyWeight(newWeight.coerceIn(0f, maxWeight))
-                            },
-                            valueRange = 0f..maxWeight,
-                            step = weightStep,
-                            label = "Weight per cable",
-                            formatValue = { viewModel.formatWeight(it, weightUnit) }
-                        )
-
-                        if (!isAMRAP) {
-                            SliderWithButtons(
-                                value = setReadyState.adjustedReps.toFloat(),
-                                onValueChange = { newValue ->
-                                    viewModel.updateSetReadyReps(newValue.toInt().coerceIn(1, 50))
-                                },
-                                valueRange = 1f..50f,
-                                step = 1f,
-                                label = "Target Reps",
-                                formatValue = { it.toInt().toString() }
-                            )
                         } else {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text("Target Reps", style = MaterialTheme.typography.bodyLarge)
-                                Text(
-                                    "AMRAP",
-                                    style = MaterialTheme.typography.titleMedium,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.primary
+                            // Standard mode: Weight + Reps using SliderWithButtons
+                            SliderWithButtons(
+                                value = setReadyState.adjustedWeight,
+                                onValueChange = { newWeight ->
+                                    viewModel.updateSetReadyWeight(newWeight.coerceIn(0f, maxWeight))
+                                },
+                                valueRange = 0f..maxWeight,
+                                step = weightStep,
+                                label = "Weight per cable",
+                                formatValue = { viewModel.formatWeight(it, weightUnit) },
+                            )
+
+                            if (!isAMRAP) {
+                                SliderWithButtons(
+                                    value = setReadyState.adjustedReps.toFloat(),
+                                    onValueChange = { newValue ->
+                                        viewModel.updateSetReadyReps(newValue.toInt().coerceIn(1, 50))
+                                    },
+                                    valueRange = 1f..50f,
+                                    step = 1f,
+                                    label = "Target Reps",
+                                    formatValue = { it.toInt().toString() },
                                 )
+                            } else {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Text(stringResource(Res.string.target_reps), style = MaterialTheme.typography.bodyLarge)
+                                    Text(
+                                        "AMRAP",
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.primary,
+                                    )
+                                }
                             }
                         }
                     }
@@ -400,24 +399,24 @@ fun SetReadyScreen(
     if (showStopConfirmation) {
         AlertDialog(
             onDismissRequest = { showStopConfirmation = false },
-            title = { Text("Exit Routine?") },
-            text = { Text("Progress will be saved.") },
+            title = { Text(stringResource(Res.string.exit_routine_title)) },
+            text = { Text(stringResource(Res.string.exit_routine_message)) },
             confirmButton = {
                 Button(
                     onClick = {
                         showStopConfirmation = false
                         viewModel.exitRoutineFlow()
                         navController.popBackStack(NavigationRoutes.DailyRoutines.route, false)
-                    }
+                    },
                 ) {
-                    Text("Exit")
+                    Text(stringResource(Res.string.action_exit))
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showStopConfirmation = false }) {
-                    Text("Cancel")
+                    Text(stringResource(Res.string.action_cancel))
                 }
-            }
+            },
         )
     }
 }
@@ -426,16 +425,13 @@ fun SetReadyScreen(
  * Echo Level selector - Row of 4 buttons matching RestTimerCard style
  */
 @Composable
-private fun SetReadyEchoLevelSelector(
-    selectedLevel: EchoLevel,
-    onLevelChange: (EchoLevel) -> Unit
-) {
+private fun SetReadyEchoLevelSelector(selectedLevel: EchoLevel, onLevelChange: (EchoLevel) -> Unit) {
     Column {
         Text(
             text = "ECHO LEVEL",
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
-            letterSpacing = 1.sp
+            letterSpacing = 1.sp,
         )
 
         Spacer(modifier = Modifier.height(Spacing.small))
@@ -445,10 +441,10 @@ private fun SetReadyEchoLevelSelector(
                 .fillMaxWidth()
                 .background(
                     MaterialTheme.colorScheme.surfaceContainerLowest,
-                    RoundedCornerShape(Spacing.medium)
+                    RoundedCornerShape(Spacing.medium),
                 )
                 .padding(Spacing.extraSmall),
-            horizontalArrangement = Arrangement.spacedBy(Spacing.extraSmall)
+            horizontalArrangement = Arrangement.spacedBy(Spacing.extraSmall),
         ) {
             EchoLevel.entries.forEach { level ->
                 val isSelected = level == selectedLevel
@@ -461,7 +457,7 @@ private fun SetReadyEchoLevelSelector(
                     } else {
                         MaterialTheme.colorScheme.surfaceContainerLowest
                     },
-                    onClick = { onLevelChange(level) }
+                    onClick = { onLevelChange(level) },
                 ) {
                     Text(
                         text = level.displayName,
@@ -475,7 +471,7 @@ private fun SetReadyEchoLevelSelector(
                         } else {
                             MaterialTheme.colorScheme.onSurfaceVariant
                         },
-                        textAlign = TextAlign.Center
+                        textAlign = TextAlign.Center,
                     )
                 }
             }
@@ -487,27 +483,24 @@ private fun SetReadyEchoLevelSelector(
  * Eccentric Load slider matching RestTimerCard style (0-150%)
  */
 @Composable
-private fun SetReadyEccentricLoadSlider(
-    percent: Int,
-    onPercentChange: (Int) -> Unit
-) {
+private fun SetReadyEccentricLoadSlider(percent: Int, onPercentChange: (Int) -> Unit) {
     Column {
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
+            verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
                 text = "ECCENTRIC LOAD",
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                letterSpacing = 1.sp
+                letterSpacing = 1.sp,
             )
             Text(
                 text = "$percent%",
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.primary
+                color = MaterialTheme.colorScheme.primary,
             )
         }
 
@@ -518,7 +511,7 @@ private fun SetReadyEccentricLoadSlider(
             onValueChange = { onPercentChange(it.toInt()) },
             valueRange = 0f..150f,
             steps = 29, // 5% increments: 0, 5, 10, ... 150
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier.fillMaxWidth(),
         )
     }
 }

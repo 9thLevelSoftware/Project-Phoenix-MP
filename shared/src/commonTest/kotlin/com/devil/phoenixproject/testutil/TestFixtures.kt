@@ -28,7 +28,7 @@ object TestFixtures {
         muscleGroups = "Chest,Triceps,Shoulders",
         equipment = "BAR",
         id = "bench-press-001",
-        isFavorite = true
+        isFavorite = true,
     )
 
     val bicepCurl = Exercise(
@@ -36,7 +36,7 @@ object TestFixtures {
         muscleGroup = "Biceps",
         muscleGroups = "Biceps",
         equipment = "SINGLE_HANDLE",
-        id = "bicep-curl-001"
+        id = "bicep-curl-001",
     )
 
     val squat = Exercise(
@@ -44,7 +44,7 @@ object TestFixtures {
         muscleGroup = "Legs",
         muscleGroups = "Legs,Glutes,Core",
         equipment = "BAR",
-        id = "squat-001"
+        id = "squat-001",
     )
 
     val deadlift = Exercise(
@@ -52,7 +52,7 @@ object TestFixtures {
         muscleGroup = "Back",
         muscleGroups = "Back,Legs,Glutes",
         equipment = "BAR",
-        id = "deadlift-001"
+        id = "deadlift-001",
     )
 
     val singleArmRow = Exercise(
@@ -60,7 +60,7 @@ object TestFixtures {
         muscleGroup = "Back",
         muscleGroups = "Back,Biceps",
         equipment = "SINGLE_HANDLE",
-        id = "single-arm-row-001"
+        id = "single-arm-row-001",
     )
 
     val customExercise = Exercise(
@@ -69,7 +69,7 @@ object TestFixtures {
         muscleGroups = "Full Body",
         equipment = "",
         id = "custom-001",
-        isCustom = true
+        isCustom = true,
     )
 
     val allExercises = listOf(benchPress, bicepCurl, squat, deadlift, singleArmRow, customExercise)
@@ -81,7 +81,7 @@ object TestFixtures {
         reps = 10,
         weightPerCableKg = 25f,
         progressionRegressionKg = 0f,
-        selectedExerciseId = benchPress.id
+        selectedExerciseId = benchPress.id,
     )
 
     val echoParams = WorkoutParameters(
@@ -90,7 +90,7 @@ object TestFixtures {
         weightPerCableKg = 0f, // Echo mode doesn't use weight setting
         selectedExerciseId = squat.id,
         echoLevel = EchoLevel.HARDER,
-        eccentricLoad = EccentricLoad.LOAD_120
+        eccentricLoad = EccentricLoad.LOAD_120,
     )
 
     val justLiftParams = WorkoutParameters(
@@ -100,7 +100,7 @@ object TestFixtures {
         isJustLift = true,
         useAutoStart = true,
         isAMRAP = true,
-        selectedExerciseId = deadlift.id
+        selectedExerciseId = deadlift.id,
     )
 
     // ========== Workout Sessions ==========
@@ -114,7 +114,7 @@ object TestFixtures {
         workingReps: Int = 10,
         warmupReps: Int = 0,
         mode: String = "OldSchool",
-        timestamp: Long = currentTimeMillis()
+        timestamp: Long = currentTimeMillis(),
     ) = WorkoutSession(
         id = id,
         timestamp = timestamp,
@@ -125,7 +125,7 @@ object TestFixtures {
         workingReps = workingReps,
         warmupReps = warmupReps,
         exerciseId = exerciseId,
-        exerciseName = exerciseName
+        exerciseName = exerciseName,
     )
 
     val sampleSession = createWorkoutSession()
@@ -138,7 +138,7 @@ object TestFixtures {
         weightPerCableKg: Float = 50f,
         reps: Int = 5,
         prType: PRType = PRType.MAX_WEIGHT,
-        timestamp: Long = currentTimeMillis()
+        timestamp: Long = currentTimeMillis(),
     ) = PersonalRecord(
         id = 0,
         exerciseId = exerciseId,
@@ -149,7 +149,7 @@ object TestFixtures {
         timestamp = timestamp,
         workoutMode = "OldSchool",
         prType = prType,
-        volume = weightPerCableKg * 2 * reps
+        volume = weightPerCableKg * 2 * reps,
     )
 
     val samplePR = createPersonalRecord()
@@ -163,7 +163,7 @@ object TestFixtures {
         positionB: Float = 500f,
         velocityA: Double = 0.0,
         velocityB: Double = 0.0,
-        timestamp: Long = currentTimeMillis()
+        timestamp: Long = currentTimeMillis(),
     ) = WorkoutMetric(
         timestamp = timestamp,
         loadA = loadA,
@@ -171,18 +171,14 @@ object TestFixtures {
         positionA = positionA,
         positionB = positionB,
         velocityA = velocityA,
-        velocityB = velocityB
+        velocityB = velocityB,
     )
 
     /**
      * Create a sequence of metrics simulating a rep.
      * Position goes from bottom (0) to top (800) and back.
      */
-    fun createRepMetrics(
-        repNumber: Int = 1,
-        loadKg: Float = 25f,
-        baseTimestamp: Long = currentTimeMillis()
-    ): List<WorkoutMetric> {
+    fun createRepMetrics(repNumber: Int = 1, loadKg: Float = 25f, baseTimestamp: Long = currentTimeMillis()): List<WorkoutMetric> {
         val metrics = mutableListOf<WorkoutMetric>()
         val positions = listOf(0f, 200f, 400f, 600f, 800f, 600f, 400f, 200f, 0f)
 
@@ -195,8 +191,8 @@ object TestFixtures {
                     positionB = position,
                     velocityA = if (index < 5) 100.0 else -100.0,
                     velocityB = if (index < 5) 100.0 else -100.0,
-                    timestamp = baseTimestamp + (index * 100L)
-                )
+                    timestamp = baseTimestamp + (index * 100L),
+                ),
             )
         }
 
@@ -209,10 +205,10 @@ object TestFixtures {
         topCounter: Int = 1,
         completeCounter: Int = 1,
         repsRomCount: Int = 0,
-        repsRomTotal: Int = 3,  // Issue #210: Machine's warmup target
+        repsRomTotal: Int = 3, // Issue #210: Machine's warmup target
         repsSetCount: Int = 1,
         repsSetTotal: Int = 10, // Issue #210: Machine's working target
-        timestamp: Long = currentTimeMillis()
+        timestamp: Long = currentTimeMillis(),
     ) = RepNotification(
         topCounter = topCounter,
         completeCounter = completeCounter,
@@ -224,7 +220,7 @@ object TestFixtures {
         rangeBottom = 0f,
         rawData = ByteArray(24),
         timestamp = timestamp,
-        isLegacyFormat = false
+        isLegacyFormat = false,
     )
 
     // ========== BLE Devices ==========
@@ -232,13 +228,13 @@ object TestFixtures {
     val vFormDevice = ScannedDevice(
         name = "Vee_ABC123",
         address = "AA:BB:CC:DD:EE:01",
-        rssi = -50
+        rssi = -50,
     )
 
     val trainerPlusDevice = ScannedDevice(
         name = "VIT_XYZ789",
         address = "AA:BB:CC:DD:EE:02",
-        rssi = -60
+        rssi = -60,
     )
 
     // ========== Helper Functions ==========

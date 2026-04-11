@@ -10,6 +10,8 @@ import android.os.IBinder
 import androidx.core.app.NotificationCompat
 import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.MainActivity
+import com.devil.phoenixproject.presentation.manager.WorkoutServicePhase
+import com.devil.phoenixproject.presentation.manager.WorkoutServiceProtocol
 
 /**
  * Foreground service to keep the app alive during workouts.
@@ -20,34 +22,24 @@ class WorkoutForegroundService : Service() {
     companion object {
         const val CHANNEL_ID = "vitruvian_workout_channel"
         const val NOTIFICATION_ID = 1
-        const val ACTION_START_WORKOUT = "com.devil.phoenixproject.START_WORKOUT"
-        const val ACTION_STOP_WORKOUT = "com.devil.phoenixproject.STOP_WORKOUT"
-        const val EXTRA_WORKOUT_MODE = "workout_mode"
-        const val EXTRA_TARGET_REPS = "target_reps"
 
         private val log = Logger.withTag("WorkoutForegroundService")
-
-        fun startWorkoutService(context: Context, workoutMode: String, targetReps: Int) {
-            val intent = Intent(context, WorkoutForegroundService::class.java).apply {
-                action = ACTION_START_WORKOUT
-                putExtra(EXTRA_WORKOUT_MODE, workoutMode)
-                putExtra(EXTRA_TARGET_REPS, targetReps)
-            }
-            // minSdk=26 (Android 8.0) requires startForegroundService
-            context.startForegroundService(intent)
-        }
-
-        fun stopWorkoutService(context: Context) {
-            val intent = Intent(context, WorkoutForegroundService::class.java).apply {
-                action = ACTION_STOP_WORKOUT
-            }
-            context.startService(intent)
-        }
     }
 
-    private var workoutMode: String = "Old School"
-    private var targetReps: Int = 10
-    private var currentReps: Int = 0
+    private data class NotificationState(
+        val phase: WorkoutServicePhase = WorkoutServicePhase.INITIALIZING,
+        val workoutMode: String = "Old School",
+        val exerciseName: String? = null,
+        val nextExerciseName: String? = null,
+        val currentSet: Int? = null,
+        val totalSets: Int? = null,
+        val completedReps: Int? = null,
+        val targetReps: Int? = null,
+        val secondsRemaining: Int? = null,
+    )
+
+    private var notificationState = NotificationState()
+    private var isForegroundActive = false
 
     override fun onCreate() {
         super.onCreate()
@@ -56,70 +48,183 @@ class WorkoutForegroundService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        when (intent?.action) {
-            ACTION_START_WORKOUT -> {
-                workoutMode = intent.getStringExtra(EXTRA_WORKOUT_MODE) ?: "Old School"
-                targetReps = intent.getIntExtra(EXTRA_TARGET_REPS, 10)
-                currentReps = 0
-                startForeground(NOTIFICATION_ID, createNotification())
-                log.d { "Workout service started: $workoutMode, $targetReps reps" }
+        if (intent == null) {
+            // Android restarted the service after it was killed. BLE connection is lost and
+            // the workout cannot meaningfully resume, so post the required foreground
+            // notification (Android 8+ crashes without it) and shut down immediately.
+            log.w { "WorkoutForegroundService restarted with null intent, stopping" }
+            startForeground(NOTIFICATION_ID, createNotification())
+            stopSelf()
+            return START_NOT_STICKY
+        }
+
+        when (intent.action) {
+            WorkoutServiceProtocol.ACTION_SYNC -> {
+                notificationState = intent.toNotificationState(previous = notificationState)
+                if (!isForegroundActive) {
+                    startForeground(NOTIFICATION_ID, createNotification())
+                    isForegroundActive = true
+                } else {
+                    updateNotification()
+                }
+                log.d {
+                    "Workout service synced: phase=${notificationState.phase}, mode=${notificationState.workoutMode}, " +
+                        "exercise=${notificationState.exerciseName}, seconds=${notificationState.secondsRemaining}"
+                }
             }
-            ACTION_STOP_WORKOUT -> {
+
+            WorkoutServiceProtocol.ACTION_STOP -> {
                 log.d { "Workout service stopping" }
+                isForegroundActive = false
                 stopForeground(STOP_FOREGROUND_REMOVE)
                 stopSelf()
             }
         }
-        return START_STICKY // Restart if killed by system
+
+        // A killed workout cannot resume the BLE connection, so do not request restart.
+        return START_NOT_STICKY
     }
 
-    override fun onBind(intent: Intent?): IBinder? {
-        return null // We don't need binding
-    }
+    override fun onBind(intent: Intent?): IBinder? = null
 
     private fun createNotificationChannel() {
-        // minSdk=26 (Android 8.0) always has NotificationChannel
         val channel = NotificationChannel(
             CHANNEL_ID,
             "Phoenix Workout",
-            NotificationManager.IMPORTANCE_LOW // Low importance = no sound/vibration
+            NotificationManager.IMPORTANCE_LOW,
         ).apply {
             description = "Shows ongoing workout status"
             setShowBadge(false)
         }
 
-        val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        val notificationManager = getSystemService(
+            Context.NOTIFICATION_SERVICE,
+        ) as NotificationManager
         notificationManager.createNotificationChannel(channel)
     }
 
+    private fun updateNotification() {
+        val notificationManager = getSystemService(
+            Context.NOTIFICATION_SERVICE,
+        ) as NotificationManager
+        notificationManager.notify(NOTIFICATION_ID, createNotification())
+    }
+
     private fun createNotification() = NotificationCompat.Builder(this, CHANNEL_ID)
-        .setContentTitle("Phoenix Workout Active")
-        .setContentText("$workoutMode - $currentReps/$targetReps reps")
+        .setContentTitle(notificationTitle())
+        .setContentText(notificationText())
         .setSmallIcon(android.R.drawable.ic_media_play)
-        .setOngoing(true) // Cannot be dismissed
+        .setOngoing(true)
         .setCategory(NotificationCompat.CATEGORY_WORKOUT)
         .setPriority(NotificationCompat.PRIORITY_LOW)
         .setContentIntent(createPendingIntent())
         .build()
 
+    private fun notificationTitle(): String = when (notificationState.phase) {
+        WorkoutServicePhase.INITIALIZING -> "Phoenix Workout"
+        WorkoutServicePhase.COUNTDOWN -> "Workout Starting"
+        WorkoutServicePhase.ACTIVE -> notificationState.exerciseName ?: "Workout Active"
+        WorkoutServicePhase.SET_SUMMARY -> "Set Complete"
+        WorkoutServicePhase.RESTING -> "Rest Timer"
+        WorkoutServicePhase.JUST_LIFT_REST -> "Just Lift Rest"
+        WorkoutServicePhase.PAUSED -> "Workout Paused"
+    }
+
+    private fun notificationText(): String {
+        val details = mutableListOf<String>()
+
+        when (notificationState.phase) {
+            WorkoutServicePhase.INITIALIZING -> details += "Preparing ${notificationState.workoutMode}"
+            WorkoutServicePhase.COUNTDOWN -> {
+                notificationState.exerciseName?.let(details::add)
+                notificationState.secondsRemaining?.let { details += "Starts in ${it}s" }
+            }
+
+            WorkoutServicePhase.ACTIVE -> {
+                notificationState.currentSetLabel()?.let(details::add)
+                notificationState.repLabel()?.let(details::add)
+                details += notificationState.workoutMode
+            }
+
+            WorkoutServicePhase.SET_SUMMARY -> {
+                notificationState.exerciseName?.let(details::add)
+                notificationState.repLabel()?.let(details::add)
+                notificationState.currentSetLabel()?.let(details::add)
+            }
+
+            WorkoutServicePhase.RESTING -> {
+                notificationState.nextExerciseName?.let { details += "Next: $it" }
+                notificationState.currentSetLabel()?.let(details::add)
+                notificationState.secondsRemaining?.let { details += "${it}s remaining" }
+            }
+
+            WorkoutServicePhase.JUST_LIFT_REST -> {
+                notificationState.exerciseName?.let(details::add)
+                notificationState.secondsRemaining?.let { details += "${it}s remaining" }
+            }
+
+            WorkoutServicePhase.PAUSED -> {
+                notificationState.exerciseName?.let(details::add)
+                notificationState.currentSetLabel()?.let(details::add)
+            }
+        }
+
+        return details.filter { it.isNotBlank() }.joinToString(" | ").ifBlank {
+            "Phoenix workout in progress"
+        }
+    }
+
+    private fun NotificationState.currentSetLabel(): String? {
+        val set = currentSet
+        val total = totalSets
+        if (set == null || total == null || set <= 0 || total <= 0) return null
+        return "Set $set/$total"
+    }
+
+    private fun NotificationState.repLabel(): String? {
+        val reps = completedReps
+        val target = targetReps
+        return when {
+            reps == null || reps < 0 -> null
+            target != null && target > 0 -> "Reps $reps/$target"
+            else -> "Reps $reps"
+        }
+    }
+
     private fun createPendingIntent(): PendingIntent {
         val intent = Intent(this, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_SINGLE_TOP
         }
-        // minSdk=26 (Android 8.0) is above API 23 (M), FLAG_IMMUTABLE always available
         val flags = PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         return PendingIntent.getActivity(this, 0, intent, flags)
     }
 
-    /**
-     * Update the notification with current rep count.
-     * Call this from WorkoutViewModel when rep count changes.
-     */
-    fun updateRepCount(reps: Int) {
-        currentReps = reps
-        val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        notificationManager.notify(NOTIFICATION_ID, createNotification())
+    private fun Intent.toNotificationState(previous: NotificationState): NotificationState {
+        val phaseName = getStringExtra(WorkoutServiceProtocol.EXTRA_PHASE)
+        val phase = phaseName?.let {
+            runCatching { WorkoutServicePhase.valueOf(it) }.getOrNull()
+        } ?: previous.phase
+
+        return NotificationState(
+            phase = phase,
+            workoutMode = getStringExtra(WorkoutServiceProtocol.EXTRA_WORKOUT_MODE) ?: previous.workoutMode,
+            exerciseName = getNullableStringExtra(WorkoutServiceProtocol.EXTRA_EXERCISE_NAME),
+            nextExerciseName = getNullableStringExtra(WorkoutServiceProtocol.EXTRA_NEXT_EXERCISE_NAME),
+            currentSet = getNullableIntExtra(WorkoutServiceProtocol.EXTRA_CURRENT_SET),
+            totalSets = getNullableIntExtra(WorkoutServiceProtocol.EXTRA_TOTAL_SETS),
+            completedReps = getNullableIntExtra(WorkoutServiceProtocol.EXTRA_COMPLETED_REPS),
+            targetReps = getNullableIntExtra(WorkoutServiceProtocol.EXTRA_TARGET_REPS),
+            secondsRemaining = getNullableIntExtra(WorkoutServiceProtocol.EXTRA_SECONDS_REMAINING),
+        )
     }
+
+    private fun Intent.getNullableIntExtra(name: String): Int? {
+        val value = getIntExtra(name, Int.MIN_VALUE)
+        return if (value == Int.MIN_VALUE || value < 0) null else value
+    }
+
+    private fun Intent.getNullableStringExtra(name: String): String? =
+        getStringExtra(name)?.takeIf { it.isNotBlank() }
 
     override fun onDestroy() {
         super.onDestroy()
