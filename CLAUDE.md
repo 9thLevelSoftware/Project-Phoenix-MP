@@ -115,6 +115,41 @@ Located in `shared/src/commonMain/kotlin/com/example/vitruvianredux/domain/model
 - **Vitruvian Trainer+**: 220kg max
 - IMPORTANT: When applicable, prefer using jetbrains-index MCP tools for code navigation and refactoring.
 
+## Sync Architecture
+
+### Key Sync Files
+- `data/sync/SyncManager.kt` — Orchestrates push/pull operations with batching and partial success handling
+- `data/sync/SyncTriggerManager.kt` — Debounces sync triggers, exponential backoff for transient errors
+- `data/sync/PortalApiClient.kt` — HTTP client with error classification and token refresh
+- `data/repository/SqlDelightSyncRepository.kt` — Merge strategies per entity type (INSERT OR IGNORE, upsert, LWW)
+- `data/sync/SyncModels.kt` — DTOs for wire format (camelCase for JSON, matches Edge Functions)
+
+### Sync Trigger Patterns
+- **`onWorkoutCompleted()`**: Always syncs immediately (bypasses throttle) since workout data is critical
+- **`onAppForeground()`**: Respects throttle/backoff to avoid excessive sync attempts
+- **`onConnectivityRestored()`**: Triggers immediate retry if sync was waiting for network
+
+### Error Classification
+```kotlin
+enum class SyncErrorCategory {
+    TRANSIENT,  // 5xx, timeout, 429 - retry with backoff
+    PERMANENT,  // 400, 404 - don't retry
+    AUTH,       // 401 - trigger re-login
+    NETWORK,    // UnknownHost, connection errors - wait for connectivity
+}
+```
+
+### Batch Handling
+- **SYNC_BATCH_SIZE = 50**: Sessions per batch to stay under Edge Function body limit (~1MB)
+- **MAX_FULL_BATCH_RETRIES = 3**: Consecutive failures before requiring manual intervention
+- Non-session data (routines, cycles, RPG, badges) included only in final batch
+
+### iOS Token Storage
+Uses multiplatform-settings with Keychain backend (`KeychainSettings`) for secure JWT storage:
+- Access token, refresh token, and expiry stored securely
+- Automatically migrates from legacy NSUserDefaults on first access
+- Requires iOS Keychain capability in entitlements
+
 ## The Daem0n's Covenant (v6.6.6 - Enforced)
 
 This project is bound to Daem0n for persistent AI memory. **The covenant is ENFORCED at the protocol layer** - mutating tools block with `COMMUNION_REQUIRED` or `COUNSEL_REQUIRED` errors until proper rituals are observed.
