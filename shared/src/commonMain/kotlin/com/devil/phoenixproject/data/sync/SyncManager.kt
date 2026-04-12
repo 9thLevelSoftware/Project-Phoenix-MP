@@ -26,7 +26,20 @@ sealed class SyncState {
     object Idle : SyncState()
     object Syncing : SyncState()
     data class Success(val syncTime: Long) : SyncState()
-    data class Error(val message: String) : SyncState()
+
+    /**
+     * Partial sync success: push succeeded but pull failed.
+     * Indicates that local changes were uploaded, but remote changes weren't retrieved.
+     * UI should display this as a warning and offer pull retry.
+     */
+    data class PartialSuccess(
+        val pushSucceeded: Boolean,
+        val pullSucceeded: Boolean,
+        val lastSyncTime: Long,
+        val pullError: String? = null,
+    ) : SyncState()
+
+    data class Error(val message: String, val errorCategory: SyncErrorCategory? = null) : SyncState()
     object NotAuthenticated : SyncState()
     object NotPremium : SyncState()
 }
@@ -80,22 +93,47 @@ class SyncManager(
 
     // === Authentication ===
 
-    suspend fun login(email: String, password: String): Result<PortalUser> = apiClient.signIn(email, password).map { goTrueResponse ->
+    suspend fun login(email: String, password: String): Result<PortalUser> {
+        val signInResult = apiClient.signIn(email, password)
+        if (signInResult.isFailure) return signInResult.map { it.toPortalAuthResponse().user }
+
+        val goTrueResponse = signInResult.getOrThrow()
         tokenStorage.saveGoTrueAuth(goTrueResponse)
         _syncState.value = SyncState.Idle // Reset stale NotAuthenticated state
-        Logger.i("SyncManager") { "Login successful for ${goTrueResponse.user.email}" }
-        goTrueResponse.toPortalAuthResponse().user
+
+        // Check premium status from server immediately after auth.
+        // On fresh install, existingPremium defaults to false — server is source of truth.
+        // On network failure, preserve existing premium status to avoid downgrading paid users.
+        val existingPremium = tokenStorage.currentUser.value?.isPremium ?: false
+        val premiumResult = apiClient.checkPremiumStatus()
+        val isPremium = premiumResult.getOrNull() ?: existingPremium
+        tokenStorage.updatePremiumStatus(isPremium)
+        Logger.i("SyncManager") {
+            "Login successful for ${goTrueResponse.user.email}, premium=$isPremium (server check: ${premiumResult.isSuccess})"
+        }
+
+        return Result.success(tokenStorage.currentUser.value ?: goTrueResponse.toPortalAuthResponse().user)
     }
 
-    suspend fun signup(email: String, password: String, displayName: String): Result<PortalUser> = apiClient.signUp(email, password, displayName).map { goTrueResponse ->
+    suspend fun signup(email: String, password: String, displayName: String): Result<PortalUser> {
+        val signUpResult = apiClient.signUp(email, password, displayName)
+        if (signUpResult.isFailure) return signUpResult.map { it.toPortalAuthResponse().user }
+
+        val goTrueResponse = signUpResult.getOrThrow()
         tokenStorage.saveGoTrueAuth(goTrueResponse)
         _syncState.value = SyncState.Idle // Reset stale NotAuthenticated state
+
+        // New accounts start as free tier — no need to check premium status.
+        // Premium status will be set after they subscribe via Paddle.
+        tokenStorage.updatePremiumStatus(false)
         Logger.i("SyncManager") { "Signup successful for ${goTrueResponse.user.email}" }
-        goTrueResponse.toPortalAuthResponse().user
+
+        return Result.success(tokenStorage.currentUser.value ?: goTrueResponse.toPortalAuthResponse().user)
     }
 
     fun logout() {
         tokenStorage.clearAuth()
+        tokenStorage.emitLogoutEvent()
         _syncState.value = SyncState.NotAuthenticated
     }
 
@@ -177,14 +215,76 @@ class SyncManager(
         // each batch, so re-reading it here would skip remote changes that arrived between
         // the original sync checkpoint and the last batch's server timestamp.
         // Fix for Codex P1: use prePushLastSync captured at line ~97 before any push.
-        val pullSyncTime = pullRemoteChanges(lastSync = prePushLastSync)
-        val finalSyncTime = pullSyncTime ?: syncTimeEpoch
+        val pullResult = pullRemoteChangesWithResult(lastSync = prePushLastSync)
 
-        tokenStorage.setLastSyncTimestamp(finalSyncTime)
-        _lastSyncTime.value = finalSyncTime
-        _syncState.value = SyncState.Success(finalSyncTime)
+        return@withLock if (pullResult.isSuccess) {
+            // Full success: both push and pull succeeded
+            val finalSyncTime = pullResult.getOrThrow()
+            tokenStorage.setLastSyncTimestamp(finalSyncTime)
+            _lastSyncTime.value = finalSyncTime
+            _syncState.value = SyncState.Success(finalSyncTime)
+            Result.success(finalSyncTime)
+        } else {
+            // Partial success: push succeeded but pull failed
+            // CRITICAL: Do NOT advance lastSyncTimestamp on pull failure.
+            // This ensures:
+            // 1. The same sessions won't be pushed again (they're already stamped)
+            // 2. The next pull will still retrieve remote changes from the correct checkpoint
+            // 3. The user is notified that sync is incomplete
+            val pullError = pullResult.exceptionOrNull()
+            val pullErrorMsg = pullError?.message ?: "Pull failed"
+            Logger.w("SyncManager") {
+                "Partial sync: push succeeded but pull failed. Not advancing lastSyncTimestamp. Error: $pullErrorMsg"
+            }
 
-        Result.success(finalSyncTime)
+            // Use push syncTime for state reporting but don't persist it
+            _syncState.value = SyncState.PartialSuccess(
+                pushSucceeded = true,
+                pullSucceeded = false,
+                lastSyncTime = syncTimeEpoch,
+                pullError = pullErrorMsg,
+            )
+            // Return success with push timestamp (data was pushed successfully)
+            // But state is PartialSuccess to indicate pull needs retry
+            Result.success(syncTimeEpoch)
+        }
+    }
+
+    /**
+     * Retry just the pull operation after a partial sync.
+     * Use when push succeeded but pull failed.
+     */
+    suspend fun retryPull(): Result<Long> = syncMutex.withLock {
+        if (!tokenStorage.hasToken()) {
+            _syncState.value = SyncState.NotAuthenticated
+            return@withLock Result.failure(PortalApiException("Not authenticated"))
+        }
+
+        _syncState.value = SyncState.Syncing
+        val lastSync = tokenStorage.getLastSyncTimestamp()
+
+        val pullResult = pullRemoteChangesWithResult(lastSync = lastSync)
+
+        return@withLock if (pullResult.isSuccess) {
+            val finalSyncTime = pullResult.getOrThrow()
+            tokenStorage.setLastSyncTimestamp(finalSyncTime)
+            _lastSyncTime.value = finalSyncTime
+            _syncState.value = SyncState.Success(finalSyncTime)
+            Logger.i("SyncManager") { "Pull retry succeeded, updated timestamp to $finalSyncTime" }
+            Result.success(finalSyncTime)
+        } else {
+            val pullError = pullResult.exceptionOrNull()
+            val pullErrorMsg = pullError?.message ?: "Pull retry failed"
+            Logger.w("SyncManager") { "Pull retry failed: $pullErrorMsg" }
+
+            _syncState.value = SyncState.PartialSuccess(
+                pushSucceeded = true,
+                pullSucceeded = false,
+                lastSyncTime = lastSync,
+                pullError = pullErrorMsg,
+            )
+            Result.failure(pullError ?: PortalApiException("Pull retry failed"))
+        }
     }
 
     // === Private Helpers ===
@@ -529,9 +629,10 @@ class SyncManager(
 
     /**
      * Pull portal data and merge into local database.
-     * Returns the pull response syncTime on success, or null on failure.
+     * Returns Result with the pull response syncTime on success, or failure with classified error.
+     * This version provides full error context for proper PartialSuccess handling.
      */
-    private suspend fun pullRemoteChanges(lastSync: Long): Long? {
+    private suspend fun pullRemoteChangesWithResult(lastSync: Long): Result<Long> {
         val deviceId = tokenStorage.getDeviceId()
         val activeProfileId = userProfileRepository.activeProfile.value?.id
 
@@ -543,10 +644,11 @@ class SyncManager(
             profileId = activeProfileId,
         )
         if (pullResult.isFailure) {
+            val error = pullResult.exceptionOrNull() ?: PortalApiException("Pull failed")
             Logger.w("SyncManager") {
-                "Pull failed (non-fatal): ${pullResult.exceptionOrNull()?.message}"
+                "Pull failed: ${error.message}"
             }
-            return null
+            return Result.failure(error)
         }
 
         val pullResponse = pullResult.getOrThrow()
@@ -665,7 +767,7 @@ class SyncManager(
             Logger.d("SyncManager") { "Merged ${activities.size} portal external activities" }
         }
 
-        return pullResponse.syncTime
+        return Result.success(pullResponse.syncTime)
     }
 
     private fun getPlatformName(): String {

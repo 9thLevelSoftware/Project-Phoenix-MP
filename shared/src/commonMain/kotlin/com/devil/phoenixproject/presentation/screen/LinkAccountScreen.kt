@@ -161,6 +161,13 @@ private fun LinkedAccountContent(
                         Text(stringResource(Res.string.never_synced))
                     }
                 }
+
+                is SyncState.PartialSuccess -> {
+                    Text(
+                        text = "Sync partially complete — pull failed: ${syncState.pullError ?: "unknown error"}",
+                        color = MaterialTheme.colorScheme.tertiary,
+                    )
+                }
             }
 
             Spacer(modifier = Modifier.height(16.dp))

@@ -632,6 +632,14 @@ private fun SyncStatusIcon(syncState: SyncState, isAuthenticated: Boolean, lastS
             clickable = true
         }
 
+        is SyncState.PartialSuccess -> {
+            // Partial success (push OK, pull failed) -- show warning indicator
+            icon = Icons.Default.CloudDone // Push succeeded, so show "done" but in warning color
+            tint = MaterialTheme.colorScheme.tertiary
+            applyRotation = false
+            clickable = true // Allow tap to retry pull
+        }
+
         else -> {
             // Idle, NotAuthenticated, NotPremium -- show muted cloud checkmark
             icon = Icons.Default.CloudDone
@@ -662,6 +670,7 @@ private fun SyncStatusIcon(syncState: SyncState, isAuthenticated: Boolean, lastS
                 is SyncState.Syncing -> "Syncing"
                 is SyncState.Success -> "Sync complete"
                 is SyncState.Error -> "Sync error, tap to fix"
+                is SyncState.PartialSuccess -> "Partial sync, tap to retry"
                 else -> "Cloud sync"
             },
             tint = tint,

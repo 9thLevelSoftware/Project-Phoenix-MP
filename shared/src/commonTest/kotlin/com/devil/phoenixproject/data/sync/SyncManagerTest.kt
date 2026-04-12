@@ -193,16 +193,18 @@ class SyncManagerTest {
         fakeApi.pushResult = Result.success(
             PortalSyncPushResponse(syncTime = "2026-03-02T12:00:00Z"),
         )
-        // Make pull fail so we get push syncTime as the final time
-        fakeApi.pullResult = Result.failure(PortalApiException("pull failed"))
+        // Make pull succeed so we get full Success state
+        val expectedEpoch = kotlinx.datetime.Instant.parse(
+            "2026-03-02T12:00:00Z",
+        ).toEpochMilliseconds()
+        fakeApi.pullResult = Result.success(
+            PortalSyncPullResponse(syncTime = expectedEpoch),
+        )
         val manager = createManager()
 
         val result = manager.sync()
 
         assertTrue(result.isSuccess)
-        val expectedEpoch = kotlinx.datetime.Instant.parse(
-            "2026-03-02T12:00:00Z",
-        ).toEpochMilliseconds()
         val syncState = manager.syncState.value
         assertIs<SyncState.Success>(syncState)
         assertEquals(
@@ -485,7 +487,7 @@ class SyncManagerTest {
     }
 
     @Test
-    fun pullFailureIsNonFatalAndUsesPushSyncTime() = runTest {
+    fun pullFailureResultsInPartialSuccessState() = runTest {
         setupAuthenticated()
         val pushSyncTimeIso = "2026-03-02T15:30:00Z"
         fakeApi.pushResult = Result.success(
@@ -496,11 +498,14 @@ class SyncManagerTest {
 
         val result = manager.sync()
 
-        assertTrue(result.isSuccess, "Sync should succeed despite pull failure")
+        assertTrue(result.isSuccess, "Sync should succeed despite pull failure (push succeeded)")
         val expectedEpoch = kotlinx.datetime.Instant.parse(pushSyncTimeIso).toEpochMilliseconds()
         val state = manager.syncState.value
-        assertIs<SyncState.Success>(state)
-        assertEquals(expectedEpoch, state.syncTime, "Should use push syncTime when pull fails")
+        assertIs<SyncState.PartialSuccess>(state)
+        assertTrue(state.pushSucceeded, "Push should have succeeded")
+        assertFalse(state.pullSucceeded, "Pull should have failed")
+        assertEquals(expectedEpoch, state.lastSyncTime, "Should report push syncTime in partial success")
+        assertEquals("Network error", state.pullError, "Should include pull error message")
     }
 
     @Test
@@ -521,20 +526,44 @@ class SyncManagerTest {
     fun syncUpdatesLastSyncTimestampInTokenStorage() = runTest {
         setupAuthenticated()
         val pushSyncTimeIso = "2026-03-02T18:00:00Z"
+        val expectedEpoch = kotlinx.datetime.Instant.parse(pushSyncTimeIso).toEpochMilliseconds()
         fakeApi.pushResult = Result.success(
             PortalSyncPushResponse(syncTime = pushSyncTimeIso),
         )
-        // Pull fails, so final time = push time
+        // Pull succeeds so timestamp is updated
+        fakeApi.pullResult = Result.success(
+            PortalSyncPullResponse(syncTime = expectedEpoch),
+        )
+        val manager = createManager()
+
+        manager.sync()
+
+        assertEquals(
+            expectedEpoch,
+            tokenStorage.getLastSyncTimestamp(),
+            "lastSyncTimestamp should be updated on full success",
+        )
+    }
+
+    @Test
+    fun pullFailureDoesNotAdvanceLastSyncTimestamp() = runTest {
+        setupAuthenticated()
+        val initialTimestamp = 1000L
+        tokenStorage.setLastSyncTimestamp(initialTimestamp)
+        val pushSyncTimeIso = "2026-03-02T18:00:00Z"
+        fakeApi.pushResult = Result.success(
+            PortalSyncPushResponse(syncTime = pushSyncTimeIso),
+        )
+        // Pull fails - timestamp should NOT be updated
         fakeApi.pullResult = Result.failure(PortalApiException("pull failed"))
         val manager = createManager()
 
         manager.sync()
 
-        val expectedEpoch = kotlinx.datetime.Instant.parse(pushSyncTimeIso).toEpochMilliseconds()
         assertEquals(
-            expectedEpoch,
+            initialTimestamp,
             tokenStorage.getLastSyncTimestamp(),
-            "lastSyncTimestamp should be updated to push syncTime",
+            "lastSyncTimestamp should NOT be updated on pull failure (partial success)",
         )
     }
 
@@ -567,7 +596,7 @@ class SyncManagerTest {
     }
 
     @Test
-    fun syncUsesPushSyncTimeWhenPullFails() = runTest {
+    fun syncReturnsSuccessWithPushTimeWhenPullFails() = runTest {
         setupAuthenticated()
         val pushSyncTimeIso = "2026-03-02T12:00:00Z"
         fakeApi.pushResult = Result.success(
@@ -578,12 +607,18 @@ class SyncManagerTest {
 
         val result = manager.sync()
 
-        assertTrue(result.isSuccess)
+        assertTrue(result.isSuccess, "Result should be success (push succeeded)")
         val expectedEpoch = kotlinx.datetime.Instant.parse(pushSyncTimeIso).toEpochMilliseconds()
         assertEquals(
             expectedEpoch,
+            result.getOrThrow(),
+            "Should return push syncTime in result when pull fails",
+        )
+        // But the timestamp in storage should NOT be updated
+        assertEquals(
+            0L,
             tokenStorage.getLastSyncTimestamp(),
-            "Should use push syncTime when pull fails",
+            "lastSyncTimestamp should NOT be advanced on partial success",
         )
     }
 

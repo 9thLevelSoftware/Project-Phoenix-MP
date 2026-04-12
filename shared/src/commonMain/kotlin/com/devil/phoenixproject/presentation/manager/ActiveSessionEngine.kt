@@ -126,9 +126,6 @@ class ActiveSessionEngine(
         /** Check if at end of superset cycle */
         fun isAtEndOfSupersetCycle(): Boolean
 
-        /** Get superset rest seconds */
-        fun getSupersetRestSeconds(): Int
-
         /** Calculate next exercise name for rest timer display */
         fun calculateNextExerciseName(isSingleExercise: Boolean, currentExercise: RoutineExercise?, routine: Routine?): String?
 
@@ -3194,25 +3191,10 @@ class ActiveSessionEngine(
             }
             val nextSetIdxFromStep = nextStep?.second
 
-            val isAtEndOfSupersetCycle = flowDelegate?.isAtEndOfSupersetCycle() == true
-            val isInSupersetTransition = (flowDelegate?.isInSuperset() == true) && !isAtEndOfSupersetCycle
-            val isStillInSupersetWorkout = (flowDelegate?.isInSuperset() == true) && nextExerciseFromStep != null &&
-                nextExerciseFromStep.supersetId == currentExercise?.supersetId
-            // Use quick superset rest only when moving to another exercise inside the same cycle.
-            // At the end of a superset cycle (last exercise of the group), use the current exercise's
-            // configured rest time so users can recover before starting the next round.
-            val useSupersetQuickRest = isInSupersetTransition || (isStillInSupersetWorkout && !isAtEndOfSupersetCycle)
-            // Issue #259: When an exercise has perSetRestTime enabled, use its own rest
-            // times even within a superset transition, instead of the superset default.
-            val restDuration = if (useSupersetQuickRest) {
-                if (currentExercise?.perSetRestTime == true) {
-                    currentExercise.getRestForSet(completedSetIndex)
-                } else {
-                    (flowDelegate?.getSupersetRestSeconds() ?: 5).coerceAtLeast(5)
-                }
-            } else {
-                currentExercise?.getRestForSet(completedSetIndex) ?: 90
-            }
+            // Issue #354: Always use the exercise's configured rest time, even within supersets.
+            // Previously, supersets used a hardcoded short rest time, but users should configure
+            // rest per exercise instead.
+            val restDuration = currentExercise?.getRestForSet(completedSetIndex) ?: 90
             val autoplay = settingsManager.autoplayEnabled.value
             val isSingleExercise = isSingleExerciseMode(coordinator)
 
@@ -3228,7 +3210,8 @@ class ActiveSessionEngine(
                 return@launch
             }
 
-            val supersetLabel = if (useSupersetQuickRest) {
+            // Show superset label during rest for user context (e.g., "Superset A")
+            val supersetLabel = if (flowDelegate?.isInSuperset() == true) {
                 val supersetIds = routine?.supersets?.map { it.id } ?: emptyList()
                 val groupIndex = supersetIds.indexOf(currentExercise?.supersetId)
                 if (groupIndex >= 0) "Superset ${('A' + groupIndex)}" else "Superset"
@@ -3284,6 +3267,12 @@ class ActiveSessionEngine(
             coordinator._isRestPaused.value = false
             armRestDeadline(restDuration)
 
+            // Determine if this is a superset transition for UI display purposes.
+            // This indicates we're moving between exercises in a superset group.
+            val isSupersetTransition = (flowDelegate?.isInSuperset() == true) &&
+                isTransitioningToNextExercise &&
+                nextExercise?.supersetId == currentExercise?.supersetId
+
             // Emit Resting immediately so the UI timer starts without waiting on repository lookups.
             coordinator._workoutState.value = WorkoutState.Resting(
                 restSecondsRemaining = restDuration,
@@ -3291,7 +3280,7 @@ class ActiveSessionEngine(
                 isLastExercise = isLastExerciseOverall,
                 currentSet = displaySetIndex,
                 totalSets = displayTotalSets,
-                isSupersetTransition = useSupersetQuickRest,
+                isSupersetTransition = isSupersetTransition,
                 supersetLabel = supersetLabel,
             )
 
@@ -3339,7 +3328,7 @@ class ActiveSessionEngine(
                             isLastExercise = isLastExerciseOverall,
                             currentSet = displaySetIndex,
                             totalSets = displayTotalSets,
-                            isSupersetTransition = useSupersetQuickRest,
+                            isSupersetTransition = isSupersetTransition,
                             supersetLabel = supersetLabel,
                         )
                     }
