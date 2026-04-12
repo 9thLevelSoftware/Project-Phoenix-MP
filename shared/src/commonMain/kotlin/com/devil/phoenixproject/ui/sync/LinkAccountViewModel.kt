@@ -55,6 +55,9 @@ class LinkAccountViewModel(private val syncManager: SyncManager) {
     val syncState: StateFlow<SyncState> = syncManager.syncState
     val lastSyncTime: StateFlow<Long> = syncManager.lastSyncTime
 
+    /** Auth events for UI notification (session expiry, refresh failure, logout). */
+    val authEvents = syncManager.authEvents
+
     /** Returns true if the ViewModel has been cleared and should not be used. */
     val isCleared: Boolean
         get() = !job.isActive
@@ -73,9 +76,9 @@ class LinkAccountViewModel(private val syncManager: SyncManager) {
                             error.message ?: "Login failed",
                         )
                     }
-            } catch (_: CancellationException) {
-                // Coroutine cancelled during clear() - do not update state
-                throw CancellationException("Coroutine cancelled")
+            } catch (e: CancellationException) {
+                // Coroutine cancelled during clear() - preserve original cancellation
+                throw e
             }
         }
     }
@@ -94,9 +97,9 @@ class LinkAccountViewModel(private val syncManager: SyncManager) {
                             error.message ?: "Signup failed",
                         )
                     }
-            } catch (_: CancellationException) {
-                // Coroutine cancelled during clear() - do not update state
-                throw CancellationException("Coroutine cancelled")
+            } catch (e: CancellationException) {
+                // Coroutine cancelled during clear() - preserve original cancellation
+                throw e
             }
         }
     }
@@ -110,9 +113,9 @@ class LinkAccountViewModel(private val syncManager: SyncManager) {
         scope.launch {
             try {
                 syncManager.sync()
-            } catch (_: CancellationException) {
-                // Coroutine cancelled during clear() - expected, rethrow
-                throw CancellationException("Coroutine cancelled")
+            } catch (e: CancellationException) {
+                // Coroutine cancelled during clear() - preserve original cancellation
+                throw e
             }
         }
     }

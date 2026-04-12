@@ -14,6 +14,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
+import com.devil.phoenixproject.data.sync.AuthEvent
 import com.devil.phoenixproject.data.sync.SyncState
 import com.devil.phoenixproject.ui.sync.LinkAccountUiState
 import com.devil.phoenixproject.ui.sync.LinkAccountViewModel
@@ -25,11 +26,16 @@ import vitruvianprojectphoenix.shared.generated.resources.Res
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun LinkAccountScreen(viewModel: LinkAccountViewModel = koinInject(), onNavigateBack: () -> Unit) {
+fun LinkAccountScreen(onNavigateBack: () -> Unit) {
+    // Get ViewModel from Koin - rememberKoinInject ensures stable instance across recompositions
+    val viewModel: LinkAccountViewModel = koinInject()
+
     // Cancel pending coroutines when the screen leaves composition
-    DisposableEffect(viewModel) {
+    // Use rememberUpdatedState to capture the current viewModel for disposal
+    val currentViewModel by rememberUpdatedState(viewModel)
+    DisposableEffect(Unit) {
         onDispose {
-            viewModel.clear()
+            currentViewModel.clear()
         }
     }
 
@@ -38,6 +44,29 @@ fun LinkAccountScreen(viewModel: LinkAccountViewModel = koinInject(), onNavigate
     val currentUser by viewModel.currentUser.collectAsState()
     val syncState by viewModel.syncState.collectAsState()
     val lastSyncTime by viewModel.lastSyncTime.collectAsState()
+
+    val snackbarHostState = remember { SnackbarHostState() }
+
+    // Observe auth events for user feedback
+    LaunchedEffect(Unit) {
+        viewModel.authEvents.collect { event ->
+            when (event) {
+                is AuthEvent.SessionExpired -> {
+                    snackbarHostState.showSnackbar("Session expired: ${event.reason}")
+                }
+                is AuthEvent.RefreshFailed -> {
+                    val message = if (event.isRecoverable)
+                        "Connection issue. Please try again."
+                    else
+                        "Please sign in again."
+                    snackbarHostState.showSnackbar(message)
+                }
+                AuthEvent.LoggedOut -> {
+                    // Navigation handled elsewhere
+                }
+            }
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -53,6 +82,7 @@ fun LinkAccountScreen(viewModel: LinkAccountViewModel = koinInject(), onNavigate
                 },
             )
         },
+        snackbarHost = { SnackbarHost(snackbarHostState) },
     ) { paddingValues ->
         Column(
             modifier = Modifier

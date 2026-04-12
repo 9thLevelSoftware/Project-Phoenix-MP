@@ -15,6 +15,8 @@ import com.devil.phoenixproject.domain.model.RpgProfile
 import com.devil.phoenixproject.domain.model.currentTimeMillis
 import com.devil.phoenixproject.domain.premium.RpgAttributeEngine
 import com.devil.phoenixproject.getPlatform
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -113,6 +115,9 @@ class SyncManager(
     val isAuthenticated: StateFlow<Boolean> = tokenStorage.isAuthenticated
     val currentUser: StateFlow<PortalUser?> = tokenStorage.currentUser
 
+    /** Auth events for UI notification (session expiry, refresh failure, logout). */
+    val authEvents = tokenStorage.authEvents
+
     // === Authentication ===
 
     suspend fun login(email: String, password: String): Result<PortalUser> {
@@ -161,6 +166,16 @@ class SyncManager(
 
     // === Sync Operations ===
 
+    /**
+     * Performs a full sync operation (push + pull).
+     *
+     * @return Result.success with sync timestamp if push succeeded.
+     *         Note: Even on PartialSuccess (push OK, pull failed), this returns Result.success
+     *         because the push timestamp is valid for retry purposes. Callers should check
+     *         [syncState] for the actual sync status (Success vs PartialSuccess vs Error).
+     *
+     * @see SyncState.PartialSuccess for incomplete sync handling
+     */
     suspend fun sync(): Result<Long> = syncMutex.withLock {
         if (!tokenStorage.hasToken()) {
             _syncState.value = SyncState.NotAuthenticated
@@ -670,6 +685,9 @@ class SyncManager(
 
         // Pagination loop: fetch pages until hasMore is false
         while (true) {
+            // Early exit on coroutine cancellation
+            currentCoroutineContext().ensureActive()
+
             // Infinite loop prevention
             if (pagesProcessed >= SyncConfig.MAX_PAGES) {
                 val error = PortalApiException(
