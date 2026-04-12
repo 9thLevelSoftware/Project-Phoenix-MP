@@ -27,6 +27,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		7BD2BAB62F8C1299004FCE77 /* Supabase.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Supabase.xcconfig; sourceTree = "<group>"; };
 		DFE6BD472EEDF42200886589 /* VitruvianPhoenix.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = VitruvianPhoenix.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		DFE6BD562EEDF53700886589 /* shared.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = shared.framework; path = ../../shared/build/bin/iosArm64/debugFramework/shared.framework; sourceTree = "<group>"; };
 		DFE6BD6D2EEDFF5500886589 /* libsqlite3.tbd */ = {isa = PBXFileReference; lastKnownFileType = "sourcecode.text-based-dylib-definition"; name = libsqlite3.tbd; path = usr/lib/libsqlite3.tbd; sourceTree = SDKROOT; };
@@ -69,6 +70,7 @@
 		DFE6BD3E2EEDF42200886589 = {
 			isa = PBXGroup;
 			children = (
+				7BD2BAB62F8C1299004FCE77 /* Supabase.xcconfig */,
 				DFE6BD492EEDF42200886589 /* VitruvianPhoenix */,
 				DFE6BD552EEDF53700886589 /* Frameworks */,
 				DFE6BD482EEDF42200886589 /* Products */,
@@ -336,6 +338,7 @@
 		};
 		DFE6BD532EEDF42300886589 /* Debug */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = 7BD2BAB62F8C1299004FCE77 /* Supabase.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
@@ -380,6 +383,7 @@
 		};
 		DFE6BD542EEDF42300886589 /* Release */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = 7BD2BAB62F8C1299004FCE77 /* Supabase.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
