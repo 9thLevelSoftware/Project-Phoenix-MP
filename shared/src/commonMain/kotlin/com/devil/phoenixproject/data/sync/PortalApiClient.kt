@@ -3,6 +3,7 @@ package com.devil.phoenixproject.data.sync
 import co.touchlab.kermit.Logger
 import io.ktor.client.*
 import io.ktor.client.call.*
+import io.ktor.client.network.sockets.*
 import io.ktor.client.plugins.*
 import io.ktor.client.plugins.contentnegotiation.*
 import io.ktor.client.request.*
@@ -12,6 +13,157 @@ import io.ktor.serialization.kotlinx.json.*
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.json.Json
+
+/**
+ * Categorizes sync errors for appropriate retry handling.
+ */
+enum class SyncErrorCategory {
+    /** Temporary server/network issues - retry with exponential backoff */
+    TRANSIENT,
+    /** Permanent errors (bad request, not found) - don't retry */
+    PERMANENT,
+    /** Authentication expired - trigger re-login */
+    AUTH,
+    /** Network connectivity issues - wait for connectivity */
+    NETWORK,
+}
+
+/**
+ * Classified error with retry context for intelligent error handling.
+ */
+data class ClassifiedSyncError(
+    val category: SyncErrorCategory,
+    val message: String,
+    val statusCode: Int? = null,
+    val isRetryable: Boolean,
+    val cause: Throwable? = null,
+) {
+    fun toException(): PortalApiException = PortalApiException(message, cause, statusCode)
+}
+
+/**
+ * Classifies exceptions into sync error categories for proper handling.
+ */
+fun classifyError(e: Exception, context: String = "Request"): ClassifiedSyncError {
+    // Handle already classified PortalApiException first
+    if (e is PortalApiException) {
+        return classifyByStatusCode(e.statusCode, e.message ?: context, e)
+    }
+
+    // Check exception class names for multiplatform compatibility
+    val exceptionName = e::class.simpleName ?: ""
+
+    return when {
+        // Timeout exceptions - transient, retry
+        e is HttpRequestTimeoutException ||
+            e is ConnectTimeoutException ||
+            e is SocketTimeoutException ||
+            exceptionName.contains("Timeout", ignoreCase = true) -> ClassifiedSyncError(
+            category = SyncErrorCategory.TRANSIENT,
+            message = "$context timed out: ${e.message}",
+            isRetryable = true,
+            cause = e,
+        )
+
+        // Network/connectivity exceptions (check by class name for multiplatform)
+        exceptionName == "UnknownHostException" ||
+            exceptionName.contains("UnknownHost", ignoreCase = true) -> ClassifiedSyncError(
+            category = SyncErrorCategory.NETWORK,
+            message = "$context failed: Unable to resolve host",
+            isRetryable = true,
+            cause = e,
+        )
+
+        exceptionName == "ConnectException" ||
+            exceptionName.contains("Connection", ignoreCase = true) -> ClassifiedSyncError(
+            category = SyncErrorCategory.NETWORK,
+            message = "$context failed: Connection error - ${e.message}",
+            isRetryable = true,
+            cause = e,
+        )
+
+        exceptionName.contains("IOException") ||
+            exceptionName == "IOException" -> ClassifiedSyncError(
+            category = SyncErrorCategory.NETWORK,
+            message = "$context failed: Network error - ${e.message}",
+            isRetryable = true,
+            cause = e,
+        )
+
+        // Generic exceptions - assume transient
+        else -> ClassifiedSyncError(
+            category = SyncErrorCategory.TRANSIENT,
+            message = "$context failed: ${e.message}",
+            isRetryable = true,
+            cause = e,
+        )
+    }
+}
+
+/**
+ * Classifies HTTP status codes into error categories.
+ */
+fun classifyByStatusCode(
+    statusCode: Int?,
+    message: String,
+    cause: Throwable? = null,
+): ClassifiedSyncError {
+    return when (statusCode) {
+        // Auth errors - don't retry, trigger re-login
+        401 -> ClassifiedSyncError(
+            category = SyncErrorCategory.AUTH,
+            message = message,
+            statusCode = statusCode,
+            isRetryable = false,
+            cause = cause,
+        )
+
+        // Forbidden (premium required) - permanent for this session
+        402, 403 -> ClassifiedSyncError(
+            category = SyncErrorCategory.PERMANENT,
+            message = message,
+            statusCode = statusCode,
+            isRetryable = false,
+            cause = cause,
+        )
+
+        // Bad request, not found - permanent errors, don't retry
+        400, 404 -> ClassifiedSyncError(
+            category = SyncErrorCategory.PERMANENT,
+            message = message,
+            statusCode = statusCode,
+            isRetryable = false,
+            cause = cause,
+        )
+
+        // Rate limited - transient, retry with backoff
+        429 -> ClassifiedSyncError(
+            category = SyncErrorCategory.TRANSIENT,
+            message = message,
+            statusCode = statusCode,
+            isRetryable = true,
+            cause = cause,
+        )
+
+        // Server errors (500, 502, 503, 504) - transient
+        in 500..599 -> ClassifiedSyncError(
+            category = SyncErrorCategory.TRANSIENT,
+            message = message,
+            statusCode = statusCode,
+            isRetryable = true,
+            cause = cause,
+        )
+
+        // Unknown status - treat as transient
+        else -> ClassifiedSyncError(
+            category = SyncErrorCategory.TRANSIENT,
+            message = message,
+            statusCode = statusCode,
+            isRetryable = true,
+            cause = cause,
+        )
+    }
+}
 
 open class PortalApiClient(private val supabaseConfig: SupabaseConfig, private val tokenStorage: PortalTokenStorage) {
 
@@ -46,7 +198,8 @@ open class PortalApiClient(private val supabaseConfig: SupabaseConfig, private v
         }
         handleGoTrueResponse(response)
     } catch (e: Exception) {
-        Result.failure(PortalApiException("Sign-in failed: ${e.message}", e))
+        val classified = classifyError(e, "Sign-in")
+        Result.failure(classified.toException())
     }
 
     open suspend fun signUp(email: String, password: String, displayName: String?): Result<GoTrueAuthResponse> = try {
@@ -63,7 +216,8 @@ open class PortalApiClient(private val supabaseConfig: SupabaseConfig, private v
         }
         handleGoTrueResponse(response)
     } catch (e: Exception) {
-        Result.failure(PortalApiException("Sign-up failed: ${e.message}", e))
+        val classified = classifyError(e, "Sign-up")
+        Result.failure(classified.toException())
     }
 
     suspend fun refreshToken(refreshToken: String): Result<GoTrueAuthResponse> = try {
@@ -76,7 +230,8 @@ open class PortalApiClient(private val supabaseConfig: SupabaseConfig, private v
         }
         handleGoTrueResponse(response)
     } catch (e: Exception) {
-        Result.failure(PortalApiException("Token refresh failed: ${e.message}", e))
+        val classified = classifyError(e, "Token refresh")
+        Result.failure(classified.toException())
     }
 
     suspend fun getUser(): Result<GoTrueUser> {
@@ -104,7 +259,8 @@ open class PortalApiClient(private val supabaseConfig: SupabaseConfig, private v
                 )
             }
         } catch (e: Exception) {
-            Result.failure(PortalApiException("Get user failed: ${e.message}", e))
+            val classified = classifyError(e, "Get user")
+            Result.failure(classified.toException())
         }
     }
 
@@ -121,6 +277,47 @@ open class PortalApiClient(private val supabaseConfig: SupabaseConfig, private v
     } catch (_: Exception) {
         // Sign-out failure is non-critical — we clear local state regardless
         Result.success(Unit)
+    }
+
+    /**
+     * Checks premium subscription status by querying the subscriptions table.
+     * Returns true if the user has an active or trialing subscription at EMBER tier or above.
+     *
+     * On network failure, returns null to allow callers to preserve existing premium status.
+     * This prevents downgrading paid users to free tier due to transient network issues.
+     */
+    suspend fun checkPremiumStatus(): Result<Boolean> {
+        val token = tokenStorage.getToken() ?: return Result.failure(
+            PortalApiException("Not authenticated", null, 401),
+        )
+        return try {
+            val response = httpClient.get("${supabaseConfig.url}/rest/v1/subscriptions") {
+                header("apikey", supabaseConfig.anonKey)
+                bearerAuth(token)
+                parameter("select", "tier,status")
+                parameter("status", "in.(active,trialing)")
+                header("Accept", "application/json")
+            }
+            if (response.status.isSuccess()) {
+                val subscriptions = response.body<List<SubscriptionCheckDto>>()
+                // User is premium if they have any active/trialing subscription at EMBER or above
+                val isPremium = subscriptions.any { sub ->
+                    sub.tier in listOf("EMBER", "FLAME", "INFERNO")
+                }
+                Result.success(isPremium)
+            } else if (response.status.value == 401) {
+                Result.failure(PortalApiException("Unauthorized", null, 401))
+            } else {
+                // Non-auth failures should preserve existing status
+                Result.failure(
+                    PortalApiException("Subscription check failed: ${response.status}", null, response.status.value),
+                )
+            }
+        } catch (e: Exception) {
+            // Network failures return failure to allow callers to preserve existing premium status
+            val classified = classifyError(e, "Subscription check")
+            Result.failure(classified.toException())
+        }
     }
 
     // === Portal Sync Endpoints (Supabase Edge Functions) ===
@@ -175,7 +372,9 @@ open class PortalApiClient(private val supabaseConfig: SupabaseConfig, private v
 
             val storedRefreshToken = tokenStorage.getRefreshToken()
                 ?: run {
-                    tokenStorage.clearAuth()
+                    tokenStorage.clearAuthWithEvent(
+                        AuthEvent.SessionExpired("No refresh token available - please log in again"),
+                    )
                     return@withLock null
                 }
 
@@ -185,9 +384,17 @@ open class PortalApiClient(private val supabaseConfig: SupabaseConfig, private v
                     tokenStorage.saveGoTrueAuth(response)
                     response.accessToken
                 },
-                onFailure = {
-                    Logger.w("PortalApiClient") { "Token refresh failed: ${it.message}" }
-                    tokenStorage.clearAuth()
+                onFailure = { error ->
+                    Logger.w("PortalApiClient") { "Token refresh failed: ${error.message}" }
+                    // Determine if this is a recoverable network error or permanent auth failure
+                    val isRecoverable = error !is PortalApiException ||
+                        (error.statusCode != 401 && error.statusCode != 403)
+                    tokenStorage.clearAuthWithEvent(
+                        AuthEvent.RefreshFailed(
+                            reason = error.message ?: "Token refresh failed",
+                            isRecoverable = isRecoverable,
+                        ),
+                    )
                     null
                 },
             )
@@ -201,7 +408,9 @@ open class PortalApiClient(private val supabaseConfig: SupabaseConfig, private v
     private suspend fun forceRefresh(): String? {
         return refreshMutex.withLock {
             val storedRefreshToken = tokenStorage.getRefreshToken() ?: run {
-                tokenStorage.clearAuth()
+                tokenStorage.clearAuthWithEvent(
+                    AuthEvent.SessionExpired("Session expired - no refresh token available"),
+                )
                 return@withLock null
             }
             refreshToken(storedRefreshToken).fold(
@@ -209,9 +418,17 @@ open class PortalApiClient(private val supabaseConfig: SupabaseConfig, private v
                     tokenStorage.saveGoTrueAuth(response)
                     response.accessToken
                 },
-                onFailure = {
-                    Logger.w("PortalApiClient") { "Force refresh failed: ${it.message}" }
-                    tokenStorage.clearAuth()
+                onFailure = { error ->
+                    Logger.w("PortalApiClient") { "Force refresh failed: ${error.message}" }
+                    // Determine if this is a recoverable network error or permanent auth failure
+                    val isRecoverable = error !is PortalApiException ||
+                        (error.statusCode != 401 && error.statusCode != 403)
+                    tokenStorage.clearAuthWithEvent(
+                        AuthEvent.RefreshFailed(
+                            reason = error.message ?: "Session refresh failed",
+                            isRecoverable = isRecoverable,
+                        ),
+                    )
                     null
                 },
             )
@@ -236,7 +453,8 @@ open class PortalApiClient(private val supabaseConfig: SupabaseConfig, private v
                 handleResponse(response)
             }
         } catch (e: Exception) {
-            Result.failure(PortalApiException("Request failed: ${e.message}", e))
+            val classified = classifyError(e, "Request")
+            Result.failure(classified.toException())
         }
     }
 

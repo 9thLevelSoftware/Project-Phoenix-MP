@@ -91,9 +91,18 @@ actual val platformModule: Module = module {
 
 /**
  * Creates an EncryptedSharedPreferences backed by Android Keystore.
- * Falls back to a regular SharedPreferences if the Keystore is unavailable
- * (e.g. some emulators) to avoid a hard crash — tokens will still be
- * app-private via MODE_PRIVATE.
+ *
+ * SECURITY: This function intentionally does NOT fall back to unencrypted storage.
+ * Authentication tokens (JWT, refresh tokens) MUST be encrypted at rest. If the
+ * Android Keystore is unavailable (very rare in production), the app will fail
+ * to initialize sync features rather than silently downgrade security.
+ *
+ * If you encounter a KeyStoreException during development on an emulator:
+ * 1. Use an emulator with Google Play APIs (includes hardware-backed Keystore)
+ * 2. Or run on a physical device
+ *
+ * @throws SecurityException if EncryptedSharedPreferences cannot be created.
+ *         This indicates the device cannot securely store authentication tokens.
  */
 private fun createEncryptedPreferences(context: Context): SharedPreferences = try {
     val masterKeyAlias = MasterKeys.getOrCreate(MasterKeys.AES256_GCM_SPEC)
@@ -105,8 +114,14 @@ private fun createEncryptedPreferences(context: Context): SharedPreferences = tr
         EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM,
     )
 } catch (e: Exception) {
-    log.w(e) { "EncryptedSharedPreferences unavailable, falling back to MODE_PRIVATE" }
-    context.getSharedPreferences(ENCRYPTED_PREFS_FILE, Context.MODE_PRIVATE)
+    log.e(e) { "SECURITY: EncryptedSharedPreferences creation failed - cannot securely store auth tokens" }
+    // Do NOT fall back to unencrypted storage - throw to prevent silent security downgrade
+    throw SecurityException(
+        "Secure token storage unavailable. Your device may not support encrypted storage. " +
+            "Portal sync features cannot be enabled without secure storage. " +
+            "Original error: ${e.message}",
+        e,
+    )
 }
 
 /**
