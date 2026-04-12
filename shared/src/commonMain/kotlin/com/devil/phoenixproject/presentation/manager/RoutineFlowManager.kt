@@ -199,15 +199,6 @@ class RoutineFlowManager(
     }
 
     /**
-     * Get the superset rest time.
-     */
-    internal fun getSupersetRestSeconds(): Int {
-        val routine = coordinator._loadedRoutine.value ?: return 10
-        val supersetId = getCurrentExercise()?.supersetId ?: return 10
-        return routine.supersets.find { it.id == supersetId }?.restBetweenSeconds ?: 10
-    }
-
-    /**
      * Find the next exercise after the current one (or after the current superset).
      */
     private fun findNextExerciseAfterCurrent(): Int? {

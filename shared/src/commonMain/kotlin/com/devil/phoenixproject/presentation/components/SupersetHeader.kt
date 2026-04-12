@@ -45,14 +45,12 @@ import vitruvianprojectphoenix.shared.generated.resources.Res
  *
  * Features:
  * - Tappable name for rename
- * - Tappable rest time chip for quick adjustment
  * - Overflow menu for other actions (add exercise, copy, delete)
  */
 @Composable
 fun SupersetHeader(
     superset: Superset,
     onRename: () -> Unit,
-    onChangeRestTime: () -> Unit,
     onChangeColor: () -> Unit,
     onAddExercise: () -> Unit,
     onCopy: () -> Unit,
@@ -95,23 +93,6 @@ fun SupersetHeader(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-
-            // Rest time chip (tappable)
-            Surface(
-                modifier = Modifier.clickable { onChangeRestTime() },
-                shape = RoundedCornerShape(16.dp),
-                color = color.copy(alpha = 0.15f),
-            ) {
-                Text(
-                    text = "${superset.restBetweenSeconds}s rest",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = color,
-                    fontWeight = FontWeight.Medium,
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                )
-            }
-
-            Spacer(Modifier.width(8.dp))
 
             if (showDragHandle) {
                 Icon(

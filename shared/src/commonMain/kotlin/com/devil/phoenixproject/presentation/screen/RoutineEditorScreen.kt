@@ -154,7 +154,6 @@ fun RoutineEditorScreen(
 
     // Dialog state for superset editing
     var supersetToRename by remember { mutableStateOf<Superset?>(null) }
-    var supersetToEditRest by remember { mutableStateOf<Superset?>(null) }
     var supersetToChangeColor by remember { mutableStateOf<Superset?>(null) }
     var supersetToDelete by remember { mutableStateOf<Superset?>(null) } // Delete All confirmation
 
@@ -537,7 +536,6 @@ fun RoutineEditorScreen(
                                             SupersetHeader(
                                                 superset = superset,
                                                 onRename = { supersetToRename = superset },
-                                                onChangeRestTime = { supersetToEditRest = superset },
                                                 onChangeColor = { supersetToChangeColor = superset },
                                                 onAddExercise = {
                                                     supersetForAddExercise = superset
@@ -826,18 +824,6 @@ fun RoutineEditorScreen(
                     Text(stringResource(Res.string.action_cancel))
                 }
             },
-        )
-    }
-
-    // Rest Time Picker Dialog (new chip-based picker)
-    supersetToEditRest?.let { superset ->
-        RestTimePickerDialog(
-            currentRestSeconds = superset.restBetweenSeconds,
-            onSelect = { newRest ->
-                updateSuperset(superset.id) { it.copy(restBetweenSeconds = newRest) }
-                supersetToEditRest = null
-            },
-            onDismiss = { supersetToEditRest = null },
         )
     }
 

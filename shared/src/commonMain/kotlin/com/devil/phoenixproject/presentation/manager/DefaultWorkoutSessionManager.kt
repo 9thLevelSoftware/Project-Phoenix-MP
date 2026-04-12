@@ -247,7 +247,6 @@ class DefaultWorkoutSessionManager(
             override fun getNextStep(routine: Routine, exerciseIndex: Int, setIndex: Int): Pair<Int, Int>? = routineFlowManager.getNextStep(routine, exerciseIndex, setIndex)
             override fun isInSuperset(): Boolean = routineFlowManager.isInSuperset()
             override fun isAtEndOfSupersetCycle(): Boolean = routineFlowManager.isAtEndOfSupersetCycle()
-            override fun getSupersetRestSeconds(): Int = routineFlowManager.getSupersetRestSeconds()
             override fun calculateNextExerciseName(
                 isSingleExercise: Boolean,
                 currentExercise: RoutineExercise?,
