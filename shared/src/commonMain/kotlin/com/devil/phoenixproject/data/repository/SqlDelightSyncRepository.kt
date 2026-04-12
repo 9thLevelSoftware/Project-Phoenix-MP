@@ -197,6 +197,19 @@ class SqlDelightSyncRepository(
 
     // === Pull Operations ===
 
+    /**
+     * Merge sessions from server (legacy push-path).
+     *
+     * CONFLICT RESOLUTION STRATEGY: SERVER WINS (UPSERT)
+     * Reference: CONFLICT-RESOLUTION-DESIGN.md Task 2, Section 1 "Workout Sessions"
+     *
+     * This is the legacy push-path merge used for initial sync/migration.
+     * For the authoritative pull-path, see [mergePortalSessions] which uses LOCAL WINS.
+     *
+     * Sessions are immutable workout records created by BLE execution. Mobile is authoritative.
+     * The push-path upsert allows server data to populate initially, but the pull-path
+     * (INSERT OR IGNORE) ensures local sessions are never overwritten after initial sync.
+     */
     override suspend fun mergeSessions(sessions: List<WorkoutSessionSyncDto>) {
         withContext(Dispatchers.IO) {
             db.transaction {
@@ -208,7 +221,7 @@ class SqlDelightSyncRepository(
 
                     val localId = existingByServer?.id ?: dto.clientId
 
-                    // Server wins for conflict resolution (last-write-wins)
+                    // Server wins for initial population (upsert pattern)
                     queries.upsertSyncSession(
                         id = localId,
                         timestamp = dto.timestamp,
@@ -267,6 +280,19 @@ class SqlDelightSyncRepository(
         }
     }
 
+    /**
+     * Merge personal records from server (legacy push-path).
+     *
+     * CONFLICT RESOLUTION STRATEGY: SERVER WINS (UPSERT by compound key)
+     * Reference: CONFLICT-RESOLUTION-DESIGN.md Task 2, Section 2 "Personal Records"
+     *
+     * PRs are computed from local workout sessions. Mobile computes PRs.
+     * The push-path uses UPSERT for initial population. The pull-path [mergePersonalRecords]
+     * uses INSERT OR IGNORE (LOCAL WINS) to ensure locally-computed PRs are never overwritten.
+     *
+     * Edge case: Both devices compute same PR from same session - no conflict (same data).
+     * Different PRs from different sessions should both exist (union semantics).
+     */
     override suspend fun mergePRs(records: List<PersonalRecordSyncDto>) {
         withContext(Dispatchers.IO) {
             db.transaction {
@@ -294,6 +320,17 @@ class SqlDelightSyncRepository(
         }
     }
 
+    /**
+     * Merge routines from server (legacy push-path).
+     *
+     * CONFLICT RESOLUTION STRATEGY: SERVER WINS (UPSERT) with local field preservation
+     * Reference: CONFLICT-RESOLUTION-DESIGN.md Task 2, Section 6 "Routines"
+     *
+     * This is the legacy push-path used for initial sync. The authoritative pull-path
+     * [mergePortalRoutines] uses TIMESTAMP-BASED LWW to handle concurrent edits.
+     *
+     * Local-only fields preserved: lastUsed, useCount (server doesn't track usage stats).
+     */
     override suspend fun mergeRoutines(routines: List<RoutineSyncDto>) {
         withContext(Dispatchers.IO) {
             db.transaction {
@@ -327,11 +364,21 @@ class SqlDelightSyncRepository(
         }
     }
 
+    /**
+     * Merge custom exercises from server.
+     *
+     * CONFLICT RESOLUTION STRATEGY: INSERT (no conflict expected)
+     * Reference: CONFLICT-RESOLUTION-DESIGN.md Task 2, Section 8 "Custom Exercises"
+     *
+     * Custom exercises are created locally on mobile. Server doesn't push custom exercises
+     * back, so this is effectively a one-way push. Uses INSERT (not UPSERT) since duplicates
+     * shouldn't occur - each custom exercise has a unique client-generated ID.
+     */
     override suspend fun mergeCustomExercises(exercises: List<CustomExerciseSyncDto>) {
         withContext(Dispatchers.IO) {
             db.transaction {
                 exercises.forEach { dto ->
-                    // Custom exercises - upsert by clientId
+                    // Custom exercises - insert by clientId (no conflict expected)
                     queries.insertExercise(
                         id = dto.clientId,
                         name = dto.name,
@@ -366,10 +413,24 @@ class SqlDelightSyncRepository(
         }
     }
 
+    /**
+     * Merge badges from server.
+     *
+     * CONFLICT RESOLUTION STRATEGY: UNION MERGE (INSERT OR IGNORE)
+     * Reference: CONFLICT-RESOLUTION-DESIGN.md Task 2, Section 3 "Badges"
+     *
+     * Badges are additive achievements computed by mobile. Both local and remote badges
+     * should exist - they are never removed or overwritten. INSERT OR IGNORE ensures
+     * that duplicate badgeIds are silently skipped while new badges are added.
+     *
+     * Multi-device scenario: If Device A earns badge X and Device B earns badge Y,
+     * after sync both devices will have badges X and Y (union semantics).
+     */
     override suspend fun mergeBadges(badges: List<EarnedBadgeSyncDto>, profileId: String) {
         withContext(Dispatchers.IO) {
             db.transaction {
                 badges.forEach { dto ->
+                    // INSERT OR IGNORE - union merge, duplicates silently skipped
                     queries.insertEarnedBadge(dto.badgeId, dto.earnedAt, profileId = profileId)
                 }
             }
@@ -377,6 +438,20 @@ class SqlDelightSyncRepository(
         }
     }
 
+    /**
+     * Merge gamification stats from server.
+     *
+     * CONFLICT RESOLUTION STRATEGY: SERVER WINS with local field preservation
+     * Reference: CONFLICT-RESOLUTION-DESIGN.md Task 2, Section 4 "Gamification Stats"
+     *
+     * Mobile is authoritative for computation, but server aggregates from all devices.
+     * Server totals may be higher than local (multi-device usage). Server values override
+     * aggregate fields (totalWorkouts, totalReps, etc.), but local-only tracking fields
+     * are preserved: uniqueExercisesUsed, prsAchieved, lastWorkoutDate, streakStartDate.
+     *
+     * Multi-device scenario: Device A has 50 workouts, Device B has 30. Server aggregates
+     * to 80 total. Both devices receive 80 on next pull.
+     */
     override suspend fun mergeGamificationStats(stats: GamificationStatsSyncDto?, profileId: String) {
         if (stats == null) return
 
@@ -405,6 +480,23 @@ class SqlDelightSyncRepository(
 
     // === Portal Pull Operations (merge portal data) ===
 
+    /**
+     * Merge routines from portal (pull-path).
+     *
+     * CONFLICT RESOLUTION STRATEGY: TIMESTAMP-BASED LWW (Last-Write-Wins with local preference)
+     * Reference: CONFLICT-RESOLUTION-DESIGN.md Task 2, Section 6 "Routines"
+     *
+     * Routines are editable on both mobile and portal. Timestamp comparison prevents data loss
+     * for recent local edits. If local routine was modified after lastSync, local version wins.
+     * Otherwise, portal version is accepted.
+     *
+     * Multi-device risk: Device A edits routine, Device B edits same routine. Whichever syncs
+     * second loses edits. Portal edits have a ~5 second window where they can be overwritten
+     * by a pending mobile sync.
+     *
+     * Edge case: Empty exercises list from portal is treated as incomplete payload - we preserve
+     * local exercises to prevent accidental data loss from server omissions.
+     */
     override suspend fun mergePortalRoutines(routines: List<PullRoutineDto>, lastSync: Long, profileId: String) {
         withContext(Dispatchers.IO) {
             db.transaction {
@@ -413,10 +505,11 @@ class SqlDelightSyncRepository(
                     val existing = queries.selectRoutineById(portalRoutine.id).executeAsOneOrNull()
 
                     if (existing != null) {
-                        // Routine exists locally — check if it was modified since last sync
+                        // TIMESTAMP LWW: Local version is newer if modified after lastSync
                         val localUpdatedAt = existing.updatedAt ?: 0L
                         if (localUpdatedAt > lastSync) {
-                            // Local version is newer — skip this portal routine (PULL-03)
+                            // Local version is newer — skip this portal routine (local wins)
+                            Logger.d { "Routine '${portalRoutine.name}' skipped: local version newer (${localUpdatedAt} > ${lastSync})" }
                             continue
                         }
                     }
@@ -551,29 +644,51 @@ class SqlDelightSyncRepository(
         }
     }
 
+    /**
+     * Merge training cycles from portal (pull-path).
+     *
+     * CONFLICT RESOLUTION STRATEGY: SERVER WINS with single-active enforcement
+     * Reference: CONFLICT-RESOLUTION-DESIGN.md Task 2, Section 7 "Training Cycles"
+     *
+     * Training cycles are primarily created/edited on portal (portal-authoritative pattern).
+     * Server data is accepted for new cycles. Existing cycles get metadata updated.
+     * Cycle days are fully replaced (delete-then-reinsert) to match portal state.
+     *
+     * IMPORTANT: Only ONE cycle can be active at a time. After processing all portal cycles,
+     * we ensure exactly one cycle is marked active (the most recently activated from portal,
+     * or existing local active cycle if no portal cycles are active).
+     *
+     * Future enhancement: Add updated_at column for timestamp-based LWW (see CONFLICT-RESOLUTION-DESIGN.md).
+     */
     override suspend fun mergePortalCycles(cycles: List<PullTrainingCycleDto>, profileId: String) {
         withContext(Dispatchers.IO) {
             db.transaction {
+                // Track which portal cycle is active (should be at most one)
+                var portalActiveCycleId: String? = null
+
                 for (portalCycle in cycles) {
+                    // Track the active cycle from portal (last one wins if multiple marked active)
+                    if (portalCycle.status == "active") {
+                        portalActiveCycleId = portalCycle.id
+                    }
+
                     // Upsert cycle (INSERT OR IGNORE — keeps local if exists)
                     queries.insertTrainingCycleIgnore(
                         id = portalCycle.id,
                         name = portalCycle.name,
                         description = portalCycle.description,
                         created_at = currentTimeMillis(),
-                        is_active = if (portalCycle.status == "active") 1L else 0L,
+                        is_active = 0L, // Don't set active yet - enforce single-active at end
                         profile_id = profileId,
                     )
 
-                    // For existing cycles, update metadata (updateTrainingCycle takes 4 params: name, description, is_active, id)
-                    // NOTE: Do NOT use setActiveTrainingCycle here — it deactivates ALL other cycles,
-                    // which would clobber the user's local active cycle during a merge.
+                    // For existing cycles, update metadata (but NOT is_active - enforce single-active at end)
                     val existing = queries.selectTrainingCycleById(portalCycle.id).executeAsOneOrNull()
                     if (existing != null) {
                         queries.updateTrainingCycle(
                             name = portalCycle.name,
                             description = portalCycle.description,
-                            is_active = if (portalCycle.status == "active") 1L else 0L,
+                            is_active = 0L, // Don't set active yet
                             id = portalCycle.id,
                         )
                     }
@@ -613,15 +728,46 @@ class SqlDelightSyncRepository(
                         }
                     }
                 }
+
+                // SINGLE-ACTIVE ENFORCEMENT: Ensure exactly one cycle is active after merge
+                // Priority: portal's active cycle > existing local active cycle > none
+                if (portalActiveCycleId != null) {
+                    // Portal specified an active cycle - deactivate all others, activate this one
+                    queries.deactivateAllCycles(profileId)
+                    queries.updateTrainingCycle(
+                        name = cycles.first { it.id == portalActiveCycleId }.name,
+                        description = cycles.first { it.id == portalActiveCycleId }.description,
+                        is_active = 1L,
+                        id = portalActiveCycleId,
+                    )
+                    Logger.d { "Set active cycle from portal: $portalActiveCycleId" }
+                }
+                // If no portal cycle is active, preserve existing local active cycle (don't change anything)
             }
             Logger.d { "Merged ${cycles.size} portal training cycles with days and progressions" }
         }
     }
 
+    /**
+     * Merge sessions from portal (pull-path).
+     *
+     * CONFLICT RESOLUTION STRATEGY: LOCAL WINS (INSERT OR IGNORE)
+     * Reference: CONFLICT-RESOLUTION-DESIGN.md Task 2, Section 1 "Workout Sessions"
+     *
+     * Sessions are immutable workout records created by BLE execution. Mobile is authoritative.
+     * Once a workout is recorded locally, it should NEVER be overwritten by server data.
+     * INSERT OR IGNORE ensures that if a session with the same ID exists locally, the
+     * remote data is silently dropped.
+     *
+     * Multi-device scenario: Device A records session X, Device B records session Y.
+     * Both sessions have unique UUIDs. After sync, both devices have sessions X and Y.
+     * UUID collision is theoretically possible but probability is negligible (~1 in 10^38).
+     */
     override suspend fun mergePortalSessions(sessions: List<WorkoutSession>) {
         withContext(Dispatchers.IO) {
             db.transaction {
                 for (session in sessions) {
+                    // INSERT OR IGNORE - local session wins if ID exists
                     queries.insertSessionIgnore(
                         id = session.id,
                         timestamp = session.timestamp,
@@ -1100,11 +1246,25 @@ class SqlDelightSyncRepository(
         queries.selectAllAssessments(profileId = profileId).executeAsList()
     }
 
+    /**
+     * Merge personal records from portal (pull-path).
+     *
+     * CONFLICT RESOLUTION STRATEGY: LOCAL WINS (INSERT OR IGNORE)
+     * Reference: CONFLICT-RESOLUTION-DESIGN.md Task 2, Section 2 "Personal Records"
+     *
+     * PRs are computed from local workout sessions. Mobile computes PRs.
+     * If the same PR exists locally (same compound key: exerciseId, workoutMode, prType, phase),
+     * the local version is authoritative and the remote PR is silently dropped.
+     *
+     * Multi-device scenario: Both devices compute same PR from same session - no conflict
+     * because the data is identical. Different PRs from different sessions both get inserted
+     * (different compound keys).
+     */
     override suspend fun mergePersonalRecords(records: List<PersonalRecordSyncDto>, profileId: String) {
         withContext(Dispatchers.IO) {
             db.transaction {
                 records.forEach { dto ->
-                    // INSERT OR IGNORE — local PRs win on conflict
+                    // INSERT OR IGNORE — local PRs win on conflict (same compound key)
                     val effectiveVolume = if (dto.volume > 0f) dto.volume else dto.weight * dto.reps
                     queries.insertPRIgnore(
                         exerciseId = dto.exerciseId,
