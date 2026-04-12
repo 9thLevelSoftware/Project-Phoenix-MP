@@ -50,10 +50,21 @@ private val PORTAL_KEYS = listOf(
 actual val platformModule: Module = module {
     single {
         val bundle = NSBundle.mainBundle
-        SupabaseConfig(
-            url = bundle.objectForInfoDictionaryKey("SUPABASE_URL") as? String ?: "",
-            anonKey = bundle.objectForInfoDictionaryKey("SUPABASE_ANON_KEY") as? String ?: "",
-        )
+        val url = bundle.objectForInfoDictionaryKey("SUPABASE_URL") as? String
+        val anonKey = bundle.objectForInfoDictionaryKey("SUPABASE_ANON_KEY") as? String
+
+        // Fail fast with clear error if Supabase config is missing
+        // This usually means Supabase.xcconfig wasn't created or linked in Xcode
+        require(!url.isNullOrBlank()) {
+            "SUPABASE_URL not found in Info.plist. " +
+                "Ensure Supabase.xcconfig exists and is linked in the Xcode project."
+        }
+        require(!anonKey.isNullOrBlank()) {
+            "SUPABASE_ANON_KEY not found in Info.plist. " +
+                "Ensure Supabase.xcconfig exists and is linked in the Xcode project."
+        }
+
+        SupabaseConfig(url = url, anonKey = anonKey)
     }
     single { DriverFactory() }
     single<Settings> {

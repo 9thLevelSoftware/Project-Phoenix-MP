@@ -76,5 +76,10 @@
     <string>Project Phoenix can read your health data to avoid logging duplicate workouts.</string>
     <key>NSHealthUpdateUsageDescription</key>
     <string>Project Phoenix writes your completed workouts to Apple Health so they appear alongside your other fitness data.</string>
+    <!-- Supabase configuration injected from Supabase.xcconfig -->
+    <key>SUPABASE_URL</key>
+    <string>$(SUPABASE_URL)</string>
+    <key>SUPABASE_ANON_KEY</key>
+    <string>$(SUPABASE_ANON_KEY)</string>
 </dict>
 </plist>
