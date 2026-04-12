@@ -1,0 +1,6 @@
+// Supabase Configuration — NOT committed to git
+// Copy Supabase.xcconfig.example and fill in your values
+// These are injected into Info.plist via $(SUPABASE_URL) and $(SUPABASE_ANON_KEY)
+
+SUPABASE_URL = https:/$()/ilzlswmatadlnsuxatcv.supabase.co
+SUPABASE_ANON_KEY = sb_publishable_UDrjasV6UJLm_IdIzGljoQ_YaRes4dQ
