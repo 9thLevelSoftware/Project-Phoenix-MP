@@ -96,6 +96,9 @@ fun ExerciseEditBottomSheet(
     val repCountTiming by viewModel.repCountTiming.collectAsState()
     val stopAtTop by viewModel.stopAtTop.collectAsState()
 
+    // Warm-up sets state (Issue #30)
+    val warmupSets by viewModel.warmupSets.collectAsState()
+
     // PR weight from ViewModel - automatically updates when mode changes
     val currentExercisePR by viewModel.currentExercisePR.collectAsState()
 
@@ -493,6 +496,22 @@ fun ExerciseEditBottomSheet(
                             )
                         }
                     }
+                }
+
+                // Warm-up Sets Configuration (Issue #30)
+                // Only show for standard exercises (not bodyweight)
+                if (exerciseType == ExerciseType.STANDARD) {
+                    WarmupSetsConfiguration(
+                        warmupSets = warmupSets,
+                        workingWeight = sets.firstOrNull()?.weightPerCable ?: 0f,
+                        weightSuffix = weightSuffix,
+                        onAddWarmupSet = viewModel::addWarmupSet,
+                        onRemoveWarmupSet = viewModel::removeWarmupSet,
+                        onUpdateReps = viewModel::updateWarmupSetReps,
+                        onUpdatePercent = viewModel::updateWarmupSetPercent,
+                        onApplyPreset = viewModel::applyClassicWarmupPreset,
+                        onClearAll = viewModel::clearWarmupSets,
+                    )
                 }
 
                 // Sets Configuration
@@ -1248,6 +1267,294 @@ fun WeightConfigurationCard(
                         )
                     }
                 }
+            }
+        }
+    }
+}
+
+/**
+ * Warm-up Sets Configuration Card (Issue #30)
+ * Allows users to configure variable warm-up sets before working sets.
+ * Each warm-up set has a number of reps and a percentage of the working weight.
+ */
+@Composable
+fun WarmupSetsConfiguration(
+    warmupSets: List<WarmupSet>,
+    workingWeight: Float,
+    weightSuffix: String,
+    onAddWarmupSet: () -> Unit,
+    onRemoveWarmupSet: (Int) -> Unit,
+    onUpdateReps: (Int, Int) -> Unit,
+    onUpdatePercent: (Int, Int) -> Unit,
+    onApplyPreset: () -> Unit,
+    onClearAll: () -> Unit,
+) {
+    var expanded by remember { mutableStateOf(warmupSets.isNotEmpty()) }
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest),
+        shape = RoundedCornerShape(20.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
+        border = BorderStroke(
+            2.dp,
+            if (warmupSets.isNotEmpty()) {
+                MaterialTheme.colorScheme.tertiary.copy(alpha = 0.5f)
+            } else {
+                MaterialTheme.colorScheme.outlineVariant
+            },
+        ),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(Spacing.medium),
+        ) {
+            // Header with toggle
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        "Warm-up Sets",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = if (warmupSets.isNotEmpty()) {
+                            MaterialTheme.colorScheme.tertiary
+                        } else {
+                            MaterialTheme.colorScheme.onSurface
+                        },
+                    )
+                    Text(
+                        if (warmupSets.isEmpty()) {
+                            "Add warm-up sets before working sets"
+                        } else {
+                            "${warmupSets.size} warm-up set${if (warmupSets.size > 1) "s" else ""} configured"
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                IconButton(onClick = { expanded = !expanded }) {
+                    Icon(
+                        imageVector = if (expanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                        contentDescription = if (expanded) "Collapse" else "Expand",
+                    )
+                }
+            }
+
+            // Expanded content
+            if (expanded) {
+                Spacer(modifier = Modifier.height(Spacing.medium))
+
+                // Quick preset button
+                if (warmupSets.isEmpty()) {
+                    Button(
+                        onClick = onApplyPreset,
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.tertiaryContainer,
+                            contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
+                        ),
+                    ) {
+                        Text("Apply 12-8-4 Preset (50%/70%/85%)")
+                    }
+                    Spacer(modifier = Modifier.height(Spacing.small))
+                }
+
+                // Warm-up sets list
+                warmupSets.forEachIndexed { index, warmupSet ->
+                    WarmupSetRow(
+                        index = index,
+                        warmupSet = warmupSet,
+                        workingWeight = workingWeight,
+                        weightSuffix = weightSuffix,
+                        onUpdateReps = { reps -> onUpdateReps(index, reps) },
+                        onUpdatePercent = { percent -> onUpdatePercent(index, percent) },
+                        onRemove = { onRemoveWarmupSet(index) },
+                    )
+                    if (index < warmupSets.lastIndex) {
+                        Spacer(modifier = Modifier.height(Spacing.small))
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(Spacing.small))
+
+                // Add/Clear buttons
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(Spacing.small),
+                ) {
+                    OutlinedButton(
+                        onClick = onAddWarmupSet,
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Add Warm-up")
+                    }
+                    if (warmupSets.isNotEmpty()) {
+                        TextButton(
+                            onClick = onClearAll,
+                            colors = ButtonDefaults.textButtonColors(
+                                contentColor = MaterialTheme.colorScheme.error,
+                            ),
+                        ) {
+                            Text("Clear All")
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Individual warm-up set row with reps picker, percentage picker, and calculated weight preview.
+ */
+@Composable
+private fun WarmupSetRow(
+    index: Int,
+    warmupSet: WarmupSet,
+    workingWeight: Float,
+    weightSuffix: String,
+    onUpdateReps: (Int) -> Unit,
+    onUpdatePercent: (Int) -> Unit,
+    onRemove: () -> Unit,
+) {
+    val calculatedWeight = (workingWeight * warmupSet.percentOfWorking / 100f)
+        .let { (it * 2).roundToInt() / 2f } // Round to 0.5
+
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(12.dp),
+        color = MaterialTheme.colorScheme.surface,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(Spacing.small),
+            horizontalArrangement = Arrangement.spacedBy(Spacing.small),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            // Warm-up number label
+            Text(
+                "W${index + 1}",
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.tertiary,
+                modifier = Modifier.width(28.dp),
+            )
+
+            // Reps picker
+            Column(
+                modifier = Modifier.weight(1f),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Text(
+                    "Reps",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    IconButton(
+                        onClick = { onUpdateReps(warmupSet.reps - 1) },
+                        modifier = Modifier.size(32.dp),
+                        enabled = warmupSet.reps > 1,
+                    ) {
+                        Text("-", fontWeight = FontWeight.Bold)
+                    }
+                    Text(
+                        "${warmupSet.reps}",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                    )
+                    IconButton(
+                        onClick = { onUpdateReps(warmupSet.reps + 1) },
+                        modifier = Modifier.size(32.dp),
+                        enabled = warmupSet.reps < 20,
+                    ) {
+                        Text("+", fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+
+            // Percentage picker
+            Column(
+                modifier = Modifier.weight(1f),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Text(
+                    "% of Working",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    IconButton(
+                        onClick = { onUpdatePercent(warmupSet.percentOfWorking - 5) },
+                        modifier = Modifier.size(32.dp),
+                        enabled = warmupSet.percentOfWorking > 10,
+                    ) {
+                        Text("-", fontWeight = FontWeight.Bold)
+                    }
+                    Text(
+                        "${warmupSet.percentOfWorking}%",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.tertiary,
+                    )
+                    IconButton(
+                        onClick = { onUpdatePercent(warmupSet.percentOfWorking + 5) },
+                        modifier = Modifier.size(32.dp),
+                        enabled = warmupSet.percentOfWorking < 100,
+                    ) {
+                        Text("+", fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+
+            // Calculated weight preview
+            Column(
+                modifier = Modifier.weight(1f),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Text(
+                    "Weight",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Text(
+                    "$calculatedWeight",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                )
+                Text(
+                    weightSuffix,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+
+            // Delete button
+            IconButton(
+                onClick = onRemove,
+                modifier = Modifier.size(36.dp),
+            ) {
+                Icon(
+                    Icons.Default.Delete,
+                    contentDescription = "Remove warm-up set",
+                    tint = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.size(20.dp),
+                )
             }
         }
     }
