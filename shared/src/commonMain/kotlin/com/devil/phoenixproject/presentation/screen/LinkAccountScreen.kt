@@ -26,6 +26,13 @@ import vitruvianprojectphoenix.shared.generated.resources.Res
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LinkAccountScreen(viewModel: LinkAccountViewModel = koinInject(), onNavigateBack: () -> Unit) {
+    // Cancel pending coroutines when the screen leaves composition
+    DisposableEffect(viewModel) {
+        onDispose {
+            viewModel.clear()
+        }
+    }
+
     val uiState by viewModel.uiState.collectAsState()
     val isAuthenticated by viewModel.isAuthenticated.collectAsState()
     val currentUser by viewModel.currentUser.collectAsState()

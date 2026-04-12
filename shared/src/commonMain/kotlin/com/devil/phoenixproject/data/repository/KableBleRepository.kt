@@ -32,11 +32,23 @@ import kotlinx.coroutines.launch
 /**
  * Thin facade delegating to 6 extracted modules (BleOperationQueue, DiscoMode,
  * HandleStateDetector, MonitorDataProcessor, MetricPollingEngine, KableBleConnectionManager).
+ *
+ * ## Lifecycle Management
+ * This repository is a **singleton** scoped to the application lifetime via Koin DI.
+ * The internal [CoroutineScope] uses [SupervisorJob] for proper structured concurrency and
+ * lives for the duration of the app process. No explicit cleanup is needed since BLE
+ * operations should remain available for the entire app session.
+ *
+ * For app-lifetime singletons managing hardware resources (BLE), the scope leak risk is
+ * acceptable since the scope lives as long as the process and BLE state should persist
+ * across navigation events.
  */
 class KableBleRepository : BleRepository {
 
     private val log = Logger.withTag("KableBleRepository")
     private val logRepo = ConnectionLogRepository.instance
+
+    // Singleton-scoped: lives for app lifetime, no explicit cleanup needed
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
     // ===== State flows =====

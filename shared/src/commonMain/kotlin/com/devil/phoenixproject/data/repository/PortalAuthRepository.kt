@@ -17,6 +17,15 @@ import kotlinx.coroutines.launch
 
 /**
  * AuthRepository implementation using Supabase GoTrue REST API.
+ *
+ * ## Lifecycle Management
+ * This repository is typically a **singleton** scoped to the application lifetime via Koin DI.
+ * The internal [CoroutineScope] uses [SupervisorJob] for proper structured concurrency and is
+ * cancelled via [close] when the repository is no longer needed (typically at app termination).
+ *
+ * For app-lifetime singletons, the scope leak risk is acceptable since the scope lives as long
+ * as the process. However, [close] should still be called during DI cleanup or testing to ensure
+ * clean shutdown of background jobs (session restoration, auth state derivation).
  */
 class PortalAuthRepository(
     private val apiClient: PortalApiClient,
