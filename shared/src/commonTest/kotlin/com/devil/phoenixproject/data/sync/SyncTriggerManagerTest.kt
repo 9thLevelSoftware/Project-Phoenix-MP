@@ -1,5 +1,6 @@
 package com.devil.phoenixproject.data.sync
 
+import com.devil.phoenixproject.domain.model.currentTimeMillis
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -45,7 +46,7 @@ class SyncTriggerManagerTest {
         private val _lastSyncTime = MutableStateFlow(1000L) // Non-zero to bypass first-sync check
         val lastSyncTime: StateFlow<Long> = _lastSyncTime
 
-        var syncResult: Result<Long> = Result.success(System.currentTimeMillis())
+        var syncResult: Result<Long> = Result.success(currentTimeMillis())
         var syncCallCount = 0
 
         /** If set, sync() will preserve this state instead of setting Success */
@@ -349,7 +350,7 @@ class SyncTriggerManagerTest {
         assertEquals(2, triggerManager.getConsecutiveFailures(), "Should have 2 consecutive failures")
 
         // Now succeed
-        syncManager.syncResult = Result.success(System.currentTimeMillis())
+        syncManager.syncResult = Result.success(currentTimeMillis())
         triggerManager.onWorkoutCompleted()
 
         assertEquals(0, triggerManager.getBackoffIndex(), "Backoff should reset to 0 on success")
@@ -432,7 +433,7 @@ class SyncTriggerManagerTest {
 
         // Restore connectivity
         connectivity.online = true
-        syncManager.syncResult = Result.success(System.currentTimeMillis())
+        syncManager.syncResult = Result.success(currentTimeMillis())
         triggerManager.onConnectivityRestored()
 
         assertFalse(
@@ -584,12 +585,12 @@ class SyncTriggerManagerTest {
         // Simulate partial success (push OK, pull failed)
         // Set preserveSyncState so sync() doesn't overwrite with Success
         syncManager.preserveSyncState = true
-        syncManager.syncResult = Result.success(System.currentTimeMillis())
+        syncManager.syncResult = Result.success(currentTimeMillis())
         syncManager.setSyncState(
             SyncState.PartialSuccess(
                 pushSucceeded = true,
                 pullSucceeded = false,
-                lastSyncTime = System.currentTimeMillis(),
+                lastSyncTime = currentTimeMillis(),
                 pullError = "Network timeout on pull",
             ),
         )

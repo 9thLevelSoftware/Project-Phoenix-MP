@@ -2,6 +2,7 @@ package com.devil.phoenixproject.ui.sync
 
 import com.devil.phoenixproject.testutil.TestCoroutineRule
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -148,7 +149,12 @@ class LinkAccountViewModelLifecycleTest {
     @Test
     fun `SupervisorJob allows sibling failures without propagation`() = runTest {
         val job = SupervisorJob()
-        val scope = CoroutineScope(Dispatchers.Main + job)
+        // Capture exceptions rather than propagating (required for runTest)
+        var caughtException: Throwable? = null
+        val exceptionHandler = CoroutineExceptionHandler { _, throwable ->
+            caughtException = throwable
+        }
+        val scope = CoroutineScope(Dispatchers.Main + job + exceptionHandler)
         var child2RanAfterChild1Failed = false
 
         // Child 1: fails immediately
@@ -164,6 +170,10 @@ class LinkAccountViewModelLifecycleTest {
 
         advanceUntilIdle()
 
+        assertTrue(
+            caughtException != null && caughtException!!.message == "Child 1 failure",
+            "Exception should have been caught by handler",
+        )
         assertTrue(
             child2RanAfterChild1Failed,
             "SupervisorJob should isolate child failures",

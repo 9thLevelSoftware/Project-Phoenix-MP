@@ -126,7 +126,12 @@ class SyncManager(
 
         val goTrueResponse = signInResult.getOrThrow()
         tokenStorage.saveGoTrueAuth(goTrueResponse)
-        _syncState.value = SyncState.Idle // Reset stale NotAuthenticated state
+
+        // Serialize state change with sync operations to prevent race condition
+        // (Issue 5.2: login() and sync() both modify _syncState)
+        syncMutex.withLock {
+            _syncState.value = SyncState.Idle // Reset stale NotAuthenticated state
+        }
 
         // Check premium status from server immediately after auth.
         // On fresh install, existingPremium defaults to false — server is source of truth.
@@ -148,7 +153,12 @@ class SyncManager(
 
         val goTrueResponse = signUpResult.getOrThrow()
         tokenStorage.saveGoTrueAuth(goTrueResponse)
-        _syncState.value = SyncState.Idle // Reset stale NotAuthenticated state
+
+        // Serialize state change with sync operations to prevent race condition
+        // (Issue 5.2: signup() and sync() both modify _syncState)
+        syncMutex.withLock {
+            _syncState.value = SyncState.Idle // Reset stale NotAuthenticated state
+        }
 
         // New accounts start as free tier — no need to check premium status.
         // Premium status will be set after they subscribe via Paddle.
@@ -174,7 +184,12 @@ class SyncManager(
 
         tokenStorage.clearAuth()
         tokenStorage.emitLogoutEvent()
-        _syncState.value = SyncState.NotAuthenticated
+
+        // Serialize state change with sync operations to prevent race condition
+        // (Issue 5.2: logout() and sync() both modify _syncState)
+        syncMutex.withLock {
+            _syncState.value = SyncState.NotAuthenticated
+        }
     }
 
     // === Sync Operations ===
