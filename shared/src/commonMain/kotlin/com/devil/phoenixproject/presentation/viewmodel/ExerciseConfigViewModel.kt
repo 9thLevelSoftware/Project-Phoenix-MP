@@ -10,6 +10,7 @@ import com.devil.phoenixproject.domain.model.PRType
 import com.devil.phoenixproject.domain.model.PersonalRecord
 import com.devil.phoenixproject.domain.model.RepCountTiming
 import com.devil.phoenixproject.domain.model.RoutineExercise
+import com.devil.phoenixproject.domain.model.WarmupSet
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.domain.model.WorkoutMode
 import com.devil.phoenixproject.domain.model.toWorkoutMode
@@ -107,6 +108,10 @@ class ExerciseConfigViewModel constructor(
 
     private val _prTypeForScaling = MutableStateFlow(PRType.MAX_WEIGHT)
     val prTypeForScaling: StateFlow<PRType> = _prTypeForScaling.asStateFlow()
+
+    // Warm-up sets state (Issue #30)
+    private val _warmupSets = MutableStateFlow<List<WarmupSet>>(emptyList())
+    val warmupSets: StateFlow<List<WarmupSet>> = _warmupSets.asStateFlow()
 
     init {
     }
@@ -209,6 +214,9 @@ class ExerciseConfigViewModel constructor(
         _weightPercentOfPR.value = exercise.weightPercentOfPR
         _prTypeForScaling.value = exercise.prTypeForScaling
 
+        // Warm-up sets (Issue #30)
+        _warmupSets.value = exercise.warmupSets
+
         // Load PR for the current exercise and mode
         exercise.exercise.id?.let { exerciseId ->
             loadPRForExercise(exerciseId, _selectedMode.value.displayName)
@@ -310,6 +318,74 @@ class ExerciseConfigViewModel constructor(
 
     fun onPRTypeForScalingChange(prType: PRType) {
         _prTypeForScaling.value = prType
+    }
+
+    // Warm-up set handlers (Issue #30)
+
+    /**
+     * Add a new warm-up set with default values.
+     * Defaults to 12 reps @ 50% for first set, then 8 @ 70%, then 4 @ 85%.
+     */
+    fun addWarmupSet() {
+        val current = _warmupSets.value
+        val newSet = when (current.size) {
+            0 -> WarmupSet(reps = 12, percentOfWorking = 50)
+            1 -> WarmupSet(reps = 8, percentOfWorking = 70)
+            2 -> WarmupSet(reps = 4, percentOfWorking = 85)
+            else -> WarmupSet(reps = 4, percentOfWorking = 90) // Additional sets default to 4 @ 90%
+        }
+        _warmupSets.value = current + newSet
+    }
+
+    /**
+     * Remove a warm-up set by index.
+     */
+    fun removeWarmupSet(index: Int) {
+        val current = _warmupSets.value
+        if (index in current.indices) {
+            _warmupSets.value = current.filterIndexed { i, _ -> i != index }
+        }
+    }
+
+    /**
+     * Update the reps for a warm-up set.
+     */
+    fun updateWarmupSetReps(index: Int, reps: Int) {
+        val current = _warmupSets.value.toMutableList()
+        if (index in current.indices) {
+            current[index] = current[index].copy(reps = reps.coerceIn(1, 20))
+            _warmupSets.value = current
+        }
+    }
+
+    /**
+     * Update the percentage for a warm-up set.
+     */
+    fun updateWarmupSetPercent(index: Int, percent: Int) {
+        val current = _warmupSets.value.toMutableList()
+        if (index in current.indices) {
+            current[index] = current[index].copy(percentOfWorking = percent.coerceIn(10, 100))
+            _warmupSets.value = current
+        }
+    }
+
+    /**
+     * Clear all warm-up sets.
+     */
+    fun clearWarmupSets() {
+        _warmupSets.value = emptyList()
+    }
+
+    /**
+     * Apply the classic 12-8-4 warm-up preset (Issue #30 suggestion).
+     * 12 reps @ 50%, 8 reps @ 70%, 4 reps @ 85%.
+     */
+    fun applyClassicWarmupPreset() {
+        _warmupSets.value = listOf(
+            WarmupSet(reps = 12, percentOfWorking = 50),
+            WarmupSet(reps = 8, percentOfWorking = 70),
+            WarmupSet(reps = 4, percentOfWorking = 85),
+        )
     }
 
     /**
@@ -434,6 +510,8 @@ class ExerciseConfigViewModel constructor(
             weightPercentOfPR = _weightPercentOfPR.value,
             prTypeForScaling = _prTypeForScaling.value,
             setWeightsPercentOfPR = resolvedSetWeightsPercentOfPR,
+            // Warm-up sets (Issue #30)
+            warmupSets = _warmupSets.value,
         )
 
         logDebug("Updated exercise to save:")
