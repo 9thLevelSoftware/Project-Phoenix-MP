@@ -25,6 +25,17 @@ import kotlinx.coroutines.sync.withLock
 sealed class SyncState {
     object Idle : SyncState()
     object Syncing : SyncState()
+
+    /**
+     * Syncing with pagination progress reporting.
+     * @param pagesProcessed Number of pages fetched so far
+     * @param entitiesFetched Total entities fetched across all pages
+     */
+    data class SyncingWithProgress(
+        val pagesProcessed: Int,
+        val entitiesFetched: Int,
+    ) : SyncState()
+
     data class Success(val syncTime: Long) : SyncState()
 
     /**
@@ -42,6 +53,17 @@ sealed class SyncState {
     data class Error(val message: String, val errorCategory: SyncErrorCategory? = null) : SyncState()
     object NotAuthenticated : SyncState()
     object NotPremium : SyncState()
+}
+
+/**
+ * Sync configuration constants for pagination and limits.
+ */
+object SyncConfig {
+    /** Default number of entities per pull page. */
+    const val DEFAULT_PAGE_SIZE = 100
+
+    /** Maximum pages to fetch in a single pull operation (prevents infinite loops). */
+    const val MAX_PAGES = 100
 }
 
 class SyncManager(
@@ -628,44 +650,140 @@ class SyncManager(
     }
 
     /**
-     * Pull portal data and merge into local database.
-     * Returns Result with the pull response syncTime on success, or failure with classified error.
-     * This version provides full error context for proper PartialSuccess handling.
+     * Pull portal data and merge into local database with pagination support.
+     *
+     * The method loops through pages until hasMore is false, merging each page atomically.
+     * Only returns success with the final syncTime when ALL pages complete successfully.
+     *
+     * @param lastSync Unix epoch ms of last successful sync
+     * @return Result with final syncTime on success, or failure with classified error
      */
     private suspend fun pullRemoteChangesWithResult(lastSync: Long): Result<Long> {
         val deviceId = tokenStorage.getDeviceId()
         val activeProfileId = userProfileRepository.activeProfile.value?.id
-
-        // Pull remote changes filtered by active profile to prevent cross-profile contamination.
-        // The server filters by local_profile_id column; merge assigns the same profileId locally.
-        val pullResult = apiClient.pullPortalPayload(
-            lastSync,
-            deviceId,
-            profileId = activeProfileId,
-        )
-        if (pullResult.isFailure) {
-            val error = pullResult.exceptionOrNull() ?: PortalApiException("Pull failed")
-            Logger.w("SyncManager") {
-                "Pull failed: ${error.message}"
-            }
-            return Result.failure(error)
-        }
-
-        val pullResponse = pullResult.getOrThrow()
-        Logger.d("SyncManager") {
-            "Pull response: ${pullResponse.routines.size} routines, " +
-                "${pullResponse.cycles.size} cycles, " +
-                "${pullResponse.badges.size} badges, " +
-                "sessions=${pullResponse.sessions.size}"
-        }
-
         val mergeProfileId = activeProfileId ?: "default"
 
+        var pagesProcessed = 0
+        var totalEntitiesFetched = 0
+        var currentCursor: String? = null
+        var finalSyncTime: Long = 0
+
+        // Pagination loop: fetch pages until hasMore is false
+        while (true) {
+            // Infinite loop prevention
+            if (pagesProcessed >= SyncConfig.MAX_PAGES) {
+                val error = PortalApiException(
+                    "Pull exceeded maximum page limit (${SyncConfig.MAX_PAGES}). " +
+                        "Processed $totalEntitiesFetched entities across $pagesProcessed pages. " +
+                        "This may indicate a data issue - please contact support.",
+                )
+                Logger.e("SyncManager") { error.message!! }
+                return Result.failure(error)
+            }
+
+            // Emit progress state for UI feedback
+            if (pagesProcessed > 0) {
+                _syncState.value = SyncState.SyncingWithProgress(
+                    pagesProcessed = pagesProcessed,
+                    entitiesFetched = totalEntitiesFetched,
+                )
+            }
+
+            // Fetch next page
+            val pullResult = apiClient.pullPortalPayload(
+                lastSync = lastSync,
+                deviceId = deviceId,
+                profileId = activeProfileId,
+                cursor = currentCursor,
+                pageSize = SyncConfig.DEFAULT_PAGE_SIZE,
+            )
+
+            if (pullResult.isFailure) {
+                val error = pullResult.exceptionOrNull() ?: PortalApiException("Pull failed")
+                Logger.w("SyncManager") {
+                    "Pull page ${pagesProcessed + 1} failed (cursor=$currentCursor): ${error.message}"
+                }
+                // Note: We don't store cursor for resume here - the caller (retryPull) will
+                // restart from the beginning. For resume-on-failure, we'd need to persist
+                // the cursor to storage, which is a more complex feature.
+                return Result.failure(error)
+            }
+
+            val pullResponse = pullResult.getOrThrow()
+            pagesProcessed++
+
+            // Count entities in this page
+            val pageEntityCount = pullResponse.sessions.size +
+                pullResponse.routines.size +
+                pullResponse.cycles.size +
+                pullResponse.badges.size +
+                pullResponse.personalRecords.size +
+                (if (pullResponse.rpgAttributes != null) 1 else 0) +
+                (if (pullResponse.gamificationStats != null) 1 else 0) +
+                pullResponse.externalActivities.size
+            totalEntitiesFetched += pageEntityCount
+
+            // Empty page warning (shouldn't happen in normal operation)
+            if (pageEntityCount == 0 && pullResponse.hasMore) {
+                Logger.w("SyncManager") {
+                    "Pull page $pagesProcessed returned empty but hasMore=true. Breaking to prevent infinite loop."
+                }
+                // Treat as end of pagination
+                finalSyncTime = pullResponse.syncTime
+                break
+            }
+
+            Logger.d("SyncManager") {
+                "Pull page $pagesProcessed: ${pullResponse.sessions.size} sessions, " +
+                    "${pullResponse.routines.size} routines, ${pullResponse.cycles.size} cycles, " +
+                    "${pullResponse.badges.size} badges, hasMore=${pullResponse.hasMore}"
+            }
+
+            // Merge this page atomically
+            val mergeResult = mergePullPage(pullResponse, lastSync, mergeProfileId)
+            if (mergeResult.isFailure) {
+                // Map Result<Unit> to Result<Long> for consistent return type
+                return Result.failure(mergeResult.exceptionOrNull() ?: PortalApiException("Merge failed"))
+            }
+
+            // Update pagination state
+            finalSyncTime = pullResponse.syncTime
+
+            if (!pullResponse.hasMore) {
+                // All pages complete
+                Logger.i("SyncManager") {
+                    "Pull complete: $pagesProcessed page(s), $totalEntitiesFetched total entities"
+                }
+                break
+            }
+
+            // Prepare for next page
+            currentCursor = pullResponse.nextCursor
+            if (currentCursor == null) {
+                // hasMore=true but no cursor - should not happen, break to prevent infinite loop
+                Logger.w("SyncManager") {
+                    "Pull page $pagesProcessed has hasMore=true but no nextCursor. Breaking."
+                }
+                break
+            }
+        }
+
+        return Result.success(finalSyncTime)
+    }
+
+    /**
+     * Merge a single pull page atomically into local database.
+     * Extracted from pullRemoteChangesWithResult for pagination support.
+     */
+    private suspend fun mergePullPage(
+        pullResponse: PortalSyncPullResponse,
+        lastSync: Long,
+        mergeProfileId: String,
+    ): Result<Unit> {
         // ====================================================================================
         // ATOMIC MERGE: All SyncRepository-managed entities are merged in a single transaction.
-        // This ensures all-or-nothing semantics: if any entity type fails, the entire pull
-        // rolls back to prevent partial state. RPG attributes and external activities are
-        // handled by separate repositories after the atomic merge.
+        // This ensures all-or-nothing semantics: if any entity type fails, the entire page
+        // rolls back to prevent partial state.
         // ====================================================================================
 
         // 1. Prepare sessions with exercise lookup (pre-transaction to avoid DB calls in transaction)
@@ -786,7 +904,7 @@ class SyncManager(
             Logger.d("SyncManager") { "Merged ${activities.size} portal external activities" }
         }
 
-        return Result.success(pullResponse.syncTime)
+        return Result.success(Unit)
     }
 
     private fun getPlatformName(): String {

@@ -433,17 +433,37 @@ data class ExternalActivitySyncDto(
  * Request body for the mobile-sync-pull Edge Function.
  * Uses a typed DTO instead of Map<String, Any> to avoid Kotlinx Serialization
  * "different element types" error with heterogeneous maps.
+ *
+ * Pagination parameters (Plan 03-05):
+ * - cursor: resume from previous response's nextCursor; null for first page
+ * - pageSize: entities per page; null uses server default (100)
  */
 @Serializable
-data class PortalSyncPullRequest(val deviceId: String, val lastSync: Long, val profileId: String? = null)
+data class PortalSyncPullRequest(
+    val deviceId: String,
+    val lastSync: Long,
+    val profileId: String? = null,
+    val cursor: String? = null,
+    val pageSize: Int? = null,
+)
 
 /**
  * Response from the mobile-sync-pull Edge Function.
  * syncTime is epoch millis (Long), NOT ISO 8601 String like the push response.
+ *
+ * Pagination fields (added in Plan 03-05):
+ * - nextCursor: opaque cursor to pass in next request; null when no more pages
+ * - hasMore: true if more pages remain; client should loop until false
+ *
+ * Backward compatibility: nextCursor and hasMore are optional with defaults.
  */
 @Serializable
 data class PortalSyncPullResponse(
     val syncTime: Long,
+    // Pagination metadata (Plan 03-05)
+    val nextCursor: String? = null,
+    val hasMore: Boolean = false,
+    // Entity data
     val sessions: List<PullWorkoutSessionDto> = emptyList(), // Merged via INSERT OR IGNORE (local wins)
     val routines: List<PullRoutineDto> = emptyList(),
     val cycles: List<PullTrainingCycleDto> = emptyList(),

@@ -709,4 +709,195 @@ class SyncManagerTest {
             "Pull should receive stored lastSync, not push response timestamp",
         )
     }
+
+    // ===== Pagination Tests (Plan 03-05) =====
+
+    @Test
+    fun pullPaginatesUntilHasMoreIsFalse() = runTest {
+        setupAuthenticated()
+        fakeApi.pushResult = Result.success(
+            PortalSyncPushResponse(syncTime = "2026-03-02T12:00:00Z"),
+        )
+
+        // Set up paginated responses: page 1 has hasMore=true, page 2 has hasMore=false
+        fakeApi.pullResultsQueue = mutableListOf(
+            Result.success(
+                PortalSyncPullResponse(
+                    syncTime = 1740916800000L,
+                    hasMore = true,
+                    nextCursor = "page2cursor",
+                    routines = listOf(PullRoutineDto(id = "r1", name = "Routine 1")),
+                ),
+            ),
+            Result.success(
+                PortalSyncPullResponse(
+                    syncTime = 1740916900000L,
+                    hasMore = false,
+                    nextCursor = null,
+                    routines = listOf(PullRoutineDto(id = "r2", name = "Routine 2")),
+                ),
+            ),
+        )
+        val manager = createManager()
+
+        val result = manager.sync()
+
+        assertTrue(result.isSuccess)
+        assertEquals(2, fakeApi.pullCallCount, "Pull should be called twice (two pages)")
+        // Verify second call used the cursor from first response
+        assertEquals("page2cursor", fakeApi.lastPullCursor, "Second pull should use cursor from first response")
+    }
+
+    @Test
+    fun pullStopsOnEmptyPageWithHasMoreTrue() = runTest {
+        setupAuthenticated()
+        fakeApi.pushResult = Result.success(
+            PortalSyncPushResponse(syncTime = "2026-03-02T12:00:00Z"),
+        )
+
+        // Empty page with hasMore=true should break to prevent infinite loop
+        fakeApi.pullResult = Result.success(
+            PortalSyncPullResponse(
+                syncTime = 1740916800000L,
+                hasMore = true, // Normally would continue, but...
+                nextCursor = "nextpage",
+                // All entity lists are empty — edge case protection
+            ),
+        )
+        val manager = createManager()
+
+        val result = manager.sync()
+
+        assertTrue(result.isSuccess)
+        assertEquals(1, fakeApi.pullCallCount, "Pull should stop after empty page despite hasMore=true")
+    }
+
+    @Test
+    fun pullFailureMidPaginationDoesNotAdvanceTimestamp() = runTest {
+        setupAuthenticated()
+        val initialTimestamp = 1000L
+        tokenStorage.setLastSyncTimestamp(initialTimestamp)
+        fakeApi.pushResult = Result.success(
+            PortalSyncPushResponse(syncTime = "2026-03-02T12:00:00Z"),
+        )
+
+        // Page 1 succeeds, page 2 fails
+        fakeApi.pullResultsQueue = mutableListOf(
+            Result.success(
+                PortalSyncPullResponse(
+                    syncTime = 1740916800000L,
+                    hasMore = true,
+                    nextCursor = "page2cursor",
+                    routines = listOf(PullRoutineDto(id = "r1", name = "Routine 1")),
+                ),
+            ),
+            Result.failure(PortalApiException("Network error on page 2")),
+        )
+        val manager = createManager()
+
+        manager.sync()
+
+        // Timestamp should NOT be advanced because pull didn't complete all pages
+        assertEquals(
+            initialTimestamp,
+            tokenStorage.getLastSyncTimestamp(),
+            "lastSyncTimestamp should NOT be updated on partial pull failure",
+        )
+    }
+
+    @Test
+    fun pullUpdatesTimestampOnlyAfterAllPagesComplete() = runTest {
+        setupAuthenticated()
+        tokenStorage.setLastSyncTimestamp(0L)
+        fakeApi.pushResult = Result.success(
+            PortalSyncPushResponse(syncTime = "2026-03-02T12:00:00Z"),
+        )
+
+        val finalSyncTime = 1740916900000L
+        fakeApi.pullResultsQueue = mutableListOf(
+            Result.success(
+                PortalSyncPullResponse(
+                    syncTime = 1740916800000L, // Page 1 sync time (intermediate)
+                    hasMore = true,
+                    nextCursor = "page2cursor",
+                    routines = listOf(PullRoutineDto(id = "r1", name = "Routine 1")),
+                ),
+            ),
+            Result.success(
+                PortalSyncPullResponse(
+                    syncTime = finalSyncTime, // Page 2 sync time (final)
+                    hasMore = false,
+                    routines = listOf(PullRoutineDto(id = "r2", name = "Routine 2")),
+                ),
+            ),
+        )
+        val manager = createManager()
+
+        val result = manager.sync()
+
+        assertTrue(result.isSuccess)
+        assertEquals(
+            finalSyncTime,
+            tokenStorage.getLastSyncTimestamp(),
+            "lastSyncTimestamp should be updated to final page's syncTime",
+        )
+    }
+
+    @Test
+    fun pullReportsProgressDuringPagination() = runTest {
+        setupAuthenticated()
+        fakeApi.pushResult = Result.success(
+            PortalSyncPushResponse(syncTime = "2026-03-02T12:00:00Z"),
+        )
+
+        fakeApi.pullResultsQueue = mutableListOf(
+            Result.success(
+                PortalSyncPullResponse(
+                    syncTime = 1740916800000L,
+                    hasMore = true,
+                    nextCursor = "page2cursor",
+                    routines = listOf(PullRoutineDto(id = "r1", name = "Routine 1")),
+                ),
+            ),
+            Result.success(
+                PortalSyncPullResponse(
+                    syncTime = 1740916900000L,
+                    hasMore = false,
+                    routines = listOf(PullRoutineDto(id = "r2", name = "Routine 2")),
+                ),
+            ),
+        )
+        val manager = createManager()
+
+        manager.sync()
+
+        // After multi-page sync completes, verify that 2 pages were processed
+        // by checking pull was called twice
+        assertEquals(
+            2,
+            fakeApi.pullCallCount,
+            "Should have processed 2 pages during pagination",
+        )
+
+        // The final state should be Success (not SyncingWithProgress)
+        assertIs<SyncState.Success>(manager.syncState.value)
+    }
+
+    @Test
+    fun pullPassesPageSizeToApi() = runTest {
+        setupAuthenticated()
+        fakeApi.pushResult = Result.success(
+            PortalSyncPushResponse(syncTime = "2026-03-02T12:00:00Z"),
+        )
+        val manager = createManager()
+
+        manager.sync()
+
+        // Verify pageSize was passed to the API
+        assertEquals(
+            com.devil.phoenixproject.data.sync.SyncConfig.DEFAULT_PAGE_SIZE,
+            fakeApi.lastPullPageSize,
+            "Pull should pass default page size to API",
+        )
+    }
 }

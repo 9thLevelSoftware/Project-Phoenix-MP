@@ -136,6 +136,11 @@ private fun LinkedAccountContent(
                     Text(stringResource(Res.string.syncing))
                 }
 
+                is SyncState.SyncingWithProgress -> {
+                    LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                    Text("Syncing... (${syncState.pagesProcessed} pages, ${syncState.entitiesFetched} items)")
+                }
+
                 is SyncState.Success -> {
                     Text(stringResource(Res.string.last_synced, formatSyncTimestamp(syncState.syncTime)))
                 }

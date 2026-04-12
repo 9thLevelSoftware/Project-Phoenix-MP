@@ -64,7 +64,13 @@ class FakePortalApiClient :
     var lastPushPayload: PortalSyncPayload? = null
     var lastPullLastSync: Long? = null
     var lastPullDeviceId: String? = null
+    var lastPullCursor: String? = null
+    var lastPullPageSize: Int? = null
     var lastIntegrationSyncRequest: IntegrationSyncRequest? = null
+
+    // Pagination support: list of results to return for successive pull calls
+    // If set, returns results from this list in order; when exhausted, falls back to pullResult
+    var pullResultsQueue: MutableList<Result<PortalSyncPullResponse>>? = null
 
     override suspend fun signIn(email: String, password: String): Result<GoTrueAuthResponse> {
         signInCallCount++
@@ -82,10 +88,26 @@ class FakePortalApiClient :
         return pushResult
     }
 
-    override suspend fun pullPortalPayload(lastSync: Long, deviceId: String, profileId: String?): Result<PortalSyncPullResponse> {
+    override suspend fun pullPortalPayload(
+        lastSync: Long,
+        deviceId: String,
+        profileId: String?,
+        cursor: String?,
+        pageSize: Int?,
+    ): Result<PortalSyncPullResponse> {
         pullCallCount++
         lastPullLastSync = lastSync
         lastPullDeviceId = deviceId
+        lastPullCursor = cursor
+        lastPullPageSize = pageSize
+
+        // Support pagination testing: return from queue if available
+        pullResultsQueue?.let { queue ->
+            if (queue.isNotEmpty()) {
+                return queue.removeAt(0)
+            }
+        }
+
         return pullResult
     }
 

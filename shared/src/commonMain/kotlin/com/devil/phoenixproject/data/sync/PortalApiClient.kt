@@ -330,7 +330,22 @@ open class PortalApiClient(private val supabaseConfig: SupabaseConfig, private v
         }
     }
 
-    open suspend fun pullPortalPayload(lastSync: Long, deviceId: String, profileId: String? = null): Result<PortalSyncPullResponse> = authenticatedRequest { token ->
+    /**
+     * Pull portal data with optional pagination parameters.
+     *
+     * @param lastSync Unix epoch ms of last successful sync; 0 for first sync
+     * @param deviceId Unique device identifier
+     * @param profileId Optional profile UUID for profile-scoped filtering
+     * @param cursor Optional pagination cursor from previous response's nextCursor
+     * @param pageSize Optional page size; null uses server default (100)
+     */
+    open suspend fun pullPortalPayload(
+        lastSync: Long,
+        deviceId: String,
+        profileId: String? = null,
+        cursor: String? = null,
+        pageSize: Int? = null,
+    ): Result<PortalSyncPullResponse> = authenticatedRequest { token ->
         httpClient.post("${supabaseConfig.url}/functions/v1/mobile-sync-pull") {
             bearerAuth(token)
             header("apikey", supabaseConfig.anonKey)
@@ -339,6 +354,8 @@ open class PortalApiClient(private val supabaseConfig: SupabaseConfig, private v
                     deviceId = deviceId,
                     lastSync = lastSync,
                     profileId = profileId,
+                    cursor = cursor,
+                    pageSize = pageSize,
                 ),
             )
         }
