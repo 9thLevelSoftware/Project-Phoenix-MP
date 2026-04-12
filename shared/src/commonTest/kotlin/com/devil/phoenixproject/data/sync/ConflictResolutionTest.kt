@@ -20,7 +20,7 @@ import kotlin.test.assertTrue
  * Key strategies tested:
  * - LOCAL WINS (INSERT OR IGNORE): Sessions, PRs
  * - TIMESTAMP LWW: Routines
- * - SINGLE-ACTIVE ENFORCEMENT: Training Cycles
+ * - SERVER WINS + SINGLE-ACTIVE ENFORCEMENT: Training Cycles (current; target is TIMESTAMP LWW after Phase 3 migration)
  * - UNION MERGE: Badges
  */
 class ConflictResolutionTest {
@@ -259,7 +259,18 @@ class ConflictResolutionTest {
         assertEquals("Local Bench Press", exercisesAfter.first().exerciseName)
     }
 
-    // ─── Training Cycle Merge Tests (SINGLE-ACTIVE) ─────────────────
+    // ─── Training Cycle Merge Tests (SINGLE-ACTIVE ENFORCEMENT) ─────────────────
+    //
+    // NOTE: Current Implementation vs. Target State
+    // ---------------------------------------------
+    // These tests validate the CURRENT behavior: SERVER WINS with single-active enforcement.
+    // The TrainingCycle table lacks an `updated_at` column, so timestamp-based LWW is not possible.
+    //
+    // Target state (Phase 3 schema migration): Once `updated_at` is added to TrainingCycle,
+    // these tests will be updated to validate timestamp-based LWW conflict resolution,
+    // where local edits with newer timestamps are preserved.
+    //
+    // See CONFLICT-RESOLUTION-DESIGN.md section 7 (Training Cycles) for details.
 
     @Test
     fun `mergePortalCycles - only one cycle is active after merge`() = runTest {
