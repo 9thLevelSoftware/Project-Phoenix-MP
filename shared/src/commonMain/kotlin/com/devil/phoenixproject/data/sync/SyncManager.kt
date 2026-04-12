@@ -47,7 +47,26 @@ class SyncManager(
          * and linked telemetry + phase stats, so 50 sessions is a safe upper bound.
          */
         const val SYNC_BATCH_SIZE = 50
+
+        /**
+         * Maximum consecutive full-batch retry attempts before requiring manual retry.
+         * Prevents infinite retry storms when the same batch keeps failing.
+         */
+        const val MAX_FULL_BATCH_RETRIES = 3
     }
+
+    /**
+     * Tracks consecutive full-batch retry failures. Reset on successful full sync.
+     * When this reaches MAX_FULL_BATCH_RETRIES, sync will fail with a clear error
+     * requiring user intervention (manual retry trigger).
+     */
+    private var consecutiveFullRetries = 0
+
+    /**
+     * Hash of the last failed batch payload for retry detection.
+     * If the same payload fails repeatedly, we increment consecutiveFullRetries.
+     */
+    private var lastFailedBatchHash: Int? = null
 
     private val syncMutex = Mutex()
     private val _syncState = MutableStateFlow<SyncState>(SyncState.Idle)
@@ -320,8 +339,9 @@ class SyncManager(
         // 8. Chunked push -- batch sessions to stay under Edge Function body limit (~1 MB).
         //    Non-session data (routines, cycles, badges, RPG, gamification, signatures, assessments)
         //    is included only in the final batch to avoid duplicate upserts.
-        //    Each successful batch updates the sync timestamp so a mid-sequence failure
-        //    does not force a full resend of already-pushed batches.
+        //    IMPORTANT: We do NOT update lastSync until ALL batches succeed. This prevents
+        //    data consistency gaps where a partial batch sequence leaves the timestamp
+        //    advanced but later batches uncommitted (audit 4.1 fix).
         val allSessions = buildResult.sessions
         val totalBatches = if (allSessions.size > SYNC_BATCH_SIZE) {
             (allSessions.size + SYNC_BATCH_SIZE - 1) / SYNC_BATCH_SIZE
@@ -364,6 +384,9 @@ class SyncManager(
             val result = apiClient.pushPortalPayload(payload)
             if (result.isFailure) return result
             lastResponse = result.getOrThrow()
+            // Single-batch success - reset retry tracking
+            consecutiveFullRetries = 0
+            lastFailedBatchHash = null
         } else {
             // --- Batched push for large history syncs ---
             val batches = allSessions.chunked(SYNC_BATCH_SIZE)
@@ -408,28 +431,58 @@ class SyncManager(
 
                 val result = apiClient.pushPortalPayload(payload)
                 if (result.isFailure) {
+                    val error = result.exceptionOrNull()
+                    val batchSessionIds = batchSessions.map { it.id }.take(3)
+                    val batchSummary = "sessions=${batchSessions.size}, " +
+                        "ids=[${batchSessionIds.joinToString()}${if (batchSessions.size > 3) "..." else ""}]"
+
                     Logger.e("SyncManager") {
-                        "Batch ${index + 1}/$totalBatches failed: ${result.exceptionOrNull()?.message}"
+                        "Batch ${index + 1}/$totalBatches failed: ${error?.message} | $batchSummary"
                     }
+
+                    // Track retry attempts for this specific batch payload to prevent retry storms.
+                    // Use a hash of session IDs to detect if the same batch is failing repeatedly.
+                    val batchHash = batchSessions.map { it.id }.hashCode()
+                    if (lastFailedBatchHash == batchHash) {
+                        consecutiveFullRetries++
+                        Logger.w("SyncManager") {
+                            "Same batch failed again, retry count: $consecutiveFullRetries/$MAX_FULL_BATCH_RETRIES"
+                        }
+                        if (consecutiveFullRetries >= MAX_FULL_BATCH_RETRIES) {
+                            val exhaustedError = PortalApiException(
+                                "Batch ${index + 1}/$totalBatches failed $MAX_FULL_BATCH_RETRIES consecutive times. " +
+                                    "Manual retry required after investigating the issue. " +
+                                    "Last error: ${error?.message}",
+                                null,
+                                (error as? PortalApiException)?.statusCode
+                            )
+                            return Result.failure(exhaustedError)
+                        }
+                    } else {
+                        // Different batch or first failure - reset counter and record hash
+                        consecutiveFullRetries = 1
+                        lastFailedBatchHash = batchHash
+                    }
+
+                    // CRITICAL: Do NOT update lastSync timestamp on failure.
+                    // All batches must succeed before we advance the timestamp.
+                    // On next retry, the full batch sequence will be re-sent.
                     return result
                 }
 
                 val batchResponse = result.getOrThrow()
                 lastResponse = batchResponse
 
-                // Update sync timestamp after each successful batch so retries skip
-                // already-pushed sessions (their modifiedAt < this new timestamp).
-                val batchSyncEpoch = try {
-                    kotlin.time.Instant.parse(batchResponse.syncTime).toEpochMilliseconds()
-                } catch (e: Exception) {
-                    Logger.w(e) { "Failed to parse batch syncTime, using current time" }
-                    currentTimeMillis()
-                }
-                tokenStorage.setLastSyncTimestamp(batchSyncEpoch)
+                // Log batch success but do NOT update timestamp yet.
+                // Timestamp is deferred until ALL batches complete successfully.
                 Logger.d("SyncManager") {
-                    "Batch ${index + 1}/$totalBatches committed, syncTime=$batchSyncEpoch"
+                    "Batch ${index + 1}/$totalBatches pushed successfully (timestamp deferred)"
                 }
             }
+
+            // All batches succeeded - reset retry tracking
+            consecutiveFullRetries = 0
+            lastFailedBatchHash = null
         }
 
         // Mark external activities as synced based on server acknowledgement.
