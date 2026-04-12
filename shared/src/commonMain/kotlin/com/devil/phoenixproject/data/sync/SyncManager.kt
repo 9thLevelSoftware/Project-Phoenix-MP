@@ -158,7 +158,20 @@ class SyncManager(
         return Result.success(tokenStorage.currentUser.value ?: goTrueResponse.toPortalAuthResponse().user)
     }
 
-    fun logout() {
+    /**
+     * Logs out the user by:
+     * 1. Invalidating the server-side session via GoTrue signOut (best-effort)
+     * 2. Clearing local auth tokens
+     * 3. Emitting logout event for UI
+     *
+     * Issue 1.5: Server-side logout ensures refresh token is revoked server-side,
+     * not just cleared locally. signOut() is fire-and-forget (swallows errors).
+     */
+    suspend fun logout() {
+        // Best-effort server-side session invalidation
+        // signOut() is designed to swallow exceptions (see PortalApiClient line 267-280)
+        apiClient.signOut()
+
         tokenStorage.clearAuth()
         tokenStorage.emitLogoutEvent()
         _syncState.value = SyncState.NotAuthenticated

@@ -105,8 +105,15 @@ class LinkAccountViewModel(private val syncManager: SyncManager) {
     }
 
     fun logout() {
-        syncManager.logout()
-        _uiState.value = LinkAccountUiState.Initial
+        scope.launch {
+            try {
+                syncManager.logout()
+                _uiState.value = LinkAccountUiState.Initial
+            } catch (e: CancellationException) {
+                // Coroutine cancelled during clear() - preserve original cancellation
+                throw e
+            }
+        }
     }
 
     fun sync() {

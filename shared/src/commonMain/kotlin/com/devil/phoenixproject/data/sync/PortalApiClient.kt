@@ -180,7 +180,9 @@ open class PortalApiClient(private val supabaseConfig: SupabaseConfig, private v
             json(json)
         }
         install(HttpTimeout) {
-            requestTimeoutMillis = 30_000
+            // Issue 4.4: Increased from 30s to 60s for large payloads on slow connections.
+            // Batch size of 50 sessions with nested telemetry can be several MB.
+            requestTimeoutMillis = 60_000
             connectTimeoutMillis = 10_000
         }
         defaultRequest {
