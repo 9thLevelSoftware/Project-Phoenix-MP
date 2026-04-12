@@ -513,6 +513,7 @@ git commit -m "feat(rpg): add attribute queries and React hook"
 
 **Step 1: Write AttributeRadar component**
 
+{% raw %}
 ```tsx
 // src/app/components/rpg/AttributeRadar.tsx
 import {
@@ -564,6 +565,7 @@ export function AttributeRadar({ attributes }: AttributeRadarProps) {
   );
 }
 ```
+{% endraw %}
 
 **Step 2: Write ClassBadge component**
 
@@ -620,6 +622,7 @@ git commit -m "feat(rpg): add AttributeRadar chart and ClassBadge components"
 
 **Step 1: Write the page component**
 
+{% raw %}
 ```tsx
 // src/app/routes/attributes.tsx
 import { AttributeRadar } from "@/app/components/rpg/AttributeRadar";
@@ -711,6 +714,7 @@ function AttributesContent() {
   );
 }
 ```
+{% endraw %}
 
 **Step 2: Add route to router**
 
