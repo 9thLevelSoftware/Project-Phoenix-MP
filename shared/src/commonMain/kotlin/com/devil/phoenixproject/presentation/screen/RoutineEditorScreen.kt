@@ -406,13 +406,17 @@ fun RoutineEditorScreen(
             val moved = items.removeAt(fromIndex)
             items.add(toIndex, moved)
 
-            val reorderedExercises = items.flatMap { item ->
+            // Issue #351: Assign new orderIndex values to preserve the visual reorder.
+            // Without this, normalizeRoutine's getItems() call re-sorts by stale orderIndex,
+            // undoing the drag operation.
+            val reorderedExercises = items.flatMapIndexed { itemIndex, item ->
                 when (item) {
-                    is RoutineItem.Single -> listOf(item.exercise)
+                    is RoutineItem.Single -> listOf(item.exercise.copy(orderIndex = itemIndex))
 
                     is RoutineItem.SupersetItem ->
                         item.superset.exercises
                             .sortedBy { it.orderInSuperset }
+                            .map { it.copy(orderIndex = itemIndex) }
                 }
             }
 
