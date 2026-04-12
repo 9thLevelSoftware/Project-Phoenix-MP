@@ -1,5 +1,6 @@
 package com.devil.phoenixproject.di
 
+import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.data.integration.HealthIntegration
 import com.devil.phoenixproject.data.local.DriverFactory
 import com.devil.phoenixproject.data.repository.BleRepository
@@ -17,12 +18,34 @@ import com.devil.phoenixproject.util.DataBackupManager
 import com.devil.phoenixproject.util.IosCsvExporter
 import com.devil.phoenixproject.util.IosCsvImporter
 import com.devil.phoenixproject.util.IosDataBackupManager
+import com.russhwolf.settings.ExperimentalSettingsImplementation
+import com.russhwolf.settings.KeychainSettings
 import com.russhwolf.settings.NSUserDefaultsSettings
 import com.russhwolf.settings.Settings
 import org.koin.core.module.Module
 import org.koin.dsl.module
 import platform.Foundation.NSBundle
 import platform.Foundation.NSUserDefaults
+
+private const val KEYCHAIN_SERVICE_NAME = "com.devil.phoenixproject.auth"
+
+private val log = Logger.withTag("PlatformModule")
+
+/**
+ * Keys that need to be migrated from NSUserDefaults to Keychain.
+ * Mirrors the Android PORTAL_KEYS list for parity.
+ */
+private val PORTAL_KEYS = listOf(
+    "portal_auth_token",
+    "portal_refresh_token",
+    "portal_token_expires_at",
+    "portal_user_id",
+    "portal_user_email",
+    "portal_user_display_name",
+    "portal_user_is_premium",
+    "portal_device_id",
+    "portal_last_sync_timestamp",
+)
 
 actual val platformModule: Module = module {
     single {
@@ -37,9 +60,15 @@ actual val platformModule: Module = module {
         val defaults = NSUserDefaults.standardUserDefaults
         NSUserDefaultsSettings(defaults)
     }
-    // iOS apps are sandboxed; use the same Settings for secure storage.
-    // Keychain-backed storage is a future enhancement.
-    single<Settings>(SecureSettingsQualifier) { get() }
+    // Secure storage using iOS Keychain for auth tokens (JWT, refresh token, user identity).
+    // Keychain data persists across app reinstalls and is protected by iOS Data Protection.
+    @OptIn(ExperimentalSettingsImplementation::class)
+    single<Settings>(SecureSettingsQualifier) {
+        val keychainSettings = KeychainSettings(service = KEYCHAIN_SERVICE_NAME)
+        val legacySettings: Settings = get() // NSUserDefaults
+        migrateTokensToKeychain(legacySettings, keychainSettings)
+        keychainSettings
+    }
     single<BleRepository> { KableBleRepository() }
     single<CsvExporter> { IosCsvExporter() }
     single<CsvImporter> { IosCsvImporter(get()) }
@@ -70,5 +99,50 @@ actual val platformModule: Module = module {
             externalActivityRepository = get(),
             workoutServiceController = get(),
         )
+    }
+}
+
+/**
+ * One-time migration: copies all portal keys from the old NSUserDefaults to
+ * the Keychain store, then removes them from NSUserDefaults.
+ *
+ * This is idempotent: if no legacy keys exist, it returns immediately.
+ * Migration runs synchronously during Koin module initialization to ensure
+ * tokens are available in Keychain before any auth operations.
+ */
+private fun migrateTokensToKeychain(legacy: Settings, keychain: Settings) {
+    // Check if any portal keys exist in legacy storage
+    val hasLegacyKeys = PORTAL_KEYS.any { key ->
+        legacy.getStringOrNull(key) != null ||
+            legacy.getLongOrNull(key) != null ||
+            legacy.getBooleanOrNull(key) != null
+    }
+    if (!hasLegacyKeys) return
+
+    log.i { "Migrating portal keys from NSUserDefaults to Keychain" }
+
+    try {
+        for (key in PORTAL_KEYS) {
+            // Try each type - Settings stores typed values
+            legacy.getStringOrNull(key)?.let { value ->
+                keychain.putString(key, value)
+            }
+            legacy.getLongOrNull(key)?.let { value ->
+                keychain.putLong(key, value)
+            }
+            legacy.getBooleanOrNull(key)?.let { value ->
+                keychain.putBoolean(key, value)
+            }
+        }
+
+        // Remove migrated keys from legacy storage
+        for (key in PORTAL_KEYS) {
+            legacy.remove(key)
+        }
+
+        log.i { "Portal key migration to Keychain complete" }
+    } catch (e: Exception) {
+        // Log but don't crash - user can re-authenticate if migration fails
+        log.e(e) { "Failed to migrate portal keys to Keychain" }
     }
 }
