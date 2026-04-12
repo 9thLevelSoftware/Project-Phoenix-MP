@@ -154,4 +154,88 @@ class FakeSyncRepository : SyncRepository {
         mergePersonalRecordsCallCount++
         mergedPersonalRecords = records
     }
+
+    // === Exercise Lookup for Pull ===
+
+    /** Configurable exercise ID lookup results for testing pull adapter */
+    var exerciseIdLookupResults: Map<String, String> = emptyMap()
+    var findExerciseIdCallCount = 0
+
+    override suspend fun findExerciseId(name: String, muscleGroup: String?): String? {
+        findExerciseIdCallCount++
+        // Try with muscle group key first, then name-only key
+        val keyWithMuscle = "$name:$muscleGroup"
+        return exerciseIdLookupResults[keyWithMuscle]
+            ?: exerciseIdLookupResults[name]
+    }
+
+    // === Atomic Pull Merge ===
+
+    /** Captured data from atomic merge calls */
+    var atomicMergeCallCount = 0
+    var lastAtomicMergeSessions: List<WorkoutSession> = emptyList()
+    var lastAtomicMergeRoutines: List<PullRoutineDto> = emptyList()
+    var lastAtomicMergeCycles: List<PullTrainingCycleDto> = emptyList()
+    var lastAtomicMergeBadges: List<EarnedBadgeSyncDto> = emptyList()
+    var lastAtomicMergeGamificationStats: GamificationStatsSyncDto? = null
+    var lastAtomicMergePersonalRecords: List<PersonalRecordSyncDto> = emptyList()
+    var lastAtomicMergeLastSync: Long = 0L
+    var lastAtomicMergeProfileId: String = ""
+
+    /** Set to throw an exception to simulate atomic merge failure */
+    var atomicMergeShouldFail: Boolean = false
+
+    override suspend fun mergeAllPullData(
+        sessions: List<WorkoutSession>,
+        routines: List<PullRoutineDto>,
+        cycles: List<PullTrainingCycleDto>,
+        badges: List<EarnedBadgeSyncDto>,
+        gamificationStats: GamificationStatsSyncDto?,
+        personalRecords: List<PersonalRecordSyncDto>,
+        lastSync: Long,
+        profileId: String,
+    ) {
+        if (atomicMergeShouldFail) {
+            throw RuntimeException("Simulated atomic merge failure for testing rollback")
+        }
+
+        atomicMergeCallCount++
+        lastAtomicMergeSessions = sessions
+        lastAtomicMergeRoutines = routines
+        lastAtomicMergeCycles = cycles
+        lastAtomicMergeBadges = badges
+        lastAtomicMergeGamificationStats = gamificationStats
+        lastAtomicMergePersonalRecords = personalRecords
+        lastAtomicMergeLastSync = lastSync
+        lastAtomicMergeProfileId = profileId
+
+        // Also update the individual merge trackers for backward compatibility with existing tests
+        // that check the individual merge call counts and captured data.
+        // Only increment counters when there's actual data to merge (matching real behavior).
+        if (sessions.isNotEmpty()) {
+            mergePortalSessionsCallCount++
+            mergedPortalSessions = sessions
+        }
+
+        if (routines.isNotEmpty()) {
+            mergePortalRoutinesCallCount++
+            mergedPortalRoutines = routines
+            mergedPortalRoutinesLastSync = lastSync
+        }
+
+        if (badges.isNotEmpty()) {
+            mergeBadgesCallCount++
+            mergedBadges = badges
+        }
+
+        if (gamificationStats != null) {
+            mergeGamificationStatsCallCount++
+            mergedGamificationStats = gamificationStats
+        }
+
+        if (personalRecords.isNotEmpty()) {
+            mergePersonalRecordsCallCount++
+            mergedPersonalRecords = personalRecords
+        }
+    }
 }

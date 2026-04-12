@@ -743,6 +743,23 @@ class SqlDelightSyncRepository(
                     Logger.d { "Set active cycle from portal: $portalActiveCycleId" }
                 }
                 // If no portal cycle is active, preserve existing local active cycle (don't change anything)
+
+                // POST-MERGE INVARIANT CHECK: Verify at most 1 active cycle
+                // This assertion guards against bugs in the merge logic that could leave multiple active cycles.
+                val activeCycleCount = queries.countActiveCycles(profileId).executeAsOne()
+                if (activeCycleCount > 1) {
+                    Logger.e { "INVARIANT VIOLATION: Found $activeCycleCount active cycles after merge (expected 0 or 1). Forcing deactivation." }
+                    // Recovery: deactivate all and re-activate the portal's choice (or none)
+                    queries.deactivateAllCycles(profileId)
+                    portalActiveCycleId?.let { id ->
+                        queries.updateTrainingCycle(
+                            name = cycles.first { it.id == id }.name,
+                            description = cycles.first { it.id == id }.description,
+                            is_active = 1L,
+                            id = id,
+                        )
+                    }
+                }
             }
             Logger.d { "Merged ${cycles.size} portal training cycles with days and progressions" }
         }
@@ -822,6 +839,43 @@ class SqlDelightSyncRepository(
             }
             Logger.d { "Merged ${sessions.size} portal sessions (INSERT OR IGNORE)" }
         }
+    }
+
+    // === Exercise Lookup for Pull ===
+
+    /**
+     * Find exercise ID by name and optionally muscle group for session enrichment during pull.
+     *
+     * Lookup strategy (in order):
+     * 1. Exact match on name + muscle group (if muscle group provided)
+     * 2. Exact match on name only (via findExerciseByName)
+     * 3. Case-insensitive match on name (fallback for portal name variations)
+     *
+     * This enables pulled sessions to link to the local exercise catalog, which provides
+     * muscle group data, equipment info, and other metadata for analytics and display.
+     *
+     * @param name Exercise name from portal
+     * @param muscleGroup Optional muscle group for disambiguation (e.g., "Chest Press" in Chest vs Arms)
+     * @return Exercise ID if found, null otherwise (caller should log for telemetry)
+     */
+    override suspend fun findExerciseId(name: String, muscleGroup: String?): String? = withContext(Dispatchers.IO) {
+        // Strategy 1: Try exact match with muscle group (most specific)
+        if (muscleGroup != null) {
+            val exactMatch = queries.findExerciseByNameAndMuscle(name, muscleGroup).executeAsOneOrNull()
+            if (exactMatch != null) {
+                return@withContext exactMatch.id
+            }
+        }
+
+        // Strategy 2: Try exact match on name only
+        val nameMatch = queries.findExerciseByName(name).executeAsOneOrNull()
+        if (nameMatch != null) {
+            return@withContext nameMatch.id
+        }
+
+        // Strategy 3: Case-insensitive fallback (handles "Bench Press" vs "bench press")
+        val caseInsensitiveMatch = queries.findExerciseByNameCaseInsensitive(name).executeAsOneOrNull()
+        return@withContext caseInsensitiveMatch?.id
     }
 
     // === Portal Push Operations (full domain objects) ===
@@ -1282,6 +1336,353 @@ class SqlDelightSyncRepository(
                 }
             }
             Logger.d { "Merged ${records.size} personal records from portal (profile=$profileId)" }
+        }
+    }
+
+    // === Atomic Pull Merge ===
+
+    /**
+     * Atomically merge all pulled entities in a single database transaction.
+     *
+     * This implementation wraps all merge operations in a single transaction to ensure
+     * atomicity. If ANY merge fails, the entire transaction rolls back, leaving the
+     * database in its pre-pull state.
+     *
+     * This prevents partial sync states like:
+     * - Sessions merged but their linked routines missing
+     * - Cycles merged but badges/stats left inconsistent
+     * - PRs merged but exercise catalog links broken
+     *
+     * DESIGN NOTE: Each individual merge method (mergePortalSessions, mergePortalRoutines, etc.)
+     * also wraps in its own transaction for backward compatibility. SQLDelight nested transactions
+     * are handled via savepoints, so this outer transaction safely encompasses all inner operations.
+     *
+     * @see mergePortalSessions for session conflict resolution (LOCAL WINS)
+     * @see mergePortalRoutines for routine conflict resolution (TIMESTAMP LWW)
+     * @see mergePortalCycles for cycle conflict resolution (SERVER WINS + single-active enforcement)
+     * @see mergeBadges for badge conflict resolution (UNION)
+     * @see mergeGamificationStats for stats conflict resolution (SERVER WINS)
+     * @see mergePersonalRecords for PR conflict resolution (LOCAL WINS)
+     */
+    override suspend fun mergeAllPullData(
+        sessions: List<WorkoutSession>,
+        routines: List<PullRoutineDto>,
+        cycles: List<PullTrainingCycleDto>,
+        badges: List<EarnedBadgeSyncDto>,
+        gamificationStats: GamificationStatsSyncDto?,
+        personalRecords: List<PersonalRecordSyncDto>,
+        lastSync: Long,
+        profileId: String,
+    ) {
+        withContext(Dispatchers.IO) {
+            // Use a single outer transaction that wraps all entity merges.
+            // SQLDelight handles nested transactions via savepoints, so if any inner
+            // operation throws, the entire outer transaction rolls back.
+            db.transaction {
+                // 1. Sessions — INSERT OR IGNORE (local wins)
+                // Full field list matches mergePortalSessions
+                for (session in sessions) {
+                    queries.insertSessionIgnore(
+                        id = session.id,
+                        timestamp = session.timestamp,
+                        mode = session.mode,
+                        targetReps = session.reps.toLong(),
+                        weightPerCableKg = session.weightPerCableKg.toDouble(),
+                        progressionKg = session.progressionKg.toDouble(),
+                        duration = session.duration,
+                        totalReps = session.totalReps.toLong(),
+                        warmupReps = session.warmupReps.toLong(),
+                        workingReps = session.workingReps.toLong(),
+                        isJustLift = if (session.isJustLift) 1L else 0L,
+                        stopAtTop = if (session.stopAtTop) 1L else 0L,
+                        eccentricLoad = session.eccentricLoad.toLong(),
+                        echoLevel = session.echoLevel.toLong(),
+                        exerciseId = session.exerciseId,
+                        exerciseName = session.exerciseName,
+                        routineSessionId = session.routineSessionId,
+                        routineName = session.routineName,
+                        routineId = session.routineId,
+                        safetyFlags = session.safetyFlags.toLong(),
+                        deloadWarningCount = session.deloadWarningCount.toLong(),
+                        romViolationCount = session.romViolationCount.toLong(),
+                        spotterActivations = session.spotterActivations.toLong(),
+                        peakForceConcentricA = session.peakForceConcentricA?.toDouble(),
+                        peakForceConcentricB = session.peakForceConcentricB?.toDouble(),
+                        peakForceEccentricA = session.peakForceEccentricA?.toDouble(),
+                        peakForceEccentricB = session.peakForceEccentricB?.toDouble(),
+                        avgForceConcentricA = session.avgForceConcentricA?.toDouble(),
+                        avgForceConcentricB = session.avgForceConcentricB?.toDouble(),
+                        avgForceEccentricA = session.avgForceEccentricA?.toDouble(),
+                        avgForceEccentricB = session.avgForceEccentricB?.toDouble(),
+                        heaviestLiftKg = session.heaviestLiftKg?.toDouble(),
+                        totalVolumeKg = session.totalVolumeKg?.toDouble(),
+                        cableCount = session.cableCount?.toLong(),
+                        estimatedCalories = session.estimatedCalories?.toDouble(),
+                        warmupAvgWeightKg = session.warmupAvgWeightKg?.toDouble(),
+                        workingAvgWeightKg = session.workingAvgWeightKg?.toDouble(),
+                        burnoutAvgWeightKg = session.burnoutAvgWeightKg?.toDouble(),
+                        peakWeightKg = session.peakWeightKg?.toDouble(),
+                        rpe = session.rpe?.toLong(),
+                        avgMcvMmS = session.avgMcvMmS?.toDouble(),
+                        avgAsymmetryPercent = session.avgAsymmetryPercent?.toDouble(),
+                        totalVelocityLossPercent = session.totalVelocityLossPercent?.toDouble(),
+                        dominantSide = session.dominantSide,
+                        strengthProfile = session.strengthProfile,
+                        formScore = session.formScore?.toLong(),
+                        updatedAt = session.timestamp, // Mark as already-synced
+                        profile_id = profileId,
+                    )
+                }
+
+                // 2. Routines — TIMESTAMP LWW (local wins if modified after lastSync)
+                for (portalRoutine in routines) {
+                    val existing = queries.selectRoutineById(portalRoutine.id).executeAsOneOrNull()
+
+                    if (existing != null) {
+                        val localUpdatedAt = existing.updatedAt ?: 0L
+                        if (localUpdatedAt > lastSync) {
+                            continue // Local version is newer
+                        }
+                    }
+
+                    // Upsert routine
+                    queries.upsertRoutine(
+                        id = portalRoutine.id,
+                        name = portalRoutine.name,
+                        description = portalRoutine.description,
+                        createdAt = existing?.createdAt ?: currentTimeMillis(),
+                        lastUsed = existing?.lastUsed,
+                        useCount = existing?.useCount ?: 0L,
+                        profile_id = existing?.profile_id ?: profileId,
+                    )
+
+                    // Replace exercises if portal provided them (non-empty list)
+                    if (portalRoutine.exercises.isNotEmpty()) {
+                        queries.deleteRoutineExercises(portalRoutine.id)
+                        queries.deleteSupersetsByRoutine(portalRoutine.id)
+
+                        // Create supersets before exercises (FK constraint)
+                        val supersetGroups = portalRoutine.exercises
+                            .filter { it.supersetId != null }
+                            .groupBy { it.supersetId!! }
+                        var supersetOrderIdx = 0
+                        for ((ssId, ssExercises) in supersetGroups) {
+                            val colorStr = ssExercises.firstOrNull()?.supersetColor
+                            val colorIndex = colorStr?.toLongOrNull() ?: supersetOrderIdx.toLong()
+                            queries.insertSupersetIgnore(
+                                id = ssId,
+                                routineId = portalRoutine.id,
+                                name = "Superset ${supersetOrderIdx + 1}",
+                                colorIndex = colorIndex,
+                                restBetweenSeconds = 10L,
+                                orderIndex = supersetOrderIdx.toLong(),
+                            )
+                            supersetOrderIdx++
+                        }
+
+                        for (exercise in portalRoutine.exercises) {
+                            // Build setReps string
+                            val repsList = List(exercise.sets) {
+                                if (exercise.isAmrap && it == exercise.sets - 1) "AMRAP" else exercise.reps.toString()
+                            }
+                            val setReps = repsList.joinToString(",")
+
+                            // Convert perSetWeights JSON
+                            val setWeights = exercise.perSetWeights?.let { jsonStr ->
+                                try {
+                                    val parsed = Json.decodeFromString<List<Float>>(jsonStr)
+                                    parsed.joinToString(",") { it.toString() }
+                                } catch (_: Exception) { "" }
+                            } ?: ""
+
+                            val setRestSeconds = exercise.perSetRest ?: "[]"
+
+                            // Convert perSetEchoLevels
+                            val setEchoLevels = exercise.perSetEchoLevels?.let { jsonStr ->
+                                try {
+                                    val names = Json.decodeFromString<List<String?>>(jsonStr)
+                                    val ordinals = names.map { name -> name?.let { PortalPullAdapter.parseEchoLevel(it).toInt() } }
+                                    Json.encodeToString(ordinals)
+                                } catch (_: Exception) { "" }
+                            } ?: ""
+
+                            val mobileMode = PortalPullAdapter.portalModeToMobileMode(exercise.mode)
+                            val catalogExercise = queries.findExerciseByName(exercise.name).executeAsOneOrNull()
+
+                            queries.insertRoutineExercise(
+                                id = exercise.id,
+                                routineId = portalRoutine.id,
+                                exerciseName = exercise.name,
+                                exerciseMuscleGroup = exercise.muscleGroup,
+                                exerciseEquipment = catalogExercise?.equipment ?: "Cable",
+                                exerciseDefaultCableConfig = catalogExercise?.defaultCableConfig ?: "DOUBLE",
+                                exerciseId = catalogExercise?.id,
+                                cableConfig = "DOUBLE",
+                                orderIndex = exercise.orderIndex.toLong(),
+                                setReps = setReps,
+                                weightPerCableKg = exercise.weight.toDouble(),
+                                setWeights = setWeights,
+                                mode = mobileMode,
+                                eccentricLoad = PortalPullAdapter.parseEccentricLoad(exercise.eccentricLoad),
+                                echoLevel = PortalPullAdapter.parseEchoLevel(exercise.echoLevel),
+                                progressionKg = 0.0,
+                                restSeconds = exercise.restSeconds.toLong(),
+                                duration = null,
+                                setRestSeconds = setRestSeconds,
+                                perSetRestTime = if (exercise.perSetRest != null) 1L else 0L,
+                                isAMRAP = if (exercise.isAmrap) 1L else 0L,
+                                supersetId = exercise.supersetId,
+                                orderInSuperset = (exercise.supersetOrder ?: 0).toLong(),
+                                usePercentOfPR = if (exercise.prPercentage != null) 1L else 0L,
+                                weightPercentOfPR = (exercise.prPercentage?.toInt() ?: 80).toLong(),
+                                prTypeForScaling = "MAX_WEIGHT",
+                                setWeightsPercentOfPR = null,
+                                stallDetectionEnabled = if (exercise.stallDetection) 1L else 0L,
+                                stopAtTop = if (exercise.stopAtPosition == "TOP") 1L else 0L,
+                                repCountTiming = exercise.repCountTiming ?: "TOP",
+                                setEchoLevels = setEchoLevels,
+                                warmupSets = exercise.warmupSets ?: "",
+                            )
+                        }
+                    }
+                }
+
+                // 3. Cycles — SERVER WINS with single-active enforcement
+                var portalActiveCycleId: String? = null
+                for (portalCycle in cycles) {
+                    if (portalCycle.status == "active") {
+                        portalActiveCycleId = portalCycle.id
+                    }
+
+                    queries.insertTrainingCycleIgnore(
+                        id = portalCycle.id,
+                        name = portalCycle.name,
+                        description = portalCycle.description,
+                        created_at = currentTimeMillis(),
+                        is_active = 0L,
+                        profile_id = profileId,
+                    )
+
+                    val existingCycle = queries.selectTrainingCycleById(portalCycle.id).executeAsOneOrNull()
+                    if (existingCycle != null) {
+                        queries.updateTrainingCycle(
+                            name = portalCycle.name,
+                            description = portalCycle.description,
+                            is_active = 0L,
+                            id = portalCycle.id,
+                        )
+                    }
+
+                    queries.deleteCycleDaysByCycle(portalCycle.id)
+                    for (day in portalCycle.days) {
+                        queries.insertCycleDayIgnore(
+                            id = day.id,
+                            cycle_id = day.cycleId.ifEmpty { portalCycle.id },
+                            day_number = day.dayNumber.toLong(),
+                            name = day.notes,
+                            routine_id = day.routineId,
+                            is_rest_day = if (day.dayType == "rest") 1L else 0L,
+                            echo_level = null,
+                            eccentric_load_percent = null,
+                            weight_progression_percent = day.weightAdjustment.toDouble(),
+                            rep_modifier = day.repModifier.toLong(),
+                            rest_time_override_seconds = day.restOverride?.toLong(),
+                        )
+                    }
+
+                    portalCycle.progressionSettings?.let { jsonStr ->
+                        try {
+                            val map = json.decodeFromString<Map<String, String>>(jsonStr)
+                            queries.upsertCycleProgression(
+                                cycle_id = portalCycle.id,
+                                frequency_cycles = map["frequencyCycles"]?.toLongOrNull() ?: 2L,
+                                weight_increase_percent = map["weightIncreasePercent"]?.toDoubleOrNull(),
+                                echo_level_increase = if (map["echoLevelIncrease"] == "true") 1L else 0L,
+                                eccentric_load_increase_percent = map["eccentricLoadIncreasePercent"]?.toLongOrNull(),
+                            )
+                        } catch (e: Exception) {
+                            Logger.w(e) { "Failed to parse progressionSettings for cycle ${portalCycle.id}" }
+                        }
+                    }
+                }
+
+                // Single-active enforcement for cycles
+                if (portalActiveCycleId != null) {
+                    queries.deactivateAllCycles(profileId)
+                    val activeCycle = cycles.first { it.id == portalActiveCycleId }
+                    queries.updateTrainingCycle(
+                        name = activeCycle.name,
+                        description = activeCycle.description,
+                        is_active = 1L,
+                        id = portalActiveCycleId,
+                    )
+                }
+
+                // Post-merge invariant check for cycles
+                val activeCycleCount = queries.countActiveCycles(profileId).executeAsOne()
+                if (activeCycleCount > 1) {
+                    Logger.e { "INVARIANT VIOLATION in atomic merge: Found $activeCycleCount active cycles. Forcing deactivation." }
+                    queries.deactivateAllCycles(profileId)
+                    portalActiveCycleId?.let { id ->
+                        val activeCycle = cycles.first { it.id == id }
+                        queries.updateTrainingCycle(
+                            name = activeCycle.name,
+                            description = activeCycle.description,
+                            is_active = 1L,
+                            id = id,
+                        )
+                    }
+                }
+
+                // 4. Badges — UNION (INSERT OR IGNORE)
+                for (badge in badges) {
+                    queries.insertEarnedBadge(badge.badgeId, badge.earnedAt, profileId = profileId)
+                }
+
+                // 5. Gamification stats — SERVER WINS with local field preservation
+                if (gamificationStats != null) {
+                    val now = currentTimeMillis()
+                    val existingStats = queries.selectGamificationStats(profileId = profileId).executeAsOneOrNull()
+                    val stableId = profileId.hashCode().toLong()
+                    queries.upsertGamificationStats(
+                        id = stableId,
+                        totalWorkouts = gamificationStats.totalWorkouts.toLong(),
+                        totalReps = gamificationStats.totalReps.toLong(),
+                        totalVolumeKg = gamificationStats.totalVolumeKg.toLong(),
+                        longestStreak = gamificationStats.longestStreak.toLong(),
+                        currentStreak = gamificationStats.currentStreak.toLong(),
+                        uniqueExercisesUsed = existingStats?.uniqueExercisesUsed ?: 0L,
+                        prsAchieved = existingStats?.prsAchieved ?: 0L,
+                        lastWorkoutDate = existingStats?.lastWorkoutDate,
+                        streakStartDate = existingStats?.streakStartDate,
+                        lastUpdated = now,
+                        profileId = profileId,
+                    )
+                }
+
+                // 6. Personal records — INSERT OR IGNORE (local wins)
+                for (pr in personalRecords) {
+                    val effectiveVolume = if (pr.volume > 0f) pr.volume else pr.weight * pr.reps
+                    queries.insertPRIgnore(
+                        exerciseId = pr.exerciseId,
+                        exerciseName = pr.exerciseName,
+                        weight = pr.weight.toDouble(),
+                        reps = pr.reps.toLong(),
+                        oneRepMax = pr.oneRepMax.toDouble(),
+                        achievedAt = pr.achievedAt,
+                        workoutMode = pr.workoutMode,
+                        prType = pr.prType,
+                        volume = effectiveVolume.toDouble(),
+                        phase = pr.phase,
+                        profile_id = profileId,
+                    )
+                }
+            }
+
+            Logger.d {
+                "Atomic merge complete: ${sessions.size} sessions, ${routines.size} routines, " +
+                    "${cycles.size} cycles, ${badges.size} badges, ${personalRecords.size} PRs (profile=$profileId)"
+            }
         }
     }
 }

@@ -30,6 +30,73 @@ object PortalPullAdapter {
      *
      * @param portalSession The pulled workout session from the portal
      * @param profileId The local profile to assign these sessions to
+     * @param exerciseLookup Optional function to resolve exerciseId from (name, muscleGroup).
+     *                       When provided, sessions will be enriched with catalog links for
+     *                       analytics, muscle group aggregation, and plateau detection.
+     *                       When null, exerciseId remains null (legacy behavior).
+     * @return List of WorkoutSession domain objects, one per exercise
+     */
+    suspend fun toWorkoutSessionsWithLookup(
+        portalSession: PullWorkoutSessionDto,
+        profileId: String,
+        exerciseLookup: suspend (name: String, muscleGroup: String?) -> String?
+    ): List<WorkoutSession> {
+        if (portalSession.exercises.isEmpty()) return emptyList()
+
+        val timestamp = try {
+            kotlin.time.Instant.parse(portalSession.startedAt ?: return emptyList())
+                .toEpochMilliseconds()
+        } catch (_: Exception) {
+            return emptyList()
+        }
+
+        val mobileMode = portalModeToMobileMode(portalSession.workoutMode ?: "OLD_SCHOOL")
+        val exerciseCount = maxOf(portalSession.exerciseCount, portalSession.exercises.size, 1)
+
+        // Build sessions with async exercise lookup
+        return portalSession.exercises.map { exercise ->
+            val totalReps = exercise.sets.sumOf { it.actualReps }
+            val maxWeight = exercise.sets.maxOfOrNull { it.weightKg } ?: 0f
+
+            // Attempt to resolve exerciseId from local catalog
+            val resolvedExerciseId = exerciseLookup(exercise.name, exercise.muscleGroup)
+
+            WorkoutSession(
+                id = exercise.id,
+                timestamp = timestamp,
+                mode = mobileMode,
+                reps = exercise.sets.firstOrNull()?.targetReps ?: totalReps / maxOf(exercise.sets.size, 1),
+                weightPerCableKg = maxWeight, // Already per-cable from DB
+                duration = (portalSession.durationSeconds * 1000L) / exerciseCount, // seconds → ms
+                totalReps = totalReps,
+                warmupReps = 0, // Portal doesn't distinguish warmup vs working
+                workingReps = totalReps,
+                exerciseId = resolvedExerciseId,
+                exerciseName = exercise.name,
+                routineSessionId = portalSession.id,
+                routineName = portalSession.routineName,
+                heaviestLiftKg = maxWeight,
+                totalVolumeKg = null, // Let effectiveTotalVolumeKg() compute from weightPerCableKg * cableCount * totalReps
+                cableCount = null, // Let effectiveTotalVolumeKg() use session-level cableCount if available
+                profileId = profileId,
+            )
+        }
+    }
+
+    /**
+     * Convert a portal workout session (1 workout with N exercises) to N mobile
+     * WorkoutSession rows (1 per exercise). This is the reverse of the push
+     * adapter's grouping logic.
+     *
+     * Weight convention: the Supabase DB stores per-cable weight values. The portal
+     * UI multiplies by WEIGHT_MULTIPLIER (2) for display only. The pull Edge Function
+     * returns raw DB values, so PullSetDto.weightKg is already per-cable — no division needed.
+     *
+     * NOTE: This legacy method does NOT resolve exerciseId. Use toWorkoutSessionsWithLookup()
+     * for full catalog integration.
+     *
+     * @param portalSession The pulled workout session from the portal
+     * @param profileId The local profile to assign these sessions to
      * @return List of WorkoutSession domain objects, one per exercise
      */
     fun toWorkoutSessions(portalSession: PullWorkoutSessionDto, profileId: String): List<WorkoutSession> {

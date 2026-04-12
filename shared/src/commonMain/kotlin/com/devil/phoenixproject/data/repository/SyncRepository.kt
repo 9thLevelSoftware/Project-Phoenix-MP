@@ -169,4 +169,50 @@ interface SyncRepository {
      * Uses INSERT OR IGNORE — local PRs win on conflict.
      */
     suspend fun mergePersonalRecords(records: List<PersonalRecordSyncDto>, profileId: String = "default")
+
+    // === Exercise Lookup for Pull ===
+
+    /**
+     * Find exercise ID by name and optionally muscle group for session enrichment during pull.
+     * Lookup strategy:
+     * 1. Exact match on name + muscle group (if muscle group provided)
+     * 2. Exact match on name only
+     * 3. Case-insensitive match on name
+     *
+     * @return Exercise ID if found, null otherwise
+     */
+    suspend fun findExerciseId(name: String, muscleGroup: String? = null): String?
+
+    // === Atomic Pull Merge ===
+
+    /**
+     * Atomically merge all pulled entities in a single database transaction.
+     *
+     * This ensures that either ALL entities are merged successfully, or NONE are (rollback on failure).
+     * Prevents partial state where some entity types are merged but others fail, which could
+     * leave the database in an inconsistent state (e.g., sessions referencing routines that don't exist).
+     *
+     * IMPORTANT: This method handles ONLY SyncRepository-managed entities (sessions, routines, cycles,
+     * badges, gamification stats, PRs). RPG attributes and external activities are managed by
+     * separate repositories and must be handled outside this transaction.
+     *
+     * @param sessions WorkoutSession domain objects to merge (INSERT OR IGNORE)
+     * @param routines Portal routine DTOs with nested exercises
+     * @param cycles Training cycle DTOs with days
+     * @param badges Earned badge DTOs
+     * @param gamificationStats Optional gamification stats DTO
+     * @param personalRecords Personal record DTOs
+     * @param lastSync Timestamp for routine conflict resolution
+     * @param profileId Target profile for all entities
+     */
+    suspend fun mergeAllPullData(
+        sessions: List<WorkoutSession>,
+        routines: List<PullRoutineDto>,
+        cycles: List<PullTrainingCycleDto>,
+        badges: List<EarnedBadgeSyncDto>,
+        gamificationStats: GamificationStatsSyncDto?,
+        personalRecords: List<PersonalRecordSyncDto>,
+        lastSync: Long,
+        profileId: String,
+    )
 }

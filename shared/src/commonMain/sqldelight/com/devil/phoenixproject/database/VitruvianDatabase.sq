@@ -1373,6 +1373,10 @@ UPDATE TrainingCycle SET is_active = CASE WHEN id = ? THEN 1 ELSE 0 END WHERE pr
 deactivateAllCycles:
 UPDATE TrainingCycle SET is_active = 0 WHERE profile_id = :profileId;
 
+-- Count active cycles for invariant verification (should always be 0 or 1)
+countActiveCycles:
+SELECT COUNT(*) FROM TrainingCycle WHERE is_active = 1 AND profile_id = :profileId;
+
 deleteTrainingCycle:
 DELETE FROM TrainingCycle WHERE id = ?;
 
@@ -1535,6 +1539,14 @@ SELECT * FROM Exercise WHERE one_rep_max_kg IS NOT NULL;
 
 findExerciseByName:
 SELECT * FROM Exercise WHERE TRIM(name) = TRIM(?) LIMIT 1;
+
+-- Exercise lookup for sync pull: exact match on name and muscle group
+findExerciseByNameAndMuscle:
+SELECT * FROM Exercise WHERE TRIM(name) = TRIM(:name) AND TRIM(muscleGroup) = TRIM(:muscleGroup) LIMIT 1;
+
+-- Exercise lookup for sync pull: case-insensitive fallback by name only
+findExerciseByNameCaseInsensitive:
+SELECT * FROM Exercise WHERE LOWER(TRIM(name)) = LOWER(TRIM(:name)) LIMIT 1;
 
 -- ==================== BACKUP SYNC QUERIES ====================
 -- These queries select all data from tables for backup/restore functionality

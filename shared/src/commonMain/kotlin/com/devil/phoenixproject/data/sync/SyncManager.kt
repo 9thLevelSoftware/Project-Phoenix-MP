@@ -661,57 +661,76 @@ class SyncManager(
 
         val mergeProfileId = activeProfileId ?: "default"
 
-        // 2. Sessions — merge from portal (INSERT OR IGNORE, local data wins)
-        if (pullResponse.sessions.isNotEmpty()) {
-            val mobileSessions = pullResponse.sessions.flatMap { portalSession ->
-                PortalPullAdapter.toWorkoutSessions(portalSession, mergeProfileId)
-            }
-            if (mobileSessions.isNotEmpty()) {
-                syncRepository.mergePortalSessions(mobileSessions)
-                Logger.d("SyncManager") {
-                    "Merged ${mobileSessions.size} portal sessions from ${pullResponse.sessions.size} workouts"
+        // ====================================================================================
+        // ATOMIC MERGE: All SyncRepository-managed entities are merged in a single transaction.
+        // This ensures all-or-nothing semantics: if any entity type fails, the entire pull
+        // rolls back to prevent partial state. RPG attributes and external activities are
+        // handled by separate repositories after the atomic merge.
+        // ====================================================================================
+
+        // 1. Prepare sessions with exercise lookup (pre-transaction to avoid DB calls in transaction)
+        var unmatchedExerciseCount = 0
+        val unmatchedExerciseNames = mutableSetOf<String>()
+        val mobileSessions = pullResponse.sessions.flatMap { portalSession ->
+            PortalPullAdapter.toWorkoutSessionsWithLookup(
+                portalSession,
+                mergeProfileId,
+            ) { name, muscleGroup ->
+                val exerciseId = syncRepository.findExerciseId(name, muscleGroup)
+                if (exerciseId == null) {
+                    unmatchedExerciseCount++
+                    unmatchedExerciseNames.add(name)
                 }
+                exerciseId
             }
         }
 
-        // 3. Routines — merge with local preference (PULL-03)
-        if (pullResponse.routines.isNotEmpty()) {
-            syncRepository.mergePortalRoutines(pullResponse.routines, lastSync, mergeProfileId)
-            Logger.d("SyncManager") { "Merged ${pullResponse.routines.size} portal routines" }
-        }
-
-        // 3b. Training cycles — server wins (portal-authoritative for cycles)
-        if (pullResponse.cycles.isNotEmpty()) {
-            syncRepository.mergePortalCycles(pullResponse.cycles, mergeProfileId)
-            Logger.d("SyncManager") { "Merged ${pullResponse.cycles.size} portal training cycles" }
-        }
-
-        // 4. Badges — union merge (insert if not exists)
-        if (pullResponse.badges.isNotEmpty()) {
-            val badgeDtos = pullResponse.badges.map { PortalPullAdapter.toBadgeSyncDto(it) }
-            syncRepository.mergeBadges(badgeDtos, mergeProfileId)
-            Logger.d("SyncManager") { "Merged ${pullResponse.badges.size} portal badges" }
-        }
-
-        // 5. Gamification stats — server wins (overwrite local, preserve local-only fields)
-        pullResponse.gamificationStats?.let { stats ->
-            val statsSyncDto = PortalPullAdapter.toGamificationStatsSyncDto(stats)
-            syncRepository.mergeGamificationStats(statsSyncDto, mergeProfileId)
-            Logger.d("SyncManager") { "Merged portal gamification stats" }
-        }
-
-        // 5b. Personal records — merge from portal (insert if not exists, local wins)
-        if (pullResponse.personalRecords.isNotEmpty()) {
-            val prDtos = pullResponse.personalRecords.map { pr ->
-                PortalPullAdapter.toPersonalRecordSyncDto(pr)
+        // Telemetry: log unmatched exercises for catalog gap analysis
+        if (unmatchedExerciseCount > 0) {
+            Logger.w("SyncManager") {
+                "Pull: $unmatchedExerciseCount exercises not found in local catalog: ${unmatchedExerciseNames.take(10).joinToString()}" +
+                    if (unmatchedExerciseNames.size > 10) " (and ${unmatchedExerciseNames.size - 10} more)" else ""
             }
-            syncRepository.mergePersonalRecords(prDtos, mergeProfileId)
+        }
+
+        // 2. Prepare badge and PR DTOs
+        val badgeDtos = pullResponse.badges.map { PortalPullAdapter.toBadgeSyncDto(it) }
+        val prDtos = pullResponse.personalRecords.map { PortalPullAdapter.toPersonalRecordSyncDto(it) }
+        val gamificationStatsDto = pullResponse.gamificationStats?.let {
+            PortalPullAdapter.toGamificationStatsSyncDto(it)
+        }
+
+        // 3. Execute atomic merge (all or nothing)
+        try {
+            syncRepository.mergeAllPullData(
+                sessions = mobileSessions,
+                routines = pullResponse.routines,
+                cycles = pullResponse.cycles,
+                badges = badgeDtos,
+                gamificationStats = gamificationStatsDto,
+                personalRecords = prDtos,
+                lastSync = lastSync,
+                profileId = mergeProfileId,
+            )
+
             Logger.d("SyncManager") {
-                "Merged ${prDtos.size} personal records from portal"
+                "Atomic merge complete: ${mobileSessions.size} sessions (${mobileSessions.count { it.exerciseId != null }} with exerciseId), " +
+                    "${pullResponse.routines.size} routines, ${pullResponse.cycles.size} cycles, " +
+                    "${pullResponse.badges.size} badges, ${prDtos.size} PRs"
             }
+        } catch (e: Exception) {
+            Logger.e(e) { "Atomic merge failed - transaction rolled back. No entities were persisted." }
+            return Result.failure(PortalApiException("Pull merge failed: ${e.message}"))
         }
 
-        // 6. RPG attributes — server wins (overwrite local)
+        // ====================================================================================
+        // NON-ATOMIC MERGES: RPG attributes and external activities are managed by separate
+        // repositories. They are merged after the atomic transaction since they have different
+        // conflict resolution strategies and don't need to be atomic with core sync data.
+        // If these fail, the core sync data is still preserved.
+        // ====================================================================================
+
+        // RPG attributes — server wins (overwrite local)
         pullResponse.rpgAttributes?.let { rpg ->
             val characterClass = try {
                 CharacterClass.valueOf(rpg.characterClass ?: "PHOENIX")
@@ -731,7 +750,7 @@ class SyncManager(
             Logger.d("SyncManager") { "Merged portal RPG attributes: ${rpg.characterClass}" }
         }
 
-        // 7. External activities — upsert from portal (needsSync = false since already on server)
+        // External activities — upsert from portal (needsSync = false since already on server)
         if (pullResponse.externalActivities.isNotEmpty()) {
             val activities = pullResponse.externalActivities.map { dto ->
                 com.devil.phoenixproject.domain.model.ExternalActivity(
