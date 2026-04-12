@@ -1478,10 +1478,21 @@ class SqlDelightSyncRepository(
                         val supersetGroups = portalRoutine.exercises
                             .filter { it.supersetId != null }
                             .groupBy { it.supersetId!! }
+                        // Issue 3.5: Reverse mapping from color name -> index for round-trip.
+                        // Portal sends color as name (e.g., "pink") from push adapter.
+                        val colorNameToIndex = mapOf(
+                            "indigo" to 0L, // SupersetColors.INDIGO
+                            "pink" to 1L,   // SupersetColors.PINK
+                            "green" to 2L,  // SupersetColors.GREEN
+                            "amber" to 3L,  // SupersetColors.AMBER
+                        )
+
                         var supersetOrderIdx = 0
                         for ((ssId, ssExercises) in supersetGroups) {
-                            val colorStr = ssExercises.firstOrNull()?.supersetColor
-                            val colorIndex = colorStr?.toLongOrNull() ?: supersetOrderIdx.toLong()
+                            val colorStr = ssExercises.firstOrNull()?.supersetColor?.lowercase()
+                            val colorIndex = colorStr?.let { colorNameToIndex[it] }
+                                ?: colorStr?.toLongOrNull()
+                                ?: supersetOrderIdx.toLong()
                             queries.insertSupersetIgnore(
                                 id = ssId,
                                 routineId = portalRoutine.id,
