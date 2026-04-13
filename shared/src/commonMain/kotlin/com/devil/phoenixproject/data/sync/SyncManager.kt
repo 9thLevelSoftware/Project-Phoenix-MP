@@ -126,6 +126,12 @@ class SyncManager(
 
         val goTrueResponse = signInResult.getOrThrow()
         tokenStorage.saveGoTrueAuth(goTrueResponse)
+        // TEMP DIAGNOSTIC: Verify token was saved
+        Logger.e("SyncManager") {
+            "LOGIN: Token saved. Verify: hasToken=${tokenStorage.hasToken()}, " +
+                "tokenPrefix=${tokenStorage.getToken()?.take(20)}, " +
+                "accessTokenLen=${goTrueResponse.accessToken.length}"
+        }
 
         // Serialize state change with sync operations to prevent race condition
         // (Issue 5.2: login() and sync() both modify _syncState)
@@ -219,8 +225,13 @@ class SyncManager(
         val prePushLastSync = tokenStorage.getLastSyncTimestamp()
 
         // Push local changes (no status check -- Railway backend abandoned)
-        Logger.i("SyncManager") {
-            "Token expired: ${tokenStorage.isTokenExpired()}, expiresAt: ${tokenStorage.getExpiresAt()}"
+        // TEMP DIAGNOSTIC: Elevated to Error level for release build visibility
+        Logger.e("SyncManager") {
+            "SYNC DEBUG: hasToken=${tokenStorage.hasToken()}, " +
+                "tokenPrefix=${tokenStorage.getToken()?.take(20)}, " +
+                "isExpired=${tokenStorage.isTokenExpired()}, " +
+                "expiresAt=${tokenStorage.getExpiresAt()}, " +
+                "hasRefresh=${tokenStorage.getRefreshToken() != null}"
         }
         val pushResult = pushLocalChanges()
         if (pushResult.isFailure) {

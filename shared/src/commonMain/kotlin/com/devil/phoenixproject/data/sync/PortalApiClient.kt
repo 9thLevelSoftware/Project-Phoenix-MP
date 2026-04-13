@@ -1,15 +1,26 @@
 package com.devil.phoenixproject.data.sync
 
 import co.touchlab.kermit.Logger
-import io.ktor.client.*
-import io.ktor.client.call.*
-import io.ktor.client.network.sockets.*
-import io.ktor.client.plugins.*
-import io.ktor.client.plugins.contentnegotiation.*
-import io.ktor.client.request.*
-import io.ktor.client.statement.*
-import io.ktor.http.*
-import io.ktor.serialization.kotlinx.json.*
+import io.ktor.client.HttpClient
+import io.ktor.client.call.body
+import io.ktor.client.network.sockets.ConnectTimeoutException
+import io.ktor.client.network.sockets.SocketTimeoutException
+import io.ktor.client.plugins.HttpRequestTimeoutException
+import io.ktor.client.plugins.HttpTimeout
+import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
+import io.ktor.client.plugins.defaultRequest
+import io.ktor.client.request.bearerAuth
+import io.ktor.client.request.get
+import io.ktor.client.request.header
+import io.ktor.client.request.parameter
+import io.ktor.client.request.post
+import io.ktor.client.request.setBody
+import io.ktor.client.statement.HttpResponse
+import io.ktor.http.ContentType
+import io.ktor.http.HttpStatusCode
+import io.ktor.http.contentType
+import io.ktor.http.isSuccess
+import io.ktor.serialization.kotlinx.json.json
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.json.Json
@@ -458,15 +469,23 @@ open class PortalApiClient(private val supabaseConfig: SupabaseConfig, private v
         val token = ensureValidToken() ?: return Result.failure(
             PortalApiException("Not authenticated - please log in again", null, 401),
         )
+        // TEMP DIAGNOSTIC: Log token being used for request
+        Logger.e("PortalApiClient") { "AUTH REQUEST: tokenLen=${token.length}, prefix=${token.take(20)}" }
         return try {
             val response = block(token)
             if (response.status.value == 401) {
                 // Token was valid by our clock but server rejected — force one refresh
+                Logger.e("PortalApiClient") { "GOT 401 - attempting forceRefresh" }
                 val retryToken = forceRefresh()
-                    ?: return Result.failure(
+                if (retryToken == null) {
+                    Logger.e("PortalApiClient") { "forceRefresh returned null - session expired" }
+                    return Result.failure(
                         PortalApiException("Session expired - please log in again", null, 401),
                     )
+                }
+                Logger.e("PortalApiClient") { "forceRefresh succeeded, retrying with new token (len=${retryToken.length})" }
                 val retryResponse = block(retryToken)
+                Logger.e("PortalApiClient") { "Retry response status: ${retryResponse.status}" }
                 handleResponse(retryResponse)
             } else {
                 handleResponse(response)
