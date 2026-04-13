@@ -3,7 +3,7 @@ plugins {
     alias(libs.plugins.kotlin.compose)
 }
 
-// Read Supabase config from local.properties
+// Read Supabase config from local.properties, falling back to environment variables for CI/CD
 val localPropsFile = rootProject.file("local.properties")
 val localPropsMap: Map<String, String> = if (localPropsFile.exists()) {
     localPropsFile.readLines()
@@ -15,15 +15,22 @@ val localPropsMap: Map<String, String> = if (localPropsFile.exists()) {
 } else {
     emptyMap()
 }
-val supabaseUrl: String = localPropsMap["supabase.url"] ?: ""
-val supabaseAnonKey: String = localPropsMap["supabase.anon.key"] ?: ""
+
+// Priority: local.properties > environment variables
+val supabaseUrl: String = localPropsMap["supabase.url"]?.takeIf { it.isNotBlank() }
+    ?: System.getenv("SUPABASE_URL")
+    ?: ""
+val supabaseAnonKey: String = localPropsMap["supabase.anon.key"]?.takeIf { it.isNotBlank() }
+    ?: System.getenv("SUPABASE_ANON_KEY")
+    ?: ""
 
 // Validate Supabase credentials unless explicitly skipped (e.g., CI builds that only run tests)
 val skipSupabaseCheck = providers.gradleProperty("skip.supabase.check").orNull?.toBoolean() ?: false
 if (!skipSupabaseCheck && (supabaseUrl.isBlank() || supabaseAnonKey.isBlank())) {
     throw GradleException(
-        "Missing Supabase credentials in local.properties. " +
-            "Set supabase.url and supabase.anon.key, or pass -Pskip.supabase.check=true for test-only builds.",
+        "Missing Supabase credentials. Provide via local.properties (supabase.url, supabase.anon.key) " +
+            "or environment variables (SUPABASE_URL, SUPABASE_ANON_KEY), " +
+            "or pass -Pskip.supabase.check=true for test-only builds.",
     )
 }
 
