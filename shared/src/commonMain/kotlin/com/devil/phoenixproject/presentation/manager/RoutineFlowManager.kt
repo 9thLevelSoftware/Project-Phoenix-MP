@@ -544,6 +544,11 @@ class RoutineFlowManager(
                         "Resolved ${exercise.exercise.name} weight from PR: ${resolved.percentOfPR}% of ${resolved.usedPR}kg = ${resolved.baseWeight}kg"
                     }
                 }
+                // Issue #357: Log per-set weights for debugging PR% scaling
+                Logger.d("RoutineFlowManager") {
+                    "Issue #357: ${exercise.exercise.name} resolved setWeights=${resolved.setWeights} (${resolved.setWeights.size} sets), " +
+                        "setReps=${exercise.setReps} (${exercise.setReps.size} sets), baseWeight=${resolved.baseWeight}kg"
+                }
                 exercise.copy(
                     weightPerCableKg = resolved.baseWeight,
                     setWeightsPerCableKg = resolved.setWeights,
@@ -754,6 +759,13 @@ class RoutineFlowManager(
         val isSetAmrap = rawSetReps == null
         Logger.d {
             "enterSetReady: exercise=${exercise.exercise.name}, set=$setIndex, isAMRAP=$isSetAmrap, stallDetection=${exercise.stallDetectionEnabled}"
+        }
+        // Issue #357: Log weight source for PR% debugging
+        val weightFromList = exercise.setWeightsPerCableKg.getOrNull(setIndex)
+        Logger.d("RoutineFlowManager") {
+            "Issue #357: enterSetReady weight for set $setIndex: setWeightsPerCableKg[$setIndex]=$weightFromList, " +
+                "fallback weightPerCableKg=${exercise.weightPerCableKg}, using=$setWeight, " +
+                "usePercentOfPR=${exercise.usePercentOfPR}, setWeights.size=${exercise.setWeightsPerCableKg.size}"
         }
 
         // Issue #356: Initialize warm-up state when entering a new exercise at set 0
