@@ -66,6 +66,7 @@ kotlin {
 
                 // Lifecycle ViewModel for Compose
                 implementation(libs.androidx.lifecycle.viewmodel.compose)
+                implementation(libs.androidx.lifecycle.runtime.compose)
 
                 // Navigation Compose (Multiplatform)
                 implementation(libs.androidx.navigation.compose)
@@ -148,9 +149,6 @@ kotlin {
 
                 // Ktor OkHttp engine for Android
                 implementation(libs.ktor.client.okhttp)
-
-                // Charts - Vico (Android only)
-                implementation(libs.vico.charts)
 
                 // Media3 ExoPlayer (for HLS video playback)
                 implementation(libs.media3.exoplayer)
