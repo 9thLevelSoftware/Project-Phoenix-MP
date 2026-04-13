@@ -94,6 +94,34 @@ interface SyncRepository {
      */
     suspend fun getAllAssessments(profileId: String = "default"): List<com.devil.phoenixproject.database.AssessmentResult>
 
+    // === Parity Sync Operations (get local entity IDs for comparison) ===
+
+    /**
+     * Get all session IDs for the given profile.
+     * Used for parity-based sync to determine which sessions already exist locally.
+     */
+    suspend fun getAllSessionIds(profileId: String = "default"): List<String>
+
+    /**
+     * Get all routine IDs for the given profile.
+     */
+    suspend fun getAllRoutineIds(profileId: String = "default"): List<String>
+
+    /**
+     * Get all training cycle IDs for the given profile.
+     */
+    suspend fun getAllCycleIds(profileId: String = "default"): List<String>
+
+    /**
+     * Get all earned badge IDs for the given profile.
+     */
+    suspend fun getAllBadgeIds(profileId: String = "default"): List<String>
+
+    /**
+     * Get all personal record IDs for the given profile.
+     */
+    suspend fun getAllPersonalRecordIds(profileId: String = "default"): List<String>
+
     // === Post-Push Stamping ===
 
     /**
