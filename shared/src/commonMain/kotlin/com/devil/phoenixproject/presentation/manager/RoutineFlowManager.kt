@@ -704,6 +704,18 @@ class RoutineFlowManager(
                 routine = normalized,
                 selectedExerciseIndex = 0,
             )
+
+            // Issue #356: Initialize warm-up state for the first exercise
+            val firstExercise = normalized.exercises.firstOrNull()
+            val isFirstBodyweight = isBodyweightExercise(firstExercise)
+            if (firstExercise != null && firstExercise.warmupSets.isNotEmpty() && !isFirstBodyweight) {
+                coordinator._currentWarmupSetIndex.value = 0
+                coordinator._totalWarmupSets.value = firstExercise.warmupSets.size
+                Logger.d("RoutineFlowManager") { "Issue #356: Overview init warm-up for ${firstExercise.exercise.name}: ${firstExercise.warmupSets.size} sets" }
+            } else {
+                coordinator._currentWarmupSetIndex.value = -1
+                coordinator._totalWarmupSets.value = 0
+            }
         }
     }
 
@@ -715,6 +727,9 @@ class RoutineFlowManager(
     fun enterSetReady(exerciseIndex: Int, setIndex: Int) {
         val routine = coordinator._loadedRoutine.value ?: return
         val exercise = routine.exercises.getOrNull(exerciseIndex) ?: return
+
+        // Issue #356: Track if we're entering a new exercise (need to reinit warm-up state)
+        val isNewExercise = exerciseIndex != coordinator._currentExerciseIndex.value
 
         coordinator._currentExerciseIndex.value = exerciseIndex
         coordinator._currentSetIndex.value = setIndex
@@ -739,6 +754,20 @@ class RoutineFlowManager(
         val isSetAmrap = rawSetReps == null
         Logger.d {
             "enterSetReady: exercise=${exercise.exercise.name}, set=$setIndex, isAMRAP=$isSetAmrap, stallDetection=${exercise.stallDetectionEnabled}"
+        }
+
+        // Issue #356: Initialize warm-up state when entering a new exercise at set 0
+        // This ensures warm-up sets are executed when navigating via SetReady skip/prev
+        if (isNewExercise && setIndex == 0) {
+            val isBodyweight = isBodyweightExercise(exercise)
+            if (exercise.warmupSets.isNotEmpty() && !isBodyweight) {
+                coordinator._currentWarmupSetIndex.value = 0
+                coordinator._totalWarmupSets.value = exercise.warmupSets.size
+                Logger.d("RoutineFlowManager") { "Issue #356: SetReady init warm-up for ${exercise.exercise.name}: ${exercise.warmupSets.size} sets" }
+            } else {
+                coordinator._currentWarmupSetIndex.value = -1
+                coordinator._totalWarmupSets.value = 0
+            }
         }
 
         // Update workout parameters for this set
@@ -767,6 +796,9 @@ class RoutineFlowManager(
         val routine = coordinator._loadedRoutine.value ?: return
         val exercise = routine.exercises.getOrNull(exerciseIndex) ?: return
 
+        // Issue #356: Track if we're entering a new exercise (need to reinit warm-up state)
+        val isNewExercise = exerciseIndex != coordinator._currentExerciseIndex.value
+
         coordinator._currentExerciseIndex.value = exerciseIndex
         coordinator._currentSetIndex.value = setIndex
 
@@ -784,6 +816,20 @@ class RoutineFlowManager(
         val isSetAmrap = rawSetReps == null
         Logger.d {
             "enterSetReadyWithAdjustments: exercise=${exercise.exercise.name}, set=$setIndex, isAMRAP=$isSetAmrap, stallDetection=${exercise.stallDetectionEnabled}"
+        }
+
+        // Issue #356: Initialize warm-up state when entering a new exercise at set 0
+        // This is the main path from RoutineOverviewScreen when user taps "Start"
+        if (isNewExercise && setIndex == 0) {
+            val isBodyweight = isBodyweightExercise(exercise)
+            if (exercise.warmupSets.isNotEmpty() && !isBodyweight) {
+                coordinator._currentWarmupSetIndex.value = 0
+                coordinator._totalWarmupSets.value = exercise.warmupSets.size
+                Logger.d("RoutineFlowManager") { "Issue #356: SetReadyWithAdjustments init warm-up for ${exercise.exercise.name}: ${exercise.warmupSets.size} sets" }
+            } else {
+                coordinator._currentWarmupSetIndex.value = -1
+                coordinator._totalWarmupSets.value = 0
+            }
         }
 
         // Update workout parameters with adjusted values
