@@ -685,14 +685,12 @@ class SyncManagerTest {
     // ===== Pull Uses Push Timestamp (Task 1.6) =====
 
     @Test
-    fun pullReceivesStoredLastSyncNotPushTimestamp() = runTest {
+    fun pullIsCalledWithKnownEntityIdsAfterPush() = runTest {
         setupAuthenticated()
-        // Set a stored lastSync — pull should use THIS, not the push response time.
-        // Using the push response time would ask "what changed since NOW" which
-        // always returns 0 results. The stored lastSync asks "give me everything
-        // that changed since my last successful sync."
-        val storedLastSync = 1000L
-        tokenStorage.setLastSyncTimestamp(storedLastSync)
+        // With parity-based sync, pull no longer uses a lastSync timestamp.
+        // Instead it sends the local entity IDs and the server returns what's missing.
+        // This test verifies that pull is called with knownEntityIds (not a timestamp).
+        tokenStorage.setLastSyncTimestamp(1000L)
         val pushSyncTimeIso = "2026-03-02T12:00:00Z"
         fakeApi.pushResult = Result.success(
             PortalSyncPushResponse(syncTime = pushSyncTimeIso),
@@ -701,13 +699,9 @@ class SyncManagerTest {
 
         manager.sync()
 
-        // The pull should have been called with the stored lastSync, not the push timestamp
-        assertNotNull(fakeApi.lastPullLastSync, "Pull should have been called")
-        assertEquals(
-            storedLastSync,
-            fakeApi.lastPullLastSync,
-            "Pull should receive stored lastSync, not push response timestamp",
-        )
+        // The pull should have been called with a KnownEntityIds object (parity-based sync)
+        assertNotNull(fakeApi.lastPullKnownEntityIds, "Pull should have been called with knownEntityIds")
+        assertEquals(1, fakeApi.pullCallCount, "Pull should be called once")
     }
 
     // ===== Pagination Tests (Plan 03-05) =====
@@ -898,6 +892,80 @@ class SyncManagerTest {
             com.devil.phoenixproject.data.sync.SyncConfig.DEFAULT_PAGE_SIZE,
             fakeApi.lastPullPageSize,
             "Pull should pass default page size to API",
+        )
+    }
+
+    // ===== Parity Sync Tests =====
+
+    @Test
+    fun pullSendsKnownEntityIdsToServer() = runTest {
+        setupAuthenticated()
+        // Set up fake repository with known entity IDs (simulating local database content)
+        fakeSyncRepo.sessionIds = listOf("session-1", "session-2")
+        fakeSyncRepo.routineIds = listOf("routine-1")
+        fakeSyncRepo.cycleIds = emptyList()
+        fakeSyncRepo.badgeIds = listOf("1", "2", "3")
+        fakeSyncRepo.personalRecordIds = listOf("10", "20")
+
+        fakeApi.pushResult = Result.success(
+            PortalSyncPushResponse(syncTime = "2026-03-02T12:00:00Z"),
+        )
+        val manager = createManager()
+
+        manager.sync()
+
+        // Verify the API received the correct entity IDs for parity comparison
+        val knownIds = fakeApi.lastPullKnownEntityIds
+        assertNotNull(knownIds, "Pull should have been called with knownEntityIds")
+        assertEquals(listOf("session-1", "session-2"), knownIds.sessionIds)
+        assertEquals(listOf("routine-1"), knownIds.routineIds)
+        assertEquals(emptyList<String>(), knownIds.cycleIds)
+        assertEquals(listOf("1", "2", "3"), knownIds.badgeIds)
+        assertEquals(listOf("10", "20"), knownIds.personalRecordIds)
+    }
+
+    @Test
+    fun pullMergesEntitiesNotInLocalDatabase() = runTest {
+        setupAuthenticated()
+        // Local has session-1 only
+        fakeSyncRepo.sessionIds = listOf("session-1")
+
+        fakeApi.pushResult = Result.success(
+            PortalSyncPushResponse(syncTime = "2026-03-02T12:00:00Z"),
+        )
+        // Server returns session-2 (which we don't have locally — server-side parity diff).
+        // Include one exercise so the PortalPullAdapter produces a WorkoutSession row
+        // (adapter returns empty when exercises list is empty).
+        fakeApi.pullResult = Result.success(
+            PortalSyncPullResponse(
+                syncTime = 1740916800000L,
+                sessions = listOf(
+                    PullWorkoutSessionDto(
+                        id = "session-2",
+                        userId = "user-123",
+                        startedAt = "2026-01-01T12:00:00Z",
+                        exercises = listOf(
+                            PullExerciseDto(
+                                id = "exercise-1",
+                                sessionId = "session-2",
+                                name = "Squat",
+                                muscleGroup = "Legs",
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        )
+        val manager = createManager()
+
+        manager.sync()
+
+        // Verify atomic merge was called and contained the converted session (routineSessionId
+        // maps the session-level id "session-2")
+        assertEquals(1, fakeSyncRepo.atomicMergeCallCount, "mergeAllPullData should be called once")
+        assertTrue(
+            fakeSyncRepo.lastAtomicMergeSessions.any { it.routineSessionId == "session-2" },
+            "Session returned by server (session-2) should be converted and merged into local database",
         )
     }
 }

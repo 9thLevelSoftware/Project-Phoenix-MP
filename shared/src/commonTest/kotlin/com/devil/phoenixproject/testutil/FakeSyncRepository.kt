@@ -123,6 +123,20 @@ class FakeSyncRepository : SyncRepository {
         updatedSessionTimestamps[sessionId] = timestamp
     }
 
+    // === Parity Sync: Entity ID lists (simulate local database content) ===
+
+    var sessionIds: List<String> = emptyList()
+    var routineIds: List<String> = emptyList()
+    var cycleIds: List<String> = emptyList()
+    var badgeIds: List<String> = emptyList()
+    var personalRecordIds: List<String> = emptyList()
+
+    override suspend fun getAllSessionIds(profileId: String): List<String> = sessionIds
+    override suspend fun getAllRoutineIds(profileId: String): List<String> = routineIds
+    override suspend fun getAllCycleIds(profileId: String): List<String> = cycleIds
+    override suspend fun getAllBadgeIds(profileId: String): List<String> = badgeIds
+    override suspend fun getAllPersonalRecordIds(profileId: String): List<String> = personalRecordIds
+
     // === Stubs for new sync interface methods (added for cycle/PR/phase/signature/assessment sync) ===
 
     override suspend fun getFullCyclesForSync(profileId: String): List<CycleWithContext> = emptyList()

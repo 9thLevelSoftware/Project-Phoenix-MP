@@ -3,6 +3,7 @@ package com.devil.phoenixproject.testutil
 import com.devil.phoenixproject.data.sync.GoTrueAuthResponse
 import com.devil.phoenixproject.data.sync.IntegrationSyncRequest
 import com.devil.phoenixproject.data.sync.IntegrationSyncResponse
+import com.devil.phoenixproject.data.sync.KnownEntityIds
 import com.devil.phoenixproject.data.sync.PortalApiClient
 import com.devil.phoenixproject.data.sync.PortalApiException
 import com.devil.phoenixproject.data.sync.PortalSyncPayload
@@ -62,7 +63,7 @@ class FakePortalApiClient :
     var signUpCallCount = 0
     var integrationSyncCallCount = 0
     var lastPushPayload: PortalSyncPayload? = null
-    var lastPullLastSync: Long? = null
+    var lastPullKnownEntityIds: KnownEntityIds? = null
     var lastPullDeviceId: String? = null
     var lastPullCursor: String? = null
     var lastPullPageSize: Int? = null
@@ -89,26 +90,21 @@ class FakePortalApiClient :
     }
 
     override suspend fun pullPortalPayload(
-        lastSync: Long,
+        knownEntityIds: KnownEntityIds,
         deviceId: String,
         profileId: String?,
         cursor: String?,
         pageSize: Int?,
     ): Result<PortalSyncPullResponse> {
         pullCallCount++
-        lastPullLastSync = lastSync
+        lastPullKnownEntityIds = knownEntityIds
         lastPullDeviceId = deviceId
         lastPullCursor = cursor
         lastPullPageSize = pageSize
 
-        // Support pagination testing: return from queue if available
-        pullResultsQueue?.let { queue ->
-            if (queue.isNotEmpty()) {
-                return queue.removeAt(0)
-            }
-        }
-
-        return pullResult
+        // Use queue if available, otherwise fallback to pullResult
+        val result = pullResultsQueue?.removeFirstOrNull() ?: pullResult
+        return result
     }
 
     override suspend fun callIntegrationSync(request: IntegrationSyncRequest): Result<IntegrationSyncResponse> {
