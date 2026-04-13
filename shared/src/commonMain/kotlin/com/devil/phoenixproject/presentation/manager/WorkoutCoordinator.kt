@@ -290,6 +290,10 @@ class WorkoutCoordinator(
 
     // Guard to prevent duplicate auto-completion when rep target is reached
     internal val setCompletionInProgress = MutableStateFlow(false)
+
+    // Issue #355: Guard to prevent duplicate proceedFromSummary() calls on iOS
+    // When app foregrounds, both manager-level fallback AND UI-level countdown can fire
+    internal val proceedFromSummaryInProgress = MutableStateFlow(false)
     internal var currentHandleState: HandleState = HandleState.WaitingForRest
 
     // Velocity-based stall detection state (Issue #204, #214)

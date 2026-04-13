@@ -563,14 +563,22 @@ class DefaultWorkoutSessionManager(
      * Stays in DWSM because it coordinates between RoutineFlowManager and ActiveSessionEngine.
      */
     fun proceedFromSummary() {
+        // Issue #355: Atomic guard to prevent duplicate calls on iOS.
+        // When app foregrounds, both manager-level fallback AND UI-level countdown can fire,
+        // causing duplicate navigation to RoutineComplete screen.
+        if (!coordinator.proceedFromSummaryInProgress.compareAndSet(expect = false, update = true)) {
+            Logger.d { "proceedFromSummary: already in progress, ignoring duplicate call" }
+            return
+        }
         scope.launch {
-            if (coordinator._workoutState.value !is WorkoutState.SetSummary) {
-                Logger.d { "proceedFromSummary: ignored because current state is ${coordinator._workoutState.value}" }
-                return@launch
-            }
+            try {
+                if (coordinator._workoutState.value !is WorkoutState.SetSummary) {
+                    Logger.d { "proceedFromSummary: ignored because current state is ${coordinator._workoutState.value}" }
+                    return@launch
+                }
 
-            summaryAutoAdvanceJob?.cancel()
-            summaryAutoAdvanceJob = null
+                summaryAutoAdvanceJob?.cancel()
+                summaryAutoAdvanceJob = null
 
             // Reset detection state for the new set
             detectionManager.resetForNewSet()
@@ -707,6 +715,9 @@ class DefaultWorkoutSessionManager(
                 } else {
                     coordinator._workoutState.value = WorkoutState.Completed
                 }
+            }
+            } finally {
+                coordinator.proceedFromSummaryInProgress.value = false
             }
         }
     }

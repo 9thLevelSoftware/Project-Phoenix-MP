@@ -902,8 +902,14 @@ class RoutineFlowManager(
 
     /**
      * Show routine complete screen.
+     * Issue #355: Idempotent - ignores duplicate calls if already complete.
      */
     fun showRoutineComplete() {
+        // Issue #355: Idempotency - don't re-trigger navigation if already complete
+        if (coordinator._routineFlowState.value is RoutineFlowState.Complete) {
+            Logger.d("RoutineFlowManager") { "showRoutineComplete: already complete, ignoring duplicate call" }
+            return
+        }
         val routine = coordinator._loadedRoutine.value ?: return
         // Issue #195: Use coordinator.routineStartTime (set on first set) for total duration
         val duration = if (coordinator.routineStartTime > 0) {
