@@ -126,12 +126,7 @@ class SyncManager(
 
         val goTrueResponse = signInResult.getOrThrow()
         tokenStorage.saveGoTrueAuth(goTrueResponse)
-        // TEMP DIAGNOSTIC: Verify token was saved
-        Logger.e("SyncManager") {
-            "LOGIN: Token saved. Verify: hasToken=${tokenStorage.hasToken()}, " +
-                "tokenPrefix=${tokenStorage.getToken()?.take(20)}, " +
-                "accessTokenLen=${goTrueResponse.accessToken.length}"
-        }
+        Logger.d("SyncManager") { "Login: token saved" }
 
         // Serialize state change with sync operations to prevent race condition
         // (Issue 5.2: login() and sync() both modify _syncState)
@@ -245,14 +240,7 @@ class SyncManager(
         val prePushLastSync = tokenStorage.getLastSyncTimestamp()
 
         // Push local changes (no status check -- Railway backend abandoned)
-        // TEMP DIAGNOSTIC: Elevated to Error level for release build visibility
-        Logger.e("SyncManager") {
-            "SYNC DEBUG: hasToken=${tokenStorage.hasToken()}, " +
-                "tokenPrefix=${tokenStorage.getToken()?.take(20)}, " +
-                "isExpired=${tokenStorage.isTokenExpired()}, " +
-                "expiresAt=${tokenStorage.getExpiresAt()}, " +
-                "hasRefresh=${tokenStorage.getRefreshToken() != null}"
-        }
+        Logger.d("SyncManager") { "Sync starting: hasToken=${tokenStorage.hasToken()}" }
         val pushResult = pushLocalChanges()
         if (pushResult.isFailure) {
             val error = pushResult.exceptionOrNull()
@@ -830,24 +818,18 @@ class SyncManager(
                 break
             }
 
-            // DIAGNOSTIC: Log detailed pull response to trace sync issues
-            Logger.e("SyncManager") {
-                "PULL RESPONSE page $pagesProcessed: " +
-                    "sessions=${pullResponse.sessions.size}, routines=${pullResponse.routines.size}, " +
-                    "cycles=${pullResponse.cycles.size}, badges=${pullResponse.badges.size}, " +
-                    "PRs=${pullResponse.personalRecords.size}, profiles=${pullResponse.localProfiles?.size ?: 0}, " +
-                    "extActivities=${pullResponse.externalActivities.size}, " +
-                    "rpg=${pullResponse.rpgAttributes != null}, stats=${pullResponse.gamificationStats != null}, " +
-                    "hasMore=${pullResponse.hasMore}, syncTime=${pullResponse.syncTime}"
+            Logger.d("SyncManager") {
+                "Pull page $pagesProcessed: sessions=${pullResponse.sessions.size}, routines=${pullResponse.routines.size}, " +
+                    "cycles=${pullResponse.cycles.size}, badges=${pullResponse.badges.size}, hasMore=${pullResponse.hasMore}"
             }
             if (pullResponse.routines.isNotEmpty()) {
-                Logger.e("SyncManager") {
-                    "PULL ROUTINES: ${pullResponse.routines.map { "${it.name} (id=${it.id.take(8)}...)" }}"
+                Logger.d("SyncManager") {
+                    "Pull routines: ${pullResponse.routines.size} received"
                 }
             }
             if (pullResponse.cycles.isNotEmpty()) {
-                Logger.e("SyncManager") {
-                    "PULL CYCLES: ${pullResponse.cycles.map { "${it.name} (id=${it.id.take(8)}...)" }}"
+                Logger.d("SyncManager") {
+                    "Pull cycles: ${pullResponse.cycles.size} received"
                 }
             }
 
