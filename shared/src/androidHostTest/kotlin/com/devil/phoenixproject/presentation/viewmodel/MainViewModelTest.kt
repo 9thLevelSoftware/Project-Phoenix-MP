@@ -43,6 +43,7 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
+import org.junit.After
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
@@ -112,6 +113,15 @@ class MainViewModelTest {
             userProfileRepository = com.devil.phoenixproject.testutil.FakeUserProfileRepository(),
             workoutServiceController = NoOpWorkoutServiceController,
         )
+    }
+
+    @After
+    fun tearDown() {
+        // Clear ViewModel to cancel viewModelScope coroutines and prevent test pollution.
+        // Uses reflection since onCleared() is protected in androidx.lifecycle.ViewModel.
+        val method = viewModel::class.java.getDeclaredMethod("onCleared")
+        method.isAccessible = true
+        method.invoke(viewModel)
     }
 
     // ========== Initial State Tests ==========
