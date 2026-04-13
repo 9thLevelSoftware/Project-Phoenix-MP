@@ -518,6 +518,13 @@ open class PortalApiClient(private val supabaseConfig: SupabaseConfig, private v
         }
 
         HttpStatusCode.Unauthorized -> {
+            // TEMP DIAGNOSTIC: Log full 401 response body for debugging
+            val bodyText = try {
+                response.body<String>()
+            } catch (_: Exception) {
+                "Could not read body"
+            }
+            Logger.e("PortalApiClient") { "401 RESPONSE BODY: $bodyText" }
             Result.failure(PortalApiException("Unauthorized - please log in again", null, 401))
         }
 
