@@ -430,6 +430,19 @@ data class ExternalActivitySyncDto(
 // These DTOs have property names matching the camelCase JSON directly.
 
 /**
+ * Entity IDs known to the client, used for parity-based sync.
+ * Server returns entities NOT in these lists.
+ */
+@Serializable
+data class KnownEntityIds(
+    val sessionIds: List<String> = emptyList(),
+    val routineIds: List<String> = emptyList(),
+    val cycleIds: List<String> = emptyList(),
+    val badgeIds: List<String> = emptyList(),
+    val personalRecordIds: List<String> = emptyList(),
+)
+
+/**
  * Request body for the mobile-sync-pull Edge Function.
  * Uses a typed DTO instead of Map<String, Any> to avoid Kotlinx Serialization
  * "different element types" error with heterogeneous maps.
@@ -441,10 +454,13 @@ data class ExternalActivitySyncDto(
 @Serializable
 data class PortalSyncPullRequest(
     val deviceId: String,
-    val lastSync: Long,
+    /** @deprecated Use knownEntityIds for parity-based sync. Kept for backward compatibility. */
+    val lastSync: Long = 0,
     val profileId: String? = null,
     val cursor: String? = null,
     val pageSize: Int? = null,
+    /** Entity IDs client already has. Server returns entities NOT in these lists. */
+    val knownEntityIds: KnownEntityIds? = null,
 )
 
 /**
