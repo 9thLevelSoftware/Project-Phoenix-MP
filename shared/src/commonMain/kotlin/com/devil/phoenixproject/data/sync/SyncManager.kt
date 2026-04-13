@@ -201,6 +201,26 @@ class SyncManager(
     // === Sync Operations ===
 
     /**
+     * Forces a complete re-sync by resetting the lastSync timestamp to 0.
+     *
+     * Use this when:
+     * - Previous syncs failed but advanced the timestamp (data was missed)
+     * - User wants to re-pull all data from the server
+     * - Debugging sync issues where delta sync returns empty results
+     *
+     * This will cause the next sync to pull ALL data from the server, not just
+     * changes since the last sync. Note: push will still only send unsynced local data.
+     *
+     * @return Result from the subsequent sync operation
+     */
+    suspend fun forceFullResync(): Result<Long> {
+        Logger.i("SyncManager") { "Forcing full resync - resetting lastSyncTimestamp to 0" }
+        tokenStorage.setLastSyncTimestamp(0L)
+        _lastSyncTime.value = 0L
+        return sync()
+    }
+
+    /**
      * Performs a full sync operation (push + pull).
      *
      * @return Result.success with sync timestamp if push succeeded.
@@ -747,6 +767,12 @@ class SyncManager(
             }
 
             // Fetch next page
+            // DIAGNOSTIC: Log pull request parameters to trace sync issues
+            Logger.e("SyncManager") {
+                "PULL REQUEST: lastSync=$lastSync, " +
+                    "deviceId=$deviceId, profileId=$activeProfileId, cursor=$currentCursor"
+            }
+
             val pullResult = apiClient.pullPortalPayload(
                 lastSync = lastSync,
                 deviceId = deviceId,
@@ -790,10 +816,25 @@ class SyncManager(
                 break
             }
 
-            Logger.d("SyncManager") {
-                "Pull page $pagesProcessed: ${pullResponse.sessions.size} sessions, " +
-                    "${pullResponse.routines.size} routines, ${pullResponse.cycles.size} cycles, " +
-                    "${pullResponse.badges.size} badges, hasMore=${pullResponse.hasMore}"
+            // DIAGNOSTIC: Log detailed pull response to trace sync issues
+            Logger.e("SyncManager") {
+                "PULL RESPONSE page $pagesProcessed: " +
+                    "sessions=${pullResponse.sessions.size}, routines=${pullResponse.routines.size}, " +
+                    "cycles=${pullResponse.cycles.size}, badges=${pullResponse.badges.size}, " +
+                    "PRs=${pullResponse.personalRecords.size}, profiles=${pullResponse.localProfiles?.size ?: 0}, " +
+                    "extActivities=${pullResponse.externalActivities.size}, " +
+                    "rpg=${pullResponse.rpgAttributes != null}, stats=${pullResponse.gamificationStats != null}, " +
+                    "hasMore=${pullResponse.hasMore}, syncTime=${pullResponse.syncTime}"
+            }
+            if (pullResponse.routines.isNotEmpty()) {
+                Logger.e("SyncManager") {
+                    "PULL ROUTINES: ${pullResponse.routines.map { "${it.name} (id=${it.id.take(8)}...)" }}"
+                }
+            }
+            if (pullResponse.cycles.isNotEmpty()) {
+                Logger.e("SyncManager") {
+                    "PULL CYCLES: ${pullResponse.cycles.map { "${it.name} (id=${it.id.take(8)}...)" }}"
+                }
             }
 
             // Merge this page atomically

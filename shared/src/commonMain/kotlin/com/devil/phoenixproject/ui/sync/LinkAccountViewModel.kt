@@ -127,6 +127,21 @@ class LinkAccountViewModel(private val syncManager: SyncManager) {
         }
     }
 
+    /**
+     * Forces a complete re-sync by resetting the lastSync timestamp to 0.
+     * This will pull ALL data from the server, not just changes since last sync.
+     * Use this when previous syncs may have missed data.
+     */
+    fun forceFullResync() {
+        scope.launch {
+            try {
+                syncManager.forceFullResync()
+            } catch (e: CancellationException) {
+                throw e
+            }
+        }
+    }
+
     fun clearError() {
         if (_uiState.value is LinkAccountUiState.Error) {
             _uiState.value = LinkAccountUiState.Initial

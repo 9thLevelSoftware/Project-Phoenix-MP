@@ -1,13 +1,45 @@
 package com.devil.phoenixproject.presentation.screen
 
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material3.AssistChip
+import androidx.compose.material3.Button
+import androidx.compose.material3.Card
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBar
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
@@ -21,8 +53,18 @@ import com.devil.phoenixproject.ui.sync.LinkAccountViewModel
 import com.devil.phoenixproject.util.KmpUtils
 import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.koinInject
-import vitruvianprojectphoenix.shared.generated.resources.*
 import vitruvianprojectphoenix.shared.generated.resources.Res
+import vitruvianprojectphoenix.shared.generated.resources.action_login
+import vitruvianprojectphoenix.shared.generated.resources.cd_back
+import vitruvianprojectphoenix.shared.generated.resources.label_email
+import vitruvianprojectphoenix.shared.generated.resources.label_password
+import vitruvianprojectphoenix.shared.generated.resources.label_premium
+import vitruvianprojectphoenix.shared.generated.resources.last_synced
+import vitruvianprojectphoenix.shared.generated.resources.never_synced
+import vitruvianprojectphoenix.shared.generated.resources.phoenix_portal
+import vitruvianprojectphoenix.shared.generated.resources.sync_now
+import vitruvianprojectphoenix.shared.generated.resources.syncing
+import vitruvianprojectphoenix.shared.generated.resources.unlink_account
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -106,6 +148,7 @@ fun LinkAccountScreen(onNavigateBack: () -> Unit) {
                     syncState = syncState,
                     lastSyncTime = lastSyncTime,
                     onSync = { viewModel.sync() },
+                    onForceFullResync = { viewModel.forceFullResync() },
                     onLogout = { viewModel.logout() },
                 )
             } else {
@@ -126,6 +169,7 @@ private fun LinkedAccountContent(
     syncState: SyncState,
     lastSyncTime: Long,
     onSync: () -> Unit,
+    onForceFullResync: () -> Unit,
     onLogout: () -> Unit,
 ) {
     Card(
@@ -228,6 +272,19 @@ private fun LinkedAccountContent(
                 ) {
                     Text(stringResource(Res.string.sync_now))
                 }
+            }
+
+            // Force full resync option for when delta sync misses data
+            TextButton(
+                onClick = onForceFullResync,
+                enabled = syncState !is SyncState.Syncing,
+                modifier = Modifier.align(Alignment.CenterHorizontally),
+            ) {
+                Text(
+                    text = "Force Full Resync",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.tertiary,
+                )
             }
         }
     }

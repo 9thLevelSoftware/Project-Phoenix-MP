@@ -195,6 +195,7 @@ open class PortalApiClient(private val supabaseConfig: SupabaseConfig, private v
             // Batch size of 50 sessions with nested telemetry can be several MB.
             requestTimeoutMillis = 60_000
             connectTimeoutMillis = 10_000
+            socketTimeoutMillis = 60_000 // Socket read timeout - must be set explicitly
         }
         defaultRequest {
             contentType(ContentType.Application.Json)

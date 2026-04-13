@@ -1709,4 +1709,26 @@ class SqlDelightSyncRepository(
             }
         }
     }
+
+    // === Parity Sync Operations ===
+
+    override suspend fun getAllSessionIds(profileId: String): List<String> = withContext(Dispatchers.IO) {
+        queries.selectAllSessionIdsByProfile(profileId).executeAsList()
+    }
+
+    override suspend fun getAllRoutineIds(profileId: String): List<String> = withContext(Dispatchers.IO) {
+        queries.selectAllRoutineIdsByProfile(profileId).executeAsList()
+    }
+
+    override suspend fun getAllCycleIds(profileId: String): List<String> = withContext(Dispatchers.IO) {
+        queries.selectAllCycleIdsByProfile(profileId).executeAsList()
+    }
+
+    override suspend fun getAllBadgeIds(profileId: String): List<String> = withContext(Dispatchers.IO) {
+        queries.selectAllBadgeIdsByProfile(profileId).executeAsList()
+    }
+
+    override suspend fun getAllPersonalRecordIds(profileId: String): List<String> = withContext(Dispatchers.IO) {
+        queries.selectAllPersonalRecordIdsByProfile(profileId).executeAsList()
+    }
 }

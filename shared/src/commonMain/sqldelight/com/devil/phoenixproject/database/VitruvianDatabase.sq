@@ -2002,3 +2002,19 @@ WHERE profileId = ?;
 upsertIntegrationStatus:
 INSERT OR REPLACE INTO IntegrationStatus(provider, status, lastSyncAt, errorMessage, profileId)
 VALUES (?, ?, ?, ?, ?);
+
+-- Parity Sync: Get all entity IDs for comparison with server
+selectAllSessionIdsByProfile:
+SELECT id FROM WorkoutSession WHERE profile_id = :profileId;
+
+selectAllRoutineIdsByProfile:
+SELECT id FROM Routine WHERE profile_id = :profileId;
+
+selectAllCycleIdsByProfile:
+SELECT id FROM TrainingCycle WHERE profile_id = :profileId;
+
+selectAllBadgeIdsByProfile:
+SELECT CAST(id AS TEXT) FROM EarnedBadge WHERE profile_id = :profileId;
+
+selectAllPersonalRecordIdsByProfile:
+SELECT CAST(id AS TEXT) FROM PersonalRecord WHERE profile_id = :profileId;
