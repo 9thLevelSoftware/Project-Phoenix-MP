@@ -345,16 +345,16 @@ open class PortalApiClient(private val supabaseConfig: SupabaseConfig, private v
     }
 
     /**
-     * Pull portal data with optional pagination parameters.
+     * Pull portal data using parity-based sync.
      *
-     * @param lastSync Unix epoch ms of last successful sync; 0 for first sync
+     * @param knownEntityIds Entity IDs client already has. Server returns entities NOT in these lists.
      * @param deviceId Unique device identifier
      * @param profileId Optional profile UUID for profile-scoped filtering
      * @param cursor Optional pagination cursor from previous response's nextCursor
      * @param pageSize Optional page size; null uses server default (100)
      */
     open suspend fun pullPortalPayload(
-        lastSync: Long,
+        knownEntityIds: KnownEntityIds,
         deviceId: String,
         profileId: String? = null,
         cursor: String? = null,
@@ -366,10 +366,11 @@ open class PortalApiClient(private val supabaseConfig: SupabaseConfig, private v
             setBody(
                 PortalSyncPullRequest(
                     deviceId = deviceId,
-                    lastSync = lastSync,
+                    lastSync = 0, // Deprecated, using knownEntityIds instead
                     profileId = profileId,
                     cursor = cursor,
                     pageSize = pageSize,
+                    knownEntityIds = knownEntityIds,
                 ),
             )
         }
