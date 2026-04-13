@@ -306,12 +306,10 @@ class SyncManager(
             currentTimeMillis()
         }
 
-        // Pull remote changes using the PRE-PUSH lastSync, not the current stored value.
-        // The batched push path (line ~428) advances tokenStorage.lastSyncTimestamp after
-        // each batch, so re-reading it here would skip remote changes that arrived between
-        // the original sync checkpoint and the last batch's server timestamp.
-        // Fix for Codex P1: use prePushLastSync captured at line ~97 before any push.
-        val pullResult = pullRemoteChangesWithResult(lastSync = prePushLastSync)
+        // Pull remote changes using parity-based sync (entity IDs, not timestamps).
+        // Entity IDs are collected inside pullRemoteChangesWithResult to ensure we send
+        // the current state of local storage after the push has completed.
+        val pullResult = pullRemoteChangesWithResult()
 
         return@withLock if (pullResult.isSuccess) {
             // Full success: both push and pull succeeded
@@ -359,7 +357,7 @@ class SyncManager(
         _syncState.value = SyncState.Syncing
         val lastSync = tokenStorage.getLastSyncTimestamp()
 
-        val pullResult = pullRemoteChangesWithResult(lastSync = lastSync)
+        val pullResult = pullRemoteChangesWithResult()
 
         return@withLock if (pullResult.isSuccess) {
             val finalSyncTime = pullResult.getOrThrow()
@@ -724,18 +722,33 @@ class SyncManager(
     }
 
     /**
-     * Pull portal data and merge into local database with pagination support.
+     * Pull portal data and merge into local database with parity-based sync.
      *
-     * The method loops through pages until hasMore is false, merging each page atomically.
-     * Only returns success with the final syncTime when ALL pages complete successfully.
+     * Instead of using timestamps to determine what's new, we send the server
+     * a list of entity IDs we already have. The server returns entities
+     * that exist server-side but not in our list.
      *
-     * @param lastSync Unix epoch ms of last successful sync
      * @return Result with final syncTime on success, or failure with classified error
      */
-    private suspend fun pullRemoteChangesWithResult(lastSync: Long): Result<Long> {
+    private suspend fun pullRemoteChangesWithResult(): Result<Long> {
         val deviceId = tokenStorage.getDeviceId()
         val activeProfileId = userProfileRepository.activeProfile.value?.id
         val mergeProfileId = activeProfileId ?: "default"
+        val lastSync = tokenStorage.getLastSyncTimestamp()
+
+        // Collect local entity IDs for parity comparison
+        val knownEntityIds = KnownEntityIds(
+            sessionIds = syncRepository.getAllSessionIds(mergeProfileId),
+            routineIds = syncRepository.getAllRoutineIds(mergeProfileId),
+            cycleIds = syncRepository.getAllCycleIds(mergeProfileId),
+            badgeIds = syncRepository.getAllBadgeIds(mergeProfileId),
+            personalRecordIds = syncRepository.getAllPersonalRecordIds(mergeProfileId),
+        )
+
+        Logger.i("SyncManager") {
+            "Parity sync: sending ${knownEntityIds.sessionIds.size} session IDs, " +
+                "${knownEntityIds.routineIds.size} routine IDs, ${knownEntityIds.cycleIds.size} cycle IDs"
+        }
 
         var pagesProcessed = 0
         var totalEntitiesFetched = 0
@@ -768,13 +781,14 @@ class SyncManager(
 
             // Fetch next page
             // DIAGNOSTIC: Log pull request parameters to trace sync issues
-            Logger.e("SyncManager") {
-                "PULL REQUEST: lastSync=$lastSync, " +
-                    "deviceId=$deviceId, profileId=$activeProfileId, cursor=$currentCursor"
+            Logger.d("SyncManager") {
+                "PULL REQUEST: deviceId=$deviceId, profileId=$activeProfileId, " +
+                    "knownSessions=${knownEntityIds.sessionIds.size}, knownRoutines=${knownEntityIds.routineIds.size}, " +
+                    "cursor=$currentCursor"
             }
 
             val pullResult = apiClient.pullPortalPayload(
-                lastSync = lastSync,
+                knownEntityIds = knownEntityIds,
                 deviceId = deviceId,
                 profileId = activeProfileId,
                 cursor = currentCursor,
