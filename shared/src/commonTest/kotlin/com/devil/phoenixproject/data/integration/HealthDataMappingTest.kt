@@ -14,19 +14,27 @@ class HealthDataMappingTest {
 
     @Test
     fun titleWithExerciseNameAndWeight() {
-        val title = buildTitle(exerciseName = "Bench Press", weightPerCableKg = 50f)
+        // Single cable exercise (default when cableCount is unspecified/null)
+        val title = buildTitle(exerciseName = "Calf Raise", weightPerCableKg = 80f)
+        assertEquals("Calf Raise \u2014 80.0kg", title)
+    }
+
+    @Test
+    fun titleWithDualCableExercise() {
+        // Dual cable exercise - weight is doubled (50kg per cable x 2)
+        val title = buildTitle(exerciseName = "Bench Press", weightPerCableKg = 50f, cableCount = 2)
         assertEquals("Bench Press \u2014 100.0kg", title)
     }
 
     @Test
     fun titleWithNullExerciseNameFallsBackToPhoenixWorkout() {
-        val title = buildTitle(exerciseName = null, weightPerCableKg = 30f)
+        val title = buildTitle(exerciseName = null, weightPerCableKg = 30f, cableCount = 2)
         assertEquals("Phoenix Workout \u2014 60.0kg", title)
     }
 
     @Test
     fun titleWithBlankExerciseNameFallsBackToPhoenixWorkout() {
-        val title = buildTitle(exerciseName = "  ", weightPerCableKg = 25f)
+        val title = buildTitle(exerciseName = "  ", weightPerCableKg = 25f, cableCount = 2)
         assertEquals("Phoenix Workout \u2014 50.0kg", title)
     }
 
@@ -50,10 +58,11 @@ class HealthDataMappingTest {
     }
 
     @Test
-    fun titleWeightDefaultsToDualWhenCableCountNull() {
-        // Legacy sessions without cableCount should still show doubled weight
+    fun titleWeightDefaultsToSingleWhenCableCountNull() {
+        // Legacy sessions without cableCount default to single cable (safer assumption)
+        // This matches effectiveTotalVolumeKg, InsightCards, and official Vitruvian app behavior
         val title = buildTitle(exerciseName = "Bench Press", weightPerCableKg = 50f, cableCount = null)
-        assertEquals("Bench Press \u2014 100.0kg", title)
+        assertEquals("Bench Press \u2014 50.0kg", title)
     }
 
     // ---- Duration clamping ----
@@ -99,7 +108,8 @@ class HealthDataMappingTest {
 
     private fun buildTitle(exerciseName: String?, weightPerCableKg: Float, cableCount: Int? = null): String {
         val name = exerciseName?.takeIf { it.isNotBlank() } ?: "Phoenix Workout"
-        val totalWeightKg = weightPerCableKg * (cableCount ?: 2).toFloat()
+        // Default to 1 cable for legacy sessions without cableCount metadata
+        val totalWeightKg = weightPerCableKg * (cableCount ?: 1).toFloat()
         return if (totalWeightKg > 0f) {
             val rounded = (totalWeightKg * 10).toInt() / 10.0
             "$name \u2014 ${rounded}kg"

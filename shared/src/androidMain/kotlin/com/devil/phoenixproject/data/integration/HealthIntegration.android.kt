@@ -122,11 +122,19 @@ actual class HealthIntegration(private val context: Context) {
 
     /**
      * Builds a human-readable title for the exercise session.
-     * Total weight shown is per-cable × cableCount (respects single vs dual cable).
+     *
+     * Weight display logic:
+     * - If cableCount is explicitly set (1 or 2), use it
+     * - If null (legacy data), default to 1 (per-cable weight shown as-is)
+     *
+     * This matches the rest of the codebase (effectiveTotalVolumeKg, InsightCards, etc.)
+     * and the official Vitruvian app which displays weight per-cable without doubling.
      */
     private fun buildExerciseTitle(session: WorkoutSession): String {
         val exerciseName = session.exerciseName?.takeIf { it.isNotBlank() } ?: "Phoenix Workout"
-        val totalWeightKg = session.weightPerCableKg * (session.cableCount ?: 2).toFloat()
+        // Default to 1 cable for legacy sessions without cableCount metadata
+        // This prevents incorrect weight inflation (Issue #358: 80kg showing as 160kg)
+        val totalWeightKg = session.weightPerCableKg * (session.cableCount ?: 1).toFloat()
         return if (totalWeightKg > 0f) {
             "$exerciseName — ${totalWeightKg.toInt()}kg"
         } else {
