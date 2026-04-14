@@ -38,6 +38,7 @@ import com.devil.phoenixproject.domain.model.currentTimeMillis
 import com.devil.phoenixproject.domain.model.elapsedRealtimeMillis
 import com.devil.phoenixproject.domain.model.generateUUID
 import com.devil.phoenixproject.domain.replay.RepBoundaryDetector
+import com.devil.phoenixproject.util.BleConstants
 import com.devil.phoenixproject.domain.usecase.RepCounterFromMachine
 import com.devil.phoenixproject.getPlatform
 import com.devil.phoenixproject.util.BlePacketFactory
@@ -517,20 +518,27 @@ class ActiveSessionEngine(
         // Physics-based calorie estimation using work-energy theorem:
         // W = sum(force_i * delta_distance_i) for each consecutive sample pair
         // kcal = (W_joules / 4184) * 5 (metabolic efficiency multiplier ~20%)
+        //
+        // Issue #358: Cap position deltas to POSITION_JUMP_THRESHOLD (20mm) to prevent
+        // BLE glitches from inflating calorie estimates. This matches the validation
+        // applied in MonitorDataProcessor.validateSample().
         val estimatedCalories = run {
             if (metrics.size < 2) {
                 // Fallback for insufficient samples
                 (totalVolumeKg * 0.5f * 9.81f / 4184f).coerceAtLeast(1f)
             } else {
+                val maxDeltaMm = BleConstants.Thresholds.POSITION_JUMP_THRESHOLD
                 var totalWorkJoules = 0.0
                 for (i in 1 until metrics.size) {
                     val prev = metrics[i - 1]
                     val curr = metrics[i]
                     // Average force in N across both cables
                     val avgForceN = ((prev.totalLoad + curr.totalLoad) / 2f) * 9.81f
-                    // Distance in meters (position is in mm)
-                    val deltaA = kotlin.math.abs(curr.positionA - prev.positionA) / 1000f
-                    val deltaB = kotlin.math.abs(curr.positionB - prev.positionB) / 1000f
+                    // Distance in meters (position is in mm, capped to filter BLE glitches)
+                    val deltaA = kotlin.math.abs(curr.positionA - prev.positionA)
+                        .coerceAtMost(maxDeltaMm) / 1000f
+                    val deltaB = kotlin.math.abs(curr.positionB - prev.positionB)
+                        .coerceAtMost(maxDeltaMm) / 1000f
                     val avgDelta = if (isSingleCable) maxOf(deltaA, deltaB) else (deltaA + deltaB) / 2f
                     totalWorkJoules += avgForceN * avgDelta
                 }

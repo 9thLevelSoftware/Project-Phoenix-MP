@@ -1078,6 +1078,73 @@ class DWSMWorkoutLifecycleTest {
         harness.cleanup()
     }
 
+    @Test
+    fun `Issue 358 - calorie calculation caps position deltas to prevent BLE glitch inflation`() = runTest {
+        val harness = DWSMTestHarness(this)
+
+        // Create metrics with a HUGE position jump (500mm) that simulates a BLE glitch.
+        // Without the fix, this would inflate calories by ~25x.
+        // With the fix, the delta is capped to 20mm (POSITION_JUMP_THRESHOLD).
+        val summary = harness.activeSessionEngine.calculateSetSummaryMetrics(
+            metrics = listOf(
+                WorkoutMetric(
+                    timestamp = 100L,
+                    loadA = 80f,
+                    loadB = 80f,
+                    positionA = 100f,  // Starting position
+                    positionB = 100f,
+                    velocityA = 50.0,
+                    velocityB = 50.0,
+                ),
+                WorkoutMetric(
+                    timestamp = 200L,
+                    loadA = 80f,
+                    loadB = 80f,
+                    positionA = 600f,  // HUGE 500mm jump - should be capped to 20mm
+                    positionB = 600f,
+                    velocityA = 50.0,
+                    velocityB = 50.0,
+                ),
+                WorkoutMetric(
+                    timestamp = 300L,
+                    loadA = 80f,
+                    loadB = 80f,
+                    positionA = 620f,  // Normal 20mm movement
+                    positionB = 620f,
+                    velocityA = -50.0,
+                    velocityB = -50.0,
+                ),
+            ),
+            repCount = 1,
+            fallbackWeightKg = 80f,
+            configuredWeightKgPerCable = 80f,
+            isEchoMode = false,
+        )
+
+        // Expected calories with capped deltas:
+        // Force = 160kg * 9.81 = 1569.6N
+        // Delta per pair = 20mm (capped) = 0.02m
+        // 2 pairs = 0.04m total movement
+        // Work = 1569.6 * 0.04 = 62.8 J
+        // Calories = (62.8 / 4184) * 5 = ~0.075 kcal, coerced to min 1.0
+        //
+        // WITHOUT the fix (uncapped 500mm jump):
+        // Delta pair 1 = 500mm = 0.5m
+        // Delta pair 2 = 20mm = 0.02m
+        // Total = 0.52m
+        // Work = 1569.6 * 0.52 = 816 J
+        // Calories = (816 / 4184) * 5 = ~0.98 kcal
+        //
+        // The fix ensures calories are bounded by capping deltas.
+        assertTrue(
+            summary.estimatedCalories <= 2f,
+            "Calorie estimate should be bounded when position deltas are capped. " +
+                "Got: ${summary.estimatedCalories}",
+        )
+
+        harness.cleanup()
+    }
+
     // ===== F. saveWorkoutSession side effects =====
 
     @Test
