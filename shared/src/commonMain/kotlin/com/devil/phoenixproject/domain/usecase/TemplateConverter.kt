@@ -2,7 +2,16 @@ package com.devil.phoenixproject.domain.usecase
 
 import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.data.repository.ExerciseRepository
-import com.devil.phoenixproject.domain.model.*
+import com.devil.phoenixproject.domain.model.CycleDay
+import com.devil.phoenixproject.domain.model.CycleTemplate
+import com.devil.phoenixproject.domain.model.EccentricLoad
+import com.devil.phoenixproject.domain.model.EchoLevel
+import com.devil.phoenixproject.domain.model.ExerciseConfig
+import com.devil.phoenixproject.domain.model.ProgramMode
+import com.devil.phoenixproject.domain.model.Routine
+import com.devil.phoenixproject.domain.model.RoutineExercise
+import com.devil.phoenixproject.domain.model.TrainingCycle
+import com.devil.phoenixproject.domain.model.generateUUID
 
 /**
  * Convert eccentric load percentage to EccentricLoad enum.
@@ -76,9 +85,14 @@ class TemplateConverter(private val exerciseRepository: ExerciseRepository) {
      *
      * @param template The cycle template to convert
      * @param exerciseConfigs User-configured settings for exercises (mode, weight, echoLevel, eccentricLoad)
+     * @param profileId Profile ID for multi-profile support (Issue #364 fix)
      * @return ConversionResult containing the cycle, routines, and any warnings
      */
-    suspend fun convert(template: CycleTemplate, exerciseConfigs: Map<String, ExerciseConfig> = emptyMap()): ConversionResult {
+    suspend fun convert(
+        template: CycleTemplate,
+        exerciseConfigs: Map<String, ExerciseConfig> = emptyMap(),
+        profileId: String = "default",
+    ): ConversionResult {
         val cycleId = generateUUID()
         val warnings = mutableListOf<String>()
         val routines = mutableListOf<Routine>()
@@ -198,7 +212,7 @@ class TemplateConverter(private val exerciseRepository: ExerciseRepository) {
             }
         }
 
-        // Create the training cycle
+        // Create the training cycle with profile ownership (Issue #364 fix)
         val cycle = TrainingCycle.create(
             id = cycleId,
             name = template.name,
@@ -206,6 +220,7 @@ class TemplateConverter(private val exerciseRepository: ExerciseRepository) {
             days = cycleDays,
             progressionRule = template.progressionRule,
             weekNumber = 1, // Start at week 1
+            profileId = profileId,
         )
 
         return ConversionResult(

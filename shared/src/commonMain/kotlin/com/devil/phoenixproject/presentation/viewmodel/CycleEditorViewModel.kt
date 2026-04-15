@@ -4,7 +4,13 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.data.repository.TrainingCycleRepository
-import com.devil.phoenixproject.domain.model.*
+import com.devil.phoenixproject.data.repository.UserProfileRepository
+import com.devil.phoenixproject.domain.model.CycleDay
+import com.devil.phoenixproject.domain.model.CycleItem
+import com.devil.phoenixproject.domain.model.CycleProgression
+import com.devil.phoenixproject.domain.model.Routine
+import com.devil.phoenixproject.domain.model.TrainingCycle
+import com.devil.phoenixproject.domain.model.generateUUID
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -30,13 +36,18 @@ data class CycleEditorUiState(
     val editingItemIndex: Int? = null,
     val recentRoutineIds: List<String> = emptyList(),
     val lastDeletedItem: Pair<Int, CycleItem>? = null,
+    /** Original profile ID when editing existing cycle (null for new cycles) */
+    val originalProfileId: String? = null,
 )
 
 /**
  * ViewModel for CycleEditorScreen.
  * Manages state across configuration changes and handles async operations.
  */
-class CycleEditorViewModel(private val repository: TrainingCycleRepository) : ViewModel() {
+class CycleEditorViewModel(
+    private val repository: TrainingCycleRepository,
+    private val userProfileRepository: UserProfileRepository,
+) : ViewModel() {
 
     private val _uiState = MutableStateFlow(CycleEditorUiState())
     val uiState: StateFlow<CycleEditorUiState> = _uiState.asStateFlow()
@@ -82,6 +93,8 @@ class CycleEditorViewModel(private val repository: TrainingCycleRepository) : Vi
                                     progression = progression ?: CycleProgression.default(cycleId),
                                     currentRotation = progress?.rotationCount ?: 0,
                                     isLoading = false,
+                                    // Preserve original profile ownership for edits
+                                    originalProfileId = cycle.profileId,
                                 )
                             }
                         } else {
@@ -270,16 +283,27 @@ class CycleEditorViewModel(private val repository: TrainingCycleRepository) : Vi
     /**
      * Save cycle to repository and return the saved cycle ID.
      * Returns null if save fails.
+     *
+     * Issue #364 Fix: Uses active profile ID from UserProfileRepository to ensure
+     * cycles are created with the correct profile ownership (matching the Routines fix in #330).
+     * When editing existing cycles, the original profile ownership is preserved.
      */
     suspend fun saveCycle(): String? {
         val state = _uiState.value
+        val isNewCycle = state.cycleId == "new"
+        // For new cycles: use active profile; for edits: preserve original ownership
+        val profileIdToUse = if (isNewCycle) {
+            userProfileRepository.activeProfile.value?.id ?: "default"
+        } else {
+            state.originalProfileId ?: "default"
+        }
         Logger.d {
-            "CycleEditorVM: saveCycle called, cycleId=${state.cycleId}, items=${state.items.size}"
+            "CycleEditorVM: saveCycle called, cycleId=${state.cycleId}, items=${state.items.size}, profileId=$profileIdToUse, isNew=$isNewCycle"
         }
         _uiState.update { it.copy(isSaving = true, saveError = null) }
 
         return try {
-            val cycleIdToUse = if (state.cycleId == "new") generateUUID() else state.cycleId
+            val cycleIdToUse = if (isNewCycle) generateUUID() else state.cycleId
             Logger.d { "CycleEditorVM: Using cycleId=$cycleIdToUse" }
 
             val days = state.items.map { item ->
@@ -308,16 +332,17 @@ class CycleEditorViewModel(private val repository: TrainingCycleRepository) : Vi
                 description = state.description.ifBlank { null },
                 days = days,
                 isActive = false,
+                profileId = profileIdToUse,
             )
 
-            if (state.cycleId == "new") {
-                Logger.d { "CycleEditorVM: Saving new cycle..." }
+            if (isNewCycle) {
+                Logger.d { "CycleEditorVM: Saving new cycle to profile $profileIdToUse..." }
                 repository.saveCycle(cycle)
             } else {
-                Logger.d { "CycleEditorVM: Updating existing cycle..." }
+                Logger.d { "CycleEditorVM: Updating existing cycle (profile=$profileIdToUse)..." }
                 repository.updateCycle(cycle)
             }
-            Logger.d { "CycleEditorVM: Cycle saved successfully" }
+            Logger.d { "CycleEditorVM: Cycle saved successfully to profile $profileIdToUse" }
 
             state.progression?.let { prog ->
                 Logger.d { "CycleEditorVM: Saving progression settings..." }

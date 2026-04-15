@@ -17,7 +17,7 @@ val presentationModule = module {
 
     // ViewModels
     factory { ConnectionLogsViewModel() }
-    factory { CycleEditorViewModel(get()) }
+    factory { CycleEditorViewModel(get(), get()) }
     factory { GamificationViewModel(get(), get()) }
     factory { IntegrationsViewModel(get(), get(), get(), get(), get(), get()) }
     factory { AssessmentViewModel(get(), get(), get()) }

@@ -8,15 +8,66 @@ import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.CalendarToday
+import androidx.compose.material.icons.filled.Cancel
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Error
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.Loop
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.PlayCircle
+import androidx.compose.material.icons.filled.SelfImprovement
+import androidx.compose.material.icons.filled.SkipNext
+import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -27,7 +78,6 @@ import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.data.repository.TrainingCycleRepository
 import com.devil.phoenixproject.data.repository.WorkoutRepository
-import com.devil.phoenixproject.domain.model.CycleDay
 import com.devil.phoenixproject.domain.model.CycleProgress
 import com.devil.phoenixproject.domain.model.CycleTemplate
 import com.devil.phoenixproject.domain.model.Routine
@@ -45,8 +95,25 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.koinInject
-import vitruvianprojectphoenix.shared.generated.resources.*
 import vitruvianprojectphoenix.shared.generated.resources.Res
+import vitruvianprojectphoenix.shared.generated.resources.action_cancel
+import vitruvianprojectphoenix.shared.generated.resources.action_delete
+import vitruvianprojectphoenix.shared.generated.resources.action_edit
+import vitruvianprojectphoenix.shared.generated.resources.action_ok
+import vitruvianprojectphoenix.shared.generated.resources.assign_routine
+import vitruvianprojectphoenix.shared.generated.resources.cd_create_cycle
+import vitruvianprojectphoenix.shared.generated.resources.cd_expand
+import vitruvianprojectphoenix.shared.generated.resources.create_cycle
+import vitruvianprojectphoenix.shared.generated.resources.delete_cycle_message
+import vitruvianprojectphoenix.shared.generated.resources.delete_cycle_title
+import vitruvianprojectphoenix.shared.generated.resources.edit_cycle
+import vitruvianprojectphoenix.shared.generated.resources.empty_no_cycles_message
+import vitruvianprojectphoenix.shared.generated.resources.empty_no_cycles_title
+import vitruvianprojectphoenix.shared.generated.resources.exercises_not_found
+import vitruvianprojectphoenix.shared.generated.resources.jump_to_day
+import vitruvianprojectphoenix.shared.generated.resources.label_error
+import vitruvianprojectphoenix.shared.generated.resources.skip_rest_day
+import vitruvianprojectphoenix.shared.generated.resources.start_workout
 
 /**
  * State machine for cycle creation flow
@@ -371,10 +438,15 @@ fun TrainingCyclesScreen(navController: NavController, viewModel: MainViewModel,
                         // Simple templates: auto-create with defaults, skip 1RM and mode screens
                         creationState = CycleCreationState.Creating(template)
                         try {
-                            val conversionResult = templateConverter.convert(template)
+                            // Issue #364 fix: Pass profileId so cycle and routines are owned by the active profile
+                            val conversionResult = templateConverter.convert(
+                                template = template,
+                                profileId = profileId,
+                            )
 
                             conversionResult.routines.forEach { routine ->
-                                workoutRepository.saveRoutine(routine)
+                                // Save routine with active profile's ownership
+                                workoutRepository.saveRoutine(routine.copy(profileId = profileId))
                             }
                             cycleRepository.saveCycle(conversionResult.cycle)
 
@@ -492,16 +564,19 @@ fun TrainingCyclesScreen(navController: NavController, viewModel: MainViewModel,
                             }
 
                             // 2. Convert template using TemplateConverter (with user's exercise configs)
+                            // Issue #364 fix: Pass profileId so cycle and routines are owned by the active profile
                             val conversionResult = templateConverter.convert(
                                 template = state.template,
                                 exerciseConfigs = exerciseConfigs,
+                                profileId = profileId,
                             )
 
                             // 3. Save routines FIRST (CycleDay has FK to Routine)
                             // CRITICAL: Must await each save - workoutRepository.saveRoutine is suspend
                             // Using viewModel.saveRoutine() was fire-and-forget (launched coroutine without await)
                             conversionResult.routines.forEach { routine ->
-                                workoutRepository.saveRoutine(routine)
+                                // Save routine with active profile's ownership (Issue #364)
+                                workoutRepository.saveRoutine(routine.copy(profileId = profileId))
                             }
 
                             // 4. Save cycle via TrainingCycleRepository (routines now guaranteed to exist)
