@@ -2,7 +2,6 @@ package com.devil.phoenixproject.data.integration
 
 import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.domain.model.WorkoutSession
-import kotlin.coroutines.resume
 import kotlinx.coroutines.suspendCancellableCoroutine
 import platform.Foundation.NSDate
 import platform.Foundation.NSError
@@ -15,6 +14,7 @@ import platform.HealthKit.HKQuantityTypeIdentifierActiveEnergyBurned
 import platform.HealthKit.HKUnit
 import platform.HealthKit.HKWorkout
 import platform.HealthKit.HKWorkoutActivityTypeTraditionalStrengthTraining
+import kotlin.coroutines.resume
 
 private val log = Logger.withTag("HealthIntegration.iOS")
 
@@ -136,11 +136,12 @@ actual class HealthIntegration {
      *
      * Creates an HKWorkout with:
      * - Activity type: Traditional Strength Training
-     * - Duration derived from session.duration (in seconds)
+     * - Duration derived from session.duration (stored in milliseconds, converted to seconds)
      * - Optional calorie data from session.estimatedCalories
      * - Metadata with external UUID (session.id) for deduplication
      *
-     * Weight display uses actual cableCount: weightPerCableKg * cableCount (defaults to 2 for legacy data).
+     * Weight display uses actual cableCount: weightPerCableKg * cableCount.
+     * Defaults to 1 for legacy sessions without cableCount metadata (Issue #358).
      */
     actual suspend fun writeWorkout(session: WorkoutSession): Result<Unit> {
         if (!isAvailable()) {
@@ -165,8 +166,10 @@ actual class HealthIntegration {
                     epochSeconds - UNIX_TO_APPLE_EPOCH_OFFSET,
             )
 
-            // session.duration is in SECONDS
-            val durationSeconds = session.duration.coerceAtLeast(1L).toDouble()
+            // session.duration is stored in MILLISECONDS (from currentTimeMillis() - startTime)
+            // Issue #362: Convert to seconds for HealthKit; minimum 1 second
+            val durationMs = session.duration.coerceAtLeast(1000L)
+            val durationSeconds = (durationMs / 1000L).toDouble()
             val endDate = NSDate(
                 timeIntervalSinceReferenceDate =
                     (epochSeconds + durationSeconds) - UNIX_TO_APPLE_EPOCH_OFFSET,
@@ -239,10 +242,13 @@ actual class HealthIntegration {
     /**
      * Builds a human-readable title for the exercise session.
      * Total weight shown is per-cable x cableCount (respects single vs dual cable).
+     *
+     * Default to 1 cable for legacy sessions without cableCount metadata (Issue #358).
+     * This matches Android behavior, effectiveTotalVolumeKg(), and official Vitruvian app.
      */
     private fun buildExerciseTitle(session: WorkoutSession): String {
         val exerciseName = session.exerciseName?.takeIf { it.isNotBlank() } ?: "Phoenix Workout"
-        val totalWeightKg = session.weightPerCableKg * (session.cableCount ?: 2).toFloat()
+        val totalWeightKg = session.weightPerCableKg * (session.cableCount ?: 1).toFloat()
         return if (totalWeightKg > 0f) {
             "$exerciseName — ${totalWeightKg.toInt()}kg"
         } else {

@@ -80,9 +80,11 @@ actual class HealthIntegration(private val context: Context) {
 
         return try {
             val startInstant = Instant.ofEpochMilli(session.timestamp)
-            // session.duration is in SECONDS (confirmed by CsvExporter.formatDuration
-            // which divides by 3600 to get hours, and WorkoutSession domain model convention)
-            val endInstant = startInstant.plusSeconds(session.duration.coerceAtLeast(1L))
+            // session.duration is stored in MILLISECONDS (from currentTimeMillis() - startTime)
+            // Issue #362: Convert to seconds for Health Connect; minimum 1 second
+            val durationMs = session.duration.coerceAtLeast(1000L)
+            val durationSeconds = durationMs / 1000L
+            val endInstant = startInstant.plusSeconds(durationSeconds)
             val zoneOffset = ZoneId.systemDefault().rules.getOffset(startInstant)
 
             val records = buildList {

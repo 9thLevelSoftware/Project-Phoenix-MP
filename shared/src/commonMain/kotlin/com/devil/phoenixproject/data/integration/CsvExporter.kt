@@ -1,11 +1,12 @@
 package com.devil.phoenixproject.data.integration
 
+import com.devil.phoenixproject.data.integration.CsvExporter.WEIGHT_MULTIPLIER
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.domain.model.WorkoutSession
-import kotlin.time.Instant
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.number
 import kotlinx.datetime.toLocalDateTime
+import kotlin.time.Instant
 
 /**
  * Exports workout sessions to Strong-compatible CSV format.
@@ -115,7 +116,9 @@ object CsvExporter {
     internal fun buildRow(session: WorkoutSession, setOrder: Int, weightUnit: WeightUnit): String {
         val date = formatTimestamp(session.timestamp)
         val workoutName = resolveWorkoutName(session)
-        val duration = formatDuration(session.duration)
+        // session.duration is stored in milliseconds; formatDuration expects seconds
+        val durationSeconds = session.duration / 1000L
+        val duration = formatDuration(durationSeconds)
         val exerciseName = session.exerciseName ?: ""
         val weight = formatWeight(session.weightPerCableKg, weightUnit)
         val reps = if (session.totalReps > 0) session.totalReps else session.reps

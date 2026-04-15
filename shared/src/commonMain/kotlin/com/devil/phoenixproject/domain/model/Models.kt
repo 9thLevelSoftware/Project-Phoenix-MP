@@ -443,6 +443,11 @@ sealed class HapticEvent {
 
 /**
  * Workout session data (simplified for database storage)
+ *
+ * @property timestamp Session start time as Unix epoch milliseconds
+ * @property duration Session duration in MILLISECONDS (not seconds!)
+ *                    Computed as `currentTimeMillis() - startTime`
+ * @property weightPerCableKg Weight per cable in kilograms (total weight = weightPerCableKg * cableCount)
  */
 data class WorkoutSession(
     val id: String = generateUUID(),
@@ -451,6 +456,7 @@ data class WorkoutSession(
     val reps: Int = 10,
     val weightPerCableKg: Float = 10f,
     val progressionKg: Float = 0f,
+    /** Duration in milliseconds. Divide by 1000 for seconds. */
     val duration: Long = 0,
     val totalReps: Int = 0,
     val warmupReps: Int = 0,
