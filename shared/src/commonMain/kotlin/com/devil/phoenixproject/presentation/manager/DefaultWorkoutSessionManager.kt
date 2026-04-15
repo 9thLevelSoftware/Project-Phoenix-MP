@@ -620,6 +620,12 @@ class DefaultWorkoutSessionManager(
                 if (nextStep == null) {
                     Logger.d { "proceedFromSummary: No more steps - showing routine complete" }
                     showRoutineComplete()
+                    // Issue #355: Clear workoutState so EnhancedMainScreen's resume-active-workout
+                    // guard does not bounce the user back to ActiveWorkout after navigation to
+                    // RoutineComplete. Leaving workoutState at SetSummary caused a navigation
+                    // ping-pong with ActiveWorkoutScreen's Complete observer. Mirrors the reset
+                    // performed in ActiveSessionEngine.startNextSetOrExercise() (Path B).
+                    coordinator._workoutState.value = WorkoutState.Idle
                     return@launch
                 }
 
