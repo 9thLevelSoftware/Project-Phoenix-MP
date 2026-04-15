@@ -1,6 +1,7 @@
 package com.devil.phoenixproject.presentation.components
 
 import androidx.compose.foundation.gestures.snapping.rememberSnapFlingBehavior
+import androidx.compose.foundation.interaction.DragInteraction
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -205,6 +206,20 @@ actual fun CompactNumberPicker(
     // Track the last value we set via scroll to prevent feedback loops
     var lastScrollSetValue by remember { mutableStateOf(value) }
 
+    // Issue #359 Fix: Track whether the current scroll was initiated by a real user drag.
+    // Programmatic scrolls (commitEdit, +/- buttons, external value sync) must NOT write
+    // the scroll position back to onValueChange — doing so created a feedback loop where
+    // a stale `centeredVisibleIndex` (iOS layoutInfo lag) would counter-write the user's
+    // value, producing the -1 lb drift and making the + button appear non-functional.
+    var wasUserDragging by remember { mutableStateOf(false) }
+    LaunchedEffect(listState) {
+        listState.interactionSource.interactions.collect { interaction ->
+            if (interaction is DragInteraction.Start) {
+                wasUserDragging = true
+            }
+        }
+    }
+
     // Issue #224 Fix: Use rememberUpdatedState to ensure LaunchedEffects always see
     // the current value, not a stale captured value from composition time
     val currentValue by rememberUpdatedState(value)
@@ -323,11 +338,16 @@ actual fun CompactNumberPicker(
             // MUST set these BEFORE any delays to prevent race with onFocusChanged
             hasFocusedOnce = false
             editSessionReady = false
-            // Issue #166 Fix: Use the current scroll position value, not external value
-            val currentScrollIndex = if (values.isNotEmpty()) {
+            // Issue #359 Fix: Prefer the external value prop when not actively scrolling.
+            // centeredVisibleIndex can lag on iOS after programmatic scrolls, which would
+            // previously start the edit session showing a stale value (e.g. "39.0" when
+            // the real value was 40.0), making the next commit drift the weight downward.
+            val currentScrollIndex = if (values.isEmpty()) {
+                0
+            } else if (listState.isScrollInProgress || isUserInteracting) {
                 centeredVisibleIndex.coerceIn(values.indices)
             } else {
-                0
+                safeCurrentIndex
             }
             val currentScrollValue = values.getOrElse(currentScrollIndex) { value }
             inputText = formatValueForEdit(currentScrollValue)
@@ -352,21 +372,28 @@ actual fun CompactNumberPicker(
 
     // Track scroll state changes and update value when scroll settles
     // Issue #224 Fix: Use currentValue and currentOnValueChange to avoid stale captures
+    // Issue #359 Fix: Only write the scroll position back to onValueChange when the user
+    // actually dragged the wheel (wasUserDragging). Programmatic scrolls (commitEdit,
+    // +/- buttons, external sync) would otherwise fire this listener with a stale
+    // centeredVisibleIndex on iOS, counter-writing the user's intended value and causing
+    // the weight to drift downward each cycle.
     LaunchedEffect(listState.isScrollInProgress) {
         if (listState.isScrollInProgress) {
             isUserInteracting = true
         } else {
-            // Scroll stopped - update the value
-            val centerIndex = centeredVisibleIndex.coerceIn(values.indices)
-            if (centerIndex in values.indices) {
-                val scrollValue = values[centerIndex]
-                Logger.i {
-                    "PICKER_DEBUG[iOS]: centerIndex=$centerIndex, scrollValue=$scrollValue, currentValue=$currentValue, values.size=${values.size}"
+            if (wasUserDragging) {
+                val centerIndex = centeredVisibleIndex.coerceIn(values.indices)
+                if (centerIndex in values.indices) {
+                    val scrollValue = values[centerIndex]
+                    Logger.i {
+                        "PICKER_DEBUG[iOS]: user-drag settle centerIndex=$centerIndex, scrollValue=$scrollValue, currentValue=$currentValue, values.size=${values.size}"
+                    }
+                    if (abs(scrollValue - currentValue) > 0.001f) {
+                        lastScrollSetValue = scrollValue
+                        currentOnValueChange(scrollValue)
+                    }
                 }
-                if (abs(scrollValue - currentValue) > 0.001f) {
-                    lastScrollSetValue = scrollValue
-                    currentOnValueChange(scrollValue)
-                }
+                wasUserDragging = false
             }
             // Small delay before allowing external sync again
             kotlinx.coroutines.delay(50)
@@ -553,7 +580,15 @@ actual fun CompactNumberPicker(
                 }
 
                 if (showCenteredOverlay) {
-                    val previewIndex = centeredVisibleIndex.coerceIn(values.indices)
+                    // Issue #359 Fix: When idle, trust the external value prop over the
+                    // scroll-derived center index. centeredVisibleIndex can lag behind
+                    // layout on iOS, which previously made the overlay visibly disagree
+                    // with the parent state after programmatic scrolls.
+                    val previewIndex = if (listState.isScrollInProgress || isUserInteracting) {
+                        centeredVisibleIndex.coerceIn(values.indices)
+                    } else {
+                        safeCurrentIndex
+                    }
                     Box(
                         modifier = Modifier
                             .align(Alignment.Center)

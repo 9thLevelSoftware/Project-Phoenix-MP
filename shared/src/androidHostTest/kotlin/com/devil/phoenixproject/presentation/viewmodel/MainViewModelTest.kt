@@ -571,7 +571,12 @@ class MainViewModelTest {
         }
         advanceUntilIdle()
 
-        assertIs<WorkoutState.SetSummary>(viewModel.workoutState.value)
+        // Issue #355 (d62d5c5): the routine contains a single set, so once the final
+        // rep lands, SetSummary auto-advances via proceedFromSummary(), which invokes
+        // showRoutineComplete() and resets workoutState to Idle to break the
+        // EnhancedMainScreen navigation ping-pong. advanceUntilIdle() runs past the
+        // 10s summary countdown, so the visible end state is Idle, not SetSummary.
+        assertEquals(WorkoutState.Idle, viewModel.workoutState.value)
         assertEquals(1, fakeWorkoutRepository.getRecentSessionsSync("default", 10).size)
     }
 
