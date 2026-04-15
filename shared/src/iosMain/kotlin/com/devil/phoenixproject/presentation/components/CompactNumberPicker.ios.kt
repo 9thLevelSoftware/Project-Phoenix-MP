@@ -1,7 +1,18 @@
 package com.devil.phoenixproject.presentation.components
 
 import androidx.compose.foundation.gestures.snapping.rememberSnapFlingBehavior
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -13,8 +24,20 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Remove
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -37,10 +60,9 @@ import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.presentation.util.LocalWindowSizeClass
 import com.devil.phoenixproject.presentation.util.WindowHeightSizeClass
 import com.devil.phoenixproject.presentation.util.WindowWidthSizeClass
+import kotlinx.coroutines.launch
 import kotlin.math.abs
 import kotlin.math.roundToInt
-import kotlinx.coroutines.flow.collectLatest
-import kotlinx.coroutines.launch
 
 private data class PickerSizing(
     val itemHeight: Dp,
@@ -188,6 +210,12 @@ actual fun CompactNumberPicker(
     val currentValue by rememberUpdatedState(value)
     val currentOnValueChange by rememberUpdatedState(onValueChange)
 
+    // Issue #359 Fix: Calculate target index from current value prop for re-sync on layout changes
+    // This ensures we always know which index the value corresponds to, regardless of scroll position
+    val targetIndexFromValue = remember(value, values) {
+        if (values.isEmpty()) 0 else values.indices.minByOrNull { abs(values[it] - value) } ?: 0
+    }
+
     // True center index derived from current viewport/layout rather than first visible item.
     val centeredVisibleIndex by remember(listState, values) {
         derivedStateOf {
@@ -200,6 +228,16 @@ actual fun CompactNumberPicker(
                     abs((itemInfo.offset + itemInfo.size / 2) - viewportCenter)
                 }
                 (nearestCenteredItem?.index ?: listState.firstVisibleItemIndex).coerceIn(values.indices)
+            }
+        }
+    }
+
+    // Issue #359 Fix: Re-sync scroll position when itemHeight changes (e.g., screen rotation)
+    // Without this, changing itemHeight shifts which item appears "centered" in the viewport
+    LaunchedEffect(pickerSizing.itemHeight) {
+        if (!isUserInteracting && !isEditing && values.isNotEmpty()) {
+            if (centeredVisibleIndex != targetIndexFromValue) {
+                listState.scrollToItem(targetIndexFromValue)
             }
         }
     }
