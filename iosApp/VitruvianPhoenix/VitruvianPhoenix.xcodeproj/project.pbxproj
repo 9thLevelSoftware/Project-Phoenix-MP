@@ -27,7 +27,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
-		7BD2BAB62F8C1299004FCE77 /* Supabase.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Supabase.xcconfig; sourceTree = "<group>"; };
+		7BD2BAB62F8C1299004FCE77 /* Supabase.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Config/Supabase.xcconfig; sourceTree = "<group>"; };
 		DFE6BD472EEDF42200886589 /* VitruvianPhoenix.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = VitruvianPhoenix.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		DFE6BD562EEDF53700886589 /* shared.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = shared.framework; path = ../../shared/build/bin/iosArm64/debugFramework/shared.framework; sourceTree = "<group>"; };
 		DFE6BD6D2EEDFF5500886589 /* libsqlite3.tbd */ = {isa = PBXFileReference; lastKnownFileType = "sourcecode.text-based-dylib-definition"; name = libsqlite3.tbd; path = usr/lib/libsqlite3.tbd; sourceTree = SDKROOT; };
@@ -198,7 +198,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "# Generate dSYM for shared.framework\nif [ \"$CONFIGURATION\" = \"Release\" ]; then\n    FRAMEWORK_PATH=\"${SRCROOT}/../../shared/build/bin/iosArm64/debugFramework/shared.framework\"\n    DSYM_PATH=\"${DWARF_DSYM_FOLDER_PATH}/shared.framework.dSYM\"\n    FRAMEWORK_BIN=\"${FRAMEWORK_PATH}/shared\"\n    \n    if [ -f \"${FRAMEWORK_BIN}\" ]; then\n        FILE_TYPE=\"$(/usr/bin/file -b \"${FRAMEWORK_BIN}\" 2>/dev/null || true)\"\n        if echo \"${FILE_TYPE}\" | /usr/bin/grep -q \"Mach-O\"; then\n            echo \"Generating dSYM for shared.framework...\"\n            if xcrun dsymutil \"${FRAMEWORK_BIN}\" -o \"${DSYM_PATH}\" >/dev/null 2>&1; then\n                echo \"dSYM generated at ${DSYM_PATH}\"\n            else\n                echo \"Warning: dsymutil failed for shared.framework; skipping.\"\n            fi\n        else\n            echo \"Skipping dSYM generation for shared.framework (binary type: ${FILE_TYPE:-unknown}).\"\n        fi\n    else\n        echo \"Warning: shared.framework binary not found at ${FRAMEWORK_PATH}\"\n    fi\nfi\n";
+			shellScript = "# Generate dSYM for shared.framework\nif [ \"$CONFIGURATION\" = \"Release\" ]; then\n    FRAMEWORK_PATH=\"${SRCROOT}/../../shared/build/bin/iosArm64/releaseFramework/shared.framework\"\n    DSYM_PATH=\"${DWARF_DSYM_FOLDER_PATH}/shared.framework.dSYM\"\n    FRAMEWORK_BIN=\"${FRAMEWORK_PATH}/shared\"\n    \n    if [ -f \"${FRAMEWORK_BIN}\" ]; then\n        FILE_TYPE=\"$(/usr/bin/file -b \"${FRAMEWORK_BIN}\" 2>/dev/null || true)\"\n        if echo \"${FILE_TYPE}\" | /usr/bin/grep -q \"Mach-O\"; then\n            echo \"Generating dSYM for shared.framework...\"\n            if xcrun dsymutil \"${FRAMEWORK_BIN}\" -o \"${DSYM_PATH}\" >/dev/null 2>&1; then\n                echo \"dSYM generated at ${DSYM_PATH}\"\n            else\n                echo \"Warning: dsymutil failed for shared.framework; skipping.\"\n            fi\n        else\n            echo \"Skipping dSYM generation for shared.framework (binary type: ${FILE_TYPE:-unknown}).\"\n        fi\n    else\n        echo \"Warning: shared.framework binary not found at ${FRAMEWORK_PATH}\"\n    fi\nfi\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 
@@ -393,7 +393,7 @@
 				CURRENT_PROJECT_VERSION = 2025122901;
 				DEVELOPMENT_TEAM = BDJDR669ZV;
 				ENABLE_PREVIEWS = YES;
-				FRAMEWORK_SEARCH_PATHS = "$(SRCROOT)/../../shared/build/bin/iosArm64/debugFramework";
+				FRAMEWORK_SEARCH_PATHS = "$(SRCROOT)/../../shared/build/bin/iosArm64/releaseFramework";
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = VitruvianPhoenix/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "Project Phoenix";

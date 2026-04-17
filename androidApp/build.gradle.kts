@@ -121,6 +121,19 @@ android {
     }
 }
 
+listOf("assembleRelease", "bundleRelease").forEach { taskName ->
+    tasks.findByName(taskName)?.let { task ->
+        task.doFirst {
+            if (injectedVersionCode == null) {
+                throw GradleException(
+                    "Release builds require an explicit Android versionCode. " +
+                        "Pass -Pversion.code=<integer> (CI injects this for Play Store builds).",
+                )
+            }
+        }
+    }
+}
+
 dependencies {
     // Shared module
     implementation(project(":shared"))

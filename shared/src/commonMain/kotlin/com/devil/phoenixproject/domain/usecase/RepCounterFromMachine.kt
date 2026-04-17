@@ -55,6 +55,9 @@ class RepCounterFromMachine {
     private var lastTopCounter: Int = 0
     private var lastCompleteCounter: Int = 0
 
+    /** After [reset], first rep packet seeds counters without counting (BLE reconnect / new baseline). */
+    private var repCountersNeedBaseline: Boolean = false
+
     // Position tracking lists - now in mm (Float)
     private val topPositionsA = mutableListOf<Float>()
     private val topPositionsB = mutableListOf<Float>()
@@ -115,6 +118,7 @@ class RepCounterFromMachine {
         phaseStartPosition = 0f
         phasePeakPosition = 0f
         positionHistoryForDirection.clear()
+        repCountersNeedBaseline = true
         lastTopCounter = 0
         lastCompleteCounter = 0
         topPositionsA.clear()
@@ -152,6 +156,7 @@ class RepCounterFromMachine {
         // Issue #163: Reset phase tracking (but keep position history for direction detection)
         activePhase = RepPhase.IDLE
         phaseProgress = 0f
+        repCountersNeedBaseline = true
         lastTopCounter = 0
         lastCompleteCounter = 0
         // NOTE: Do NOT clear position tracking lists or min/max ranges!
@@ -306,61 +311,65 @@ class RepCounterFromMachine {
      * Used when machine sends 6-byte packets without repsRomCount/repsSetCount fields.
      */
     private fun processLegacy(up: Int, down: Int, posA: Float, posB: Float) {
-        // Issue #210 FIX: No null check needed - lastTopCounter initialized to 0
-        // First notification with up=1: delta = 1 - 0 = 1 → counts the rep
+        if (repCountersNeedBaseline) {
+            lastTopCounter = up
+            lastCompleteCounter = down
+            repCountersNeedBaseline = false
+            logDebug("LEGACY: baseline seeded up=$up down=$down (no reps counted)")
+            return
+        }
+
         val topDelta = calculateDelta(lastTopCounter, up)
         if (topDelta > 0) {
             recordTopPosition(posA, posB)
 
-            // Count the rep at TOP of movement (matches Beta 4 / official app behavior)
-            val totalReps = warmupReps + workingReps + 1
-            if (totalReps <= warmupTarget) {
-                warmupReps++
-                logDebug("📈 LEGACY: Warmup rep $warmupReps (top counter increment)")
-                onRepEvent?.invoke(
-                    RepEvent(
-                        type = RepType.WARMUP_COMPLETED,
-                        warmupCount = warmupReps,
-                        workingCount = workingReps,
-                    ),
-                )
-                if (warmupReps == warmupTarget) {
+            repeat(topDelta) {
+                val totalReps = warmupReps + workingReps + 1
+                if (totalReps <= warmupTarget) {
+                    warmupReps++
+                    logDebug("📈 LEGACY: Warmup rep $warmupReps (top counter increment)")
                     onRepEvent?.invoke(
                         RepEvent(
-                            type = RepType.WARMUP_COMPLETE,
+                            type = RepType.WARMUP_COMPLETED,
                             warmupCount = warmupReps,
                             workingCount = workingReps,
                         ),
                     )
-                }
-            } else {
-                workingReps++
-                logDebug("💪 LEGACY: Working rep $workingReps (top counter increment)")
-                onRepEvent?.invoke(
-                    RepEvent(
-                        type = RepType.WORKING_COMPLETED,
-                        warmupCount = warmupReps,
-                        workingCount = workingReps,
-                    ),
-                )
+                    if (warmupReps == warmupTarget) {
+                        onRepEvent?.invoke(
+                            RepEvent(
+                                type = RepType.WARMUP_COMPLETE,
+                                warmupCount = warmupReps,
+                                workingCount = workingReps,
+                            ),
+                        )
+                    }
+                } else {
+                    workingReps++
+                    logDebug("💪 LEGACY: Working rep $workingReps (top counter increment)")
+                    onRepEvent?.invoke(
+                        RepEvent(
+                            type = RepType.WORKING_COMPLETED,
+                            warmupCount = warmupReps,
+                            workingCount = workingReps,
+                        ),
+                    )
 
-                // Check if target reached (unless AMRAP or Just Lift)
-                if (!isJustLift && !isAMRAP && workingTarget > 0 && workingReps >= workingTarget) {
-                    logDebug("⚠️ LEGACY: shouldStop set to TRUE (target reached)")
-                    shouldStop = true
-                    onRepEvent?.invoke(
-                        RepEvent(
-                            type = RepType.WORKOUT_COMPLETE,
-                            warmupCount = warmupReps,
-                            workingCount = workingReps,
-                        ),
-                    )
+                    if (!isJustLift && !isAMRAP && workingTarget > 0 && workingReps >= workingTarget) {
+                        logDebug("⚠️ LEGACY: shouldStop set to TRUE (target reached)")
+                        shouldStop = true
+                        onRepEvent?.invoke(
+                            RepEvent(
+                                type = RepType.WORKOUT_COMPLETE,
+                                warmupCount = warmupReps,
+                                workingCount = workingReps,
+                            ),
+                        )
+                    }
                 }
             }
         }
 
-        // Track bottom position for calibration
-        // Issue #210 FIX: No null check needed - lastCompleteCounter initialized to 0
         val downDelta = calculateDelta(lastCompleteCounter, down)
         if (downDelta > 0) {
             recordBottomPosition(posA, posB)
@@ -387,6 +396,14 @@ class RepCounterFromMachine {
      * - Actual rep counting comes from repsRomCount/repsSetCount
      */
     private fun processModern(repsRomCount: Int, repsSetCount: Int, up: Int, down: Int, posA: Float, posB: Float) {
+        if (repCountersNeedBaseline) {
+            lastTopCounter = up
+            lastCompleteCounter = down
+            repCountersNeedBaseline = false
+            logDebug("MODERN: baseline seeded up=$up down=$down (no reps counted)")
+            return
+        }
+
         // Track UP movement - for working reps, show PENDING (grey) at TOP
         // Issue #210 FIX: No null check needed - lastTopCounter initialized to 0
         val upDelta = calculateDelta(lastTopCounter, up)
@@ -478,7 +495,7 @@ class RepCounterFromMachine {
         }
         // FALLBACK WARMUP: When machine doesn't report repsRomCount (0xFF/unlimited mode),
         // count warmup reps from directional up counter (matches processLegacy approach)
-        else if (repsRomCount == 0 && warmupReps < warmupTarget && upDelta > 0) {
+        else if (repsSetCount == 0 && repsRomCount == 0 && warmupReps < warmupTarget && upDelta > 0) {
             warmupReps = (warmupReps + upDelta).coerceAtMost(warmupTarget)
             logDebug("📈 MODERN FALLBACK: Warmup rep $warmupReps (from up counter, repsRomCount=0)")
 
@@ -552,9 +569,10 @@ class RepCounterFromMachine {
     }
 
     private fun calculateDelta(last: Int, current: Int): Int = if (current >= last) {
-        current - last
+        (current - last).coerceAtMost(100_000)
     } else {
-        0xFFFF - last + current + 1
+        val wrap = 0xFFFF - last + current + 1
+        wrap.takeIf { it in 0..100_000 } ?: 0
     }
 
     private fun recordTopPosition(posA: Float, posB: Float) {

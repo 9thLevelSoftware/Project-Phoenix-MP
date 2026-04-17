@@ -183,6 +183,7 @@ class SyncManager(
         // signOut() is designed to swallow exceptions (see PortalApiClient line 267-280)
         apiClient.signOut()
 
+        tokenStorage.updatePremiumStatus(false)
         tokenStorage.clearAuth()
         tokenStorage.emitLogoutEvent()
 
@@ -190,6 +191,21 @@ class SyncManager(
         // (Issue 5.2: logout() and sync() both modify _syncState)
         syncMutex.withLock {
             _syncState.value = SyncState.NotAuthenticated
+        }
+    }
+
+    /**
+     * Refreshes [PortalUser.isPremium] from the server subscription endpoint.
+     * Prefer this on app foreground; do not infer entitlement from sync HTTP status alone.
+     */
+    suspend fun refreshPremiumStatusFromServer() {
+        if (!tokenStorage.hasToken()) return
+        val premiumResult = apiClient.checkPremiumStatus()
+        val existingPremium = tokenStorage.currentUser.value?.isPremium ?: false
+        val isPremium = premiumResult.getOrNull() ?: existingPremium
+        tokenStorage.updatePremiumStatus(isPremium)
+        Logger.d("SyncManager") {
+            "refreshPremiumStatusFromServer: premium=$isPremium (network ok=${premiumResult.isSuccess})"
         }
     }
 
@@ -252,7 +268,6 @@ class SyncManager(
             } else if (error is PortalApiException &&
                 (error.statusCode == 402 || error.statusCode == 403)
             ) {
-                tokenStorage.updatePremiumStatus(false)
                 _syncState.value = SyncState.NotPremium
             } else {
                 _syncState.value = SyncState.Error(error?.message ?: "Push failed")
@@ -260,9 +275,6 @@ class SyncManager(
             return@withLock Result.failure(error ?: Exception("Push failed"))
         }
         Logger.i("SyncManager") { "Push succeeded" }
-
-        // Successful push confirms premium status
-        tokenStorage.updatePremiumStatus(true)
 
         // Stamp pushed sessions so they aren't re-sent on next sync.
         // Sessions with NULL updatedAt would match every delta query indefinitely.

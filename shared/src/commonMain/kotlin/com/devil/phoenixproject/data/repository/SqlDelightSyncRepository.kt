@@ -610,12 +610,18 @@ class SqlDelightSyncRepository(
                             // Prevents bodyweight misclassification when equipment would default to "".
                             val catalogExercise = queries.findExerciseByName(exercise.name).executeAsOneOrNull()
 
+                            val resolvedEquipment = when {
+                                exercise.isBodyweight -> "Bodyweight"
+                                catalogExercise != null -> catalogExercise.equipment
+                                else -> "Cable"
+                            }
+
                             queries.insertRoutineExercise(
                                 id = exercise.id,
                                 routineId = portalRoutine.id,
                                 exerciseName = exercise.name,
                                 exerciseMuscleGroup = exercise.muscleGroup,
-                                exerciseEquipment = catalogExercise?.equipment ?: "Cable",
+                                exerciseEquipment = resolvedEquipment,
                                 exerciseDefaultCableConfig = catalogExercise?.defaultCableConfig ?: "DOUBLE",
                                 exerciseId = catalogExercise?.id, // Link to catalog when available
                                 cableConfig = "DOUBLE",
@@ -1533,12 +1539,18 @@ class SqlDelightSyncRepository(
                             val mobileMode = PortalPullAdapter.portalModeToMobileMode(exercise.mode)
                             val catalogExercise = queries.findExerciseByName(exercise.name).executeAsOneOrNull()
 
+                            val resolvedEquipmentBulk = when {
+                                exercise.isBodyweight -> "Bodyweight"
+                                catalogExercise != null -> catalogExercise.equipment
+                                else -> "Cable"
+                            }
+
                             queries.insertRoutineExercise(
                                 id = exercise.id,
                                 routineId = portalRoutine.id,
                                 exerciseName = exercise.name,
                                 exerciseMuscleGroup = exercise.muscleGroup,
-                                exerciseEquipment = catalogExercise?.equipment ?: "Cable",
+                                exerciseEquipment = resolvedEquipmentBulk,
                                 exerciseDefaultCableConfig = catalogExercise?.defaultCableConfig ?: "DOUBLE",
                                 exerciseId = catalogExercise?.id,
                                 cableConfig = "DOUBLE",

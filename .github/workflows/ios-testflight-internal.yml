@@ -24,6 +24,17 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v6
 
+      - name: Write Supabase.xcconfig from secrets
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+        run: |
+          mkdir -p iosApp/VitruvianPhoenix/Config
+          {
+            echo "SUPABASE_URL = $SUPABASE_URL"
+            echo "SUPABASE_ANON_KEY = $SUPABASE_ANON_KEY"
+          } > iosApp/VitruvianPhoenix/Config/Supabase.xcconfig
+
       - name: Set up Java 17
         uses: actions/setup-java@v4
         with:

@@ -464,6 +464,7 @@ object PortalSyncAdapter {
                 perSetRest = ex.setRestSeconds.takeIf { it.isNotEmpty() }
                     ?.let { Json.encodeToString(ListSerializer(Int.serializer()), it) },
                 isAmrap = ex.isAMRAP,
+                isBodyweight = !ex.exercise.hasCableAccessory,
                 prPercentage = if (ex.usePercentOfPR) ex.weightPercentOfPR.toFloat() else null,
                 repCountTiming = ex.repCountTiming.name,
                 stopAtPosition = if (ex.stopAtTop) "TOP" else null,

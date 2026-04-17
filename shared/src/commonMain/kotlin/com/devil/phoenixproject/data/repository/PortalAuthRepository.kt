@@ -91,9 +91,11 @@ class PortalAuthRepository(
             goTrueResponse.toPortalAuthResponse().user.toAuthUser()
         }
 
-    override suspend fun signInWithGoogle(): Result<AuthUser> = Result.failure(NotImplementedError("Google sign-in requires platform implementation"))
+    override suspend fun signInWithGoogle(): Result<AuthUser> =
+        Result.failure(UnsupportedOperationException("Google sign-in requires platform implementation"))
 
-    override suspend fun signInWithApple(): Result<AuthUser> = Result.failure(NotImplementedError("Apple sign-in requires platform implementation"))
+    override suspend fun signInWithApple(): Result<AuthUser> =
+        Result.failure(UnsupportedOperationException("Apple sign-in requires platform implementation"))
 
     override suspend fun signOut(): Result<Unit> {
         apiClient.signOut()

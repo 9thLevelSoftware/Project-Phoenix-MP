@@ -108,7 +108,7 @@ fun parseRepPacket(data: ByteArray, hasOpcodePrefix: Boolean, timestamp: Long): 
     val offset = if (hasOpcodePrefix) 1 else 0
     val effectiveSize = data.size - offset
 
-    // Minimum 6 bytes for legacy format
+    // Minimum 6 bytes for legacy format; ambiguous 7..23 byte packets are rejected (M-M01).
     if (effectiveSize < 6) return null
 
     return if (effectiveSize >= 24) {
@@ -135,10 +135,10 @@ fun parseRepPacket(data: ByteArray, hasOpcodePrefix: Boolean, timestamp: Long): 
             timestamp = timestamp,
             isLegacyFormat = false,
         )
-    } else {
-        // LEGACY 6-byte format - u16 counters only
+    } else if (effectiveSize == 6) {
+        // LEGACY 6-byte format — second u16 is at offset +2 (not +4; bytes 4-5 are padding)
         val topCounter = getUInt16LE(data, offset + 0)
-        val completeCounter = getUInt16LE(data, offset + 4)
+        val completeCounter = getUInt16LE(data, offset + 2)
 
         RepNotification(
             topCounter = topCounter,
@@ -153,6 +153,8 @@ fun parseRepPacket(data: ByteArray, hasOpcodePrefix: Boolean, timestamp: Long): 
             timestamp = timestamp,
             isLegacyFormat = true,
         )
+    } else {
+        null
     }
 }
 

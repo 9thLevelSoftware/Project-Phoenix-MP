@@ -182,6 +182,7 @@ data class PortalRoutineExerciseSyncDto(
     val perSetWeights: String? = null, // JSON array
     val perSetRest: String? = null, // JSON array
     val isAmrap: Boolean = false,
+    val isBodyweight: Boolean = false,
     val prPercentage: Float? = null,
     val repCountTiming: String? = null, // "TOP" or "BOTTOM"
     val stopAtPosition: String? = null, // "TOP" or "BOTTOM"
@@ -592,6 +593,7 @@ data class PullRoutineExerciseDto(
     val perSetWeights: String? = null,
     val perSetRest: String? = null,
     val isAmrap: Boolean = false,
+    val isBodyweight: Boolean = false,
     val prPercentage: Float? = null,
     val repCountTiming: String? = null,
     val stopAtPosition: String? = null,
