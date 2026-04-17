@@ -121,9 +121,12 @@ android {
     }
 }
 
-listOf("assembleRelease", "bundleRelease").forEach { taskName ->
-    tasks.findByName(taskName)?.let { task ->
-        task.doFirst {
+// Guard release packaging tasks with an explicit versionCode check. Use configureEach
+// so the doFirst is attached regardless of when AGP registers the task (findByName at
+// configuration time silently no-ops if the task isn't registered yet).
+tasks.matching { it.name == "assembleRelease" || it.name == "bundleRelease" }
+    .configureEach {
+        doFirst {
             if (injectedVersionCode == null) {
                 throw GradleException(
                     "Release builds require an explicit Android versionCode. " +
@@ -132,7 +135,6 @@ listOf("assembleRelease", "bundleRelease").forEach { taskName ->
             }
         }
     }
-}
 
 dependencies {
     // Shared module

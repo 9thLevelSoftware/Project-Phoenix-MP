@@ -12,9 +12,12 @@ fun initKoin(appDeclaration: KoinAppDeclaration = {}) = startKoin {
 }
 
 /**
- * Shared Koin bootstrap used by [doInitKoin] (iOS) and tests.
- * Swift calls the iOS entrypoint `KoinKt.doInitKoin()` which is declared in `iosMain`
- * with `@Throws` so failures surface as NSError.
+ * Shared Koin bootstrap used by the iOS `doInitKoin` entrypoint (and tests).
+ *
+ * Swift calls `KoinInitIosKt.doInitKoin()` (declared in `shared/iosMain/.../KoinInitIos.kt`,
+ * `@Throws(Throwable::class)` so failures bridge to `NSError`). That function thinly delegates
+ * to this one. The Kotlin/Native export class name follows the source file name, so note the
+ * `Ios` suffix — the iOS symbol is NOT `KoinInitKt.doInitKoin()`.
  */
 internal fun doInitKoinInternal() {
     Logger.i { "iOS: ========== KOIN INITIALIZATION START ==========" }

@@ -30,9 +30,15 @@ jobs:
           SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
         run: |
           mkdir -p iosApp/VitruvianPhoenix/Config
+          # xcconfig treats `//` as an inline comment, so URLs like `https://foo`
+          # must be written as `https:/$()/foo` (empty xcconfig substitution) or
+          # the value gets truncated to `https:` at parse time. Apply to both
+          # fields defensively.
+          url_escaped=$(printf '%s' "$SUPABASE_URL" | sed 's|//|/$()/|g')
+          key_escaped=$(printf '%s' "$SUPABASE_ANON_KEY" | sed 's|//|/$()/|g')
           {
-            echo "SUPABASE_URL = $SUPABASE_URL"
-            echo "SUPABASE_ANON_KEY = $SUPABASE_ANON_KEY"
+            echo "SUPABASE_URL = $url_escaped"
+            echo "SUPABASE_ANON_KEY = $key_escaped"
           } > iosApp/VitruvianPhoenix/Config/Supabase.xcconfig
 
       - name: Set up Java 17

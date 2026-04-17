@@ -122,8 +122,8 @@ If you get "No such module 'shared'" error:
 
 The app initializes Koin and runs migrations in `VitruvianPhoenixApp.init()`:
 ```swift
-KoinKt.doInitKoin()
-KoinKt.runMigrations()
+try KoinInitIosKt.doInitKoin()   // declared in shared/iosMain/.../KoinInitIos.kt (@Throws)
+KoinInitKt.runMigrations()        // declared in shared/commonMain/.../KoinInit.kt
 ```
 
 This must be called before any Compose UI is rendered. Migrations run automatically on app startup, matching Android behavior.
