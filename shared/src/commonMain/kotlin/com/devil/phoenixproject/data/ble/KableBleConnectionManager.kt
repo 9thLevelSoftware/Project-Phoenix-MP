@@ -7,9 +7,7 @@ import com.devil.phoenixproject.data.repository.ReconnectionRequest
 import com.devil.phoenixproject.data.repository.ScannedDevice
 import com.devil.phoenixproject.domain.model.ConnectionState
 import com.devil.phoenixproject.util.BleConstants
-import com.devil.phoenixproject.util.DeviceInfo
 import com.devil.phoenixproject.util.HardwareDetection
-import com.devil.phoenixproject.util.PixelBleExperiments
 import com.juul.kable.Advertisement
 import com.juul.kable.Peripheral
 import com.juul.kable.Scanner
@@ -658,18 +656,16 @@ class KableBleConnectionManager(
     private suspend fun onDeviceReady() {
         val p = peripheral ?: return
 
-        // Log BCM4389 mitigation status at connection time (Issue #333)
-        PixelBleExperiments.logConnectionSummary()
-        // Also log to connection log export so users can confirm mitigations are active
-        if (PixelBleExperiments.isAffectedPixel()) {
-            logRepo.info(
-                LogEventType.SERVICE_DISCOVERED,
-                "BCM4389 mitigations active (B+C+D+F+G) for Issue #333",
-                connectedDeviceName,
-                connectedDeviceAddress,
-                "Model: ${DeviceInfo.model}",
-            )
-        }
+        // Issue #333: Pin LE 1M PHY post-connection.
+        // The decompiled official Vitruvian app calls connectGatt() with PHY_LE_1M_MASK and
+        // the BCM4389 silicon in Pixel 6/6 Pro/7/7 Pro otherwise negotiates up to LE 2M PHY,
+        // which the Vitruvian firmware cannot sustain — the link silently degrades and the
+        // first large GATT write (96-byte CONFIG on workout start) surfaces GATT_ERROR(133).
+        // Kable's connectGatt hint alone is insufficient (the peer may still renegotiate PHY);
+        // calling setPreferredPhy post-connection forces the link back to 1M explicitly.
+        p.requestLe1mPhy(
+            onEvent = { msg -> logRepo.info(LogEventType.MTU_CHANGED, msg, connectedDeviceName, connectedDeviceAddress) },
+        )
 
         // Request High Connection Priority (Android only - via expect/actual extension)
         // Critical for maintaining ~20Hz polling rate without lag
@@ -1037,12 +1033,9 @@ class KableBleConnectionManager(
             log.i { "Command sent via NUS TX: ${command.size} bytes" }
 
             // Issue #222 v16 (optional): One-shot diagnostic read after CONFIG to catch early faults.
-            // Issue #333 mitigation C: Skip on BCM4389 Pixels — this read contends with the
-            // CONFIG→START command sequence and triggers GATT_ERROR(133). Fault detection
-            // continues via the regular 1Hz diagnostic polling loop.
             val isEchoConfig = command.size == 32 && command[0] == 0x4E.toByte()
             val isProgramConfig = command.size == 96 && command[0] == 0x04.toByte()
-            if ((isEchoConfig || isProgramConfig) && !PixelBleExperiments.isAffectedPixel()) {
+            if (isEchoConfig || isProgramConfig) {
                 val delayMs = if (isProgramConfig) 350L else 200L
                 scope.launch {
                     delay(delayMs)

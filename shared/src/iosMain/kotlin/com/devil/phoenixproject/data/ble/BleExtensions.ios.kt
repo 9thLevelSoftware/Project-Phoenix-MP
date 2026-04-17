@@ -11,3 +11,8 @@ actual suspend fun Peripheral.requestMtuIfSupported(mtu: Int): Int? {
     // No explicit API to request MTU - returns null to indicate "use system default"
     return null
 }
+
+actual suspend fun Peripheral.requestLe1mPhy(onEvent: (String) -> Unit) {
+    // No-op on iOS: CoreBluetooth does not expose a PHY preference API, and BCM4389
+    // (the Pixel 6/7-specific root cause of Issue #333) does not apply to iOS silicon.
+}

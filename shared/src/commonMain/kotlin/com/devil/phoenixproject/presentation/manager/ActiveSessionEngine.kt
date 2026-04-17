@@ -43,7 +43,6 @@ import com.devil.phoenixproject.util.BlePacketFactory
 import com.devil.phoenixproject.util.Constants
 import com.devil.phoenixproject.util.DataBackupManager
 import com.devil.phoenixproject.util.KmpUtils
-import com.devil.phoenixproject.util.PixelBleExperiments
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -1752,18 +1751,6 @@ class ActiveSessionEngine(
                     stopMotionStartDetection()
                 }
 
-                // Issue #333 mitigation B: Pause polling before CONFIG write on BCM4389 Pixels.
-                // The 4 polling loops (monitor 10-20Hz, heuristic 4Hz, diagnostic 2Hz,
-                // heartbeat 0.5Hz) saturate the BCM4389's internal GATT queue. Pausing
-                // 500ms before CONFIG lets in-flight operations drain so the 96-byte
-                // CONFIG write hits a clean bus. Happens during countdown — no UX impact.
-                val pausedForBcm4389 = PixelBleExperiments.isAffectedPixel()
-                if (pausedForBcm4389) {
-                    Logger.i { "BCM4389: pausing polling ${PixelBleExperiments.POLLING_PAUSE_BEFORE_CONFIG_MS}ms before CONFIG write" }
-                    bleRepository.stopPolling()
-                    delay(PixelBleExperiments.POLLING_PAUSE_BEFORE_CONFIG_MS)
-                }
-
                 try {
                     bleRepository.sendWorkoutCommand(command).getOrThrow()
                     Logger.i { "CONFIG command sent: ${command.size} bytes for ${effectiveParams.programMode}" }
@@ -1780,25 +1767,11 @@ class ActiveSessionEngine(
                 } catch (e: Exception) {
                     Logger.e(e) { "Failed to send config command" }
                     coordinator._bleErrorEvents.tryEmit("Failed to send command: ${e.message}")
-                    // Resume polling if we paused for BCM4389 — startActiveWorkoutPolling
-                    // won't be reached, so restart here to maintain connection keep-alive
-                    if (pausedForBcm4389) {
-                        bleRepository.startActiveWorkoutPolling()
-                    }
                     return@launch
                 }
 
                 if (!effectiveParams.isEchoMode) {
-                    // Issue #333 mitigation D: BCM4389 Pixels need more time between CONFIG
-                    // and START to avoid GATT_ERROR(133). 1000ms vs 100ms default.
-                    val configStartDelayMs = if (PixelBleExperiments.isAffectedPixel()) {
-                        Logger.i { "BCM4389: extended CONFIG→START delay ${PixelBleExperiments.EXTENDED_CONFIG_START_DELAY_MS}ms" }
-                        PixelBleExperiments.EXTENDED_CONFIG_START_DELAY_MS
-                    } else {
-                        100L
-                    }
-                    delay(configStartDelayMs)
-
+                    delay(100)
                     try {
                         val startCommand = BlePacketFactory.createStartCommand()
                         bleRepository.sendWorkoutCommand(startCommand).getOrThrow()
