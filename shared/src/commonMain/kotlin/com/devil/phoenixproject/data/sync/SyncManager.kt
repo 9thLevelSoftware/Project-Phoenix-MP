@@ -66,6 +66,13 @@ object SyncConfig {
 
     /** Maximum pages to fetch in a single pull operation (prevents infinite loops). */
     const val MAX_PAGES = 100
+
+    /**
+     * Maximum number of IDs per parity list sent in a single pull request.
+     * Must stay <= the server's MAX_PARITY_IDS in mobile-sync-pull; exceeding
+     * it causes HTTP 413 "parity_ids_exceeds_max". See audit item #7.
+     */
+    const val MAX_PARITY_IDS = 500
 }
 
 class SyncManager(
@@ -736,13 +743,38 @@ class SyncManager(
         val mergeProfileId = activeProfileId ?: "default"
         val lastSync = tokenStorage.getLastSyncTimestamp()
 
-        // Collect local entity IDs for parity comparison
+        // Collect local entity IDs for parity comparison.
+        //
+        // fix(audit #7): cap each list at MAX_PARITY_IDS to stay within the
+        // server's enforced HTTP 413 threshold. If a user has more than
+        // MAX_PARITY_IDS entities, we send the most recent window and rely on
+        // the mobile-side dedupe against local DB to handle the tail. This is
+        // strictly better than the prior server behavior which silently
+        // returned empty for over-cap lists.
+        val rawSessionIds = syncRepository.getAllSessionIds(mergeProfileId)
+        val rawRoutineIds = syncRepository.getAllRoutineIds(mergeProfileId)
+        val rawCycleIds = syncRepository.getAllCycleIds(mergeProfileId)
+        val rawBadgeIds = syncRepository.getAllBadgeIds(mergeProfileId)
+        val rawPrIds = syncRepository.getAllPersonalRecordIds(mergeProfileId)
+
+        fun <T> capParity(list: List<T>, label: String): List<T> =
+            if (list.size <= SyncConfig.MAX_PARITY_IDS) {
+                list
+            } else {
+                Logger.w("SyncManager") {
+                    "Parity list '$label' has ${list.size} entries; truncating to last " +
+                        "${SyncConfig.MAX_PARITY_IDS} to stay within server cap. " +
+                        "Local dedupe will handle the older tail."
+                }
+                list.takeLast(SyncConfig.MAX_PARITY_IDS)
+            }
+
         val knownEntityIds = KnownEntityIds(
-            sessionIds = syncRepository.getAllSessionIds(mergeProfileId),
-            routineIds = syncRepository.getAllRoutineIds(mergeProfileId),
-            cycleIds = syncRepository.getAllCycleIds(mergeProfileId),
-            badgeIds = syncRepository.getAllBadgeIds(mergeProfileId),
-            personalRecordIds = syncRepository.getAllPersonalRecordIds(mergeProfileId),
+            sessionIds = capParity(rawSessionIds, "sessionIds"),
+            routineIds = capParity(rawRoutineIds, "routineIds"),
+            cycleIds = capParity(rawCycleIds, "cycleIds"),
+            badgeIds = capParity(rawBadgeIds, "badgeIds"),
+            personalRecordIds = capParity(rawPrIds, "personalRecordIds"),
         )
 
         Logger.i("SyncManager") {
