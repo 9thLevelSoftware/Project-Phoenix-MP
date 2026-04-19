@@ -1041,18 +1041,53 @@ class SyncManager(
                     )
                 }
 
-        // 3. Execute atomic merge (all or nothing)
+        // Phase 3.3 (audit item #1): build per-session updatedAt map keyed
+        // on the per-exercise WorkoutSession.id (== portal exercise id).
+        // Each portal session's updatedAt applies to all child mobile rows.
+        val sessionUpdatedAtById: Map<String, Long> = pullResponse.sessions
+            .flatMap { ps ->
+                val ts = ps.updatedAt?.let { iso ->
+                    runCatching { kotlin.time.Instant.parse(iso).toEpochMilliseconds() }
+                        .getOrNull()
+                } ?: 0L
+                ps.exercises.map { ex -> ex.id to ts }
+            }
+            .toMap()
+
+        // 3. Execute atomic merge (all or nothing). Sessions are merged via
+        // the LWW path (mergeSessionsLww) when SYNC_LWW_ENABLED is implicit
+        // through the presence of incoming updatedAt; falls back to the
+        // legacy INSERT OR IGNORE behavior when the map has no entries
+        // (older Edge Function payloads pre-Phase-3.2).
+        val sessionsHaveUpdatedAt = sessionUpdatedAtById.values.any { it > 0L }
         try {
-            syncRepository.mergeAllPullData(
-                sessions = mobileSessions,
-                routines = pullResponse.routines,
-                cycles = pullResponse.cycles,
-                badges = badgeDtos,
-                gamificationStats = gamificationStatsDto,
-                personalRecords = prDtos,
-                lastSync = lastSync,
-                profileId = mergeProfileId,
-            )
+            if (sessionsHaveUpdatedAt) {
+                syncRepository.mergeSessionsLww(mobileSessions, sessionUpdatedAtById)
+                // Routines/cycles/badges/stats/PRs still go through the atomic
+                // path. Pass an empty session list to skip the legacy
+                // INSERT OR IGNORE branch (already handled by LWW).
+                syncRepository.mergeAllPullData(
+                    sessions = emptyList(),
+                    routines = pullResponse.routines,
+                    cycles = pullResponse.cycles,
+                    badges = badgeDtos,
+                    gamificationStats = gamificationStatsDto,
+                    personalRecords = prDtos,
+                    lastSync = lastSync,
+                    profileId = mergeProfileId,
+                )
+            } else {
+                syncRepository.mergeAllPullData(
+                    sessions = mobileSessions,
+                    routines = pullResponse.routines,
+                    cycles = pullResponse.cycles,
+                    badges = badgeDtos,
+                    gamificationStats = gamificationStatsDto,
+                    personalRecords = prDtos,
+                    lastSync = lastSync,
+                    profileId = mergeProfileId,
+                )
+            }
 
             // Phase 3.5: persist session-level notes after the atomic merge
             // succeeds. Kept outside the main transaction so a notes-table

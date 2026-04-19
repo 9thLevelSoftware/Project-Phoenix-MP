@@ -518,6 +518,13 @@ SELECT * FROM WorkoutSession WHERE profile_id = :profileId ORDER BY timestamp DE
 selectSessionById:
 SELECT * FROM WorkoutSession WHERE id = ?;
 
+-- Phase 3.3 (audit item #1): cheap LWW-gate read. Returns just the
+-- existing updatedAt for a given session id so the repository can
+-- decide whether to accept an incoming pull row without loading the
+-- full row body.
+selectSessionUpdatedAt:
+SELECT updatedAt FROM WorkoutSession WHERE id = ?;
+
 -- Sync version for backup
 selectAllSessionsSync:
 SELECT * FROM WorkoutSession;
@@ -550,6 +557,29 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 
 -- Includes updatedAt to prevent re-push (selectSessionsModifiedSince picks up updatedAt IS NULL).
 insertSessionIgnore:
 INSERT OR IGNORE INTO WorkoutSession (
+    id, timestamp, mode, targetReps, weightPerCableKg, progressionKg,
+    duration, totalReps, warmupReps, workingReps,
+    isJustLift, stopAtTop, eccentricLoad, echoLevel,
+    exerciseId, exerciseName, routineSessionId, routineName, routineId,
+    safetyFlags, deloadWarningCount, romViolationCount, spotterActivations,
+    peakForceConcentricA, peakForceConcentricB, peakForceEccentricA, peakForceEccentricB,
+    avgForceConcentricA, avgForceConcentricB, avgForceEccentricA, avgForceEccentricB,
+    heaviestLiftKg, totalVolumeKg, cableCount, estimatedCalories,
+    warmupAvgWeightKg, workingAvgWeightKg, burnoutAvgWeightKg, peakWeightKg, rpe,
+    avgMcvMmS, avgAsymmetryPercent, totalVelocityLossPercent, dominantSide, strengthProfile,
+    formScore,
+    updatedAt,
+    profile_id
+)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+-- Phase 3.3 (audit item #1): LWW write — overwrite existing row whose
+-- id matches. The repository gates this with a prior selectSessionUpdatedAt
+-- comparison so stale incoming rows never reach the REPLACE. SQLite 3.18
+-- does not support `INSERT ... ON CONFLICT DO UPDATE WHERE`, hence the
+-- LWW gate lives in Kotlin.
+mergeSessionLww:
+INSERT OR REPLACE INTO WorkoutSession (
     id, timestamp, mode, targetReps, weightPerCableKg, progressionKg,
     duration, totalReps, warmupReps, workingReps,
     isJustLift, stopAtTop, eccentricLoad, echoLevel,

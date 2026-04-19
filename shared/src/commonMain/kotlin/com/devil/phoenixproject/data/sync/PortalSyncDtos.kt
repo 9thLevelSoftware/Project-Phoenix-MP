@@ -607,16 +607,19 @@ data class PullWorkoutSessionDto(
     val workoutMode: String? = null,
     val routineSessionId: String? = null,
     /**
-     * Session-level notes from portal. Added 2026-04-19 (audit item #2).
-     *
-     * Wire contract only — mobile does not yet persist session-level notes
-     * locally because the mobile WorkoutSession model is per-exercise (portal
-     * session → N mobile rows grouped by routineSessionId). A SessionNotes
-     * table keyed on routineSessionId is the planned persistence surface and
-     * ships with the Phase 3 LWW migration; until then, this field round-trips
-     * through the wire but is ignored when merging into SQLDelight.
+     * Session-level notes from portal. Persisted by mobile via the
+     * SessionNotes side-table (migration 26.sqm) keyed on `routineSessionId`.
+     * Resolves audit item #2.
      */
     val notes: String? = null,
+    /**
+     * Server-canonical last-write timestamp (ISO 8601). Mobile uses this as
+     * the LWW gate when merging the pull row into the local WorkoutSession
+     * table. Optional for backward compat with Edge Function responses
+     * that pre-date Phase 3.3 — when null, mobile falls back to the
+     * legacy INSERT OR IGNORE path. Resolves audit item #1 mobile half.
+     */
+    val updatedAt: String? = null,
     val exercises: List<PullExerciseDto> = emptyList(),
 )
 
