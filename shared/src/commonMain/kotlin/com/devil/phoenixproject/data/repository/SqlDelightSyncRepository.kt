@@ -1747,10 +1747,11 @@ class SqlDelightSyncRepository(
     /**
      * Phase 3.5 — Persist session-level notes from the portal pull.
      *
-     * Uses the LWW upsert query `upsertSessionNotesLww` (migration 26.sqm)
-     * keyed on `routineSessionId`. NULL entries are tolerated; the WHERE
-     * clause in the .sq file treats a missing stored timestamp as "older"
-     * so first-time pulls always write.
+     * SQLDelight is on the sqlite 3.18 dialect which does not support
+     * INSERT ... ON CONFLICT DO UPDATE WHERE, so the LWW gate lives here in
+     * Kotlin: SELECT existing.updatedAt, compare against incoming, then
+     * either INSERT OR REPLACE or skip. Wrapped in a single transaction so
+     * the read+write pair is atomic per row.
      */
     override suspend fun mergeSessionNotes(
         notes: Map<String, SessionNotesEntry>,
@@ -1758,11 +1759,20 @@ class SqlDelightSyncRepository(
         if (notes.isEmpty()) return@withContext
         db.transaction {
             for ((routineSessionId, entry) in notes) {
-                queries.upsertSessionNotesLww(
-                    routineSessionId = routineSessionId,
-                    notes = entry.notes,
-                    updatedAt = entry.updatedAtMillis,
-                )
+                val existingUpdatedAt = queries
+                    .selectSessionNotesUpdatedAt(routineSessionId)
+                    .executeAsOneOrNull()
+                    ?.updatedAt
+                val incomingMillis = entry.updatedAtMillis
+                val accept = existingUpdatedAt == null ||
+                    incomingMillis >= existingUpdatedAt
+                if (accept) {
+                    queries.upsertSessionNotes(
+                        routineSessionId = routineSessionId,
+                        notes = entry.notes,
+                        updatedAt = incomingMillis,
+                    )
+                }
             }
         }
     }
