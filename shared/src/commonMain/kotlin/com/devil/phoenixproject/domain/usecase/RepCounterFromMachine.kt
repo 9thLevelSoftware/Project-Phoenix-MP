@@ -55,9 +55,6 @@ class RepCounterFromMachine {
     private var lastTopCounter: Int = 0
     private var lastCompleteCounter: Int = 0
 
-    /** After [reset], first rep packet seeds counters without counting (BLE reconnect / new baseline). */
-    private var repCountersNeedBaseline: Boolean = false
-
     // Position tracking lists - now in mm (Float)
     private val topPositionsA = mutableListOf<Float>()
     private val topPositionsB = mutableListOf<Float>()
@@ -118,7 +115,6 @@ class RepCounterFromMachine {
         phaseStartPosition = 0f
         phasePeakPosition = 0f
         positionHistoryForDirection.clear()
-        repCountersNeedBaseline = true
         lastTopCounter = 0
         lastCompleteCounter = 0
         topPositionsA.clear()
@@ -156,7 +152,6 @@ class RepCounterFromMachine {
         // Issue #163: Reset phase tracking (but keep position history for direction detection)
         activePhase = RepPhase.IDLE
         phaseProgress = 0f
-        repCountersNeedBaseline = true
         lastTopCounter = 0
         lastCompleteCounter = 0
         // NOTE: Do NOT clear position tracking lists or min/max ranges!
@@ -311,14 +306,6 @@ class RepCounterFromMachine {
      * Used when machine sends 6-byte packets without repsRomCount/repsSetCount fields.
      */
     private fun processLegacy(up: Int, down: Int, posA: Float, posB: Float) {
-        if (repCountersNeedBaseline) {
-            lastTopCounter = up
-            lastCompleteCounter = down
-            repCountersNeedBaseline = false
-            logDebug("LEGACY: baseline seeded up=$up down=$down (no reps counted)")
-            return
-        }
-
         val topDelta = calculateDelta(lastTopCounter, up)
         if (topDelta > 0) {
             recordTopPosition(posA, posB)
@@ -396,14 +383,6 @@ class RepCounterFromMachine {
      * - Actual rep counting comes from repsRomCount/repsSetCount
      */
     private fun processModern(repsRomCount: Int, repsSetCount: Int, up: Int, down: Int, posA: Float, posB: Float) {
-        if (repCountersNeedBaseline) {
-            lastTopCounter = up
-            lastCompleteCounter = down
-            repCountersNeedBaseline = false
-            logDebug("MODERN: baseline seeded up=$up down=$down (no reps counted)")
-            return
-        }
-
         // Track UP movement - for working reps, show PENDING (grey) at TOP
         // Issue #210 FIX: No null check needed - lastTopCounter initialized to 0
         val upDelta = calculateDelta(lastTopCounter, up)

@@ -83,6 +83,15 @@ data class PortalExerciseDto(
  * Maps to portal's `sets` table.
  * One mobile WorkoutSession = one "set" in portal terms (since mobile
  * treats each exercise run as its own session).
+ *
+ * NOTE: `prType`, `prPhase`, and `prVolume` are SEND-ONLY derivation hints.
+ * The portal `sets` table has no columns for them — the push handler reads
+ * these fields from the incoming DTO and forwards them into the
+ * `personal_records` table insert (see mobile-sync-push/index.ts around the
+ * personal_records handling). PRs round-trip via PersonalRecord DTOs, not
+ * through set-level columns. This split is intentional: keeping PR state
+ * canonical in a single table avoids double-source-of-truth bugs.
+ * Resolves audit item #3 (2026-04-19).
  */
 @Serializable
 data class PortalSetDto(
@@ -94,6 +103,9 @@ data class PortalSetDto(
     val weightKg: Float = 0f, // per-cable
     val rpe: Int? = null,
     val isPr: Boolean = false,
+    // The following three fields are send-only PR derivation hints consumed
+    // by the portal push handler to construct personal_records rows. They are
+    // NOT persisted on the `sets` table. See doc comment above.
     val prType: String? = null, // "MAX_WEIGHT" or "MAX_VOLUME"
     val prPhase: String? = null, // "COMBINED", "CONCENTRIC", or "ECCENTRIC"
     val prVolume: Float? = null, // total volume (weight × reps) for volume PRs
@@ -131,6 +143,11 @@ data class PortalRepSummaryDto(
 /**
  * Maps to portal's `rep_telemetry` table.
  * Raw time-series data points for force curve visualization.
+ *
+ * Cable wire format: canonical "A" | "B" from BLE (A = left actuator,
+ * B = right actuator). Portal schema (src/schemas/telemetry.ts) accepts
+ * the same canonical values; the portal UI layer applies display mapping
+ * via `cableDisplayName()`. Resolves audit item #4 (2026-04-19).
  */
 @Serializable
 data class PortalRepTelemetryDto(
@@ -140,7 +157,8 @@ data class PortalRepTelemetryDto(
     val forceN: Float? = null,
     val velocityMps: Float? = null,
     val positionMm: Float? = null,
-    val cable: String? = null, // "left" or "right"
+    /** Canonical BLE cable identifier: "A" (left actuator) or "B" (right actuator). */
+    val cable: String? = null,
 )
 
 // ─── Routine Sync DTOs ──────────────────────────────────────────────
@@ -513,6 +531,17 @@ data class PullWorkoutSessionDto(
     val routineName: String? = null,
     val workoutMode: String? = null,
     val routineSessionId: String? = null,
+    /**
+     * Session-level notes from portal. Added 2026-04-19 (audit item #2).
+     *
+     * Wire contract only — mobile does not yet persist session-level notes
+     * locally because the mobile WorkoutSession model is per-exercise (portal
+     * session → N mobile rows grouped by routineSessionId). A SessionNotes
+     * table keyed on routineSessionId is the planned persistence surface and
+     * ships with the Phase 3 LWW migration; until then, this field round-trips
+     * through the wire but is ignored when merging into SQLDelight.
+     */
+    val notes: String? = null,
     val exercises: List<PullExerciseDto> = emptyList(),
 )
 

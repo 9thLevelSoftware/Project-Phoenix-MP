@@ -92,7 +92,10 @@ actual class SafeWordListener(private val context: Context, private val safeWord
             val intent = createRecognizerIntent()
             sr.startListening(intent)
             _isListening.value = true
-            Log.d(TAG, "Speech recognition started, listening for: \"$safeWord\"")
+            // fix(audit): H — do not log the configured safe word. It is user-
+            // chosen and may be PII or a sensitive phrase. Log only a length
+            // hint for debugging startup issues.
+            Log.d(TAG, "Speech recognition started (safe word len=${safeWord.length})")
         } catch (e: Exception) {
             Log.e(TAG, "Failed to start speech recognition", e)
             _isListening.value = false
@@ -196,11 +199,15 @@ actual class SafeWordListener(private val context: Context, private val safeWord
             if (matchesSafeWord(match)) {
                 val now = android.os.SystemClock.elapsedRealtime()
                 if (now - lastEmitTimeMs < DEBOUNCE_MS) {
-                    Log.d(TAG, "Safe word match suppressed (debounce): \"$match\"")
+                    // fix(audit): H — never log recognized speech text. It
+                    // contains the safe word and whatever the user said around
+                    // it; both are sensitive.
+                    Log.d(TAG, "Safe word match suppressed (debounce)")
                     return
                 }
                 lastEmitTimeMs = now
-                Log.i(TAG, "Safe word detected in: \"$match\"")
+                // fix(audit): H — redacted: previously logged matched transcript.
+                Log.i(TAG, "Safe word detected")
                 _detectedWord.tryEmit(safeWord)
                 return
             }

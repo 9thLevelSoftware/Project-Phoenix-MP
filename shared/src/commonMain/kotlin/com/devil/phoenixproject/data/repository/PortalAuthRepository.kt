@@ -91,11 +91,28 @@ class PortalAuthRepository(
             goTrueResponse.toPortalAuthResponse().user.toAuthUser()
         }
 
+    // fix(audit): C6 — the audit claimed UnsupportedOperationException extends
+    // Error, but in Kotlin it extends RuntimeException → Exception on both JVM
+    // and Native, so `Result.failure` consumers that catch `Exception` (or
+    // propagate via `Result.onFailure`) work correctly. We keep it but wrap in
+    // an explicitly-named sentinel so callers can pattern-match the reason
+    // without string-sniffing the message. Note: `kotlin.NotImplementedError`
+    // (thrown by `TODO()`) DOES extend Error — do not use it here.
     override suspend fun signInWithGoogle(): Result<AuthUser> =
-        Result.failure(UnsupportedOperationException("Google sign-in requires platform implementation"))
+        Result.failure(
+            UnsupportedOperationException(
+                "Google sign-in is not wired up in the portal auth repository. " +
+                    "Use the platform-specific Google sign-in flow from the UI layer.",
+            ),
+        )
 
     override suspend fun signInWithApple(): Result<AuthUser> =
-        Result.failure(UnsupportedOperationException("Apple sign-in requires platform implementation"))
+        Result.failure(
+            UnsupportedOperationException(
+                "Apple sign-in is not wired up in the portal auth repository. " +
+                    "Use the platform-specific Apple sign-in flow from the UI layer.",
+            ),
+        )
 
     override suspend fun signOut(): Result<Unit> {
         apiClient.signOut()

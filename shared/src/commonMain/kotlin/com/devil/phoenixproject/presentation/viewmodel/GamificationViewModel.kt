@@ -2,6 +2,7 @@ package com.devil.phoenixproject.presentation.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.data.local.BadgeDefinitions
 import com.devil.phoenixproject.data.repository.BadgeWithProgress
 import com.devil.phoenixproject.data.repository.GamificationRepository
@@ -35,6 +36,12 @@ class GamificationViewModel(private val repository: GamificationRepository, priv
 
     private val _isLoading = MutableStateFlow(true)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
+
+    // fix(audit): H — empty catch blocks below used to swallow errors silently.
+    // Surface the error via state so the UI can render an empty/error state
+    // instead of just sitting at loading=false with no data.
+    private val _loadError = MutableStateFlow<String?>(null)
+    val loadError: StateFlow<String?> = _loadError.asStateFlow()
 
     // Streak info from repository (real-time, reactive to profile switches)
     val streakInfo: StateFlow<StreakInfo> = activeProfileId
@@ -81,12 +88,15 @@ class GamificationViewModel(private val repository: GamificationRepository, priv
     fun loadBadges() {
         viewModelScope.launch {
             _isLoading.value = true
+            _loadError.value = null
             try {
                 val profileId = activeProfileId.value
                 val badges = repository.getAllBadgesWithProgress(profileId)
                 _badgesWithProgress.value = badges
-            } catch (_: Exception) {
-                // Handle error
+            } catch (e: Exception) {
+                // fix(audit): H — log and surface the error instead of silently swallowing.
+                Logger.e("GamificationViewModel", e) { "Failed to load badges: ${e.message}" }
+                _loadError.value = e.message ?: "Failed to load badges"
             } finally {
                 _isLoading.value = false
             }
@@ -109,8 +119,11 @@ class GamificationViewModel(private val repository: GamificationRepository, priv
                     profile.copy(lastComputed = currentTimeMillis()),
                     profileId,
                 )
-            } catch (_: Exception) {
-                // Log error, leave profile null (card won't show)
+            } catch (e: Exception) {
+                // fix(audit): H — log so failures are visible in crash reports;
+                // leave profile null so the RPG card stays hidden (no change in
+                // user-visible behavior, but we no longer drop the error on the floor).
+                Logger.w("GamificationViewModel", e) { "Failed to compute RPG profile: ${e.message}" }
             }
         }
     }

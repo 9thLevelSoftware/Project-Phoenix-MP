@@ -18,7 +18,7 @@ import com.russhwolf.settings.MapSettings
  * Extends the open PortalApiClient with dummy config; overrides all 4 methods
  * used by SyncManager. Provides configurable Result returns and call counters.
  */
-class FakePortalApiClient :
+open class FakePortalApiClient :
     PortalApiClient(
         supabaseConfig = SupabaseConfig(url = "https://fake.supabase.co", anonKey = "fake-anon-key"),
         tokenStorage = PortalTokenStorage(MapSettings()),
