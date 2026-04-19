@@ -188,6 +188,12 @@ object PortalSyncAdapter {
             userId = userId,
             name = first.routineName ?: first.exerciseName,
             startedAt = epochToIso8601(first.timestamp),
+            // LWW gate (Phase 3.2): epoch-ms push time as ISO 8601. When mobile
+            // domain starts tracking per-row updated_at end-to-end, replace
+            // with the domain value. Until then, push time is monotonic and
+            // consistent with the server-wins semantics we are preserving in
+            // Phase 3.2 (server falls back to NOW() for missing values).
+            updatedAt = epochToIso8601(currentTimeMillis()),
             durationSeconds = totalDuration,
             totalVolume = totalVolume,
             setCount = totalSets,
@@ -500,6 +506,8 @@ object PortalSyncAdapter {
             estimatedDuration = estimateRoutineDuration(routine),
             timesCompleted = routine.useCount,
             isFavorite = false,
+            // LWW gate (Phase 3.2); see PortalWorkoutSessionDto build path.
+            updatedAt = epochToIso8601(currentTimeMillis()),
             exercises = exercises,
         )
     }
@@ -588,6 +596,8 @@ object PortalSyncAdapter {
             status = if (cycle.isActive) "active" else "draft",
             startedAt = progress?.cycleStartDate?.let { epochToIso8601(it) },
             lastUsedAt = progress?.lastCompletedDate?.let { epochToIso8601(it) },
+            // LWW gate (Phase 3.2); see PortalWorkoutSessionDto build path.
+            updatedAt = epochToIso8601(currentTimeMillis()),
             progressionSettings = progressionJson,
             deloadSettings = null,
             days = days,

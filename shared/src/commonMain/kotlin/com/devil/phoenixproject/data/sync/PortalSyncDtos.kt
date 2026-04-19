@@ -29,6 +29,14 @@ data class PortalWorkoutSessionDto(
     val userId: String,
     val name: String? = null,
     val startedAt: String, // ISO 8601
+    /**
+     * Client-canonical last-write timestamp (ISO 8601). Required for the
+     * server-side LWW gate in Phase 3.2+. If null, the server falls back to
+     * `NOW()` (effective server-wins) for backward compatibility with pre-LWW
+     * mobile builds. Populate from `WorkoutSession.updatedAt` (epoch millis) in
+     * the push adapter. Resolves audit item #1.
+     */
+    val updatedAt: String? = null,
     val durationSeconds: Int = 0,
     val totalVolume: Float = 0f, // per-cable kg
     val setCount: Int = 0,
@@ -177,6 +185,8 @@ data class PortalRoutineSyncDto(
     val estimatedDuration: Int = 0,
     val timesCompleted: Int = 0,
     val isFavorite: Boolean = false,
+    /** ISO 8601 last-write timestamp for LWW gate (Phase 3.2+). Null falls back to server NOW(). */
+    val updatedAt: String? = null,
     val exercises: List<PortalRoutineExerciseSyncDto> = emptyList(),
 )
 
@@ -231,6 +241,8 @@ data class PortalTrainingCycleSyncDto(
     val status: String = "draft",
     val startedAt: String? = null, // ISO 8601
     val lastUsedAt: String? = null, // ISO 8601
+    /** ISO 8601 last-write timestamp for LWW gate (Phase 3.2+). Null falls back to server NOW(). */
+    val updatedAt: String? = null,
     val progressionSettings: String? = null, // JSON
     val deloadSettings: String? = null, // JSON
     val days: List<PortalCycleDaySyncDto> = emptyList(),
@@ -398,6 +410,38 @@ data class PortalSyncPushResponse(
     )
     val externalActivityIds: List<String> = emptyList(),
     val externalActivityKeys: List<ExternalActivityAckDto> = emptyList(),
+    /**
+     * Per-entity LWW rejections. Empty when SYNC_LWW_ENABLED is false on
+     * the server or when every incoming row cleared the LWW gate. Phase 3.2.
+     */
+    val rejections: SyncRejectionsDto = SyncRejectionsDto(),
+)
+
+/**
+ * One LWW rejection from the Phase 3.2 push handler. Emitted when the
+ * server already has a row with a newer `updated_at` than the incoming
+ * mobile row. Mobile logs these and lets the next pull repair convergence.
+ * `id` is the entity id (uuid or user_id for single-row-per-user entities).
+ */
+@Serializable
+data class SyncRejectionDto(
+    val id: String,
+    val serverUpdatedAt: String? = null,
+)
+
+/**
+ * Per-entity rejection lists returned by the push handler when
+ * SYNC_LWW_ENABLED is true. All lists default to empty for backward compat
+ * with pre-LWW server responses.
+ */
+@Serializable
+data class SyncRejectionsDto(
+    val sessions: List<SyncRejectionDto> = emptyList(),
+    val routines: List<SyncRejectionDto> = emptyList(),
+    val cycles: List<SyncRejectionDto> = emptyList(),
+    val externalActivities: List<SyncRejectionDto> = emptyList(),
+    val rpgAttributes: List<SyncRejectionDto> = emptyList(),
+    val gamificationStats: List<SyncRejectionDto> = emptyList(),
 )
 
 /**
