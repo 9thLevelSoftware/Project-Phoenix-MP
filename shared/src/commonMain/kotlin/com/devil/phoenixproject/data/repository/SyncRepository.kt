@@ -259,6 +259,31 @@ interface SyncRepository {
     ) {
         // Default no-op for fakes / older implementations.
     }
+
+    /**
+     * Phase 3.3 (audit item #1): LWW pull merge for WorkoutSession rows.
+     *
+     * Replaces the legacy INSERT OR IGNORE behavior (`mergeAllPullData`)
+     * which silently dropped server-newer rows. For each session, the
+     * implementation reads the existing local `updatedAt`, compares to
+     * `updatedAtBySessionId[session.id]`, and overwrites only when the
+     * incoming timestamp is newer-or-equal. NULL existing or absent map
+     * entry is treated as older (accept incoming) so first-time pulls
+     * always write.
+     *
+     * `updatedAtBySessionId` is the authoritative server timestamp that
+     * portal-sync-pull returns on `PullWorkoutSessionDto.updatedAt`. It
+     * is keyed on the per-exercise WorkoutSession.id (which equals the
+     * portal exercise id; one portal session expands to N mobile rows).
+     *
+     * Default no-op so unrelated test fakes do not need to implement.
+     */
+    suspend fun mergeSessionsLww(
+        sessions: List<WorkoutSession>,
+        updatedAtBySessionId: Map<String, Long>,
+    ) {
+        // Default no-op for fakes / older implementations.
+    }
 }
 
 /** Side-table entry for session notes (Phase 3.5). */

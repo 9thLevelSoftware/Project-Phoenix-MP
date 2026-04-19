@@ -1753,6 +1753,87 @@ class SqlDelightSyncRepository(
      * either INSERT OR REPLACE or skip. Wrapped in a single transaction so
      * the read+write pair is atomic per row.
      */
+    /**
+     * Phase 3.3 (audit item #1): replace the legacy INSERT OR IGNORE pull
+     * merge with `updatedAt`-gated LWW. SQLite 3.18 does not support
+     * `INSERT ... ON CONFLICT DO UPDATE WHERE`, so the gate lives here:
+     * SELECT existing.updatedAt → compare to incoming → INSERT OR REPLACE
+     * iff incoming wins. Wrapped in a single transaction so the read+write
+     * pair is atomic per row.
+     *
+     * `updatedAtBySessionId` keys on the per-exercise WorkoutSession.id
+     * (== portal exercise id; one portal session expands to N mobile rows
+     * in PortalPullAdapter.toWorkoutSessionsWithLookup). Missing entries
+     * default to "older" so first-time pulls always write.
+     */
+    override suspend fun mergeSessionsLww(
+        sessions: List<WorkoutSession>,
+        updatedAtBySessionId: Map<String, Long>,
+    ) = withContext(Dispatchers.IO) {
+        if (sessions.isEmpty()) return@withContext
+        db.transaction {
+            for (session in sessions) {
+                val existingTs = queries.selectSessionUpdatedAt(session.id)
+                    .executeAsOneOrNull()
+                    ?.updatedAt
+                val incomingTs = updatedAtBySessionId[session.id] ?: 0L
+                val accept = existingTs == null || incomingTs >= existingTs
+                if (!accept) continue
+
+                queries.mergeSessionLww(
+                    id = session.id,
+                    timestamp = session.timestamp,
+                    mode = session.mode,
+                    targetReps = session.reps.toLong(),
+                    weightPerCableKg = session.weightPerCableKg.toDouble(),
+                    progressionKg = session.progressionKg.toDouble(),
+                    duration = session.duration,
+                    totalReps = session.totalReps.toLong(),
+                    warmupReps = session.warmupReps.toLong(),
+                    workingReps = session.workingReps.toLong(),
+                    isJustLift = if (session.isJustLift) 1L else 0L,
+                    stopAtTop = if (session.stopAtTop) 1L else 0L,
+                    eccentricLoad = session.eccentricLoad.toLong(),
+                    echoLevel = session.echoLevel.toLong(),
+                    exerciseId = session.exerciseId,
+                    exerciseName = session.exerciseName,
+                    routineSessionId = session.routineSessionId,
+                    routineName = session.routineName,
+                    routineId = session.routineId,
+                    safetyFlags = session.safetyFlags.toLong(),
+                    deloadWarningCount = session.deloadWarningCount.toLong(),
+                    romViolationCount = session.romViolationCount.toLong(),
+                    spotterActivations = session.spotterActivations.toLong(),
+                    peakForceConcentricA = session.peakForceConcentricA?.toDouble(),
+                    peakForceConcentricB = session.peakForceConcentricB?.toDouble(),
+                    peakForceEccentricA = session.peakForceEccentricA?.toDouble(),
+                    peakForceEccentricB = session.peakForceEccentricB?.toDouble(),
+                    avgForceConcentricA = session.avgForceConcentricA?.toDouble(),
+                    avgForceConcentricB = session.avgForceConcentricB?.toDouble(),
+                    avgForceEccentricA = session.avgForceEccentricA?.toDouble(),
+                    avgForceEccentricB = session.avgForceEccentricB?.toDouble(),
+                    heaviestLiftKg = session.heaviestLiftKg?.toDouble(),
+                    totalVolumeKg = session.totalVolumeKg?.toDouble(),
+                    cableCount = session.cableCount?.toLong(),
+                    estimatedCalories = session.estimatedCalories?.toDouble(),
+                    warmupAvgWeightKg = session.warmupAvgWeightKg?.toDouble(),
+                    workingAvgWeightKg = session.workingAvgWeightKg?.toDouble(),
+                    burnoutAvgWeightKg = session.burnoutAvgWeightKg?.toDouble(),
+                    peakWeightKg = session.peakWeightKg?.toDouble(),
+                    rpe = session.rpe?.toLong(),
+                    avgMcvMmS = session.avgMcvMmS?.toDouble(),
+                    avgAsymmetryPercent = session.avgAsymmetryPercent?.toDouble(),
+                    totalVelocityLossPercent = session.totalVelocityLossPercent?.toDouble(),
+                    dominantSide = session.dominantSide,
+                    strengthProfile = session.strengthProfile,
+                    formScore = session.formScore?.toLong(),
+                    updatedAt = incomingTs,
+                    profile_id = session.profileId,
+                )
+            }
+        }
+    }
+
     override suspend fun mergeSessionNotes(
         notes: Map<String, SessionNotesEntry>,
     ) = withContext(Dispatchers.IO) {
