@@ -98,3 +98,4 @@ repomix-output.xml
 bugreport-*.zip
 .codex_tmp/
 /.gradle-local/
+/.gradle-local-test/
