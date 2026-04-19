@@ -1021,6 +1021,26 @@ class SyncManager(
             PortalPullAdapter.toGamificationStatsSyncDto(it)
         }
 
+        // 2b. Phase 3.5: extract session-level notes for the SessionNotes
+        // side-table. Keyed on the portal `routineSessionId` (== portal
+        // session id). Sessions without notes are skipped. The updatedAt
+        // timestamp falls back to the session.startedAt when the server has
+        // not yet populated updatedAt on the pull projection (older Edge
+        // Function versions or null-on-create rows).
+        val sessionNotesMap: Map<String, com.devil.phoenixproject.data.repository.SessionNotesEntry> =
+            pullResponse.sessions
+                .filter { !it.notes.isNullOrBlank() }
+                .associate { ps ->
+                    val updatedAtMillis = ps.startedAt?.let { iso ->
+                        runCatching { kotlin.time.Instant.parse(iso).toEpochMilliseconds() }
+                            .getOrNull()
+                    } ?: currentTimeMillis()
+                    ps.id to com.devil.phoenixproject.data.repository.SessionNotesEntry(
+                        notes = ps.notes,
+                        updatedAtMillis = updatedAtMillis,
+                    )
+                }
+
         // 3. Execute atomic merge (all or nothing)
         try {
             syncRepository.mergeAllPullData(
@@ -1034,10 +1054,25 @@ class SyncManager(
                 profileId = mergeProfileId,
             )
 
+            // Phase 3.5: persist session-level notes after the atomic merge
+            // succeeds. Kept outside the main transaction so a notes-table
+            // failure cannot roll back session data.
+            if (sessionNotesMap.isNotEmpty()) {
+                try {
+                    syncRepository.mergeSessionNotes(sessionNotesMap)
+                } catch (e: Exception) {
+                    Logger.w(e) {
+                        "SessionNotes merge failed for ${sessionNotesMap.size} sessions; " +
+                            "non-fatal, sessions remain consistent."
+                    }
+                }
+            }
+
             Logger.d("SyncManager") {
                 "Atomic merge complete: ${mobileSessions.size} sessions (${mobileSessions.count { it.exerciseId != null }} with exerciseId), " +
                     "${pullResponse.routines.size} routines, ${pullResponse.cycles.size} cycles, " +
-                    "${pullResponse.badges.size} badges, ${prDtos.size} PRs"
+                    "${pullResponse.badges.size} badges, ${prDtos.size} PRs, " +
+                    "${sessionNotesMap.size} session notes"
             }
         } catch (e: Exception) {
             Logger.e(e) { "Atomic merge failed - transaction rolled back. No entities were persisted." }

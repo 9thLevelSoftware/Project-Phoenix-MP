@@ -1,0 +1,25 @@
+-- Phase 3.5 — SessionNotes side-table for session-level notes persistence.
+--
+-- Resolves the mobile-side gap in audit item #2: portal sessions carry a
+-- `notes` field but the mobile WorkoutSession table cannot store it because
+-- the mobile model is per-exercise (one portal session expands into N
+-- mobile rows keyed by routineSessionId). Adding a `notes` column to every
+-- exercise-row would duplicate state.
+--
+-- This migration introduces a single-row-per-portal-session side-table
+-- keyed on the portal `routineSessionId`. Notes flow through the sync
+-- wire via `PullWorkoutSessionDto.notes`, are written by the pull adapter
+-- into this table, and surface to the UI via the session detail screen.
+--
+-- `updatedAt` is carried so the Phase 3.3 LWW pull merge can gate writes
+-- the same way it does for shared-edit entities — portal edits from
+-- another device win-by-timestamp.
+
+CREATE TABLE IF NOT EXISTS SessionNotes (
+    routineSessionId TEXT NOT NULL PRIMARY KEY,
+    notes TEXT,
+    updatedAt INTEGER
+);
+
+CREATE INDEX IF NOT EXISTS idx_session_notes_updated_at
+    ON SessionNotes(updatedAt);

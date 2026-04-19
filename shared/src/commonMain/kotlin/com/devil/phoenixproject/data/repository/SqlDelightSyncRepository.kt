@@ -1743,4 +1743,27 @@ class SqlDelightSyncRepository(
     override suspend fun getAllPersonalRecordIds(profileId: String): List<String> = withContext(Dispatchers.IO) {
         queries.selectAllPersonalRecordIdsByProfile(profileId).executeAsList()
     }
+
+    /**
+     * Phase 3.5 — Persist session-level notes from the portal pull.
+     *
+     * Uses the LWW upsert query `upsertSessionNotesLww` (migration 26.sqm)
+     * keyed on `routineSessionId`. NULL entries are tolerated; the WHERE
+     * clause in the .sq file treats a missing stored timestamp as "older"
+     * so first-time pulls always write.
+     */
+    override suspend fun mergeSessionNotes(
+        notes: Map<String, SessionNotesEntry>,
+    ) = withContext(Dispatchers.IO) {
+        if (notes.isEmpty()) return@withContext
+        db.transaction {
+            for ((routineSessionId, entry) in notes) {
+                queries.upsertSessionNotesLww(
+                    routineSessionId = routineSessionId,
+                    notes = entry.notes,
+                    updatedAt = entry.updatedAtMillis,
+                )
+            }
+        }
+    }
 }

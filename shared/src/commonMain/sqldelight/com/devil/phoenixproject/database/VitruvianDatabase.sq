@@ -2018,3 +2018,40 @@ SELECT CAST(id AS TEXT) FROM EarnedBadge WHERE profile_id = :profileId;
 
 selectAllPersonalRecordIdsByProfile:
 SELECT CAST(id AS TEXT) FROM PersonalRecord WHERE profile_id = :profileId;
+
+-- ────────────────────────────────────────────────────────────────────────────
+-- SessionNotes (Phase 3.5, migration 26.sqm)
+--
+-- Session-level notes authored on the portal. Keyed on the portal's
+-- `routineSessionId` which groups the N mobile per-exercise WorkoutSession
+-- rows that belong to the same portal workout. `updatedAt` lets the pull
+-- merge gate writes with LWW semantics (portal edit from a newer device
+-- wins). Resolves the mobile persistence gap from audit item #2.
+-- ────────────────────────────────────────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS SessionNotes (
+    routineSessionId TEXT NOT NULL PRIMARY KEY,
+    notes TEXT,
+    updatedAt INTEGER
+);
+
+CREATE INDEX IF NOT EXISTS idx_session_notes_updated_at
+    ON SessionNotes(updatedAt);
+
+-- LWW-gated upsert: only overwrite when incoming updatedAt is newer than
+-- stored. NULL stored updatedAt treated as older (accept incoming).
+upsertSessionNotesLww:
+INSERT INTO SessionNotes(routineSessionId, notes, updatedAt)
+VALUES (?, ?, ?)
+ON CONFLICT(routineSessionId) DO UPDATE SET
+    notes = excluded.notes,
+    updatedAt = excluded.updatedAt
+WHERE SessionNotes.updatedAt IS NULL
+   OR excluded.updatedAt IS NULL
+   OR excluded.updatedAt >= SessionNotes.updatedAt;
+
+getSessionNotes:
+SELECT * FROM SessionNotes WHERE routineSessionId = ?;
+
+selectSessionNotesForIds:
+SELECT * FROM SessionNotes WHERE routineSessionId IN ?;
