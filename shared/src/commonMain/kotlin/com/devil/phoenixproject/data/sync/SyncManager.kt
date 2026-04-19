@@ -73,6 +73,43 @@ object SyncConfig {
      * it causes HTTP 413 "parity_ids_exceeds_max". See audit item #7.
      */
     const val MAX_PARITY_IDS = 500
+
+    // ─── Phase 4.2: self-cap + self-throttle (audit item #9) ──────────────
+    //
+    // These constants mirror the server-side limits in
+    // phoenix-portal/supabase/functions/mobile-sync-push/index.ts so that a
+    // misbehaving client fails fast locally instead of wasting an Edge
+    // Function invocation only to receive HTTP 413/429. The client caps stay
+    // slightly below the server limits where possible so spurious retries do
+    // not teeter on the threshold.
+
+    /** Maximum sessions per push batch. Must stay <= server MAX_ARRAY_SIZE (10000). */
+    const val MAX_SESSIONS_PER_BATCH = 10_000
+
+    /** Maximum routines per push batch (mirrors server cap). */
+    const val MAX_ROUTINES_PER_BATCH = 10_000
+
+    /** Maximum training cycles per push batch. Aligned with server cap in audit #6. */
+    const val MAX_CYCLES_PER_BATCH = 10_000
+
+    /** Maximum rep_telemetry points per push batch. Server accepts up to MAX_ARRAY_SIZE. */
+    const val MAX_TELEMETRY_PER_BATCH = 10_000
+
+    /**
+     * Maximum serialized payload size in bytes for a single push request.
+     * Set 500 KiB below the server's 10 MiB limit to leave headroom for
+     * compression envelope + HTTP framing overhead.
+     */
+    const val MAX_PAYLOAD_BYTES = 9_500_000L
+
+    /** Maximum push requests per minute (matches server-enforced rate limit). */
+    const val PUSH_RATE_LIMIT_PER_MIN = 10
+
+    /** Maximum pull requests per minute (matches server-enforced rate limit). */
+    const val PULL_RATE_LIMIT_PER_MIN = 20
+
+    /** Rate-limit window in milliseconds (60 seconds). */
+    const val RATE_LIMIT_WINDOW_MS = 60_000L
 }
 
 class SyncManager(
@@ -83,6 +120,7 @@ class SyncManager(
     private val repMetricRepository: RepMetricRepository,
     private val userProfileRepository: UserProfileRepository,
     private val externalActivityRepository: ExternalActivityRepository,
+    private val rateLimiter: ClientRateLimiter = ClientRateLimiter(),
 ) {
     companion object {
         /**
@@ -393,6 +431,21 @@ class SyncManager(
     private suspend fun pushLocalChanges(): Result<PortalSyncPushResponse> {
         val userId = tokenStorage.currentUser.value?.id
             ?: return Result.failure(PortalApiException("Not authenticated", null, 401))
+
+        // fix(audit #9): self-throttle to match server 10/min limit so a
+        // runaway retry loop fails fast locally instead of hammering the
+        // Edge Function for HTTP 429 responses.
+        if (!rateLimiter.tryAcquire("push", SyncConfig.PUSH_RATE_LIMIT_PER_MIN)) {
+            return Result.failure(
+                PortalApiException(
+                    "Client rate limit exceeded for push (" +
+                        "${SyncConfig.PUSH_RATE_LIMIT_PER_MIN}/min). Try again shortly.",
+                    null,
+                    429,
+                ),
+            )
+        }
+
         val deviceId = tokenStorage.getDeviceId()
         val lastSync = tokenStorage.getLastSyncTimestamp()
         val platform = getPlatformName()
@@ -738,6 +791,18 @@ class SyncManager(
      * @return Result with final syncTime on success, or failure with classified error
      */
     private suspend fun pullRemoteChangesWithResult(): Result<Long> {
+        // fix(audit #9): self-throttle to match server 20/min limit.
+        if (!rateLimiter.tryAcquire("pull", SyncConfig.PULL_RATE_LIMIT_PER_MIN)) {
+            return Result.failure(
+                PortalApiException(
+                    "Client rate limit exceeded for pull (" +
+                        "${SyncConfig.PULL_RATE_LIMIT_PER_MIN}/min). Try again shortly.",
+                    null,
+                    429,
+                ),
+            )
+        }
+
         val deviceId = tokenStorage.getDeviceId()
         val activeProfileId = userProfileRepository.activeProfile.value?.id
         val mergeProfileId = activeProfileId ?: "default"

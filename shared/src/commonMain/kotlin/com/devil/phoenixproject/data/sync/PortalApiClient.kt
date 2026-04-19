@@ -336,11 +336,63 @@ open class PortalApiClient(private val supabaseConfig: SupabaseConfig, private v
 
     // === Portal Sync Endpoints (Supabase Edge Functions) ===
 
-    open suspend fun pushPortalPayload(payload: PortalSyncPayload): Result<PortalSyncPushResponse> = authenticatedRequest { token ->
-        httpClient.post("${supabaseConfig.url}/functions/v1/mobile-sync-push") {
-            bearerAuth(token)
-            header("apikey", supabaseConfig.anonKey)
-            setBody(payload)
+    open suspend fun pushPortalPayload(payload: PortalSyncPayload): Result<PortalSyncPushResponse> {
+        // fix(audit #9): self-enforce array caps + payload size before network
+        // so a misbehaving client fails fast locally instead of burning an
+        // Edge Function invocation for a payload the server will reject with
+        // HTTP 413. Limits mirror the server constants.
+        if (payload.sessions.size > SyncConfig.MAX_SESSIONS_PER_BATCH) {
+            return Result.failure(
+                PortalApiException(
+                    "Push payload has ${payload.sessions.size} sessions; " +
+                        "cap is ${SyncConfig.MAX_SESSIONS_PER_BATCH}. Caller must batch.",
+                ),
+            )
+        }
+        if (payload.routines.size > SyncConfig.MAX_ROUTINES_PER_BATCH) {
+            return Result.failure(
+                PortalApiException(
+                    "Push payload has ${payload.routines.size} routines; " +
+                        "cap is ${SyncConfig.MAX_ROUTINES_PER_BATCH}.",
+                ),
+            )
+        }
+        if (payload.cycles.size > SyncConfig.MAX_CYCLES_PER_BATCH) {
+            return Result.failure(
+                PortalApiException(
+                    "Push payload has ${payload.cycles.size} cycles; " +
+                        "cap is ${SyncConfig.MAX_CYCLES_PER_BATCH}.",
+                ),
+            )
+        }
+        if (payload.telemetry.size > SyncConfig.MAX_TELEMETRY_PER_BATCH) {
+            return Result.failure(
+                PortalApiException(
+                    "Push payload has ${payload.telemetry.size} telemetry points; " +
+                        "cap is ${SyncConfig.MAX_TELEMETRY_PER_BATCH}.",
+                ),
+            )
+        }
+
+        // Serialize once to measure size. Reuse the serialized bytes so we
+        // do not pay the JSON cost twice.
+        val serialized = Json.encodeToString(PortalSyncPayload.serializer(), payload)
+        if (serialized.encodeToByteArray().size > SyncConfig.MAX_PAYLOAD_BYTES) {
+            return Result.failure(
+                PortalApiException(
+                    "Push payload is ${serialized.encodeToByteArray().size} bytes; " +
+                        "cap is ${SyncConfig.MAX_PAYLOAD_BYTES} bytes. Caller must split.",
+                ),
+            )
+        }
+
+        return authenticatedRequest { token ->
+            httpClient.post("${supabaseConfig.url}/functions/v1/mobile-sync-push") {
+                bearerAuth(token)
+                header("apikey", supabaseConfig.anonKey)
+                header("Content-Type", "application/json")
+                setBody(serialized)
+            }
         }
     }
 
