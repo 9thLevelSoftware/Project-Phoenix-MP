@@ -386,12 +386,43 @@ data class PortalSyncPushResponse(
     val exerciseSignaturesUpserted: Int = 0,
     val assessmentsInserted: Int = 0,
     val externalActivitiesUpserted: Int = 0,
+    /**
+     * DEPRECATED: prefer `externalActivityKeys` which now carries per-ack
+     * localId/serverId/updatedAt metadata. Retained for one release so older
+     * adapters can continue to decode the response. Will be removed alongside
+     * Phase 3 LWW rollout.
+     */
+    @Deprecated(
+        message = "Use externalActivityKeys which now carries full ack metadata",
+        replaceWith = ReplaceWith("externalActivityKeys")
+    )
     val externalActivityIds: List<String> = emptyList(),
     val externalActivityKeys: List<ExternalActivityAckDto> = emptyList(),
 )
 
+/**
+ * Ack returned by mobile-sync-push for each upserted external activity.
+ *
+ * `localId` and `serverId` are both the client-minted UUID in steady state.
+ * They are modeled as separate fields so a future server-side id remap would
+ * not require another wire break. `updatedAt` is the server-canonical
+ * timestamp used to seed LWW convergence on the mobile side.
+ *
+ * Older clients that only read `externalId`/`provider` still deserialize
+ * correctly because new fields carry defaults. The deprecated
+ * `PortalSyncPushResponse.externalActivityIds` alias is retained for one
+ * release for callers that relied on it.
+ *
+ * Resolves audit items #5 and #10 (2026-04-19).
+ */
 @Serializable
-data class ExternalActivityAckDto(val externalId: String, val provider: String)
+data class ExternalActivityAckDto(
+    val externalId: String,
+    val provider: String,
+    val localId: String? = null,
+    val serverId: String? = null,
+    val updatedAt: String? = null,
+)
 
 // ─── Composite Sync Payload ─────────────────────────────────────────
 
