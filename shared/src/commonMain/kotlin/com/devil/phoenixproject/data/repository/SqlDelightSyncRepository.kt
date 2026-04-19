@@ -610,12 +610,18 @@ class SqlDelightSyncRepository(
                             // Prevents bodyweight misclassification when equipment would default to "".
                             val catalogExercise = queries.findExerciseByName(exercise.name).executeAsOneOrNull()
 
+                            val resolvedEquipment = when {
+                                exercise.isBodyweight -> "Bodyweight"
+                                catalogExercise != null -> catalogExercise.equipment
+                                else -> "Cable"
+                            }
+
                             queries.insertRoutineExercise(
                                 id = exercise.id,
                                 routineId = portalRoutine.id,
                                 exerciseName = exercise.name,
                                 exerciseMuscleGroup = exercise.muscleGroup,
-                                exerciseEquipment = catalogExercise?.equipment ?: "Cable",
+                                exerciseEquipment = resolvedEquipment,
                                 exerciseDefaultCableConfig = catalogExercise?.defaultCableConfig ?: "DOUBLE",
                                 exerciseId = catalogExercise?.id, // Link to catalog when available
                                 cableConfig = "DOUBLE",
@@ -1533,12 +1539,18 @@ class SqlDelightSyncRepository(
                             val mobileMode = PortalPullAdapter.portalModeToMobileMode(exercise.mode)
                             val catalogExercise = queries.findExerciseByName(exercise.name).executeAsOneOrNull()
 
+                            val resolvedEquipmentBulk = when {
+                                exercise.isBodyweight -> "Bodyweight"
+                                catalogExercise != null -> catalogExercise.equipment
+                                else -> "Cable"
+                            }
+
                             queries.insertRoutineExercise(
                                 id = exercise.id,
                                 routineId = portalRoutine.id,
                                 exerciseName = exercise.name,
                                 exerciseMuscleGroup = exercise.muscleGroup,
-                                exerciseEquipment = catalogExercise?.equipment ?: "Cable",
+                                exerciseEquipment = resolvedEquipmentBulk,
                                 exerciseDefaultCableConfig = catalogExercise?.defaultCableConfig ?: "DOUBLE",
                                 exerciseId = catalogExercise?.id,
                                 cableConfig = "DOUBLE",
@@ -1730,5 +1742,38 @@ class SqlDelightSyncRepository(
 
     override suspend fun getAllPersonalRecordIds(profileId: String): List<String> = withContext(Dispatchers.IO) {
         queries.selectAllPersonalRecordIdsByProfile(profileId).executeAsList()
+    }
+
+    /**
+     * Phase 3.5 — Persist session-level notes from the portal pull.
+     *
+     * SQLDelight is on the sqlite 3.18 dialect which does not support
+     * INSERT ... ON CONFLICT DO UPDATE WHERE, so the LWW gate lives here in
+     * Kotlin: SELECT existing.updatedAt, compare against incoming, then
+     * either INSERT OR REPLACE or skip. Wrapped in a single transaction so
+     * the read+write pair is atomic per row.
+     */
+    override suspend fun mergeSessionNotes(
+        notes: Map<String, SessionNotesEntry>,
+    ) = withContext(Dispatchers.IO) {
+        if (notes.isEmpty()) return@withContext
+        db.transaction {
+            for ((routineSessionId, entry) in notes) {
+                val existingUpdatedAt = queries
+                    .selectSessionNotesUpdatedAt(routineSessionId)
+                    .executeAsOneOrNull()
+                    ?.updatedAt
+                val incomingMillis = entry.updatedAtMillis
+                val accept = existingUpdatedAt == null ||
+                    incomingMillis >= existingUpdatedAt
+                if (accept) {
+                    queries.upsertSessionNotes(
+                        routineSessionId = routineSessionId,
+                        notes = entry.notes,
+                        updatedAt = incomingMillis,
+                    )
+                }
+            }
+        }
     }
 }

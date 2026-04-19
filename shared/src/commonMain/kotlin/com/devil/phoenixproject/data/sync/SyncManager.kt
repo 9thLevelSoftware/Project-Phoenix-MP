@@ -66,6 +66,50 @@ object SyncConfig {
 
     /** Maximum pages to fetch in a single pull operation (prevents infinite loops). */
     const val MAX_PAGES = 100
+
+    /**
+     * Maximum number of IDs per parity list sent in a single pull request.
+     * Must stay <= the server's MAX_PARITY_IDS in mobile-sync-pull; exceeding
+     * it causes HTTP 413 "parity_ids_exceeds_max". See audit item #7.
+     */
+    const val MAX_PARITY_IDS = 500
+
+    // ─── Phase 4.2: self-cap + self-throttle (audit item #9) ──────────────
+    //
+    // These constants mirror the server-side limits in
+    // phoenix-portal/supabase/functions/mobile-sync-push/index.ts so that a
+    // misbehaving client fails fast locally instead of wasting an Edge
+    // Function invocation only to receive HTTP 413/429. The client caps stay
+    // slightly below the server limits where possible so spurious retries do
+    // not teeter on the threshold.
+
+    /** Maximum sessions per push batch. Must stay <= server MAX_ARRAY_SIZE (10000). */
+    const val MAX_SESSIONS_PER_BATCH = 10_000
+
+    /** Maximum routines per push batch (mirrors server cap). */
+    const val MAX_ROUTINES_PER_BATCH = 10_000
+
+    /** Maximum training cycles per push batch. Aligned with server cap in audit #6. */
+    const val MAX_CYCLES_PER_BATCH = 10_000
+
+    /** Maximum rep_telemetry points per push batch. Server accepts up to MAX_ARRAY_SIZE. */
+    const val MAX_TELEMETRY_PER_BATCH = 10_000
+
+    /**
+     * Maximum serialized payload size in bytes for a single push request.
+     * Set 500 KiB below the server's 10 MiB limit to leave headroom for
+     * compression envelope + HTTP framing overhead.
+     */
+    const val MAX_PAYLOAD_BYTES = 9_500_000L
+
+    /** Maximum push requests per minute (matches server-enforced rate limit). */
+    const val PUSH_RATE_LIMIT_PER_MIN = 10
+
+    /** Maximum pull requests per minute (matches server-enforced rate limit). */
+    const val PULL_RATE_LIMIT_PER_MIN = 20
+
+    /** Rate-limit window in milliseconds (60 seconds). */
+    const val RATE_LIMIT_WINDOW_MS = 60_000L
 }
 
 class SyncManager(
@@ -76,6 +120,7 @@ class SyncManager(
     private val repMetricRepository: RepMetricRepository,
     private val userProfileRepository: UserProfileRepository,
     private val externalActivityRepository: ExternalActivityRepository,
+    private val rateLimiter: ClientRateLimiter = ClientRateLimiter(),
 ) {
     companion object {
         /**
@@ -183,6 +228,7 @@ class SyncManager(
         // signOut() is designed to swallow exceptions (see PortalApiClient line 267-280)
         apiClient.signOut()
 
+        tokenStorage.updatePremiumStatus(false)
         tokenStorage.clearAuth()
         tokenStorage.emitLogoutEvent()
 
@@ -190,6 +236,21 @@ class SyncManager(
         // (Issue 5.2: logout() and sync() both modify _syncState)
         syncMutex.withLock {
             _syncState.value = SyncState.NotAuthenticated
+        }
+    }
+
+    /**
+     * Refreshes [PortalUser.isPremium] from the server subscription endpoint.
+     * Prefer this on app foreground; do not infer entitlement from sync HTTP status alone.
+     */
+    suspend fun refreshPremiumStatusFromServer() {
+        if (!tokenStorage.hasToken()) return
+        val premiumResult = apiClient.checkPremiumStatus()
+        val existingPremium = tokenStorage.currentUser.value?.isPremium ?: false
+        val isPremium = premiumResult.getOrNull() ?: existingPremium
+        tokenStorage.updatePremiumStatus(isPremium)
+        Logger.d("SyncManager") {
+            "refreshPremiumStatusFromServer: premium=$isPremium (network ok=${premiumResult.isSuccess})"
         }
     }
 
@@ -252,7 +313,6 @@ class SyncManager(
             } else if (error is PortalApiException &&
                 (error.statusCode == 402 || error.statusCode == 403)
             ) {
-                tokenStorage.updatePremiumStatus(false)
                 _syncState.value = SyncState.NotPremium
             } else {
                 _syncState.value = SyncState.Error(error?.message ?: "Push failed")
@@ -260,9 +320,6 @@ class SyncManager(
             return@withLock Result.failure(error ?: Exception("Push failed"))
         }
         Logger.i("SyncManager") { "Push succeeded" }
-
-        // Successful push confirms premium status
-        tokenStorage.updatePremiumStatus(true)
 
         // Stamp pushed sessions so they aren't re-sent on next sync.
         // Sessions with NULL updatedAt would match every delta query indefinitely.
@@ -374,6 +431,21 @@ class SyncManager(
     private suspend fun pushLocalChanges(): Result<PortalSyncPushResponse> {
         val userId = tokenStorage.currentUser.value?.id
             ?: return Result.failure(PortalApiException("Not authenticated", null, 401))
+
+        // fix(audit #9): self-throttle to match server 10/min limit so a
+        // runaway retry loop fails fast locally instead of hammering the
+        // Edge Function for HTTP 429 responses.
+        if (!rateLimiter.tryAcquire("push", SyncConfig.PUSH_RATE_LIMIT_PER_MIN)) {
+            return Result.failure(
+                PortalApiException(
+                    "Client rate limit exceeded for push (" +
+                        "${SyncConfig.PUSH_RATE_LIMIT_PER_MIN}/min). Try again shortly.",
+                    null,
+                    429,
+                ),
+            )
+        }
+
         val deviceId = tokenStorage.getDeviceId()
         val lastSync = tokenStorage.getLastSyncTimestamp()
         val platform = getPlatformName()
@@ -719,18 +791,55 @@ class SyncManager(
      * @return Result with final syncTime on success, or failure with classified error
      */
     private suspend fun pullRemoteChangesWithResult(): Result<Long> {
+        // fix(audit #9): self-throttle to match server 20/min limit.
+        if (!rateLimiter.tryAcquire("pull", SyncConfig.PULL_RATE_LIMIT_PER_MIN)) {
+            return Result.failure(
+                PortalApiException(
+                    "Client rate limit exceeded for pull (" +
+                        "${SyncConfig.PULL_RATE_LIMIT_PER_MIN}/min). Try again shortly.",
+                    null,
+                    429,
+                ),
+            )
+        }
+
         val deviceId = tokenStorage.getDeviceId()
         val activeProfileId = userProfileRepository.activeProfile.value?.id
         val mergeProfileId = activeProfileId ?: "default"
         val lastSync = tokenStorage.getLastSyncTimestamp()
 
-        // Collect local entity IDs for parity comparison
+        // Collect local entity IDs for parity comparison.
+        //
+        // fix(audit #7): cap each list at MAX_PARITY_IDS to stay within the
+        // server's enforced HTTP 413 threshold. If a user has more than
+        // MAX_PARITY_IDS entities, we send the most recent window and rely on
+        // the mobile-side dedupe against local DB to handle the tail. This is
+        // strictly better than the prior server behavior which silently
+        // returned empty for over-cap lists.
+        val rawSessionIds = syncRepository.getAllSessionIds(mergeProfileId)
+        val rawRoutineIds = syncRepository.getAllRoutineIds(mergeProfileId)
+        val rawCycleIds = syncRepository.getAllCycleIds(mergeProfileId)
+        val rawBadgeIds = syncRepository.getAllBadgeIds(mergeProfileId)
+        val rawPrIds = syncRepository.getAllPersonalRecordIds(mergeProfileId)
+
+        fun <T> capParity(list: List<T>, label: String): List<T> =
+            if (list.size <= SyncConfig.MAX_PARITY_IDS) {
+                list
+            } else {
+                Logger.w("SyncManager") {
+                    "Parity list '$label' has ${list.size} entries; truncating to last " +
+                        "${SyncConfig.MAX_PARITY_IDS} to stay within server cap. " +
+                        "Local dedupe will handle the older tail."
+                }
+                list.takeLast(SyncConfig.MAX_PARITY_IDS)
+            }
+
         val knownEntityIds = KnownEntityIds(
-            sessionIds = syncRepository.getAllSessionIds(mergeProfileId),
-            routineIds = syncRepository.getAllRoutineIds(mergeProfileId),
-            cycleIds = syncRepository.getAllCycleIds(mergeProfileId),
-            badgeIds = syncRepository.getAllBadgeIds(mergeProfileId),
-            personalRecordIds = syncRepository.getAllPersonalRecordIds(mergeProfileId),
+            sessionIds = capParity(rawSessionIds, "sessionIds"),
+            routineIds = capParity(rawRoutineIds, "routineIds"),
+            cycleIds = capParity(rawCycleIds, "cycleIds"),
+            badgeIds = capParity(rawBadgeIds, "badgeIds"),
+            personalRecordIds = capParity(rawPrIds, "personalRecordIds"),
         )
 
         Logger.i("SyncManager") {
@@ -912,6 +1021,26 @@ class SyncManager(
             PortalPullAdapter.toGamificationStatsSyncDto(it)
         }
 
+        // 2b. Phase 3.5: extract session-level notes for the SessionNotes
+        // side-table. Keyed on the portal `routineSessionId` (== portal
+        // session id). Sessions without notes are skipped. The updatedAt
+        // timestamp falls back to the session.startedAt when the server has
+        // not yet populated updatedAt on the pull projection (older Edge
+        // Function versions or null-on-create rows).
+        val sessionNotesMap: Map<String, com.devil.phoenixproject.data.repository.SessionNotesEntry> =
+            pullResponse.sessions
+                .filter { !it.notes.isNullOrBlank() }
+                .associate { ps ->
+                    val updatedAtMillis = ps.startedAt?.let { iso ->
+                        runCatching { kotlin.time.Instant.parse(iso).toEpochMilliseconds() }
+                            .getOrNull()
+                    } ?: currentTimeMillis()
+                    ps.id to com.devil.phoenixproject.data.repository.SessionNotesEntry(
+                        notes = ps.notes,
+                        updatedAtMillis = updatedAtMillis,
+                    )
+                }
+
         // 3. Execute atomic merge (all or nothing)
         try {
             syncRepository.mergeAllPullData(
@@ -925,10 +1054,25 @@ class SyncManager(
                 profileId = mergeProfileId,
             )
 
+            // Phase 3.5: persist session-level notes after the atomic merge
+            // succeeds. Kept outside the main transaction so a notes-table
+            // failure cannot roll back session data.
+            if (sessionNotesMap.isNotEmpty()) {
+                try {
+                    syncRepository.mergeSessionNotes(sessionNotesMap)
+                } catch (e: Exception) {
+                    Logger.w(e) {
+                        "SessionNotes merge failed for ${sessionNotesMap.size} sessions; " +
+                            "non-fatal, sessions remain consistent."
+                    }
+                }
+            }
+
             Logger.d("SyncManager") {
                 "Atomic merge complete: ${mobileSessions.size} sessions (${mobileSessions.count { it.exerciseId != null }} with exerciseId), " +
                     "${pullResponse.routines.size} routines, ${pullResponse.cycles.size} cycles, " +
-                    "${pullResponse.badges.size} badges, ${prDtos.size} PRs"
+                    "${pullResponse.badges.size} badges, ${prDtos.size} PRs, " +
+                    "${sessionNotesMap.size} session notes"
             }
         } catch (e: Exception) {
             Logger.e(e) { "Atomic merge failed - transaction rolled back. No entities were persisted." }

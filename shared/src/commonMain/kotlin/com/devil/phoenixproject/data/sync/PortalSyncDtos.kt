@@ -29,6 +29,14 @@ data class PortalWorkoutSessionDto(
     val userId: String,
     val name: String? = null,
     val startedAt: String, // ISO 8601
+    /**
+     * Client-canonical last-write timestamp (ISO 8601). Required for the
+     * server-side LWW gate in Phase 3.2+. If null, the server falls back to
+     * `NOW()` (effective server-wins) for backward compatibility with pre-LWW
+     * mobile builds. Populate from `WorkoutSession.updatedAt` (epoch millis) in
+     * the push adapter. Resolves audit item #1.
+     */
+    val updatedAt: String? = null,
     val durationSeconds: Int = 0,
     val totalVolume: Float = 0f, // per-cable kg
     val setCount: Int = 0,
@@ -83,6 +91,15 @@ data class PortalExerciseDto(
  * Maps to portal's `sets` table.
  * One mobile WorkoutSession = one "set" in portal terms (since mobile
  * treats each exercise run as its own session).
+ *
+ * NOTE: `prType`, `prPhase`, and `prVolume` are SEND-ONLY derivation hints.
+ * The portal `sets` table has no columns for them — the push handler reads
+ * these fields from the incoming DTO and forwards them into the
+ * `personal_records` table insert (see mobile-sync-push/index.ts around the
+ * personal_records handling). PRs round-trip via PersonalRecord DTOs, not
+ * through set-level columns. This split is intentional: keeping PR state
+ * canonical in a single table avoids double-source-of-truth bugs.
+ * Resolves audit item #3 (2026-04-19).
  */
 @Serializable
 data class PortalSetDto(
@@ -94,6 +111,9 @@ data class PortalSetDto(
     val weightKg: Float = 0f, // per-cable
     val rpe: Int? = null,
     val isPr: Boolean = false,
+    // The following three fields are send-only PR derivation hints consumed
+    // by the portal push handler to construct personal_records rows. They are
+    // NOT persisted on the `sets` table. See doc comment above.
     val prType: String? = null, // "MAX_WEIGHT" or "MAX_VOLUME"
     val prPhase: String? = null, // "COMBINED", "CONCENTRIC", or "ECCENTRIC"
     val prVolume: Float? = null, // total volume (weight × reps) for volume PRs
@@ -131,6 +151,11 @@ data class PortalRepSummaryDto(
 /**
  * Maps to portal's `rep_telemetry` table.
  * Raw time-series data points for force curve visualization.
+ *
+ * Cable wire format: canonical "A" | "B" from BLE (A = left actuator,
+ * B = right actuator). Portal schema (src/schemas/telemetry.ts) accepts
+ * the same canonical values; the portal UI layer applies display mapping
+ * via `cableDisplayName()`. Resolves audit item #4 (2026-04-19).
  */
 @Serializable
 data class PortalRepTelemetryDto(
@@ -140,7 +165,8 @@ data class PortalRepTelemetryDto(
     val forceN: Float? = null,
     val velocityMps: Float? = null,
     val positionMm: Float? = null,
-    val cable: String? = null, // "left" or "right"
+    /** Canonical BLE cable identifier: "A" (left actuator) or "B" (right actuator). */
+    val cable: String? = null,
 )
 
 // ─── Routine Sync DTOs ──────────────────────────────────────────────
@@ -159,6 +185,8 @@ data class PortalRoutineSyncDto(
     val estimatedDuration: Int = 0,
     val timesCompleted: Int = 0,
     val isFavorite: Boolean = false,
+    /** ISO 8601 last-write timestamp for LWW gate (Phase 3.2+). Null falls back to server NOW(). */
+    val updatedAt: String? = null,
     val exercises: List<PortalRoutineExerciseSyncDto> = emptyList(),
 )
 
@@ -182,6 +210,7 @@ data class PortalRoutineExerciseSyncDto(
     val perSetWeights: String? = null, // JSON array
     val perSetRest: String? = null, // JSON array
     val isAmrap: Boolean = false,
+    val isBodyweight: Boolean = false,
     val prPercentage: Float? = null,
     val repCountTiming: String? = null, // "TOP" or "BOTTOM"
     val stopAtPosition: String? = null, // "TOP" or "BOTTOM"
@@ -212,6 +241,8 @@ data class PortalTrainingCycleSyncDto(
     val status: String = "draft",
     val startedAt: String? = null, // ISO 8601
     val lastUsedAt: String? = null, // ISO 8601
+    /** ISO 8601 last-write timestamp for LWW gate (Phase 3.2+). Null falls back to server NOW(). */
+    val updatedAt: String? = null,
     val progressionSettings: String? = null, // JSON
     val deloadSettings: String? = null, // JSON
     val days: List<PortalCycleDaySyncDto> = emptyList(),
@@ -367,12 +398,75 @@ data class PortalSyncPushResponse(
     val exerciseSignaturesUpserted: Int = 0,
     val assessmentsInserted: Int = 0,
     val externalActivitiesUpserted: Int = 0,
+    /**
+     * DEPRECATED: prefer `externalActivityKeys` which now carries per-ack
+     * localId/serverId/updatedAt metadata. Retained for one release so older
+     * adapters can continue to decode the response. Will be removed alongside
+     * Phase 3 LWW rollout.
+     */
+    @Deprecated(
+        message = "Use externalActivityKeys which now carries full ack metadata",
+        replaceWith = ReplaceWith("externalActivityKeys")
+    )
     val externalActivityIds: List<String> = emptyList(),
     val externalActivityKeys: List<ExternalActivityAckDto> = emptyList(),
+    /**
+     * Per-entity LWW rejections. Empty when SYNC_LWW_ENABLED is false on
+     * the server or when every incoming row cleared the LWW gate. Phase 3.2.
+     */
+    val rejections: SyncRejectionsDto = SyncRejectionsDto(),
 )
 
+/**
+ * One LWW rejection from the Phase 3.2 push handler. Emitted when the
+ * server already has a row with a newer `updated_at` than the incoming
+ * mobile row. Mobile logs these and lets the next pull repair convergence.
+ * `id` is the entity id (uuid or user_id for single-row-per-user entities).
+ */
 @Serializable
-data class ExternalActivityAckDto(val externalId: String, val provider: String)
+data class SyncRejectionDto(
+    val id: String,
+    val serverUpdatedAt: String? = null,
+)
+
+/**
+ * Per-entity rejection lists returned by the push handler when
+ * SYNC_LWW_ENABLED is true. All lists default to empty for backward compat
+ * with pre-LWW server responses.
+ */
+@Serializable
+data class SyncRejectionsDto(
+    val sessions: List<SyncRejectionDto> = emptyList(),
+    val routines: List<SyncRejectionDto> = emptyList(),
+    val cycles: List<SyncRejectionDto> = emptyList(),
+    val externalActivities: List<SyncRejectionDto> = emptyList(),
+    val rpgAttributes: List<SyncRejectionDto> = emptyList(),
+    val gamificationStats: List<SyncRejectionDto> = emptyList(),
+)
+
+/**
+ * Ack returned by mobile-sync-push for each upserted external activity.
+ *
+ * `localId` and `serverId` are both the client-minted UUID in steady state.
+ * They are modeled as separate fields so a future server-side id remap would
+ * not require another wire break. `updatedAt` is the server-canonical
+ * timestamp used to seed LWW convergence on the mobile side.
+ *
+ * Older clients that only read `externalId`/`provider` still deserialize
+ * correctly because new fields carry defaults. The deprecated
+ * `PortalSyncPushResponse.externalActivityIds` alias is retained for one
+ * release for callers that relied on it.
+ *
+ * Resolves audit items #5 and #10 (2026-04-19).
+ */
+@Serializable
+data class ExternalActivityAckDto(
+    val externalId: String,
+    val provider: String,
+    val localId: String? = null,
+    val serverId: String? = null,
+    val updatedAt: String? = null,
+)
 
 // ─── Composite Sync Payload ─────────────────────────────────────────
 
@@ -512,6 +606,17 @@ data class PullWorkoutSessionDto(
     val routineName: String? = null,
     val workoutMode: String? = null,
     val routineSessionId: String? = null,
+    /**
+     * Session-level notes from portal. Added 2026-04-19 (audit item #2).
+     *
+     * Wire contract only — mobile does not yet persist session-level notes
+     * locally because the mobile WorkoutSession model is per-exercise (portal
+     * session → N mobile rows grouped by routineSessionId). A SessionNotes
+     * table keyed on routineSessionId is the planned persistence surface and
+     * ships with the Phase 3 LWW migration; until then, this field round-trips
+     * through the wire but is ignored when merging into SQLDelight.
+     */
+    val notes: String? = null,
     val exercises: List<PullExerciseDto> = emptyList(),
 )
 
@@ -592,6 +697,7 @@ data class PullRoutineExerciseDto(
     val perSetWeights: String? = null,
     val perSetRest: String? = null,
     val isAmrap: Boolean = false,
+    val isBodyweight: Boolean = false,
     val prPercentage: Float? = null,
     val repCountTiming: String? = null,
     val stopAtPosition: String? = null,

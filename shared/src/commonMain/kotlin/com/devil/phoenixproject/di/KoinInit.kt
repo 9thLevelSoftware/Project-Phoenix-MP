@@ -12,10 +12,14 @@ fun initKoin(appDeclaration: KoinAppDeclaration = {}) = startKoin {
 }
 
 /**
- * Helper function for iOS that doesn't require lambda parameter.
- * Call this from Swift: KoinKt.doInitKoin()
+ * Shared Koin bootstrap used by the iOS `doInitKoin` entrypoint (and tests).
+ *
+ * Swift calls `KoinInitIosKt.doInitKoin()` (declared in `shared/iosMain/.../KoinInitIos.kt`,
+ * `@Throws(Throwable::class)` so failures bridge to `NSError`). That function thinly delegates
+ * to this one. The Kotlin/Native export class name follows the source file name, so note the
+ * `Ios` suffix — the iOS symbol is NOT `KoinInitKt.doInitKoin()`.
  */
-fun doInitKoin() {
+internal fun doInitKoinInternal() {
     Logger.i { "iOS: ========== KOIN INITIALIZATION START ==========" }
     try {
         Logger.i { "iOS: Calling initKoin()..." }

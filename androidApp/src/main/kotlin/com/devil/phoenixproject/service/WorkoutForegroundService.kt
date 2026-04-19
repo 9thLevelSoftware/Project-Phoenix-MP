@@ -6,6 +6,8 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.content.pm.ServiceInfo
+import android.os.Build
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
 import co.touchlab.kermit.Logger
@@ -49,11 +51,9 @@ class WorkoutForegroundService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent == null) {
-            // Android restarted the service after it was killed. BLE connection is lost and
-            // the workout cannot meaningfully resume, so post the required foreground
-            // notification (Android 8+ crashes without it) and shut down immediately.
+            // Process death restart: BLE session is gone; do not call startForeground (avoids
+            // wrong service-type on API 34+). Tear down immediately.
             log.w { "WorkoutForegroundService restarted with null intent, stopping" }
-            startForeground(NOTIFICATION_ID, createNotification())
             stopSelf()
             return START_NOT_STICKY
         }
@@ -62,7 +62,7 @@ class WorkoutForegroundService : Service() {
             WorkoutServiceProtocol.ACTION_SYNC -> {
                 notificationState = intent.toNotificationState(previous = notificationState)
                 if (!isForegroundActive) {
-                    startForeground(NOTIFICATION_ID, createNotification())
+                    startWorkoutForeground()
                     isForegroundActive = true
                 } else {
                     updateNotification()
@@ -86,6 +86,19 @@ class WorkoutForegroundService : Service() {
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
+
+    private fun startWorkoutForeground() {
+        val notification = createNotification()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            startForeground(
+                NOTIFICATION_ID,
+                notification,
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE,
+            )
+        } else {
+            startForeground(NOTIFICATION_ID, notification)
+        }
+    }
 
     private fun createNotificationChannel() {
         val channel = NotificationChannel(

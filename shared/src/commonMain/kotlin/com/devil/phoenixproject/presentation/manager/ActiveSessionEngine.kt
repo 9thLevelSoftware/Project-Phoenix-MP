@@ -3638,9 +3638,10 @@ class ActiveSessionEngine(
         val now = elapsedRealtimeProvider()
         val activeDeadline = coordinator.restDeadlineElapsedRealtimeMs
         if (activeDeadline != null && !coordinator._isRestPaused.value) {
-            coordinator.restDeadlineElapsedRealtimeMs = maxOf(activeDeadline, now) + (seconds * 1000L)
+            val extendedDeadline = maxOf(activeDeadline, now) + (seconds * 1000L)
+            coordinator.restDeadlineElapsedRealtimeMs = extendedDeadline
             coordinator._restSecondsRemaining.value =
-                computeRemainingSeconds(coordinator.restDeadlineElapsedRealtimeMs!!, now)
+                computeRemainingSeconds(extendedDeadline, now)
         } else {
             coordinator._restSecondsRemaining.value += seconds
         }

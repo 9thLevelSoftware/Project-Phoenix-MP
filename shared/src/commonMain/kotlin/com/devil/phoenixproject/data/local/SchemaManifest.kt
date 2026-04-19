@@ -886,6 +886,20 @@ internal val manifestTables: List<SchemaTableOperation> = listOf(
             )
         """.trimIndent(),
     ),
+
+    // SessionNotes -- introduced by migration 26.sqm (Phase 3.5).
+    // Side-table for portal session-level notes keyed on routineSessionId.
+    // Resolves the mobile persistence gap from audit item #2.
+    SchemaTableOperation(
+        table = "SessionNotes",
+        createSql = """
+            CREATE TABLE IF NOT EXISTS SessionNotes (
+                routineSessionId TEXT NOT NULL PRIMARY KEY,
+                notes TEXT,
+                updatedAt INTEGER
+            )
+        """.trimIndent(),
+    ),
 )
 
 // ============================================================
@@ -1142,4 +1156,7 @@ internal val manifestIndexes: List<SchemaIndexOperation> = listOf(
     SchemaIndexOperation("idx_external_activity_profile", "CREATE INDEX IF NOT EXISTS idx_external_activity_profile ON ExternalActivity(profileId)"),
     SchemaIndexOperation("idx_external_activity_provider", "CREATE INDEX IF NOT EXISTS idx_external_activity_provider ON ExternalActivity(provider)"),
     SchemaIndexOperation("idx_external_activity_started", "CREATE INDEX IF NOT EXISTS idx_external_activity_started ON ExternalActivity(startedAt DESC)"),
+
+    // ── SessionNotes (Phase 3.5, migration 26.sqm) ──────────────────────
+    SchemaIndexOperation("idx_session_notes_updated_at", "CREATE INDEX IF NOT EXISTS idx_session_notes_updated_at ON SessionNotes(updatedAt)"),
 )

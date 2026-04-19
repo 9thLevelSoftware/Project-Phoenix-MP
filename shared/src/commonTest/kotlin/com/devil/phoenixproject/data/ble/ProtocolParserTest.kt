@@ -173,15 +173,14 @@ class ProtocolParserTest {
 
     @Test
     fun `parseRepPacket parses legacy 6-byte format`() {
-        // Legacy format: top=5, complete=3
-        // [0x05, 0x00, 0x00, 0x00, 0x03, 0x00]
-        val data = byteArrayOf(0x05, 0x00, 0x00, 0x00, 0x03, 0x00)
+        // Legacy 6-byte: top=2 at 0-1, complete=1 at 2-3 (audit M-C02)
+        val data = byteArrayOf(0x02, 0x00, 0x01, 0x00, 0x00, 0x00)
         val result = parseRepPacket(data, hasOpcodePrefix = false, timestamp = 1000L)
 
         assertNotNull(result)
         assertTrue(result.isLegacyFormat)
-        assertEquals(5, result.topCounter)
-        assertEquals(3, result.completeCounter)
+        assertEquals(2, result.topCounter)
+        assertEquals(1, result.completeCounter)
         assertEquals(0, result.repsRomCount)
         assertEquals(0, result.repsSetCount)
         assertEquals(1000L, result.timestamp)
@@ -477,11 +476,17 @@ class ProtocolParserTest {
     @Test
     fun `handles exactly minimum size rep packet`() {
         // Exactly 6 bytes - should parse as legacy
-        val data = byteArrayOf(0x01, 0x00, 0x00, 0x00, 0x02, 0x00)
+        val data = byteArrayOf(0x01, 0x00, 0x02, 0x00, 0x00, 0x00)
         val result = parseRepPacket(data, hasOpcodePrefix = false, timestamp = 0L)
 
         assertNotNull(result)
         assertTrue(result.isLegacyFormat)
+    }
+
+    @Test
+    fun `parseRepPacket returns null for ambiguous 7 to 23 byte payload`() {
+        val data = ByteArray(10) { 0x01 }
+        assertNull(parseRepPacket(data, hasOpcodePrefix = false, timestamp = 0L))
     }
 
     @Test

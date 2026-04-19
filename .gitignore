@@ -18,6 +18,9 @@ build/
 # Local configuration
 local.properties
 *.local.properties
+# fix(audit): C1 — cover Supabase.xcconfig in any location under VitruvianPhoenix
+# so a stray sibling file doesn't leak the anon key again.
+iosApp/VitruvianPhoenix/**/Supabase.xcconfig
 iosApp/VitruvianPhoenix/Config/Supabase.xcconfig
 
 # Kotlin
@@ -82,6 +85,7 @@ CHANGELOG.md
 # Git worktrees
 .worktrees/
 /.daem0nmcp/
+daem0nmcp.db
 
 # Node.js
 node_modules/

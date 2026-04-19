@@ -1,6 +1,21 @@
-// Supabase Configuration — NOT committed to git
-// Copy Supabase.xcconfig.example and fill in your values
-// These are injected into Info.plist via $(SUPABASE_URL) and $(SUPABASE_ANON_KEY)
+// fix(audit): C1 — Supabase credentials redacted from committed file.
+// This file MUST be kept local-only and is listed in .gitignore. However, it
+// was tracked in a prior commit, so this sanitized content replaces the leaked
+// values. Follow the steps below to restore a working local build.
+//
+// 1. Copy Supabase.xcconfig.example to Supabase.xcconfig and fill in real values
+//    (or run: cp Supabase.xcconfig.example Supabase.xcconfig)
+// 2. Populate SUPABASE_URL and SUPABASE_ANON_KEY from the Supabase dashboard
+//    (Project Settings → API). Use the publishable `sb_publishable_*` key.
+// 3. Run: git rm --cached iosApp/VitruvianPhoenix/Config/Supabase.xcconfig
+//    from the Project-Phoenix-MP directory to stop git from tracking the file.
+// 4. Rotate the compromised anon key in the Supabase dashboard
+//    (Project Settings → API → Reset anon key).
+// 5. The CI workflows in .github/workflows/ios-*.yml already write this file
+//    from GitHub Actions secrets; no change to CI needed.
+//
+// The values below are intentional placeholders that will FAIL fast in
+// PlatformModule.ios.kt require() checks so a developer notices immediately.
 
-SUPABASE_URL = https:/$()/ilzlswmatadlnsuxatcv.supabase.co
-SUPABASE_ANON_KEY = sb_publishable_UDrjasV6UJLm_IdIzGljoQ_YaRes4dQ
+SUPABASE_URL = https:/$()/your-project.supabase.co
+SUPABASE_ANON_KEY = REPLACE_WITH_LOCAL_VALUE

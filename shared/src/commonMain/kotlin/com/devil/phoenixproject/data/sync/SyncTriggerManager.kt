@@ -85,6 +85,9 @@ class SyncTriggerManager(private val syncManager: SyncManager, private val conne
      */
     suspend fun onAppForeground() {
         Logger.d { "SyncTrigger: App foreground, checking if sync needed" }
+        if (syncManager.isAuthenticated.value) {
+            syncManager.refreshPremiumStatusFromServer()
+        }
         attemptSync(bypassThrottle = false)
     }
 

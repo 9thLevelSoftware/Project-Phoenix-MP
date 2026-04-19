@@ -374,6 +374,42 @@ class RepCounterFromMachineTest {
         assertEquals(1, repCounter.getRepCount().workingReps, "First working rep should register")
     }
 
+    @Test
+    fun `Issue 210 - first modern rep still registers immediately after reset`() {
+        repCounter.configure(warmupTarget = 3, workingTarget = 10, isJustLift = false, stopAtTop = false)
+
+        repCounter.process(repsRomCount = 1, repsSetCount = 0, up = 1, down = 1)
+        assertEquals(1, repCounter.getRepCount().warmupReps)
+
+        repCounter.reset()
+        repCounter.configure(warmupTarget = 3, workingTarget = 10, isJustLift = false, stopAtTop = false)
+
+        repCounter.process(repsRomCount = 1, repsSetCount = 0, up = 1, down = 1)
+
+        val count = repCounter.getRepCount()
+        assertEquals(1, count.warmupReps, "First warmup rep after reset should not be discarded")
+        assertTrue(
+            capturedEvents.any { it.type == RepType.WARMUP_COMPLETED && it.warmupCount == 1 },
+            "WARMUP_COMPLETED should fire for the first rep after reset",
+        )
+    }
+
+    @Test
+    fun `Issue 210 - first legacy rep still registers immediately after resetCountsOnly`() {
+        repCounter.configure(warmupTarget = 1, workingTarget = 3, isJustLift = false, stopAtTop = false)
+
+        repCounter.process(repsRomCount = 0, repsSetCount = 0, up = 1, down = 0, isLegacyFormat = true)
+        assertEquals(1, repCounter.getRepCount().warmupReps)
+
+        repCounter.resetCountsOnly()
+        repCounter.configure(warmupTarget = 1, workingTarget = 3, isJustLift = false, stopAtTop = false)
+
+        repCounter.process(repsRomCount = 0, repsSetCount = 0, up = 1, down = 0, isLegacyFormat = true)
+
+        val count = repCounter.getRepCount()
+        assertEquals(1, count.warmupReps, "First legacy warmup rep after resetCountsOnly should count immediately")
+    }
+
     // ========== Legacy Mode Rep Counting Tests ==========
 
     @Test

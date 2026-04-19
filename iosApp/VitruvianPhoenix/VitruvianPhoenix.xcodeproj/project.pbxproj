@@ -27,7 +27,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
-		7BD2BAB62F8C1299004FCE77 /* Supabase.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Supabase.xcconfig; sourceTree = "<group>"; };
+		7BD2BAB62F8C1299004FCE77 /* Supabase.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Config/Supabase.xcconfig; sourceTree = "<group>"; };
 		DFE6BD472EEDF42200886589 /* VitruvianPhoenix.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = VitruvianPhoenix.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		DFE6BD562EEDF53700886589 /* shared.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = shared.framework; path = ../../shared/build/bin/iosArm64/debugFramework/shared.framework; sourceTree = "<group>"; };
 		DFE6BD6D2EEDFF5500886589 /* libsqlite3.tbd */ = {isa = PBXFileReference; lastKnownFileType = "sourcecode.text-based-dylib-definition"; name = libsqlite3.tbd; path = usr/lib/libsqlite3.tbd; sourceTree = SDKROOT; };

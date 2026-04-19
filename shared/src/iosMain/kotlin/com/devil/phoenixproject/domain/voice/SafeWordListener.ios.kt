@@ -178,7 +178,10 @@ actual class SafeWordListener(private val safeWord: String) {
             }
 
             _isListening.value = true
-            NSLog("$TAG: Speech recognition started, listening for: \"$safeWord\"")
+            // fix(audit): H — do not log the configured safe word. It is user-
+            // chosen and may be PII or a sensitive phrase. Log only a length
+            // hint for debugging startup issues.
+            NSLog("$TAG: Speech recognition started (safe word len=${safeWord.length})")
         } catch (e: Exception) {
             NSLog("$TAG: Failed to start speech recognition: ${e.message}")
             _isListening.value = false
@@ -207,10 +210,14 @@ actual class SafeWordListener(private val safeWord: String) {
             if (matchesSafeWord(text)) {
                 val now = (NSDate().timeIntervalSince1970 * 1000).toLong()
                 if (now - lastEmitTimeMs < DEBOUNCE_MS) {
-                    NSLog("$TAG: Safe word match suppressed (debounce): \"$text\"")
+                    // fix(audit): H — never log recognized speech text. It
+                    // contains the safe word and whatever the user said around
+                    // it; both are sensitive.
+                    NSLog("$TAG: Safe word match suppressed (debounce)")
                 } else {
                     lastEmitTimeMs = now
-                    NSLog("$TAG: Safe word detected in: \"$text\"")
+                    // fix(audit): H — redacted: previously logged matched transcript.
+                    NSLog("$TAG: Safe word detected")
                     _detectedWord.tryEmit(safeWord)
                 }
             }

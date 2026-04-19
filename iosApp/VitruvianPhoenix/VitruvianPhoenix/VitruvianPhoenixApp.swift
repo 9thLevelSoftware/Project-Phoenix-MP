@@ -10,10 +10,12 @@ struct VitruvianPhoenixApp: App {
     init() {
         logger.info("========== APP INITIALIZATION START ==========")
 
-        // Initialize Koin for dependency injection
+        // Initialize Koin for dependency injection.
+        // The iOS entrypoint lives in shared/iosMain (KoinInitIos.kt) so the Kotlin/Native
+        // export class is KoinInitIosKt, not KoinInitKt.
         logger.info("[STEP 1/3] Starting Koin initialization...")
         do {
-            KoinInitKt.doInitKoin()
+            try KoinInitIosKt.doInitKoin()
             logger.info("[STEP 1/3] Koin initialization completed")
         } catch {
             logger.error("[STEP 1/3] Koin initialization FAILED: \(error.localizedDescription)")

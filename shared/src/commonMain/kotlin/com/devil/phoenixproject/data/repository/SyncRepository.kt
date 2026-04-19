@@ -243,4 +243,26 @@ interface SyncRepository {
         lastSync: Long,
         profileId: String,
     )
+
+    /**
+     * Merge session-level notes from the portal pull (Phase 3.5, audit
+     * item #2 mobile persistence). Notes are keyed on the portal's
+     * `routineSessionId` because the mobile WorkoutSession is per-exercise
+     * and a single portal workout expands into N mobile rows. The merge
+     * uses LWW on `updatedAt` (millis since epoch); call sites should pass
+     * the server-canonical timestamp from `PullWorkoutSessionDto.updatedAt`
+     * (Phase 3.2). Default no-op so unrelated test fakes do not need to
+     * implement immediately.
+     */
+    suspend fun mergeSessionNotes(
+        notes: Map<String, SessionNotesEntry>,
+    ) {
+        // Default no-op for fakes / older implementations.
+    }
 }
+
+/** Side-table entry for session notes (Phase 3.5). */
+data class SessionNotesEntry(
+    val notes: String?,
+    val updatedAtMillis: Long,
+)

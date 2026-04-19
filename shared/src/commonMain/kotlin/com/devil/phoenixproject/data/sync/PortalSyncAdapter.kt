@@ -10,6 +10,7 @@ import com.devil.phoenixproject.domain.model.SupersetColors
 import com.devil.phoenixproject.domain.model.TrainingCycle
 import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.domain.model.generateUUID
+import com.devil.phoenixproject.util.KmpUtils.currentTimeMillis
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.builtins.MapSerializer
 import kotlinx.serialization.builtins.nullable
@@ -188,6 +189,12 @@ object PortalSyncAdapter {
             userId = userId,
             name = first.routineName ?: first.exerciseName,
             startedAt = epochToIso8601(first.timestamp),
+            // LWW gate (Phase 3.2): epoch-ms push time as ISO 8601. When mobile
+            // domain starts tracking per-row updated_at end-to-end, replace
+            // with the domain value. Until then, push time is monotonic and
+            // consistent with the server-wins semantics we are preserving in
+            // Phase 3.2 (server falls back to NOW() for missing values).
+            updatedAt = epochToIso8601(currentTimeMillis()),
             durationSeconds = totalDuration,
             totalVolume = totalVolume,
             setCount = totalSets,
@@ -464,6 +471,7 @@ object PortalSyncAdapter {
                 perSetRest = ex.setRestSeconds.takeIf { it.isNotEmpty() }
                     ?.let { Json.encodeToString(ListSerializer(Int.serializer()), it) },
                 isAmrap = ex.isAMRAP,
+                isBodyweight = !ex.exercise.hasCableAccessory,
                 prPercentage = if (ex.usePercentOfPR) ex.weightPercentOfPR.toFloat() else null,
                 repCountTiming = ex.repCountTiming.name,
                 stopAtPosition = if (ex.stopAtTop) "TOP" else null,
@@ -499,6 +507,8 @@ object PortalSyncAdapter {
             estimatedDuration = estimateRoutineDuration(routine),
             timesCompleted = routine.useCount,
             isFavorite = false,
+            // LWW gate (Phase 3.2); see PortalWorkoutSessionDto build path.
+            updatedAt = epochToIso8601(currentTimeMillis()),
             exercises = exercises,
         )
     }
@@ -587,6 +597,8 @@ object PortalSyncAdapter {
             status = if (cycle.isActive) "active" else "draft",
             startedAt = progress?.cycleStartDate?.let { epochToIso8601(it) },
             lastUsedAt = progress?.lastCompletedDate?.let { epochToIso8601(it) },
+            // LWW gate (Phase 3.2); see PortalWorkoutSessionDto build path.
+            updatedAt = epochToIso8601(currentTimeMillis()),
             progressionSettings = progressionJson,
             deloadSettings = null,
             days = days,

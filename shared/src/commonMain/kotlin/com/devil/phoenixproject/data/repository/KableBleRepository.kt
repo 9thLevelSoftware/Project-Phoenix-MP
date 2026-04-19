@@ -7,7 +7,7 @@ import com.devil.phoenixproject.data.ble.HandleStateDetector
 import com.devil.phoenixproject.data.ble.KableBleConnectionManager
 import com.devil.phoenixproject.data.ble.MetricPollingEngine
 import com.devil.phoenixproject.data.ble.MonitorDataProcessor
-import com.devil.phoenixproject.data.ble.getUInt16BE
+import com.devil.phoenixproject.data.ble.parseMonitorPacket
 import com.devil.phoenixproject.data.ble.parseRepPacket
 import com.devil.phoenixproject.data.ble.toVitruvianHex
 import com.devil.phoenixproject.domain.model.ConnectionState
@@ -288,32 +288,23 @@ class KableBleRepository : BleRepository {
 
     // ===== Parsing methods (stay in facade) =====
 
-    /** Parse metrics packet from RX notifications (0x01). Big-endian, position scaled to mm. */
+    /** Parse metrics packet from RX notifications (0x01). Delegates to [parseMonitorPacket] for unit consistency. */
     private fun parseMetricsPacket(data: ByteArray) {
-        if (data.size < 16) return
-
+        if (data.size < 17) return
         try {
-            val positionARaw = getUInt16BE(data, 2)
-            val positionBRaw = getUInt16BE(data, 4)
-            val loadA = getUInt16BE(data, 6)
-            val loadB = getUInt16BE(data, 8)
-            val velocityA = getUInt16BE(data, 10)
-            val velocityB = getUInt16BE(data, 12)
-
-            val positionA = positionARaw / 10.0f
-            val positionB = positionBRaw / 10.0f
-
+            val monitor = parseMonitorPacket(data.copyOfRange(1, data.size)) ?: return
             val currentTime = currentTimeMillis()
+            val rawVelocityA = monitor.firmwareVelA / 10.0
+            val rawVelocityB = monitor.firmwareVelB / 10.0
             val metric = WorkoutMetric(
                 timestamp = currentTime,
-                loadA = loadA / 10f,
-                loadB = loadB / 10f,
-                positionA = positionA,
-                positionB = positionB,
-                velocityA = (velocityA - 32768).toDouble(),
-                velocityB = (velocityB - 32768).toDouble(),
+                loadA = monitor.loadA,
+                loadB = monitor.loadB,
+                positionA = monitor.posA,
+                positionB = monitor.posB,
+                velocityA = rawVelocityA,
+                velocityB = rawVelocityB,
             )
-
             _metricsFlow.tryEmit(metric)
             handleDetector.processMetric(metric)
         } catch (e: Exception) {
