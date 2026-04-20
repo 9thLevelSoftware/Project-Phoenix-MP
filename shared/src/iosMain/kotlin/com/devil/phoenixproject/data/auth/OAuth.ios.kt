@@ -122,10 +122,10 @@ actual class OAuthLauncher {
                     if (cont.isActive) cont.resume(result)
                 },
             )
-            webSession.setPresentationContextProvider(provider)
+            webSession.presentationContextProvider = provider
             // Share Safari cookies so already-signed-in Google/Apple users
             // don't have to type credentials every time.
-            webSession.setPrefersEphemeralWebBrowserSession(false)
+            webSession.prefersEphemeralWebBrowserSession = false
 
             session = webSession
             presentationProvider = provider
