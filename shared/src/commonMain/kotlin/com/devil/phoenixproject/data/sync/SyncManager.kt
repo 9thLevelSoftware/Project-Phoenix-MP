@@ -428,6 +428,53 @@ class SyncManager(
 
     // === Private Helpers ===
 
+    /**
+     * Builds push batches that respect BOTH the per-batch session cap
+     * ([SYNC_BATCH_SIZE]) and the per-batch telemetry cap
+     * ([SyncConfig.MAX_TELEMETRY_PER_BATCH]).
+     *
+     * A fixed chunk of 50 sessions can still blow past the server's rep_telemetry
+     * array cap (10_000) when sessions carry heavy force-curve telemetry — the
+     * client self-check then rejects the batch and sync gets stuck. This greedy
+     * planner closes a batch early whenever adding another session would exceed
+     * either cap.
+     *
+     * A single session whose own telemetry exceeds the cap is still placed
+     * alone in its batch and logged as a warning. PortalApiClient will still
+     * reject it, but batches around it continue to flow normally.
+     */
+    internal fun planSessionBatches(
+        sessions: List<PortalWorkoutSessionDto>,
+        telemetryCountBySessionId: Map<String, Int>,
+    ): List<List<PortalWorkoutSessionDto>> {
+        if (sessions.isEmpty()) return listOf(emptyList())
+        val batches = mutableListOf<List<PortalWorkoutSessionDto>>()
+        var current = mutableListOf<PortalWorkoutSessionDto>()
+        var currentTelemetry = 0
+        for (session in sessions) {
+            val sessionTelemetry = telemetryCountBySessionId[session.id] ?: 0
+            if (sessionTelemetry > SyncConfig.MAX_TELEMETRY_PER_BATCH) {
+                Logger.w("SyncManager") {
+                    "Session ${session.id} has $sessionTelemetry telemetry points, " +
+                        "exceeding per-batch cap ${SyncConfig.MAX_TELEMETRY_PER_BATCH}. " +
+                        "Batch will likely be rejected by the server until telemetry is trimmed."
+                }
+            }
+            val wouldExceedSessions = current.size + 1 > SYNC_BATCH_SIZE
+            val wouldExceedTelemetry =
+                currentTelemetry + sessionTelemetry > SyncConfig.MAX_TELEMETRY_PER_BATCH
+            if (current.isNotEmpty() && (wouldExceedSessions || wouldExceedTelemetry)) {
+                batches.add(current)
+                current = mutableListOf()
+                currentTelemetry = 0
+            }
+            current.add(session)
+            currentTelemetry += sessionTelemetry
+        }
+        if (current.isNotEmpty()) batches.add(current)
+        return batches
+    }
+
     private suspend fun pushLocalChanges(): Result<PortalSyncPushResponse> {
         val userId = tokenStorage.currentUser.value?.id
             ?: return Result.failure(PortalApiException("Not authenticated", null, 401))
@@ -590,18 +637,22 @@ class SyncManager(
         }
         val profileDtos = allProfiles.map { LocalProfileDto(it.id, it.name, it.colorIndex) }
 
-        // 8. Chunked push -- batch sessions to stay under Edge Function body limit (~1 MB).
+        // 8. Chunked push -- batch sessions to stay under Edge Function body limit (~1 MB)
+        //    AND under the server-side rep_telemetry array cap (MAX_TELEMETRY_PER_BATCH).
         //    Non-session data (routines, cycles, badges, RPG, gamification, signatures, assessments)
         //    is included only in the final batch to avoid duplicate upserts.
         //    IMPORTANT: We do NOT update lastSync until ALL batches succeed. This prevents
         //    data consistency gaps where a partial batch sequence leaves the timestamp
         //    advanced but later batches uncommitted (audit 4.1 fix).
         val allSessions = buildResult.sessions
-        val totalBatches = if (allSessions.size > SYNC_BATCH_SIZE) {
-            (allSessions.size + SYNC_BATCH_SIZE - 1) / SYNC_BATCH_SIZE
-        } else {
-            1
+        val telemetryCountBySessionId = allSessions.associate { session ->
+            val count = (sessionSetIds[session.id] ?: emptySet()).sumOf { setId ->
+                telemetryBySetId[setId]?.size ?: 0
+            }
+            session.id to count
         }
+        val batchPlan = planSessionBatches(allSessions, telemetryCountBySessionId)
+        val totalBatches = batchPlan.size.coerceAtLeast(1)
 
         Logger.d("SyncManager") {
             "Pushing portal payload: ${allSessions.size} sessions ($totalBatches batch(es)), " +
@@ -614,7 +665,7 @@ class SyncManager(
 
         var lastResponse: PortalSyncPushResponse? = null
 
-        if (allSessions.size <= SYNC_BATCH_SIZE) {
+        if (batchPlan.size <= 1) {
             // --- Single-push fast path (most common case) ---
             val payload = PortalSyncPayload(
                 deviceId = deviceId,
@@ -643,7 +694,7 @@ class SyncManager(
             lastFailedBatchHash = null
         } else {
             // --- Batched push for large history syncs ---
-            val batches = allSessions.chunked(SYNC_BATCH_SIZE)
+            val batches = batchPlan
             batches.forEachIndexed { index, batchSessions ->
                 val isLastBatch = index == batches.lastIndex
                 Logger.i("SyncManager") {
