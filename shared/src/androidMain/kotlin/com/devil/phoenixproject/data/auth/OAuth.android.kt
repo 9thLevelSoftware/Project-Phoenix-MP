@@ -121,8 +121,18 @@ object AndroidOAuthBridge {
         pending = null
     }
 
+    /**
+     * Called by the host app's redirect activity when the browser hands back
+     * an intent with no usable URI (e.g., the OS launched us without a
+     * payload). The launcher's pending suspend must still complete, so
+     * surface this as a cancellation.
+     *
+     * Public so the redirect activity in `androidApp` (separate Gradle
+     * module) can invoke it; the `internal` `OAuthLauncher` use sites stay
+     * in this module.
+     */
     @Synchronized
-    internal fun cancelFlow() {
+    fun cancelFlow() {
         pending?.let {
             if (!it.isCompleted) {
                 it.completeExceptionally(OAuthCancelledException("OAuth flow cancelled"))
