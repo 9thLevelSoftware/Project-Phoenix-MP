@@ -70,10 +70,15 @@ object SyncConfig {
 
     /**
      * Maximum number of IDs per parity list sent in a single pull request.
-     * Must stay <= the server's MAX_PARITY_IDS in mobile-sync-pull; exceeding
-     * it causes HTTP 413 "parity_ids_exceeds_max". See audit item #7.
+     *
+     * UPDATE 2026-04-20: Server now uses RPC functions (get_sessions_excluding_ids,
+     * etc.) which accept IDs in POST body instead of URL params. No URL length limit.
+     * Raised cap to 10,000 for power users with years of workout history.
+     *
+     * The RPC functions use PostgreSQL array parameters, which handle large arrays
+     * efficiently via `id != ALL(p_known_ids)`.
      */
-    const val MAX_PARITY_IDS = 500
+    const val MAX_PARITY_IDS = 10_000
 
     // ─── Phase 4.2: self-cap + self-throttle (audit item #9) ──────────────
     //
