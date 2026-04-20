@@ -34,5 +34,5 @@ val syncModule = module {
     single { IntegrationManager(get(), get()) }
 
     // Auth (using Supabase GoTrue)
-    single<AuthRepository> { PortalAuthRepository(get(), get(), get()) }
+    single<AuthRepository> { PortalAuthRepository(get(), get(), get(), get(), get()) }
 }

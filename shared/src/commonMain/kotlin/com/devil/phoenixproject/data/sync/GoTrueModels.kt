@@ -55,6 +55,14 @@ data class GoTruePasswordRequest(val email: String, val password: String)
 @Serializable
 data class GoTrueRefreshRequest(@SerialName("refresh_token") val refreshToken: String)
 
+// === GoTrue PKCE Code Exchange Request (OAuth) ===
+
+@Serializable
+data class GoTruePkceExchangeRequest(
+    @SerialName("auth_code") val authCode: String,
+    @SerialName("code_verifier") val codeVerifier: String,
+)
+
 // === GoTrue Error Response ===
 
 @Serializable

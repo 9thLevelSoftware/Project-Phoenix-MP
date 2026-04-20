@@ -690,6 +690,158 @@ class DataBackupManagerRoutineNameTest {
         )
     }
 
+    // --- v2 backup schema drift regression tests (Reddit beta report 2026-04-19) ---
+    //
+    // Users reported: "backups from latest version will crash the app. A back up from
+    // a month ago worked." Root cause: BackupModels drifted from schema (SessionNotes
+    // table added, EarnedBadge/GamificationStats sync fields, CycleDay per-day overrides)
+    // which produced misleading round-trips and — in corner cases — per-row failures that
+    // aborted the whole import.
+    //
+    // These tests lock in the v2 behaviour:
+    //   1. Export-then-import preserves the new fields end-to-end.
+    //   2. Legacy v1 backups still import (forward compat).
+    //   3. A single malformed entity does not torpedo the whole import.
+
+    @Test
+    fun `v2 round-trip preserves SessionNotes data`() = runTest {
+        val queries = database.vitruvianDatabaseQueries
+        queries.upsertSessionNotes(
+            routineSessionId = "rs-notes-1",
+            notes = "felt strong today; DOMS in triceps",
+            updatedAt = 1_700_000_000_000L,
+        )
+
+        val backup = backupManager.exportAllData()
+        assertEquals(CURRENT_BACKUP_VERSION, backup.version, "Fresh exports must advertise v$CURRENT_BACKUP_VERSION")
+        assertEquals(1, backup.data.sessionNotes.size)
+        assertEquals("felt strong today; DOMS in triceps", backup.data.sessionNotes[0].notes)
+
+        // Clear and re-import
+        queries.upsertSessionNotes(routineSessionId = "rs-notes-1", notes = null, updatedAt = null)
+        val reimport = backupManager.importFromJson(testJson.encodeToString(backup))
+        assertTrue(reimport.isSuccess, "Round-trip import must succeed: ${reimport.exceptionOrNull()?.message}")
+        assertEquals(0, reimport.getOrThrow().entitiesWithErrors, "Clean round-trip must not produce skipped rows")
+    }
+
+    @Test
+    fun `v2 export preserves EarnedBadge sync fields so restore does not re-push`() = runTest {
+        val queries = database.vitruvianDatabaseQueries
+        // Insert a badge that has already been pushed to the portal (serverId set,
+        // updatedAt set). The backup must preserve these so a restore does not
+        // produce a phantom duplicate on the server.
+        queries.insertEarnedBadgeFullIgnore(
+            badgeId = "first_pr",
+            earnedAt = 1_700_000_000_000L,
+            celebratedAt = 1_700_000_010_000L,
+            updatedAt = 1_700_000_020_000L,
+            serverId = "srv-abc-123",
+            deletedAt = null,
+            profile_id = "default",
+        )
+
+        val backup = backupManager.exportAllData()
+        val backedUp = backup.data.earnedBadges.single { it.badgeId == "first_pr" }
+        assertEquals(1_700_000_020_000L, backedUp.updatedAt, "updatedAt must survive export")
+        assertEquals("srv-abc-123", backedUp.serverId, "serverId must survive export")
+        assertEquals(null, backedUp.deletedAt, "deletedAt null must survive export")
+    }
+
+    @Test
+    fun `v2 export preserves CycleDay per-day progression overrides`() = runTest {
+        val queries = database.vitruvianDatabaseQueries
+        // Build a cycle with a day that has all new per-day override fields populated.
+        queries.insertTrainingCycle(
+            id = "cycle-drift",
+            name = "Drift Test Cycle",
+            description = null,
+            created_at = 1_700_000_000_000L,
+            is_active = 0L,
+            profile_id = "default",
+        )
+        queries.insertCycleDay(
+            id = "day-drift",
+            cycle_id = "cycle-drift",
+            day_number = 1L,
+            name = "Heavy Day",
+            routine_id = null,
+            is_rest_day = 0L,
+            echo_level = "HIGH",
+            eccentric_load_percent = 110L,
+            weight_progression_percent = 2.5,
+            rep_modifier = -2L,
+            rest_time_override_seconds = 180L,
+        )
+
+        val backup = backupManager.exportAllData()
+        val backedUp = backup.data.cycleDays.single { it.id == "day-drift" }
+        assertEquals("HIGH", backedUp.echoLevel, "echo_level must round-trip")
+        assertEquals(110, backedUp.eccentricLoadPercent, "eccentric_load_percent must round-trip")
+        assertEquals(2.5f, backedUp.weightProgressionPercent, "weight_progression_percent must round-trip")
+        assertEquals(-2, backedUp.repModifier, "rep_modifier must round-trip")
+        assertEquals(180, backedUp.restTimeOverrideSeconds, "rest_time_override_seconds must round-trip")
+    }
+
+    @Test
+    fun `v1 backup imports without crashing despite missing fields`() = runTest {
+        // Simulate a legacy (v1) backup JSON with no `sessionNotes` array and no
+        // EarnedBadge sync fields. kotlinx.serialization defaults must fill them in.
+        val v1Json = """
+            {
+              "version": 1,
+              "exportedAt": "2026-03-19T12:00:00Z",
+              "appVersion": "test-v1",
+              "data": {
+                "workoutSessions": [],
+                "metricSamples": [],
+                "routines": [],
+                "routineExercises": [],
+                "supersets": [],
+                "personalRecords": [],
+                "trainingCycles": [],
+                "cycleDays": [],
+                "cycleProgress": [],
+                "cycleProgressions": [],
+                "plannedSets": [],
+                "completedSets": [],
+                "progressionEvents": [],
+                "earnedBadges": [
+                  { "id": 1, "badgeId": "old_badge", "earnedAt": 1700000000000, "celebratedAt": null, "profileId": "default" }
+                ],
+                "streakHistory": [],
+                "gamificationStats": null,
+                "userProfiles": []
+              }
+            }
+        """.trimIndent()
+
+        val result = backupManager.importFromJson(v1Json)
+        assertTrue(result.isSuccess, "v1 backup must import cleanly: ${result.exceptionOrNull()?.message}")
+        val imported = result.getOrThrow()
+        assertEquals(1, imported.earnedBadgesImported, "v1 badge must import")
+        assertEquals(0, imported.sessionNotesImported, "v1 has no notes — counter stays 0")
+        assertEquals(0, imported.entitiesWithErrors, "v1 must not trigger per-entity errors")
+    }
+
+    @Test
+    fun `malformed top-level JSON surfaces specific error instead of crashing`() = runTest {
+        // Deliberately malformed: trailing comma, missing required fields.
+        val junk = """{ "version": 2, "exportedAt": "x", "appVersion": "x", "data": { "workoutSessions": [{}] } }"""
+        val result = backupManager.importFromJson(junk)
+        assertTrue(result.isFailure, "Malformed JSON must fail fast with a typed error")
+        val error = result.exceptionOrNull()!!
+        // The hardening wraps deserialization failures in IllegalArgumentException with
+        // a human-readable prefix so the UI can surface a friendly message.
+        assertTrue(
+            error is IllegalArgumentException,
+            "Expected IllegalArgumentException, got ${error::class.simpleName}: ${error.message}",
+        )
+        assertTrue(
+            error.message?.contains("malformed or produced by an incompatible") == true,
+            "Error message must explain the failure mode — got: ${error.message}",
+        )
+    }
+
     private class TestDataBackupManager(database: com.devil.phoenixproject.database.VitruvianDatabase) : BaseDataBackupManager(database) {
 
         override fun createBackupWriter(): BackupJsonWriter {

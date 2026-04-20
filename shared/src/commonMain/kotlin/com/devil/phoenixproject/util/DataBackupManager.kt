@@ -206,193 +206,36 @@ abstract class BaseDataBackupManager(
         val streakHistory = runCatching { queries.selectAllStreakHistorySync().executeAsList() }.getOrElse { emptyList() }
         val gamificationStats = runCatching { queries.selectGamificationStatsSync().executeAsOneOrNull() }.getOrNull()
         val userProfiles = runCatching { queries.selectAllUserProfilesSync().executeAsList() }.getOrElse { emptyList() }
+        // Migration 26 added SessionNotes. Wrap in runCatching for safety on legacy DBs
+        // where the table does not yet exist (pre-flight create-if-missing covers this
+        // on current builds, but defending against partial upgrade paths is cheap).
+        val sessionNotes = runCatching { queries.selectAllSessionNotesSync().executeAsList() }.getOrElse { emptyList() }
 
         val nowMs = KmpUtils.currentTimeMillis()
         BackupData(
-            version = 1,
+            version = CURRENT_BACKUP_VERSION,
             exportedAt = KmpUtils.formatTimestamp(nowMs, "yyyy-MM-dd") + "T" +
                 KmpUtils.formatTimestamp(nowMs, "HH:mm:ss") + "Z",
             appVersion = Constants.APP_VERSION,
             data = BackupContent(
                 workoutSessions = sessions.map { session -> mapSessionToBackup(session, routineNameResolutionContext) },
-                metricSamples = metrics.map { metric ->
-                    MetricSampleBackup(
-                        id = metric.id,
-                        sessionId = metric.sessionId,
-                        timestamp = metric.timestamp,
-                        position = metric.position?.toFloat(),
-                        positionB = metric.positionB?.toFloat(),
-                        velocity = metric.velocity?.toFloat(),
-                        velocityB = metric.velocityB?.toFloat(),
-                        load = metric.load?.toFloat(),
-                        loadB = metric.loadB?.toFloat(),
-                        power = metric.power?.toFloat(),
-                        status = metric.status.toInt(),
-                    )
-                },
-                routines = routines.map { routine -> mapRoutineToBackup(routine) },
-                routineExercises = routineExercises.map { exercise ->
-                    RoutineExerciseBackup(
-                        id = exercise.id,
-                        routineId = exercise.routineId,
-                        exerciseName = exercise.exerciseName,
-                        exerciseMuscleGroup = exercise.exerciseMuscleGroup,
-                        exerciseEquipment = exercise.exerciseEquipment,
-                        exerciseDefaultCableConfig = exercise.exerciseDefaultCableConfig,
-                        exerciseId = exercise.exerciseId,
-                        cableConfig = exercise.cableConfig,
-                        orderIndex = exercise.orderIndex.toInt(),
-                        setReps = exercise.setReps,
-                        weightPerCableKg = exercise.weightPerCableKg.toFloat(),
-                        setWeights = exercise.setWeights,
-                        mode = exercise.mode,
-                        eccentricLoad = exercise.eccentricLoad.toInt(),
-                        echoLevel = exercise.echoLevel.toInt(),
-                        progressionKg = exercise.progressionKg.toFloat(),
-                        restSeconds = exercise.restSeconds.toInt(),
-                        duration = exercise.duration?.toInt(),
-                        setRestSeconds = exercise.setRestSeconds,
-                        setEchoLevels = exercise.setEchoLevels,
-                        perSetRestTime = exercise.perSetRestTime != 0L,
-                        isAMRAP = exercise.isAMRAP != 0L,
-                        supersetId = exercise.supersetId,
-                        orderInSuperset = exercise.orderInSuperset.toInt(),
-                        // PR percentage scaling fields
-                        usePercentOfPR = exercise.usePercentOfPR != 0L,
-                        weightPercentOfPR = exercise.weightPercentOfPR.toInt(),
-                        prTypeForScaling = exercise.prTypeForScaling,
-                        setWeightsPercentOfPR = exercise.setWeightsPercentOfPR,
-                        stallDetectionEnabled = exercise.stallDetectionEnabled != 0L,
-                        stopAtTop = exercise.stopAtTop != 0L,
-                        repCountTiming = exercise.repCountTiming,
-                        warmupSets = exercise.warmupSets,
-                    )
-                },
-                supersets = supersets.map { superset ->
-                    SupersetBackup(
-                        id = superset.id,
-                        routineId = superset.routineId,
-                        name = superset.name,
-                        colorIndex = superset.colorIndex.toInt(),
-                        restBetweenSeconds = superset.restBetweenSeconds.toInt(),
-                        orderIndex = superset.orderIndex.toInt(),
-                    )
-                },
+                metricSamples = metrics.map { mapMetricToBackup(it) },
+                routines = routines.map { mapRoutineToBackup(it) },
+                routineExercises = routineExercises.map { mapRoutineExerciseToBackup(it) },
+                supersets = supersets.map { mapSupersetToBackup(it) },
                 personalRecords = personalRecords,
-                trainingCycles = trainingCycles.map { cycle -> mapTrainingCycleToBackup(cycle) },
-                cycleDays = cycleDays.map { day ->
-                    CycleDayBackup(
-                        id = day.id,
-                        cycleId = day.cycle_id,
-                        dayNumber = day.day_number.toInt(),
-                        name = day.name,
-                        routineId = day.routine_id,
-                        isRestDay = day.is_rest_day != 0L,
-                    )
-                },
-                cycleProgress = cycleProgress.map { cp ->
-                    CycleProgressBackup(
-                        id = cp.id,
-                        cycleId = cp.cycle_id,
-                        currentDayNumber = cp.current_day_number.toInt(),
-                        lastCompletedDate = cp.last_completed_date,
-                        cycleStartDate = cp.cycle_start_date,
-                        lastAdvancedAt = cp.last_advanced_at,
-                        completedDays = cp.completed_days,
-                        missedDays = cp.missed_days,
-                        rotationCount = cp.rotation_count.toInt(),
-                    )
-                },
-                cycleProgressions = cycleProgressions.map { cprog ->
-                    CycleProgressionBackup(
-                        cycleId = cprog.cycle_id,
-                        frequencyCycles = cprog.frequency_cycles.toInt(),
-                        weightIncreasePercent = cprog.weight_increase_percent?.toFloat(),
-                        echoLevelIncrease = cprog.echo_level_increase.toInt(),
-                        eccentricLoadIncreasePercent = cprog.eccentric_load_increase_percent?.toInt(),
-                    )
-                },
-                plannedSets = plannedSets.map { ps ->
-                    PlannedSetBackup(
-                        id = ps.id,
-                        routineExerciseId = ps.routine_exercise_id,
-                        setNumber = ps.set_number.toInt(),
-                        setType = ps.set_type,
-                        targetReps = ps.target_reps?.toInt(),
-                        targetWeightKg = ps.target_weight_kg?.toFloat(),
-                        targetRpe = ps.target_rpe?.toInt(),
-                        restSeconds = ps.rest_seconds?.toInt(),
-                    )
-                },
-                completedSets = completedSets.map { cs ->
-                    CompletedSetBackup(
-                        id = cs.id,
-                        sessionId = cs.session_id,
-                        plannedSetId = cs.planned_set_id,
-                        setNumber = cs.set_number.toInt(),
-                        setType = cs.set_type,
-                        actualReps = cs.actual_reps.toInt(),
-                        actualWeightKg = cs.actual_weight_kg.toFloat(),
-                        loggedRpe = cs.logged_rpe?.toInt(),
-                        isPr = cs.is_pr != 0L,
-                        completedAt = cs.completed_at,
-                    )
-                },
-                progressionEvents = progressionEvents.map { pe ->
-                    ProgressionEventBackup(
-                        id = pe.id,
-                        exerciseId = pe.exercise_id,
-                        suggestedWeightKg = pe.suggested_weight_kg.toFloat(),
-                        previousWeightKg = pe.previous_weight_kg.toFloat(),
-                        reason = pe.reason,
-                        userResponse = pe.user_response,
-                        actualWeightKg = pe.actual_weight_kg?.toFloat(),
-                        timestamp = pe.timestamp,
-                        profileId = pe.profile_id,
-                    )
-                },
-                earnedBadges = earnedBadges.map { eb ->
-                    EarnedBadgeBackup(
-                        id = eb.id,
-                        badgeId = eb.badgeId,
-                        earnedAt = eb.earnedAt,
-                        celebratedAt = eb.celebratedAt,
-                        profileId = eb.profile_id,
-                    )
-                },
-                streakHistory = streakHistory.map { sh ->
-                    StreakHistoryBackup(
-                        id = sh.id,
-                        startDate = sh.startDate,
-                        endDate = sh.endDate,
-                        length = sh.length.toInt(),
-                        profileId = sh.profile_id,
-                    )
-                },
-                gamificationStats = gamificationStats?.let { gs ->
-                    GamificationStatsBackup(
-                        totalWorkouts = gs.totalWorkouts.toInt(),
-                        totalReps = gs.totalReps.toInt(),
-                        totalVolumeKg = gs.totalVolumeKg.toInt(),
-                        longestStreak = gs.longestStreak.toInt(),
-                        currentStreak = gs.currentStreak.toInt(),
-                        uniqueExercisesUsed = gs.uniqueExercisesUsed.toInt(),
-                        prsAchieved = gs.prsAchieved.toInt(),
-                        lastWorkoutDate = gs.lastWorkoutDate,
-                        streakStartDate = gs.streakStartDate,
-                        lastUpdated = gs.lastUpdated,
-                        profileId = gs.profile_id,
-                    )
-                },
-                userProfiles = userProfiles.map { up ->
-                    UserProfileBackup(
-                        id = up.id,
-                        name = up.name,
-                        colorIndex = up.colorIndex.toInt(),
-                        createdAt = up.createdAt,
-                        isActive = up.isActive != 0L,
-                    )
-                },
+                trainingCycles = trainingCycles.map { mapTrainingCycleToBackup(it) },
+                cycleDays = cycleDays.map { mapCycleDayToBackup(it) },
+                cycleProgress = cycleProgress.map { mapCycleProgressToBackup(it) },
+                cycleProgressions = cycleProgressions.map { mapCycleProgressionToBackup(it) },
+                plannedSets = plannedSets.map { mapPlannedSetToBackup(it) },
+                completedSets = completedSets.map { mapCompletedSetToBackup(it) },
+                progressionEvents = progressionEvents.map { mapProgressionEventToBackup(it) },
+                earnedBadges = earnedBadges.map { mapEarnedBadgeToBackup(it) },
+                streakHistory = streakHistory.map { mapStreakHistoryToBackup(it) },
+                gamificationStats = gamificationStats?.let { mapGamificationStatsToBackup(it) },
+                userProfiles = userProfiles.map { mapUserProfileToBackup(it) },
+                sessionNotes = sessionNotes.map { mapSessionNotesToBackup(it) },
             ),
         )
     }
@@ -403,10 +246,28 @@ abstract class BaseDataBackupManager(
 
     override suspend fun importFromJson(jsonString: String): Result<ImportResult> = withContext(Dispatchers.IO) {
         try {
-            val backup = json.decodeFromString<BackupData>(jsonString)
+            val backup = try {
+                json.decodeFromString<BackupData>(jsonString)
+            } catch (e: Exception) {
+                // Deserialization error — surface a specific message instead of a raw
+                // kotlinx.serialization stack trace. This is the most likely failure mode
+                // when a user's backup was produced by a newer schema than the client knows.
+                Logger.e(e) { "Backup JSON deserialization failed: ${e::class.simpleName}: ${e.message}" }
+                return@withContext Result.failure(
+                    IllegalArgumentException(
+                        "Backup file is malformed or produced by an incompatible app version " +
+                            "(${e::class.simpleName}: ${e.message?.take(200) ?: "unknown"})",
+                        e,
+                    ),
+                )
+            }
 
-            if (backup.version > 1) {
-                Logger.w { "Backup version ${backup.version} is newer than supported (v1). Proceeding with forward compatibility." }
+            if (backup.version > CURRENT_BACKUP_VERSION) {
+                Logger.w {
+                    "Backup version ${backup.version} is newer than supported " +
+                        "(v$CURRENT_BACKUP_VERSION). Proceeding with forward compatibility — " +
+                        "fields added after v$CURRENT_BACKUP_VERSION will be dropped."
+                }
             }
 
             // Get existing IDs for duplicate detection (before transaction)
@@ -449,10 +310,33 @@ abstract class BaseDataBackupManager(
             var earnedBadgesImported = 0
             var streakHistoryImported = 0
             var gamificationStatsImported = false
+            var sessionNotesImported = 0
+            var sessionNotesSkipped = 0
 
             // Track adopted (profile_id updated) records
             var sessionsAdopted = 0
             var routinesAdopted = 0
+
+            // Count of per-entity failures that were logged and skipped instead of
+            // aborting the whole import. Surfaced to the UI so users can see partial
+            // data loss rather than a silent pass.
+            var entitiesWithErrors = 0
+
+            // Helper: run a single-entity write inside the outer transaction. If it
+            // throws, log the cause + entity identifier and continue with the next
+            // entity. SQLDelight's transaction block tolerates caught exceptions —
+            // only an uncaught throwable rolls the outer transaction back.
+            fun <T> tryImport(label: String, entityId: String?, block: () -> T): T? = try {
+                block()
+            } catch (e: Exception) {
+                entitiesWithErrors++
+                Logger.w(e) {
+                    "Import skip $label" +
+                        (entityId?.let { " id=$it" } ?: "") +
+                        " — ${e::class.simpleName}: ${e.message}"
+                }
+                null
+            }
 
             // Wrap all imports in a transaction for atomicity
             database.transaction {
@@ -473,56 +357,58 @@ abstract class BaseDataBackupManager(
                             routineNameResolutionContext = importRoutineNameResolutionContext,
                         )
 
-                        queries.insertSession(
-                            id = session.id,
-                            timestamp = session.timestamp,
-                            mode = session.mode,
-                            targetReps = session.targetReps.toLong(),
-                            weightPerCableKg = session.weightPerCableKg.toDouble(),
-                            progressionKg = session.progressionKg.toDouble(),
-                            duration = session.duration,
-                            totalReps = session.totalReps.toLong(),
-                            warmupReps = session.warmupReps.toLong(),
-                            workingReps = session.workingReps.toLong(),
-                            isJustLift = if (session.isJustLift) 1L else 0L,
-                            stopAtTop = if (session.stopAtTop) 1L else 0L,
-                            eccentricLoad = safeEccentricLoad.toLong(),
-                            echoLevel = session.echoLevel.toLong(),
-                            exerciseId = session.exerciseId,
-                            exerciseName = session.exerciseName,
-                            routineSessionId = resolvedRoutineSessionId,
-                            routineName = resolvedRoutineName,
-                            routineId = session.routineId,
-                            safetyFlags = session.safetyFlags.toLong(),
-                            deloadWarningCount = session.deloadWarningCount.toLong(),
-                            romViolationCount = session.romViolationCount.toLong(),
-                            spotterActivations = session.spotterActivations.toLong(),
-                            peakForceConcentricA = session.peakForceConcentricA?.toDouble(),
-                            peakForceConcentricB = session.peakForceConcentricB?.toDouble(),
-                            peakForceEccentricA = session.peakForceEccentricA?.toDouble(),
-                            peakForceEccentricB = session.peakForceEccentricB?.toDouble(),
-                            avgForceConcentricA = session.avgForceConcentricA?.toDouble(),
-                            avgForceConcentricB = session.avgForceConcentricB?.toDouble(),
-                            avgForceEccentricA = session.avgForceEccentricA?.toDouble(),
-                            avgForceEccentricB = session.avgForceEccentricB?.toDouble(),
-                            heaviestLiftKg = session.heaviestLiftKg?.toDouble(),
-                            totalVolumeKg = session.totalVolumeKg?.toDouble(),
-                            cableCount = session.cableCount?.toLong(),
-                            estimatedCalories = session.estimatedCalories?.toDouble(),
-                            warmupAvgWeightKg = session.warmupAvgWeightKg?.toDouble(),
-                            workingAvgWeightKg = session.workingAvgWeightKg?.toDouble(),
-                            burnoutAvgWeightKg = session.burnoutAvgWeightKg?.toDouble(),
-                            peakWeightKg = session.peakWeightKg?.toDouble(),
-                            rpe = session.rpe?.toLong(),
-                            avgMcvMmS = session.avgMcvMmS?.toDouble(),
-                            avgAsymmetryPercent = session.avgAsymmetryPercent?.toDouble(),
-                            totalVelocityLossPercent = session.totalVelocityLossPercent?.toDouble(),
-                            dominantSide = session.dominantSide,
-                            strengthProfile = session.strengthProfile,
-                            formScore = session.formScore,
-                            profile_id = session.profileId ?: "default",
-                        )
-                        sessionsImported++
+                        val inserted = tryImport("session", session.id) {
+                            queries.insertSession(
+                                id = session.id,
+                                timestamp = session.timestamp,
+                                mode = session.mode,
+                                targetReps = session.targetReps.toLong(),
+                                weightPerCableKg = session.weightPerCableKg.toDouble(),
+                                progressionKg = session.progressionKg.toDouble(),
+                                duration = session.duration,
+                                totalReps = session.totalReps.toLong(),
+                                warmupReps = session.warmupReps.toLong(),
+                                workingReps = session.workingReps.toLong(),
+                                isJustLift = if (session.isJustLift) 1L else 0L,
+                                stopAtTop = if (session.stopAtTop) 1L else 0L,
+                                eccentricLoad = safeEccentricLoad.toLong(),
+                                echoLevel = session.echoLevel.toLong(),
+                                exerciseId = session.exerciseId,
+                                exerciseName = session.exerciseName,
+                                routineSessionId = resolvedRoutineSessionId,
+                                routineName = resolvedRoutineName,
+                                routineId = session.routineId,
+                                safetyFlags = session.safetyFlags.toLong(),
+                                deloadWarningCount = session.deloadWarningCount.toLong(),
+                                romViolationCount = session.romViolationCount.toLong(),
+                                spotterActivations = session.spotterActivations.toLong(),
+                                peakForceConcentricA = session.peakForceConcentricA?.toDouble(),
+                                peakForceConcentricB = session.peakForceConcentricB?.toDouble(),
+                                peakForceEccentricA = session.peakForceEccentricA?.toDouble(),
+                                peakForceEccentricB = session.peakForceEccentricB?.toDouble(),
+                                avgForceConcentricA = session.avgForceConcentricA?.toDouble(),
+                                avgForceConcentricB = session.avgForceConcentricB?.toDouble(),
+                                avgForceEccentricA = session.avgForceEccentricA?.toDouble(),
+                                avgForceEccentricB = session.avgForceEccentricB?.toDouble(),
+                                heaviestLiftKg = session.heaviestLiftKg?.toDouble(),
+                                totalVolumeKg = session.totalVolumeKg?.toDouble(),
+                                cableCount = session.cableCount?.toLong(),
+                                estimatedCalories = session.estimatedCalories?.toDouble(),
+                                warmupAvgWeightKg = session.warmupAvgWeightKg?.toDouble(),
+                                workingAvgWeightKg = session.workingAvgWeightKg?.toDouble(),
+                                burnoutAvgWeightKg = session.burnoutAvgWeightKg?.toDouble(),
+                                peakWeightKg = session.peakWeightKg?.toDouble(),
+                                rpe = session.rpe?.toLong(),
+                                avgMcvMmS = session.avgMcvMmS?.toDouble(),
+                                avgAsymmetryPercent = session.avgAsymmetryPercent?.toDouble(),
+                                totalVelocityLossPercent = session.totalVelocityLossPercent?.toDouble(),
+                                dominantSide = session.dominantSide,
+                                strengthProfile = session.strengthProfile,
+                                formScore = session.formScore,
+                                profile_id = session.profileId ?: "default",
+                            )
+                        }
+                        if (inserted != null) sessionsImported++
                     } else {
                         // Adopt orphaned records into the active profile (fixes #324).
                         // Only adopt when the backup row has no explicit profile (legacy)
@@ -612,7 +498,9 @@ abstract class BaseDataBackupManager(
                     }
                 }
 
-                // Import routine exercises (only for imported routines)
+                // Import routine exercises (only for imported routines).
+                // Wrapped per-entity so a single malformed exercise row doesn't torpedo
+                // the whole restore — the remaining rows still land.
                 backup.data.routineExercises.forEach { exercise ->
                     if (exercise.routineId in importedRoutineIds) {
                         // Sanitize eccentric load to prevent machine faults (hardware limit 150%)
@@ -621,41 +509,43 @@ abstract class BaseDataBackupManager(
                             Logger.w { "Backup import: routine exercise ${exercise.exerciseName} eccentricLoad ${exercise.eccentricLoad}% clamped to $safeExerciseEccentricLoad% (hardware limit)" }
                         }
 
-                        queries.insertRoutineExerciseIgnore(
-                            id = exercise.id,
-                            routineId = exercise.routineId,
-                            exerciseName = exercise.exerciseName,
-                            exerciseMuscleGroup = exercise.exerciseMuscleGroup,
-                            exerciseEquipment = exercise.exerciseEquipment,
-                            exerciseDefaultCableConfig = exercise.exerciseDefaultCableConfig,
-                            exerciseId = exercise.exerciseId,
-                            cableConfig = exercise.cableConfig,
-                            orderIndex = exercise.orderIndex.toLong(),
-                            setReps = exercise.setReps,
-                            weightPerCableKg = exercise.weightPerCableKg.toDouble(),
-                            setWeights = exercise.setWeights,
-                            mode = exercise.mode,
-                            eccentricLoad = safeExerciseEccentricLoad.toLong(),
-                            echoLevel = exercise.echoLevel.toLong(),
-                            progressionKg = exercise.progressionKg.toDouble(),
-                            restSeconds = exercise.restSeconds.toLong(),
-                            duration = exercise.duration?.toLong(),
-                            setRestSeconds = exercise.setRestSeconds,
-                            perSetRestTime = if (exercise.perSetRestTime) 1L else 0L,
-                            isAMRAP = if (exercise.isAMRAP) 1L else 0L,
-                            supersetId = exercise.supersetId,
-                            orderInSuperset = exercise.orderInSuperset.toLong(),
-                            usePercentOfPR = if (exercise.usePercentOfPR) 1L else 0L,
-                            weightPercentOfPR = exercise.weightPercentOfPR.toLong(),
-                            prTypeForScaling = exercise.prTypeForScaling,
-                            setWeightsPercentOfPR = exercise.setWeightsPercentOfPR,
-                            stallDetectionEnabled = if (exercise.stallDetectionEnabled) 1L else 0L,
-                            stopAtTop = if (exercise.stopAtTop) 1L else 0L,
-                            repCountTiming = exercise.repCountTiming,
-                            setEchoLevels = exercise.setEchoLevels,
-                            warmupSets = exercise.warmupSets,
-                        )
-                        routineExercisesImported++
+                        val inserted = tryImport("routineExercise", exercise.id) {
+                            queries.insertRoutineExerciseIgnore(
+                                id = exercise.id,
+                                routineId = exercise.routineId,
+                                exerciseName = exercise.exerciseName,
+                                exerciseMuscleGroup = exercise.exerciseMuscleGroup,
+                                exerciseEquipment = exercise.exerciseEquipment,
+                                exerciseDefaultCableConfig = exercise.exerciseDefaultCableConfig,
+                                exerciseId = exercise.exerciseId,
+                                cableConfig = exercise.cableConfig,
+                                orderIndex = exercise.orderIndex.toLong(),
+                                setReps = exercise.setReps,
+                                weightPerCableKg = exercise.weightPerCableKg.toDouble(),
+                                setWeights = exercise.setWeights,
+                                mode = exercise.mode,
+                                eccentricLoad = safeExerciseEccentricLoad.toLong(),
+                                echoLevel = exercise.echoLevel.toLong(),
+                                progressionKg = exercise.progressionKg.toDouble(),
+                                restSeconds = exercise.restSeconds.toLong(),
+                                duration = exercise.duration?.toLong(),
+                                setRestSeconds = exercise.setRestSeconds,
+                                perSetRestTime = if (exercise.perSetRestTime) 1L else 0L,
+                                isAMRAP = if (exercise.isAMRAP) 1L else 0L,
+                                supersetId = exercise.supersetId,
+                                orderInSuperset = exercise.orderInSuperset.toLong(),
+                                usePercentOfPR = if (exercise.usePercentOfPR) 1L else 0L,
+                                weightPercentOfPR = exercise.weightPercentOfPR.toLong(),
+                                prTypeForScaling = exercise.prTypeForScaling,
+                                setWeightsPercentOfPR = exercise.setWeightsPercentOfPR,
+                                stallDetectionEnabled = if (exercise.stallDetectionEnabled) 1L else 0L,
+                                stopAtTop = if (exercise.stopAtTop) 1L else 0L,
+                                repCountTiming = exercise.repCountTiming,
+                                setEchoLevels = exercise.setEchoLevels,
+                                warmupSets = exercise.warmupSets,
+                            )
+                        }
+                        if (inserted != null) routineExercisesImported++
                     }
                 }
 
@@ -711,20 +601,25 @@ abstract class BaseDataBackupManager(
 
                 backup.data.cycleDays.forEach { day ->
                     if (day.cycleId in importedCycleIds) {
-                        queries.insertCycleDay(
-                            id = day.id,
-                            cycle_id = day.cycleId,
-                            day_number = day.dayNumber.toLong(),
-                            name = day.name,
-                            routine_id = day.routineId,
-                            is_rest_day = if (day.isRestDay) 1L else 0L,
-                            echo_level = null,
-                            eccentric_load_percent = null,
-                            weight_progression_percent = null,
-                            rep_modifier = null,
-                            rest_time_override_seconds = null,
-                        )
-                        cycleDaysImported++
+                        val inserted = tryImport("cycleDay", day.id) {
+                            queries.insertCycleDay(
+                                id = day.id,
+                                cycle_id = day.cycleId,
+                                day_number = day.dayNumber.toLong(),
+                                name = day.name,
+                                routine_id = day.routineId,
+                                is_rest_day = if (day.isRestDay) 1L else 0L,
+                                // v2 backup schema carries per-day progression overrides.
+                                // v1 backups default these to null — identical to the
+                                // previous hardcoded-null behaviour.
+                                echo_level = day.echoLevel,
+                                eccentric_load_percent = day.eccentricLoadPercent?.toLong(),
+                                weight_progression_percent = day.weightProgressionPercent?.toDouble(),
+                                rep_modifier = day.repModifier?.toLong(),
+                                rest_time_override_seconds = day.restTimeOverrideSeconds?.toLong(),
+                            )
+                        }
+                        if (inserted != null) cycleDaysImported++
                     }
                 }
 
@@ -833,15 +728,22 @@ abstract class BaseDataBackupManager(
                     progressionEventsImported++
                 }
 
-                // Import earned badges
+                // Import earned badges. v2 backups carry sync bookkeeping fields
+                // (updatedAt/serverId/deletedAt); v1 backups default these to null which
+                // matches the previous `insertEarnedBadgeIgnore` behaviour.
                 backup.data.earnedBadges.forEach { badge ->
-                    queries.insertEarnedBadgeIgnore(
-                        badgeId = badge.badgeId,
-                        earnedAt = badge.earnedAt,
-                        celebratedAt = badge.celebratedAt,
-                        profile_id = badge.profileId,
-                    )
-                    earnedBadgesImported++
+                    val inserted = tryImport("earnedBadge", badge.badgeId) {
+                        queries.insertEarnedBadgeFullIgnore(
+                            badgeId = badge.badgeId,
+                            earnedAt = badge.earnedAt,
+                            celebratedAt = badge.celebratedAt,
+                            updatedAt = badge.updatedAt,
+                            serverId = badge.serverId,
+                            deletedAt = badge.deletedAt,
+                            profile_id = badge.profileId,
+                        )
+                    }
+                    if (inserted != null) earnedBadgesImported++
                 }
 
                 // Import streak history
@@ -855,29 +757,52 @@ abstract class BaseDataBackupManager(
                     streakHistoryImported++
                 }
 
-                // Import gamification stats (upsert - replaces existing)
+                // Import gamification stats (upsert - replaces existing).
+                // Uses the sync-preserving query so restored rows keep their original
+                // updatedAt/serverId and don't immediately re-push to the portal as new.
                 backup.data.gamificationStats?.let { stats ->
                     val stableId = stats.profileId.hashCode().toLong()
-                    queries.upsertGamificationStats(
-                        id = stableId,
-                        totalWorkouts = stats.totalWorkouts.toLong(),
-                        totalReps = stats.totalReps.toLong(),
-                        totalVolumeKg = stats.totalVolumeKg.toLong(),
-                        longestStreak = stats.longestStreak.toLong(),
-                        currentStreak = stats.currentStreak.toLong(),
-                        uniqueExercisesUsed = stats.uniqueExercisesUsed.toLong(),
-                        prsAchieved = stats.prsAchieved.toLong(),
-                        lastWorkoutDate = stats.lastWorkoutDate,
-                        streakStartDate = stats.streakStartDate,
-                        lastUpdated = stats.lastUpdated,
-                        profileId = stats.profileId,
-                    )
-                    gamificationStatsImported = true
+                    val inserted = tryImport("gamificationStats", stats.profileId) {
+                        queries.upsertGamificationStatsWithSync(
+                            id = stableId,
+                            totalWorkouts = stats.totalWorkouts.toLong(),
+                            totalReps = stats.totalReps.toLong(),
+                            totalVolumeKg = stats.totalVolumeKg.toLong(),
+                            longestStreak = stats.longestStreak.toLong(),
+                            currentStreak = stats.currentStreak.toLong(),
+                            uniqueExercisesUsed = stats.uniqueExercisesUsed.toLong(),
+                            prsAchieved = stats.prsAchieved.toLong(),
+                            lastWorkoutDate = stats.lastWorkoutDate,
+                            streakStartDate = stats.streakStartDate,
+                            lastUpdated = stats.lastUpdated,
+                            updatedAt = stats.updatedAt,
+                            serverId = stats.serverId,
+                            profileId = stats.profileId,
+                        )
+                    }
+                    if (inserted != null) gamificationStatsImported = true
+                }
+
+                // Import session notes (migration 26). v1 backups have no `sessionNotes`
+                // field — kotlinx.serialization fills it with the default empty list
+                // so this loop is a no-op for legacy imports.
+                backup.data.sessionNotes.forEach { note ->
+                    val inserted = tryImport("sessionNotes", note.routineSessionId) {
+                        queries.insertSessionNotesIgnore(
+                            routineSessionId = note.routineSessionId,
+                            notes = note.notes,
+                            updatedAt = note.updatedAt,
+                        )
+                    }
+                    if (inserted != null) sessionNotesImported++ else sessionNotesSkipped++
                 }
             }
 
             if (sessionsAdopted > 0 || routinesAdopted > 0) {
                 Logger.i { "Import adopted $sessionsAdopted session(s) and $routinesAdopted routine(s) into active profile" }
+            }
+            if (entitiesWithErrors > 0) {
+                Logger.w { "Import completed with $entitiesWithErrors skipped entity row(s) — see preceding warnings for per-entity diagnostics" }
             }
 
             Result.success(
@@ -905,9 +830,16 @@ abstract class BaseDataBackupManager(
                     gamificationStatsImported = gamificationStatsImported,
                     userProfilesImported = userProfilesImported,
                     userProfilesSkipped = userProfilesSkipped,
+                    sessionNotesImported = sessionNotesImported,
+                    sessionNotesSkipped = sessionNotesSkipped,
+                    entitiesWithErrors = entitiesWithErrors,
                 ),
             )
         } catch (e: Exception) {
+            // Log the full exception here — not just the bare message — so a user-shared
+            // logcat can identify the failure mode. The caller (SettingsTab) surfaces the
+            // message string; this log line carries the class + stack trace for devs.
+            Logger.e(e) { "Backup import aborted: ${e::class.simpleName}: ${e.message}" }
             Result.failure(e)
         }
     }
@@ -932,7 +864,7 @@ abstract class BaseDataBackupManager(
         val exportNowMs = KmpUtils.currentTimeMillis()
         val exportedAt = KmpUtils.formatTimestamp(exportNowMs, "yyyy-MM-dd") + "T" +
             KmpUtils.formatTimestamp(exportNowMs, "HH:mm:ss") + "Z"
-        writer.write("""{"version":1,"exportedAt":"$exportedAt","appVersion":"${Constants.APP_VERSION}","data":{""")
+        writer.write("""{"version":$CURRENT_BACKUP_VERSION,"exportedAt":"$exportedAt","appVersion":"${Constants.APP_VERSION}","data":{""")
 
         // Phase 2: Sessions
         onProgress(BackupProgress(BackupPhase.SESSIONS, 0, sessionCount))
@@ -1039,6 +971,12 @@ abstract class BaseDataBackupManager(
 
         val userProfiles = runCatching { queries.selectAllUserProfilesSync().executeAsList() }.getOrElse { emptyList() }
         writeJsonArray(writer, "userProfiles", userProfiles.map { json.encodeToString(UserProfileBackup.serializer(), mapUserProfileToBackup(it)) })
+        writer.write(",")
+
+        // Session notes (migration 26). Wrap in runCatching so the export still completes
+        // on legacy DBs where the table is missing; v1 backups simply emit an empty array.
+        val sessionNotes = runCatching { queries.selectAllSessionNotesSync().executeAsList() }.getOrElse { emptyList() }
+        writeJsonArray(writer, "sessionNotes", sessionNotes.map { json.encodeToString(SessionNotesBackup.serializer(), mapSessionNotesToBackup(it)) })
 
         // Close JSON
         writer.write("}}")
@@ -1482,6 +1420,11 @@ abstract class BaseDataBackupManager(
         name = day.name,
         routineId = day.routine_id,
         isRestDay = day.is_rest_day != 0L,
+        echoLevel = day.echo_level,
+        eccentricLoadPercent = day.eccentric_load_percent?.toInt(),
+        weightProgressionPercent = day.weight_progression_percent?.toFloat(),
+        repModifier = day.rep_modifier?.toInt(),
+        restTimeOverrideSeconds = day.rest_time_override_seconds?.toInt(),
     )
 
     private fun mapCycleProgressToBackup(cp: CycleProgress): CycleProgressBackup = CycleProgressBackup(
@@ -1537,6 +1480,7 @@ abstract class BaseDataBackupManager(
         userResponse = pe.user_response,
         actualWeightKg = pe.actual_weight_kg?.toFloat(),
         timestamp = pe.timestamp,
+        profileId = pe.profile_id,
     )
 
     private fun mapEarnedBadgeToBackup(eb: EarnedBadge): EarnedBadgeBackup = EarnedBadgeBackup(
@@ -1545,6 +1489,9 @@ abstract class BaseDataBackupManager(
         earnedAt = eb.earnedAt,
         celebratedAt = eb.celebratedAt,
         profileId = eb.profile_id,
+        updatedAt = eb.updatedAt,
+        serverId = eb.serverId,
+        deletedAt = eb.deletedAt,
     )
 
     private fun mapStreakHistoryToBackup(sh: StreakHistory): StreakHistoryBackup = StreakHistoryBackup(
@@ -1567,6 +1514,14 @@ abstract class BaseDataBackupManager(
         streakStartDate = gs.streakStartDate,
         lastUpdated = gs.lastUpdated,
         profileId = gs.profile_id,
+        updatedAt = gs.updatedAt,
+        serverId = gs.serverId,
+    )
+
+    private fun mapSessionNotesToBackup(sn: SessionNotes): SessionNotesBackup = SessionNotesBackup(
+        routineSessionId = sn.routineSessionId,
+        notes = sn.notes,
+        updatedAt = sn.updatedAt,
     )
 
     private fun mapUserProfileToBackup(up: UserProfile): UserProfileBackup = UserProfileBackup(
@@ -1598,7 +1553,7 @@ abstract class BaseDataBackupManager(
             // Build a minimal BackupData with just this session (import-compatible)
             val sessionBackupNowMs = KmpUtils.currentTimeMillis()
             val backupData = BackupData(
-                version = 1,
+                version = CURRENT_BACKUP_VERSION,
                 exportedAt = KmpUtils.formatTimestamp(sessionBackupNowMs, "yyyy-MM-dd") + "T" +
                     KmpUtils.formatTimestamp(sessionBackupNowMs, "HH:mm:ss") + "Z",
                 appVersion = Constants.APP_VERSION,

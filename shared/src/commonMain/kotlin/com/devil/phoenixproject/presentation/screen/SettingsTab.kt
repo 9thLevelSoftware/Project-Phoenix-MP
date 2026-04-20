@@ -1956,7 +1956,11 @@ fun SettingsTab(
                             restoreResult = importResult
                             showResultDialog = true
                         }.onFailure { error ->
-                            backupError = "Import failed: ${error.message ?: "Unknown error"}"
+                            // Include exception class so users sharing a screenshot give
+                            // us enough to diagnose without needing a full logcat.
+                            val cls = error::class.simpleName ?: "Error"
+                            val msg = error.message?.take(240) ?: "Unknown error"
+                            backupError = "Import failed ($cls): $msg"
                             showResultDialog = true
                         }
                     } finally {

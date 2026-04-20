@@ -15,6 +15,7 @@ import com.devil.phoenixproject.domain.model.RpgProfile
 import com.devil.phoenixproject.domain.model.currentTimeMillis
 import com.devil.phoenixproject.domain.premium.RpgAttributeEngine
 import com.devil.phoenixproject.getPlatform
+import com.devil.phoenixproject.isIosPlatform
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -590,18 +591,22 @@ class SyncManager(
         }
         val profileDtos = allProfiles.map { LocalProfileDto(it.id, it.name, it.colorIndex) }
 
-        // 8. Chunked push -- batch sessions to stay under Edge Function body limit (~1 MB).
+        // 8. Chunked push -- batch sessions to stay under Edge Function body limit (~1 MB)
+        //    AND under the server-side rep_telemetry array cap (MAX_TELEMETRY_PER_BATCH).
         //    Non-session data (routines, cycles, badges, RPG, gamification, signatures, assessments)
         //    is included only in the final batch to avoid duplicate upserts.
         //    IMPORTANT: We do NOT update lastSync until ALL batches succeed. This prevents
         //    data consistency gaps where a partial batch sequence leaves the timestamp
         //    advanced but later batches uncommitted (audit 4.1 fix).
         val allSessions = buildResult.sessions
-        val totalBatches = if (allSessions.size > SYNC_BATCH_SIZE) {
-            (allSessions.size + SYNC_BATCH_SIZE - 1) / SYNC_BATCH_SIZE
-        } else {
-            1
+        val telemetryCountBySessionId = allSessions.associate { session ->
+            val count = (sessionSetIds[session.id] ?: emptySet()).sumOf { setId ->
+                telemetryBySetId[setId]?.size ?: 0
+            }
+            session.id to count
         }
+        val batchPlan = planSessionBatches(allSessions, telemetryCountBySessionId)
+        val totalBatches = batchPlan.size.coerceAtLeast(1)
 
         Logger.d("SyncManager") {
             "Pushing portal payload: ${allSessions.size} sessions ($totalBatches batch(es)), " +
@@ -614,7 +619,7 @@ class SyncManager(
 
         var lastResponse: PortalSyncPushResponse? = null
 
-        if (allSessions.size <= SYNC_BATCH_SIZE) {
+        if (batchPlan.size <= 1) {
             // --- Single-push fast path (most common case) ---
             val payload = PortalSyncPayload(
                 deviceId = deviceId,
@@ -643,7 +648,7 @@ class SyncManager(
             lastFailedBatchHash = null
         } else {
             // --- Batched push for large history syncs ---
-            val batches = allSessions.chunked(SYNC_BATCH_SIZE)
+            val batches = batchPlan
             batches.forEachIndexed { index, batchSessions ->
                 val isLastBatch = index == batches.lastIndex
                 Logger.i("SyncManager") {
@@ -834,31 +839,10 @@ class SyncManager(
                 list.takeLast(SyncConfig.MAX_PARITY_IDS)
             }
 
-        // fix(pull 400): strip any local ID that is not a canonical UUID before
-        // sending it as a parity marker. mobile-sync-pull's server-side
-        // validator rejects the entire request if any entry in sessionIds /
-        // routineIds / cycleIds fails /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-
-        // [0-9a-f]{4}-[0-9a-f]{12}$/i. These IDs (e.g. cycle-derived routines
-        // minted as "cycle_routine_<uuid>" in TemplateConverter) cannot exist
-        // on the server anyway — server columns are uuid-typed — so filtering
-        // them is correct. Defense-in-depth: also filter session and cycle
-        // lists in case any legacy rows have non-UUID ids.
-        fun filterUuids(list: List<String>, label: String): List<String> {
-            val valid = list.filter(::isCanonicalUuid)
-            val dropped = list.size - valid.size
-            if (dropped > 0) {
-                Logger.w("SyncManager") {
-                    "Parity list '$label' dropped $dropped non-UUID entries before send " +
-                        "(e.g. cycle-derived routine ids); server validator requires canonical UUID."
-                }
-            }
-            return valid
-        }
-
         val knownEntityIds = KnownEntityIds(
-            sessionIds = capParity(filterUuids(rawSessionIds, "sessionIds"), "sessionIds"),
-            routineIds = capParity(filterUuids(rawRoutineIds, "routineIds"), "routineIds"),
-            cycleIds = capParity(filterUuids(rawCycleIds, "cycleIds"), "cycleIds"),
+            sessionIds = capParity(rawSessionIds, "sessionIds"),
+            routineIds = capParity(rawRoutineIds, "routineIds"),
+            cycleIds = capParity(rawCycleIds, "cycleIds"),
             badgeIds = capParity(rawBadgeIds, "badgeIds"),
             personalRecordIds = capParity(rawPrIds, "personalRecordIds"),
         )
@@ -1202,22 +1186,65 @@ class SyncManager(
     }
 
     private fun getPlatformName(): String {
-        val platformName = getPlatform().name.lowercase()
+        // Guaranteed non-empty. The server's normalizeSyncPlatform rejects
+        // anything that doesn't trim-lowercase-contain "android"/"ios", so
+        // if the Platform actual ever returned an empty or odd string we'd
+        // log a server-side "defaulting to unknown" warning. Fall back on
+        // the compile-time isIosPlatform flag, then on "android" as the
+        // most common device, so the wire value is never blank.
+        val raw = getPlatform().name.lowercase().trim()
         return when {
-            platformName.contains("android") -> "android"
-            platformName.contains("ios") -> "ios"
-            else -> platformName
+            raw.contains("android") -> "android"
+            raw.contains("ios") -> "ios"
+            isIosPlatform -> "ios"
+            else -> "android"
         }
     }
 }
 
 /**
- * Canonical UUID (v1–v5) check matching the server-side regex used in
- * mobile-sync-pull's validateKnownEntityIds. Keep this pattern and the
- * phoenix-portal version (supabase/functions/mobile-sync-pull/index.ts) in
- * lockstep — any divergence re-introduces the pull 400 regression.
+ * Builds push batches that respect BOTH the per-batch session cap
+ * ([SyncManager.SYNC_BATCH_SIZE]) and the per-batch telemetry cap
+ * ([SyncConfig.MAX_TELEMETRY_PER_BATCH]).
+ *
+ * A fixed chunk of 50 sessions can still blow past the server's rep_telemetry
+ * array cap (10_000) when sessions carry heavy force-curve telemetry — the
+ * client self-check then rejects the batch and sync gets stuck. This greedy
+ * planner closes a batch early whenever adding another session would exceed
+ * either cap.
+ *
+ * A single session whose own telemetry exceeds the cap is still placed
+ * alone in its batch and logged as a warning. PortalApiClient will still
+ * reject it, but batches around it continue to flow normally.
  */
-private val CANONICAL_UUID_REGEX =
-    Regex("^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", RegexOption.IGNORE_CASE)
-
-internal fun isCanonicalUuid(id: String): Boolean = CANONICAL_UUID_REGEX.matches(id)
+internal fun planSessionBatches(
+    sessions: List<PortalWorkoutSessionDto>,
+    telemetryCountBySessionId: Map<String, Int>,
+): List<List<PortalWorkoutSessionDto>> {
+    if (sessions.isEmpty()) return listOf(emptyList<PortalWorkoutSessionDto>())
+    val batches = mutableListOf<List<PortalWorkoutSessionDto>>()
+    var current = mutableListOf<PortalWorkoutSessionDto>()
+    var currentTelemetry = 0
+    for (session in sessions) {
+        val sessionTelemetry = telemetryCountBySessionId[session.id] ?: 0
+        if (sessionTelemetry > SyncConfig.MAX_TELEMETRY_PER_BATCH) {
+            Logger.w("SyncManager") {
+                "Session ${session.id} has $sessionTelemetry telemetry points, " +
+                    "exceeding per-batch cap ${SyncConfig.MAX_TELEMETRY_PER_BATCH}. " +
+                    "Batch will likely be rejected by the server until telemetry is trimmed."
+            }
+        }
+        val wouldExceedSessions = current.size + 1 > SyncManager.SYNC_BATCH_SIZE
+        val wouldExceedTelemetry =
+            currentTelemetry + sessionTelemetry > SyncConfig.MAX_TELEMETRY_PER_BATCH
+        if (current.isNotEmpty() && (wouldExceedSessions || wouldExceedTelemetry)) {
+            batches.add(current)
+            current = mutableListOf<PortalWorkoutSessionDto>()
+            currentTelemetry = 0
+        }
+        current.add(session)
+        currentTelemetry += sessionTelemetry
+    }
+    if (current.isNotEmpty()) batches.add(current)
+    return batches
+}

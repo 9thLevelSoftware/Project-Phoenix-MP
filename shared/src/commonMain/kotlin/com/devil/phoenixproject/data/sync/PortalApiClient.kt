@@ -234,6 +234,26 @@ open class PortalApiClient(private val supabaseConfig: SupabaseConfig, private v
         Result.failure(classified.toException())
     }
 
+    /**
+     * Exchange a PKCE auth code for a GoTrue session. Used by the OAuth
+     * sign-in flow after the browser has redirected back with `?code=...`.
+     *
+     * The [codeVerifier] is the PKCE verifier generated before launching the
+     * browser; GoTrue hashes it and compares to the challenge it received
+     * in the authorize request.
+     */
+    open suspend fun exchangeOAuthCode(authCode: String, codeVerifier: String): Result<GoTrueAuthResponse> = try {
+        val response = httpClient.post("${supabaseConfig.authUrl}/token?grant_type=pkce") {
+            header("apikey", supabaseConfig.anonKey)
+            contentType(ContentType.Application.Json)
+            setBody(GoTruePkceExchangeRequest(authCode = authCode, codeVerifier = codeVerifier))
+        }
+        handleGoTrueResponse(response)
+    } catch (e: Exception) {
+        val classified = classifyError(e, "OAuth code exchange")
+        Result.failure(classified.toException())
+    }
+
     suspend fun refreshToken(refreshToken: String): Result<GoTrueAuthResponse> = try {
         val response = httpClient.post(
             "${supabaseConfig.authUrl}/token?grant_type=refresh_token",

@@ -1,6 +1,7 @@
 package com.devil.phoenixproject.di
 
 import co.touchlab.kermit.Logger
+import com.devil.phoenixproject.data.auth.OAuthLauncher
 import com.devil.phoenixproject.data.integration.HealthIntegration
 import com.devil.phoenixproject.data.local.DriverFactory
 import com.devil.phoenixproject.data.repository.BleRepository
@@ -80,6 +81,7 @@ actual val platformModule: Module = module {
         migrateTokensToKeychain(legacySettings, keychainSettings)
         keychainSettings
     }
+    single { OAuthLauncher() }
     single<BleRepository> { KableBleRepository() }
     single<CsvExporter> { IosCsvExporter() }
     single<CsvImporter> { IosCsvImporter(get()) }

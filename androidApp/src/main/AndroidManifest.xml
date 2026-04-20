@@ -109,6 +109,31 @@
             </intent-filter>
         </activity>
 
+        <!-- OAuth redirect handler: catches Supabase GoTrue's final redirect
+             back to the app after Google/Apple sign-in. Transparent activity
+             that forwards the URL to AndroidOAuthBridge and finishes itself. -->
+        <activity
+            android:name=".auth.OAuthRedirectActivity"
+            android:exported="true"
+            android:launchMode="singleTask"
+            android:taskAffinity=""
+            android:excludeFromRecents="true"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar">
+            <!-- AGP 9 lint promotes `autoVerify` on non-http/https schemes to an
+                 error (AppLinkUrlError), so this intent-filter intentionally
+                 omits the attribute. We don't want App Links verification for a
+                 custom-scheme OAuth callback URL anyway. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <!-- Lint's `IntentFilterUniqueDataAttributes` rule (error-by-default
+                     in AGP 9) requires scheme and host on separate <data> tags. -->
+                <data android:scheme="com.devil.phoenixproject" />
+                <data android:host="auth-callback" />
+            </intent-filter>
+        </activity>
+
         <!-- Foreground service for workout sessions -->
         <service
             android:name=".service.WorkoutForegroundService"
