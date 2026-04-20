@@ -368,6 +368,92 @@ class PortalPushLimitsTest {
         )
     }
 
+    // ==================== Telemetry-Aware Batching (audit: 36_852 point rejection) ====================
+
+    /**
+     * Sessions that individually fit under SYNC_BATCH_SIZE can still push a single
+     * batch past the server-side rep_telemetry array cap when force-curve data is
+     * heavy. The planner must close a batch early whenever the next session would
+     * push cumulative telemetry past MAX_TELEMETRY_PER_BATCH.
+     */
+    @Test
+    fun planSessionBatchesSplitsWhenCumulativeTelemetryExceedsCap() {
+        val sessions = (0 until 50).map { stubPortalSession("sess-$it") }
+        // Each session carries 800 telemetry points → 50 * 800 = 40_000, well past the
+        // 10_000 cap. Should split into at least 5 batches (ceil(40_000 / 10_000)).
+        val telemetryCounts = sessions.associate { it.id to 800 }
+
+        val batches = planSessionBatches(sessions, telemetryCounts)
+
+        assertTrue(
+            batches.size >= 4,
+            "40_000 telemetry points must split into multiple batches; got ${batches.size}",
+        )
+        batches.forEach { batch ->
+            val tel = batch.sumOf { telemetryCounts[it.id] ?: 0 }
+            assertTrue(
+                tel <= SyncConfig.MAX_TELEMETRY_PER_BATCH,
+                "Batch telemetry $tel must not exceed ${SyncConfig.MAX_TELEMETRY_PER_BATCH}",
+            )
+            assertTrue(
+                batch.size <= SyncManager.SYNC_BATCH_SIZE,
+                "Batch size ${batch.size} must not exceed SYNC_BATCH_SIZE",
+            )
+        }
+        // No sessions lost or duplicated.
+        assertEquals(sessions.size, batches.sumOf { it.size })
+    }
+
+    /** Sessions with zero telemetry should batch identically to the old 50-per-batch chunker. */
+    @Test
+    fun planSessionBatchesPreservesLegacyChunkingWhenTelemetryIsEmpty() {
+        val sessions = (0 until 73).map { stubPortalSession("sess-$it") }
+        val telemetryCounts = sessions.associate { it.id to 0 }
+
+        val batches = planSessionBatches(sessions, telemetryCounts)
+
+        assertEquals(listOf(50, 23), batches.map { it.size })
+    }
+
+    /**
+     * A single session whose telemetry alone exceeds MAX_TELEMETRY_PER_BATCH should be
+     * emitted in its own batch so surrounding batches still succeed. The oversized
+     * batch will still be rejected by PortalApiClient's self-check, but that's isolated
+     * to one session instead of poisoning a whole 50-session chunk.
+     */
+    @Test
+    fun planSessionBatchesIsolatesSingleSessionTelemetryOverflow() {
+        val small1 = stubPortalSession("small-1")
+        val giant = stubPortalSession("giant")
+        val small2 = stubPortalSession("small-2")
+        val telemetryCounts = mapOf(
+            small1.id to 100,
+            giant.id to SyncConfig.MAX_TELEMETRY_PER_BATCH + 5_000,
+            small2.id to 100,
+        )
+
+        val batches = planSessionBatches(listOf(small1, giant, small2), telemetryCounts)
+
+        // Expect 3 batches: [small1], [giant], [small2]
+        assertEquals(3, batches.size, "Giant session must be isolated in its own batch")
+        assertEquals(listOf(small1.id), batches[0].map { it.id })
+        assertEquals(listOf(giant.id), batches[1].map { it.id })
+        assertEquals(listOf(small2.id), batches[2].map { it.id })
+    }
+
+    @Test
+    fun planSessionBatchesHandlesEmptyInput() {
+        val batches = planSessionBatches(emptyList(), emptyMap())
+        assertEquals(1, batches.size)
+        assertTrue(batches[0].isEmpty())
+    }
+
+    private fun stubPortalSession(id: String) = PortalWorkoutSessionDto(
+        id = id,
+        userId = "user-123",
+        startedAt = "2026-03-02T12:00:00Z",
+    )
+
     @Test
     fun pushPayloadCapturesDeviceIdAndPlatform() = runTest {
         authenticate()
