@@ -447,7 +447,7 @@ class SyncManager(
         sessions: List<PortalWorkoutSessionDto>,
         telemetryCountBySessionId: Map<String, Int>,
     ): List<List<PortalWorkoutSessionDto>> {
-        if (sessions.isEmpty()) return listOf(emptyList())
+        if (sessions.isEmpty()) return listOf(emptyList<PortalWorkoutSessionDto>())
         val batches = mutableListOf<List<PortalWorkoutSessionDto>>()
         var current = mutableListOf<PortalWorkoutSessionDto>()
         var currentTelemetry = 0
@@ -465,7 +465,7 @@ class SyncManager(
                 currentTelemetry + sessionTelemetry > SyncConfig.MAX_TELEMETRY_PER_BATCH
             if (current.isNotEmpty() && (wouldExceedSessions || wouldExceedTelemetry)) {
                 batches.add(current)
-                current = mutableListOf()
+                current = mutableListOf<PortalWorkoutSessionDto>()
                 currentTelemetry = 0
             }
             current.add(session)
