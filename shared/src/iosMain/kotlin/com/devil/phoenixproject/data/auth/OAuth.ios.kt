@@ -121,10 +121,10 @@ actual class OAuthLauncher {
                     if (cont.isActive) cont.resume(result)
                 },
             )
-            webSession.presentationContextProvider = provider
+            webSession.setPresentationContextProvider(provider)
             // Share Safari cookies so already-signed-in Google/Apple users
             // don't have to type credentials every time.
-            webSession.prefersEphemeralWebBrowserSession = false
+            webSession.setPrefersEphemeralWebBrowserSession(false)
 
             session = webSession
             presentationProvider = provider
@@ -144,6 +144,7 @@ actual class OAuthLauncher {
         }
 }
 
+@OptIn(ExperimentalForeignApi::class)
 private class PresentationContextProvider :
     NSObject(),
     ASWebAuthenticationPresentationContextProvidingProtocol {
@@ -152,12 +153,15 @@ private class PresentationContextProvider :
     // Kotlin/Native exposes the typealias as an importable symbol.
     override fun presentationAnchorForWebAuthenticationSession(session: ASWebAuthenticationSession): UIWindow {
         val app = UIApplication.sharedApplication
-        val windows = app.windows
-        val keyWindow = windows
-            .filterIsInstance<UIWindow>()
+        // `UIApplication.windows` is typed `List<*>` in K/N interop; cast each
+        // element with `as? UIWindow` rather than `filterIsInstance` so the
+        // compiler doesn't complain about the erasure check on an opaque list.
+        val keyWindow = app.windows
+            .asSequence()
+            .mapNotNull { it as? UIWindow }
             .firstOrNull { it.isKeyWindow }
         return keyWindow
-            ?: windows.filterIsInstance<UIWindow>().firstOrNull()
+            ?: app.windows.asSequence().mapNotNull { it as? UIWindow }.firstOrNull()
             ?: UIWindow()
     }
 }
