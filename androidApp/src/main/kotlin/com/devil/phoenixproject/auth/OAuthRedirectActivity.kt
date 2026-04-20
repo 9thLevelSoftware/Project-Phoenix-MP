@@ -30,8 +30,14 @@ class OAuthRedirectActivity : ComponentActivity() {
     }
 
     private fun handleIntent(intent: Intent?) {
-        val data = intent?.data ?: run {
-            Logger.w("OAuthRedirectActivity") { "Received intent with no data" }
+        val data = intent?.data
+        if (data == null) {
+            // No URI on the intent means the OS or another app launched us
+            // without a redirect payload. The waiting suspend in
+            // OAuthLauncher.launch() must still complete — surface this as
+            // a cancellation so the caller doesn't hang.
+            Logger.w("OAuthRedirectActivity") { "Received intent with no data; cancelling pending OAuth flow" }
+            AndroidOAuthBridge.cancelFlow()
             return
         }
         AndroidOAuthBridge.deliverCallback(data.toString())

@@ -4,6 +4,7 @@ import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.data.auth.OAuthLauncher
 import com.devil.phoenixproject.data.auth.OAuthProvider
 import com.devil.phoenixproject.data.auth.generateOAuthPkce
+import com.devil.phoenixproject.data.auth.generateOAuthState
 import com.devil.phoenixproject.data.sync.PortalApiClient
 import com.devil.phoenixproject.data.sync.PortalTokenStorage
 import com.devil.phoenixproject.data.sync.PortalUser
@@ -127,10 +128,24 @@ class PortalAuthRepository(
      */
     private suspend fun signInWithOAuth(provider: OAuthProvider): Result<AuthUser> {
         val pkce = generateOAuthPkce()
-        val authorizeUrl = buildAuthorizeUrl(provider, pkce.challenge)
+        val state = generateOAuthState()
+        val authorizeUrl = buildAuthorizeUrl(provider, pkce.challenge, state)
 
         val callbackResult = oauthLauncher.launch(authorizeUrl, OAUTH_CALLBACK_SCHEME)
         val callbackUrl = callbackResult.getOrElse { return Result.failure(it) }
+
+        // Defence-in-depth: Android deep-link schemes can be invoked by any
+        // app that targets the same intent filter, and iOS only filters by
+        // scheme. Reject anything that isn't from the redirect we registered.
+        if (!isExpectedOAuthCallback(callbackUrl)) {
+            return Result.failure(Exception("Unexpected OAuth callback URL"))
+        }
+
+        // CSRF protection: Supabase echoes `state` back unchanged. A mismatch
+        // means either a forged callback or a stale flow — refuse the code.
+        if (extractState(callbackUrl) != state) {
+            return Result.failure(Exception("OAuth callback state mismatch"))
+        }
 
         val code = extractAuthCode(callbackUrl)
             ?: return Result.failure(
@@ -147,18 +162,30 @@ class PortalAuthRepository(
             }
     }
 
-    private fun buildAuthorizeUrl(provider: OAuthProvider, codeChallenge: String): String {
+    private fun buildAuthorizeUrl(provider: OAuthProvider, codeChallenge: String, state: String): String {
         val redirect = urlEncode(OAUTH_CALLBACK_URL)
         return "${supabaseConfig.authUrl}/authorize" +
             "?provider=${provider.wireName}" +
             "&redirect_to=$redirect" +
             "&code_challenge=$codeChallenge" +
-            "&code_challenge_method=S256"
+            "&code_challenge_method=S256" +
+            "&state=${urlEncode(state)}"
+    }
+
+    private fun isExpectedOAuthCallback(callbackUrl: String): Boolean {
+        val url = runCatching { Url(callbackUrl) }.getOrNull() ?: return false
+        return url.protocol.name.equals(OAUTH_CALLBACK_SCHEME, ignoreCase = true) &&
+            url.host.equals("auth-callback", ignoreCase = true)
     }
 
     private fun extractAuthCode(callbackUrl: String): String? {
         val url = runCatching { Url(callbackUrl) }.getOrNull() ?: return null
         return url.parameters["code"]
+    }
+
+    private fun extractState(callbackUrl: String): String? {
+        val url = runCatching { Url(callbackUrl) }.getOrNull() ?: return null
+        return url.parameters["state"]
     }
 
     private fun extractErrorMessage(callbackUrl: String): String? {

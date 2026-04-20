@@ -26,6 +26,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -382,6 +383,9 @@ private fun GoogleIcon(modifier: Modifier = Modifier) {
 /** Apple logo drawn with Canvas primitives. */
 @Composable
 private fun AppleIcon(modifier: Modifier = Modifier) {
+    // Theme-aware color so the icon stays readable on both light + dark
+    // OutlinedButton surfaces. Hardcoded black would disappear in dark mode.
+    val iconColor = LocalContentColor.current
     Canvas(modifier = modifier) {
         val side = size.minDimension
         val centerX = side / 2
@@ -409,11 +413,11 @@ private fun AppleIcon(modifier: Modifier = Modifier) {
 
         drawPath(
             path = path,
-            color = Color.Black,
+            color = iconColor,
         )
 
         drawLine(
-            color = Color.Black,
+            color = iconColor,
             start = Offset(centerX + side * 0.05f, side * 0.15f),
             end = Offset(centerX + side * 0.15f, side * 0.02f),
             strokeWidth = side * 0.08f,

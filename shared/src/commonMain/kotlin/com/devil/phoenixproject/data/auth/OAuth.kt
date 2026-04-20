@@ -46,6 +46,17 @@ fun generateOAuthPkce(): OAuthPkce {
 }
 
 /**
+ * Generate a cryptographically random `state` value for the OAuth authorize
+ * request. The caller stores the value, includes it in the authorize URL,
+ * and after the redirect verifies that the callback echoes the same value.
+ * Mismatch indicates a CSRF / authorization-code-substitution attempt.
+ *
+ * 16 bytes → 22 base64url chars; well above the OAuth 2.0 §10.10 entropy
+ * recommendation of 128 bits.
+ */
+fun generateOAuthState(): String = generateSecureRandomBytes(16).toBase64UrlNoPad()
+
+/**
  * Platform-specific browser launcher for OAuth authorization flows.
  *
  * Opens [authorizeUrl] in the system browser (Chrome Custom Tabs on Android,

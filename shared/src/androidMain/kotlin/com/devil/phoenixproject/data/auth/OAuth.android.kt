@@ -1,8 +1,11 @@
 package com.devil.phoenixproject.data.auth
 
+import android.app.Activity
+import android.app.Application
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.os.Bundle
 import co.touchlab.kermit.Logger
 import kotlinx.coroutines.CompletableDeferred
 import java.security.MessageDigest
@@ -25,11 +28,48 @@ internal actual fun sha256(input: ByteArray): ByteArray =
  * captured by [OAuthRedirectActivity] in the host app (registered against
  * the callback URI scheme in its AndroidManifest) and delivered back here
  * via [AndroidOAuthBridge].
+ *
+ * If the user dismisses the browser without completing the flow (Back / Home
+ * / kill the tab), the host activity will resume without a callback ever
+ * being delivered. An [Application.ActivityLifecycleCallbacks] listener
+ * detects that case and cancels the deferred so [launch] doesn't hang.
  */
 actual class OAuthLauncher(private val context: Context) {
 
     actual suspend fun launch(authorizeUrl: String, callbackScheme: String): Result<String> {
         val deferred = AndroidOAuthBridge.beginFlow()
+        val application = context.applicationContext as? Application
+            ?: return Result.failure(
+                IllegalStateException("OAuth requires an Application context"),
+            )
+
+        // Watch the activity lifecycle so we can detect the user backing out
+        // of the browser without completing OAuth. We set hostStopped = true
+        // when our app goes to the background (browser opens), then if any
+        // activity in our app resumes again without the deferred being
+        // completed, we know the user dismissed the browser.
+        //
+        // Successful OAuth: OAuthRedirectActivity.onCreate runs deliverCallback
+        // before its onResume fires, so the deferred is already completed by
+        // the time the listener sees a resume → no cancellation.
+        var hostStopped = false
+        val abandonmentWatcher = object : Application.ActivityLifecycleCallbacks {
+            override fun onActivityStopped(activity: Activity) {
+                hostStopped = true
+            }
+            override fun onActivityResumed(activity: Activity) {
+                if (hostStopped && !deferred.isCompleted) {
+                    AndroidOAuthBridge.cancelFlow()
+                }
+            }
+            override fun onActivityCreated(activity: Activity, savedInstanceState: Bundle?) {}
+            override fun onActivityStarted(activity: Activity) {}
+            override fun onActivityPaused(activity: Activity) {}
+            override fun onActivitySaveInstanceState(activity: Activity, outState: Bundle) {}
+            override fun onActivityDestroyed(activity: Activity) {}
+        }
+        application.registerActivityLifecycleCallbacks(abandonmentWatcher)
+
         return try {
             val intent = Intent(Intent.ACTION_VIEW, Uri.parse(authorizeUrl)).apply {
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
@@ -38,9 +78,11 @@ actual class OAuthLauncher(private val context: Context) {
             val callbackUrl = deferred.await()
             Result.success(callbackUrl)
         } catch (e: Exception) {
-            log.w(e) { "OAuth browser launch failed" }
+            log.w(e) { "OAuth flow ended: ${e.message}" }
             AndroidOAuthBridge.cancelFlow()
             Result.failure(e)
+        } finally {
+            application.unregisterActivityLifecycleCallbacks(abandonmentWatcher)
         }
     }
 }

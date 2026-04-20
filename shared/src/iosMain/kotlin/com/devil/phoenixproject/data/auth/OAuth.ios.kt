@@ -9,6 +9,7 @@ import kotlinx.cinterop.usePinned
 import kotlinx.coroutines.suspendCancellableCoroutine
 import platform.AuthenticationServices.ASWebAuthenticationPresentationContextProvidingProtocol
 import platform.AuthenticationServices.ASWebAuthenticationSession
+import platform.AuthenticationServices.ASWebAuthenticationSessionErrorDomain
 import platform.CommonCrypto.CC_SHA256
 import platform.CommonCrypto.CC_SHA256_DIGEST_LENGTH
 import platform.Foundation.NSError
@@ -80,13 +81,23 @@ actual class OAuthLauncher {
                     session = null
                     presentationProvider = null
                     val result: Result<String> = when {
-                        callbackURL != null -> Result.success(callbackURL.absoluteString ?: "")
+                        callbackURL != null -> {
+                            val urlString = callbackURL.absoluteString
+                            if (urlString != null) {
+                                Result.success(urlString)
+                            } else {
+                                Result.failure(Exception("OAuth callback URL had no absoluteString"))
+                            }
+                        }
                         error != null -> {
                             val message = error.localizedDescription
-                            // Apple returns ASWebAuthenticationSessionErrorCodeCanceledLogin (1)
-                            // when the user dismisses the sheet. We classify that as cancellation
-                            // so callers can distinguish from real failures.
-                            if (error.code == 1L) {
+                            // ASWebAuthenticationSessionErrorCodeCanceledLogin = 1 inside the
+                            // ASWebAuthenticationSessionErrorDomain when the user dismisses
+                            // the sheet. We gate on BOTH so we don't misclassify a code=1
+                            // error from an unrelated NSError domain as a user cancellation.
+                            val isCancel = error.code == 1L &&
+                                error.domain == ASWebAuthenticationSessionErrorDomain
+                            if (isCancel) {
                                 Result.failure(OAuthCancelledException(message))
                             } else {
                                 Result.failure(Exception(message))
@@ -113,6 +124,8 @@ actual class OAuthLauncher {
 
             val started = webSession.start()
             if (!started) {
+                session = null
+                presentationProvider = null
                 cont.resume(Result.failure(Exception("ASWebAuthenticationSession failed to start")))
             }
         }
