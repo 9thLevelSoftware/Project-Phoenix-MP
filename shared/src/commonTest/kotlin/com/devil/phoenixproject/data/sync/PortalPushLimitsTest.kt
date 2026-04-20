@@ -378,13 +378,12 @@ class PortalPushLimitsTest {
      */
     @Test
     fun planSessionBatchesSplitsWhenCumulativeTelemetryExceedsCap() {
-        val manager = createManager()
         val sessions = (0 until 50).map { stubPortalSession("sess-$it") }
         // Each session carries 800 telemetry points → 50 * 800 = 40_000, well past the
         // 10_000 cap. Should split into at least 5 batches (ceil(40_000 / 10_000)).
         val telemetryCounts = sessions.associate { it.id to 800 }
 
-        val batches = manager.planSessionBatches(sessions, telemetryCounts)
+        val batches = planSessionBatches(sessions, telemetryCounts)
 
         assertTrue(
             batches.size >= 4,
@@ -408,11 +407,10 @@ class PortalPushLimitsTest {
     /** Sessions with zero telemetry should batch identically to the old 50-per-batch chunker. */
     @Test
     fun planSessionBatchesPreservesLegacyChunkingWhenTelemetryIsEmpty() {
-        val manager = createManager()
         val sessions = (0 until 73).map { stubPortalSession("sess-$it") }
         val telemetryCounts = sessions.associate { it.id to 0 }
 
-        val batches = manager.planSessionBatches(sessions, telemetryCounts)
+        val batches = planSessionBatches(sessions, telemetryCounts)
 
         assertEquals(listOf(50, 23), batches.map { it.size })
     }
@@ -425,7 +423,6 @@ class PortalPushLimitsTest {
      */
     @Test
     fun planSessionBatchesIsolatesSingleSessionTelemetryOverflow() {
-        val manager = createManager()
         val small1 = stubPortalSession("small-1")
         val giant = stubPortalSession("giant")
         val small2 = stubPortalSession("small-2")
@@ -435,7 +432,7 @@ class PortalPushLimitsTest {
             small2.id to 100,
         )
 
-        val batches = manager.planSessionBatches(listOf(small1, giant, small2), telemetryCounts)
+        val batches = planSessionBatches(listOf(small1, giant, small2), telemetryCounts)
 
         // Expect 3 batches: [small1], [giant], [small2]
         assertEquals(3, batches.size, "Giant session must be isolated in its own batch")
@@ -446,8 +443,7 @@ class PortalPushLimitsTest {
 
     @Test
     fun planSessionBatchesHandlesEmptyInput() {
-        val manager = createManager()
-        val batches = manager.planSessionBatches(emptyList(), emptyMap())
+        val batches = planSessionBatches(emptyList(), emptyMap())
         assertEquals(1, batches.size)
         assertTrue(batches[0].isEmpty())
     }

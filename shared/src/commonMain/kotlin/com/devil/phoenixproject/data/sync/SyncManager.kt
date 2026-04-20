@@ -428,53 +428,6 @@ class SyncManager(
 
     // === Private Helpers ===
 
-    /**
-     * Builds push batches that respect BOTH the per-batch session cap
-     * ([SYNC_BATCH_SIZE]) and the per-batch telemetry cap
-     * ([SyncConfig.MAX_TELEMETRY_PER_BATCH]).
-     *
-     * A fixed chunk of 50 sessions can still blow past the server's rep_telemetry
-     * array cap (10_000) when sessions carry heavy force-curve telemetry — the
-     * client self-check then rejects the batch and sync gets stuck. This greedy
-     * planner closes a batch early whenever adding another session would exceed
-     * either cap.
-     *
-     * A single session whose own telemetry exceeds the cap is still placed
-     * alone in its batch and logged as a warning. PortalApiClient will still
-     * reject it, but batches around it continue to flow normally.
-     */
-    internal fun planSessionBatches(
-        sessions: List<PortalWorkoutSessionDto>,
-        telemetryCountBySessionId: Map<String, Int>,
-    ): List<List<PortalWorkoutSessionDto>> {
-        if (sessions.isEmpty()) return listOf(emptyList<PortalWorkoutSessionDto>())
-        val batches = mutableListOf<List<PortalWorkoutSessionDto>>()
-        var current = mutableListOf<PortalWorkoutSessionDto>()
-        var currentTelemetry = 0
-        for (session in sessions) {
-            val sessionTelemetry = telemetryCountBySessionId[session.id] ?: 0
-            if (sessionTelemetry > SyncConfig.MAX_TELEMETRY_PER_BATCH) {
-                Logger.w("SyncManager") {
-                    "Session ${session.id} has $sessionTelemetry telemetry points, " +
-                        "exceeding per-batch cap ${SyncConfig.MAX_TELEMETRY_PER_BATCH}. " +
-                        "Batch will likely be rejected by the server until telemetry is trimmed."
-                }
-            }
-            val wouldExceedSessions = current.size + 1 > SYNC_BATCH_SIZE
-            val wouldExceedTelemetry =
-                currentTelemetry + sessionTelemetry > SyncConfig.MAX_TELEMETRY_PER_BATCH
-            if (current.isNotEmpty() && (wouldExceedSessions || wouldExceedTelemetry)) {
-                batches.add(current)
-                current = mutableListOf<PortalWorkoutSessionDto>()
-                currentTelemetry = 0
-            }
-            current.add(session)
-            currentTelemetry += sessionTelemetry
-        }
-        if (current.isNotEmpty()) batches.add(current)
-        return batches
-    }
-
     private suspend fun pushLocalChanges(): Result<PortalSyncPushResponse> {
         val userId = tokenStorage.currentUser.value?.id
             ?: return Result.failure(PortalApiException("Not authenticated", null, 401))
@@ -1239,4 +1192,51 @@ class SyncManager(
             else -> platformName
         }
     }
+}
+
+/**
+ * Builds push batches that respect BOTH the per-batch session cap
+ * ([SyncManager.SYNC_BATCH_SIZE]) and the per-batch telemetry cap
+ * ([SyncConfig.MAX_TELEMETRY_PER_BATCH]).
+ *
+ * A fixed chunk of 50 sessions can still blow past the server's rep_telemetry
+ * array cap (10_000) when sessions carry heavy force-curve telemetry — the
+ * client self-check then rejects the batch and sync gets stuck. This greedy
+ * planner closes a batch early whenever adding another session would exceed
+ * either cap.
+ *
+ * A single session whose own telemetry exceeds the cap is still placed
+ * alone in its batch and logged as a warning. PortalApiClient will still
+ * reject it, but batches around it continue to flow normally.
+ */
+internal fun planSessionBatches(
+    sessions: List<PortalWorkoutSessionDto>,
+    telemetryCountBySessionId: Map<String, Int>,
+): List<List<PortalWorkoutSessionDto>> {
+    if (sessions.isEmpty()) return listOf(emptyList<PortalWorkoutSessionDto>())
+    val batches = mutableListOf<List<PortalWorkoutSessionDto>>()
+    var current = mutableListOf<PortalWorkoutSessionDto>()
+    var currentTelemetry = 0
+    for (session in sessions) {
+        val sessionTelemetry = telemetryCountBySessionId[session.id] ?: 0
+        if (sessionTelemetry > SyncConfig.MAX_TELEMETRY_PER_BATCH) {
+            Logger.w("SyncManager") {
+                "Session ${session.id} has $sessionTelemetry telemetry points, " +
+                    "exceeding per-batch cap ${SyncConfig.MAX_TELEMETRY_PER_BATCH}. " +
+                    "Batch will likely be rejected by the server until telemetry is trimmed."
+            }
+        }
+        val wouldExceedSessions = current.size + 1 > SyncManager.SYNC_BATCH_SIZE
+        val wouldExceedTelemetry =
+            currentTelemetry + sessionTelemetry > SyncConfig.MAX_TELEMETRY_PER_BATCH
+        if (current.isNotEmpty() && (wouldExceedSessions || wouldExceedTelemetry)) {
+            batches.add(current)
+            current = mutableListOf<PortalWorkoutSessionDto>()
+            currentTelemetry = 0
+        }
+        current.add(session)
+        currentTelemetry += sessionTelemetry
+    }
+    if (current.isNotEmpty()) batches.add(current)
+    return batches
 }
