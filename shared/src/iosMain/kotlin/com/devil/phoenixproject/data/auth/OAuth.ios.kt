@@ -7,12 +7,10 @@ import kotlinx.cinterop.convert
 import kotlinx.cinterop.reinterpret
 import kotlinx.cinterop.usePinned
 import kotlinx.coroutines.suspendCancellableCoroutine
-import platform.AuthenticationServices.ASPresentationAnchor
 import platform.AuthenticationServices.ASWebAuthenticationPresentationContextProvidingProtocol
 import platform.AuthenticationServices.ASWebAuthenticationSession
-import platform.AuthenticationServices.ASWebAuthenticationSessionErrorCodeCanceledLogin
-import platform.CoreCrypto.CC_SHA256
-import platform.CoreCrypto.CC_SHA256_DIGEST_LENGTH
+import platform.CommonCrypto.CC_SHA256
+import platform.CommonCrypto.CC_SHA256_DIGEST_LENGTH
 import platform.Foundation.NSError
 import platform.Foundation.NSURL
 import platform.Security.SecRandomCopyBytes
@@ -81,23 +79,22 @@ actual class OAuthLauncher {
                 completionHandler = { callbackURL: NSURL?, error: NSError? ->
                     session = null
                     presentationProvider = null
-                    when {
+                    val result: Result<String> = when {
+                        callbackURL != null -> Result.success(callbackURL.absoluteString ?: "")
                         error != null -> {
-                            val result = if (error.code == ASWebAuthenticationSessionErrorCodeCanceledLogin) {
-                                Result.failure(OAuthCancelledException("User cancelled OAuth flow"))
+                            val message = error.localizedDescription
+                            // Apple returns ASWebAuthenticationSessionErrorCodeCanceledLogin (1)
+                            // when the user dismisses the sheet. We classify that as cancellation
+                            // so callers can distinguish from real failures.
+                            if (error.code == 1L) {
+                                Result.failure(OAuthCancelledException(message))
                             } else {
-                                Result.failure(Exception(error.localizedDescription))
+                                Result.failure(Exception(message))
                             }
-                            if (cont.isActive) cont.resume(result)
                         }
-                        callbackURL != null -> {
-                            val urlString = callbackURL.absoluteString ?: ""
-                            if (cont.isActive) cont.resume(Result.success(urlString))
-                        }
-                        else -> {
-                            if (cont.isActive) cont.resume(Result.failure(Exception("Unknown OAuth error")))
-                        }
+                        else -> Result.failure(Exception("Unknown OAuth error"))
                     }
+                    if (cont.isActive) cont.resume(result)
                 },
             )
             webSession.presentationContextProvider = provider
@@ -124,11 +121,17 @@ actual class OAuthLauncher {
 private class PresentationContextProvider :
     NSObject(),
     ASWebAuthenticationPresentationContextProvidingProtocol {
-    override fun presentationAnchorForWebAuthenticationSession(session: ASWebAuthenticationSession): ASPresentationAnchor {
+    // Return type is ASPresentationAnchor in ObjC, which is a typealias for
+    // UIWindow. Declaring the return as UIWindow avoids depending on whether
+    // Kotlin/Native exposes the typealias as an importable symbol.
+    override fun presentationAnchorForWebAuthenticationSession(session: ASWebAuthenticationSession): UIWindow {
         val app = UIApplication.sharedApplication
-        val keyWindow = app.windows.firstOrNull { (it as? UIWindow)?.isKeyWindow == true } as? UIWindow
+        val windows = app.windows
+        val keyWindow = windows
+            .filterIsInstance<UIWindow>()
+            .firstOrNull { it.isKeyWindow }
         return keyWindow
-            ?: app.windows.firstOrNull() as? UIWindow
+            ?: windows.filterIsInstance<UIWindow>().firstOrNull()
             ?: UIWindow()
     }
 }
