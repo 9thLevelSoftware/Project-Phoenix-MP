@@ -15,6 +15,7 @@ import com.devil.phoenixproject.domain.model.RpgProfile
 import com.devil.phoenixproject.domain.model.currentTimeMillis
 import com.devil.phoenixproject.domain.premium.RpgAttributeEngine
 import com.devil.phoenixproject.getPlatform
+import com.devil.phoenixproject.isIosPlatform
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -1185,11 +1186,18 @@ class SyncManager(
     }
 
     private fun getPlatformName(): String {
-        val platformName = getPlatform().name.lowercase()
+        // Guaranteed non-empty. The server's normalizeSyncPlatform rejects
+        // anything that doesn't trim-lowercase-contain "android"/"ios", so
+        // if the Platform actual ever returned an empty or odd string we'd
+        // log a server-side "defaulting to unknown" warning. Fall back on
+        // the compile-time isIosPlatform flag, then on "android" as the
+        // most common device, so the wire value is never blank.
+        val raw = getPlatform().name.lowercase().trim()
         return when {
-            platformName.contains("android") -> "android"
-            platformName.contains("ios") -> "ios"
-            else -> platformName
+            raw.contains("android") -> "android"
+            raw.contains("ios") -> "ios"
+            isIosPlatform -> "ios"
+            else -> "android"
         }
     }
 }

@@ -198,6 +198,9 @@ data class TrainingCycleBackup(
 
 /**
  * Backup representation of CycleDay (KMP extension)
+ *
+ * NOTE: Fields added in schema migrations 23+ are nullable here and default to null so
+ * old (v1) backups continue to deserialize cleanly via kotlinx.serialization default values.
  */
 @Serializable
 data class CycleDayBackup(
@@ -207,6 +210,12 @@ data class CycleDayBackup(
     val name: String? = null,
     val routineId: String? = null,
     val isRestDay: Boolean = false,
+    // Per-day cycle progression overrides (added v2 backup schema)
+    val echoLevel: String? = null,
+    val eccentricLoadPercent: Int? = null,
+    val weightProgressionPercent: Float? = null,
+    val repModifier: Int? = null,
+    val restTimeOverrideSeconds: Int? = null,
 )
 
 /**
@@ -293,6 +302,9 @@ data class ProgressionEventBackup(
 
 /**
  * Backup representation of EarnedBadge
+ *
+ * Sync fields (updatedAt, serverId, deletedAt) are preserved across backup round-trips
+ * so a restored badge does not immediately re-push to the portal as a "new" badge.
  */
 @Serializable
 data class EarnedBadgeBackup(
@@ -301,6 +313,10 @@ data class EarnedBadgeBackup(
     val earnedAt: Long,
     val celebratedAt: Long? = null,
     val profileId: String = "default",
+    // Sync fields (added v2 backup schema)
+    val updatedAt: Long? = null,
+    val serverId: String? = null,
+    val deletedAt: Long? = null,
 )
 
 /**
@@ -325,6 +341,23 @@ data class GamificationStatsBackup(
     val streakStartDate: Long? = null,
     val lastUpdated: Long,
     val profileId: String = "default",
+    // Sync fields (added v2 backup schema) — preserve so restored row does not re-push
+    val updatedAt: Long? = null,
+    val serverId: String? = null,
+)
+
+/**
+ * Backup representation of SessionNotes (added in migration 26)
+ *
+ * Portal-level notes attached to a routine session. Stored in its own table because
+ * one portal session expands into N mobile WorkoutSession rows (keyed by
+ * routineSessionId) and duplicating notes across rows would invite drift.
+ */
+@Serializable
+data class SessionNotesBackup(
+    val routineSessionId: String,
+    val notes: String? = null,
+    val updatedAt: Long? = null,
 )
 
 /**
@@ -369,10 +402,22 @@ enum class BackupPhase(val displayName: String) {
 }
 
 /**
- * Root backup data structure containing all exportable data
+ * Root backup data structure containing all exportable data.
+ *
+ * Schema versions:
+ * - v1: initial backup format (pre-2026-04-19)
+ * - v2: adds SessionNotes, EarnedBadge/GamificationStats sync fields, CycleDay per-day
+ *       progression overrides. Older (v1) backups remain importable — new fields default
+ *       to null via kotlinx.serialization default values.
  */
 @Serializable
-data class BackupData(val version: Int = 1, val exportedAt: String, val appVersion: String, val data: BackupContent)
+data class BackupData(val version: Int = CURRENT_BACKUP_VERSION, val exportedAt: String, val appVersion: String, val data: BackupContent)
+
+/**
+ * Highest backup schema version this build can produce.
+ * Bump whenever BackupContent gains/loses entities or a backup field type changes.
+ */
+const val CURRENT_BACKUP_VERSION: Int = 2
 
 /**
  * Container for all backup data entities
@@ -397,6 +442,8 @@ data class BackupContent(
     val streakHistory: List<StreakHistoryBackup> = emptyList(),
     val gamificationStats: GamificationStatsBackup? = null,
     val userProfiles: List<UserProfileBackup> = emptyList(),
+    // Added v2: portal session notes (migration 26)
+    val sessionNotes: List<SessionNotesBackup> = emptyList(),
 )
 
 /**
@@ -426,6 +473,15 @@ data class ImportResult(
     val gamificationStatsImported: Boolean = false,
     val userProfilesImported: Int = 0,
     val userProfilesSkipped: Int = 0,
+    val sessionNotesImported: Int = 0,
+    val sessionNotesSkipped: Int = 0,
+    /**
+     * Count of individual entity rows that threw during import and were skipped.
+     * Non-zero here means the backup contained malformed rows — the import still
+     * succeeded overall, but data was partially dropped. Surfacing this lets the UI
+     * warn users rather than silently swallow corruption.
+     */
+    val entitiesWithErrors: Int = 0,
 ) {
     val totalImported: Int
         get() = sessionsImported + metricsImported + routinesImported +
@@ -433,9 +489,10 @@ data class ImportResult(
             trainingCyclesImported + cycleDaysImported + cycleProgressImported +
             cycleProgressionsImported + plannedSetsImported + completedSetsImported +
             progressionEventsImported + earnedBadgesImported + streakHistoryImported +
-            (if (gamificationStatsImported) 1 else 0) + userProfilesImported
+            (if (gamificationStatsImported) 1 else 0) + userProfilesImported +
+            sessionNotesImported
 
     val totalSkipped: Int
         get() = sessionsSkipped + routinesSkipped + supersetsSkipped + personalRecordsSkipped +
-            trainingCyclesSkipped + userProfilesSkipped
+            trainingCyclesSkipped + userProfilesSkipped + sessionNotesSkipped
 }
