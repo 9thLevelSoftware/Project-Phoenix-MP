@@ -35,7 +35,7 @@ jobs:
             -   name: Trigger Android Play Store
                 if: ${{ !inputs.skip_android_playstore }}
                 env:
-                    GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+                    GH_TOKEN: ${{ secrets.RELEASE_PAT }}
                 run: |
                     ARGS=""
                     if [ -n "${{ inputs.versionCodeOverride }}" ]; then
@@ -47,7 +47,7 @@ jobs:
             -   name: Trigger Android Release APK
                 if: ${{ !inputs.skip_android_apk }}
                 env:
-                    GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+                    GH_TOKEN: ${{ secrets.RELEASE_PAT }}
                 run: |
                     ARGS=""
                     if [ -n "${{ inputs.versionCodeOverride }}" ]; then
@@ -59,7 +59,7 @@ jobs:
             -   name: Trigger iOS Release IPA
                 if: ${{ !inputs.skip_ios_ipa }}
                 env:
-                    GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+                    GH_TOKEN: ${{ secrets.RELEASE_PAT }}
                 run: |
                     gh workflow run ios-release-ipa.yml --repo ${{ github.repository }}
                     echo "Triggered iOS Release IPA"
@@ -67,7 +67,7 @@ jobs:
             -   name: Trigger iOS TestFlight
                 if: ${{ !inputs.skip_ios_testflight }}
                 env:
-                    GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+                    GH_TOKEN: ${{ secrets.RELEASE_PAT }}
                 run: |
                     gh workflow run ios-testflight.yml --repo ${{ github.repository }}
                     echo "Triggered iOS TestFlight"
