@@ -1,5 +1,6 @@
 package com.devil.phoenixproject.presentation.screen
 
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -25,7 +26,9 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -42,6 +45,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusDirection
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
@@ -54,6 +63,8 @@ import com.devil.phoenixproject.data.repository.AuthState
 import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.stringResource
 import vitruvianprojectphoenix.shared.generated.resources.Res
+import vitruvianprojectphoenix.shared.generated.resources.auth_apple
+import vitruvianprojectphoenix.shared.generated.resources.auth_google
 import vitruvianprojectphoenix.shared.generated.resources.cd_back
 import vitruvianprojectphoenix.shared.generated.resources.label_confirm_password
 import vitruvianprojectphoenix.shared.generated.resources.label_email
@@ -279,7 +290,138 @@ fun AuthScreen(authRepository: AuthRepository, onAuthSuccess: () -> Unit, onBack
                 }
             }
 
+            // OAuth sign-in (sign-in mode only).
+            // Mobile does NOT offer OAuth sign-up: new accounts must be created on the
+            // portal web app, where provider consent + email verification land correctly.
+            // Mobile reuses an existing portal account via sign-in only.
+            if (authMode == AuthMode.SIGN_IN) {
+                Spacer(modifier = Modifier.height(16.dp))
+
+                Text(
+                    text = "Or continue with",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(16.dp),
+                ) {
+                    OutlinedButton(
+                        onClick = {
+                            scope.launch {
+                                isLoading = true
+                                errorMessage = null
+                                authRepository.signInWithGoogle().fold(
+                                    onSuccess = { onAuthSuccess() },
+                                    onFailure = { e -> errorMessage = e.message ?: "Google sign-in failed" },
+                                )
+                                isLoading = false
+                            }
+                        },
+                        enabled = !isLoading,
+                    ) {
+                        GoogleIcon(modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(stringResource(Res.string.auth_google))
+                    }
+
+                    OutlinedButton(
+                        onClick = {
+                            scope.launch {
+                                isLoading = true
+                                errorMessage = null
+                                authRepository.signInWithApple().fold(
+                                    onSuccess = { onAuthSuccess() },
+                                    onFailure = { e -> errorMessage = e.message ?: "Apple sign-in failed" },
+                                )
+                                isLoading = false
+                            }
+                        },
+                        enabled = !isLoading,
+                    ) {
+                        AppleIcon(modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(stringResource(Res.string.auth_apple))
+                    }
+                }
+            }
+
             Spacer(modifier = Modifier.height(24.dp))
         }
+    }
+}
+
+/** Google "G" logo drawn with Canvas primitives (no network-fetched asset). */
+@Composable
+private fun GoogleIcon(modifier: Modifier = Modifier) {
+    Canvas(modifier = modifier) {
+        val side = size.minDimension
+        val strokeWidth = side * 0.15f
+        val radius = side * 0.4f
+        val center = Offset(side / 2, side / 2)
+
+        drawArc(
+            color = Color(0xFF4285F4),
+            startAngle = 45f,
+            sweepAngle = 270f,
+            useCenter = false,
+            topLeft = Offset(center.x - radius, center.y - radius),
+            size = Size(radius * 2, radius * 2),
+            style = Stroke(width = strokeWidth, cap = StrokeCap.Round),
+        )
+
+        drawLine(
+            color = Color(0xFF4285F4),
+            start = Offset(center.x, center.y),
+            end = Offset(center.x + radius, center.y),
+            strokeWidth = strokeWidth,
+            cap = StrokeCap.Round,
+        )
+    }
+}
+
+/** Apple logo drawn with Canvas primitives. */
+@Composable
+private fun AppleIcon(modifier: Modifier = Modifier) {
+    // Theme-aware color so the icon stays readable on both light + dark
+    // OutlinedButton surfaces. Hardcoded black would disappear in dark mode.
+    val iconColor = LocalContentColor.current
+    Canvas(modifier = modifier) {
+        val side = size.minDimension
+        val centerX = side / 2
+
+        val path = Path().apply {
+            moveTo(centerX, side * 0.15f)
+            cubicTo(
+                centerX + side * 0.5f,
+                side * 0.2f,
+                centerX + side * 0.4f,
+                side * 0.7f,
+                centerX,
+                side * 0.95f,
+            )
+            cubicTo(
+                centerX - side * 0.4f,
+                side * 0.7f,
+                centerX - side * 0.5f,
+                side * 0.2f,
+                centerX,
+                side * 0.15f,
+            )
+            close()
+        }
+
+        drawPath(
+            path = path,
+            color = iconColor,
+        )
+
+        drawLine(
+            color = iconColor,
+            start = Offset(centerX + side * 0.05f, side * 0.15f),
+            end = Offset(centerX + side * 0.15f, side * 0.02f),
+            strokeWidth = side * 0.08f,
+            cap = StrokeCap.Round,
+        )
     }
 }

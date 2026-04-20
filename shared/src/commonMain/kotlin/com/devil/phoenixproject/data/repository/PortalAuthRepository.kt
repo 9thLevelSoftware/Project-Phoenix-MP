@@ -1,10 +1,16 @@
 package com.devil.phoenixproject.data.repository
 
 import co.touchlab.kermit.Logger
+import com.devil.phoenixproject.data.auth.OAuthLauncher
+import com.devil.phoenixproject.data.auth.OAuthProvider
+import com.devil.phoenixproject.data.auth.generateOAuthPkce
+import com.devil.phoenixproject.data.auth.generateOAuthState
 import com.devil.phoenixproject.data.sync.PortalApiClient
 import com.devil.phoenixproject.data.sync.PortalTokenStorage
 import com.devil.phoenixproject.data.sync.PortalUser
+import com.devil.phoenixproject.data.sync.SupabaseConfig
 import com.devil.phoenixproject.data.sync.toPortalAuthResponse
+import io.ktor.http.Url
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -31,7 +37,23 @@ class PortalAuthRepository(
     private val apiClient: PortalApiClient,
     private val tokenStorage: PortalTokenStorage,
     private val userProfileRepository: UserProfileRepository,
+    private val supabaseConfig: SupabaseConfig,
+    private val oauthLauncher: OAuthLauncher,
 ) : AuthRepository {
+
+    companion object {
+        /**
+         * Deep-link scheme used for OAuth redirects back to the mobile app.
+         * Must match:
+         *  - Android: the intent-filter scheme registered in [androidApp]'s
+         *    AndroidManifest for the OAuth redirect activity.
+         *  - iOS: the `callbackURLScheme` passed to ASWebAuthenticationSession.
+         *  - Supabase: the redirect URL whitelist in the Supabase project's
+         *    Auth → URL Configuration settings.
+         */
+        const val OAUTH_CALLBACK_SCHEME = "com.devil.phoenixproject"
+        const val OAUTH_CALLBACK_URL = "$OAUTH_CALLBACK_SCHEME://auth-callback"
+    }
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
@@ -91,28 +113,103 @@ class PortalAuthRepository(
             goTrueResponse.toPortalAuthResponse().user.toAuthUser()
         }
 
-    // fix(audit): C6 — the audit claimed UnsupportedOperationException extends
-    // Error, but in Kotlin it extends RuntimeException → Exception on both JVM
-    // and Native, so `Result.failure` consumers that catch `Exception` (or
-    // propagate via `Result.onFailure`) work correctly. We keep it but wrap in
-    // an explicitly-named sentinel so callers can pattern-match the reason
-    // without string-sniffing the message. Note: `kotlin.NotImplementedError`
-    // (thrown by `TODO()`) DOES extend Error — do not use it here.
-    override suspend fun signInWithGoogle(): Result<AuthUser> =
-        Result.failure(
-            UnsupportedOperationException(
-                "Google sign-in is not wired up in the portal auth repository. " +
-                    "Use the platform-specific Google sign-in flow from the UI layer.",
-            ),
-        )
+    override suspend fun signInWithGoogle(): Result<AuthUser> = signInWithOAuth(OAuthProvider.GOOGLE)
 
-    override suspend fun signInWithApple(): Result<AuthUser> =
-        Result.failure(
-            UnsupportedOperationException(
-                "Apple sign-in is not wired up in the portal auth repository. " +
-                    "Use the platform-specific Apple sign-in flow from the UI layer.",
-            ),
-        )
+    override suspend fun signInWithApple(): Result<AuthUser> = signInWithOAuth(OAuthProvider.APPLE)
+
+    /**
+     * Run the browser-based PKCE OAuth sign-in flow against Supabase GoTrue.
+     *
+     * Sign-in only: if the authenticated user has no existing portal account,
+     * Supabase's `/authorize` endpoint will still create one (same behavior
+     * the portal uses). The mobile UI intentionally hides the OAuth buttons
+     * on the sign-up tab so that mobile users always land on the sign-in
+     * surface for OAuth, keeping portal and mobile identity aligned.
+     */
+    private suspend fun signInWithOAuth(provider: OAuthProvider): Result<AuthUser> {
+        val pkce = generateOAuthPkce()
+        val state = generateOAuthState()
+        val authorizeUrl = buildAuthorizeUrl(provider, pkce.challenge, state)
+
+        val callbackResult = oauthLauncher.launch(authorizeUrl, OAUTH_CALLBACK_SCHEME)
+        val callbackUrl = callbackResult.getOrElse { return Result.failure(it) }
+
+        // Defence-in-depth: Android deep-link schemes can be invoked by any
+        // app that targets the same intent filter, and iOS only filters by
+        // scheme. Reject anything that isn't from the redirect we registered.
+        if (!isExpectedOAuthCallback(callbackUrl)) {
+            return Result.failure(Exception("Unexpected OAuth callback URL"))
+        }
+
+        // CSRF protection: Supabase echoes `state` back unchanged. A mismatch
+        // means either a forged callback or a stale flow — refuse the code.
+        if (extractState(callbackUrl) != state) {
+            return Result.failure(Exception("OAuth callback state mismatch"))
+        }
+
+        val code = extractAuthCode(callbackUrl)
+            ?: return Result.failure(
+                Exception(extractErrorMessage(callbackUrl) ?: "OAuth callback missing auth code"),
+            )
+
+        return apiClient.exchangeOAuthCode(authCode = code, codeVerifier = pkce.verifier)
+            .onSuccess { goTrueResponse ->
+                tokenStorage.saveGoTrueAuth(goTrueResponse)
+                linkUserProfile(goTrueResponse.user.id)
+            }
+            .map { goTrueResponse ->
+                goTrueResponse.toPortalAuthResponse().user.toAuthUser()
+            }
+    }
+
+    private fun buildAuthorizeUrl(provider: OAuthProvider, codeChallenge: String, state: String): String {
+        val redirect = urlEncode(OAUTH_CALLBACK_URL)
+        return "${supabaseConfig.authUrl}/authorize" +
+            "?provider=${provider.wireName}" +
+            "&redirect_to=$redirect" +
+            "&code_challenge=$codeChallenge" +
+            "&code_challenge_method=S256" +
+            "&state=${urlEncode(state)}" +
+            "&scopes=${urlEncode(provider.scopes)}"
+    }
+
+    private fun isExpectedOAuthCallback(callbackUrl: String): Boolean {
+        val url = runCatching { Url(callbackUrl) }.getOrNull() ?: return false
+        return url.protocol.name.equals(OAUTH_CALLBACK_SCHEME, ignoreCase = true) &&
+            url.host.equals("auth-callback", ignoreCase = true)
+    }
+
+    private fun extractAuthCode(callbackUrl: String): String? {
+        val url = runCatching { Url(callbackUrl) }.getOrNull() ?: return null
+        return url.parameters["code"]
+    }
+
+    private fun extractState(callbackUrl: String): String? {
+        val url = runCatching { Url(callbackUrl) }.getOrNull() ?: return null
+        return url.parameters["state"]
+    }
+
+    private fun extractErrorMessage(callbackUrl: String): String? {
+        val url = runCatching { Url(callbackUrl) }.getOrNull() ?: return null
+        val description = url.parameters["error_description"]
+        val error = url.parameters["error"]
+        return description ?: error
+    }
+
+    private fun urlEncode(value: String): String = buildString {
+        for (c in value) {
+            when {
+                c.isLetterOrDigit() || c == '-' || c == '_' || c == '.' || c == '~' -> append(c)
+                else -> {
+                    for (b in c.toString().encodeToByteArray()) {
+                        append('%')
+                        append(((b.toInt() shr 4) and 0xF).toString(16).uppercase())
+                        append((b.toInt() and 0xF).toString(16).uppercase())
+                    }
+                }
+            }
+        }
+    }
 
     override suspend fun signOut(): Result<Unit> {
         apiClient.signOut()
