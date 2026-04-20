@@ -169,7 +169,8 @@ class PortalAuthRepository(
             "&redirect_to=$redirect" +
             "&code_challenge=$codeChallenge" +
             "&code_challenge_method=S256" +
-            "&state=${urlEncode(state)}"
+            "&state=${urlEncode(state)}" +
+            "&scopes=${urlEncode(provider.scopes)}"
     }
 
     private fun isExpectedOAuthCallback(callbackUrl: String): Boolean {

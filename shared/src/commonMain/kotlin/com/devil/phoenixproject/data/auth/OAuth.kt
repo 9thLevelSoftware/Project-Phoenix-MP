@@ -6,16 +6,34 @@ import kotlin.io.encoding.ExperimentalEncodingApi
 /**
  * OAuth providers supported by the mobile sign-in flow.
  *
- * The [wireName] matches the value passed to Supabase GoTrue's
- * `/auth/v1/authorize?provider=` endpoint.
+ * - [wireName] matches the value passed to Supabase GoTrue's
+ *   `/auth/v1/authorize?provider=` endpoint.
+ * - [scopes] is a space-separated scope list passed via `&scopes=`.
+ *   Mirrors what `phoenix-portal` requests so that a portal user can
+ *   sign in on mobile with the same identity. See the Supabase
+ *   troubleshooting note on Google Workspace users:
+ *   https://supabase.com/docs/guides/troubleshooting/google-auth-fails-for-some-users-XcFXEu
  *
  * Sign-in only: account creation via OAuth happens on the portal web app.
  * The mobile app reuses the existing portal account; it never creates new
  * users through this flow.
  */
-enum class OAuthProvider(val wireName: String) {
-    GOOGLE("google"),
-    APPLE("apple"),
+enum class OAuthProvider(val wireName: String, val scopes: String) {
+    GOOGLE(
+        wireName = "google",
+        // Explicit `userinfo.email` is required so Workspace tenants with
+        // restrictive default scopes still send the email back to Supabase,
+        // which uses it to join with existing portal accounts. Without this,
+        // a portal user created via Google can hit "invalid credentials" on
+        // mobile because GoTrue can't link the session to their portal row.
+        scopes = "openid email profile https://www.googleapis.com/auth/userinfo.email",
+    ),
+    APPLE(
+        wireName = "apple",
+        // Standard Sign in with Apple scope set; matches what Supabase
+        // expects for Apple OAuth so the email claim is included.
+        scopes = "name email",
+    ),
 }
 
 /** A PKCE verifier/challenge pair per RFC 7636. */
