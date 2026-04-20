@@ -5,6 +5,7 @@ import android.content.SharedPreferences
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKeys
 import co.touchlab.kermit.Logger
+import com.devil.phoenixproject.data.auth.OAuthLauncher
 import com.devil.phoenixproject.data.integration.HealthIntegration
 import com.devil.phoenixproject.data.local.DriverFactory
 import com.devil.phoenixproject.data.repository.BleRepository
@@ -56,6 +57,7 @@ actual val platformModule: Module = module {
         SharedPreferencesSettings(encryptedPrefs)
     }
 
+    single { OAuthLauncher(androidContext()) }
     single<BleRepository> { KableBleRepository() }
     single<CsvExporter> { AndroidCsvExporter(androidContext()) }
     single<CsvImporter> { AndroidCsvImporter(androidContext(), get()) }

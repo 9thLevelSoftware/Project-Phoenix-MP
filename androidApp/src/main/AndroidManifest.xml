@@ -109,6 +109,24 @@
             </intent-filter>
         </activity>
 
+        <!-- OAuth redirect handler: catches Supabase GoTrue's final redirect
+             back to the app after Google/Apple sign-in. Transparent activity
+             that forwards the URL to AndroidOAuthBridge and finishes itself. -->
+        <activity
+            android:name=".auth.OAuthRedirectActivity"
+            android:exported="true"
+            android:launchMode="singleTask"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar">
+            <intent-filter android:autoVerify="false">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data
+                    android:scheme="com.devil.phoenixproject"
+                    android:host="auth-callback" />
+            </intent-filter>
+        </activity>
+
         <!-- Foreground service for workout sessions -->
         <service
             android:name=".service.WorkoutForegroundService"
