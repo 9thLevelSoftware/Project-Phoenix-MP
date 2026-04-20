@@ -41,7 +41,9 @@ internal actual fun generateSecureRandomBytes(size: Int): ByteArray {
 
 @OptIn(ExperimentalForeignApi::class)
 internal actual fun sha256(input: ByteArray): ByteArray {
-    val digest = ByteArray(CC_SHA256_DIGEST_LENGTH)
+    // CC_SHA256_DIGEST_LENGTH comes from CommonCrypto as Long in Kotlin/Native
+    // 2.3.x platform libs; ByteArray(size: Int) needs the explicit narrowing.
+    val digest = ByteArray(CC_SHA256_DIGEST_LENGTH.toInt())
     if (input.isEmpty()) {
         digest.usePinned { digestPinned ->
             CC_SHA256(null, 0u, digestPinned.addressOf(0).reinterpret())
