@@ -9,7 +9,6 @@ import kotlinx.cinterop.usePinned
 import kotlinx.coroutines.suspendCancellableCoroutine
 import platform.AuthenticationServices.ASWebAuthenticationPresentationContextProvidingProtocol
 import platform.AuthenticationServices.ASWebAuthenticationSession
-import platform.AuthenticationServices.ASWebAuthenticationSessionErrorDomain
 import platform.CommonCrypto.CC_SHA256
 import platform.CommonCrypto.CC_SHA256_DIGEST_LENGTH
 import platform.Foundation.NSError
@@ -20,6 +19,15 @@ import platform.UIKit.UIApplication
 import platform.UIKit.UIWindow
 import platform.darwin.NSObject
 import kotlin.coroutines.resume
+
+/**
+ * Domain string for NSErrors emitted by ASWebAuthenticationSession. Kotlin/
+ * Native does not always re-export Apple's `ASWebAuthenticationSessionErrorDomain`
+ * extern as an importable symbol, so we hardcode the public string here.
+ * Source: Apple AuthenticationServices framework headers.
+ */
+private const val ASWEB_AUTH_SESSION_ERROR_DOMAIN =
+    "com.apple.AuthenticationServices.WebAuthenticationSession"
 
 @OptIn(ExperimentalForeignApi::class)
 internal actual fun generateSecureRandomBytes(size: Int): ByteArray {
@@ -95,8 +103,11 @@ actual class OAuthLauncher {
                             // ASWebAuthenticationSessionErrorDomain when the user dismisses
                             // the sheet. We gate on BOTH so we don't misclassify a code=1
                             // error from an unrelated NSError domain as a user cancellation.
+                            // The domain string literal mirrors Apple's public extern symbol;
+                            // we hardcode it because Kotlin/Native does not always expose the
+                            // ASWebAuthenticationSessionErrorDomain constant as importable.
                             val isCancel = error.code == 1L &&
-                                error.domain == ASWebAuthenticationSessionErrorDomain
+                                error.domain == ASWEB_AUTH_SESSION_ERROR_DOMAIN
                             if (isCancel) {
                                 Result.failure(OAuthCancelledException(message))
                             } else {

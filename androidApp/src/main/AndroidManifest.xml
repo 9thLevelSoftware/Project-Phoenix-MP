@@ -117,7 +117,11 @@
             android:exported="true"
             android:launchMode="singleTask"
             android:theme="@android:style/Theme.Translucent.NoTitleBar">
-            <intent-filter android:autoVerify="false">
+            <!-- AGP 9 lint promotes `autoVerify` on non-http/https schemes to an
+                 error (AppLinkUrlError), so this intent-filter intentionally
+                 omits the attribute. We don't want App Links verification for a
+                 custom-scheme OAuth callback URL anyway. -->
+            <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
