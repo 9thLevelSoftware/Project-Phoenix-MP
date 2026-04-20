@@ -10,6 +10,8 @@ import com.devil.phoenixproject.testutil.FakeRepMetricRepository
 import com.devil.phoenixproject.testutil.FakeSyncRepository
 import com.devil.phoenixproject.testutil.FakeUserProfileRepository
 import com.russhwolf.settings.MapSettings
+import kotlinx.coroutines.async
+import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -17,8 +19,6 @@ import kotlin.test.assertIs
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
-import kotlinx.coroutines.async
-import kotlinx.coroutines.test.runTest
 
 /**
  * Integration tests for SyncManager.
@@ -900,9 +900,14 @@ class SyncManagerTest {
     @Test
     fun pullSendsKnownEntityIdsToServer() = runTest {
         setupAuthenticated()
-        // Set up fake repository with known entity IDs (simulating local database content)
-        fakeSyncRepo.sessionIds = listOf("session-1", "session-2")
-        fakeSyncRepo.routineIds = listOf("routine-1")
+        // Set up fake repository with known entity IDs (simulating local database content).
+        // IDs must be canonical UUIDs — SyncManager filters non-UUIDs before send to
+        // satisfy the server-side validator in mobile-sync-pull.
+        val sess1 = "66666666-6666-4666-a666-666666666666"
+        val sess2 = "77777777-7777-4777-a777-777777777777"
+        val rout1 = "88888888-8888-4888-a888-888888888888"
+        fakeSyncRepo.sessionIds = listOf(sess1, sess2)
+        fakeSyncRepo.routineIds = listOf(rout1)
         fakeSyncRepo.cycleIds = emptyList()
         fakeSyncRepo.badgeIds = listOf("1", "2", "3")
         fakeSyncRepo.personalRecordIds = listOf("10", "20")
@@ -917,8 +922,8 @@ class SyncManagerTest {
         // Verify the API received the correct entity IDs for parity comparison
         val knownIds = fakeApi.lastPullKnownEntityIds
         assertNotNull(knownIds, "Pull should have been called with knownEntityIds")
-        assertEquals(listOf("session-1", "session-2"), knownIds.sessionIds)
-        assertEquals(listOf("routine-1"), knownIds.routineIds)
+        assertEquals(listOf(sess1, sess2), knownIds.sessionIds)
+        assertEquals(listOf(rout1), knownIds.routineIds)
         assertEquals(emptyList<String>(), knownIds.cycleIds)
         assertEquals(listOf("1", "2", "3"), knownIds.badgeIds)
         assertEquals(listOf("10", "20"), knownIds.personalRecordIds)

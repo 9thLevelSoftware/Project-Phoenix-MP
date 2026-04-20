@@ -7,12 +7,12 @@ import com.devil.phoenixproject.testutil.FakeRepMetricRepository
 import com.devil.phoenixproject.testutil.FakeSyncRepository
 import com.devil.phoenixproject.testutil.FakeUserProfileRepository
 import com.russhwolf.settings.MapSettings
+import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
-import kotlinx.coroutines.test.runTest
 
 /**
  * Tests covering the pull-side pagination contract:
@@ -273,22 +273,48 @@ class PortalPullPaginationTest {
     @Test
     fun pullSendsKnownEntityIdsToServer() = runTest {
         authenticate()
-        fakeSyncRepo.sessionIds = listOf("s-1", "s-2")
-        fakeSyncRepo.routineIds = listOf("r-1")
+        val s1 = "11111111-1111-4111-a111-111111111111"
+        val s2 = "22222222-2222-4222-a222-222222222222"
+        val r1 = "33333333-3333-4333-a333-333333333333"
+        fakeSyncRepo.sessionIds = listOf(s1, s2)
+        fakeSyncRepo.routineIds = listOf(r1)
         fakeSyncRepo.cycleIds = emptyList()
-        fakeSyncRepo.badgeIds = listOf("b-1", "b-2")
-        fakeSyncRepo.personalRecordIds = listOf("pr-1")
+        fakeSyncRepo.badgeIds = listOf("1", "2")
+        fakeSyncRepo.personalRecordIds = listOf("10")
         fakeApi.pushResult = Result.success(PortalSyncPushResponse(syncTime = "2026-03-02T12:00:00Z"))
 
         createManager().sync()
 
         val known = fakeApi.lastPullKnownEntityIds
         assertNotNull(known, "Pull must send knownEntityIds (parity sync)")
-        assertEquals(listOf("s-1", "s-2"), known.sessionIds)
-        assertEquals(listOf("r-1"), known.routineIds)
+        assertEquals(listOf(s1, s2), known.sessionIds)
+        assertEquals(listOf(r1), known.routineIds)
         assertEquals(emptyList<String>(), known.cycleIds)
-        assertEquals(listOf("b-1", "b-2"), known.badgeIds)
-        assertEquals(listOf("pr-1"), known.personalRecordIds)
+        assertEquals(listOf("1", "2"), known.badgeIds)
+        assertEquals(listOf("10"), known.personalRecordIds)
+    }
+
+    @Test
+    fun pullDropsNonUuidRoutineIdsBeforeSend() = runTest {
+        // fix(pull 400): TemplateConverter mints cycle-derived routine ids as
+        // "cycle_routine_<uuid>". server's mobile-sync-pull validator rejects
+        // the whole request on any non-canonical UUID in knownEntityIds, so
+        // SyncManager.runPullLoop filters them out client-side before send.
+        authenticate()
+        val realRoutine = "44444444-4444-4444-a444-444444444444"
+        val cycleRoutine = "cycle_routine_${"55555555-5555-4555-a555-555555555555"}"
+        fakeSyncRepo.routineIds = listOf(realRoutine, cycleRoutine)
+        fakeApi.pushResult = Result.success(PortalSyncPushResponse(syncTime = "2026-03-02T12:00:00Z"))
+
+        createManager().sync()
+
+        val known = fakeApi.lastPullKnownEntityIds
+        assertNotNull(known)
+        assertEquals(
+            listOf(realRoutine),
+            known.routineIds,
+            "Non-UUID routine ids (e.g. cycle_routine_...) must be filtered before send",
+        )
     }
 
     @Test
@@ -300,7 +326,12 @@ class PortalPullPaginationTest {
         // to the last MAX_PARITY_IDS entries (most recent window) and rely on
         // server-side `lastSync` delta + local dedupe for the older tail.
         // Resolves audit item #7 (Phase 4.1).
-        val bigSet = List(5000) { "sess-$it" }
+        fun fakeUuid(i: Int): String {
+            val hex = i.toString(16).padStart(8, '0')
+            return "$hex-0000-4000-8000-000000000000"
+        }
+
+        val bigSet = List(5000) { fakeUuid(it) }
         fakeSyncRepo.sessionIds = bigSet
         fakeApi.pushResult = Result.success(PortalSyncPushResponse(syncTime = "2026-03-02T12:00:00Z"))
 
@@ -314,8 +345,8 @@ class PortalPullPaginationTest {
             "Large knownEntityIds payloads must be capped at MAX_PARITY_IDS to avoid server 413",
         )
         // capParity() uses takeLast(), so the window is the most recent IDs.
-        assertEquals("sess-${5000 - SyncConfig.MAX_PARITY_IDS}", known.sessionIds.first())
-        assertEquals("sess-4999", known.sessionIds.last())
+        assertEquals(fakeUuid(5000 - SyncConfig.MAX_PARITY_IDS), known.sessionIds.first())
+        assertEquals(fakeUuid(4999), known.sessionIds.last())
     }
 
     // ==================== pageSize Wiring ====================

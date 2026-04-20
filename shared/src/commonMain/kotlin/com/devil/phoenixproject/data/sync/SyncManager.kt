@@ -834,10 +834,31 @@ class SyncManager(
                 list.takeLast(SyncConfig.MAX_PARITY_IDS)
             }
 
+        // fix(pull 400): strip any local ID that is not a canonical UUID before
+        // sending it as a parity marker. mobile-sync-pull's server-side
+        // validator rejects the entire request if any entry in sessionIds /
+        // routineIds / cycleIds fails /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-
+        // [0-9a-f]{4}-[0-9a-f]{12}$/i. These IDs (e.g. cycle-derived routines
+        // minted as "cycle_routine_<uuid>" in TemplateConverter) cannot exist
+        // on the server anyway — server columns are uuid-typed — so filtering
+        // them is correct. Defense-in-depth: also filter session and cycle
+        // lists in case any legacy rows have non-UUID ids.
+        fun filterUuids(list: List<String>, label: String): List<String> {
+            val valid = list.filter(::isCanonicalUuid)
+            val dropped = list.size - valid.size
+            if (dropped > 0) {
+                Logger.w("SyncManager") {
+                    "Parity list '$label' dropped $dropped non-UUID entries before send " +
+                        "(e.g. cycle-derived routine ids); server validator requires canonical UUID."
+                }
+            }
+            return valid
+        }
+
         val knownEntityIds = KnownEntityIds(
-            sessionIds = capParity(rawSessionIds, "sessionIds"),
-            routineIds = capParity(rawRoutineIds, "routineIds"),
-            cycleIds = capParity(rawCycleIds, "cycleIds"),
+            sessionIds = capParity(filterUuids(rawSessionIds, "sessionIds"), "sessionIds"),
+            routineIds = capParity(filterUuids(rawRoutineIds, "routineIds"), "routineIds"),
+            cycleIds = capParity(filterUuids(rawCycleIds, "cycleIds"), "cycleIds"),
             badgeIds = capParity(rawBadgeIds, "badgeIds"),
             personalRecordIds = capParity(rawPrIds, "personalRecordIds"),
         )
@@ -1189,3 +1210,14 @@ class SyncManager(
         }
     }
 }
+
+/**
+ * Canonical UUID (v1–v5) check matching the server-side regex used in
+ * mobile-sync-pull's validateKnownEntityIds. Keep this pattern and the
+ * phoenix-portal version (supabase/functions/mobile-sync-pull/index.ts) in
+ * lockstep — any divergence re-introduces the pull 400 regression.
+ */
+private val CANONICAL_UUID_REGEX =
+    Regex("^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", RegexOption.IGNORE_CASE)
+
+internal fun isCanonicalUuid(id: String): Boolean = CANONICAL_UUID_REGEX.matches(id)
