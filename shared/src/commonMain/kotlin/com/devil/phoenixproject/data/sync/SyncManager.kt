@@ -827,6 +827,31 @@ class SyncManager(
         val rawBadgeIds = syncRepository.getAllBadgeIds(mergeProfileId)
         val rawPrIds = syncRepository.getAllPersonalRecordIds(mergeProfileId)
 
+        // fix(pull 400): TemplateConverter mints cycle-derived routine IDs as
+        // "cycle_routine_<uuid>" which aren't valid UUIDs. The server's
+        // mobile-sync-pull validator rejects the whole request if any entry
+        // in knownEntityIds fails UUID validation. Filter non-canonical UUIDs
+        // client-side before sending.
+        val uuidPattern = Regex(
+            "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+            RegexOption.IGNORE_CASE,
+        )
+
+        fun filterUuids(ids: List<String>, label: String): List<String> {
+            val filtered = ids.filter { uuidPattern.matches(it) }
+            val dropped = ids.size - filtered.size
+            if (dropped > 0) {
+                Logger.w("SyncManager") {
+                    "Parity list '$label': dropped $dropped non-UUID entries before send"
+                }
+            }
+            return filtered
+        }
+
+        val filteredRoutineIds = filterUuids(rawRoutineIds, "routineIds")
+        val filteredSessionIds = filterUuids(rawSessionIds, "sessionIds")
+        val filteredCycleIds = filterUuids(rawCycleIds, "cycleIds")
+
         fun <T> capParity(list: List<T>, label: String): List<T> =
             if (list.size <= SyncConfig.MAX_PARITY_IDS) {
                 list
@@ -840,9 +865,9 @@ class SyncManager(
             }
 
         val knownEntityIds = KnownEntityIds(
-            sessionIds = capParity(rawSessionIds, "sessionIds"),
-            routineIds = capParity(rawRoutineIds, "routineIds"),
-            cycleIds = capParity(rawCycleIds, "cycleIds"),
+            sessionIds = capParity(filteredSessionIds, "sessionIds"),
+            routineIds = capParity(filteredRoutineIds, "routineIds"),
+            cycleIds = capParity(filteredCycleIds, "cycleIds"),
             badgeIds = capParity(rawBadgeIds, "badgeIds"),
             personalRecordIds = capParity(rawPrIds, "personalRecordIds"),
         )
