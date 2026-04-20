@@ -1,0 +1,84 @@
+name: Release All Platforms
+
+on:
+    workflow_dispatch:
+        inputs:
+            versionCodeOverride:
+                description: 'Optional Android version code override (passed to both Android workflows)'
+                required: false
+                type: string
+            skip_android_playstore:
+                description: 'Skip Android Play Store'
+                required: false
+                type: boolean
+                default: false
+            skip_android_apk:
+                description: 'Skip Android Release APK'
+                required: false
+                type: boolean
+                default: false
+            skip_ios_ipa:
+                description: 'Skip iOS Release IPA'
+                required: false
+                type: boolean
+                default: false
+            skip_ios_testflight:
+                description: 'Skip iOS TestFlight'
+                required: false
+                type: boolean
+                default: false
+
+jobs:
+    trigger-all:
+        runs-on: ubuntu-latest
+        steps:
+            -   name: Trigger Android Play Store
+                if: ${{ !inputs.skip_android_playstore }}
+                env:
+                    GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+                run: |
+                    ARGS=""
+                    if [ -n "${{ inputs.versionCodeOverride }}" ]; then
+                      ARGS="-f versionCodeOverride=${{ inputs.versionCodeOverride }}"
+                    fi
+                    gh workflow run android-playstore.yml --repo ${{ github.repository }} $ARGS
+                    echo "Triggered Android Play Store"
+
+            -   name: Trigger Android Release APK
+                if: ${{ !inputs.skip_android_apk }}
+                env:
+                    GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+                run: |
+                    ARGS=""
+                    if [ -n "${{ inputs.versionCodeOverride }}" ]; then
+                      ARGS="-f versionCodeOverride=${{ inputs.versionCodeOverride }}"
+                    fi
+                    gh workflow run android-release-apk.yml --repo ${{ github.repository }} $ARGS
+                    echo "Triggered Android Release APK"
+
+            -   name: Trigger iOS Release IPA
+                if: ${{ !inputs.skip_ios_ipa }}
+                env:
+                    GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+                run: |
+                    gh workflow run ios-release-ipa.yml --repo ${{ github.repository }}
+                    echo "Triggered iOS Release IPA"
+
+            -   name: Trigger iOS TestFlight
+                if: ${{ !inputs.skip_ios_testflight }}
+                env:
+                    GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+                run: |
+                    gh workflow run ios-testflight.yml --repo ${{ github.repository }}
+                    echo "Triggered iOS TestFlight"
+
+            -   name: Summary
+                run: |
+                    echo "## Release All Platforms" >> $GITHUB_STEP_SUMMARY
+                    echo "" >> $GITHUB_STEP_SUMMARY
+                    echo "| Platform | Status |" >> $GITHUB_STEP_SUMMARY
+                    echo "|----------|--------|" >> $GITHUB_STEP_SUMMARY
+                    echo "| Android Play Store | ${{ inputs.skip_android_playstore && 'Skipped' || 'Triggered' }} |" >> $GITHUB_STEP_SUMMARY
+                    echo "| Android Release APK | ${{ inputs.skip_android_apk && 'Skipped' || 'Triggered' }} |" >> $GITHUB_STEP_SUMMARY
+                    echo "| iOS Release IPA | ${{ inputs.skip_ios_ipa && 'Skipped' || 'Triggered' }} |" >> $GITHUB_STEP_SUMMARY
+                    echo "| iOS TestFlight | ${{ inputs.skip_ios_testflight && 'Skipped' || 'Triggered' }} |" >> $GITHUB_STEP_SUMMARY
