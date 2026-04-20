@@ -17,6 +17,7 @@ import platform.Security.SecRandomCopyBytes
 import platform.Security.kSecRandomDefault
 import platform.UIKit.UIApplication
 import platform.UIKit.UIWindow
+import platform.UIKit.UIWindowScene
 import platform.darwin.NSObject
 import kotlin.coroutines.resume
 
@@ -148,20 +149,16 @@ actual class OAuthLauncher {
 private class PresentationContextProvider :
     NSObject(),
     ASWebAuthenticationPresentationContextProvidingProtocol {
-    // Return type is ASPresentationAnchor in ObjC, which is a typealias for
-    // UIWindow. Declaring the return as UIWindow avoids depending on whether
-    // Kotlin/Native exposes the typealias as an importable symbol.
+    // Return type is ASPresentationAnchor in ObjC, a typealias for UIWindow;
+    // returning UIWindow avoids depending on whether K/N exposes the typealias.
+    //
+    // Uses the modern `UIApplication.connectedScenes → UIWindowScene.keyWindow`
+    // pattern (see `CsvExporter.ios.kt` for the same pattern in this project)
+    // instead of the deprecated `UIApplication.windows` API, which has had
+    // spotty Kotlin/Native interop support across 2.x versions.
     override fun presentationAnchorForWebAuthenticationSession(session: ASWebAuthenticationSession): UIWindow {
-        val app = UIApplication.sharedApplication
-        // `UIApplication.windows` is typed `List<*>` in K/N interop; cast each
-        // element with `as? UIWindow` rather than `filterIsInstance` so the
-        // compiler doesn't complain about the erasure check on an opaque list.
-        val keyWindow = app.windows
-            .asSequence()
-            .mapNotNull { it as? UIWindow }
-            .firstOrNull { it.isKeyWindow }
-        return keyWindow
-            ?: app.windows.asSequence().mapNotNull { it as? UIWindow }.firstOrNull()
-            ?: UIWindow()
+        val scenes = UIApplication.sharedApplication.connectedScenes
+        val windowScene = scenes.firstOrNull { it is UIWindowScene } as? UIWindowScene
+        return windowScene?.keyWindow ?: UIWindow()
     }
 }
