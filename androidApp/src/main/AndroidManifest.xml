@@ -116,6 +116,8 @@
             android:name=".auth.OAuthRedirectActivity"
             android:exported="true"
             android:launchMode="singleTask"
+            android:taskAffinity=""
+            android:excludeFromRecents="true"
             android:theme="@android:style/Theme.Translucent.NoTitleBar">
             <!-- AGP 9 lint promotes `autoVerify` on non-http/https schemes to an
                  error (AppLinkUrlError), so this intent-filter intentionally
