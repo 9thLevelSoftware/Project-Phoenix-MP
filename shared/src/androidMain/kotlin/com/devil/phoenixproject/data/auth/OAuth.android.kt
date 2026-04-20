@@ -8,7 +8,6 @@ import android.net.Uri
 import android.os.Bundle
 import co.touchlab.kermit.Logger
 import kotlinx.coroutines.CompletableDeferred
-import java.security.MessageDigest
 import java.security.SecureRandom
 
 private val log = Logger.withTag("OAuthLauncher")
@@ -18,9 +17,6 @@ internal actual fun generateSecureRandomBytes(size: Int): ByteArray {
     SecureRandom().nextBytes(bytes)
     return bytes
 }
-
-internal actual fun sha256(input: ByteArray): ByteArray =
-    MessageDigest.getInstance("SHA-256").digest(input)
 
 /**
  * Android OAuth launcher. Opens the authorize URL in whatever browser the
