@@ -1171,6 +1171,14 @@ INSERT OR REPLACE INTO GamificationStats
 (id, totalWorkouts, totalReps, totalVolumeKg, longestStreak, currentStreak, uniqueExercisesUsed, prsAchieved, lastWorkoutDate, streakStartDate, lastUpdated, profile_id)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, :profileId);
 
+-- Used by backup restore (v2+) to preserve sync bookkeeping fields (updatedAt,
+-- serverId) across backup round-trips. Same behaviour as `upsertGamificationStats`
+-- but writes the sync columns instead of leaving them NULL.
+upsertGamificationStatsWithSync:
+INSERT OR REPLACE INTO GamificationStats
+(id, totalWorkouts, totalReps, totalVolumeKg, longestStreak, currentStreak, uniqueExercisesUsed, prsAchieved, lastWorkoutDate, streakStartDate, lastUpdated, updatedAt, serverId, profile_id)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, :profileId);
+
 -- Analytics helpers for gamification (profile-scoped)
 countTotalWorkouts:
 SELECT COUNT(*) FROM WorkoutSession WHERE profile_id = :profileId;
@@ -1658,6 +1666,13 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
 insertEarnedBadgeIgnore:
 INSERT OR IGNORE INTO EarnedBadge (badgeId, earnedAt, celebratedAt, profile_id) VALUES (?, ?, ?, ?);
 
+-- Used by backup restore (v2+) to preserve sync bookkeeping across round-trips.
+-- If the row was synced before the backup was taken, we want the restored row
+-- to carry the original updatedAt/serverId so it does not immediately re-push.
+insertEarnedBadgeFullIgnore:
+INSERT OR IGNORE INTO EarnedBadge (badgeId, earnedAt, celebratedAt, updatedAt, serverId, deletedAt, profile_id)
+VALUES (?, ?, ?, ?, ?, ?, ?);
+
 insertStreakHistoryIgnore:
 INSERT OR IGNORE INTO StreakHistory (startDate, endDate, length, profile_id) VALUES (?, ?, ?, ?);
 
@@ -2086,3 +2101,14 @@ SELECT * FROM SessionNotes WHERE routineSessionId = ?;
 
 selectSessionNotesForIds:
 SELECT * FROM SessionNotes WHERE routineSessionId IN :ids;
+
+-- Full-table scan for backup export (small table; one row per routine session with notes).
+selectAllSessionNotesSync:
+SELECT * FROM SessionNotes;
+
+-- Restore helper: insert notes only if the row does not already exist.
+-- Restore defers to existing notes (local wins) to avoid clobbering data added
+-- after the backup was taken.
+insertSessionNotesIgnore:
+INSERT OR IGNORE INTO SessionNotes(routineSessionId, notes, updatedAt)
+VALUES (?, ?, ?);
