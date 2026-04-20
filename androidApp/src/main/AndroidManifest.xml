@@ -125,9 +125,10 @@
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
-                <data
-                    android:scheme="com.devil.phoenixproject"
-                    android:host="auth-callback" />
+                <!-- Lint's `IntentFilterUniqueDataAttributes` rule (error-by-default
+                     in AGP 9) requires scheme and host on separate <data> tags. -->
+                <data android:scheme="com.devil.phoenixproject" />
+                <data android:host="auth-callback" />
             </intent-filter>
         </activity>
 
