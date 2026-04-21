@@ -19,6 +19,7 @@ import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.LinkOff
+import androidx.compose.material.icons.automirrored.filled.TrendingUp
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.ExtendedFloatingActionButton
@@ -52,6 +53,7 @@ fun SelectionActionBar(
     onDelete: () -> Unit,
     onAddToSuperset: () -> Unit,
     onRemoveFromSuperset: () -> Unit,
+    onBulkWeightAdjust: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     AnimatedVisibility(
@@ -104,6 +106,18 @@ fun SelectionActionBar(
                                 contentDescription = stringResource(Res.string.cd_remove_superset),
                             )
                         }
+                    }
+
+                    // Bulk weight adjust
+                    FloatingActionButton(
+                        onClick = onBulkWeightAdjust,
+                        containerColor = MaterialTheme.colorScheme.primaryContainer,
+                        contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                    ) {
+                        Icon(
+                            Icons.AutoMirrored.Filled.TrendingUp,
+                            contentDescription = "Adjust weights",
+                        )
                     }
 
                     // Copy selected exercises

@@ -29,6 +29,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.automirrored.filled.TrendingUp
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -65,6 +68,7 @@ import com.devil.phoenixproject.domain.model.SupersetColors
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.domain.model.generateSupersetId
 import com.devil.phoenixproject.domain.model.generateUUID
+import com.devil.phoenixproject.presentation.components.BulkWeightAdjustDialog
 import com.devil.phoenixproject.presentation.components.ExercisePickerDialog
 import com.devil.phoenixproject.presentation.components.ExerciseRowInSuperset
 import com.devil.phoenixproject.presentation.components.ExerciseRowWithConnector
@@ -160,6 +164,14 @@ fun RoutineEditorScreen(
     // Selection mode dialogs
     var showBatchDeleteDialog by remember { mutableStateOf(false) }
     var showSupersetPickerDialog by remember { mutableStateOf(false) }
+
+    // Bulk weight adjust state
+    var showBulkAdjust by remember { mutableStateOf(false) }
+    // When null, targets all exercises; when set, targets only those exercises
+    var bulkAdjustExerciseIds by remember { mutableStateOf<Set<String>?>(null) }
+
+    // Overflow menu for routine-level actions
+    var showOverflowMenu by remember { mutableStateOf(false) }
 
     // Superset being edited (for add exercise flow)
     var supersetForAddExercise by remember { mutableStateOf<Superset?>(null) }
@@ -486,6 +498,28 @@ fun RoutineEditorScreen(
                 ) {
                     Text(stringResource(Res.string.action_save))
                 }
+
+                // Overflow menu for routine-level actions
+                Box {
+                    IconButton(onClick = { showOverflowMenu = true }) {
+                        Icon(Icons.Default.MoreVert, contentDescription = "More actions")
+                    }
+                    DropdownMenu(
+                        expanded = showOverflowMenu,
+                        onDismissRequest = { showOverflowMenu = false },
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text("Adjust All Weights") },
+                            onClick = {
+                                showOverflowMenu = false
+                                bulkAdjustExerciseIds = null // null = target all exercises
+                                showBulkAdjust = true
+                            },
+                            leadingIcon = { Icon(Icons.AutoMirrored.Filled.TrendingUp, null) },
+                            enabled = state.exercises.isNotEmpty(),
+                        )
+                    }
+                }
             }
 
             // Exercise list content
@@ -708,6 +742,10 @@ fun RoutineEditorScreen(
                     },
                     onDelete = { showBatchDeleteDialog = true },
                     onAddToSuperset = { showSupersetPickerDialog = true },
+                    onBulkWeightAdjust = {
+                        bulkAdjustExerciseIds = selectedExerciseIds.toSet()
+                        showBulkAdjust = true
+                    },
                     onRemoveFromSuperset = {
                         // Remove all selected exercises from their supersets
                         val updatedExercises = state.exercises.map { ex ->
@@ -941,6 +979,42 @@ fun RoutineEditorScreen(
                 TextButton(onClick = { showBatchDeleteDialog = false }) {
                     Text(stringResource(Res.string.action_cancel))
                 }
+            },
+        )
+    }
+
+    // Bulk Weight Adjust Dialog
+    if (showBulkAdjust) {
+        // Determine target exercises: selected only (if from selection bar) or all
+        val targetExercises = if (bulkAdjustExerciseIds != null) {
+            state.exercises.filter { it.id in bulkAdjustExerciseIds!! }
+        } else {
+            state.exercises
+        }
+
+        BulkWeightAdjustDialog(
+            exercises = targetExercises,
+            weightUnit = weightUnit,
+            formatWeight = { weight, unit ->
+                val displayWeight = kgToDisplay(weight, unit)
+                if (unit == WeightUnit.LB) "${displayWeight.toInt()} lbs" else "${displayWeight.toInt()} kg"
+            },
+            onApply = { adjustedExercises ->
+                // Build a map of adjusted exercises by ID for O(1) lookup
+                val adjustedById = adjustedExercises.associateBy { it.id }
+                // Replace only the targeted exercises in the full list
+                val updatedExercises = state.exercises.map { ex ->
+                    adjustedById[ex.id] ?: ex
+                }
+                updateExercises(updatedExercises)
+                showBulkAdjust = false
+                bulkAdjustExerciseIds = null
+                // Clear selection if we came from selection mode
+                if (selectionMode) clearSelection()
+            },
+            onDismiss = {
+                showBulkAdjust = false
+                bulkAdjustExerciseIds = null
             },
         )
     }
