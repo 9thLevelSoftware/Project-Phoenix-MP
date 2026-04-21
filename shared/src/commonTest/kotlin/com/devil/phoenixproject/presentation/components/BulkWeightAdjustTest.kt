@@ -319,6 +319,14 @@ class BulkWeightAdjustTest {
     }
 
     @Test
+    fun weightAtZero_percentageIncrease_staysZero() {
+        // 0 * 1.10 = 0 — percentage of zero is still zero
+        val exercises = listOf(exercise(weightKg = 0f))
+        val result = applyBulkAdjust(exercises, BulkAdjustMode.Percentage(10f))
+        assertEquals(Constants.MIN_WEIGHT_KG, result[0].weightPerCableKg)
+    }
+
+    @Test
     fun weightAtMax_percentageIncrease_staysAtMax() {
         val exercises = listOf(exercise(weightKg = Constants.MAX_WEIGHT_KG))
         val result = applyBulkAdjust(exercises, BulkAdjustMode.Percentage(10f))
