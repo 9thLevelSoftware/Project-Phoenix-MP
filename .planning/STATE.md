@@ -17,8 +17,8 @@ progress:
 
 Phase: 39 of 44 (pending)
 Plan: 0/3 complete
-Status: Phase 38 complete — all 3 plans executed successfully (114 weight tests, 0 failures)
-Last activity: 2026-04-21 — Phase 38 execution complete
+Status: Phase 38 complete — review passed (1 cycle, 4 warnings fixed, 116 tests)
+Last activity: 2026-04-21 — Phase 38 review passed
 
 ## Progress
 ```
@@ -96,7 +96,7 @@ Advanced (#313) ── uses biomechanics engine (exists)
 
 ## Next Action
 
-Run `/legion:review` to verify Phase 38: Weight-Dependent Features (#266, #337)
+Run `/legion:plan 39` to plan Phase 39: Routine Cluster (#365, #307)
 
 ---
-*Last updated: 2026-04-21 — Phase 38 executed (3/3 plans passed, 114 tests)*
+*Last updated: 2026-04-21 — Phase 38 review passed (1 cycle, 4 warnings fixed)*
