@@ -30,7 +30,10 @@ import vitruvianprojectphoenix.shared.generated.resources.Res
  * @param modifier Modifier for the composable
  * @param minWeight Minimum allowed weight (default 0)
  * @param maxWeight Maximum allowed weight per cable (default 100kg)
- * @param step Weight increment/decrement step (default 2.5kg)
+ * @param step Weight increment/decrement step (default 2.5kg).
+ *   Note: WeightStepper does NOT apply [UnitConverter.roundToMachineIncrement] after stepping.
+ *   Callers that transmit the result over BLE should round to the machine's 0.5kg increment
+ *   before sending, to avoid sub-increment values reaching the hardware.
  * @param label Label text displayed above the control
  * @param prWeight Optional PR weight to show percentage indicator
  */

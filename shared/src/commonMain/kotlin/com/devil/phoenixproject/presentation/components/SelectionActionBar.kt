@@ -116,7 +116,7 @@ fun SelectionActionBar(
                     ) {
                         Icon(
                             Icons.AutoMirrored.Filled.TrendingUp,
-                            contentDescription = "Adjust weights",
+                            contentDescription = stringResource(Res.string.cd_adjust_weights),
                         )
                     }
 

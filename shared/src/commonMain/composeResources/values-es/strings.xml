@@ -510,6 +510,7 @@
     <string name="cd_cancel_selection">Cancel selection</string>
     <string name="cd_copy_selected">Copy selected</string>
     <string name="cd_delete_selected">Delete selected</string>
+    <string name="cd_adjust_weights">Adjust weights</string>
     <string name="cd_create_cycle">Create Cycle</string>
     <string name="cd_reorder_superset">Reorder superset</string>
     <string name="cd_remove_superset">Remove from superset</string>

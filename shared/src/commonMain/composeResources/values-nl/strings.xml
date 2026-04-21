@@ -495,6 +495,7 @@
     <string name="cd_cancel_selection">Selectie annuleren</string>
     <string name="cd_copy_selected">Geselecteerde kopiëren</string>
     <string name="cd_delete_selected">Geselecteerde verwijderen</string>
+    <string name="cd_adjust_weights">Gewichten aanpassen</string>
     <string name="cd_create_cycle">Cyclus aanmaken</string>
     <string name="cd_reorder_superset">Superset herschikken</string>
     <string name="cd_remove_superset">Uit superset verwijderen</string>

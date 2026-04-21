@@ -4,6 +4,8 @@ import com.devil.phoenixproject.domain.model.Exercise
 import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.RoutineExercise
 import com.devil.phoenixproject.util.Constants
+import com.devil.phoenixproject.util.UnitConverter
+import kotlin.math.abs
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -331,5 +333,35 @@ class BulkWeightAdjustTest {
         val exercises = listOf(exercise(weightKg = Constants.MAX_WEIGHT_KG))
         val result = applyBulkAdjust(exercises, BulkAdjustMode.Percentage(10f))
         assertEquals(Constants.MAX_WEIGHT_KG, result[0].weightPerCableKg)
+    }
+
+    // ── lb-to-kg conversion path (simulates BulkWeightAdjustDialog) ────
+
+    @Test
+    fun lbToKg_positiveDelta_convertsAndAdjusts() {
+        // Simulates the dialog converting a 5lb absolute delta to kg before calling applyBulkAdjust.
+        // 5 lb -> ~2.268 kg, applied to 50 kg exercise -> 52.268 -> rounded to 52.5 kg
+        val deltaLb = 5f
+        val deltaKg = UnitConverter.lbToKg(deltaLb)
+        assertTrue(abs(deltaKg - 2.268f) < 0.01f, "5lb should convert to ~2.268kg, got $deltaKg")
+
+        val exercises = listOf(exercise(weightKg = 50f))
+        val result = applyBulkAdjust(exercises, BulkAdjustMode.Absolute(deltaKg))
+        // 50 + 2.268 = 52.268 -> roundToMachineIncrement -> 52.5
+        assertEquals(52.5f, result[0].weightPerCableKg)
+    }
+
+    @Test
+    fun lbToKg_negativeDelta_convertsAndAdjusts() {
+        // Simulates the dialog converting a -2.5lb absolute delta to kg.
+        // -2.5 lb -> ~-1.134 kg, applied to 50 kg exercise -> 48.866 -> rounded to 49.0 kg
+        val deltaLb = -2.5f
+        val deltaKg = UnitConverter.lbToKg(deltaLb)
+        assertTrue(abs(deltaKg - (-1.134f)) < 0.01f, "-2.5lb should convert to ~-1.134kg, got $deltaKg")
+
+        val exercises = listOf(exercise(weightKg = 50f))
+        val result = applyBulkAdjust(exercises, BulkAdjustMode.Absolute(deltaKg))
+        // 50 + (-1.134) = 48.866 -> roundToMachineIncrement -> 49.0
+        assertEquals(49f, result[0].weightPerCableKg)
     }
 }

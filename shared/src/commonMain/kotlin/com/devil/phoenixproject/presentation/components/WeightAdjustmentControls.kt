@@ -23,15 +23,11 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.ui.theme.Spacing
+import com.devil.phoenixproject.util.Constants
 import com.devil.phoenixproject.util.UnitConverter
 import org.jetbrains.compose.resources.stringResource
 import vitruvianprojectphoenix.shared.generated.resources.*
 import vitruvianprojectphoenix.shared.generated.resources.Res
-
-// Conversion constants
-private const val KG_TO_LB = 2.20462f
-private const val LB_TO_KG = 0.453592f
-private const val MAX_WEIGHT_KG = 100f // Per cable max (V-Form: 100kg, Trainer+: 110kg)
 
 /**
  * Weight adjustment controls for modifying weight during a workout.
@@ -58,7 +54,7 @@ fun WeightAdjustmentControls(
     } else {
         when (weightUnit) {
             WeightUnit.KG -> 0.5f
-            WeightUnit.LB -> LB_TO_KG // ~0.45kg = 1lb
+            WeightUnit.LB -> UnitConverter.lbToKg(1f) // ~0.45kg = 1lb
         }
     }
 
@@ -113,8 +109,8 @@ fun WeightAdjustmentControls(
             // Increase button
             WeightButton(
                 icon = Icons.Default.Add,
-                onClick = { onWeightChange((currentWeightKg + incrementKg).coerceAtMost(MAX_WEIGHT_KG)) },
-                enabled = enabled && currentWeightKg < MAX_WEIGHT_KG,
+                onClick = { onWeightChange((currentWeightKg + incrementKg).coerceAtMost(Constants.MAX_WEIGHT_KG)) },
+                enabled = enabled && currentWeightKg < Constants.MAX_WEIGHT_KG,
                 contentDescription = stringResource(Res.string.cd_increase_weight),
             )
         }
@@ -260,7 +256,7 @@ private fun WeightPresets(
                 onClick = {
                     onSelectPreset(
                         UnitConverter.roundToMachineIncrement(currentWeightKg * 1.05f)
-                            .coerceAtMost(MAX_WEIGHT_KG),
+                            .coerceAtMost(Constants.MAX_WEIGHT_KG),
                     )
                 },
                 enabled = enabled,
@@ -315,11 +311,11 @@ private fun WeightPickerDialog(
 
     // Unit-aware configuration
     val isLbs = weightUnit == WeightUnit.LB
-    val maxWeightDisplay = if (isLbs) (MAX_WEIGHT_KG * KG_TO_LB).toInt() else MAX_WEIGHT_KG.toInt() // 220 lbs or 100 kg
+    val maxWeightDisplay = if (isLbs) UnitConverter.kgToLb(Constants.MAX_WEIGHT_KG).toInt() else Constants.MAX_WEIGHT_KG.toInt() // 220 lbs or 100 kg
 
     // Issue #266: Cap slider steps at 200 to keep slider usable even with fine increments.
     // For very fine increments (e.g. 0.1lb), slider stays coarse — users rely on quick-adjust buttons.
-    val rawSteps = if (isLbs) maxWeightDisplay - 1 else (MAX_WEIGHT_KG * 2 - 1).toInt()
+    val rawSteps = if (isLbs) maxWeightDisplay - 1 else (Constants.MAX_WEIGHT_KG * 2 - 1).toInt()
     val sliderSteps = rawSteps.coerceAtMost(200)
 
     // Issue #266: Scale quick adjustments based on configured increment
@@ -394,18 +390,18 @@ private fun WeightPickerDialog(
                 Spacer(modifier = Modifier.height(Spacing.medium))
 
                 // Slider for weight selection (operates in display units for better UX)
-                val displayWeight = if (isLbs) selectedWeightKg * KG_TO_LB else selectedWeightKg
+                val displayWeight = if (isLbs) UnitConverter.kgToLb(selectedWeightKg) else selectedWeightKg
                 Slider(
                     value = displayWeight,
                     onValueChange = { displayValue ->
                         // Convert back to kg and round to machine increment (0.5kg)
                         val rawKg = if (isLbs) {
-                            displayValue * LB_TO_KG
+                            UnitConverter.lbToKg(displayValue)
                         } else {
                             displayValue
                         }
                         selectedWeightKg = UnitConverter.roundToMachineIncrement(rawKg)
-                            .coerceIn(0f, MAX_WEIGHT_KG)
+                            .coerceIn(0f, Constants.MAX_WEIGHT_KG)
                     },
                     valueRange = 0f..maxWeightDisplay.toFloat(),
                     steps = sliderSteps,
@@ -424,10 +420,10 @@ private fun WeightPickerDialog(
                         FilledTonalButton(
                             onClick = {
                                 // Convert delta from display unit to kg, round to machine increment
-                                val deltaKg = if (isLbs) delta * LB_TO_KG else delta.toFloat()
+                                val deltaKg = if (isLbs) UnitConverter.lbToKg(delta.toFloat()) else delta.toFloat()
                                 selectedWeightKg = UnitConverter.roundToMachineIncrement(
                                     selectedWeightKg + deltaKg,
-                                ).coerceIn(0f, MAX_WEIGHT_KG)
+                                ).coerceIn(0f, Constants.MAX_WEIGHT_KG)
                             },
                             contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
                         ) {
@@ -473,7 +469,7 @@ fun CompactWeightAdjustment(
     } else {
         when (weightUnit) {
             WeightUnit.KG -> 0.5f
-            WeightUnit.LB -> LB_TO_KG // ~0.45kg = 1lb
+            WeightUnit.LB -> UnitConverter.lbToKg(1f) // ~0.45kg = 1lb
         }
     }
 
@@ -512,8 +508,8 @@ fun CompactWeightAdjustment(
             )
 
             IconButton(
-                onClick = { onWeightChange((currentWeightKg + incrementKg).coerceAtMost(MAX_WEIGHT_KG)) },
-                enabled = enabled && currentWeightKg < MAX_WEIGHT_KG,
+                onClick = { onWeightChange((currentWeightKg + incrementKg).coerceAtMost(Constants.MAX_WEIGHT_KG)) },
+                enabled = enabled && currentWeightKg < Constants.MAX_WEIGHT_KG,
                 modifier = Modifier.size(32.dp),
             ) {
                 Icon(

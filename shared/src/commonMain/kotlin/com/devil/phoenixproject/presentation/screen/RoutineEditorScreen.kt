@@ -78,6 +78,7 @@ import com.devil.phoenixproject.presentation.components.SupersetContainer
 import com.devil.phoenixproject.presentation.components.SupersetHeader
 import com.devil.phoenixproject.presentation.components.SupersetPickerDialog
 import com.devil.phoenixproject.ui.theme.SupersetTheme
+import com.devil.phoenixproject.util.UnitConverter
 import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.koinInject
 import sh.calvin.reorderable.ReorderableItem
@@ -808,7 +809,7 @@ fun RoutineEditorScreen(
             personalRecordRepository = personalRecordRepository,
             formatWeight = { weight, unit ->
                 val displayWeight = kgToDisplay(weight, unit)
-                if (unit == WeightUnit.LB) "${displayWeight.toInt()} lbs" else "${displayWeight.toInt()} kg"
+                if (unit == WeightUnit.LB) "${UnitConverter.formatDecimal(displayWeight)} lbs" else "${UnitConverter.formatDecimal(displayWeight)} kg"
             },
             onSave = { configuredExercise ->
                 if (isNewExercise) {
@@ -997,7 +998,7 @@ fun RoutineEditorScreen(
             weightUnit = weightUnit,
             formatWeight = { weight, unit ->
                 val displayWeight = kgToDisplay(weight, unit)
-                if (unit == WeightUnit.LB) "${displayWeight.toInt()} lbs" else "${displayWeight.toInt()} kg"
+                if (unit == WeightUnit.LB) "${UnitConverter.formatDecimal(displayWeight)} lbs" else "${UnitConverter.formatDecimal(displayWeight)} kg"
             },
             onApply = { adjustedExercises ->
                 // Build a map of adjusted exercises by ID for O(1) lookup
