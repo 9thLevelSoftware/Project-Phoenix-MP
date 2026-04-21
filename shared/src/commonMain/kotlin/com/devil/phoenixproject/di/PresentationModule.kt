@@ -27,5 +27,5 @@ val presentationModule = module {
     single { EulaViewModel(get()) }
 
     // Sync UI
-    factory { LinkAccountViewModel(get()) }
+    factory { LinkAccountViewModel(get(), get()) }
 }

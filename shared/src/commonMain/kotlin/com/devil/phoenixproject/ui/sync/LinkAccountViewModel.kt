@@ -1,5 +1,6 @@
 package com.devil.phoenixproject.ui.sync
 
+import com.devil.phoenixproject.data.repository.AuthRepository
 import com.devil.phoenixproject.data.sync.PortalUser
 import com.devil.phoenixproject.data.sync.SyncManager
 import com.devil.phoenixproject.data.sync.SyncState
@@ -43,7 +44,10 @@ sealed class LinkAccountUiState {
  * .onDisappear { viewModel.clear() }
  * ```
  */
-class LinkAccountViewModel(private val syncManager: SyncManager) {
+class LinkAccountViewModel(
+    private val syncManager: SyncManager,
+    private val authRepository: AuthRepository,
+) {
     private val job = SupervisorJob()
     private val scope = CoroutineScope(Dispatchers.Main + job)
 
@@ -80,6 +84,70 @@ class LinkAccountViewModel(private val syncManager: SyncManager) {
                 // Coroutine cancelled during clear() - preserve original cancellation
                 throw e
             }
+        }
+    }
+
+    /**
+     * Link the portal account by signing in with Google OAuth.
+     *
+     * The flow runs against the same Supabase GoTrue backend the portal uses,
+     * so a user who signed up on the web portal with Google lands in the
+     * exact same account here — no separate provisioning required. After the
+     * OAuth session is saved, we refresh premium/tier from the server so the
+     * UI reflects the actual subscription state instead of defaulting to
+     * free.
+     */
+    fun loginWithGoogle() {
+        scope.launch {
+            try {
+                _uiState.value = LinkAccountUiState.Loading
+                authRepository.signInWithGoogle()
+                    .onSuccess { finishOAuthLink() }
+                    .onFailure { error ->
+                        _uiState.value = LinkAccountUiState.Error(
+                            error.message ?: "Google sign-in failed",
+                        )
+                    }
+            } catch (e: CancellationException) {
+                throw e
+            }
+        }
+    }
+
+    /**
+     * Link the portal account by signing in with Apple OAuth. Same
+     * contract as [loginWithGoogle] — same GoTrue backend, same post-sign-in
+     * premium/tier refresh.
+     */
+    fun loginWithApple() {
+        scope.launch {
+            try {
+                _uiState.value = LinkAccountUiState.Loading
+                authRepository.signInWithApple()
+                    .onSuccess { finishOAuthLink() }
+                    .onFailure { error ->
+                        _uiState.value = LinkAccountUiState.Error(
+                            error.message ?: "Apple sign-in failed",
+                        )
+                    }
+            } catch (e: CancellationException) {
+                throw e
+            }
+        }
+    }
+
+    /**
+     * Shared post-OAuth tail: pull premium + tier from the server so the
+     * PortalUser exposed by [currentUser] reflects the real entitlement
+     * rather than the default-false values `saveGoTrueAuth` writes.
+     */
+    private suspend fun finishOAuthLink() {
+        syncManager.refreshPremiumStatusFromServer()
+        val user = syncManager.currentUser.value
+        _uiState.value = if (user != null) {
+            LinkAccountUiState.Success(user)
+        } else {
+            LinkAccountUiState.Error("Signed in but user session is missing")
         }
     }
 

@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -48,6 +49,8 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.data.sync.AuthEvent
 import com.devil.phoenixproject.data.sync.SyncState
+import com.devil.phoenixproject.presentation.components.AppleIcon
+import com.devil.phoenixproject.presentation.components.GoogleIcon
 import com.devil.phoenixproject.ui.sync.LinkAccountUiState
 import com.devil.phoenixproject.ui.sync.LinkAccountViewModel
 import com.devil.phoenixproject.util.KmpUtils
@@ -55,6 +58,8 @@ import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.koinInject
 import vitruvianprojectphoenix.shared.generated.resources.Res
 import vitruvianprojectphoenix.shared.generated.resources.action_login
+import vitruvianprojectphoenix.shared.generated.resources.auth_apple
+import vitruvianprojectphoenix.shared.generated.resources.auth_google
 import vitruvianprojectphoenix.shared.generated.resources.cd_back
 import vitruvianprojectphoenix.shared.generated.resources.label_email
 import vitruvianprojectphoenix.shared.generated.resources.label_password
@@ -156,6 +161,8 @@ fun LinkAccountScreen(onNavigateBack: () -> Unit) {
                 LoginForm(
                     uiState = uiState,
                     onLogin = { email, password -> viewModel.login(email, password) },
+                    onGoogleLogin = { viewModel.loginWithGoogle() },
+                    onAppleLogin = { viewModel.loginWithApple() },
                     onClearError = { viewModel.clearError() },
                 )
             }
@@ -291,7 +298,13 @@ private fun LinkedAccountContent(
 }
 
 @Composable
-private fun LoginForm(uiState: LinkAccountUiState, onLogin: (String, String) -> Unit, onClearError: () -> Unit) {
+private fun LoginForm(
+    uiState: LinkAccountUiState,
+    onLogin: (String, String) -> Unit,
+    onGoogleLogin: () -> Unit,
+    onAppleLogin: () -> Unit,
+    onClearError: () -> Unit,
+) {
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var showPassword by remember { mutableStateOf(false) }
@@ -368,6 +381,43 @@ private fun LoginForm(uiState: LinkAccountUiState, onLogin: (String, String) -> 
                     )
                 } else {
                     Text(stringResource(Res.string.action_login))
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // OAuth sign-in. Reuses the same Supabase GoTrue backend the web
+            // portal uses, so a user who signed up on the portal via Google /
+            // Apple lands in the same account here — no separate provisioning.
+            // Sign-up stays on the web, so this surface is sign-in-only.
+            Text(
+                text = "Or continue with",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.align(Alignment.CenterHorizontally),
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterHorizontally),
+            ) {
+                OutlinedButton(
+                    onClick = onGoogleLogin,
+                    enabled = uiState !is LinkAccountUiState.Loading,
+                ) {
+                    GoogleIcon(modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(stringResource(Res.string.auth_google))
+                }
+                OutlinedButton(
+                    onClick = onAppleLogin,
+                    enabled = uiState !is LinkAccountUiState.Loading,
+                ) {
+                    AppleIcon(modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(stringResource(Res.string.auth_apple))
                 }
             }
 
