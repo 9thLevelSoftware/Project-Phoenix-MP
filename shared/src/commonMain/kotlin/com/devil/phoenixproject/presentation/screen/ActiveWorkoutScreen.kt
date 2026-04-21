@@ -30,6 +30,7 @@ import com.devil.phoenixproject.data.repository.UserProfileRepository
 import com.devil.phoenixproject.domain.model.Badge
 import com.devil.phoenixproject.domain.model.PRCelebrationEvent
 import com.devil.phoenixproject.domain.model.RoutineFlowState
+import com.devil.phoenixproject.presentation.util.WeightDisplayFormatter
 import com.devil.phoenixproject.domain.model.WorkoutState
 import com.devil.phoenixproject.presentation.components.BatchedBadgeCelebrationDialog
 import com.devil.phoenixproject.presentation.components.ConnectionErrorDialog
@@ -536,10 +537,11 @@ fun ActiveWorkoutScreen(navController: NavController, viewModel: MainViewModel, 
         PRCelebrationDialog(
             show = true,
             exerciseName = event.exerciseName,
-            weight = "${viewModel.formatWeight(
+            weight = "${WeightDisplayFormatter.formatDisplayWeight(
                 event.weightPerCableKg,
+                cableCount = null, // PRCelebrationEvent lacks cableCount; defaults to 1
                 weightUnit,
-            )}/cable × ${event.reps} reps",
+            )} × ${event.reps} reps",
             workoutMode = event.workoutMode,
             onDismiss = { prCelebrationEvent = null },
             onSoundTrigger = { viewModel.emitPRSound() },

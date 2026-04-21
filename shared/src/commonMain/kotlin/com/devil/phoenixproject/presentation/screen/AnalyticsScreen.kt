@@ -24,6 +24,7 @@ import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.presentation.components.*
 import com.devil.phoenixproject.presentation.util.LocalWindowSizeClass
+import com.devil.phoenixproject.presentation.util.WeightDisplayFormatter
 import com.devil.phoenixproject.presentation.util.WindowWidthSizeClass
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
 import com.devil.phoenixproject.ui.theme.Spacing
@@ -175,7 +176,11 @@ fun ProgressTab(
 
                             Column(horizontalAlignment = Alignment.End) {
                                 Text(
-                                    text = formatWeight(pr.weightPerCableKg, weightUnit),
+                                    text = WeightDisplayFormatter.formatDisplayWeight(
+                                        pr.weightPerCableKg,
+                                        cableCount = null, // PersonalRecord lacks cableCount; defaults to 1
+                                        weightUnit,
+                                    ),
                                     style = MaterialTheme.typography.headlineSmall,
                                     fontWeight = FontWeight.Bold,
                                     color = MaterialTheme.colorScheme.primary,

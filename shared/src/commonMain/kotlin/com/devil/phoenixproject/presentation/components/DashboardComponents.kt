@@ -26,6 +26,7 @@ import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.domain.model.effectiveTotalVolumeKg
 import com.devil.phoenixproject.domain.model.currentTimeMillis
+import com.devil.phoenixproject.presentation.util.WeightDisplayFormatter
 import com.devil.phoenixproject.ui.theme.AccessibilityTheme
 import com.devil.phoenixproject.ui.theme.Spacing
 import com.devil.phoenixproject.util.KmpUtils
@@ -376,7 +377,11 @@ private fun PRListItem(
                 )
             }
             Text(
-                text = formatWeight(pr.weightPerCableKg, weightUnit),
+                text = WeightDisplayFormatter.formatDisplayWeight(
+                    pr.weightPerCableKg,
+                    cableCount = null, // PersonalRecord lacks cableCount; defaults to 1
+                    weightUnit,
+                ),
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onSurface,
@@ -527,7 +532,11 @@ private fun TopExerciseItem(
                 }
             }
             Text(
-                text = formatWeight(pr.weightPerCableKg, weightUnit),
+                text = WeightDisplayFormatter.formatDisplayWeight(
+                    pr.weightPerCableKg,
+                    cableCount = null, // PersonalRecord lacks cableCount; defaults to 1
+                    weightUnit,
+                ),
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.primary,

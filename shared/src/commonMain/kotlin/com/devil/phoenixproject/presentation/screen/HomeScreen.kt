@@ -25,6 +25,7 @@ import com.devil.phoenixproject.domain.model.CycleProgress
 import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.domain.model.TrainingCycle
 import com.devil.phoenixproject.domain.model.WeightUnit
+import com.devil.phoenixproject.presentation.util.WeightDisplayFormatter
 import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.presentation.components.AnimatedActionButton
 import com.devil.phoenixproject.presentation.components.ConnectionErrorDialog
@@ -492,11 +493,11 @@ private fun RecentActivitySummary(history: List<WorkoutSession>, weightUnit: Wei
                         )
                         Spacer(Modifier.width(12.dp))
                         Column {
-                            val displayWeight = if (weightUnit == WeightUnit.LB) {
-                                (session.weightPerCableKg * 2.20462f).toInt()
-                            } else {
-                                session.weightPerCableKg.toInt()
-                            }
+                            val displayWeight = WeightDisplayFormatter.formatDisplayWeight(
+                                session.weightPerCableKg,
+                                session.cableCount,
+                                weightUnit,
+                            )
                             val unitLabel = if (weightUnit == WeightUnit.LB) "lbs" else "kg"
                             Text(
                                 session.exerciseName ?: "Workout Session",
@@ -504,7 +505,7 @@ private fun RecentActivitySummary(history: List<WorkoutSession>, weightUnit: Wei
                                 fontWeight = FontWeight.SemiBold,
                             )
                             Text(
-                                "${session.workingReps} reps • $displayWeight $unitLabel/cable",
+                                "${session.workingReps} reps • $displayWeight $unitLabel",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
