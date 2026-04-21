@@ -152,6 +152,17 @@ CREATE TABLE PersonalRecord (
 CREATE UNIQUE INDEX idx_pr_unique ON PersonalRecord(exerciseId, workoutMode, prType, phase, profile_id);
 CREATE INDEX idx_pr_profile ON PersonalRecord(profile_id);
 
+-- Routine Groups (local-only organizational buckets, added in migration 27)
+CREATE TABLE RoutineGroup (
+    id TEXT PRIMARY KEY NOT NULL,
+    name TEXT NOT NULL,
+    orderIndex INTEGER NOT NULL DEFAULT 0,
+    createdAt INTEGER NOT NULL,
+    profile_id TEXT NOT NULL DEFAULT 'default'
+);
+
+CREATE INDEX idx_routine_group_profile ON RoutineGroup(profile_id);
+
 -- Custom routines
 CREATE TABLE Routine (
     id TEXT NOT NULL PRIMARY KEY,
@@ -165,7 +176,9 @@ CREATE TABLE Routine (
     serverId TEXT,
     deletedAt INTEGER,
     -- Multi-profile support (added in migration 21)
-    profile_id TEXT NOT NULL DEFAULT 'default'
+    profile_id TEXT NOT NULL DEFAULT 'default',
+    -- Routine group assignment (added in migration 27, local-only)
+    groupId TEXT REFERENCES RoutineGroup(id) ON DELETE SET NULL
 );
 
 CREATE INDEX idx_routine_profile ON Routine(profile_id);
@@ -787,6 +800,35 @@ SELECT * FROM Routine;
 
 selectAllRoutineIds:
 SELECT id FROM Routine;
+
+-- ==================== ROUTINE GROUP QUERIES ====================
+
+selectAllRoutineGroups:
+SELECT * FROM RoutineGroup WHERE profile_id = :profileId ORDER BY orderIndex ASC, name ASC;
+
+selectRoutineGroupById:
+SELECT * FROM RoutineGroup WHERE id = ?;
+
+insertRoutineGroup:
+INSERT INTO RoutineGroup (id, name, orderIndex, createdAt, profile_id)
+VALUES (?, ?, ?, ?, ?);
+
+updateRoutineGroup:
+UPDATE RoutineGroup SET name = ?, orderIndex = ? WHERE id = ?;
+
+deleteRoutineGroup:
+DELETE FROM RoutineGroup WHERE id = ?;
+
+updateRoutineGroupId:
+UPDATE Routine SET groupId = ? WHERE id = ?;
+
+-- Backup queries for routine groups
+selectAllRoutineGroupsSync:
+SELECT * FROM RoutineGroup;
+
+insertRoutineGroupIgnore:
+INSERT OR IGNORE INTO RoutineGroup (id, name, orderIndex, createdAt, profile_id)
+VALUES (?, ?, ?, ?, ?);
 
 -- Routine Exercise Queries
 selectExercisesByRoutine:

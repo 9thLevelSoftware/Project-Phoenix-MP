@@ -31,6 +31,7 @@ import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.data.repository.PersonalRecordRepository
 import com.devil.phoenixproject.data.repository.UserProfile
 import com.devil.phoenixproject.domain.model.Routine
+import com.devil.phoenixproject.domain.model.RoutineGroup
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.domain.model.generateSupersetId
 import com.devil.phoenixproject.domain.model.generateUUID
@@ -68,6 +69,12 @@ fun RoutinesTab(
     activeProfileId: String = "default",
     onMoveToProfile: (routineIds: Set<String>, targetProfileId: String) -> Unit = { _, _ -> },
     onSaveRoutineToProfile: (routine: Routine, targetProfileId: String) -> Unit = { _, _ -> },
+    // Routine group support
+    routineGroups: List<RoutineGroup> = emptyList(),
+    onCreateGroup: (String) -> Unit = {},
+    onRenameGroup: (String, String) -> Unit = { _, _ -> },
+    onDeleteGroup: (String) -> Unit = {},
+    onMoveToGroup: (routineIds: Set<String>, groupId: String?) -> Unit = { _, _ -> },
     themeMode: ThemeMode,
     modifier: Modifier = Modifier,
 ) {
@@ -90,6 +97,25 @@ fun RoutinesTab(
     // Profiles available as targets (exclude current active profile)
     val targetProfiles = remember(profiles, activeProfileId) {
         profiles.filter { it.id != activeProfileId }
+    }
+
+    // Routine group state
+    val collapsedGroups = remember { mutableStateMapOf<String, Boolean>() }
+    var showMoveToGroupDialog by remember { mutableStateOf(false) }
+    var moveToGroupRoutineId by remember { mutableStateOf<String?>(null) }
+    var showBatchMoveToGroupDialog by remember { mutableStateOf(false) }
+    var showCreateGroupDialog by remember { mutableStateOf(false) }
+    var renameGroupTarget by remember { mutableStateOf<RoutineGroup?>(null) }
+    var deleteGroupTarget by remember { mutableStateOf<RoutineGroup?>(null) }
+    // Pending group creation from MoveToGroupDialog "New Group..." option
+    var pendingCreateGroupForMove by remember { mutableStateOf(false) }
+
+    // Group routines: ungrouped first, then by group
+    val ungroupedRoutines = remember(routines) {
+        routines.filter { it.groupId == null }
+    }
+    val groupedRoutineMap = remember(routines) {
+        routines.filter { it.groupId != null }.groupBy { it.groupId }
     }
 
     // Helper to clear selection
@@ -132,95 +158,70 @@ fun RoutinesTab(
                     verticalArrangement = Arrangement.spacedBy(Spacing.small),
                     contentPadding = PaddingValues(bottom = 80.dp), // Space for FAB
                 ) {
-                    items(routines, key = { it.id }) { routine ->
-                        RoutineCard(
+                    // --- Ungrouped routines first ---
+                    items(ungroupedRoutines, key = { it.id }) { routine ->
+                        RoutineCardWithActions(
                             routine = routine,
-                            isSelectionMode = selectionMode,
-                            isSelected = selectedIds.contains(routine.id),
-                            onLongPress = {
-                                selectionMode = true
-                                selectedIds.add(routine.id)
-                            },
-                            onSelectionToggle = {
-                                if (selectedIds.contains(routine.id)) {
-                                    selectedIds.remove(routine.id)
-                                    // Exit selection mode if nothing selected
-                                    if (selectedIds.isEmpty()) {
-                                        selectionMode = false
-                                    }
-                                } else {
-                                    selectedIds.add(routine.id)
-                                }
-                            },
-                            onStartWorkout = { onStartWorkout(routine) },
-                            onEdit = { onEditRoutine(routine.id) },
-                            onDelete = { onDeleteRoutine(routine.id) },
-                            onMoveToProfile = {
-                                profilePickerRoutineId = routine.id
-                                profilePickerIsMoveAction = true
-                            },
-                            onCopyToProfile = {
-                                profilePickerRoutineId = routine.id
-                                profilePickerIsMoveAction = false
-                            },
-                            hasOtherProfiles = targetProfiles.isNotEmpty(),
-                            onDuplicate = {
-                                // Generate new IDs explicitly and create deep copies
-                                val newRoutineId = generateUUID()
-
-                                // Deep-copy supersets with new IDs and remap to new routine
-                                val supersetIdMap = routine.supersets.associate { it.id to generateSupersetId() }
-                                val newSupersets = routine.supersets.map { superset ->
-                                    superset.copy(
-                                        id = supersetIdMap[superset.id] ?: generateSupersetId(),
-                                        routineId = newRoutineId,
-                                    )
-                                }
-
-                                // Deep-copy exercises, remapping supersetId references
-                                val newExercises = routine.exercises.map { exercise ->
-                                    Logger.d { "Duplicating exercise '${exercise.exercise.name}': setReps=${exercise.setReps}" }
-                                    exercise.copy(
-                                        id = generateUUID(),
-                                        exercise = exercise.exercise.copy(),
-                                        supersetId = exercise.supersetId?.let { supersetIdMap[it] },
-                                    )
-                                }
-
-                                // Smart duplicate naming: extract base name and find next copy number
-                                val baseName = routine.name.replace(Regex(""" \(Copy( \d+)?\)$"""), "")
-                                val copyPattern = Regex("""^${Regex.escape(baseName)} \(Copy( (\d+))?\)$""")
-                                val existingCopyNumbers = routines
-                                    .mapNotNull { r ->
-                                        when {
-                                            r.name == baseName -> 0
-
-                                            // Original has number 0
-                                            r.name == "$baseName (Copy)" -> 1
-
-                                            // First copy is 1
-                                            else -> copyPattern.find(r.name)?.groups?.get(2)?.value?.toIntOrNull()
-                                        }
-                                    }
-                                val nextCopyNumber = (existingCopyNumbers.maxOrNull() ?: 0) + 1
-                                val newName = if (nextCopyNumber == 1) {
-                                    "$baseName (Copy)"
-                                } else {
-                                    "$baseName (Copy $nextCopyNumber)"
-                                }
-
-                                val duplicated = routine.copy(
-                                    id = newRoutineId,
-                                    name = newName,
-                                    createdAt = KmpUtils.currentTimeMillis(),
-                                    useCount = 0,
-                                    lastUsed = null,
-                                    exercises = newExercises,
-                                    supersets = newSupersets,
-                                )
-                                onSaveRoutine(duplicated)
+                            routines = routines,
+                            selectionMode = selectionMode,
+                            selectedIds = selectedIds,
+                            targetProfiles = targetProfiles,
+                            onSelectionModeActivate = { selectionMode = true },
+                            onStartWorkout = onStartWorkout,
+                            onEditRoutine = onEditRoutine,
+                            onDeleteRoutine = onDeleteRoutine,
+                            onSaveRoutine = onSaveRoutine,
+                            profilePickerRoutineId = { profilePickerRoutineId = it },
+                            profilePickerIsMoveAction = { profilePickerIsMoveAction = it },
+                            hasGroups = routineGroups.isNotEmpty(),
+                            onMoveToGroup = {
+                                moveToGroupRoutineId = routine.id
+                                showMoveToGroupDialog = true
                             },
                         )
+                    }
+
+                    // --- Grouped sections ---
+                    routineGroups.sortedBy { it.orderIndex }.forEach { group ->
+                        val groupRoutines = groupedRoutineMap[group.id] ?: emptyList()
+                        val isExpanded = collapsedGroups[group.id] != true // default expanded
+
+                        item(key = "group_header_${group.id}") {
+                            RoutineGroupHeader(
+                                group = group,
+                                routineCount = groupRoutines.size,
+                                isExpanded = isExpanded,
+                                onToggleExpand = {
+                                    collapsedGroups[group.id] = isExpanded // toggle
+                                },
+                                onRename = { renameGroupTarget = group },
+                                onDelete = { deleteGroupTarget = group },
+                            )
+                        }
+
+                        if (isExpanded) {
+                            items(groupRoutines, key = { it.id }) { routine ->
+                                RoutineCardWithActions(
+                                    routine = routine,
+                                    routines = routines,
+                                    selectionMode = selectionMode,
+                                    selectedIds = selectedIds,
+                                    targetProfiles = targetProfiles,
+                                    onSelectionModeActivate = { selectionMode = true },
+                                    onStartWorkout = onStartWorkout,
+                                    onEditRoutine = onEditRoutine,
+                                    onDeleteRoutine = onDeleteRoutine,
+                                    onSaveRoutine = onSaveRoutine,
+                                    profilePickerRoutineId = { profilePickerRoutineId = it },
+                                    profilePickerIsMoveAction = { profilePickerIsMoveAction = it },
+                                    hasGroups = routineGroups.isNotEmpty(),
+                                    onMoveToGroup = {
+                                        moveToGroupRoutineId = routine.id
+                                        showMoveToGroupDialog = true
+                                    },
+                                )
+                            }
+                        }
                     }
                 }
             }
@@ -269,6 +270,15 @@ fun RoutinesTab(
                         contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
                     ) {
                         Icon(Icons.Default.Close, contentDescription = stringResource(Res.string.cd_cancel_selection))
+                    }
+
+                    // Move to Group button
+                    SmallFloatingActionButton(
+                        onClick = { showBatchMoveToGroupDialog = true },
+                        containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                        contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                    ) {
+                        Icon(Icons.Default.Folder, contentDescription = "Move to Group")
                     }
 
                     // Move to Profile button (only if other profiles exist)
@@ -491,6 +501,215 @@ fun RoutinesTab(
             onDismiss = { showBatchCopyProfilePicker = false },
         )
     }
+
+    // === Routine Group Dialogs ===
+
+    // Individual routine "Move to Group" dialog
+    moveToGroupRoutineId?.let { routineId ->
+        val routine = routines.find { it.id == routineId }
+        if (routine != null) {
+            MoveToGroupDialog(
+                title = "Move to Group",
+                subtitle = routine.name,
+                groups = routineGroups,
+                currentGroupId = routine.groupId,
+                onGroupSelected = { groupId ->
+                    onMoveToGroup(setOf(routineId), groupId)
+                    moveToGroupRoutineId = null
+                },
+                onRemoveFromGroup = {
+                    onMoveToGroup(setOf(routineId), null)
+                    moveToGroupRoutineId = null
+                },
+                onCreateNewGroup = {
+                    moveToGroupRoutineId = null
+                    pendingCreateGroupForMove = true
+                    showCreateGroupDialog = true
+                },
+                onDismiss = { moveToGroupRoutineId = null },
+            )
+        }
+    }
+
+    // Batch "Move to Group" dialog (selection mode)
+    if (showBatchMoveToGroupDialog) {
+        val firstSelectedGroupId = selectedIds.firstOrNull()?.let { id ->
+            routines.find { it.id == id }?.groupId
+        }
+        MoveToGroupDialog(
+            title = "Move to Group",
+            subtitle = "${selectedIds.size} routine(s)",
+            groups = routineGroups,
+            currentGroupId = firstSelectedGroupId,
+            onGroupSelected = { groupId ->
+                onMoveToGroup(selectedIds.toSet(), groupId)
+                showBatchMoveToGroupDialog = false
+                clearSelection()
+            },
+            onRemoveFromGroup = {
+                onMoveToGroup(selectedIds.toSet(), null)
+                showBatchMoveToGroupDialog = false
+                clearSelection()
+            },
+            onCreateNewGroup = {
+                showBatchMoveToGroupDialog = false
+                pendingCreateGroupForMove = true
+                showCreateGroupDialog = true
+            },
+            onDismiss = { showBatchMoveToGroupDialog = false },
+        )
+    }
+
+    // Create Group dialog
+    if (showCreateGroupDialog) {
+        GroupNameDialog(
+            title = "New Group",
+            onConfirm = { name ->
+                onCreateGroup(name)
+                showCreateGroupDialog = false
+                pendingCreateGroupForMove = false
+            },
+            onDismiss = {
+                showCreateGroupDialog = false
+                pendingCreateGroupForMove = false
+            },
+        )
+    }
+
+    // Rename Group dialog
+    renameGroupTarget?.let { group ->
+        GroupNameDialog(
+            title = "Rename Group",
+            initialName = group.name,
+            onConfirm = { newName ->
+                onRenameGroup(group.id, newName)
+                renameGroupTarget = null
+            },
+            onDismiss = { renameGroupTarget = null },
+        )
+    }
+
+    // Delete Group confirmation
+    deleteGroupTarget?.let { group ->
+        AlertDialog(
+            onDismissRequest = { deleteGroupTarget = null },
+            title = { Text("Delete Group") },
+            text = {
+                Text("Delete group \"${group.name}\"? Routines in this group will become ungrouped.")
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    onDeleteGroup(group.id)
+                    deleteGroupTarget = null
+                }) {
+                    Text("Delete", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { deleteGroupTarget = null }) {
+                    Text("Cancel")
+                }
+            },
+        )
+    }
+}
+
+/**
+ * Wrapper composable that attaches all action callbacks to a RoutineCard.
+ * Extracted to avoid duplicating the long callback chain in both ungrouped and grouped sections.
+ */
+@Composable
+private fun RoutineCardWithActions(
+    routine: Routine,
+    routines: List<Routine>,
+    selectionMode: Boolean,
+    selectedIds: MutableSet<String>,
+    targetProfiles: List<UserProfile>,
+    onSelectionModeActivate: () -> Unit,
+    onStartWorkout: (Routine) -> Unit,
+    onEditRoutine: (String) -> Unit,
+    onDeleteRoutine: (String) -> Unit,
+    onSaveRoutine: (Routine) -> Unit,
+    profilePickerRoutineId: (String?) -> Unit,
+    profilePickerIsMoveAction: (Boolean) -> Unit,
+    hasGroups: Boolean,
+    onMoveToGroup: () -> Unit,
+) {
+    RoutineCard(
+        routine = routine,
+        isSelectionMode = selectionMode,
+        isSelected = selectedIds.contains(routine.id),
+        onLongPress = {
+            onSelectionModeActivate()
+            selectedIds.add(routine.id)
+        },
+        onSelectionToggle = {
+            if (selectedIds.contains(routine.id)) {
+                selectedIds.remove(routine.id)
+                // Note: caller handles exit from selection mode when selectedIds becomes empty
+            } else {
+                selectedIds.add(routine.id)
+            }
+        },
+        onStartWorkout = { onStartWorkout(routine) },
+        onEdit = { onEditRoutine(routine.id) },
+        onDelete = { onDeleteRoutine(routine.id) },
+        onMoveToProfile = {
+            profilePickerRoutineId(routine.id)
+            profilePickerIsMoveAction(true)
+        },
+        onCopyToProfile = {
+            profilePickerRoutineId(routine.id)
+            profilePickerIsMoveAction(false)
+        },
+        hasOtherProfiles = targetProfiles.isNotEmpty(),
+        hasGroups = hasGroups,
+        onMoveToGroup = onMoveToGroup,
+        onDuplicate = {
+            val newRoutineId = generateUUID()
+            val supersetIdMap = routine.supersets.associate { it.id to generateSupersetId() }
+            val newSupersets = routine.supersets.map { superset ->
+                superset.copy(
+                    id = supersetIdMap[superset.id] ?: generateSupersetId(),
+                    routineId = newRoutineId,
+                )
+            }
+            val newExercises = routine.exercises.map { exercise ->
+                Logger.d { "Duplicating exercise '${exercise.exercise.name}': setReps=${exercise.setReps}" }
+                exercise.copy(
+                    id = generateUUID(),
+                    exercise = exercise.exercise.copy(),
+                    supersetId = exercise.supersetId?.let { supersetIdMap[it] },
+                )
+            }
+            val baseName = routine.name.replace(Regex(""" \(Copy( \d+)?\)$"""), "")
+            val copyPattern = Regex("""^${Regex.escape(baseName)} \(Copy( (\d+))?\)$""")
+            val existingCopyNumbers = routines
+                .mapNotNull { r ->
+                    when {
+                        r.name == baseName -> 0
+                        r.name == "$baseName (Copy)" -> 1
+                        else -> copyPattern.find(r.name)?.groups?.get(2)?.value?.toIntOrNull()
+                    }
+                }
+            val nextCopyNumber = (existingCopyNumbers.maxOrNull() ?: 0) + 1
+            val newName = if (nextCopyNumber == 1) {
+                "$baseName (Copy)"
+            } else {
+                "$baseName (Copy $nextCopyNumber)"
+            }
+            val duplicated = routine.copy(
+                id = newRoutineId,
+                name = newName,
+                createdAt = KmpUtils.currentTimeMillis(),
+                useCount = 0,
+                lastUsed = null,
+                exercises = newExercises,
+                supersets = newSupersets,
+            )
+            onSaveRoutine(duplicated)
+        },
+    )
 }
 
 /**
@@ -638,6 +857,8 @@ fun RoutineCard(
     onMoveToProfile: () -> Unit = {},
     onCopyToProfile: () -> Unit = {},
     hasOtherProfiles: Boolean = false,
+    hasGroups: Boolean = false,
+    onMoveToGroup: () -> Unit = {},
 ) {
     var expanded by remember { mutableStateOf(false) }
     var showDeleteDialog by remember { mutableStateOf(false) }
@@ -837,8 +1058,8 @@ fun RoutineCard(
                             Text(stringResource(Res.string.action_delete), maxLines = 1)
                         }
 
-                        // Overflow menu for Move/Copy to Profile
-                        if (hasOtherProfiles) {
+                        // Overflow menu for Move/Copy to Profile and Move to Group
+                        if (hasOtherProfiles || hasGroups) {
                             var showOverflow by remember { mutableStateOf(false) }
                             Spacer(Modifier.width(2.dp))
                             Box {
@@ -848,7 +1069,7 @@ fun RoutineCard(
                                 ) {
                                     Icon(
                                         Icons.Default.MoreVert,
-                                        contentDescription = stringResource(Res.string.select_target_profile),
+                                        contentDescription = "More options",
                                         modifier = Modifier.size(20.dp),
                                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                     )
@@ -857,34 +1078,51 @@ fun RoutineCard(
                                     expanded = showOverflow,
                                     onDismissRequest = { showOverflow = false },
                                 ) {
+                                    // Move to Group option
                                     DropdownMenuItem(
-                                        text = { Text(stringResource(Res.string.move_to_profile)) },
+                                        text = { Text("Move to Group") },
                                         onClick = {
                                             showOverflow = false
-                                            onMoveToProfile()
+                                            onMoveToGroup()
                                         },
                                         leadingIcon = {
                                             Icon(
-                                                Icons.AutoMirrored.Default.DriveFileMove,
+                                                Icons.Default.Folder,
                                                 contentDescription = null,
                                                 modifier = Modifier.size(20.dp),
                                             )
                                         },
                                     )
-                                    DropdownMenuItem(
-                                        text = { Text(stringResource(Res.string.copy_to_profile)) },
-                                        onClick = {
-                                            showOverflow = false
-                                            onCopyToProfile()
-                                        },
-                                        leadingIcon = {
-                                            Icon(
-                                                Icons.Default.FileCopy,
-                                                contentDescription = null,
-                                                modifier = Modifier.size(20.dp),
-                                            )
-                                        },
-                                    )
+                                    if (hasOtherProfiles) {
+                                        DropdownMenuItem(
+                                            text = { Text(stringResource(Res.string.move_to_profile)) },
+                                            onClick = {
+                                                showOverflow = false
+                                                onMoveToProfile()
+                                            },
+                                            leadingIcon = {
+                                                Icon(
+                                                    Icons.AutoMirrored.Default.DriveFileMove,
+                                                    contentDescription = null,
+                                                    modifier = Modifier.size(20.dp),
+                                                )
+                                            },
+                                        )
+                                        DropdownMenuItem(
+                                            text = { Text(stringResource(Res.string.copy_to_profile)) },
+                                            onClick = {
+                                                showOverflow = false
+                                                onCopyToProfile()
+                                            },
+                                            leadingIcon = {
+                                                Icon(
+                                                    Icons.Default.FileCopy,
+                                                    contentDescription = null,
+                                                    modifier = Modifier.size(20.dp),
+                                                )
+                                            },
+                                        )
+                                    }
                                 }
                             }
                         }

@@ -1,0 +1,17 @@
+-- Migration 27: Routine Groups (local-only organizational buckets)
+--
+-- Adds a RoutineGroup table for named routine grouping and a nullable
+-- groupId FK on the Routine table. ON DELETE SET NULL ensures deleting
+-- a group preserves routines (they become ungrouped).
+
+CREATE TABLE IF NOT EXISTS RoutineGroup (
+    id TEXT PRIMARY KEY NOT NULL,
+    name TEXT NOT NULL,
+    orderIndex INTEGER NOT NULL DEFAULT 0,
+    createdAt INTEGER NOT NULL,
+    profile_id TEXT NOT NULL DEFAULT 'default'
+);
+
+CREATE INDEX IF NOT EXISTS idx_routine_group_profile ON RoutineGroup(profile_id);
+
+ALTER TABLE Routine ADD COLUMN groupId TEXT REFERENCES RoutineGroup(id) ON DELETE SET NULL;

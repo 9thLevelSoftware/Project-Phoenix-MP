@@ -4,6 +4,7 @@ import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.data.repository.AutoStopUiState
 import com.devil.phoenixproject.data.repository.CompletedSetRepository
 import com.devil.phoenixproject.data.repository.ExerciseRepository
+import com.devil.phoenixproject.data.repository.SqlDelightWorkoutRepository
 import com.devil.phoenixproject.data.repository.UserProfileRepository
 import com.devil.phoenixproject.data.repository.WorkoutRepository
 import com.devil.phoenixproject.domain.model.EccentricLoad
@@ -13,9 +14,12 @@ import com.devil.phoenixproject.domain.model.RepCount
 import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.domain.model.RoutineExercise
 import com.devil.phoenixproject.domain.model.RoutineFlowState
+import com.devil.phoenixproject.domain.model.RoutineGroup
 import com.devil.phoenixproject.domain.model.RoutineItem
 import com.devil.phoenixproject.domain.model.Superset
 import com.devil.phoenixproject.domain.model.SupersetColors
+import com.devil.phoenixproject.domain.model.currentTimeMillis
+import com.devil.phoenixproject.domain.model.generateUUID
 import com.devil.phoenixproject.domain.model.WorkoutParameters
 import com.devil.phoenixproject.domain.model.WorkoutState
 import com.devil.phoenixproject.domain.model.currentTimeMillis
@@ -138,7 +142,31 @@ class RoutineFlowManager(
                 Logger.e(e) { "Error initializing exercise library" }
             }
         }
+
+        // Collector #3: Load routine groups for active profile
+        scope.launch {
+            try {
+                userProfileRepository.activeProfile
+                    .flatMapLatest { profile ->
+                        val profileId = profile?.id ?: "default"
+                        Logger.d { "ROUTINE_GROUPS: Subscribing for profile=$profileId" }
+                        groupRepo.getAllRoutineGroups(profileId)
+                    }
+                    .collect { groups ->
+                        Logger.d { "ROUTINE_GROUPS: Got ${groups.size} groups" }
+                        coordinator._routineGroups.value = groups
+                    }
+            } catch (e: Exception) {
+                Logger.e(e) { "ROUTINE_GROUPS: Error loading groups" }
+            }
+        }
     }
+
+    /**
+     * Concrete repo access for RoutineGroup CRUD (groups are local-only, not on WorkoutRepository interface).
+     */
+    private val groupRepo: SqlDelightWorkoutRepository
+        get() = workoutRepository as SqlDelightWorkoutRepository
 
     // ===== Superset Navigation Helpers (private) =====
 
@@ -525,6 +553,46 @@ class RoutineFlowManager(
             routineIds.forEach { id ->
                 workoutRepository.deleteRoutine(id)
             }
+        }
+    }
+
+    // ===== Routine Group CRUD =====
+
+    fun createGroup(name: String) {
+        scope.launch {
+            val group = RoutineGroup(
+                id = generateUUID(),
+                name = name,
+                profileId = userProfileRepository.activeProfile.value?.id ?: "default",
+                orderIndex = coordinator._routineGroups.value.size,
+                createdAt = currentTimeMillis(),
+            )
+            groupRepo.saveRoutineGroup(group)
+            Logger.d { "ROUTINE_GROUPS: Created group '${group.name}' (${group.id})" }
+        }
+    }
+
+    fun renameGroup(groupId: String, newName: String) {
+        scope.launch {
+            val existing = coordinator._routineGroups.value.find { it.id == groupId } ?: return@launch
+            groupRepo.updateRoutineGroup(existing.copy(name = newName))
+            Logger.d { "ROUTINE_GROUPS: Renamed group '$groupId' to '$newName'" }
+        }
+    }
+
+    fun deleteGroup(groupId: String) {
+        scope.launch {
+            groupRepo.deleteRoutineGroup(groupId)
+            Logger.d { "ROUTINE_GROUPS: Deleted group '$groupId' (routines become ungrouped via ON DELETE SET NULL)" }
+        }
+    }
+
+    fun moveRoutinesToGroup(routineIds: Set<String>, groupId: String?) {
+        scope.launch {
+            routineIds.forEach { id ->
+                groupRepo.moveRoutineToGroup(id, groupId)
+            }
+            Logger.d { "ROUTINE_GROUPS: Moved ${routineIds.size} routine(s) to group=${groupId ?: "ungrouped"}" }
         }
     }
 

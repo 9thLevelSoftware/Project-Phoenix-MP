@@ -10,6 +10,7 @@ import com.devil.phoenixproject.domain.model.RepMetricData
 import com.devil.phoenixproject.domain.model.RepQualityScore
 import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.domain.model.RoutineFlowState
+import com.devil.phoenixproject.domain.model.RoutineGroup
 import com.devil.phoenixproject.domain.model.WorkoutMetric
 import com.devil.phoenixproject.domain.model.WorkoutParameters
 import com.devil.phoenixproject.domain.model.WorkoutState
@@ -215,6 +216,9 @@ class WorkoutCoordinator(
 
     internal val _routines = MutableStateFlow<List<Routine>>(emptyList())
     val routines: StateFlow<List<Routine>> = _routines.asStateFlow()
+
+    internal val _routineGroups = MutableStateFlow<List<RoutineGroup>>(emptyList())
+    val routineGroups: StateFlow<List<RoutineGroup>> = _routineGroups.asStateFlow()
 
     internal val _loadedRoutine = MutableStateFlow<Routine?>(null)
     val loadedRoutine: StateFlow<Routine?> = _loadedRoutine.asStateFlow()

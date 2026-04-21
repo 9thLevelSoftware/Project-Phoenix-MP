@@ -455,6 +455,13 @@ class DefaultWorkoutSessionManager(
     fun deleteRoutines(routineIds: Set<String>) = routineFlowManager.deleteRoutines(routineIds)
     fun moveRoutinesToProfile(routineIds: Set<String>, targetProfileId: String) = routineFlowManager.moveRoutinesToProfile(routineIds, targetProfileId)
     fun saveRoutineToProfile(routine: Routine, targetProfileId: String) = routineFlowManager.saveRoutineToProfile(routine, targetProfileId)
+
+    // Routine Group CRUD
+    fun createGroup(name: String) = routineFlowManager.createGroup(name)
+    fun renameGroup(groupId: String, newName: String) = routineFlowManager.renameGroup(groupId, newName)
+    fun deleteGroup(groupId: String) = routineFlowManager.deleteGroup(groupId)
+    fun moveRoutinesToGroup(routineIds: Set<String>, groupId: String?) = routineFlowManager.moveRoutinesToGroup(routineIds, groupId)
+
     fun loadRoutine(routine: Routine) = routineFlowManager.loadRoutine(routine)
 
     /** Issue #2 Fix: Suspend version that completes after routine is fully loaded */

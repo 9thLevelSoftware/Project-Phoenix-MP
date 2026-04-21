@@ -11,6 +11,7 @@ import com.devil.phoenixproject.domain.model.PRType
 import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.domain.model.RoutineExercise
+import com.devil.phoenixproject.domain.model.RoutineGroup
 import com.devil.phoenixproject.domain.model.Superset
 import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.domain.model.currentTimeMillis
@@ -155,6 +156,8 @@ class SqlDelightWorkoutRepository(private val db: VitruvianDatabase, private val
         deletedAt: Long?,
         // Multi-profile support (migration 21)
         profileId: String,
+        // Routine group assignment (migration 27)
+        groupId: String?,
     ): Routine = Routine(
         id = id,
         name = name,
@@ -163,6 +166,7 @@ class SqlDelightWorkoutRepository(private val db: VitruvianDatabase, private val
         lastUsed = lastUsed,
         useCount = useCount.toInt(),
         profileId = profileId,
+        groupId = groupId,
     )
 
     private suspend fun loadRoutineWithExercises(
@@ -172,6 +176,7 @@ class SqlDelightWorkoutRepository(private val db: VitruvianDatabase, private val
         lastUsed: Long? = null,
         useCount: Int = 0,
         profileId: String = "default",
+        groupId: String? = null,
     ): Routine {
         val exerciseRows = queries.selectExercisesByRoutine(routineId).executeAsList()
         val supersetRows = queries.selectSupersetsByRoutine(routineId).executeAsList()
@@ -380,6 +385,7 @@ class SqlDelightWorkoutRepository(private val db: VitruvianDatabase, private val
             lastUsed = lastUsed,
             useCount = useCount,
             profileId = profileId,
+            groupId = groupId,
         )
     }
 
@@ -548,6 +554,7 @@ class SqlDelightWorkoutRepository(private val db: VitruvianDatabase, private val
                         routine.lastUsed,
                         routine.useCount,
                         routine.profileId,
+                        routine.groupId,
                     )
                 } catch (e: Exception) {
                     Logger.e(e) { "Failed to load exercises for routine ${routine.id}" }
@@ -729,7 +736,59 @@ class SqlDelightWorkoutRepository(private val db: VitruvianDatabase, private val
                 basicRoutine.lastUsed,
                 basicRoutine.useCount,
                 basicRoutine.profileId,
+                basicRoutine.groupId,
             )
+        }
+    }
+
+    // ==================== ROUTINE GROUP CRUD ====================
+
+    fun getAllRoutineGroups(profileId: String): Flow<List<RoutineGroup>> =
+        queries.selectAllRoutineGroups(profileId = profileId) { id, name, orderIndex, createdAt, profile_id ->
+            RoutineGroup(
+                id = id,
+                name = name,
+                orderIndex = orderIndex.toInt(),
+                createdAt = createdAt,
+                profileId = profile_id,
+            )
+        }.asFlow().mapToList(Dispatchers.IO)
+
+    suspend fun saveRoutineGroup(group: RoutineGroup) {
+        withContext(Dispatchers.IO) {
+            queries.insertRoutineGroup(
+                id = group.id,
+                name = group.name,
+                orderIndex = group.orderIndex.toLong(),
+                createdAt = group.createdAt,
+                profile_id = group.profileId,
+            )
+            Logger.d { "Saved routine group '${group.name}'" }
+        }
+    }
+
+    suspend fun updateRoutineGroup(group: RoutineGroup) {
+        withContext(Dispatchers.IO) {
+            queries.updateRoutineGroup(
+                name = group.name,
+                orderIndex = group.orderIndex.toLong(),
+                id = group.id,
+            )
+            Logger.d { "Updated routine group '${group.name}'" }
+        }
+    }
+
+    suspend fun deleteRoutineGroup(groupId: String) {
+        withContext(Dispatchers.IO) {
+            queries.deleteRoutineGroup(groupId)
+            Logger.d { "Deleted routine group $groupId" }
+        }
+    }
+
+    suspend fun moveRoutineToGroup(routineId: String, groupId: String?) {
+        withContext(Dispatchers.IO) {
+            queries.updateRoutineGroupId(groupId, routineId)
+            Logger.d { "Moved routine $routineId to group ${groupId ?: "ungrouped"}" }
         }
     }
 

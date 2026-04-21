@@ -587,7 +587,7 @@ FROM EarnedBadge""",
         "CREATE UNIQUE INDEX IF NOT EXISTS idx_earned_badge_profile ON EarnedBadge(badgeId, profile_id)",
     )
 
-    // Migration 25: Deduplicate GamificationStats rows and enforce one row per profile
+    // Migration 25: Deduplicate GamificationStats rows and enforce one-row-per-profile
     25 -> listOf(
         "DROP INDEX IF EXISTS idx_gamification_stats_profile",
         """CREATE TABLE IF NOT EXISTS GamificationStats_rebuild (
@@ -648,6 +648,29 @@ WHERE gs.rowid = (
         "DROP TABLE IF EXISTS GamificationStats",
         "ALTER TABLE GamificationStats_rebuild RENAME TO GamificationStats",
         "CREATE UNIQUE INDEX IF NOT EXISTS idx_gamification_stats_profile ON GamificationStats(profile_id)",
+    )
+
+    // Migration 26: SessionNotes side-table for session-level notes persistence
+    26 -> listOf(
+        """CREATE TABLE IF NOT EXISTS SessionNotes (
+            routineSessionId TEXT NOT NULL PRIMARY KEY,
+            notes TEXT,
+            updatedAt INTEGER
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_session_notes_updated_at ON SessionNotes(updatedAt)",
+    )
+
+    // Migration 27: Routine Groups (local-only organizational buckets)
+    27 -> listOf(
+        """CREATE TABLE IF NOT EXISTS RoutineGroup (
+            id TEXT PRIMARY KEY NOT NULL,
+            name TEXT NOT NULL,
+            orderIndex INTEGER NOT NULL DEFAULT 0,
+            createdAt INTEGER NOT NULL,
+            profile_id TEXT NOT NULL DEFAULT 'default'
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_routine_group_profile ON RoutineGroup(profile_id)",
+        "ALTER TABLE Routine ADD COLUMN groupId TEXT REFERENCES RoutineGroup(id) ON DELETE SET NULL",
     )
 
     else -> emptyList()

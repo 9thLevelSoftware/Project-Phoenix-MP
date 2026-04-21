@@ -4,6 +4,18 @@ import kotlin.math.roundToInt
 import kotlinx.serialization.Serializable
 
 /**
+ * Named group for organizing routines.
+ * Groups are local-only in v1 (not synced to portal).
+ */
+data class RoutineGroup(
+    val id: String,
+    val name: String,
+    val profileId: String = "default",
+    val orderIndex: Int = 0,
+    val createdAt: Long = currentTimeMillis(),
+)
+
+/**
  * A single warm-up set definition for a routine exercise.
  *
  * Warm-up sets execute before working sets with reduced weight.
@@ -33,6 +45,7 @@ data class Routine(
     val lastUsed: Long? = null,
     val useCount: Int = 0,
     val profileId: String = "default",
+    val groupId: String? = null, // Routine group assignment (local-only, v1)
 ) {
     /**
      * Get all items (supersets + standalone exercises) in display order.

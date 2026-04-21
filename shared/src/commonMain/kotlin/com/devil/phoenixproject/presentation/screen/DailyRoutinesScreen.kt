@@ -9,6 +9,7 @@ import androidx.navigation.NavController
 import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.data.repository.UserProfileRepository
 import com.devil.phoenixproject.domain.model.Routine
+import com.devil.phoenixproject.domain.model.RoutineGroup
 import com.devil.phoenixproject.presentation.components.ResumeRoutineDialog
 import com.devil.phoenixproject.presentation.navigation.NavigationRoutes
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
@@ -31,6 +32,7 @@ fun DailyRoutinesScreen(
     themeMode: com.devil.phoenixproject.ui.theme.ThemeMode,
 ) {
     val routines by viewModel.routines.collectAsState()
+    val routineGroups by viewModel.routineGroups.collectAsState()
     val weightUnit by viewModel.weightUnit.collectAsState()
     val enableVideoPlayback by viewModel.enableVideoPlayback.collectAsState()
 
@@ -95,6 +97,12 @@ fun DailyRoutinesScreen(
             onSaveRoutineToProfile = { routine, targetProfileId ->
                 viewModel.saveRoutineToProfile(routine, targetProfileId)
             },
+            // Routine group support
+            routineGroups = routineGroups,
+            onCreateGroup = { name -> viewModel.createGroup(name) },
+            onRenameGroup = { groupId, newName -> viewModel.renameGroup(groupId, newName) },
+            onDeleteGroup = { groupId -> viewModel.deleteGroup(groupId) },
+            onMoveToGroup = { routineIds, groupId -> viewModel.moveRoutinesToGroup(routineIds, groupId) },
             onEditRoutine = { routineId ->
                 // Issue #130: Block editing during active workout
                 if (viewModel.isWorkoutActive) {

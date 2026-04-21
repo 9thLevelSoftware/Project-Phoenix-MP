@@ -106,6 +106,19 @@ data class RoutineBackup(
     val lastUsed: Long? = null,
     val useCount: Int = 0,
     val profileId: String? = null, // null for backward compat with pre-profile backups
+    val groupId: String? = null, // Routine group assignment (added v3)
+)
+
+/**
+ * Backup representation of RoutineGroup (added in migration 27, v3 backup schema)
+ */
+@Serializable
+data class RoutineGroupBackup(
+    val id: String,
+    val name: String,
+    val orderIndex: Int = 0,
+    val createdAt: Long,
+    val profileId: String = "default",
 )
 
 /**
@@ -409,6 +422,7 @@ enum class BackupPhase(val displayName: String) {
  * - v2: adds SessionNotes, EarnedBadge/GamificationStats sync fields, CycleDay per-day
  *       progression overrides. Older (v1) backups remain importable — new fields default
  *       to null via kotlinx.serialization default values.
+ * - v3: adds RoutineGroup table and Routine.groupId field for routine grouping.
  */
 @Serializable
 data class BackupData(val version: Int = CURRENT_BACKUP_VERSION, val exportedAt: String, val appVersion: String, val data: BackupContent)
@@ -417,7 +431,7 @@ data class BackupData(val version: Int = CURRENT_BACKUP_VERSION, val exportedAt:
  * Highest backup schema version this build can produce.
  * Bump whenever BackupContent gains/loses entities or a backup field type changes.
  */
-const val CURRENT_BACKUP_VERSION: Int = 2
+const val CURRENT_BACKUP_VERSION: Int = 3
 
 /**
  * Container for all backup data entities
@@ -444,6 +458,8 @@ data class BackupContent(
     val userProfiles: List<UserProfileBackup> = emptyList(),
     // Added v2: portal session notes (migration 26)
     val sessionNotes: List<SessionNotesBackup> = emptyList(),
+    // Added v3: routine groups (migration 27)
+    val routineGroups: List<RoutineGroupBackup> = emptyList(),
 )
 
 /**
@@ -475,6 +491,8 @@ data class ImportResult(
     val userProfilesSkipped: Int = 0,
     val sessionNotesImported: Int = 0,
     val sessionNotesSkipped: Int = 0,
+    val routineGroupsImported: Int = 0,
+    val routineGroupsSkipped: Int = 0,
     /**
      * Count of individual entity rows that threw during import and were skipped.
      * Non-zero here means the backup contained malformed rows — the import still
@@ -490,9 +508,10 @@ data class ImportResult(
             cycleProgressionsImported + plannedSetsImported + completedSetsImported +
             progressionEventsImported + earnedBadgesImported + streakHistoryImported +
             (if (gamificationStatsImported) 1 else 0) + userProfilesImported +
-            sessionNotesImported
+            sessionNotesImported + routineGroupsImported
 
     val totalSkipped: Int
         get() = sessionsSkipped + routinesSkipped + supersetsSkipped + personalRecordsSkipped +
-            trainingCyclesSkipped + userProfilesSkipped + sessionNotesSkipped
+            trainingCyclesSkipped + userProfilesSkipped + sessionNotesSkipped +
+            routineGroupsSkipped
 }

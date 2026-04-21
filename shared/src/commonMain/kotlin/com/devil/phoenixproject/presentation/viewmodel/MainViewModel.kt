@@ -31,6 +31,7 @@ import com.devil.phoenixproject.domain.model.RepCountTiming
 import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.domain.model.RoutineExercise
 import com.devil.phoenixproject.domain.model.RoutineFlowState
+import com.devil.phoenixproject.domain.model.RoutineGroup
 import com.devil.phoenixproject.domain.model.Superset
 import com.devil.phoenixproject.domain.model.UserPreferences
 import com.devil.phoenixproject.domain.model.WeightUnit
@@ -170,6 +171,7 @@ class MainViewModel constructor(
     val hapticEvents: SharedFlow<HapticEvent> get() = workoutSessionManager.coordinator.hapticEvents
     val userFeedbackEvents: SharedFlow<String> get() = workoutSessionManager.coordinator.userFeedbackEvents
     val routines: StateFlow<List<Routine>> get() = workoutSessionManager.coordinator.routines
+    val routineGroups: StateFlow<List<RoutineGroup>> get() = workoutSessionManager.coordinator.routineGroups
     val loadedRoutine: StateFlow<Routine?> get() = workoutSessionManager.coordinator.loadedRoutine
     val currentExerciseIndex: StateFlow<Int> get() = workoutSessionManager.coordinator.currentExerciseIndex
     val currentSetIndex: StateFlow<Int> get() = workoutSessionManager.coordinator.currentSetIndex
@@ -342,6 +344,13 @@ class MainViewModel constructor(
     fun deleteRoutines(routineIds: Set<String>) = workoutSessionManager.deleteRoutines(routineIds)
     fun moveRoutinesToProfile(routineIds: Set<String>, targetProfileId: String) = workoutSessionManager.moveRoutinesToProfile(routineIds, targetProfileId)
     fun saveRoutineToProfile(routine: Routine, targetProfileId: String) = workoutSessionManager.saveRoutineToProfile(routine, targetProfileId)
+
+    // Routine Group CRUD
+    fun createGroup(name: String) = workoutSessionManager.createGroup(name)
+    fun renameGroup(groupId: String, newName: String) = workoutSessionManager.renameGroup(groupId, newName)
+    fun deleteGroup(groupId: String) = workoutSessionManager.deleteGroup(groupId)
+    fun moveRoutinesToGroup(routineIds: Set<String>, groupId: String?) = workoutSessionManager.moveRoutinesToGroup(routineIds, groupId)
+
     fun loadRoutine(routine: Routine) = workoutSessionManager.loadRoutine(routine)
 
     /** Issue #2 Fix: Suspend version that completes after routine is fully loaded (including PR weight resolution) */

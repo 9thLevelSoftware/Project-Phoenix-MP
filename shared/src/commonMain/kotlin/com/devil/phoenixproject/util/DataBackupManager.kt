@@ -210,6 +210,8 @@ abstract class BaseDataBackupManager(
         // where the table does not yet exist (pre-flight create-if-missing covers this
         // on current builds, but defending against partial upgrade paths is cheap).
         val sessionNotes = runCatching { queries.selectAllSessionNotesSync().executeAsList() }.getOrElse { emptyList() }
+        // Migration 27 added RoutineGroup. Same defensive pattern.
+        val routineGroups = runCatching { queries.selectAllRoutineGroupsSync().executeAsList() }.getOrElse { emptyList() }
 
         val nowMs = KmpUtils.currentTimeMillis()
         BackupData(
@@ -236,6 +238,7 @@ abstract class BaseDataBackupManager(
                 gamificationStats = gamificationStats?.let { mapGamificationStatsToBackup(it) },
                 userProfiles = userProfiles.map { mapUserProfileToBackup(it) },
                 sessionNotes = sessionNotes.map { mapSessionNotesToBackup(it) },
+                routineGroups = routineGroups.map { mapRoutineGroupToBackup(it) },
             ),
         )
     }
@@ -312,6 +315,8 @@ abstract class BaseDataBackupManager(
             var gamificationStatsImported = false
             var sessionNotesImported = 0
             var sessionNotesSkipped = 0
+            var routineGroupsImported = 0
+            var routineGroupsSkipped = 0
 
             // Track adopted (profile_id updated) records
             var sessionsAdopted = 0
@@ -446,6 +451,20 @@ abstract class BaseDataBackupManager(
                         )
                         metricsImported++
                     }
+                }
+
+                // Import routine groups (BEFORE routines — routines have FK to RoutineGroup)
+                backup.data.routineGroups.forEach { group ->
+                    val inserted = tryImport("routineGroup", group.id) {
+                        queries.insertRoutineGroupIgnore(
+                            id = group.id,
+                            name = group.name,
+                            orderIndex = group.orderIndex.toLong(),
+                            createdAt = group.createdAt,
+                            profile_id = group.profileId,
+                        )
+                    }
+                    if (inserted != null) routineGroupsImported++ else routineGroupsSkipped++
                 }
 
                 // Import routines
@@ -832,6 +851,8 @@ abstract class BaseDataBackupManager(
                     userProfilesSkipped = userProfilesSkipped,
                     sessionNotesImported = sessionNotesImported,
                     sessionNotesSkipped = sessionNotesSkipped,
+                    routineGroupsImported = routineGroupsImported,
+                    routineGroupsSkipped = routineGroupsSkipped,
                     entitiesWithErrors = entitiesWithErrors,
                 ),
             )
@@ -977,6 +998,11 @@ abstract class BaseDataBackupManager(
         // on legacy DBs where the table is missing; v1 backups simply emit an empty array.
         val sessionNotes = runCatching { queries.selectAllSessionNotesSync().executeAsList() }.getOrElse { emptyList() }
         writeJsonArray(writer, "sessionNotes", sessionNotes.map { json.encodeToString(SessionNotesBackup.serializer(), mapSessionNotesToBackup(it)) })
+        writer.write(",")
+
+        // Routine groups (migration 27). Same defensive pattern.
+        val routineGroups = runCatching { queries.selectAllRoutineGroupsSync().executeAsList() }.getOrElse { emptyList() }
+        writeJsonArray(writer, "routineGroups", routineGroups.map { json.encodeToString(RoutineGroupBackup.serializer(), mapRoutineGroupToBackup(it)) })
 
         // Close JSON
         writer.write("}}")
@@ -1343,6 +1369,7 @@ abstract class BaseDataBackupManager(
         lastUsed = routine.lastUsed,
         useCount = routine.useCount.toInt(),
         profileId = routine.profile_id,
+        groupId = routine.groupId,
     )
 
     private fun mapRoutineExerciseToBackup(exercise: RoutineExercise): RoutineExerciseBackup = RoutineExerciseBackup(
@@ -1522,6 +1549,14 @@ abstract class BaseDataBackupManager(
         routineSessionId = sn.routineSessionId,
         notes = sn.notes,
         updatedAt = sn.updatedAt,
+    )
+
+    private fun mapRoutineGroupToBackup(rg: RoutineGroup): RoutineGroupBackup = RoutineGroupBackup(
+        id = rg.id,
+        name = rg.name,
+        orderIndex = rg.orderIndex.toInt(),
+        createdAt = rg.createdAt,
+        profileId = rg.profile_id,
     )
 
     private fun mapUserProfileToBackup(up: UserProfile): UserProfileBackup = UserProfileBackup(
