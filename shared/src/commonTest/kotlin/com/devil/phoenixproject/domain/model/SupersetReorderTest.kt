@@ -134,7 +134,9 @@ class SupersetReorderTest {
         // X exercises should be swapped
         val xExercises = result.exercises.filter { it.supersetId == "ssX" }.sortedBy { it.orderInSuperset }
         assertEquals("B", xExercises[0].id)
+        assertEquals(0, xExercises[0].orderInSuperset)
         assertEquals("A", xExercises[1].id)
+        assertEquals(1, xExercises[1].orderInSuperset)
     }
 
     @Test
@@ -177,6 +179,21 @@ class SupersetReorderTest {
         assertEquals(1, ssExercises[1].orderInSuperset)
         assertEquals("A", ssExercises[2].id)
         assertEquals(2, ssExercises[2].orderInSuperset)
+    }
+
+    @Test
+    fun reorder_outOfBoundsIndex_returnsOriginalRoutine() {
+        val exercises = listOf(
+            exercise("A", orderIndex = 0, supersetId = "ss1", orderInSuperset = 0),
+            exercise("B", orderIndex = 1, supersetId = "ss1", orderInSuperset = 1),
+            exercise("C", orderIndex = 2, supersetId = "ss1", orderInSuperset = 2),
+        )
+        val routine = routineWithSuperset(exercises = exercises)
+
+        // fromIndex = 5 is out of bounds for a 3-element superset
+        val result = reorderExercisesInSuperset(routine, "ss1", fromIndex = 5, toIndex = 0)
+
+        assertEquals(routine.exercises, result.exercises, "Out-of-bounds fromIndex should return original routine unchanged")
     }
 
     @Test

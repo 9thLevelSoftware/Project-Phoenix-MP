@@ -578,6 +578,7 @@ class SqlDelightWorkoutRepository(private val db: VitruvianDatabase, private val
                     lastUsed = routine.lastUsed,
                     useCount = routine.useCount.toLong(),
                     profile_id = routine.profileId,
+                    groupId = routine.groupId,
                 )
 
                 // Delete existing supersets and exercises before re-inserting

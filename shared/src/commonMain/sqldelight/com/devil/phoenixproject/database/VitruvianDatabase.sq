@@ -784,12 +784,12 @@ selectRoutineById:
 SELECT * FROM Routine WHERE id = ?;
 
 insertRoutine:
-INSERT INTO Routine (id, name, description, createdAt, lastUsed, useCount, profile_id) VALUES (?, ?, ?, ?, ?, ?, ?);
+INSERT INTO Routine (id, name, description, createdAt, lastUsed, useCount, profile_id, groupId) VALUES (?, ?, ?, ?, ?, ?, ?, ?);
 
 -- Upsert routine (insert or replace) - handles both new and existing routines
 upsertRoutine:
-INSERT OR REPLACE INTO Routine (id, name, description, createdAt, lastUsed, useCount, profile_id)
-VALUES (?, ?, ?, ?, ?, ?, ?);
+INSERT OR REPLACE INTO Routine (id, name, description, createdAt, lastUsed, useCount, profile_id, groupId)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?);
 
 updateRoutineLastUsed:
 UPDATE Routine SET lastUsed = ?, useCount = useCount + 1 WHERE id = ?;

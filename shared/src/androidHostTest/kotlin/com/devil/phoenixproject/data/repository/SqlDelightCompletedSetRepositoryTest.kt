@@ -111,6 +111,7 @@ class SqlDelightCompletedSetRepositoryTest {
             lastUsed = null,
             useCount = 0L,
             profile_id = "default",
+            groupId = null,
         )
     }
 

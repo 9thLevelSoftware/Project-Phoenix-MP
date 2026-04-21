@@ -1,5 +1,8 @@
 package com.devil.phoenixproject.domain.model
 
+import com.devil.phoenixproject.util.BackupContent
+import com.devil.phoenixproject.util.BackupData
+import com.devil.phoenixproject.util.RoutineBackup
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
@@ -162,6 +165,35 @@ class RoutineRegressionGuardTest {
         val normalized = normalizeRoutine(routine)
 
         assertEquals("g-push", normalized.groupId, "normalizeRoutine must not strip groupId")
+    }
+
+    // ── Backup v2 backward compatibility ──────────────────────────────
+
+    @Test
+    fun backupV2_withoutRoutineGroupFields_producesValidDefaults() {
+        // Simulate a v2 backup that has no routineGroups and no groupId on routines.
+        // BackupContent.routineGroups defaults to emptyList(), RoutineBackup.groupId defaults to null.
+        val v2Routine = RoutineBackup(
+            id = "r1",
+            name = "Legacy Routine",
+            createdAt = 1000L,
+            // groupId intentionally omitted — relies on default null
+        )
+        val v2Content = BackupContent(
+            routines = listOf(v2Routine),
+            // routineGroups intentionally omitted — relies on default emptyList()
+        )
+        val v2Backup = BackupData(
+            version = 2,
+            exportedAt = "2026-01-01T00:00:00Z",
+            appVersion = "0.8.0",
+            data = v2Content,
+        )
+
+        // Verify v3 fields default correctly on a v2-shaped backup
+        assertNull(v2Backup.data.routines.first().groupId, "v2 routines should have null groupId by default")
+        assertTrue(v2Backup.data.routineGroups.isEmpty(), "v2 backups should have empty routineGroups by default")
+        assertEquals(2, v2Backup.version, "Version should reflect v2 origin")
     }
 
     // ── normalizeRoutine produces contiguous indices ─────────────────

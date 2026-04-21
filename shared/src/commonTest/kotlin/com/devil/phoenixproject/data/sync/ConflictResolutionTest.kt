@@ -119,6 +119,7 @@ class ConflictResolutionTest {
             lastUsed = null,
             useCount = 5L,
             profile_id = testProfileId,
+            groupId = null,
         )
         // Set updatedAt by re-inserting with full upsert that preserves the timestamp
         // For this test, we simulate the scenario by inserting a routine where
@@ -198,6 +199,7 @@ class ConflictResolutionTest {
             lastUsed = null,
             useCount = 0L,
             profile_id = testProfileId,
+            groupId = null,
         )
         // Add a local exercise
         database.vitruvianDatabaseQueries.insertRoutineExercise(

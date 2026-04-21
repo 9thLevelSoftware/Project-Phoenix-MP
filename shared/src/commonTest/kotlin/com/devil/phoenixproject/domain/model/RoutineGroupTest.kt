@@ -74,6 +74,8 @@ class RoutineGroupTest {
 
     @Test
     fun deleteGroupPreservesRoutines_setGroupIdToNull() {
+        // Note: Database-level ON DELETE SET NULL cascade validated by SchemaParityTest migration 27.
+        // This test covers domain model support for null groupId.
         // Simulate ON DELETE SET NULL: when group is removed, routine's groupId becomes null
         val g = group(id = "g1")
         val r = routine(id = "r1", groupId = g.id)

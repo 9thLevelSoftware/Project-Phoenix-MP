@@ -14,9 +14,9 @@ import kotlin.test.fail
  * identical result:
  *
  * 1. A fresh install (Schema.create) must match an upgrade-from-v1 path
- *    (manual v1 + migrate 1->26 + reconcileFullSchema).
+ *    (manual v1 + migrate 1->27 + reconcileFullSchema).
  *
- * 2. Every intermediate version (1..25) must upgrade cleanly to 26 with all
+ * 2. Every intermediate version (1..26) must upgrade cleanly to 27 with all
  *    manifest columns and indexes present after reconciliation.
  */
 class SchemaParityTest {
@@ -29,7 +29,7 @@ class SchemaParityTest {
         val freshDriver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
         VitruvianDatabase.Schema.create(freshDriver)
 
-        // Database B: v1 base -> migrate 1..26 with resilient fallback -> reconcile
+        // Database B: v1 base -> migrate 1..27 with resilient fallback -> reconcile
         val upgradeDriver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
         buildMinimalV1Schema(upgradeDriver)
         migrateWithResilience(upgradeDriver, 1, CURRENT_VERSION)

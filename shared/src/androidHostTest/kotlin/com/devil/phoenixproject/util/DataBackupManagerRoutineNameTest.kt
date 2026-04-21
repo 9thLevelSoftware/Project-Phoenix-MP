@@ -544,6 +544,7 @@ class DataBackupManagerRoutineNameTest {
             lastUsed = null,
             useCount = 3,
             profile_id = "userA",
+            groupId = null,
         )
 
         // 3. Build a legacy backup with null profileId containing the same IDs
@@ -633,6 +634,7 @@ class DataBackupManagerRoutineNameTest {
         queries.insertRoutine(
             id = "routine-b", name = "Leg Day", description = "",
             createdAt = 1_700_000_000_000, lastUsed = null, useCount = 1, profile_id = "userB",
+            groupId = null,
         )
 
         // 3. Restore a backup that explicitly says these rows belong to "userB"

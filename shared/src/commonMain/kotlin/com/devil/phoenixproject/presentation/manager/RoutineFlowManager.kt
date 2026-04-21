@@ -144,29 +144,54 @@ class RoutineFlowManager(
         }
 
         // Collector #3: Load routine groups for active profile
+        // Uses same retry-with-backoff pattern as Collector #1 — if the DB is
+        // mid-migration when groups load, the collector would die permanently
+        // and groups stay invisible until app restart.
         scope.launch {
-            try {
-                userProfileRepository.activeProfile
-                    .flatMapLatest { profile ->
-                        val profileId = profile?.id ?: "default"
-                        Logger.d { "ROUTINE_GROUPS: Subscribing for profile=$profileId" }
-                        groupRepo.getAllRoutineGroups(profileId)
+            val repo = groupRepo
+            if (repo == null) {
+                Logger.e { "ROUTINE_GROUPS: Cannot load groups — groupRepo unavailable" }
+                return@launch
+            }
+            var retryCount = 0
+            val maxRetries = 3
+            while (retryCount <= maxRetries) {
+                try {
+                    userProfileRepository.activeProfile
+                        .flatMapLatest { profile ->
+                            val profileId = profile?.id ?: "default"
+                            Logger.d { "ROUTINE_GROUPS: Subscribing for profile=$profileId (attempt=${retryCount + 1})" }
+                            repo.getAllRoutineGroups(profileId)
+                        }
+                        .collect { groups ->
+                            Logger.d { "ROUTINE_GROUPS: Got ${groups.size} groups" }
+                            coordinator._routineGroups.value = groups
+                        }
+                    break
+                } catch (e: Exception) {
+                    retryCount++
+                    Logger.e(e) { "ROUTINE_GROUPS: Error loading groups (attempt $retryCount/$maxRetries)" }
+                    if (retryCount <= maxRetries) {
+                        delay(1000L * retryCount) // Back off: 1s, 2s, 3s
                     }
-                    .collect { groups ->
-                        Logger.d { "ROUTINE_GROUPS: Got ${groups.size} groups" }
-                        coordinator._routineGroups.value = groups
-                    }
-            } catch (e: Exception) {
-                Logger.e(e) { "ROUTINE_GROUPS: Error loading groups" }
+                }
+            }
+            if (retryCount > maxRetries) {
+                Logger.e { "ROUTINE_GROUPS: All $maxRetries retries exhausted — groups will remain empty until app restart" }
             }
         }
     }
 
     /**
      * Concrete repo access for RoutineGroup CRUD (groups are local-only, not on WorkoutRepository interface).
+     * Safe cast: logs error if the underlying implementation changes.
      */
-    private val groupRepo: SqlDelightWorkoutRepository
-        get() = workoutRepository as SqlDelightWorkoutRepository
+    private val groupRepo: SqlDelightWorkoutRepository?
+        get() = (workoutRepository as? SqlDelightWorkoutRepository).also {
+            if (it == null) {
+                Logger.e { "ROUTINE_GROUPS: workoutRepository is not SqlDelightWorkoutRepository — group operations unavailable" }
+            }
+        }
 
     // ===== Superset Navigation Helpers (private) =====
 
@@ -560,6 +585,7 @@ class RoutineFlowManager(
 
     fun createGroup(name: String) {
         scope.launch {
+            val repo = groupRepo ?: return@launch
             val group = RoutineGroup(
                 id = generateUUID(),
                 name = name,
@@ -567,30 +593,33 @@ class RoutineFlowManager(
                 orderIndex = coordinator._routineGroups.value.size,
                 createdAt = currentTimeMillis(),
             )
-            groupRepo.saveRoutineGroup(group)
+            repo.saveRoutineGroup(group)
             Logger.d { "ROUTINE_GROUPS: Created group '${group.name}' (${group.id})" }
         }
     }
 
     fun renameGroup(groupId: String, newName: String) {
         scope.launch {
+            val repo = groupRepo ?: return@launch
             val existing = coordinator._routineGroups.value.find { it.id == groupId } ?: return@launch
-            groupRepo.updateRoutineGroup(existing.copy(name = newName))
+            repo.updateRoutineGroup(existing.copy(name = newName))
             Logger.d { "ROUTINE_GROUPS: Renamed group '$groupId' to '$newName'" }
         }
     }
 
     fun deleteGroup(groupId: String) {
         scope.launch {
-            groupRepo.deleteRoutineGroup(groupId)
+            val repo = groupRepo ?: return@launch
+            repo.deleteRoutineGroup(groupId)
             Logger.d { "ROUTINE_GROUPS: Deleted group '$groupId' (routines become ungrouped via ON DELETE SET NULL)" }
         }
     }
 
     fun moveRoutinesToGroup(routineIds: Set<String>, groupId: String?) {
         scope.launch {
+            val repo = groupRepo ?: return@launch
             routineIds.forEach { id ->
-                groupRepo.moveRoutineToGroup(id, groupId)
+                repo.moveRoutineToGroup(id, groupId)
             }
             Logger.d { "ROUTINE_GROUPS: Moved ${routineIds.size} routine(s) to group=${groupId ?: "ungrouped"}" }
         }

@@ -656,7 +656,7 @@ internal val manifestTables: List<SchemaTableOperation> = listOf(
     ),
 
     // Routine -- initial schema, full current shape
-    // Columns added by later migrations: sync fields (m11), profile_id (m21)
+    // Columns added by later migrations: sync fields (m11), profile_id (m21), groupId (m27)
     SchemaTableOperation(
         table = "Routine",
         createSql = """
@@ -670,7 +670,8 @@ internal val manifestTables: List<SchemaTableOperation> = listOf(
                 updatedAt INTEGER,
                 serverId TEXT,
                 deletedAt INTEGER,
-                profile_id TEXT NOT NULL DEFAULT 'default'
+                profile_id TEXT NOT NULL DEFAULT 'default',
+                groupId TEXT REFERENCES RoutineGroup(id) ON DELETE SET NULL
             )
         """.trimIndent(),
     ),

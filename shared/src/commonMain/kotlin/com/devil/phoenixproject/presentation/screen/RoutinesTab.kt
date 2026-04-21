@@ -109,6 +109,10 @@ fun RoutinesTab(
     var deleteGroupTarget by remember { mutableStateOf<RoutineGroup?>(null) }
     // Pending group creation from MoveToGroupDialog "New Group..." option
     var pendingCreateGroupForMove by remember { mutableStateOf(false) }
+    // Routine IDs that should be moved into the newly created group
+    var pendingMoveRoutineIds by remember { mutableStateOf<Set<String>>(emptySet()) }
+    // Snapshot of known group IDs before creating a new group (to detect the new one)
+    var preCreateGroupIds by remember { mutableStateOf<Set<String>>(emptySet()) }
 
     // Group routines: ungrouped first, then by group
     val ungroupedRoutines = remember(routines) {
@@ -167,6 +171,7 @@ fun RoutinesTab(
                             selectedIds = selectedIds,
                             targetProfiles = targetProfiles,
                             onSelectionModeActivate = { selectionMode = true },
+                            onSelectionModeDeactivate = { selectionMode = false },
                             onStartWorkout = onStartWorkout,
                             onEditRoutine = onEditRoutine,
                             onDeleteRoutine = onDeleteRoutine,
@@ -208,6 +213,7 @@ fun RoutinesTab(
                                     selectedIds = selectedIds,
                                     targetProfiles = targetProfiles,
                                     onSelectionModeActivate = { selectionMode = true },
+                                    onSelectionModeDeactivate = { selectionMode = false },
                                     onStartWorkout = onStartWorkout,
                                     onEditRoutine = onEditRoutine,
                                     onDeleteRoutine = onDeleteRoutine,
@@ -522,6 +528,8 @@ fun RoutinesTab(
                     moveToGroupRoutineId = null
                 },
                 onCreateNewGroup = {
+                    pendingMoveRoutineIds = setOf(routineId)
+                    preCreateGroupIds = routineGroups.map { it.id }.toSet()
                     moveToGroupRoutineId = null
                     pendingCreateGroupForMove = true
                     showCreateGroupDialog = true
@@ -552,6 +560,8 @@ fun RoutinesTab(
                 clearSelection()
             },
             onCreateNewGroup = {
+                pendingMoveRoutineIds = selectedIds.toSet()
+                preCreateGroupIds = routineGroups.map { it.id }.toSet()
                 showBatchMoveToGroupDialog = false
                 pendingCreateGroupForMove = true
                 showCreateGroupDialog = true
@@ -567,13 +577,37 @@ fun RoutinesTab(
             onConfirm = { name ->
                 onCreateGroup(name)
                 showCreateGroupDialog = false
-                pendingCreateGroupForMove = false
+                // If this was triggered from "Move to Group" -> "New Group...",
+                // keep pendingCreateGroupForMove=true so the LaunchedEffect below
+                // can detect the new group and chain the move operation.
+                if (!pendingCreateGroupForMove) {
+                    pendingMoveRoutineIds = emptySet()
+                    preCreateGroupIds = emptySet()
+                }
             },
             onDismiss = {
                 showCreateGroupDialog = false
                 pendingCreateGroupForMove = false
+                pendingMoveRoutineIds = emptySet()
+                preCreateGroupIds = emptySet()
             },
         )
+    }
+
+    // Reactive handler: when a new group appears after "New Group..." from move dialog,
+    // automatically move the pending routines into it.
+    LaunchedEffect(routineGroups, pendingCreateGroupForMove) {
+        if (pendingCreateGroupForMove && pendingMoveRoutineIds.isNotEmpty()) {
+            val newGroup = routineGroups.firstOrNull { it.id !in preCreateGroupIds }
+            if (newGroup != null) {
+                Logger.d { "ROUTINE_GROUPS: Auto-moving ${pendingMoveRoutineIds.size} routine(s) into new group '${newGroup.name}' (${newGroup.id})" }
+                onMoveToGroup(pendingMoveRoutineIds, newGroup.id)
+                pendingCreateGroupForMove = false
+                pendingMoveRoutineIds = emptySet()
+                preCreateGroupIds = emptySet()
+                clearSelection()
+            }
+        }
     }
 
     // Rename Group dialog
@@ -626,6 +660,7 @@ private fun RoutineCardWithActions(
     selectedIds: MutableSet<String>,
     targetProfiles: List<UserProfile>,
     onSelectionModeActivate: () -> Unit,
+    onSelectionModeDeactivate: () -> Unit,
     onStartWorkout: (Routine) -> Unit,
     onEditRoutine: (String) -> Unit,
     onDeleteRoutine: (String) -> Unit,
@@ -646,7 +681,7 @@ private fun RoutineCardWithActions(
         onSelectionToggle = {
             if (selectedIds.contains(routine.id)) {
                 selectedIds.remove(routine.id)
-                // Note: caller handles exit from selection mode when selectedIds becomes empty
+                if (selectedIds.isEmpty()) onSelectionModeDeactivate()
             } else {
                 selectedIds.add(routine.id)
             }

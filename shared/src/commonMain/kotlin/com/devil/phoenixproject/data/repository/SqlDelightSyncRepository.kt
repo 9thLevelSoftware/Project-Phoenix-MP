@@ -352,6 +352,7 @@ class SqlDelightSyncRepository(
                         lastUsed = existing?.lastUsed,
                         useCount = existing?.useCount ?: 0L,
                         profile_id = userProfileRepository.activeProfile.value?.id ?: "default",
+                        groupId = existing?.groupId,
                     )
 
                     // Update sync fields
@@ -523,6 +524,7 @@ class SqlDelightSyncRepository(
                         lastUsed = existing?.lastUsed,
                         useCount = existing?.useCount ?: 0L,
                         profile_id = existing?.profile_id ?: profileId,
+                        groupId = existing?.groupId,
                     )
 
                     // SAFETY GUARD: Only replace exercises if the portal actually sent exercises.
@@ -1473,6 +1475,7 @@ class SqlDelightSyncRepository(
                         lastUsed = existing?.lastUsed,
                         useCount = existing?.useCount ?: 0L,
                         profile_id = existing?.profile_id ?: profileId,
+                        groupId = existing?.groupId,
                     )
 
                     // Replace exercises if portal provided them (non-empty list)
