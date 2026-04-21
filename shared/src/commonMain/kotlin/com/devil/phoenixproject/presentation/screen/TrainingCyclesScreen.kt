@@ -550,6 +550,8 @@ fun TrainingCyclesScreen(navController: NavController, viewModel: MainViewModel,
                 template = state.template,
                 oneRepMaxValues = state.oneRepMaxValues,
                 prWeightValues = state.prWeightValues,
+                weightUnit = weightUnit,
+                kgToDisplay = viewModel::kgToDisplay,
                 onConfirm = { exerciseConfigs ->
                     creationState = CycleCreationState.Creating(state.template)
                     scope.launch {

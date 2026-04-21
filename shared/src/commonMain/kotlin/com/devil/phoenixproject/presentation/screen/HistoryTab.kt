@@ -398,6 +398,7 @@ fun WorkoutHistoryCard(
                     // CompletedSet breakdown (set-level tracking)
                     CompletedSetsSection(
                         sessionId = session.id,
+                        cableCount = session.cableCount,
                         weightUnit = weightUnit,
                         formatWeight = formatWeight,
                     )
@@ -512,10 +513,15 @@ fun WorkoutHistoryCard(
 /**
  * Shows completed set breakdown for a workout session.
  * Only renders if CompletedSet records exist for the session.
+ *
+ * Note: CompletedSet.actualWeightKg stores per-cable weight (populated from
+ * WorkoutParameters.weightPerCableKg in ActiveSessionEngine). We use
+ * WeightDisplayFormatter to apply cable multiplication for display.
  */
 @Composable
 private fun CompletedSetsSection(
     sessionId: String,
+    cableCount: Int?,
     weightUnit: WeightUnit,
     formatWeight: (Float, WeightUnit) -> String,
 ) {
@@ -575,8 +581,13 @@ private fun CompletedSetsSection(
 
                 // Reps x Weight + RPE
                 Row(verticalAlignment = Alignment.CenterVertically) {
+                    // actualWeightKg is per-cable; use WeightDisplayFormatter for total display weight
+                    val displayWeight = WeightDisplayFormatter.formatDisplayWeight(
+                        set.actualWeightKg, cableCount, weightUnit,
+                    )
+                    val unitLabel = weightUnit.name.lowercase()
                     Text(
-                        "${set.actualReps} x ${formatWeight(set.actualWeightKg, weightUnit)}",
+                        "${set.actualReps} x $displayWeight $unitLabel",
                         style = MaterialTheme.typography.bodyMedium,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurface,
@@ -944,6 +955,7 @@ fun GroupedRoutineCard(
                         // CompletedSet breakdown per session
                         CompletedSetsSection(
                             sessionId = session.id,
+                            cableCount = session.cableCount,
                             weightUnit = weightUnit,
                             formatWeight = formatWeight,
                         )

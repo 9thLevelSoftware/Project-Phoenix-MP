@@ -16,6 +16,8 @@ import com.devil.phoenixproject.domain.model.CycleTemplate
 import com.devil.phoenixproject.domain.model.ExerciseConfig
 import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.TemplateExercise
+import com.devil.phoenixproject.domain.model.WeightUnit
+import com.devil.phoenixproject.util.format
 import com.devil.phoenixproject.presentation.components.ExerciseConfigModal
 import com.devil.phoenixproject.ui.theme.Spacing
 import org.jetbrains.compose.resources.stringResource
@@ -44,6 +46,8 @@ fun ModeConfirmationScreen(
     template: CycleTemplate,
     oneRepMaxValues: Map<String, Float> = emptyMap(),
     prWeightValues: Map<String, Float> = emptyMap(),
+    weightUnit: WeightUnit = WeightUnit.KG,
+    kgToDisplay: (Float, WeightUnit) -> Float = { kg, _ -> kg },
     onConfirm: (Map<String, ExerciseConfig>) -> Unit,
     onCancel: () -> Unit,
 ) {
@@ -177,6 +181,8 @@ fun ModeConfirmationScreen(
                             ),
                             oneRepMaxKg = oneRepMaxValues[exercise.exerciseName],
                             prWeight = prWeightValues[exercise.exerciseName],
+                            weightUnit = weightUnit,
+                            kgToDisplay = kgToDisplay,
                             onConfigUpdated = { newConfig ->
                                 exerciseConfigs[exercise.exerciseName] = newConfig
                             },
@@ -245,6 +251,8 @@ private fun ConfigurableExerciseCard(
     config: ExerciseConfig,
     oneRepMaxKg: Float?,
     prWeight: Float? = null,
+    weightUnit: WeightUnit = WeightUnit.KG,
+    kgToDisplay: (Float, WeightUnit) -> Float = { kg, _ -> kg },
     onConfigUpdated: (ExerciseConfig) -> Unit,
 ) {
     var showConfigModal by remember { mutableStateOf(false) }
@@ -303,14 +311,21 @@ private fun ConfigurableExerciseCard(
                     )
                 }
 
-                // Weight badge (if configured)
+                // Weight badge (if configured) — shows per-cable weight in user's unit
                 if (config.weightPerCableKg > 0f) {
+                    val displayWeight = kgToDisplay(config.weightPerCableKg, weightUnit)
+                    val unitLabel = weightUnit.name.lowercase()
+                    val weightText = if (displayWeight % 1f == 0f) {
+                        "${displayWeight.toInt()}$unitLabel"
+                    } else {
+                        "${displayWeight.format(1)}$unitLabel"
+                    }
                     Surface(
                         shape = RoundedCornerShape(Spacing.small),
                         color = MaterialTheme.colorScheme.secondaryContainer,
                     ) {
                         Text(
-                            text = "${config.weightPerCableKg.toInt()}kg",
+                            text = weightText,
                             modifier = Modifier.padding(horizontal = Spacing.small, vertical = Spacing.extraSmall),
                             style = MaterialTheme.typography.labelSmall,
                             fontWeight = FontWeight.Bold,

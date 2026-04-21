@@ -74,11 +74,8 @@ class WeightDisplayRegressionTest {
             cableCount = 2,
             unit = WeightUnit.LB,
         )
-        // 160kg * 2.20462 = 352.7392 -> "352.7"
-        assertTrue(
-            result.startsWith("352"),
-            "160kg -> ~352.7lb, got '$result'",
-        )
+        // 160kg * 2.20462 = 352.7392 -> rounded to 1 decimal = "352.7"
+        assertEquals("352.7", result, "160kg -> 352.7392lb -> formatted '352.7', got '$result'")
     }
 
     // ===== 3. Single-cable session: KG =====
@@ -399,17 +396,93 @@ class WeightDisplayRegressionTest {
 
     @Test
     fun format_lbConversion_showsOneDecimal() {
-        // 100kg * 2.20462 = 220.462 -> "220.5" (rounded to 1 decimal)
+        // 100kg * 2.20462 = 220.462 -> rounded to 1 decimal = "220.5"
         val result = WeightDisplayFormatter.formatDisplayWeight(100f, 1, WeightUnit.LB)
-        assertTrue(
-            result.startsWith("220"),
-            "100kg -> ~220lb, got '$result'",
+        assertEquals("220.5", result, "100kg -> 220.462lb -> formatted '220.5', got '$result'")
+    }
+
+    // ===== 15. Negative weight input =====
+
+    @Test
+    fun negativeWeight_passesThrough() {
+        // Negative weight is not physically possible but should not crash.
+        // Current behavior: passes through without clamping (no coerceAtLeast).
+        // Documenting rather than clamping: the caller (UI) should prevent negative input.
+        val result = WeightDisplayFormatter.toDisplayWeight(
+            weightPerCableKg = -50f,
+            cableCount = 2,
+            unit = WeightUnit.KG,
         )
-        // Verify it has at most 1 decimal place
-        val decimalPart = result.substringAfter(".", "")
-        assertTrue(
-            decimalPart.length <= 1,
-            "Should have at most 1 decimal place, got '$result'",
+        assertEquals(-100f, result, "Negative weight passes through: -50 x 2 = -100")
+    }
+
+    @Test
+    fun negativeWeight_formatsWithMinus() {
+        val result = WeightDisplayFormatter.formatDisplayWeight(
+            weightPerCableKg = -50f,
+            cableCount = 2,
+            unit = WeightUnit.KG,
         )
+        assertEquals("-100", result, "Negative result should format with minus sign")
+    }
+
+    // ===== 16. Unusual cableCount values =====
+
+    @Test
+    fun cableCountNegative_producesNegativeWeight() {
+        // cableCount = -1 is invalid data (corruption). Currently produces negative result.
+        // The formatter is a pure math function; input validation belongs at the call site.
+        val result = WeightDisplayFormatter.toDisplayWeight(
+            weightPerCableKg = 50f,
+            cableCount = -1,
+            unit = WeightUnit.KG,
+        )
+        assertEquals(-50f, result, "50 x -1 = -50 (invalid cableCount, no validation in formatter)")
+    }
+
+    @Test
+    fun cableCountThree_multipliesByThree() {
+        // cableCount = 3 is not physically possible on Vitruvian hardware (max 2 cables).
+        // Formatter treats cableCount as a pure multiplier without validation.
+        val result = WeightDisplayFormatter.toDisplayWeight(
+            weightPerCableKg = 50f,
+            cableCount = 3,
+            unit = WeightUnit.KG,
+        )
+        assertEquals(150f, result, "50 x 3 = 150 (no hardware validation in formatter)")
+    }
+
+    // ===== 17. Float modulo precision near integer boundary =====
+
+    @Test
+    fun floatModuloPrecision_nearIntegerBoundary() {
+        // 33.3333f * 3 = 99.9999 due to float precision — NOT exactly 100.
+        // This tests whether `display % 1f == 0f` incorrectly treats 99.9999 as integer.
+        val result = WeightDisplayFormatter.formatDisplayWeight(
+            weightPerCableKg = 33.3333f,
+            cableCount = 3,
+            unit = WeightUnit.KG,
+        )
+        // 33.3333 * 3 = 99.9999... which is NOT exactly 100
+        // So `display % 1f` is ~0.9999 (not 0), takes the format(1) path
+        // format(1) rounds: (99.9999 * 10).roundToInt() / 10 = 1000 / 10 = 100.0
+        // Then 100.0 % 1f == 0f, but we're already in the decimal path...
+        // Actually format(1) returns "100.0" since intPart=100, decPart=0, padded="0"
+        // The key: this must not crash and must produce a reasonable string.
+        assertTrue(
+            result == "100.0" || result == "100",
+            "Near-integer float: 33.3333 x 3 should produce ~100, got '$result'",
+        )
+    }
+
+    @Test
+    fun floatModuloPrecision_exactlyHalf() {
+        // 0.5 * 1 = 0.5 — should be detected as fractional
+        val result = WeightDisplayFormatter.formatDisplayWeight(
+            weightPerCableKg = 0.5f,
+            cableCount = 1,
+            unit = WeightUnit.KG,
+        )
+        assertEquals("0.5", result, "0.5 should format as '0.5'")
     }
 }

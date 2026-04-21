@@ -158,11 +158,8 @@ class WeightDisplayFormatterTest {
             cableCount = 2,
             unit = WeightUnit.LB,
         )
-        // 50 * 2 = 100kg * 2.20462 = 220.462 → "220.5" (1 decimal)
-        assertTrue(
-            result.startsWith("220"),
-            "100kg → ~220 lb, got '$result'",
-        )
+        // 50 * 2 = 100kg * 2.20462 = 220.462 → rounded to 1 decimal = "220.5"
+        assertEquals("220.5", result, "100kg → 220.462lb → formatted '220.5', got '$result'")
     }
 
     // ===== Pure function: per-cable value preserved =====
