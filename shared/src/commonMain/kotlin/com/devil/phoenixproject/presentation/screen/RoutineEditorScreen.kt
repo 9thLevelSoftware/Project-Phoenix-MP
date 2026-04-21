@@ -15,12 +15,14 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
@@ -28,6 +30,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.DragHandle
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.automirrored.filled.TrendingUp
@@ -68,6 +71,8 @@ import com.devil.phoenixproject.domain.model.SupersetColors
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.domain.model.generateSupersetId
 import com.devil.phoenixproject.domain.model.generateUUID
+import com.devil.phoenixproject.domain.model.normalizeRoutine
+import com.devil.phoenixproject.domain.model.reorderExercisesInSuperset
 import com.devil.phoenixproject.presentation.components.BulkWeightAdjustDialog
 import com.devil.phoenixproject.presentation.components.ExercisePickerDialog
 import com.devil.phoenixproject.presentation.components.ExerciseRowInSuperset
@@ -81,6 +86,7 @@ import com.devil.phoenixproject.ui.theme.SupersetTheme
 import com.devil.phoenixproject.util.UnitConverter
 import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.koinInject
+import sh.calvin.reorderable.ReorderableColumn
 import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.rememberReorderableLazyListState
 import vitruvianprojectphoenix.shared.generated.resources.Res
@@ -208,46 +214,14 @@ fun RoutineEditorScreen(
     // Drag and Drop State
     val lazyListState = rememberLazyListState()
 
-    fun normalizeRoutine(routine: Routine): Routine {
-        // Issue #334: Reorder exercises so superset members are contiguous.
-        // When exercises are added to a superset they get appended to the end
-        // of the flat list. getNextStep() Phase C assumes superset members are
-        // contiguous, so we must group them before reindexing.
-        val reorderedExercises = routine.getItems().flatMap { item ->
-            when (item) {
-                is RoutineItem.Single -> listOf(item.exercise)
-                is RoutineItem.SupersetItem ->
-                    item.superset.exercises.sortedBy { it.orderInSuperset }
-            }
-        }
-
-        val reindexedExercises = reorderedExercises.mapIndexed { index, ex ->
-            ex.copy(orderIndex = index)
-        }
-        val exercisesBySuperset = reindexedExercises.groupBy { it.supersetId }
-        val normalizedExercises = reindexedExercises.map { ex ->
-            val supersetId = ex.supersetId ?: return@map ex
-            val ordered = exercisesBySuperset[supersetId].orEmpty().sortedBy { it.orderIndex }
-            val newOrder = ordered.indexOfFirst { it.id == ex.id }
-            ex.copy(orderInSuperset = if (newOrder >= 0) newOrder else ex.orderInSuperset)
-        }
-        val normalizedSupersets = routine.supersets.mapNotNull { superset ->
-            val minOrder = normalizedExercises
-                .filter { it.supersetId == superset.id }
-                .minOfOrNull { it.orderIndex }
-            minOrder?.let { superset.copy(orderIndex = it) }
-        }
-        return routine.copy(
-            exercises = normalizedExercises,
-            supersets = normalizedSupersets,
-        )
-    }
-
-    // Helper: Update Routine
-    fun updateRoutine(updateFn: (Routine) -> Routine) {
+    // Helper: Update Routine (with optional preserveIntraSupersetOrder for intra-superset reorder)
+    fun updateRoutine(
+        preserveIntraSupersetOrder: Boolean = false,
+        updateFn: (Routine) -> Routine,
+    ) {
         state.routine?.let { current ->
             val updated = updateFn(current)
-            state = state.copy(routine = normalizeRoutine(updated))
+            state = state.copy(routine = normalizeRoutine(updated, preserveIntraSupersetOrder))
         }
     }
 
@@ -607,35 +581,74 @@ fun RoutineEditorScreen(
                                                 },
                                             )
 
-                                            // Exercises in superset
-                                            superset.exercises.forEach { exercise ->
-                                                ExerciseRowInSuperset(
-                                                    exercise = exercise,
-                                                    supersetRestSeconds = superset.restBetweenSeconds,
-                                                    weightUnit = weightUnit,
-                                                    kgToDisplay = kgToDisplay,
-                                                    isSelectionMode = selectionMode,
-                                                    isSelected = selectedExerciseIds.contains(exercise.id),
-                                                    onClick = {
-                                                        if (!selectionMode) {
-                                                            exerciseToConfig = exercise
-                                                            isNewExercise = false
-                                                            editingIndex = state.exercises.indexOf(exercise)
+                                            // Exercises in superset (nested drag-and-drop reorder)
+                                            val sortedExercises = superset.exercises.sortedBy { it.orderInSuperset }
+                                            ReorderableColumn(
+                                                list = sortedExercises,
+                                                onSettle = { fromIndex, toIndex ->
+                                                    val reordered = reorderExercisesInSuperset(
+                                                        routine = state.routine ?: return@ReorderableColumn,
+                                                        supersetId = superset.id,
+                                                        fromIndex = fromIndex,
+                                                        toIndex = toIndex,
+                                                    )
+                                                    updateRoutine(preserveIntraSupersetOrder = true) { reordered }
+                                                },
+                                            ) { index, exercise, innerIsDragging ->
+                                                ReorderableItem {
+                                                    val innerElevation by animateDpAsState(
+                                                        if (innerIsDragging) 8.dp else 0.dp,
+                                                    )
+                                                    Row(
+                                                        modifier = Modifier
+                                                            .fillMaxWidth()
+                                                            .shadow(innerElevation, RoundedCornerShape(10.dp)),
+                                                        verticalAlignment = Alignment.CenterVertically,
+                                                    ) {
+                                                        // Drag handle for intra-superset reorder
+                                                        if (!selectionMode && sortedExercises.size > 1) {
+                                                            Icon(
+                                                                Icons.Default.DragHandle,
+                                                                contentDescription = "Reorder exercise",
+                                                                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                                                                modifier = Modifier
+                                                                    .size(20.dp)
+                                                                    .draggableHandle()
+                                                                    .padding(start = 4.dp),
+                                                            )
+                                                            Spacer(Modifier.width(4.dp))
                                                         }
-                                                    },
-                                                    onLongPress = {
-                                                        selectionMode = true
-                                                        selectedExerciseIds.add(exercise.id)
-                                                    },
-                                                    onSelectionToggle = {
-                                                        if (selectedExerciseIds.contains(exercise.id)) {
-                                                            selectedExerciseIds.remove(exercise.id)
-                                                            if (selectedExerciseIds.isEmpty()) selectionMode = false
-                                                        } else {
-                                                            selectedExerciseIds.add(exercise.id)
-                                                        }
-                                                    },
-                                                )
+
+                                                        ExerciseRowInSuperset(
+                                                            exercise = exercise,
+                                                            supersetRestSeconds = superset.restBetweenSeconds,
+                                                            weightUnit = weightUnit,
+                                                            kgToDisplay = kgToDisplay,
+                                                            isSelectionMode = selectionMode,
+                                                            isSelected = selectedExerciseIds.contains(exercise.id),
+                                                            onClick = {
+                                                                if (!selectionMode) {
+                                                                    exerciseToConfig = exercise
+                                                                    isNewExercise = false
+                                                                    editingIndex = state.exercises.indexOf(exercise)
+                                                                }
+                                                            },
+                                                            onLongPress = {
+                                                                selectionMode = true
+                                                                selectedExerciseIds.add(exercise.id)
+                                                            },
+                                                            onSelectionToggle = {
+                                                                if (selectedExerciseIds.contains(exercise.id)) {
+                                                                    selectedExerciseIds.remove(exercise.id)
+                                                                    if (selectedExerciseIds.isEmpty()) selectionMode = false
+                                                                } else {
+                                                                    selectedExerciseIds.add(exercise.id)
+                                                                }
+                                                            },
+                                                            modifier = Modifier.weight(1f),
+                                                        )
+                                                    }
+                                                }
                                             }
                                         }
                                     }
