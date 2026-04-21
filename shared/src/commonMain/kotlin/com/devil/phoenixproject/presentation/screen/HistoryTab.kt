@@ -32,6 +32,7 @@ import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.domain.model.currentTimeMillis
 import com.devil.phoenixproject.domain.model.effectiveHeaviestKgPerCable
 import com.devil.phoenixproject.domain.model.toSetSummary
+import com.devil.phoenixproject.presentation.util.WeightDisplayFormatter
 import com.devil.phoenixproject.presentation.components.BiomechanicsHistorySummary
 import com.devil.phoenixproject.presentation.components.EmptyState
 import com.devil.phoenixproject.presentation.components.RepBiomechanicsDetail
@@ -291,18 +292,27 @@ fun WorkoutHistoryCard(
 
             Spacer(modifier = Modifier.height(Spacing.small))
 
-            // Measured Peak Per Cable | Workout Mode
+            // Measured Peak (Total) | Workout Mode
+            // Issue #5: Show total weight (per-cable * cableCount) via WeightDisplayFormatter
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
             ) {
                 Text(
-                    "Measured Peak Per Cable",
+                    "Measured Peak",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 Text(
-                    if (session.mode.contains("Echo", ignoreCase = true)) "Adaptive" else formatWeight(session.effectiveHeaviestKgPerCable(), weightUnit),
+                    if (session.mode.contains("Echo", ignoreCase = true)) {
+                        "Adaptive"
+                    } else {
+                        WeightDisplayFormatter.formatDisplayWeight(
+                            session.effectiveHeaviestKgPerCable(),
+                            session.cableCount,
+                            weightUnit,
+                        ) + " ${if (weightUnit == WeightUnit.LB) "lbs" else "kg"}"
+                    },
                     style = MaterialTheme.typography.bodyLarge,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurface,
@@ -807,18 +817,33 @@ fun GroupedRoutineCard(
 
                 Spacer(modifier = Modifier.height(Spacing.small))
 
-                // Measured Peak Per Cable | Workout Mode
+                // Measured Peak (Total) | Workout Mode
+                // Issue #5: Show total weight via WeightDisplayFormatter
+                // Use max cableCount from sessions in this group for display
+                val groupCableCount = groupedItem.sessions
+                    .filter { it.exerciseId == exerciseGroup.exerciseId }
+                    .mapNotNull { it.cableCount }
+                    .maxOrNull()
+
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                 ) {
                     Text(
-                        "Measured Peak Per Cable",
+                        "Measured Peak",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     Text(
-                        if (exerciseGroup.mode.contains("Echo", ignoreCase = true)) "Adaptive" else formatWeight(exerciseGroup.highestWeightPerCableKg, weightUnit),
+                        if (exerciseGroup.mode.contains("Echo", ignoreCase = true)) {
+                            "Adaptive"
+                        } else {
+                            WeightDisplayFormatter.formatDisplayWeight(
+                                exerciseGroup.highestWeightPerCableKg,
+                                groupCableCount,
+                                weightUnit,
+                            ) + " ${if (weightUnit == WeightUnit.LB) "lbs" else "kg"}"
+                        },
                         style = MaterialTheme.typography.bodyLarge,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurface,
@@ -1076,7 +1101,7 @@ fun WorkoutSessionCard(
                     color = MaterialTheme.colorScheme.onSurface,
                 )
                 Text(
-                    "${formatWeight(session.weightPerCableKg, weightUnit)}/cable • ${session.totalReps} reps • ${session.mode}",
+                    "${WeightDisplayFormatter.formatDisplayWeight(session.weightPerCableKg, session.cableCount, weightUnit)} ${if (weightUnit == WeightUnit.LB) "lbs" else "kg"} • ${session.totalReps} reps • ${session.mode}",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
