@@ -283,6 +283,21 @@ class SyncManager(
     }
 
     /**
+     * Resets [_syncState] to [SyncState.Idle] without performing a sync.
+     *
+     * Use this after an out-of-band sign-in (OAuth, deep-link, etc.) that
+     * bypasses [login] but still needs to clear a stale
+     * [SyncState.NotAuthenticated] left over from a prior [logout]. Otherwise
+     * the UI continues to show "Authentication failed — please sign out and
+     * sign back in" even though the new session is valid.
+     */
+    suspend fun resetSyncStateToIdle() {
+        syncMutex.withLock {
+            _syncState.value = SyncState.Idle
+        }
+    }
+
+    /**
      * Refreshes [PortalUser.isPremium] from the server subscription endpoint.
      * Prefer this on app foreground; do not infer entitlement from sync HTTP status alone.
      */
