@@ -2,15 +2,16 @@
 
 ## Milestones
 
-- ✅ **v0.4.1 Architectural Cleanup** — Phases 1-4 (shipped 2026-02-13)
-- ✅ **v0.4.5 Premium Features Phase 1** — Phases 1-5 (shipped 2026-02-14)
-- ✅ **v0.4.6 Biomechanics MVP** — Phases 6-8 (shipped 2026-02-15)
-- ✅ **v0.4.7 Mobile Platform Features** — Phases 9-12 (shipped 2026-02-15)
-- ✅ **v0.5.0 Premium Mobile** — Phases 13-15 (shipped 2026-02-27)
-- ✅ **v0.5.1 Board Polish & Premium UI** — Phases 16-22 (shipped 2026-02-28)
-- ✅ **v0.6.0 Portal Sync Compatibility** — Phases 23-28 (shipped 2026-03-02)
-- ✅ **v0.7.0 MVP Cloud Sync** — Phases 29-31 (shipped 2026-03-15)
-- ✅ **v0.8.0 Beta Readiness** — Phases 32-36 (shipped 2026-03-24)
+- v0.4.1 Architectural Cleanup — Phases 1-4 (shipped 2026-02-13)
+- v0.4.5 Premium Features Phase 1 — Phases 1-5 (shipped 2026-02-14)
+- v0.4.6 Biomechanics MVP — Phases 6-8 (shipped 2026-02-15)
+- v0.4.7 Mobile Platform Features — Phases 9-12 (shipped 2026-02-15)
+- v0.5.0 Premium Mobile — Phases 13-15 (shipped 2026-02-27)
+- v0.5.1 Board Polish & Premium UI — Phases 16-22 (shipped 2026-02-28)
+- v0.6.0 Portal Sync Compatibility — Phases 23-28 (shipped 2026-03-02)
+- v0.7.0 MVP Cloud Sync — Phases 29-31 (shipped 2026-03-15)
+- v0.8.0 Beta Readiness — Phases 32-36 (shipped 2026-03-24)
+- **v0.9.0 Enhancement Sweep** — Phases 37-44 (active)
 
 ## Phases
 
@@ -18,95 +19,120 @@
 - Integer phases (1, 2, 3): Planned milestone work
 - Decimal phases (16.1, 16.2): Urgent insertions (marked with INSERTED)
 
-Decimal phases appear between their surrounding integers in numeric order.
-
 <details>
-<summary>✅ v0.4.1 Architectural Cleanup (Phases 1-4) — SHIPPED 2026-02-13</summary>
+<summary>v0.4.1 - v0.8.0 (Phases 1-36) — SHIPPED</summary>
 
-See `.planning/milestones/v0.4.1-*` for archived phase details.
+See `.planning/milestones/` for archived phase details.
 
 </details>
 
-<details>
-<summary>✅ v0.4.5 Premium Features Phase 1 (Phases 1-5) — SHIPPED 2026-02-14</summary>
+### v0.9.0 Enhancement Sweep (Phases 37-44) — ACTIVE
 
-See `.planning/milestones/v0.4.5-*` for archived phase details.
+- [x] Phase 37: Foundation (#323 weight display)
+- [x] Phase 38: Weight-Dependent Features (#266, #337)
+- [ ] Phase 39: Routine Cluster (#365, #307)
+- [ ] Phase 40: Analytics (#229, #225)
+- [ ] Phase 41: Quick Wins (#190, #228, #100)
+- [ ] Phase 42: Platform (#363)
+- [ ] Phase 43: Advanced VBT (#313)
+- [ ] Phase 44: Integration Validation
 
-</details>
+## Phase Details
 
-<details>
-<summary>✅ v0.4.6 Biomechanics MVP (Phases 6-8) — SHIPPED 2026-02-15</summary>
+### Phase 37: Foundation
+**Goal**: Fix weight display across all surfaces — per-cable → total weight
+**Requirements**: FOUND-01 (#323)
+**Recommended Agents**: Senior Developer, Frontend Developer, QA Verification Specialist
+**Success Criteria**:
+- [ ] All weight displays show total weight (per-cable × 2)
+- [ ] Unit preference (kg/lbs) respected
+- [ ] Single-cable exercises handled correctly
+- [ ] No double-multiplication regressions
+- [ ] Insights tab, history, set summary all updated
+**Plans**: 2
 
-See `.planning/milestones/v0.4.6-*` for archived phase details.
+### Phase 38: Weight-Dependent Features
+**Goal**: Implement granular weight adjustments and bulk routine weight changes
+**Requirements**: WEIGHT-01 (#266), WEIGHT-02 (#337)
+**Recommended Agents**: Senior Developer, UX Architect, QA Verification Specialist
+**Success Criteria**:
+- [ ] Weight wheel supports 0.1lb/0.1kg increments
+- [ ] User preference for min increment stored
+- [ ] Bulk weight adjust by % or absolute in routine editor
+- [ ] Both features respect new weight display layer
+**Plans**: 3
 
-</details>
+### Phase 39: Routine Cluster
+**Goal**: Enable superset reorder and routine parent grouping
+**Requirements**: ROUTINE-01 (#365), ROUTINE-02 (#307)
+**Recommended Agents**: Senior Developer, Frontend Developer, UX Architect
+**Success Criteria**:
+- [ ] Exercises inside supersets can be reordered
+- [ ] Supersets can be dragged relative to standalone exercises
+- [ ] Parent groups created/edited for daily routines
+- [ ] Routines can be moved between groups
+- [ ] Drag-and-drop edge cases handled
+**Plans**: 3
 
-<details>
-<summary>✅ v0.4.7 Mobile Platform Features (Phases 9-12) — SHIPPED 2026-02-15</summary>
+### Phase 40: Analytics
+**Goal**: Add bodyweight volume tracking and historical time estimates
+**Requirements**: ANALYTICS-01 (#229), ANALYTICS-02 (#225)
+**Recommended Agents**: Senior Developer, Data Analytics Engineer, UX Architect
+**Success Criteria**:
+- [ ] Body weight captured in settings or per-exercise prompt
+- [ ] Push-up/pull-up volume calculated per formula
+- [ ] Decline height options available
+- [ ] Routine time estimates based on historical completion
+- [ ] AMRAP handling for time estimates
+**Plans**: 3
 
-See `.planning/milestones/v0.4.7-*` for archived phase details.
+### Phase 41: Quick Wins
+**Goal**: Ship independent UX improvements for immediate user value
+**Requirements**: UX-01 (#190), UX-02 (#228), AUDIO-01 (#100)
+**Recommended Agents**: Senior Developer, Frontend Developer, QA Verification Specialist
+**Success Criteria**:
+- [ ] Routine auto-starts when first exercise selected
+- [ ] Timer pause/restart buttons available on timed exercises
+- [ ] Countdown sounds improved (last 10 seconds)
+- [ ] Final rep sound distinct
+- [ ] Rep chirps more audible over music
+**Plans**: 2
 
-</details>
+### Phase 42: Platform
+**Goal**: Enable user-defined backup locations (NAS, cloud drives)
+**Requirements**: PLATFORM-01 (#363)
+**Recommended Agents**: Backend Architect, Mobile App Builder, QA Verification Specialist
+**Success Criteria**:
+- [ ] User can select backup destination (local, Google Drive, Dropbox, etc.)
+- [ ] Android Storage Access Framework integration
+- [ ] iOS Files app integration
+- [ ] Backup scheduling respects selected location
+- [ ] Restore from alternate locations
+**Plans**: 3
 
-<details>
-<summary>✅ v0.5.0 Premium Mobile (Phases 13-15) — SHIPPED 2026-02-27</summary>
+### Phase 43: Advanced VBT
+**Goal**: Implement power loss thresholds for velocity-based training
+**Requirements**: ADVANCED-01 (#313)
+**Recommended Agents**: Senior Developer, Backend Architect, Data Analytics Engineer
+**Success Criteria**:
+- [ ] User can set power loss threshold (e.g., 20%)
+- [ ] Real-time power tracking during set
+- [ ] Auto-end set when threshold reached
+- [ ] Audio/visual alert at threshold
+- [ ] Integration with existing biomechanics engine
+**Plans**: 3
 
-See `.planning/milestones/v0.5.0-*` for archived phase details.
-
-</details>
-
-<details>
-<summary>✅ v0.5.1 Board Polish & Premium UI (Phases 16-22) — SHIPPED 2026-02-28</summary>
-
-- [x] Phase 16: Foundation & Board Conditions (2/2 plans) — FeatureGate entries, versionName, UTC fix, backup exclusion, camera rationale (completed 2026-02-27)
-- [x] Phase 17: WCAG Accessibility (2/2 plans) — Color-blind mode toggle, secondary visual signals (completed 2026-02-28)
-- [x] Phase 18: HUD Customization (2/2 plans) — Preset-based HUD page visibility (completed 2026-02-28)
-- [x] Phase 19: CV Form Check UX & Persistence (3/3 plans) — Toggle UI, real-time warnings, form score persistence (completed 2026-02-28)
-- [x] Phase 20: Readiness Briefing (2/2 plans) — ACWR engine, readiness card, Elite tier gate (completed 2026-02-28)
-- [x] Phase 21: RPG Attributes (2/2 plans) — Attribute engine, character class, schema v17 (completed 2026-02-28)
-- [x] Phase 22: Ghost Racing (3/3 plans) — Ghost engine, dual progress bars, workout lifecycle integration (completed 2026-02-28)
-
-See `.planning/milestones/v0.5.1-*` for archived phase details.
-
-</details>
-
-<details>
-<summary>✅ v0.6.0 Portal Sync Compatibility (Phases 23-28) — SHIPPED 2026-03-02</summary>
-
-- [x] Phase 23: Portal DB Foundation + RLS (3/3 plans) — Schema migrations, INSERT RLS policies, mode wire format, gamification tables (completed 2026-03-02)
-- [x] Phase 24: Supabase Auth Migration (3/3 plans) — GoTrue auth, token lifecycle, session persistence, duration fix (completed 2026-03-02)
-- [x] Phase 25: Edge Functions (2/2 plans) — mobile-sync-push, mobile-sync-pull, CORS helper (completed 2026-03-02)
-- [x] Phase 26: Mobile Push Wire-Up (2/2 plans) — SyncManager → PortalSyncAdapter → Edge Function (completed 2026-03-02)
-- [x] Phase 27: Mobile Pull Wire-Up (2/2 plans) — Pull DTOs, PortalPullAdapter, routine/badge merge (completed 2026-03-02)
-- [x] Phase 28: Integration Validation (3/3 plans) — 138 tests, deployment runbook, dead code cleanup (completed 2026-03-02)
-
-See `.planning/milestones/v0.6.0-*` for archived phase details.
-
-</details>
-
-<details>
-<summary>✅ v0.7.0 MVP Cloud Sync (Phases 29-31) — SHIPPED 2026-03-15</summary>
-
-- [x] Phase 29: Core Sync UI (2/2 plans) — Enable sync UI on both platforms, ProGuard fix (completed 2026-03-15)
-- [x] Phase 30: iOS Sync Launch (2/2 plans) — Credential injection, Darwin engine verification, TestFlight (completed 2026-03-15)
-- [x] Phase 31: Polish & Validation (4/4 plans) — UX cleanup, sync discoverability, version bump, E2E validation (completed 2026-03-15)
-
-See `.planning/milestones/v0.7.0-*` for archived phase details.
-
-</details>
-
-<details>
-<summary>✅ v0.8.0 Beta Readiness (Phases 32-36) — SHIPPED 2026-03-24</summary>
-
-- [x] Phase 32: BLE Reliability (3/3 plans) — B1/B2 blockers, H2-H4/H10 high, M1/M2 medium (completed 2026-03-23)
-- [x] Phase 33: Sync & Data Integrity (3/3 plans) — B3/B4 blockers, H5/H6 high, M3/M4 medium (completed 2026-03-23)
-- [x] Phase 34: Lifecycle & Security (3/3 plans) — B5/B6 blockers, H1/H9/H11 high, M6/M7 medium (completed 2026-03-23)
-- [x] Phase 35: iOS Platform Parity (3/3 plans) — B7/B8 blockers, H12-H15 high (completed 2026-03-24)
-- [x] Phase 36: Integration Validation (3/3 plans) — VAL-01/02/03 E2E verification (completed 2026-03-24)
-
-See `.planning/milestones/v0.8.0-*` for archived phase details.
-
-</details>
+### Phase 44: Integration Validation
+**Goal**: Cross-feature verification and regression testing
+**Requirements**: All features from Phases 37-43
+**Recommended Agents**: QA Verification Specialist, Test Results Analyzer, Evidence Collector
+**Success Criteria**:
+- [ ] All 12 enhancements verified working
+- [ ] No regressions in existing features
+- [ ] Both platforms tested (Android + iOS)
+- [ ] Sync compatibility maintained
+- [ ] Performance benchmarks passed
+**Plans**: 2
 
 ## Progress
 
@@ -121,8 +147,9 @@ See `.planning/milestones/v0.8.0-*` for archived phase details.
 | v0.6.0 Portal Sync Compatibility | 23-28 | 13 | Complete | 2026-03-02 |
 | v0.7.0 MVP Cloud Sync | 29-31 | 8 | Complete | 2026-03-15 |
 | v0.8.0 Beta Readiness | 32-36 | 15 | Complete | 2026-03-24 |
+| **v0.9.0 Enhancement Sweep** | 37-44 | 21 | Active | — |
 
-**Last phase number:** 36
+**Last phase number:** 44
 
 ---
-*Last updated: 2026-03-23 — v0.8.0 Beta Readiness initialized*
+*Last updated: 2026-04-21 — v0.9.0 Enhancement Sweep initialized*

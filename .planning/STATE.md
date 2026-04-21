@@ -1,37 +1,70 @@
 ---
 gsd_state_version: 1.0
-milestone: —
-milestone_name: —
-status: idle
-last_updated: "2026-04-21T00:00:00.000Z"
+milestone: v0.9.0
+milestone_name: Enhancement Sweep
+status: executing
+last_updated: "2026-04-21T18:00:00.000Z"
 progress:
-  total_phases: 0
-  completed_phases: 0
-  total_plans: 0
-  completed_plans: 0
+  total_phases: 8
+  completed_phases: 2
+  total_plans: 21
+  completed_plans: 5
 ---
 
 # GSD State: Project Phoenix MP
 
 ## Current Position
 
-Phase: —
-Plan: —
-Status: Between milestones
-Last activity: 2026-04-21 — v0.8.0 Beta Readiness archived
+Phase: 39 of 44 (pending)
+Plan: 0/3 complete
+Status: Phase 38 complete — all 3 plans executed successfully (114 weight tests, 0 failures)
+Last activity: 2026-04-21 — Phase 38 execution complete
 
 ## Progress
 ```
-No active milestone
+[#####               ] 24% — 5/21 plans complete
 ```
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-03-23)
+See: .planning/PROJECT.md (updated 2026-04-21)
 
 **Core value:** Users can connect to their Vitruvian trainer and execute workouts with accurate rep counting, weight control, and progress tracking — reliably, on both platforms.
-**Last shipped:** v0.8.0 Beta Readiness (2026-03-24)
+**Current milestone:** v0.9.0 Enhancement Sweep
 **Branch:** main
+
+## Workflow Preferences
+
+| Setting | Choice |
+|---------|--------|
+| Execution | Guided (plan approval required) |
+| Depth | Deep Analysis (full spec per issue) |
+| Cost | Premium (max parallelization) |
+
+## v0.9.0 Phase Overview
+
+| Phase | Name | Issues | Plans | Status |
+|-------|------|--------|-------|--------|
+| 37 | Foundation | #323 | 2 | Complete |
+| 38 | Weight-Dependent | #266, #337 | 3 | Complete |
+| 39 | Routine Cluster | #365, #307 | 3 | Pending |
+| 40 | Analytics | #229, #225 | 3 | Pending |
+| 41 | Quick Wins | #190, #228, #100 | 2 | Pending |
+| 42 | Platform | #363 | 3 | Pending |
+| 43 | Advanced VBT | #313 | 3 | Pending |
+| 44 | Integration Validation | — | 2 | Pending |
+
+## Dependency Map
+
+```
+#323 (Foundation) ──blocks──▶ #266, #337 (Weight-Dependent)
+                              └──▶ Routine Cluster (#365, #307, #337)
+
+Quick Wins (#190, #228, #100) ── independent
+Platform (#363) ── independent
+Analytics (#229, #225) ── needs body weight settings
+Advanced (#313) ── uses biomechanics engine (exists)
+```
 
 ## Performance Metrics
 
@@ -50,25 +83,20 @@ See: .planning/PROJECT.md (updated 2026-03-23)
 | v0.7.0 MVP Cloud Sync | 2026-03-15 | Cloud sync UI + iOS launch |
 | v0.6.0 Portal Sync | 2026-03-02 | Bidirectional Supabase sync |
 
-See `.planning/milestones/` for full milestone summaries.
-
-## GitHub
-
-| Milestone | GitHub | Status |
-|-----------|--------|--------|
-| v0.8.0 Beta Readiness | [#2](https://github.com/9thLevelSoftware/Project-Phoenix-MP/milestone/2) | Closed |
-
 ## Known Issues
 
 - SqlDelightTrainingCycleRepositoryTest.checkAndAutoAdvance — flaky (time-dependent, pre-existing)
 
+## GitHub
+
+| Phase | Issue |
+|-------|-------|
+| 37 | #380 |
+| 38 | #382 |
+
 ## Next Action
 
-v0.8.0 shipped and archived. Ready for v0.9.0 planning or ad-hoc work.
-
-Options:
-- `/legion:start` to define v0.9.0 milestone
-- `/legion:quick <task>` for ad-hoc work
+Run `/legion:review` to verify Phase 38: Weight-Dependent Features (#266, #337)
 
 ---
-*Last updated: 2026-04-21 — v0.8.0 archived*
+*Last updated: 2026-04-21 — Phase 38 executed (3/3 plans passed, 114 tests)*
