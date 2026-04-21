@@ -900,6 +900,21 @@ internal val manifestTables: List<SchemaTableOperation> = listOf(
             )
         """.trimIndent(),
     ),
+
+    // RoutineGroup -- introduced by migration 27.sqm (Phase 39).
+    // Parent grouping for daily routines. Local-only (not synced).
+    SchemaTableOperation(
+        table = "RoutineGroup",
+        createSql = """
+            CREATE TABLE IF NOT EXISTS RoutineGroup (
+                id TEXT PRIMARY KEY NOT NULL,
+                name TEXT NOT NULL,
+                orderIndex INTEGER NOT NULL DEFAULT 0,
+                createdAt INTEGER NOT NULL,
+                profile_id TEXT NOT NULL DEFAULT 'default'
+            )
+        """.trimIndent(),
+    ),
 )
 
 // ============================================================
@@ -1049,6 +1064,10 @@ internal val manifestColumns: List<SchemaHealOperation> = listOf(
 
     // Migration 22: multi-profile support
     SchemaHealOperation("RpgAttributes", "profile_id", "ALTER TABLE RpgAttributes ADD COLUMN profile_id TEXT NOT NULL DEFAULT 'default'"),
+
+    // ── Routine (1 column, migration 27) ───────────────────────────────
+    // Migration 27: routine grouping
+    SchemaHealOperation("Routine", "groupId", "ALTER TABLE Routine ADD COLUMN groupId TEXT REFERENCES RoutineGroup(id) ON DELETE SET NULL"),
 )
 
 // ============================================================
@@ -1159,4 +1178,7 @@ internal val manifestIndexes: List<SchemaIndexOperation> = listOf(
 
     // ── SessionNotes (Phase 3.5, migration 26.sqm) ──────────────────────
     SchemaIndexOperation("idx_session_notes_updated_at", "CREATE INDEX IF NOT EXISTS idx_session_notes_updated_at ON SessionNotes(updatedAt)"),
+
+    // ── RoutineGroup (Phase 39, migration 27.sqm) ──────────────────────
+    SchemaIndexOperation("idx_routine_group_profile", "CREATE INDEX IF NOT EXISTS idx_routine_group_profile ON RoutineGroup(profile_id)"),
 )
