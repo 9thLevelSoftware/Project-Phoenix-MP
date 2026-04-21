@@ -50,6 +50,7 @@ fun ModeConfirmationScreen(
     kgToDisplay: (Float, WeightUnit) -> Float = { kg, _ -> kg },
     onConfirm: (Map<String, ExerciseConfig>) -> Unit,
     onCancel: () -> Unit,
+    weightStepKg: Float = 2.5f, // Issue #266: Configurable weight step in kg
 ) {
     // State: Map of exercise name to ExerciseConfig
     // Note: Bodyweight exercises (null suggestedMode) are excluded - they don't use cables
@@ -186,6 +187,7 @@ fun ModeConfirmationScreen(
                             onConfigUpdated = { newConfig ->
                                 exerciseConfigs[exercise.exerciseName] = newConfig
                             },
+                            weightStepKg = weightStepKg,
                         )
                     }
                 }
@@ -254,6 +256,7 @@ private fun ConfigurableExerciseCard(
     weightUnit: WeightUnit = WeightUnit.KG,
     kgToDisplay: (Float, WeightUnit) -> Float = { kg, _ -> kg },
     onConfigUpdated: (ExerciseConfig) -> Unit,
+    weightStepKg: Float = 2.5f, // Issue #266
 ) {
     var showConfigModal by remember { mutableStateOf(false) }
 
@@ -351,6 +354,7 @@ private fun ConfigurableExerciseCard(
                 showConfigModal = false
             },
             onDismiss = { showConfigModal = false },
+            weightStepKg = weightStepKg,
         )
     }
 }

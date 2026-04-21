@@ -180,7 +180,17 @@ private fun Float.roundToHalfKg(): Float = (this * 2).roundToInt() / 2f
 /**
  * Round to nearest given increment.
  * Issue #266: Configurable weight rounding for user-facing values.
+ *
+ * @deprecated Use [com.devil.phoenixproject.util.UnitConverter.roundToIncrement] instead.
+ * This extension function is a duplicate; consolidating to a single implementation.
  */
+@Deprecated(
+    message = "Use UnitConverter.roundToIncrement(value, increment) instead",
+    replaceWith = ReplaceWith(
+        "com.devil.phoenixproject.util.UnitConverter.roundToIncrement(this, increment)",
+        "com.devil.phoenixproject.util.UnitConverter",
+    ),
+)
 fun Float.roundToIncrement(increment: Float): Float {
     if (increment <= 0f) return this
     return (kotlin.math.round(this / increment) * increment)

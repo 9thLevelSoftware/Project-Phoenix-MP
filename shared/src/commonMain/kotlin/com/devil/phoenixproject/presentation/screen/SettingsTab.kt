@@ -30,10 +30,12 @@ import com.devil.phoenixproject.presentation.components.CountdownDropdown
 import com.devil.phoenixproject.ui.theme.*
 import com.devil.phoenixproject.util.BackupProgress
 import com.devil.phoenixproject.util.ColorSchemes
+import com.devil.phoenixproject.util.Constants
 import com.devil.phoenixproject.util.DataBackupManager
 import com.devil.phoenixproject.util.DeviceInfo
 import com.devil.phoenixproject.util.ImportResult
 import com.devil.phoenixproject.util.KmpUtils
+import com.devil.phoenixproject.util.UnitConverter
 import com.devil.phoenixproject.util.rememberFilePicker
 import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.stringResource
@@ -102,6 +104,9 @@ fun SettingsTab(
     onSafeWordChange: (String?) -> Unit = {},
     safeWordCalibrated: Boolean = false,
     onSafeWordCalibratedChange: (Boolean) -> Unit = {},
+    // Issue #266: Configurable weight increment
+    weightIncrement: Float = -1f,
+    onWeightIncrementChange: (Float) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     var showDeleteAllDialog by remember { mutableStateOf(false) }
@@ -127,6 +132,8 @@ fun SettingsTab(
     var localSafeWord by remember(safeWord) { mutableStateOf(safeWord ?: "") }
     // Optimistic UI state for immediate visual feedback
     var localWeightUnit by remember(weightUnit) { mutableStateOf(weightUnit) }
+    // Issue #266: Weight increment picker dialog state
+    var showWeightIncrementDialog by remember { mutableStateOf(false) }
 
     // Inject DataBackupManager for manual backup/restore operations
     val backupManager: DataBackupManager = koinInject()
@@ -396,8 +403,11 @@ fun SettingsTab(
                     FilterChip(
                         selected = localWeightUnit == WeightUnit.KG,
                         onClick = {
+                            val changed = localWeightUnit != WeightUnit.KG
                             localWeightUnit = WeightUnit.KG
                             onWeightUnitChange(WeightUnit.KG)
+                            // Reset increment to default when unit changes (options differ per system)
+                            if (changed) onWeightIncrementChange(-1f)
                         },
                         label = { Text(stringResource(Res.string.label_kg)) },
                         modifier = Modifier.weight(1f),
@@ -417,8 +427,11 @@ fun SettingsTab(
                     FilterChip(
                         selected = localWeightUnit == WeightUnit.LB,
                         onClick = {
+                            val changed = localWeightUnit != WeightUnit.LB
                             localWeightUnit = WeightUnit.LB
                             onWeightUnitChange(WeightUnit.LB)
+                            // Reset increment to default when unit changes (options differ per system)
+                            if (changed) onWeightIncrementChange(-1f)
                         },
                         label = { Text(stringResource(Res.string.label_lbs)) },
                         modifier = Modifier.weight(1f),
@@ -434,6 +447,109 @@ fun SettingsTab(
                             borderColor = MaterialTheme.colorScheme.outline,
                             selectedBorderColor = MaterialTheme.colorScheme.primary,
                         ),
+                    )
+                }
+
+                // Issue #266: Weight Increment Picker
+                Spacer(modifier = Modifier.height(Spacing.small))
+                HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
+                Spacer(modifier = Modifier.height(Spacing.small))
+
+                val incrementOptions = if (localWeightUnit == WeightUnit.KG) {
+                    Constants.WEIGHT_INCREMENT_OPTIONS_KG
+                } else {
+                    Constants.WEIGHT_INCREMENT_OPTIONS_LB
+                }
+                val effectiveIncrement = if (weightIncrement > 0f) {
+                    weightIncrement
+                } else if (localWeightUnit == WeightUnit.KG) {
+                    Constants.DEFAULT_WEIGHT_INCREMENT_KG
+                } else {
+                    Constants.DEFAULT_WEIGHT_INCREMENT_LB
+                }
+                val unitLabel = if (localWeightUnit == WeightUnit.KG) "kg" else "lb"
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { showWeightIncrementDialog = true }
+                        .padding(vertical = Spacing.small),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column {
+                        Text(
+                            text = "Weight Increment",
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.onSurface,
+                        )
+                        Text(
+                            text = "${UnitConverter.formatDecimal(effectiveIncrement)} $unitLabel per step",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Icon(
+                        imageVector = Icons.Default.ChevronRight,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+
+                // Weight increment selection dialog
+                if (showWeightIncrementDialog) {
+                    AlertDialog(
+                        onDismissRequest = { showWeightIncrementDialog = false },
+                        title = { Text("Weight Increment") },
+                        text = {
+                            Column(
+                                verticalArrangement = Arrangement.spacedBy(Spacing.extraSmall),
+                            ) {
+                                Text(
+                                    text = "Choose how much weight changes with each +/- tap",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                                Spacer(modifier = Modifier.height(Spacing.small))
+                                incrementOptions.forEach { option ->
+                                    val isSelected = kotlin.math.abs(effectiveIncrement - option) < 0.001f
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clickable {
+                                                onWeightIncrementChange(option)
+                                                showWeightIncrementDialog = false
+                                            }
+                                            .padding(vertical = Spacing.small),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                    ) {
+                                        RadioButton(
+                                            selected = isSelected,
+                                            onClick = {
+                                                onWeightIncrementChange(option)
+                                                showWeightIncrementDialog = false
+                                            },
+                                        )
+                                        Spacer(modifier = Modifier.width(Spacing.small))
+                                        Text(
+                                            text = "${UnitConverter.formatDecimal(option)} $unitLabel",
+                                            style = MaterialTheme.typography.bodyLarge,
+                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                            color = if (isSelected) {
+                                                MaterialTheme.colorScheme.primary
+                                            } else {
+                                                MaterialTheme.colorScheme.onSurface
+                                            },
+                                        )
+                                    }
+                                }
+                            }
+                        },
+                        confirmButton = {
+                            TextButton(onClick = { showWeightIncrementDialog = false }) {
+                                Text("Cancel")
+                            }
+                        },
                     )
                 }
             }

@@ -147,8 +147,9 @@ fun TrainingCyclesScreen(navController: NavController, viewModel: MainViewModel,
     val profileId = activeProfile?.id ?: "default"
     val scope = rememberCoroutineScope()
 
-    // User preferences for weight unit
+    // User preferences for weight unit and increment
     val weightUnit by viewModel.weightUnit.collectAsState()
+    val userPreferences by viewModel.userPreferences.collectAsState()
 
     // Collect cycles from repository
     val cycles by cycleRepository.getAllCycles(profileId).collectAsState(initial = emptyList())
@@ -552,6 +553,7 @@ fun TrainingCyclesScreen(navController: NavController, viewModel: MainViewModel,
                 prWeightValues = state.prWeightValues,
                 weightUnit = weightUnit,
                 kgToDisplay = viewModel::kgToDisplay,
+                weightStepKg = userPreferences.effectiveWeightIncrementKg,
                 onConfirm = { exerciseConfigs ->
                     creationState = CycleCreationState.Creating(state.template)
                     scope.launch {

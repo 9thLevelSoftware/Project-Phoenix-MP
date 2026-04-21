@@ -353,6 +353,9 @@ fun NavGraph(
                     onSafeWordChange = { viewModel.setSafeWord(it) },
                     safeWordCalibrated = userPreferences.safeWordCalibrated,
                     onSafeWordCalibratedChange = { viewModel.setSafeWordCalibrated(it) },
+                    // Issue #266: Configurable weight increment
+                    weightIncrement = userPreferences.weightIncrement,
+                    onWeightIncrementChange = { viewModel.setWeightIncrement(it) },
                 )
             }
 

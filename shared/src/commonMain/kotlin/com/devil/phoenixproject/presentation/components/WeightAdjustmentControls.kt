@@ -23,6 +23,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.ui.theme.Spacing
+import com.devil.phoenixproject.util.UnitConverter
 import org.jetbrains.compose.resources.stringResource
 import vitruvianprojectphoenix.shared.generated.resources.*
 import vitruvianprojectphoenix.shared.generated.resources.Res
@@ -47,13 +48,18 @@ fun WeightAdjustmentControls(
     showPresets: Boolean = false,
     lastUsedWeight: Float? = null,
     prWeight: Float? = null,
+    weightIncrementKg: Float = 0f, // Issue #266: 0 = use legacy default
 ) {
     var showWeightPicker by remember { mutableStateOf(false) }
 
-    // Unit-aware increment: 0.5kg or 1lb (converted to kg)
-    val incrementKg = when (weightUnit) {
-        WeightUnit.KG -> 0.5f
-        WeightUnit.LB -> LB_TO_KG // ~0.45kg = 1lb
+    // Issue #266: Use configured increment if provided, otherwise legacy default
+    val incrementKg = if (weightIncrementKg > 0f) {
+        weightIncrementKg
+    } else {
+        when (weightUnit) {
+            WeightUnit.KG -> 0.5f
+            WeightUnit.LB -> LB_TO_KG // ~0.45kg = 1lb
+        }
     }
 
     Column(
@@ -163,6 +169,7 @@ fun WeightAdjustmentControls(
                 showWeightPicker = false
             },
             onDismiss = { showWeightPicker = false },
+            weightIncrementKg = weightIncrementKg,
         )
     }
 }
@@ -239,16 +246,23 @@ private fun WeightPresets(
             }
         }
 
-        // Quick percentage adjustments
+        // Quick percentage adjustments — round to machine increment (0.5kg)
         if (currentWeightKg > 0) {
             PresetChip(
                 label = "-5%",
-                onClick = { onSelectPreset(currentWeightKg * 0.95f) },
+                onClick = {
+                    onSelectPreset(UnitConverter.roundToMachineIncrement(currentWeightKg * 0.95f))
+                },
                 enabled = enabled,
             )
             PresetChip(
                 label = "+5%",
-                onClick = { onSelectPreset(currentWeightKg * 1.05f) },
+                onClick = {
+                    onSelectPreset(
+                        UnitConverter.roundToMachineIncrement(currentWeightKg * 1.05f)
+                            .coerceAtMost(MAX_WEIGHT_KG),
+                    )
+                },
                 enabled = enabled,
             )
         }
@@ -295,19 +309,38 @@ private fun WeightPickerDialog(
     formatWeight: (Float, WeightUnit) -> String,
     onWeightSelected: (Float) -> Unit,
     onDismiss: () -> Unit,
+    weightIncrementKg: Float = 0f, // Issue #266: 0 = use legacy default
 ) {
     var selectedWeightKg by remember { mutableStateOf(currentWeightKg) }
 
     // Unit-aware configuration
     val isLbs = weightUnit == WeightUnit.LB
     val maxWeightDisplay = if (isLbs) (MAX_WEIGHT_KG * KG_TO_LB).toInt() else MAX_WEIGHT_KG.toInt() // 220 lbs or 100 kg
-    val sliderSteps = if (isLbs) maxWeightDisplay - 1 else (MAX_WEIGHT_KG * 2 - 1).toInt() // 1 lb steps or 0.5kg steps
 
-    // Quick adjustment deltas (in display units)
-    val quickAdjustments = if (isLbs) {
-        listOf(-10, -5, -1, 1, 5, 10) // lbs
+    // Issue #266: Cap slider steps at 200 to keep slider usable even with fine increments.
+    // For very fine increments (e.g. 0.1lb), slider stays coarse — users rely on quick-adjust buttons.
+    val rawSteps = if (isLbs) maxWeightDisplay - 1 else (MAX_WEIGHT_KG * 2 - 1).toInt()
+    val sliderSteps = rawSteps.coerceAtMost(200)
+
+    // Issue #266: Scale quick adjustments based on configured increment
+    val displayIncrement = if (weightIncrementKg > 0f) {
+        if (isLbs) UnitConverter.kgToLb(weightIncrementKg) else weightIncrementKg
     } else {
-        listOf(-5, -2, -1, 1, 2, 5) // kg (using whole numbers for cleaner UI)
+        if (isLbs) 1f else 0.5f
+    }
+
+    // Quick adjustment deltas (in display units), scaled to increment
+    val quickAdjustments = if (isLbs) {
+        listOf(
+            -(displayIncrement * 10).toInt().coerceAtLeast(1),
+            -(displayIncrement * 5).toInt().coerceAtLeast(1),
+            -1,
+            1,
+            (displayIncrement * 5).toInt().coerceAtLeast(1),
+            (displayIncrement * 10).toInt().coerceAtLeast(1),
+        ).distinct()
+    } else {
+        listOf(-5, -2, -1, 1, 2, 5) // kg (keep standard increments for cleaner UI)
     }
 
     AlertDialog(
@@ -365,13 +398,14 @@ private fun WeightPickerDialog(
                 Slider(
                     value = displayWeight,
                     onValueChange = { displayValue ->
-                        // Convert back to kg and round appropriately
-                        val newKg = if (isLbs) {
+                        // Convert back to kg and round to machine increment (0.5kg)
+                        val rawKg = if (isLbs) {
                             displayValue * LB_TO_KG
                         } else {
-                            (displayValue * 2).toInt() / 2f // Round to 0.5kg
+                            displayValue
                         }
-                        selectedWeightKg = newKg.coerceIn(0f, MAX_WEIGHT_KG)
+                        selectedWeightKg = UnitConverter.roundToMachineIncrement(rawKg)
+                            .coerceIn(0f, MAX_WEIGHT_KG)
                     },
                     valueRange = 0f..maxWeightDisplay.toFloat(),
                     steps = sliderSteps,
@@ -389,9 +423,11 @@ private fun WeightPickerDialog(
                         val sign = if (delta > 0) "+" else ""
                         FilledTonalButton(
                             onClick = {
-                                // Convert delta from display unit to kg
+                                // Convert delta from display unit to kg, round to machine increment
                                 val deltaKg = if (isLbs) delta * LB_TO_KG else delta.toFloat()
-                                selectedWeightKg = (selectedWeightKg + deltaKg).coerceIn(0f, MAX_WEIGHT_KG)
+                                selectedWeightKg = UnitConverter.roundToMachineIncrement(
+                                    selectedWeightKg + deltaKg,
+                                ).coerceIn(0f, MAX_WEIGHT_KG)
                             },
                             contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
                         ) {
@@ -429,11 +465,16 @@ fun CompactWeightAdjustment(
     onWeightChange: (Float) -> Unit,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
+    weightIncrementKg: Float = 0f, // Issue #266: 0 = use legacy default
 ) {
-    // Unit-aware increment: 0.5kg or 1lb (converted to kg)
-    val incrementKg = when (weightUnit) {
-        WeightUnit.KG -> 0.5f
-        WeightUnit.LB -> LB_TO_KG // ~0.45kg = 1lb
+    // Issue #266: Use configured increment if provided, otherwise legacy default
+    val incrementKg = if (weightIncrementKg > 0f) {
+        weightIncrementKg
+    } else {
+        when (weightUnit) {
+            WeightUnit.KG -> 0.5f
+            WeightUnit.LB -> LB_TO_KG // ~0.45kg = 1lb
+        }
     }
 
     Surface(

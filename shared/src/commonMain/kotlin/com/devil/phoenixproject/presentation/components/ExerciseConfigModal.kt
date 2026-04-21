@@ -46,6 +46,7 @@ fun ExerciseConfigModal(
     initialConfig: ExerciseConfig,
     onConfirm: (ExerciseConfig) -> Unit,
     onDismiss: () -> Unit,
+    weightStepKg: Float = 2.5f, // Issue #266: Configurable weight step in kg
 ) {
     var config by remember { mutableStateOf(initialConfig) }
 
@@ -106,6 +107,7 @@ fun ExerciseConfigModal(
                                 weight = config.weightPerCableKg,
                                 onWeightChange = { config = config.copy(weightPerCableKg = it) },
                                 prWeight = prWeight,
+                                stepKg = weightStepKg,
                             )
 
                             ProgramMode.TUT -> TutConfigPanel(
@@ -118,6 +120,7 @@ fun ExerciseConfigModal(
                                     )
                                 },
                                 prWeight = prWeight,
+                                stepKg = weightStepKg,
                             )
 
                             ProgramMode.TUTBeast -> { /* Handled by TUT case above */ }
@@ -126,6 +129,7 @@ fun ExerciseConfigModal(
                                 weight = config.weightPerCableKg,
                                 onWeightChange = { config = config.copy(weightPerCableKg = it) },
                                 prWeight = prWeight,
+                                stepKg = weightStepKg,
                             )
 
                             ProgramMode.EccentricOnly -> EccentricConfigPanel(
@@ -134,6 +138,7 @@ fun ExerciseConfigModal(
                                 eccentricPercent = config.eccentricLoadPercent,
                                 onEccentricPercentChange = { config = config.copy(eccentricLoadPercent = it) },
                                 prWeight = prWeight,
+                                stepKg = weightStepKg,
                             )
 
                             ProgramMode.Echo -> EchoConfigPanel(
@@ -224,12 +229,13 @@ private fun MetaChip(label: String, value: String) {
 // ==================== MODE-SPECIFIC PANELS ====================
 
 @Composable
-private fun OldSchoolConfigPanel(weight: Float, onWeightChange: (Float) -> Unit, prWeight: Float? = null) {
+private fun OldSchoolConfigPanel(weight: Float, onWeightChange: (Float) -> Unit, prWeight: Float? = null, stepKg: Float = 2.5f) {
     WeightStepper(
         weight = weight,
         onWeightChange = onWeightChange,
         label = stringResource(Res.string.starting_weight),
         prWeight = prWeight,
+        step = stepKg,
     )
     ModeInfoCard(
         title = stringResource(Res.string.mode_old_school),
@@ -244,8 +250,9 @@ private fun TutConfigPanel(
     isBeastMode: Boolean,
     onBeastModeChange: (Boolean) -> Unit,
     prWeight: Float? = null,
+    stepKg: Float = 2.5f,
 ) {
-    WeightStepper(weight = weight, onWeightChange = onWeightChange, label = stringResource(Res.string.starting_weight), prWeight = prWeight)
+    WeightStepper(weight = weight, onWeightChange = onWeightChange, label = stringResource(Res.string.starting_weight), prWeight = prWeight, step = stepKg)
 
     // Beast Mode Toggle
     Row(
@@ -301,8 +308,8 @@ private fun TutConfigPanel(
 }
 
 @Composable
-private fun PumpConfigPanel(weight: Float, onWeightChange: (Float) -> Unit, prWeight: Float? = null) {
-    WeightStepper(weight = weight, onWeightChange = onWeightChange, label = stringResource(Res.string.starting_weight), prWeight = prWeight)
+private fun PumpConfigPanel(weight: Float, onWeightChange: (Float) -> Unit, prWeight: Float? = null, stepKg: Float = 2.5f) {
+    WeightStepper(weight = weight, onWeightChange = onWeightChange, label = stringResource(Res.string.starting_weight), prWeight = prWeight, step = stepKg)
     ModeInfoCard(
         title = stringResource(Res.string.config_mode_pump_title),
         description = stringResource(Res.string.config_mode_pump_desc),
@@ -316,8 +323,9 @@ private fun EccentricConfigPanel(
     eccentricPercent: Int,
     onEccentricPercentChange: (Int) -> Unit,
     prWeight: Float? = null,
+    stepKg: Float = 2.5f,
 ) {
-    WeightStepper(weight = weight, onWeightChange = onWeightChange, label = stringResource(Res.string.starting_weight), prWeight = prWeight)
+    WeightStepper(weight = weight, onWeightChange = onWeightChange, label = stringResource(Res.string.starting_weight), prWeight = prWeight, step = stepKg)
     EccentricSlider(
         percent = eccentricPercent,
         onPercentChange = onEccentricPercentChange,
