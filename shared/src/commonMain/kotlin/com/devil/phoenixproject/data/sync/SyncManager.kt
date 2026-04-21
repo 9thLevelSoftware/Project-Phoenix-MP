@@ -141,6 +141,14 @@ class SyncManager(
          * Prevents infinite retry storms when the same batch keeps failing.
          */
         const val MAX_FULL_BATCH_RETRIES = 3
+
+        /**
+         * Subscription tier that entitles a user to sync 50 Hz rep telemetry
+         * (raw force curves) to the portal. Matches the portal's "Session replay
+         * with 50 Hz telemetry" and "Force curves & VBT zones" Inferno features.
+         * All other tiers sync rep summaries but not per-sample telemetry.
+         */
+        const val TELEMETRY_SYNC_TIER = "INFERNO"
     }
 
     /**
@@ -192,8 +200,19 @@ class SyncManager(
         val premiumResult = apiClient.checkPremiumStatus()
         val isPremium = premiumResult.getOrNull() ?: existingPremium
         tokenStorage.updatePremiumStatus(isPremium)
+
+        // Resolve specific tier alongside the boolean. Preserve the previously stored
+        // tier on network failure so paid Inferno users do not lose tier-gated features
+        // (e.g., telemetry sync) on a transient error.
+        val existingTier = tokenStorage.getSubscriptionTier()
+        val tierResult = apiClient.getActiveSubscriptionTier()
+        val resolvedTier = tierResult.getOrNull() ?: existingTier
+        tokenStorage.updateSubscriptionTier(resolvedTier)
+
         Logger.i("SyncManager") {
-            "Login successful for ${goTrueResponse.user.email}, premium=$isPremium (server check: ${premiumResult.isSuccess})"
+            "Login successful for ${goTrueResponse.user.email}, premium=$isPremium, " +
+                "tier=${resolvedTier ?: "none"} (server checks: premium=${premiumResult.isSuccess}, " +
+                "tier=${tierResult.isSuccess})"
         }
 
         return Result.success(tokenStorage.currentUser.value ?: goTrueResponse.toPortalAuthResponse().user)
@@ -212,9 +231,10 @@ class SyncManager(
             _syncState.value = SyncState.Idle // Reset stale NotAuthenticated state
         }
 
-        // New accounts start as free tier — no need to check premium status.
-        // Premium status will be set after they subscribe via Paddle.
+        // New accounts start without a subscription — no need to check status.
+        // Premium status and tier will be set after they subscribe via Paddle.
         tokenStorage.updatePremiumStatus(false)
+        tokenStorage.updateSubscriptionTier(null)
         Logger.i("SyncManager") { "Signup successful for ${goTrueResponse.user.email}" }
 
         return Result.success(tokenStorage.currentUser.value ?: goTrueResponse.toPortalAuthResponse().user)
@@ -235,6 +255,7 @@ class SyncManager(
         apiClient.signOut()
 
         tokenStorage.updatePremiumStatus(false)
+        tokenStorage.updateSubscriptionTier(null)
         tokenStorage.clearAuth()
         tokenStorage.emitLogoutEvent()
 
@@ -255,8 +276,15 @@ class SyncManager(
         val existingPremium = tokenStorage.currentUser.value?.isPremium ?: false
         val isPremium = premiumResult.getOrNull() ?: existingPremium
         tokenStorage.updatePremiumStatus(isPremium)
+
+        val existingTier = tokenStorage.getSubscriptionTier()
+        val tierResult = apiClient.getActiveSubscriptionTier()
+        val resolvedTier = tierResult.getOrNull() ?: existingTier
+        tokenStorage.updateSubscriptionTier(resolvedTier)
+
         Logger.d("SyncManager") {
-            "refreshPremiumStatusFromServer: premium=$isPremium (network ok=${premiumResult.isSuccess})"
+            "refreshPremiumStatusFromServer: premium=$isPremium, tier=${resolvedTier ?: "none"} " +
+                "(network ok: premium=${premiumResult.isSuccess}, tier=${tierResult.isSuccess})"
         }
     }
 
@@ -579,13 +607,33 @@ class SyncManager(
             userId,
         )
 
+        // Gate telemetry push behind the Inferno tier. Force-curve / 50 Hz session
+        // replay is an Inferno-only feature per the subscription matrix. Other
+        // tiers (Ember, Flame) and users whose tier is unresolved (offline login,
+        // network error during subscription check) fail closed — no telemetry on
+        // the wire. Rep summaries still ship in `sessions` regardless of tier so
+        // Ember/Flame users get full history, PRs, and analytics without the raw
+        // per-sample payload that blows past the server cap. When Inferno
+        // launches, this gate automatically opens for those subscribers with no
+        // further code changes.
+        val tier = tokenStorage.getSubscriptionTier()
+        val telemetryAllowed = tier == TELEMETRY_SYNC_TIER
+        val effectiveTelemetry = if (telemetryAllowed) buildResult.telemetry else emptyList()
+        if (!telemetryAllowed && buildResult.telemetry.isNotEmpty()) {
+            Logger.i("SyncManager") {
+                "Telemetry push gated off: tier=${tier ?: "unknown"} " +
+                    "($TELEMETRY_SYNC_TIER required). Skipping ${buildResult.telemetry.size} points; " +
+                    "rep summaries still sync."
+            }
+        }
+
         // Build a telemetry index keyed by set ID for batch slicing.
         // Each session's exercises contain sets whose IDs are referenced by telemetry rows.
         val sessionSetIds = buildResult.sessions.associate { session ->
             val setIds = session.exercises.flatMap { ex -> ex.sets.map { s -> s.id } }.toSet()
             session.id to setIds
         }
-        val telemetryBySetId = buildResult.telemetry.groupBy { it.setId }
+        val telemetryBySetId = effectiveTelemetry.groupBy { it.setId }
 
         // 7b. Profile data for portal tagging and profile-scoped filtering
         val activeProfile = userProfileRepository.activeProfile.value
@@ -615,7 +663,7 @@ class SyncManager(
 
         Logger.d("SyncManager") {
             "Pushing portal payload: ${allSessions.size} sessions ($totalBatches batch(es)), " +
-                "${buildResult.telemetry.size} telemetry points, " +
+                "${effectiveTelemetry.size} telemetry points, " +
                 "${routineDtos.size} routines, ${cycleDtos.size} cycles, " +
                 "${phaseStatsBySessionId.size} sessions with phase stats, " +
                 "${signatureDtos.size} signatures, " +
@@ -631,7 +679,7 @@ class SyncManager(
                 platform = platform,
                 lastSync = lastSync,
                 sessions = allSessions,
-                telemetry = buildResult.telemetry,
+                telemetry = effectiveTelemetry,
                 routines = routineDtos,
                 cycles = cycleDtos,
                 rpgAttributes = rpgDto,
