@@ -54,12 +54,19 @@ class WeightDisplaySourceGuardTest {
     @Test
     fun healthIntegration_android_doesNotUseWeightDisplayFormatter() {
         val path = "com/devil/phoenixproject/data/integration/HealthIntegration.android.kt"
-        val source = readSourceFile(path)
-        if (source != null) {
-            assertNoFormatterImport(source, "HealthIntegration.android.kt")
-        } else {
-            // File doesn't exist yet -- guard is satisfied by absence
-            assertTrue(true, "HealthIntegration.android.kt not found; guard passes (no import possible)")
+        // Check both commonMain and androidMain — actual file lives in androidMain
+        val commonSource = readSourceFile(path)
+        val androidRoot = File(projectRoot, "shared/src/androidMain/kotlin")
+        val androidSource = File(androidRoot, path).let { if (it.exists()) it.readText() else null }
+
+        if (commonSource != null) {
+            assertNoFormatterImport(commonSource, "HealthIntegration.android.kt (commonMain)")
+        }
+        if (androidSource != null) {
+            assertNoFormatterImport(androidSource, "HealthIntegration.android.kt (androidMain)")
+        }
+        if (commonSource == null && androidSource == null) {
+            assertTrue(true, "HealthIntegration.android.kt not found; guard passes")
         }
     }
 
