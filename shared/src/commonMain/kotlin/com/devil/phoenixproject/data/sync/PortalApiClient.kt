@@ -342,7 +342,7 @@ open class PortalApiClient(private val supabaseConfig: SupabaseConfig, private v
      * On network failure, returns null to allow callers to preserve existing premium status.
      * This prevents downgrading paid users to free tier due to transient network issues.
      */
-    open suspend fun checkPremiumStatus(): Result<Boolean> {
+    suspend fun checkPremiumStatus(): Result<Boolean> {
         val token = tokenStorage.getToken() ?: return Result.failure(
             PortalApiException("Not authenticated", null, 401),
         )
