@@ -30,7 +30,7 @@ See `.planning/milestones/` for archived phase details.
 
 - [x] Phase 37: Foundation (#323 weight display)
 - [x] Phase 38: Weight-Dependent Features (#266, #337)
-- [ ] Phase 39: Routine Cluster (#365, #307)
+- [x] Phase 39: Routine Cluster (#365, #307)
 - [ ] Phase 40: Analytics (#229, #225)
 - [ ] Phase 41: Quick Wins (#190, #228, #100)
 - [ ] Phase 42: Platform (#363)
