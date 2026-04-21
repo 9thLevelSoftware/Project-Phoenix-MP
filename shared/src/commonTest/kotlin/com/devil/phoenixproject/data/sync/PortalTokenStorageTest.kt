@@ -229,4 +229,77 @@ class PortalTokenStorageTest {
             "currentUser.isPremium should be false after updatePremiumStatus(false)",
         )
     }
+
+    // ===== Subscription Tier Tests =====
+    // Tier is stored independently of the isPremium boolean so SyncManager can gate
+    // tier-specific features (e.g., 50Hz telemetry sync is INFERNO-only).
+
+    @Test
+    fun getSubscriptionTierReturnsNullWhenNeverSet() {
+        val storage = createStorage()
+        assertNull(storage.getSubscriptionTier(), "Tier should be null before any update")
+    }
+
+    @Test
+    fun updateSubscriptionTierPersistsString() {
+        val storage = createStorage()
+
+        storage.updateSubscriptionTier("INFERNO")
+        assertEquals("INFERNO", storage.getSubscriptionTier())
+
+        storage.updateSubscriptionTier("FLAME")
+        assertEquals("FLAME", storage.getSubscriptionTier(), "Tier should overwrite on update")
+
+        storage.updateSubscriptionTier("EMBER")
+        assertEquals("EMBER", storage.getSubscriptionTier())
+    }
+
+    @Test
+    fun updateSubscriptionTierWithNullClearsStoredValue() {
+        val storage = createStorage()
+        storage.updateSubscriptionTier("INFERNO")
+        assertEquals("INFERNO", storage.getSubscriptionTier())
+
+        storage.updateSubscriptionTier(null)
+        assertNull(
+            storage.getSubscriptionTier(),
+            "Passing null must remove the stored key so callers can distinguish 'unknown' from 'downgraded'",
+        )
+    }
+
+    @Test
+    fun clearAuthClearsSubscriptionTier() {
+        val storage = createStorage()
+
+        // Setup: authenticate with a tier set
+        val nowSec = currentTimeMillis() / 1000
+        saveAuthWithExpiry(storage, nowSec + 3600)
+        storage.updateSubscriptionTier("INFERNO")
+        assertEquals("INFERNO", storage.getSubscriptionTier(), "Tier set before clear")
+
+        storage.clearAuth()
+
+        assertNull(
+            storage.getSubscriptionTier(),
+            "clearAuth must drop tier so a re-linked account starts from an unknown tier",
+        )
+    }
+
+    @Test
+    fun subscriptionTierSurvivesIndependentlyOfPremiumFlag() {
+        val storage = createStorage()
+        val nowSec = currentTimeMillis() / 1000
+        saveAuthWithExpiry(storage, nowSec + 3600)
+
+        storage.updateSubscriptionTier("INFERNO")
+        storage.updatePremiumStatus(true)
+
+        // Toggling premium must not touch tier
+        storage.updatePremiumStatus(false)
+        assertEquals(
+            "INFERNO",
+            storage.getSubscriptionTier(),
+            "updatePremiumStatus should not affect the stored tier",
+        )
+    }
 }

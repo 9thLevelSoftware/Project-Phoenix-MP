@@ -1,5 +1,6 @@
 package com.devil.phoenixproject.data.sync
 
+import com.devil.phoenixproject.domain.model.RepMetricData
 import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.testutil.FakeExternalActivityRepository
 import com.devil.phoenixproject.testutil.FakeGamificationRepository
@@ -10,6 +11,7 @@ import com.devil.phoenixproject.testutil.FakeUserProfileRepository
 import com.russhwolf.settings.MapSettings
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.test.runTest
@@ -420,6 +422,11 @@ class PortalPushLimitsTest {
      * emitted in its own batch so surrounding batches still succeed. The oversized
      * batch will still be rejected by PortalApiClient's self-check, but that's isolated
      * to one session instead of poisoning a whole 50-session chunk.
+     *
+     * NOTE: After the INFERNO telemetry gate (#381 fix), this overflow path is only
+     * reachable for INFERNO-tier users whose individual sessions carry > 10k points.
+     * Kept as a defensive regression canary in case the gate is ever relaxed or a
+     * future tier re-enables telemetry sync.
      */
     @Test
     fun planSessionBatchesIsolatesSingleSessionTelemetryOverflow() {
@@ -453,6 +460,182 @@ class PortalPushLimitsTest {
         userId = "user-123",
         startedAt = "2026-03-02T12:00:00Z",
     )
+
+    // ==================== Inferno Telemetry Gate (#381) ====================
+    //
+    // Contract: 50Hz force-curve telemetry is an INFERNO-tier feature per the portal
+    // subscription matrix. SyncManager must drop all telemetry from the push payload
+    // for any tier other than INFERNO (including unknown/null tiers — fail closed).
+    // Rep summaries, sessions, and all other data still ship regardless of tier.
+
+    /**
+     * Build a RepMetricData with a minimal but non-trivial force curve so that
+     * PortalSyncAdapter.toPortalWorkoutSessionsWithTelemetry produces real telemetry
+     * points. Point count per rep = 2 cables × (concentric samples + eccentric samples).
+     */
+    private fun repWithTelemetry(repNumber: Int = 1): RepMetricData = RepMetricData(
+        repNumber = repNumber,
+        isWarmup = false,
+        startTimestamp = 1_700_000_000_000L,
+        endTimestamp = 1_700_000_002_500L,
+        durationMs = 2_500L,
+        concentricDurationMs = 1_000L,
+        concentricPositions = floatArrayOf(0f, 100f, 200f),
+        concentricLoadsA = floatArrayOf(10f, 12f, 11f),
+        concentricLoadsB = floatArrayOf(10f, 12f, 11f),
+        concentricVelocities = floatArrayOf(400f, 500f, 600f),
+        concentricTimestamps = longArrayOf(0L, 500L, 1_000L),
+        eccentricDurationMs = 1_500L,
+        eccentricPositions = floatArrayOf(200f, 100f, 0f),
+        eccentricLoadsA = floatArrayOf(11f, 10f, 9f),
+        eccentricLoadsB = floatArrayOf(11f, 10f, 9f),
+        eccentricVelocities = floatArrayOf(300f, 400f, 350f),
+        eccentricTimestamps = longArrayOf(0L, 500L, 1_000L),
+        peakForceA = 15f,
+        peakForceB = 15f,
+        avgForceConcentricA = 10f,
+        avgForceConcentricB = 10f,
+        avgForceEccentricA = 8f,
+        avgForceEccentricB = 8f,
+        peakVelocity = 800f,
+        avgVelocityConcentric = 500f,
+        avgVelocityEccentric = 350f,
+        rangeOfMotionMm = 300f,
+        peakPowerWatts = 300f,
+        avgPowerWatts = 200f,
+    )
+
+    /** Stage the fakes with a session that carries real telemetry-bearing rep metrics. */
+    private fun seedSessionWithTelemetry() {
+        val session = buildSessions(1).single()
+        fakeSyncRepo.workoutSessionsToReturn = listOf(session)
+        fakeRepMetricRepo.savedMetrics[session.id] = listOf(
+            repWithTelemetry(1),
+            repWithTelemetry(2),
+            repWithTelemetry(3),
+        )
+    }
+
+    @Test
+    fun flameTierSkipsTelemetryButStillPushesSession() = runTest {
+        authenticate()
+        tokenStorage.updateSubscriptionTier("FLAME")
+        seedSessionWithTelemetry()
+        fakeApi.pushResult = Result.success(
+            PortalSyncPushResponse(syncTime = "2026-04-21T12:00:00Z"),
+        )
+
+        val result = createManager().sync()
+
+        assertTrue(
+            result.isSuccess || result.exceptionOrNull()?.message?.contains("Pull") == true,
+            "Push must succeed on Flame tier even when rep metrics carry telemetry. " +
+                "Result: ${result.exceptionOrNull()?.message}",
+        )
+        val payload = fakeApi.lastPushPayload
+        assertNotNull(payload, "Push was invoked")
+        assertTrue(
+            payload.telemetry.isEmpty(),
+            "Flame tier must not ship force-curve telemetry (Inferno-only). " +
+                "Got ${payload.telemetry.size} points.",
+        )
+        assertFalse(
+            payload.sessions.isEmpty(),
+            "Flame tier still syncs sessions/rep-summaries — only raw telemetry is gated off",
+        )
+    }
+
+    @Test
+    fun emberTierSkipsTelemetry() = runTest {
+        authenticate()
+        tokenStorage.updateSubscriptionTier("EMBER")
+        seedSessionWithTelemetry()
+        fakeApi.pushResult = Result.success(
+            PortalSyncPushResponse(syncTime = "2026-04-21T12:00:00Z"),
+        )
+
+        createManager().sync()
+
+        val payload = fakeApi.lastPushPayload
+        assertNotNull(payload)
+        assertTrue(
+            payload.telemetry.isEmpty(),
+            "Ember tier must not ship telemetry — only Inferno does",
+        )
+    }
+
+    @Test
+    fun infernoTierPushesTelemetry() = runTest {
+        authenticate()
+        tokenStorage.updateSubscriptionTier("INFERNO")
+        seedSessionWithTelemetry()
+        fakeApi.pushResult = Result.success(
+            PortalSyncPushResponse(syncTime = "2026-04-21T12:00:00Z"),
+        )
+
+        createManager().sync()
+
+        val payload = fakeApi.lastPushPayload
+        assertNotNull(payload)
+        assertFalse(
+            payload.telemetry.isEmpty(),
+            "Inferno tier must ship telemetry — this is the whole reason it is a paid tier",
+        )
+    }
+
+    @Test
+    fun unknownTierFailsClosedAndSkipsTelemetry() = runTest {
+        authenticate()
+        // Deliberately do NOT call updateSubscriptionTier — simulates first-login /
+        // offline-login / transient network error during subscription resolution.
+        assertEquals(
+            null,
+            tokenStorage.getSubscriptionTier(),
+            "Precondition: tier must be unresolved for this test",
+        )
+        seedSessionWithTelemetry()
+        fakeApi.pushResult = Result.success(
+            PortalSyncPushResponse(syncTime = "2026-04-21T12:00:00Z"),
+        )
+
+        createManager().sync()
+
+        val payload = fakeApi.lastPushPayload
+        assertNotNull(payload)
+        assertTrue(
+            payload.telemetry.isEmpty(),
+            "Unknown tier must fail closed — better to skip a premium feature than to ship " +
+                "Inferno-only payloads to a user whose entitlement cannot be confirmed",
+        )
+    }
+
+    @Test
+    fun caseSensitiveTierCheckRejectsLowercaseInferno() = runTest {
+        authenticate()
+        tokenStorage.updateSubscriptionTier("inferno") // wrong case
+        seedSessionWithTelemetry()
+        fakeApi.pushResult = Result.success(
+            PortalSyncPushResponse(syncTime = "2026-04-21T12:00:00Z"),
+        )
+
+        createManager().sync()
+
+        val payload = fakeApi.lastPushPayload
+        assertNotNull(payload)
+        assertTrue(
+            payload.telemetry.isEmpty(),
+            "Tier comparison is case-sensitive — server stores uppercase, any drift fails closed",
+        )
+    }
+
+    @Test
+    fun telemetrySyncTierConstantIsInferno() {
+        assertEquals(
+            "INFERNO",
+            SyncManager.TELEMETRY_SYNC_TIER,
+            "Telemetry gate must pin to Inferno — changing this changes entitlement policy",
+        )
+    }
 
     @Test
     fun pushPayloadCapturesDeviceIdAndPlatform() = runTest {

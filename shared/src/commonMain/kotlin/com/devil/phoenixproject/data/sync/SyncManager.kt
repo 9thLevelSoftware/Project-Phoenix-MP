@@ -141,6 +141,14 @@ class SyncManager(
          * Prevents infinite retry storms when the same batch keeps failing.
          */
         const val MAX_FULL_BATCH_RETRIES = 3
+
+        /**
+         * Subscription tier that entitles a user to sync 50 Hz rep telemetry
+         * (raw force curves) to the portal. Matches the portal's "Session replay
+         * with 50 Hz telemetry" and "Force curves & VBT zones" Inferno features.
+         * All other tiers sync rep summaries but not per-sample telemetry.
+         */
+        const val TELEMETRY_SYNC_TIER = "INFERNO"
     }
 
     /**
@@ -176,6 +184,16 @@ class SyncManager(
         if (signInResult.isFailure) return signInResult.map { it.toPortalAuthResponse().user }
 
         val goTrueResponse = signInResult.getOrThrow()
+
+        // Capture prior identity BEFORE overwriting auth so entitlement can only
+        // carry forward on the same userId. A different user (or no prior user)
+        // must never inherit a previous session's INFERNO / premium flag through
+        // a transient network failure on the subscription check.
+        val previousUserId = tokenStorage.currentUser.value?.id
+        val previousPremium = tokenStorage.currentUser.value?.isPremium ?: false
+        val previousTier = tokenStorage.getSubscriptionTier()
+        val sameAccount = previousUserId != null && previousUserId == goTrueResponse.user.id
+
         tokenStorage.saveGoTrueAuth(goTrueResponse)
         Logger.d("SyncManager") { "Login: token saved" }
 
@@ -185,15 +203,32 @@ class SyncManager(
             _syncState.value = SyncState.Idle // Reset stale NotAuthenticated state
         }
 
-        // Check premium status from server immediately after auth.
-        // On fresh install, existingPremium defaults to false — server is source of truth.
-        // On network failure, preserve existing premium status to avoid downgrading paid users.
-        val existingPremium = tokenStorage.currentUser.value?.isPremium ?: false
+        // On account switch, fail closed: drop prior entitlement before the
+        // server resolves the new account's status. Only preserve it when the
+        // login is for the same userId and the server call hiccups.
+        val fallbackPremium = if (sameAccount) previousPremium else false
+        val fallbackTier = if (sameAccount) previousTier else null
+
+        // Distinguish a *successful* `null` (user has no active subscription —
+        // genuine downgrade) from a *failure* (network or 5xx — preserve prior
+        // status). `getOrNull() ?: fallback` would incorrectly keep the old
+        // tier on a legitimate downgrade.
         val premiumResult = apiClient.checkPremiumStatus()
-        val isPremium = premiumResult.getOrNull() ?: existingPremium
+        val isPremium = if (premiumResult.isSuccess) {
+            premiumResult.getOrNull() ?: false
+        } else {
+            fallbackPremium
+        }
         tokenStorage.updatePremiumStatus(isPremium)
+
+        val tierResult = apiClient.getActiveSubscriptionTier()
+        val resolvedTier = if (tierResult.isSuccess) tierResult.getOrNull() else fallbackTier
+        tokenStorage.updateSubscriptionTier(resolvedTier)
+
         Logger.i("SyncManager") {
-            "Login successful for ${goTrueResponse.user.email}, premium=$isPremium (server check: ${premiumResult.isSuccess})"
+            "Login successful for ${goTrueResponse.user.email}, premium=$isPremium, " +
+                "tier=${resolvedTier ?: "none"} (sameAccount=$sameAccount, " +
+                "server checks: premium=${premiumResult.isSuccess}, tier=${tierResult.isSuccess})"
         }
 
         return Result.success(tokenStorage.currentUser.value ?: goTrueResponse.toPortalAuthResponse().user)
@@ -212,9 +247,10 @@ class SyncManager(
             _syncState.value = SyncState.Idle // Reset stale NotAuthenticated state
         }
 
-        // New accounts start as free tier — no need to check premium status.
-        // Premium status will be set after they subscribe via Paddle.
+        // New accounts start without a subscription — no need to check status.
+        // Premium status and tier will be set after they subscribe via Paddle.
         tokenStorage.updatePremiumStatus(false)
+        tokenStorage.updateSubscriptionTier(null)
         Logger.i("SyncManager") { "Signup successful for ${goTrueResponse.user.email}" }
 
         return Result.success(tokenStorage.currentUser.value ?: goTrueResponse.toPortalAuthResponse().user)
@@ -235,6 +271,7 @@ class SyncManager(
         apiClient.signOut()
 
         tokenStorage.updatePremiumStatus(false)
+        tokenStorage.updateSubscriptionTier(null)
         tokenStorage.clearAuth()
         tokenStorage.emitLogoutEvent()
 
@@ -251,12 +288,28 @@ class SyncManager(
      */
     suspend fun refreshPremiumStatusFromServer() {
         if (!tokenStorage.hasToken()) return
-        val premiumResult = apiClient.checkPremiumStatus()
+
         val existingPremium = tokenStorage.currentUser.value?.isPremium ?: false
-        val isPremium = premiumResult.getOrNull() ?: existingPremium
+        val existingTier = tokenStorage.getSubscriptionTier()
+
+        // A successful `null` from the server means the user has no active
+        // subscription (a real downgrade) and MUST clear the cached tier.
+        // Only a failed call (network, 5xx) preserves the existing value.
+        val premiumResult = apiClient.checkPremiumStatus()
+        val isPremium = if (premiumResult.isSuccess) {
+            premiumResult.getOrNull() ?: false
+        } else {
+            existingPremium
+        }
         tokenStorage.updatePremiumStatus(isPremium)
+
+        val tierResult = apiClient.getActiveSubscriptionTier()
+        val resolvedTier = if (tierResult.isSuccess) tierResult.getOrNull() else existingTier
+        tokenStorage.updateSubscriptionTier(resolvedTier)
+
         Logger.d("SyncManager") {
-            "refreshPremiumStatusFromServer: premium=$isPremium (network ok=${premiumResult.isSuccess})"
+            "refreshPremiumStatusFromServer: premium=$isPremium, tier=${resolvedTier ?: "none"} " +
+                "(network ok: premium=${premiumResult.isSuccess}, tier=${tierResult.isSuccess})"
         }
     }
 
@@ -579,13 +632,33 @@ class SyncManager(
             userId,
         )
 
+        // Gate telemetry push behind the Inferno tier. Force-curve / 50 Hz session
+        // replay is an Inferno-only feature per the subscription matrix. Other
+        // tiers (Ember, Flame) and users whose tier is unresolved (offline login,
+        // network error during subscription check) fail closed — no telemetry on
+        // the wire. Rep summaries still ship in `sessions` regardless of tier so
+        // Ember/Flame users get full history, PRs, and analytics without the raw
+        // per-sample payload that blows past the server cap. When Inferno
+        // launches, this gate automatically opens for those subscribers with no
+        // further code changes.
+        val tier = tokenStorage.getSubscriptionTier()
+        val telemetryAllowed = tier == TELEMETRY_SYNC_TIER
+        val effectiveTelemetry = if (telemetryAllowed) buildResult.telemetry else emptyList()
+        if (!telemetryAllowed && buildResult.telemetry.isNotEmpty()) {
+            Logger.i("SyncManager") {
+                "Telemetry push gated off: tier=${tier ?: "unknown"} " +
+                    "($TELEMETRY_SYNC_TIER required). Skipping ${buildResult.telemetry.size} points; " +
+                    "rep summaries still sync."
+            }
+        }
+
         // Build a telemetry index keyed by set ID for batch slicing.
         // Each session's exercises contain sets whose IDs are referenced by telemetry rows.
         val sessionSetIds = buildResult.sessions.associate { session ->
             val setIds = session.exercises.flatMap { ex -> ex.sets.map { s -> s.id } }.toSet()
             session.id to setIds
         }
-        val telemetryBySetId = buildResult.telemetry.groupBy { it.setId }
+        val telemetryBySetId = effectiveTelemetry.groupBy { it.setId }
 
         // 7b. Profile data for portal tagging and profile-scoped filtering
         val activeProfile = userProfileRepository.activeProfile.value
@@ -615,7 +688,7 @@ class SyncManager(
 
         Logger.d("SyncManager") {
             "Pushing portal payload: ${allSessions.size} sessions ($totalBatches batch(es)), " +
-                "${buildResult.telemetry.size} telemetry points, " +
+                "${effectiveTelemetry.size} telemetry points, " +
                 "${routineDtos.size} routines, ${cycleDtos.size} cycles, " +
                 "${phaseStatsBySessionId.size} sessions with phase stats, " +
                 "${signatureDtos.size} signatures, " +
@@ -631,7 +704,7 @@ class SyncManager(
                 platform = platform,
                 lastSync = lastSync,
                 sessions = allSessions,
-                telemetry = buildResult.telemetry,
+                telemetry = effectiveTelemetry,
                 routines = routineDtos,
                 cycles = cycleDtos,
                 rpgAttributes = rpgDto,
