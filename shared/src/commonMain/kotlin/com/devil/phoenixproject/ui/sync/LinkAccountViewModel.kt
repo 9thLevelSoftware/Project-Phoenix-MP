@@ -1,5 +1,7 @@
 package com.devil.phoenixproject.ui.sync
 
+import co.touchlab.kermit.Logger
+import com.devil.phoenixproject.data.auth.OAuthProvider
 import com.devil.phoenixproject.data.repository.AuthRepository
 import com.devil.phoenixproject.data.sync.PortalUser
 import com.devil.phoenixproject.data.sync.SyncManager
@@ -15,7 +17,15 @@ import kotlinx.coroutines.launch
 
 sealed class LinkAccountUiState {
     object Initial : LinkAccountUiState()
-    object Loading : LinkAccountUiState()
+
+    /**
+     * Loading state. [provider] identifies which OAuth provider triggered the
+     * flow, or `null` for the email/password path. The UI uses this to render
+     * a spinner inside the specific button the user tapped instead of just
+     * dimming all three.
+     */
+    data class Loading(val provider: OAuthProvider? = null) : LinkAccountUiState()
+
     data class Success(val user: PortalUser) : LinkAccountUiState()
     data class Error(val message: String) : LinkAccountUiState()
 }
@@ -69,7 +79,7 @@ class LinkAccountViewModel(
     fun login(email: String, password: String) {
         scope.launch {
             try {
-                _uiState.value = LinkAccountUiState.Loading
+                _uiState.value = LinkAccountUiState.Loading(provider = null)
 
                 syncManager.login(email, password)
                     .onSuccess { user ->
@@ -96,21 +106,13 @@ class LinkAccountViewModel(
      * OAuth session is saved, we refresh premium/tier from the server so the
      * UI reflects the actual subscription state instead of defaulting to
      * free.
+     *
+     * @param fallbackErrorMessage localized error string used when the
+     *        underlying provider didn't surface its own message.
      */
-    fun loginWithGoogle() {
-        scope.launch {
-            try {
-                _uiState.value = LinkAccountUiState.Loading
-                authRepository.signInWithGoogle()
-                    .onSuccess { finishOAuthLink() }
-                    .onFailure { error ->
-                        _uiState.value = LinkAccountUiState.Error(
-                            error.message ?: "Google sign-in failed",
-                        )
-                    }
-            } catch (e: CancellationException) {
-                throw e
-            }
+    fun loginWithGoogle(fallbackErrorMessage: String) {
+        runOAuth(OAuthProvider.GOOGLE, fallbackErrorMessage) {
+            authRepository.signInWithGoogle()
         }
     }
 
@@ -119,15 +121,25 @@ class LinkAccountViewModel(
      * contract as [loginWithGoogle] — same GoTrue backend, same post-sign-in
      * premium/tier refresh.
      */
-    fun loginWithApple() {
+    fun loginWithApple(fallbackErrorMessage: String) {
+        runOAuth(OAuthProvider.APPLE, fallbackErrorMessage) {
+            authRepository.signInWithApple()
+        }
+    }
+
+    private fun runOAuth(
+        provider: OAuthProvider,
+        fallbackErrorMessage: String,
+        block: suspend () -> Result<*>,
+    ) {
         scope.launch {
             try {
-                _uiState.value = LinkAccountUiState.Loading
-                authRepository.signInWithApple()
+                _uiState.value = LinkAccountUiState.Loading(provider = provider)
+                block()
                     .onSuccess { finishOAuthLink() }
                     .onFailure { error ->
                         _uiState.value = LinkAccountUiState.Error(
-                            error.message ?: "Apple sign-in failed",
+                            error.message ?: fallbackErrorMessage,
                         )
                     }
             } catch (e: CancellationException) {
@@ -137,12 +149,29 @@ class LinkAccountViewModel(
     }
 
     /**
-     * Shared post-OAuth tail: pull premium + tier from the server so the
-     * PortalUser exposed by [currentUser] reflects the real entitlement
-     * rather than the default-false values `saveGoTrueAuth` writes.
+     * Shared post-OAuth tail. Two responsibilities:
+     *
+     * 1. Reset [SyncState.NotAuthenticated] left over from a prior
+     *    [SyncManager.logout]. OAuth bypasses [SyncManager.login], which is
+     *    where that reset normally happens, so without this the screen will
+     *    render "Authentication failed" right after a successful sign-in.
+     * 2. Pull premium + tier from the server so the PortalUser exposed by
+     *    [currentUser] reflects real entitlement instead of the
+     *    default-false values `saveGoTrueAuth` writes.
+     *
+     * The premium refresh is best-effort: a network failure here must NOT
+     * leave the UI stuck at Loading or invalidate the sign-in itself —
+     * the GoTrue session was already persisted. Wrap in `runCatching` and
+     * always advance to Success/Error.
      */
     private suspend fun finishOAuthLink() {
-        syncManager.refreshPremiumStatusFromServer()
+        syncManager.resetSyncStateToIdle()
+        runCatching { syncManager.refreshPremiumStatusFromServer() }
+            .onFailure { e ->
+                Logger.w("LinkAccountViewModel") {
+                    "OAuth premium refresh failed (sign-in still succeeded): ${e.message}"
+                }
+            }
         val user = syncManager.currentUser.value
         _uiState.value = if (user != null) {
             LinkAccountUiState.Success(user)
@@ -154,7 +183,7 @@ class LinkAccountViewModel(
     fun signup(email: String, password: String, displayName: String) {
         scope.launch {
             try {
-                _uiState.value = LinkAccountUiState.Loading
+                _uiState.value = LinkAccountUiState.Loading(provider = null)
 
                 syncManager.signup(email, password, displayName)
                     .onSuccess { user ->

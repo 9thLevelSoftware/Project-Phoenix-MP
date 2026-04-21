@@ -138,6 +138,9 @@
     <!-- ==================== Auth ==================== -->
     <string name="auth_google">Google</string>
     <string name="auth_apple">Apple</string>
+    <string name="auth_or_continue_with">Or continue with</string>
+    <string name="auth_google_failed">Google sign-in failed</string>
+    <string name="auth_apple_failed">Apple sign-in failed</string>
 
     <!-- ==================== Link Account / Sync ==================== -->
     <string name="phoenix_portal">Phoenix Portal</string>

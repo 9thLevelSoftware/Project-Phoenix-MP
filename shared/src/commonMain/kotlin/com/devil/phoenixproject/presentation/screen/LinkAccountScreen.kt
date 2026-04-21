@@ -47,6 +47,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
+import com.devil.phoenixproject.data.auth.OAuthProvider
 import com.devil.phoenixproject.data.sync.AuthEvent
 import com.devil.phoenixproject.data.sync.SyncState
 import com.devil.phoenixproject.presentation.components.AppleIcon
@@ -59,7 +60,10 @@ import org.koin.compose.koinInject
 import vitruvianprojectphoenix.shared.generated.resources.Res
 import vitruvianprojectphoenix.shared.generated.resources.action_login
 import vitruvianprojectphoenix.shared.generated.resources.auth_apple
+import vitruvianprojectphoenix.shared.generated.resources.auth_apple_failed
 import vitruvianprojectphoenix.shared.generated.resources.auth_google
+import vitruvianprojectphoenix.shared.generated.resources.auth_google_failed
+import vitruvianprojectphoenix.shared.generated.resources.auth_or_continue_with
 import vitruvianprojectphoenix.shared.generated.resources.cd_back
 import vitruvianprojectphoenix.shared.generated.resources.label_email
 import vitruvianprojectphoenix.shared.generated.resources.label_password
@@ -157,12 +161,17 @@ fun LinkAccountScreen(onNavigateBack: () -> Unit) {
                     onLogout = { viewModel.logout() },
                 )
             } else {
-                // Login form (sign up happens via Phoenix Portal)
+                // Login form (sign up happens via Phoenix Portal). Strings
+                // are read here so they can be passed to the ViewModel as
+                // localized fallbacks — VMs in this project don't have
+                // direct access to compose-resources.
+                val googleFailedFallback = stringResource(Res.string.auth_google_failed)
+                val appleFailedFallback = stringResource(Res.string.auth_apple_failed)
                 LoginForm(
                     uiState = uiState,
                     onLogin = { email, password -> viewModel.login(email, password) },
-                    onGoogleLogin = { viewModel.loginWithGoogle() },
-                    onAppleLogin = { viewModel.loginWithApple() },
+                    onGoogleLogin = { viewModel.loginWithGoogle(googleFailedFallback) },
+                    onAppleLogin = { viewModel.loginWithApple(appleFailedFallback) },
                     onClearError = { viewModel.clearError() },
                 )
             }
@@ -391,7 +400,7 @@ private fun LoginForm(
             // Apple lands in the same account here — no separate provisioning.
             // Sign-up stays on the web, so this surface is sign-in-only.
             Text(
-                text = "Or continue with",
+                text = stringResource(Res.string.auth_or_continue_with),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.align(Alignment.CenterHorizontally),
@@ -399,23 +408,44 @@ private fun LoginForm(
 
             Spacer(modifier = Modifier.height(8.dp))
 
+            // Track which provider (if any) initiated the active load so we
+            // can render an inline spinner inside that specific button —
+            // otherwise the user sees three dimmed buttons with no feedback
+            // while the system browser warms up.
+            val loadingProvider = (uiState as? LinkAccountUiState.Loading)?.provider
+            val anyLoading = uiState is LinkAccountUiState.Loading
+
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterHorizontally),
             ) {
                 OutlinedButton(
                     onClick = onGoogleLogin,
-                    enabled = uiState !is LinkAccountUiState.Loading,
+                    enabled = !anyLoading,
                 ) {
-                    GoogleIcon(modifier = Modifier.size(18.dp))
+                    if (loadingProvider == OAuthProvider.GOOGLE) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(18.dp),
+                            strokeWidth = 2.dp,
+                        )
+                    } else {
+                        GoogleIcon(modifier = Modifier.size(18.dp))
+                    }
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(stringResource(Res.string.auth_google))
                 }
                 OutlinedButton(
                     onClick = onAppleLogin,
-                    enabled = uiState !is LinkAccountUiState.Loading,
+                    enabled = !anyLoading,
                 ) {
-                    AppleIcon(modifier = Modifier.size(18.dp))
+                    if (loadingProvider == OAuthProvider.APPLE) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(18.dp),
+                            strokeWidth = 2.dp,
+                        )
+                    } else {
+                        AppleIcon(modifier = Modifier.size(18.dp))
+                    }
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(stringResource(Res.string.auth_apple))
                 }
