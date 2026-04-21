@@ -3,26 +3,26 @@ gsd_state_version: 1.0
 milestone: v0.9.0
 milestone_name: Enhancement Sweep
 status: executing
-last_updated: "2026-04-21T18:00:00.000Z"
+last_updated: "2026-04-21T20:00:00.000Z"
 progress:
   total_phases: 8
-  completed_phases: 2
+  completed_phases: 3
   total_plans: 21
-  completed_plans: 5
+  completed_plans: 8
 ---
 
 # GSD State: Project Phoenix MP
 
 ## Current Position
 
-Phase: 39 of 44 (pending)
-Plan: 0/3 complete
-Status: Phase 38 complete — review passed (1 cycle, 4 warnings fixed, 116 tests)
-Last activity: 2026-04-21 — Phase 38 review passed
+Phase: 39 of 44 (executed, pending review)
+Plan: 3/3 complete
+Status: Phase 39 complete — all plans executed successfully
+Last activity: 2026-04-21 — Phase 39 execution complete
 
 ## Progress
 ```
-[#####               ] 24% — 5/21 plans complete
+[########            ] 38% — 8/21 plans complete
 ```
 
 ## Project Reference
@@ -47,7 +47,7 @@ See: .planning/PROJECT.md (updated 2026-04-21)
 |-------|------|--------|-------|--------|
 | 37 | Foundation | #323 | 2 | Complete |
 | 38 | Weight-Dependent | #266, #337 | 3 | Complete |
-| 39 | Routine Cluster | #365, #307 | 3 | Pending |
+| 39 | Routine Cluster | #365, #307 | 3 | Complete |
 | 40 | Analytics | #229, #225 | 3 | Pending |
 | 41 | Quick Wins | #190, #228, #100 | 2 | Pending |
 | 42 | Platform | #363 | 3 | Pending |
@@ -83,9 +83,16 @@ Advanced (#313) ── uses biomechanics engine (exists)
 | v0.7.0 MVP Cloud Sync | 2026-03-15 | Cloud sync UI + iOS launch |
 | v0.6.0 Portal Sync | 2026-03-02 | Bidirectional Supabase sync |
 
+## Phase 39 Results
+
+- Plan 39-01 (Wave 1): Superset Exercise Reorder — Complete. RoutineUtils.kt + nested ReorderableColumn.
+- Plan 39-02 (Wave 1): Routine Parent Grouping — Complete. RoutineGroup entity, migration 27, grouped RoutinesTab, backup v3.
+- Plan 39-03 (Wave 2): Integration Tests & Regression Guards — Complete. 22 new tests, SchemaManifest updated.
+
 ## Known Issues
 
 - SqlDelightTrainingCycleRepositoryTest.checkAndAutoAdvance — flaky (time-dependent, pre-existing)
+- PortalPullPaginationTest.pullCapsLargeKnownSessionIdsToMaxParityIds — pre-existing failure, unrelated to Phase 39
 
 ## GitHub
 
@@ -93,10 +100,11 @@ Advanced (#313) ── uses biomechanics engine (exists)
 |-------|-------|
 | 37 | #380 |
 | 38 | #382 |
+| 39 | #385 |
 
 ## Next Action
 
-Run `/legion:plan 39` to plan Phase 39: Routine Cluster (#365, #307)
+Run `/legion:review` to verify Phase 39: Routine Cluster (#365, #307)
 
 ---
-*Last updated: 2026-04-21 — Phase 38 review passed (1 cycle, 4 warnings fixed)*
+*Last updated: 2026-04-21 — Phase 39 complete (3/3 plans passed, 22 new tests)*
