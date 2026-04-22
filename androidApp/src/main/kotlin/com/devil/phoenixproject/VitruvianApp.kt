@@ -80,7 +80,7 @@ class VitruvianApp :
             override fun onActivitySaveInstanceState(activity: Activity, outState: Bundle) {}
         })
 
-        Logger.d("VitruvianApp") { "Application initialized" }
+        Logger.d(tag = "VitruvianApp") { "Application initialized" }
     }
 
     override fun newImageLoader(context: coil3.PlatformContext): ImageLoader = ImageLoader.Builder(context)

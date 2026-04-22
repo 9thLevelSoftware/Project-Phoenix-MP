@@ -1,6 +1,8 @@
 package com.devil.phoenixproject.data.sync
 
+import com.devil.phoenixproject.domain.model.CycleDay
 import com.devil.phoenixproject.domain.model.RepMetricData
+import com.devil.phoenixproject.domain.model.TrainingCycle
 import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.testutil.FakeExternalActivityRepository
 import com.devil.phoenixproject.testutil.FakeGamificationRepository
@@ -606,6 +608,43 @@ class PortalPushLimitsTest {
             payload.telemetry.isEmpty(),
             "Unknown tier must fail closed — better to skip a premium feature than to ship " +
                 "Inferno-only payloads to a user whose entitlement cannot be confirmed",
+        )
+    }
+
+    @Test
+    fun cyclePayloadDropsNonUuidRoutineIdsBeforeSend() = runTest {
+        authenticate()
+        val cycleId = "66666666-6666-4666-a666-666666666666"
+        val cycleRoutineId = "cycle_routine_${"55555555-5555-4555-a555-555555555555"}"
+        fakeSyncRepo.cyclesToReturn = listOf(
+            PortalSyncAdapter.CycleWithContext(
+                cycle = TrainingCycle.create(
+                    id = cycleId,
+                    name = "Cycle With Local Template Routine",
+                    days = listOf(
+                        CycleDay.create(
+                            id = "77777777-7777-4777-a777-777777777777",
+                            cycleId = cycleId,
+                            dayNumber = 1,
+                            routineId = cycleRoutineId,
+                        ),
+                    ),
+                ),
+            ),
+        )
+        fakeApi.pushResult = Result.success(
+            PortalSyncPushResponse(syncTime = "2026-04-21T12:00:00Z"),
+        )
+
+        createManager().sync()
+
+        val payload = fakeApi.lastPushPayload
+        assertNotNull(payload)
+        assertEquals(1, payload.cycles.size, "Cycle should still be pushed")
+        assertEquals(
+            null,
+            payload.cycles.single().days.single().routineId,
+            "Server-bound cycle days must not carry local-only cycle_routine_* IDs into UUID ownership checks",
         )
     }
 

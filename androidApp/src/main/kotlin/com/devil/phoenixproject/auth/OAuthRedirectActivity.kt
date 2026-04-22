@@ -36,7 +36,7 @@ class OAuthRedirectActivity : ComponentActivity() {
             // without a redirect payload. The waiting suspend in
             // OAuthLauncher.launch() must still complete — surface this as
             // a cancellation so the caller doesn't hang.
-            Logger.w("OAuthRedirectActivity") { "Received intent with no data; cancelling pending OAuth flow" }
+            Logger.w(tag = "OAuthRedirectActivity") { "Received intent with no data; cancelling pending OAuth flow" }
             AndroidOAuthBridge.cancelFlow()
             return
         }

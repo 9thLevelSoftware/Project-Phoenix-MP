@@ -149,6 +149,11 @@ class SyncManager(
          * All other tiers sync rep summaries but not per-sample telemetry.
          */
         const val TELEMETRY_SYNC_TIER = "INFERNO"
+
+        private val CANONICAL_UUID_REGEX = Regex(
+            "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+            RegexOption.IGNORE_CASE,
+        )
     }
 
     /**
@@ -547,12 +552,45 @@ class SyncManager(
             )
         }
 
-        // 4. Gather routines as full domain objects (exclude internal cycle_routine_ entries), profile-scoped
-        val routines = syncRepository.getFullRoutinesModifiedSince(lastSync, activeProfileId)
-            .filterNot { it.id.startsWith("cycle_routine_") }
+        // 4. Gather routines as full domain objects, but only ship canonical UUID IDs.
+        // Local template-derived cycle routines use "cycle_routine_<uuid>" and must never
+        // reach the server's UUID ownership checks.
+        val rawRoutines = syncRepository.getFullRoutinesModifiedSince(lastSync, activeProfileId)
+        val routines = rawRoutines.filter { routine -> CANONICAL_UUID_REGEX.matches(routine.id) }
+        val droppedRoutineCount = rawRoutines.size - routines.size
+        if (droppedRoutineCount > 0) {
+            Logger.w("SyncManager") {
+                "Push payload: dropped $droppedRoutineCount non-UUID routines before send"
+            }
+        }
 
-        // 4b. Gather training cycles (all — no delta, lacks updatedAt), profile-scoped
-        val cyclesWithContext = syncRepository.getFullCyclesForSync(activeProfileId)
+        // 4b. Gather training cycles (all — no delta, lacks updatedAt), profile-scoped.
+        // Cycle days may still point at local-only template routines that are hidden from
+        // the main routines list via the "cycle_routine_<uuid>" prefix. Null those
+        // references for server push so one bad local ID cannot fail the entire sync.
+        val rawCyclesWithContext = syncRepository.getFullCyclesForSync(activeProfileId)
+        var droppedCycleRoutineRefs = 0
+        val cyclesWithContext = rawCyclesWithContext.map { ctx ->
+            val sanitizedDays = ctx.cycle.days.map { day ->
+                val routineId = day.routineId
+                if (routineId != null && !CANONICAL_UUID_REGEX.matches(routineId)) {
+                    droppedCycleRoutineRefs++
+                    day.copy(routineId = null)
+                } else {
+                    day
+                }
+            }
+            if (sanitizedDays == ctx.cycle.days) {
+                ctx
+            } else {
+                ctx.copy(cycle = ctx.cycle.copy(days = sanitizedDays))
+            }
+        }
+        if (droppedCycleRoutineRefs > 0) {
+            Logger.w("SyncManager") {
+                "Push payload: dropped $droppedCycleRoutineRefs non-UUID cycle-day routine references before send"
+            }
+        }
 
         // 5. Gather gamification data (profile-scoped)
         val rpgInput = gamificationRepository.getRpgInput(activeProfileId)
@@ -925,13 +963,8 @@ class SyncManager(
         // mobile-sync-pull validator rejects the whole request if any entry
         // in knownEntityIds fails UUID validation. Filter non-canonical UUIDs
         // client-side before sending.
-        val uuidPattern = Regex(
-            "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
-            RegexOption.IGNORE_CASE,
-        )
-
         fun filterUuids(ids: List<String>, label: String): List<String> {
-            val filtered = ids.filter { uuidPattern.matches(it) }
+            val filtered = ids.filter { CANONICAL_UUID_REGEX.matches(it) }
             val dropped = ids.size - filtered.size
             if (dropped > 0) {
                 Logger.w("SyncManager") {

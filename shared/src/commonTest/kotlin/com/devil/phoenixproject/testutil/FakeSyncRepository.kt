@@ -130,6 +130,7 @@ class FakeSyncRepository : SyncRepository {
     var cycleIds: List<String> = emptyList()
     var badgeIds: List<String> = emptyList()
     var personalRecordIds: List<String> = emptyList()
+    var cyclesToReturn: List<CycleWithContext> = emptyList()
 
     override suspend fun getAllSessionIds(profileId: String): List<String> = sessionIds
     override suspend fun getAllRoutineIds(profileId: String): List<String> = routineIds
@@ -139,7 +140,7 @@ class FakeSyncRepository : SyncRepository {
 
     // === Stubs for new sync interface methods (added for cycle/PR/phase/signature/assessment sync) ===
 
-    override suspend fun getFullCyclesForSync(profileId: String): List<CycleWithContext> = emptyList()
+    override suspend fun getFullCyclesForSync(profileId: String): List<CycleWithContext> = cyclesToReturn
 
     override suspend fun getFullPRsModifiedSince(timestamp: Long, profileId: String): List<PersonalRecord> = emptyList()
 
