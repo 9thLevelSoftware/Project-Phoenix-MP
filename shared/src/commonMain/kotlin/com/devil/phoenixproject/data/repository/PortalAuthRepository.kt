@@ -11,6 +11,7 @@ import com.devil.phoenixproject.data.sync.PortalUser
 import com.devil.phoenixproject.data.sync.SupabaseConfig
 import com.devil.phoenixproject.data.sync.toPortalAuthResponse
 import io.ktor.http.Url
+import io.ktor.http.decodeURLQueryComponent
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -174,25 +175,23 @@ class PortalAuthRepository(
     }
 
     private fun isExpectedOAuthCallback(callbackUrl: String): Boolean {
-        val url = runCatching { Url(callbackUrl) }.getOrNull() ?: return false
-        return url.protocol.name.equals(OAUTH_CALLBACK_SCHEME, ignoreCase = true) &&
-            url.host.equals("auth-callback", ignoreCase = true)
+        return isExpectedOAuthCallbackUrl(
+            callbackUrl = callbackUrl,
+            expectedScheme = OAUTH_CALLBACK_SCHEME,
+        )
     }
 
     private fun extractAuthCode(callbackUrl: String): String? {
-        val url = runCatching { Url(callbackUrl) }.getOrNull() ?: return null
-        return url.parameters["code"]
+        return extractOAuthCallbackParam(callbackUrl, "code")
     }
 
     private fun extractState(callbackUrl: String): String? {
-        val url = runCatching { Url(callbackUrl) }.getOrNull() ?: return null
-        return url.parameters["state"]
+        return extractOAuthCallbackParam(callbackUrl, "state")
     }
 
     private fun extractErrorMessage(callbackUrl: String): String? {
-        val url = runCatching { Url(callbackUrl) }.getOrNull() ?: return null
-        val description = url.parameters["error_description"]
-        val error = url.parameters["error"]
+        val description = extractOAuthCallbackParam(callbackUrl, "error_description")
+        val error = extractOAuthCallbackParam(callbackUrl, "error")
         return description ?: error
     }
 
@@ -271,4 +270,36 @@ class PortalAuthRepository(
         email = email,
         displayName = displayName,
     )
+}
+
+internal fun isExpectedOAuthCallbackUrl(
+    callbackUrl: String,
+    expectedScheme: String,
+    expectedHost: String = "auth-callback",
+): Boolean {
+    val url = runCatching { Url(callbackUrl) }.getOrNull() ?: return false
+    if (!url.protocol.name.equals(expectedScheme, ignoreCase = true)) return false
+    if (!url.host.equals(expectedHost, ignoreCase = true)) return false
+    return url.encodedPath.isEmpty() || url.encodedPath == "/"
+}
+
+internal fun extractOAuthCallbackParam(callbackUrl: String, key: String): String? {
+    val url = runCatching { Url(callbackUrl) }.getOrNull() ?: return null
+    url.parameters[key]?.let { return it }
+
+    val fragment = callbackUrl.substringAfter('#', "")
+    if (fragment.isBlank()) return null
+
+    return fragment
+        .split('&')
+        .asSequence()
+        .mapNotNull { entry ->
+            if (entry.isBlank()) return@mapNotNull null
+            val parts = entry.split('=', limit = 2)
+            val name = parts[0].decodeURLQueryComponent(plusIsSpace = true)
+            val value = parts.getOrNull(1)?.decodeURLQueryComponent(plusIsSpace = true)
+            name to value
+        }
+        .firstOrNull { (name, _) -> name == key }
+        ?.second
 }
